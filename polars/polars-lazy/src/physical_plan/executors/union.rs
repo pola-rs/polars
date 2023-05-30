@@ -22,7 +22,11 @@ impl Executor for UnionExec {
         }
         let mut inputs = std::mem::take(&mut self.inputs);
 
-        let sliced_path = self.options.slice && self.options.slice_offset >= 0;
+        let sliced_path = if let Some((offset, _)) = self.options.slice {
+            offset >= 0
+        } else {
+            false
+        };
 
         if !self.options.parallel || sliced_path {
             if state.verbose() {
@@ -33,42 +37,46 @@ impl Executor for UnionExec {
                 }
             }
 
-            let mut offset = self.options.slice_offset as usize;
-            let mut len = self.options.slice_len as usize;
-            let dfs = inputs
-                .into_iter()
-                .enumerate()
-                .map(|(idx, mut input)| {
-                    let mut state = state.split();
-                    state.branch_idx += idx;
-                    let df = input.execute(&mut state)?;
+            let (slice_offset, mut slice_len) = self.options.slice.unwrap_or((0, usize::MAX));
+            let mut slice_offset = slice_offset as usize;
+            let mut dfs = Vec::with_capacity(inputs.len());
 
-                    if !sliced_path {
-                        return Ok(Some(df));
-                    }
+            for (idx, mut input) in inputs.into_iter().enumerate() {
+                let mut state = state.split();
+                state.branch_idx += idx;
 
-                    Ok(if offset > df.height() {
-                        offset -= df.height();
-                        None
-                    } else if offset + len > df.height() {
-                        len -= df.height() - offset;
-                        if offset == 0 {
-                            Some(df)
-                        } else {
-                            let out = Some(df.slice(offset as i64, usize::MAX));
-                            offset = 0;
-                            out
-                        }
+                let df = input.execute(&mut state)?;
+
+                if !sliced_path {
+                    dfs.push(df);
+                    continue;
+                }
+
+                let height = df.height();
+                // this part can be skipped as we haven't reached the offset yet
+                // TODO!: don't read the file yet!
+                if slice_offset > height {
+                    slice_offset -= height;
+                }
+                // applying the slice
+                // continue iteration
+                else if slice_offset + slice_len > height {
+                    slice_len -= height - slice_offset;
+                    if slice_offset == 0 {
+                        dfs.push(df);
                     } else {
-                        let out = Some(df.slice(offset as i64, len));
-                        len = 0;
-                        offset = 0;
-                        out
-                    })
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
+                        dfs.push(df.slice(slice_offset as i64, usize::MAX));
+                        slice_offset = 0;
+                    }
+                }
+                // we finished the slice
+                else {
+                    dfs.push(df.slice(slice_offset as i64, slice_len));
+                    break;
+                }
+            }
 
-            concat_df(dfs.iter().flatten())
+            concat_df(&dfs)
         } else {
             if state.verbose() {
                 println!("UNION: union is run in parallel")

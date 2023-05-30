@@ -9,14 +9,15 @@ Manipulation/selection
     Series.alias
     Series.append
     Series.arg_sort
-    Series.argsort
+    Series.bottom_k
     Series.cast
     Series.ceil
-    Series.cleared
+    Series.clear
     Series.clip
     Series.clip_max
     Series.clip_min
     Series.clone
+    Series.cut
     Series.drop_nans
     Series.drop_nulls
     Series.explode
@@ -26,10 +27,12 @@ Manipulation/selection
     Series.filter
     Series.floor
     Series.head
+    Series.hist
     Series.interpolate
     Series.item
     Series.limit
     Series.new_from_index
+    Series.qcut
     Series.rechunk
     Series.rename
     Series.reshape

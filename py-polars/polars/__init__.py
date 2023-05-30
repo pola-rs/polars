@@ -1,19 +1,15 @@
+import contextlib
 import os
-import warnings
 
-try:
-    from polars.polars import version
-except ImportError:
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    # ensure the object constructor is known by polars
+    # we set this once on import
+    from polars.polars import register_object_builder
 
-    def version() -> str:
-        return ""
-
-    # this is only useful for documentation
-    warnings.warn("polars binary missing!")
+    register_object_builder()
 
 from polars import api
-from polars.build_info import build_info
-from polars.cfg import Config
+from polars.config import Config
 from polars.convert import (
     from_arrow,
     from_dataframe,
@@ -22,14 +18,24 @@ from polars.convert import (
     from_numpy,
     from_pandas,
     from_records,
+    from_repr,
 )
+from polars.dataframe import DataFrame
 from polars.datatypes import (
+    DATETIME_DTYPES,
+    DURATION_DTYPES,
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    TEMPORAL_DTYPES,
+    Array,
     Binary,
     Boolean,
     Categorical,
     DataType,
     Date,
     Datetime,
+    Decimal,
     Duration,
     Field,
     Float32,
@@ -41,7 +47,6 @@ from polars.datatypes import (
     List,
     Null,
     Object,
-    PolarsDataType,
     Struct,
     Time,
     UInt8,
@@ -50,60 +55,47 @@ from polars.datatypes import (
     UInt64,
     Unknown,
     Utf8,
-    get_idx_type,
 )
 from polars.exceptions import (
     ArrowError,
+    ChronoFormatWarning,
     ColumnNotFoundError,
     ComputeError,
     DuplicateError,
     InvalidOperationError,
     NoDataError,
-    PanicException,
+    PolarsPanicError,
     SchemaError,
     SchemaFieldNotFoundError,
     ShapeError,
     StructFieldNotFoundError,
 )
-from polars.internals import BatchedCsvReader
-
-# TODO remove need for wrap_df
-from polars.internals.dataframe import (
-    DataFrame,
-    wrap_df,  # noqa: F401
-)
-from polars.internals.expr.expr import Expr
-from polars.internals.functions import (
+from polars.expr import Expr
+from polars.functions import (
     align_frames,
-    concat,
-    cut,
-    date_range,
-    get_dummies,
-    ones,
-    zeros,
-)
-from polars.internals.io import read_ipc_schema, read_parquet_schema
-from polars.internals.lazy_functions import _date as date
-from polars.internals.lazy_functions import _datetime as datetime
-from polars.internals.lazy_functions import (
     all,
     any,
     apply,
+    approx_unique,
     arange,
     arg_sort_by,
     arg_where,
-    argsort_by,
     avg,
     coalesce,
     col,
     collect_all,
+    concat,
     concat_list,
     concat_str,
+    corr,
     count,
     cov,
     cumfold,
     cumreduce,
     cumsum,
+    date,
+    date_range,
+    datetime,
     duration,
     element,
     exclude,
@@ -113,6 +105,7 @@ from polars.internals.lazy_functions import (
     from_epoch,
     groups,
     head,
+    implode,
     last,
     lit,
     map,
@@ -121,47 +114,68 @@ from polars.internals.lazy_functions import (
     median,
     min,
     n_unique,
-    pearson_corr,
+    ones,
     quantile,
     reduce,
     repeat,
+    rolling_corr,
+    rolling_cov,
     select,
-    spearman_rank_corr,
     std,
     struct,
     sum,
     tail,
+    time,
+    time_range,
     var,
+    when,
+    zeros,
 )
-from polars.internals.lazy_functions import to_list as list
-from polars.internals.lazyframe import LazyFrame
-
-# TODO: remove need for wrap_s
-from polars.internals.series import wrap_s  # noqa: F401
-from polars.internals.series.series import Series
-from polars.internals.sql import SQLContext
-from polars.internals.whenthen import when
 from polars.io import (
     read_avro,
     read_csv,
     read_csv_batched,
+    read_database,
     read_delta,
     read_excel,
     read_ipc,
+    read_ipc_schema,
     read_json,
     read_ndjson,
     read_parquet,
-    read_sql,
+    read_parquet_schema,
     scan_csv,
     scan_delta,
     scan_ds,
     scan_ipc,
     scan_ndjson,
     scan_parquet,
+    scan_pyarrow_dataset,
 )
-from polars.show_versions import show_versions
-from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
-from polars.utils import threadpool_size
+from polars.lazyframe import LazyFrame
+from polars.series import Series
+from polars.sql import SQLContext
+from polars.string_cache import (
+    StringCache,
+    enable_string_cache,
+    toggle_string_cache,
+    using_string_cache,
+)
+from polars.type_aliases import PolarsDataType
+from polars.utils import (
+    build_info,
+    get_idx_type,
+    get_index_type,
+    show_versions,
+    threadpool_size,
+)
+
+# TODO: remove need for importing wrap utils at top level
+from polars.utils._wrap import wrap_df, wrap_s  # noqa: F401
+from polars.utils.polars_version import get_polars_version as _get_polars_version
+
+__version__: str = _get_polars_version()
+del _get_polars_version
 
 __all__ = [
     "api",
@@ -170,27 +184,29 @@ __all__ = [
     "ArrowError",
     "ColumnNotFoundError",
     "ComputeError",
+    "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
     "NoDataError",
-    "PanicException",
+    "PolarsPanicError",
     "SchemaError",
     "SchemaFieldNotFoundError",
     "ShapeError",
     "StructFieldNotFoundError",
     # core classes
-    "BatchedCsvReader",
     "DataFrame",
     "Expr",
     "LazyFrame",
     "Series",
     # polars.datatypes
+    "Array",
     "Binary",
     "Boolean",
     "Categorical",
     "DataType",
     "Date",
     "Datetime",
+    "Decimal",
     "Duration",
     "Field",
     "Float32",
@@ -202,7 +218,6 @@ __all__ = [
     "List",
     "Null",
     "Object",
-    "PolarsDataType",
     "Struct",
     "Time",
     "UInt16",
@@ -211,11 +226,20 @@ __all__ = [
     "UInt8",
     "Unknown",
     "Utf8",
-    "get_idx_type",
+    # polars.datatypes: dtype groups
+    "DATETIME_DTYPES",
+    "DURATION_DTYPES",
+    "FLOAT_DTYPES",
+    "INTEGER_DTYPES",
+    "NUMERIC_DTYPES",
+    "TEMPORAL_DTYPES",
+    # polars.type_aliases
+    "PolarsDataType",
     # polars.io
     "read_avro",
     "read_csv",
     "read_csv_batched",
+    "read_database",
     "read_delta",
     "read_excel",
     "read_ipc",
@@ -224,52 +248,52 @@ __all__ = [
     "read_ndjson",
     "read_parquet",
     "read_parquet_schema",
-    "read_sql",
     "scan_csv",
     "scan_delta",
     "scan_ds",
     "scan_ipc",
     "scan_ndjson",
     "scan_parquet",
+    "scan_pyarrow_dataset",
     # polars.stringcache
     "StringCache",
+    "enable_string_cache",
     "toggle_string_cache",
     "using_string_cache",
     # polars.config
     "Config",
-    # polars.internals.whenthen
+    # polars.functions.whenthen
     "when",
-    # polars.internals.functions
+    # polars.functions
     "align_frames",
     "arg_where",
     "concat",
-    "cut",
     "date_range",
     "element",
-    "get_dummies",
     "ones",
     "repeat",
+    "time_range",
     "zeros",
-    # polars.internals.lazy_functions
+    # polars.functions.lazy
     "all",
     "any",
     "apply",
     "arange",
     "arg_sort_by",
-    "argsort_by",
     "avg",
     "coalesce",
     "col",
     "collect_all",
     "concat_list",
     "concat_str",
+    "corr",
     "count",
     "cov",
     "cumfold",
     "cumreduce",
     "cumsum",
-    "date",  # name _date, see import above
-    "datetime",  # named _datetime, see import above
+    "date",  # named date_, see import above
+    "datetime",  # named datetime_, see import above
     "duration",
     "exclude",
     "first",
@@ -278,8 +302,8 @@ __all__ = [
     "from_epoch",
     "groups",
     "head",
+    "implode",
     "last",
-    "list",  # named to_list, see import above
     "lit",
     "map",
     "max",
@@ -287,16 +311,17 @@ __all__ = [
     "median",
     "min",
     "n_unique",
-    "pearson_corr",
+    "approx_unique",
     "quantile",
     "reduce",
+    "rolling_corr",
+    "rolling_cov",
     "select",
-    "spearman_rank_corr",
     "std",
     "struct",
     "sum",
     "tail",
-    "var",
+    "time",  # named time_, see import above
     "var",
     # polars.convert
     "from_arrow",
@@ -306,14 +331,15 @@ __all__ = [
     "from_numpy",
     "from_pandas",
     "from_records",
-    # testing
-    "threadpool_size",
-    # version
+    "from_repr",
+    # polars.sql
     "SQLContext",
+    # polars.utils
     "build_info",
+    "get_idx_type",
+    "get_index_type",
     "show_versions",
+    "threadpool_size",
 ]
-
-__version__ = version()
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"

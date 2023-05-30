@@ -1,4 +1,45 @@
 use core::slice::SliceIndex;
+use std::cmp::Ordering;
+
+pub trait Extrema<T> {
+    fn min_value(&self) -> Option<&T>;
+    fn max_value(&self) -> Option<&T>;
+}
+
+impl<T: PartialOrd> Extrema<T> for [T] {
+    fn min_value(&self) -> Option<&T> {
+        self.iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+    }
+
+    fn max_value(&self) -> Option<&T> {
+        self.iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+    }
+}
+
+pub trait SortedSlice<T> {
+    fn is_sorted_ascending(&self) -> bool;
+}
+
+impl<T: PartialOrd + Copy> SortedSlice<T> for [T] {
+    fn is_sorted_ascending(&self) -> bool {
+        if self.is_empty() {
+            true
+        } else {
+            let mut previous = self[0];
+            let mut sorted = true;
+
+            // don't early stop or branch
+            // so it autovectorizes
+            for &v in &self[1..] {
+                sorted &= previous <= v;
+                previous = v;
+            }
+            sorted
+        }
+    }
+}
 
 pub trait GetSaferUnchecked<T> {
     /// # Safety

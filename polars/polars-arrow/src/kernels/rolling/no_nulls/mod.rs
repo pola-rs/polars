@@ -11,7 +11,7 @@ use arrow::datatypes::DataType;
 use arrow::types::NativeType;
 pub use mean::*;
 pub use min_max::*;
-use num::{Float, NumCast};
+use num_traits::{Float, NumCast};
 pub use quantile::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

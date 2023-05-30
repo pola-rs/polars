@@ -11,7 +11,6 @@ The following methods are available under the `Series.struct` attribute.
 
     Series.struct.field
     Series.struct.rename_fields
-    Series.struct.to_frame
     Series.struct.unnest
 
 .. autosummary::
@@ -19,3 +18,4 @@ The following methods are available under the `Series.struct` attribute.
    :template: autosummary/accessor_attribute.rst
 
     Series.struct.fields
+    Series.struct.schema

@@ -1,15 +1,15 @@
 mod asof;
 mod groups;
-
 use std::borrow::Cow;
 
 use asof::*;
-use num::Bounded;
+use num_traits::Bounded;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
-use crate::utils::slice_slice;
+use crate::utils::{ensure_sorted_arg, slice_slice};
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -22,28 +22,28 @@ pub struct AsOfOptions {
     /// - "2h15m"
     /// - "1d6h"
     /// etc
-    pub tolerance_str: Option<String>,
-    pub left_by: Option<Vec<String>>,
-    pub right_by: Option<Vec<String>>,
+    pub tolerance_str: Option<SmartString>,
+    pub left_by: Option<Vec<SmartString>>,
+    pub right_by: Option<Vec<SmartString>>,
 }
 
-fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
-    if a.dtype() != b.dtype() {
-        Err(PolarsError::ComputeError(
-            format!(
-                "keys used in asof-join must have equal dtypes. We got: left: {:?}\tright: {:?}",
-                a.dtype(),
-                b.dtype()
-            )
-            .into(),
-        ))
-    } else if a.null_count() > 0 || b.null_count() > 0 {
-        Err(PolarsError::ComputeError(
-            "asof join must not have null values in 'on' arguments".into(),
-        ))
-    } else {
-        Ok(())
+fn check_asof_columns(a: &Series, b: &Series, check_sorted: bool) -> PolarsResult<()> {
+    let dtype_a = a.dtype();
+    let dtype_b = b.dtype();
+    polars_ensure!(
+        dtype_a == dtype_b,
+        ComputeError: "mismatching key dtypes in asof-join: `{}` and `{}`",
+        a.dtype(), b.dtype()
+    );
+    polars_ensure!(
+        a.null_count() == 0 && b.null_count() == 0,
+        ComputeError: "asof join must not have null values in 'on' arguments"
+    );
+    if check_sorted {
+        ensure_sorted_arg(a, "asof_join")?;
+        ensure_sorted_arg(b, "asof_join")?;
     }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -54,6 +54,8 @@ pub enum AsofStrategy {
     Backward,
     /// selects the first row in the right DataFrame whose ‘on’ key is greater than or equal to the left’s key.
     Forward,
+    /// selects the right in the right DataFrame whose 'on' key is nearest to the left's key.
+    Nearest,
 }
 
 impl<T> ChunkedArray<T>
@@ -96,6 +98,9 @@ where
                     )
                 }
             },
+            AsofStrategy::Nearest => {
+                join_asof_nearest(ca.cont_slice().unwrap(), other.cont_slice().unwrap())
+            }
         };
         Ok(out)
     }
@@ -117,7 +122,7 @@ impl DataFrame {
         let left_key = self.column(left_on)?;
         let right_key = other.column(right_on)?;
 
-        check_asof_columns(left_key, right_key)?;
+        check_asof_columns(left_key, right_key, true)?;
         let left_key = left_key.to_physical_repr();
         let right_key = right_key.to_physical_repr();
 

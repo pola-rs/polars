@@ -39,10 +39,14 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             expr: to_aexpr(*expr, arena),
             options,
         },
-        Expr::SortBy { expr, by, reverse } => AExpr::SortBy {
+        Expr::SortBy {
+            expr,
+            by,
+            descending,
+        } => AExpr::SortBy {
             expr: to_aexpr(*expr, arena),
             by: by.into_iter().map(|e| to_aexpr(e, arena)).collect(),
-            reverse,
+            descending,
         },
         Expr::Filter { input, by } => AExpr::Filter {
             input: to_aexpr(*input, arena),
@@ -69,7 +73,7 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 AggExpr::First(expr) => AAggExpr::First(to_aexpr(*expr, arena)),
                 AggExpr::Last(expr) => AAggExpr::Last(to_aexpr(*expr, arena)),
                 AggExpr::Mean(expr) => AAggExpr::Mean(to_aexpr(*expr, arena)),
-                AggExpr::List(expr) => AAggExpr::List(to_aexpr(*expr, arena)),
+                AggExpr::Implode(expr) => AAggExpr::Implode(to_aexpr(*expr, arena)),
                 AggExpr::Count(expr) => AAggExpr::Count(to_aexpr(*expr, arena)),
                 AggExpr::Quantile {
                     expr,
@@ -141,6 +145,10 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             offset: to_aexpr(*offset, arena),
             length: to_aexpr(*length, arena),
         },
+        Expr::Cache { input, id } => AExpr::Cache {
+            input: to_aexpr(*input, arena),
+            id,
+        },
         Expr::Wildcard => AExpr::Wildcard,
         Expr::Count => AExpr::Count,
         Expr::Nth(i) => AExpr::Nth(i),
@@ -198,19 +206,7 @@ pub fn to_alp(
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Slice { input, offset, len }
         }
-        LogicalPlan::Melt {
-            input,
-            args,
-            schema,
-        } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Melt {
-                input,
-                args,
-                schema,
-            }
-        }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         LogicalPlan::CsvScan {
             path,
             file_info,
@@ -304,18 +300,6 @@ pub fn to_alp(
                 input,
                 by_column,
                 args,
-            }
-        }
-        LogicalPlan::Explode {
-            input,
-            columns,
-            schema,
-        } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Explode {
-                input,
-                columns,
-                schema,
             }
         }
         LogicalPlan::Cache { input, id, count } => {
@@ -475,7 +459,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 idx: Box::new(idx),
             }
         }
-        AExpr::SortBy { expr, by, reverse } => {
+        AExpr::SortBy {
+            expr,
+            by,
+            descending,
+        } => {
             let expr = node_to_expr(expr, expr_arena);
             let by = by
                 .iter()
@@ -484,7 +472,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             Expr::SortBy {
                 expr: Box::new(expr),
                 by,
-                reverse,
+                descending,
             }
         }
         AExpr::Filter { input, by } => {
@@ -539,9 +527,9 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Mean(Box::new(exp)).into()
             }
-            AAggExpr::List(expr) => {
+            AAggExpr::Implode(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
-                AggExpr::List(Box::new(exp)).into()
+                AggExpr::Implode(Box::new(exp)).into()
             }
             AAggExpr::Quantile {
                 expr,
@@ -638,6 +626,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             offset: Box::new(node_to_expr(offset, expr_arena)),
             length: Box::new(node_to_expr(length, expr_arena)),
         },
+        AExpr::Cache { input, id } => Expr::Cache {
+            input: Box::new(node_to_expr(input, expr_arena)),
+            id,
+        },
         AExpr::Count => Expr::Count,
         AExpr::Nth(i) => Expr::Nth(i),
         AExpr::Wildcard => Expr::Wildcard,
@@ -700,7 +692,7 @@ impl ALogicalPlan {
                     predicate: p,
                 }
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             ALogicalPlan::CsvScan {
                 path,
                 file_info,
@@ -792,18 +784,6 @@ impl ALogicalPlan {
                     args,
                 }
             }
-            ALogicalPlan::Explode {
-                input,
-                columns,
-                schema,
-            } => {
-                let input = Box::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::Explode {
-                    input,
-                    columns,
-                    schema,
-                }
-            }
             ALogicalPlan::Cache { input, id, count } => {
                 let input = Box::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::Cache { input, id, count }
@@ -869,18 +849,6 @@ impl ALogicalPlan {
                     options,
                 }
             }
-            ALogicalPlan::Melt {
-                input,
-                args,
-                schema,
-            } => {
-                let input = convert_to_lp(input, lp_arena);
-                LogicalPlan::Melt {
-                    input: Box::new(input),
-                    args,
-                    schema,
-                }
-            }
             ALogicalPlan::MapFunction { input, function } => {
                 let input = Box::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::MapFunction { input, function }
@@ -915,7 +883,7 @@ pub fn node_to_lp_cloned(
     mut lp_arena: &Arena<ALogicalPlan>,
 ) -> LogicalPlan {
     // we borrow again mutably only to make the types happy
-    // we want to intialize `to_lp` from a mutable and a immutable lp_arena
+    // we want to initialize `to_lp` from a mutable and a immutable lp_arena
     // by borrowing an immutable mutably, we still are immutable down the line.
     let alp = lp_arena.get(node).clone();
     alp.into_lp(

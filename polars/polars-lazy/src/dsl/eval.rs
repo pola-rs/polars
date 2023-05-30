@@ -56,23 +56,24 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
             let expr = expr.clone();
             let mut arena = Arena::with_capacity(10);
             let aexpr = to_aexpr(expr, &mut arena);
-            let phys_expr = create_physical_expr(aexpr, Context::Default, &arena, None)?;
+            let phys_expr = create_physical_expr(
+                aexpr,
+                Context::Default,
+                &arena,
+                None,
+                &mut Default::default(),
+            )?;
 
             let state = ExecutionState::new();
 
             let finish = |out: Series| {
-                if out.len() > 1 {
-                    Err(PolarsError::ComputeError(
-                        format!(
-                            "expected single value, got a result with length: {}, {:?}",
-                            out.len(),
-                            out
-                        )
-                        .into(),
-                    ))
-                } else {
-                    Ok(out.get(0).unwrap().into_static().unwrap())
-                }
+                polars_ensure!(
+                    out.len() <= 1,
+                    ComputeError:
+                    "expected single value, got a result with length {}, {:?}",
+                    out.len(), out,
+                );
+                Ok(out.get(0).unwrap().into_static().unwrap())
             };
 
             let avs = if parallel {
@@ -95,10 +96,12 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                     .map(|len| {
                         let s = s.slice(0, len);
                         if (len - s.null_count()) >= min_periods {
-                            df_container.get_columns_mut().push(s);
-                            let out = phys_expr.evaluate(&df_container, &state)?;
-                            df_container.get_columns_mut().clear();
-                            finish(out)
+                            unsafe {
+                                df_container.get_columns_mut().push(s);
+                                let out = phys_expr.evaluate(&df_container, &state)?;
+                                df_container.get_columns_mut().clear();
+                                finish(out)
+                            }
                         } else {
                             Ok(AnyValue::Null)
                         }

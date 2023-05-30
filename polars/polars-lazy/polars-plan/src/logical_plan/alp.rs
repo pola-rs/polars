@@ -1,23 +1,21 @@
 use std::borrow::Cow;
-#[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "csv", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::Arc;
 
 #[cfg(feature = "parquet")]
 use polars_core::cloud::CloudOptions;
-use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 use crate::logical_plan::CsvParserOptions;
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
 #[cfg(feature = "parquet")]
 use crate::logical_plan::ParquetOptions;
-use crate::logical_plan::{det_melt_schema, Context};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 
@@ -36,11 +34,6 @@ pub enum ALogicalPlan {
         options: PythonOptions,
         predicate: Option<Node>,
     },
-    Melt {
-        input: Node,
-        args: Arc<MeltArgs>,
-        schema: SchemaRef,
-    },
     Slice {
         input: Node,
         offset: i64,
@@ -50,7 +43,7 @@ pub enum ALogicalPlan {
         input: Node,
         predicate: Node,
     },
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     CsvScan {
         path: PathBuf,
         file_info: FileInfo,
@@ -100,11 +93,6 @@ pub enum ALogicalPlan {
         input: Node,
         by_column: Vec<Node>,
         args: SortArguments,
-    },
-    Explode {
-        input: Node,
-        columns: Vec<String>,
-        schema: SchemaRef,
     },
     Cache {
         input: Node,
@@ -175,7 +163,7 @@ impl ALogicalPlan {
         match self {
             #[cfg(feature = "python")]
             PythonScan { options, .. } => &options.schema,
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "parquet")]
             ParquetScan { file_info, .. } => &file_info.schema,
@@ -183,6 +171,36 @@ impl ALogicalPlan {
             IpcScan { file_info, .. } => &file_info.schema,
             AnonymousScan { file_info, .. } => &file_info.schema,
             _ => unreachable!(),
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        use ALogicalPlan::*;
+        match self {
+            AnonymousScan { .. } => "anonymous_scan",
+            #[cfg(feature = "python")]
+            PythonScan { .. } => "python_scan",
+            Slice { .. } => "slice",
+            Selection { .. } => "selection",
+            #[cfg(feature = "csv")]
+            CsvScan { .. } => "csv_scan",
+            #[cfg(feature = "ipc")]
+            IpcScan { .. } => "ipc_scan",
+            #[cfg(feature = "parquet")]
+            ParquetScan { .. } => "parquet_scan",
+            DataFrameScan { .. } => "df",
+            Projection { .. } => "projection",
+            LocalProjection { .. } => "local_projection",
+            Sort { .. } => "sort",
+            Cache { .. } => "cache",
+            Aggregate { .. } => "aggregate",
+            Join { .. } => "join",
+            HStack { .. } => "hstack",
+            Distinct { .. } => "distinct",
+            MapFunction { .. } => "map_function",
+            Union { .. } => "union",
+            ExtContext { .. } => "ext_context",
+            FileSink { .. } => "file_sink",
         }
     }
 
@@ -195,7 +213,6 @@ impl ALogicalPlan {
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
-            Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
             ParquetScan {
                 file_info,
@@ -219,7 +236,7 @@ impl ALogicalPlan {
                 ..
             } => output_schema.as_ref().unwrap_or(&file_info.schema),
             Selection { input, .. } => return arena.get(*input).schema(arena),
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 file_info,
                 output_schema,
@@ -234,7 +251,6 @@ impl ALogicalPlan {
                 return arena.get(*input).schema(arena)
             }
             Slice { input, .. } => return arena.get(*input).schema(arena),
-            Melt { schema, .. } => schema,
             MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);
 
@@ -269,11 +285,6 @@ impl ALogicalPlan {
             Union { options, .. } => Union {
                 inputs,
                 options: *options,
-            },
-            Melt { args, schema, .. } => Melt {
-                input: inputs[0],
-                args: args.clone(),
-                schema: schema.clone(),
             },
             Slice { offset, len, .. } => Slice {
                 input: inputs[0],
@@ -329,13 +340,6 @@ impl ALogicalPlan {
                 input: inputs[0],
                 by_column: by_column.clone(),
                 args: args.clone(),
-            },
-            Explode {
-                columns, schema, ..
-            } => Explode {
-                input: inputs[0],
-                columns: columns.clone(),
-                schema: schema.clone(),
             },
             Cache { id, count, .. } => Cache {
                 input: inputs[0],
@@ -398,7 +402,7 @@ impl ALogicalPlan {
                     cloud_options: cloud_options.clone(),
                 }
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 path,
                 file_info,
@@ -479,14 +483,8 @@ impl ALogicalPlan {
     pub fn copy_exprs(&self, container: &mut Vec<Node>) {
         use ALogicalPlan::*;
         match self {
-            Melt { .. }
-            | Slice { .. }
-            | Sort { .. }
-            | Explode { .. }
-            | Cache { .. }
-            | Distinct { .. }
-            | Union { .. }
-            | MapFunction { .. } => {}
+            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {}
+            Sort { by_column, .. } => container.extend_from_slice(by_column),
             Selection { predicate, .. } => container.push(*predicate),
             Projection { expr, .. } => container.extend_from_slice(expr),
             LocalProjection { expr, .. } => container.extend_from_slice(expr),
@@ -513,7 +511,7 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan { predicate, .. } => {
                 if let Some(node) = predicate {
                     container.push(*node)
@@ -557,13 +555,11 @@ impl ALogicalPlan {
                 }
                 return;
             }
-            Melt { input, .. } => *input,
             Slice { input, .. } => *input,
             Selection { input, .. } => *input,
             Projection { input, .. } => *input,
             LocalProjection { input, .. } => *input,
             Sort { input, .. } => *input,
-            Explode { input, .. } => *input,
             Cache { input, .. } => *input,
             Aggregate { input, .. } => *input,
             Join {
@@ -591,7 +587,7 @@ impl ALogicalPlan {
             ParquetScan { .. } => return,
             #[cfg(feature = "ipc")]
             IpcScan { .. } => return,
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan { .. } => return,
             DataFrameScan { .. } => return,
             AnonymousScan { .. } => return,
@@ -609,7 +605,8 @@ impl ALogicalPlan {
     /// panics if more than one input
     #[cfg(any(
         all(feature = "strings", feature = "concat_str"),
-        feature = "streaming"
+        feature = "streaming",
+        feature = "fused"
     ))]
     pub(crate) fn get_input(&self) -> Option<Node> {
         let mut inputs = [None, None];
@@ -648,18 +645,6 @@ impl<'a> ALogicalPlanBuilder<'a> {
             expr_arena,
             lp_arena,
         }
-    }
-
-    pub fn melt(self, args: Arc<MeltArgs>) -> Self {
-        let schema = det_melt_schema(&args, &self.schema());
-
-        let lp = ALogicalPlan::Melt {
-            input: self.root,
-            args,
-            schema,
-        };
-        let node = self.lp_arena.add(lp);
-        ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
     }
 
     pub fn project_local(self, exprs: Vec<Node>) -> Self {

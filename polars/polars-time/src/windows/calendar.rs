@@ -1,3 +1,4 @@
+use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
@@ -34,54 +35,63 @@ pub const NS_HOUR: i64 = 60 * NS_MINUTE;
 pub const NS_DAY: i64 = 24 * NS_HOUR;
 pub const NS_WEEK: i64 = 7 * NS_DAY;
 
-pub fn date_range(
+/// vector of i64 representing temporal values
+pub fn temporal_range(
     start: i64,
     stop: i64,
     every: Duration,
     closed: ClosedWindow,
     tu: TimeUnit,
-) -> Vec<i64> {
-    let size = match tu {
-        TimeUnit::Nanoseconds => ((stop - start) / every.duration_ns() + 1) as usize,
-        TimeUnit::Microseconds => ((stop - start) / every.duration_us() + 1) as usize,
-        TimeUnit::Milliseconds => ((stop - start) / every.duration_ms() + 1) as usize,
-    };
+    tz: Option<&Tz>,
+) -> PolarsResult<Vec<i64>> {
+    let size: usize;
+    let offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>;
+
+    match tu {
+        TimeUnit::Nanoseconds => {
+            size = ((stop - start) / every.duration_ns() + 1) as usize;
+            offset_fn = Duration::add_ns;
+        }
+        TimeUnit::Microseconds => {
+            size = ((stop - start) / every.duration_us() + 1) as usize;
+            offset_fn = Duration::add_us;
+        }
+        TimeUnit::Milliseconds => {
+            size = ((stop - start) / every.duration_ms() + 1) as usize;
+            offset_fn = Duration::add_ms;
+        }
+    }
     let mut ts = Vec::with_capacity(size);
 
     let mut t = start;
-    let f = match tu {
-        TimeUnit::Nanoseconds => <Duration>::add_ns,
-        TimeUnit::Microseconds => <Duration>::add_us,
-        TimeUnit::Milliseconds => <Duration>::add_ms,
-    };
     match closed {
         ClosedWindow::Both => {
             while t <= stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = offset_fn(&every, t, tz)?
             }
         }
         ClosedWindow::Left => {
             while t < stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = offset_fn(&every, t, tz)?
             }
         }
         ClosedWindow::Right => {
-            t = f(&every, t);
+            t = offset_fn(&every, t, tz)?;
             while t <= stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = offset_fn(&every, t, tz)?
             }
         }
         ClosedWindow::None => {
-            t = f(&every, t);
+            t = offset_fn(&every, t, tz)?;
             while t < stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = offset_fn(&every, t, tz)?
             }
         }
     }
     debug_assert!(size >= ts.len());
-    ts
+    Ok(ts)
 }

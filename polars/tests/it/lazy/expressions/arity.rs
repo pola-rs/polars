@@ -57,7 +57,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
                 move |s| {
                     s.utf8()?
                         .to_lowercase()
-                        .contains("not_exist")
+                        .contains("not_exist", true)
                         .map(|ca| Some(ca.into_series()))
                 },
                 GetOutput::from_type(DataType::Boolean),
@@ -279,6 +279,7 @@ fn test_binary_over_3930() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "rank")]
 fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     let df = df![
         "name" => ["a", "b", "a", "b"],
@@ -290,7 +291,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .lazy()
         .groupby([col("name")])
         .agg([when(col("value").sum().eq(lit(3)))
-            .then(col("value").rank(Default::default()))
+            .then(col("value").rank(Default::default(), None))
             .otherwise(lit(Series::new("", &[10 as IdxSize])))])
         .sort("name", Default::default())
         .collect()?;
@@ -311,7 +312,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .groupby([col("name")])
         .agg([when(col("value").sum().eq(lit(3)))
             .then(lit(Series::new("", &[10 as IdxSize])).alias("value"))
-            .otherwise(col("value").rank(Default::default()))])
+            .otherwise(col("value").rank(Default::default(), None))])
         .sort("name", Default::default())
         .collect()?;
 
@@ -330,7 +331,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .lazy()
         .groupby([col("name")])
         .agg([when(col("value").sum().eq(lit(3)))
-            .then(col("value").rank(Default::default()))
+            .then(col("value").rank(Default::default(), None))
             .otherwise(Null {}.lit())])
         .sort("name", Default::default())
         .collect()?;
@@ -345,7 +346,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .groupby([col("name")])
         .agg([when(col("value").sum().eq(lit(3)))
             .then(Null {}.lit().alias("value"))
-            .otherwise(col("value").rank(Default::default()))])
+            .otherwise(col("value").rank(Default::default(), None))])
         .sort("name", Default::default())
         .collect()?;
 
@@ -380,31 +381,6 @@ fn test_binary_group_consistency() -> PolarsResult<()> {
             .collect::<Vec<_>>(),
         &["a", "b", "c", "d"]
     );
-
-    Ok(())
-}
-
-#[test]
-fn test_binary_null_prop() -> PolarsResult<()> {
-    let df = df![
-        "a" => [0, 0],
-        "b" => [1, 2]
-    ]?
-    .lazy();
-
-    let expr = col("a").filter(col("a").gt(lit(0)));
-
-    let out = df
-        .groupby([col("b")])
-        .agg([(expr.clone() - expr.mean()).alias("a_mean")])
-        .sort("b", Default::default())
-        .collect()?;
-
-    let a_mean: [Option<f64>; 2] = [None, None];
-    assert!(out.frame_equal_missing(&df![
-        "b" => [1, 2],
-        "a_mean" => a_mean,
-    ]?));
 
     Ok(())
 }

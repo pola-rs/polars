@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 
 use arrow::array::*;
@@ -6,7 +7,6 @@ use polars_arrow::trusted_len::PushUnchecked;
 use polars_utils::HashSingle;
 
 use crate::datatypes::PlHashMap;
-use crate::error::PolarsError::ComputeError;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
@@ -47,13 +47,26 @@ impl RevMappingBuilder {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum RevMapping {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
     Global(PlHashMap<u32, u32>, Utf8Array<i64>, u128),
     /// Utf8Array: caches the string values
     Local(Utf8Array<i64>),
+}
+
+impl Debug for RevMapping {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RevMapping::Global(_, _, _) => {
+                write!(f, "global")
+            }
+            RevMapping::Local(_) => {
+                write!(f, "local")
+            }
+        }
+    }
 }
 
 impl Default for RevMapping {
@@ -74,6 +87,10 @@ impl Default for RevMapping {
 impl RevMapping {
     pub fn is_global(&self) -> bool {
         matches!(self, Self::Global(_, _, _))
+    }
+
+    pub fn is_local(&self) -> bool {
+        !self.is_global()
     }
 
     /// Get the length of the [`RevMapping`]
@@ -437,21 +454,13 @@ impl CategoricalChunked {
     /// Create a [`CategoricalChunked`] from a categorical indices. The indices will
     /// probe the global string cache.
     pub(crate) fn from_global_indices(cats: UInt32Chunked) -> PolarsResult<CategoricalChunked> {
-        let cache = crate::STRING_CACHE.read_map();
-        let len = cache.len() as u32;
-        drop(cache);
-        let mut oob = false;
-
-        // fastest happy path
-        for cat in cats.into_iter().flatten() {
-            if cat >= len {
-                oob = true
-            }
-        }
-
-        if oob {
-            return Err(ComputeError("Cannot construct 'Categorical' from these categories. At least on of them is out of bounds.".into()));
-        }
+        let len = crate::STRING_CACHE.read_map().len() as u32;
+        let oob = cats.into_iter().flatten().any(|cat| cat >= len);
+        polars_ensure!(
+            !oob,
+            ComputeError:
+            "cannot construct Categorical from these categories, at least on of them is out of bounds"
+        );
         Ok(unsafe { Self::from_global_indices_unchecked(cats) })
     }
 
@@ -490,7 +499,7 @@ impl CategoricalChunked {
 mod test {
     use crate::chunked_array::categorical::CategoricalChunkedBuilder;
     use crate::prelude::*;
-    use crate::{reset_string_cache, toggle_string_cache, SINGLE_LOCK};
+    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
 
     #[test]
     fn test_categorical_rev() -> PolarsResult<()> {
@@ -510,7 +519,7 @@ mod test {
         assert_eq!(out.get_rev_map().len(), 2);
 
         // test the global branch
-        toggle_string_cache(true);
+        enable_string_cache(true);
         // empty global cache
         let out = ca.cast(&DataType::Categorical(None))?;
         let out = out.categorical().unwrap().clone();
@@ -534,11 +543,11 @@ mod test {
 
     #[test]
     fn test_categorical_builder() {
-        use crate::{reset_string_cache, toggle_string_cache};
+        use crate::{enable_string_cache, reset_string_cache};
         let _lock = crate::SINGLE_LOCK.lock();
         for b in &[false, true] {
             reset_string_cache();
-            toggle_string_cache(*b);
+            enable_string_cache(*b);
 
             // Use 2 builders to check if the global string cache
             // does not interfere with the index mapping

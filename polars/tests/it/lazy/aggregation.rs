@@ -72,12 +72,12 @@ fn test_lazy_agg() {
 fn test_apply_multiple_error() {
     fn issue() -> Expr {
         apply_multiple(
-            move |columns| return Err(PolarsError::ComputeError("hardcoded error".into())),
+            move |_| polars_bail!(ComputeError: "hardcoded error"),
             &[col("x"), col("y")],
             GetOutput::from_type(DataType::Float64),
             true,
         )
-    };
+    }
 
     let df = df![
         "rf" => ["App", "App", "Gg", "App"],
@@ -87,7 +87,7 @@ fn test_apply_multiple_error() {
     ]
     .unwrap();
 
-    let res = df
+    let _res = df
         .lazy()
         .with_streaming(false)
         .groupby_stable([col("rf")])

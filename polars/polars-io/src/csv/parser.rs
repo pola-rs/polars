@@ -1,8 +1,10 @@
-use num::traits::Pow;
+use memchr::memchr2_iter;
+use num_traits::Pow;
 use polars_core::prelude::*;
 
 use super::buffer::*;
 use crate::csv::read::NullValuesCompiled;
+use crate::csv::splitfields::SplitFields;
 
 /// Skip the utf-8 Byte Order Mark.
 /// credits to csv-core
@@ -32,12 +34,46 @@ pub(crate) fn next_line_position(
     quote_char: Option<u8>,
     eol_char: u8,
 ) -> Option<usize> {
+    fn accept_line(
+        line: &[u8],
+        expected_fields: usize,
+        delimiter: u8,
+        eol_char: u8,
+        quote_char: Option<u8>,
+    ) -> bool {
+        let mut count = 0usize;
+        for (field, _) in SplitFields::new(line, delimiter, quote_char, eol_char) {
+            if memchr2_iter(delimiter, eol_char, field).count() >= expected_fields {
+                return false;
+            }
+            count += 1;
+        }
+
+        // if the latest field is missing
+        // e.g.:
+        // a,b,c
+        // vala,valb,
+        // SplitFields returns a count that is 1 less
+        // There fore we accept:
+        // expected == count
+        // and
+        // expected == count - 1
+        expected_fields.wrapping_sub(count) <= 1
+    }
+
+    // we check 3 subsequent lines for `accept_line` before we accept
+    // if 3 groups are rejected we reject completely
+    let mut rejected_line_groups = 0u8;
+
     let mut total_pos = 0;
     if input.is_empty() {
         return None;
     }
     let mut lines_checked = 0u16;
     loop {
+        if rejected_line_groups >= 3 {
+            return None;
+        }
         lines_checked += 1;
         // headers might have an extra value
         // So if we have churned through enough lines
@@ -53,29 +89,36 @@ pub(crate) fn next_line_position(
         }
         debug_assert!(pos <= input.len());
         let new_input = unsafe { input.get_unchecked(pos..) };
-        let line = SplitLines::new(new_input, quote_char.unwrap_or(b'"'), eol_char).next();
-
-        let count_fields =
-            |line: &[u8]| SplitFields::new(line, delimiter, quote_char, eol_char).count();
+        let mut lines = SplitLines::new(new_input, quote_char.unwrap_or(b'"'), eol_char);
+        let line = lines.next();
 
         match (line, expected_fields) {
             // count the fields, and determine if they are equal to what we expect from the schema
-            (Some(line), Some(expected_fields)) if { count_fields(line) == expected_fields } => {
-                return Some(total_pos + pos)
-            }
-            (Some(_), Some(_)) => {
-                debug_assert!(pos < input.len());
-                unsafe {
-                    input = input.get_unchecked(pos + 1..);
+            (Some(line), Some(expected_fields)) => {
+                if accept_line(line, expected_fields, delimiter, eol_char, quote_char) {
+                    let mut valid = true;
+                    for line in lines.take(2) {
+                        if !accept_line(line, expected_fields, delimiter, eol_char, quote_char) {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if valid {
+                        return Some(total_pos + pos);
+                    } else {
+                        rejected_line_groups += 1;
+                    }
+                } else {
+                    debug_assert!(pos < input.len());
+                    unsafe {
+                        input = input.get_unchecked(pos + 1..);
+                    }
+                    total_pos += pos + 1;
                 }
-                total_pos += pos + 1;
             }
             // don't count the fields
             (Some(_), None) => return Some(total_pos + pos),
-            // no new line found, check latest line (without eol) for number of fields
-            (None, Some(expected_fields)) if { count_fields(new_input) == expected_fields } => {
-                return Some(total_pos + pos)
-            }
+            // // no new line found, check latest line (without eol) for number of fields
             _ => return None,
         }
     }
@@ -106,17 +149,8 @@ where
 ///     'field_1,field_2'
 /// and not with
 ///     '\nfield_1,field_1'
-pub(crate) fn skip_header(input: &[u8], eol_char: u8) -> (&[u8], usize) {
-    match next_line_position_naive(input, eol_char) {
-        Some(mut pos) => {
-            if input[pos] == eol_char {
-                pos += 1;
-            }
-            (&input[pos..], pos)
-        }
-        // no lines in the file, so skipping the header is skipping all.
-        None => (&[], input.len()),
-    }
+pub(crate) fn skip_header(input: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
+    skip_this_line(input, quote, eol_char)
 }
 
 /// Remove whitespace from the start of buffer.
@@ -268,50 +302,6 @@ impl<'a> Iterator for SplitLines<'a> {
     }
 }
 
-/// An adapted version of std::iter::Split.
-/// This exists solely because we cannot split the lines naively as
-pub(crate) struct SplitFields<'a> {
-    v: &'a [u8],
-    delimiter: u8,
-    finished: bool,
-    quote_char: u8,
-    quoting: bool,
-    eol_char: u8,
-}
-
-impl<'a> SplitFields<'a> {
-    pub(crate) fn new(
-        slice: &'a [u8],
-        delimiter: u8,
-        quote_char: Option<u8>,
-        eol_char: u8,
-    ) -> Self {
-        Self {
-            v: slice,
-            delimiter,
-            finished: false,
-            quote_char: quote_char.unwrap_or(b'"'),
-            quoting: quote_char.is_some(),
-            eol_char,
-        }
-    }
-
-    unsafe fn finish_eol(&mut self, need_escaping: bool, idx: usize) -> Option<(&'a [u8], bool)> {
-        self.finished = true;
-        debug_assert!(idx <= self.v.len());
-        Some((self.v.get_unchecked(..idx), need_escaping))
-    }
-
-    fn finish(&mut self, need_escaping: bool) -> Option<(&'a [u8], bool)> {
-        self.finished = true;
-        Some((self.v, need_escaping))
-    }
-
-    fn eof_oel(&self, current_ch: u8) -> bool {
-        current_ch == self.delimiter || current_ch == self.eol_char
-    }
-}
-
 #[inline]
 fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
     let mut in_field = false;
@@ -333,87 +323,6 @@ fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
         idx += 1;
     }
     None
-}
-
-impl<'a> Iterator for SplitFields<'a> {
-    // the bool is used to indicate that it requires escaping
-    type Item = (&'a [u8], bool);
-
-    #[inline]
-    fn next(&mut self) -> Option<(&'a [u8], bool)> {
-        if self.v.is_empty() || self.finished {
-            return None;
-        }
-
-        let mut needs_escaping = false;
-        // There can be strings with delimiters:
-        // "Street, City",
-
-        // Safety:
-        // we have checked bounds
-        let pos = if self.quoting && unsafe { *self.v.get_unchecked(0) } == self.quote_char {
-            needs_escaping = true;
-            // There can be pair of double-quotes within string.
-            // Each of the embedded double-quote characters must be represented
-            // by a pair of double-quote characters:
-            // e.g. 1997,Ford,E350,"Super, ""luxurious"" truck",20020
-
-            // denotes if we are in a string field, started with a quote
-            let mut in_field = false;
-
-            let mut idx = 0u32;
-            let mut current_idx = 0u32;
-            // micro optimizations
-            #[allow(clippy::explicit_counter_loop)]
-            for &c in self.v.iter() {
-                if c == self.quote_char {
-                    // toggle between string field enclosure
-                    //      if we encounter a starting '"' -> in_field = true;
-                    //      if we encounter a closing '"' -> in_field = false;
-                    in_field = !in_field;
-                }
-
-                if !in_field && self.eof_oel(c) {
-                    if c == self.eol_char {
-                        // safety
-                        // we are in bounds
-                        return unsafe { self.finish_eol(needs_escaping, current_idx as usize) };
-                    }
-                    idx = current_idx;
-                    break;
-                }
-                current_idx += 1;
-            }
-
-            if idx == 0 {
-                return self.finish(needs_escaping);
-            }
-
-            idx as usize
-        } else {
-            match memchr::memchr2(self.delimiter, self.eol_char, self.v) {
-                None => return self.finish(needs_escaping),
-                Some(idx) => unsafe {
-                    // Safety:
-                    // idx was just found
-                    if *self.v.get_unchecked(idx) == self.eol_char {
-                        return self.finish_eol(needs_escaping, idx);
-                    } else {
-                        idx
-                    }
-                },
-            }
-        };
-
-        unsafe {
-            debug_assert!(pos <= self.v.len());
-            // safety
-            // we are in bounds
-            let ret = Some((self.v.get_unchecked(..pos), needs_escaping));
-            self.v = self.v.get_unchecked(pos + 1..);
-            ret
-        }
-    }
 }
 
 #[inline]
@@ -451,8 +360,9 @@ pub(super) fn parse_lines<'a>(
     buffers: &mut [Buffer<'a>],
     ignore_errors: bool,
     n_lines: usize,
-    // length or original schema
+    // length of original schema
     schema_len: usize,
+    schema: &Schema,
 ) -> PolarsResult<usize> {
     assert!(
         !projection.is_empty(),
@@ -510,13 +420,12 @@ pub(super) fn parse_lines<'a>(
                     break;
                 }
                 Some((mut field, needs_escaping)) => {
-                    idx += 1;
                     let field_len = field.len();
 
                     // +1 is the split character that is consumed by the iterator.
                     read_sol += field_len + 1;
 
-                    if (idx - 1) == next_projected as u32 {
+                    if idx == next_projected as u32 {
                         // the iterator is finished when it encounters a `\n`
                         // this could be preceded by a '\r'
                         if field_len > 0 && field[field_len - 1] == b'\r' {
@@ -549,22 +458,23 @@ pub(super) fn parse_lines<'a>(
                                 .map_err(|_| {
                                     let bytes_offset = offset + field.as_ptr() as usize - start;
                                     let unparsable = String::from_utf8_lossy(field);
-                                    PolarsError::ComputeError(
-                                        format!(
-                                            "Could not parse `{}` as dtype {:?} at column {}.\n\
-                                            The current offset in the file is {} bytes.\n\
-                                            \n\
-                                            Consider specifying the correct dtype, increasing\n\
-                                            the number of records used to infer the schema,\n\
-                                            enabling the `ignore_errors` flag, or adding\n\
-                                            `{}` to the `null_values` list.",
-                                            &unparsable,
-                                            buf.dtype(),
-                                            idx,
-                                            bytes_offset,
-                                            &unparsable,
-                                        )
-                                        .into(),
+                                    let column_name = schema.get_at_index(idx as usize).unwrap().0;
+                                    polars_err!(
+                                        ComputeError:
+                                        "Could not parse `{}` as dtype `{}` at column '{}' (column number {}).\n\
+                                        The current offset in the file is {} bytes.\n\
+                                        \n\
+                                        You might want to try:\n\
+                                        - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
+                                        - specifying correct dtype with the `dtypes` argument\n\
+                                        - setting `ignore_errors` to `True`,\n\
+                                        - adding `{}` to the `null_values` list.",
+                                        &unparsable,
+                                        buf.dtype(),
+                                        column_name,
+                                        idx + 1,
+                                        bytes_offset,
+                                        &unparsable,
                                     )
                                 })?;
                         }
@@ -588,6 +498,7 @@ pub(super) fn parse_lines<'a>(
                             }
                         }
                     }
+                    idx += 1;
                 }
             }
         }

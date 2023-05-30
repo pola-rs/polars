@@ -1,7 +1,7 @@
 import pytest
 
 import polars as pl
-from polars.exceptions import NoRowsReturned, TooManyRowsReturned
+from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 
 
 def test_row_tuple() -> None:
@@ -25,10 +25,10 @@ def test_row_tuple() -> None:
     assert row == {"a": "bar", "b": 2, "c": 2.0}
 
     # expected error conditions
-    with pytest.raises(TooManyRowsReturned):
+    with pytest.raises(TooManyRowsReturnedError):
         df.row(by_predicate=pl.col("b").is_in([1, 3, 5]))
 
-    with pytest.raises(NoRowsReturned):
+    with pytest.raises(NoRowsReturnedError):
         df.row(by_predicate=pl.col("a") == "???")
 
     # cannot set both 'index' and 'by_predicate'
@@ -59,6 +59,15 @@ def test_rows() -> None:
     rows = df.rows(named=True)
     assert rows == [{"a": 1, "b": 1}, {"a": 2, "b": 2}]
 
+    # Rows with nullarray cols
+    df = df.with_columns(c=pl.lit(None))
+    assert df.schema == {"a": pl.Int64, "b": pl.Int64, "c": pl.Null}
+    assert df.rows() == [(1, 1, None), (2, 2, None)]
+    assert df.rows(named=True) == [
+        {"a": 1, "b": 1, "c": None},
+        {"a": 2, "b": 2, "c": None},
+    ]
+
 
 def test_iter_rows() -> None:
     df = pl.DataFrame(
@@ -80,15 +89,6 @@ def test_iter_rows() -> None:
     assert next(it) == (3, None, c3)
     with pytest.raises(StopIteration):
         next(it)
-
-    # TODO: Remove this section once iterrows is removed
-    with pytest.deprecated_call():
-        it = df.iterrows()  # type: ignore[attr-defined]
-        assert next(it) == (1, True, c1)
-        assert next(it) == (2, False, c2)
-        assert next(it) == (3, None, c3)
-        with pytest.raises(StopIteration):
-            next(it)
 
     # Apply explicit row-buffer size
     for sz in (0, 1, 2, 3, 4):
@@ -126,3 +126,36 @@ def test_iter_rows() -> None:
         {"id": 2, "values": "c"},
         {"id": 3, "values": "d"},
     ]
+
+
+def test_row_constructor_schema() -> None:
+    expected = {"d": [1, 2, 3]}
+    for primitive in [
+        pl.UInt8,
+        pl.Int8,
+        pl.UInt16,
+        pl.Int16,
+        pl.UInt32,
+        pl.Int32,
+        pl.UInt64,
+        pl.Int64,
+    ]:
+        out = pl.DataFrame(
+            data=[
+                [1],
+                [2],
+                [3],
+            ],
+            schema={"d": primitive},
+        )
+        assert out.dtypes == [primitive]
+        assert out.to_dict(False) == expected
+
+
+def test_row_constructor_uint64() -> None:
+    # validate init with a valid UInt64 that exceeds Int64 upper bound
+    df = pl.DataFrame(
+        data=[[0], [int(2**63) + 1]],
+        schema={"x": pl.UInt64},
+    )
+    assert df.rows() == [(0,), (9223372036854775809,)]

@@ -130,9 +130,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.hour()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => s.time().map(|ca| ca.hour()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = hour, dt),
         }
     }
 
@@ -145,9 +143,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.minute()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => s.time().map(|ca| ca.minute()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = minute, dt),
         }
     }
 
@@ -160,9 +156,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.second()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => s.time().map(|ca| ca.second()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = second, dt),
         }
     }
 
@@ -175,9 +169,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.nanosecond()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => s.time().map(|ca| ca.nanosecond()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = nanosecond, dt),
         }
     }
 
@@ -192,9 +184,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| ca.day()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.day()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = day, dt),
         }
     }
     /// Returns the weekday number where monday = 0 and sunday = 6
@@ -205,9 +195,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| ca.weekday()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.weekday()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = weekday, dt),
         }
     }
 
@@ -220,9 +208,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| ca.week()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.week()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = week, dt),
         }
     }
 
@@ -236,9 +222,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| ca.ordinal()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.ordinal()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = ordinal_day, dt),
         }
     }
 
@@ -251,9 +235,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| ca.year()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.year()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = year, dt),
         }
     }
 
@@ -264,9 +246,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| ca.iso_year()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.iso_year()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = iso_year, dt),
         }
     }
 
@@ -279,9 +259,20 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| ca.year()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.year()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = ordinal_year, dt),
+        }
+    }
+
+    /// Extract year from underlying NaiveDateTime representation.
+    /// Returns whether the year is a leap year.
+    fn is_leap_year(&self) -> PolarsResult<BooleanChunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| ca.is_leap_year()),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.is_leap_year()),
+            dt => polars_bail!(opq = is_leap_year, dt),
         }
     }
 
@@ -294,9 +285,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| ca.quarter()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.quarter()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = quarter, dt),
         }
     }
 
@@ -311,28 +300,33 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| ca.month()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.month()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            dt => polars_bail!(opq = month, dt),
         }
     }
 
-    /// Format Date/Datetimewith a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    fn strftime(&self, fmt: &str) -> PolarsResult<Series> {
+    /// Convert Time into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    fn to_string(&self, format: &str) -> PolarsResult<Series> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
-            DataType::Date => s.date().map(|ca| ca.strftime(fmt).into_series()),
+            DataType::Date => s.date().map(|ca| ca.to_string(format).into_series()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => {
-                s.datetime().map(|ca| Ok(ca.strftime(fmt)?.into_series()))?
-            }
+            DataType::Datetime(_, _) => s
+                .datetime()
+                .map(|ca| Ok(ca.to_string(format)?.into_series()))?,
             #[cfg(feature = "dtype-time")]
-            DataType::Time => s.time().map(|ca| ca.strftime(fmt).into_series()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
+            DataType::Time => s.time().map(|ca| ca.to_string(format).into_series()),
+            dt => polars_bail!(opq = to_string, dt),
         }
+    }
+
+    /// Convert from Time into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    ///
+    /// Alias for `to_string`.
+    fn strftime(&self, format: &str) -> PolarsResult<Series> {
+        self.to_string(format)
     }
 
     #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
@@ -340,9 +334,7 @@ pub trait TemporalMethods: AsSeries {
     fn timestamp(&self, tu: TimeUnit) -> PolarsResult<Int64Chunked> {
         let s = self.as_series();
         if matches!(s.dtype(), DataType::Time) {
-            Err(PolarsError::ComputeError(
-                "Cannot compute timestamp of a series with dtype 'Time'".into(),
-            ))
+            polars_bail!(opq = timestamp, s.dtype());
         } else {
             s.cast(&DataType::Datetime(tu, None))
                 .map(|s| s.datetime().unwrap().deref().clone())

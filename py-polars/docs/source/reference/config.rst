@@ -9,9 +9,11 @@ Config options
 .. autosummary::
    :toctree: api/
 
+    Config.activate_decimals
     Config.set_ascii_tables
     Config.set_fmt_float
     Config.set_fmt_str_lengths
+    Config.set_streaming_chunk_size
     Config.set_tbl_cell_alignment
     Config.set_tbl_cols
     Config.set_tbl_column_data_type_inline
@@ -42,6 +44,9 @@ Note that ``Config`` supports setting context-scoped options. These options
 are valid *only* during scope lifetime, and are reset to their initial values
 (whatever they were before entering the new context) on scope exit.
 
+You can take advantage of this by initialising  a``Config`` instance and then
+explicitly calling one or more of the available "set\_" methods on it...
+
 .. code-block:: python
 
     with pl.Config() as cfg:
@@ -49,3 +54,11 @@ are valid *only* during scope lifetime, and are reset to their initial values
         do_various_things()
 
     # on scope exit any modified settings are restored to their previous state
+
+...or by setting the options in the ``Config`` init directly (optionally
+omitting the "set\_" prefix for brevity):
+
+.. code-block:: python
+
+    with pl.Config(verbose=True):
+        do_various_things()

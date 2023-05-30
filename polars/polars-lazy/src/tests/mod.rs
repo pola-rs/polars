@@ -1,24 +1,17 @@
-#[cfg(feature = "test")]
 mod aggregations;
-#[cfg(feature = "test")]
 mod arity;
-#[cfg(all(feature = "test", feature = "strings", feature = "cse"))]
+#[cfg(all(feature = "strings", feature = "cse"))]
 mod cse;
 #[cfg(feature = "parquet")]
 mod io;
-#[cfg(feature = "test")]
 mod logical;
-#[cfg(feature = "test")]
 mod optimization_checks;
-#[cfg(feature = "test")]
 mod predicate_queries;
-#[cfg(feature = "test")]
 mod projection_queries;
-#[cfg(feature = "test")]
 mod queries;
 #[cfg(feature = "streaming")]
 mod streaming;
-#[cfg(feature = "strings")]
+#[cfg(all(feature = "strings", feature = "cse"))]
 mod tpch;
 
 fn get_arenas() -> (Arena<AExpr>, Arena<ALogicalPlan>) {
@@ -50,7 +43,7 @@ use polars_plan::logical_plan::{
     ArenaLpIter, OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
 };
 
-use crate::dsl::{arg_sort_by, pearson_corr};
+use crate::dsl::pearson_corr;
 use crate::prelude::*;
 
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";
@@ -60,7 +53,7 @@ static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
 static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
 static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
 
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 fn scan_foods_csv() -> LazyFrame {
     LazyCsvReader::new(FOODS_CSV).finish().unwrap()
 }
@@ -76,22 +69,30 @@ fn init_files() {
         "../../examples/datasets/foods1.csv",
         "../../examples/datasets/foods2.csv",
     ] {
-        let out_path1 = path.replace(".csv", ".parquet");
-        let out_path2 = path.replace(".csv", ".ipc");
+        for ext in [".parquet", ".ipc", ".ndjson"] {
+            let out_path = path.replace(".csv", ext);
 
-        for out_path in [out_path1, out_path2] {
             if std::fs::metadata(&out_path).is_err() {
                 let mut df = CsvReader::from_path(path).unwrap().finish().unwrap();
+                let f = std::fs::File::create(&out_path).unwrap();
 
-                if out_path.ends_with("parquet") {
-                    let f = std::fs::File::create(&out_path).unwrap();
-                    ParquetWriter::new(f)
-                        .with_statistics(true)
-                        .finish(&mut df)
-                        .unwrap();
-                } else {
-                    let f = std::fs::File::create(&out_path).unwrap();
-                    IpcWriter::new(f).finish(&mut df).unwrap();
+                match ext {
+                    ".parquet" => {
+                        ParquetWriter::new(f)
+                            .with_statistics(true)
+                            .finish(&mut df)
+                            .unwrap();
+                    }
+                    ".ipc" => {
+                        IpcWriter::new(f).finish(&mut df).unwrap();
+                    }
+                    ".ndjson" => {
+                        #[cfg(feature = "json")]
+                        {
+                            JsonWriter::new(f).finish(&mut df).unwrap()
+                        }
+                    }
+                    _ => panic!(),
                 }
             }
         }

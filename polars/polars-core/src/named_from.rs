@@ -63,7 +63,6 @@ macro_rules! impl_named_from {
 }
 
 impl_named_from!([String], Utf8Type, from_slice);
-#[cfg(feature = "dtype-binary")]
 impl_named_from!([Vec<u8>], BinaryType, from_slice);
 impl_named_from!([bool], BooleanType, from_slice);
 #[cfg(feature = "dtype-u8")]
@@ -81,7 +80,6 @@ impl_named_from!([i64], Int64Type, from_slice);
 impl_named_from!([f32], Float32Type, from_slice);
 impl_named_from!([f64], Float64Type, from_slice);
 impl_named_from!([Option<String>], Utf8Type, from_slice_options);
-#[cfg(feature = "dtype-binary")]
 impl_named_from!([Option<Vec<u8>>], BinaryType, from_slice_options);
 impl_named_from!([Option<bool>], BooleanType, from_slice_options);
 #[cfg(feature = "dtype-u8")]
@@ -152,13 +150,10 @@ impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
         let values_cap = series_slice.iter().fold(0, |acc, opt_s| {
             acc + opt_s.as_ref().map(|s| s.len()).unwrap_or(0)
         });
-
-        let dt = series_slice
-            .iter()
-            .filter_map(|opt| opt.as_ref())
-            .next()
-            .expect("cannot create List Series from a slice of nulls")
-            .dtype();
+        let dt = match series_slice.iter().filter_map(|opt| opt.as_ref()).next() {
+            Some(series) => series.dtype(),
+            None => &DataType::Null,
+        };
 
         let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name).unwrap();
         for series in series_slice {
@@ -229,35 +224,30 @@ impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> 
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a, T: AsRef<[&'a [u8]]>> NamedFrom<T, [&'a [u8]]> for Series {
     fn new(name: &str, v: T) -> Self {
         BinaryChunked::from_slice(name, v.as_ref()).into_series()
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a, T: AsRef<[&'a [u8]]>> NamedFrom<T, [&'a [u8]]> for BinaryChunked {
     fn new(name: &str, v: T) -> Self {
         BinaryChunked::from_slice(name, v.as_ref())
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a, T: AsRef<[Option<&'a [u8]>]>> NamedFrom<T, [Option<&'a [u8]>]> for Series {
     fn new(name: &str, v: T) -> Self {
         BinaryChunked::from_slice_options(name, v.as_ref()).into_series()
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a, T: AsRef<[Option<&'a [u8]>]>> NamedFrom<T, [Option<&'a [u8]>]> for BinaryChunked {
     fn new(name: &str, v: T) -> Self {
         BinaryChunked::from_slice_options(name, v.as_ref())
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a, T: AsRef<[Cow<'a, [u8]>]>> NamedFrom<T, [Cow<'a, [u8]>]> for Series {
     fn new(name: &str, v: T) -> Self {
         BinaryChunked::from_iter_values(name, v.as_ref().iter().map(|value| value.as_ref()))
@@ -265,21 +255,18 @@ impl<'a, T: AsRef<[Cow<'a, [u8]>]>> NamedFrom<T, [Cow<'a, [u8]>]> for Series {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a, T: AsRef<[Cow<'a, [u8]>]>> NamedFrom<T, [Cow<'a, [u8]>]> for BinaryChunked {
     fn new(name: &str, v: T) -> Self {
         BinaryChunked::from_iter_values(name, v.as_ref().iter().map(|value| value.as_ref()))
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a, T: AsRef<[Option<Cow<'a, [u8]>>]>> NamedFrom<T, [Option<Cow<'a, [u8]>>]> for Series {
     fn new(name: &str, v: T) -> Self {
         BinaryChunked::new(name, v).into_series()
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a, T: AsRef<[Option<Cow<'a, [u8]>>]>> NamedFrom<T, [Option<Cow<'a, [u8]>>]>
     for BinaryChunked
 {

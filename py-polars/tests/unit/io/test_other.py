@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import os.path
 from typing import cast
 
 import polars as pl
@@ -28,27 +29,6 @@ def test_categorical_round_trip() -> None:
     assert df2.dtypes == [pl.Int64, pl.Categorical]
 
 
-def test_date_list_fmt() -> None:
-    df = pl.DataFrame(
-        {
-            "mydate": ["2020-01-01", "2020-01-02", "2020-01-05", "2020-01-05"],
-            "index": [1, 2, 5, 5],
-        }
-    )
-
-    df = df.with_columns(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
-    assert (
-        str(df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
-        == """shape: (3,)
-Series: 'mydate' [list[date]]
-[
-	[2020-01-01]
-	[2020-01-02]
-	[2020-01-05, 2020-01-05]
-]"""
-    )
-
-
 def test_from_different_chunks() -> None:
     s0 = pl.Series("a", [1, 2, 3, 4, None])
     s1 = pl.Series("b", [1, 2])
@@ -62,3 +42,17 @@ def test_from_different_chunks() -> None:
     out = df.to_pandas()
     assert list(out.columns) == ["a", "b"]
     assert out.shape == (5, 2)
+
+
+def test_unit_io_subdir_has_no_init() -> None:
+    # --------------------------------------------------------------------------------
+    # If this test fails it means an '__init__.py' was added to 'tests/unit/io'.
+    # See https://github.com/pola-rs/polars/pull/6889 for why this can cause issues.
+    # --------------------------------------------------------------------------------
+    # TLDR: it can mask the builtin 'io' module, causing a fatal python error.
+    # --------------------------------------------------------------------------------
+    io_dir = os.path.dirname(__file__)
+    assert io_dir.endswith(f"unit{os.path.sep}io")
+    assert not os.path.exists(
+        f"{io_dir}{os.path.sep}__init__.py"
+    ), "Found undesirable '__init__.py' in the 'unit.io' tests subdirectory"

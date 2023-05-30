@@ -2,8 +2,8 @@ use arrow::array::{ListArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::PhysicalType::Primitive;
 use arrow::types::NativeType;
+use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
-use crate::error::PolarsError;
 use crate::utils::with_match_primitive_type;
 
 unsafe fn bytes_iter<'a, T: NativeType>(
@@ -18,7 +18,7 @@ unsafe fn bytes_iter<'a, T: NativeType>(
         start = end;
 
         let data = out.as_ptr() as *const u8;
-        let out = std::slice::from_raw_parts(data, std::mem::size_of::<T>() * out.len());
+        let out = std::slice::from_raw_parts(data, std::mem::size_of_val(out));
         match validity {
             None => Some(out),
             Some(validity) => {
@@ -34,13 +34,12 @@ unsafe fn bytes_iter<'a, T: NativeType>(
 
 pub fn numeric_list_bytes_iter(
     arr: &ListArray<i64>,
-) -> Result<Box<dyn ExactSizeIterator<Item = Option<&[u8]>> + '_>, PolarsError> {
+) -> PolarsResult<Box<dyn ExactSizeIterator<Item = Option<&[u8]>> + '_>> {
     let values = arr.values();
-    if values.null_count() > 0 {
-        return Err(PolarsError::ComputeError(
-            "only allowed for child arrays without nulls".into(),
-        ));
-    }
+    polars_ensure!(
+        values.null_count() == 0,
+        ComputeError: "only allowed for child arrays without nulls"
+    );
     let offsets = arr.offsets().as_slice();
     let validity = arr.validity();
 
@@ -52,8 +51,6 @@ pub fn numeric_list_bytes_iter(
             Ok(Box::new(iter))
         })
     } else {
-        Err(PolarsError::ComputeError(
-            "only allowed for numeric child arrays".into(),
-        ))
+        polars_bail!(ComputeError: "only allowed for numeric child arrays");
     }
 }

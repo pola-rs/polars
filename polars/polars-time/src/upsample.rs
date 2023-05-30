@@ -1,7 +1,12 @@
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
 use polars_core::prelude::*;
+use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
 
 use crate::prelude::*;
+#[cfg(feature = "timezones")]
+use crate::utils::unlocalize_timestamp;
 
 pub trait PolarsUpsample {
     /// Upsample a DataFrame at a regular frequency.
@@ -28,6 +33,9 @@ pub trait PolarsUpsample {
     /// - 1i    (1 index count)
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    /// Suffix with `"_saturating"` to saturate dates with days too
+    /// large for their month to the last day of the month (e.g.
+    /// 2022-02-29 to 2022-02-28).
     fn upsample<I: IntoVec<String>>(
         &self,
         by: I,
@@ -102,6 +110,7 @@ fn upsample_impl(
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
+    ensure_sorted_arg(s, "upsample")?;
     if matches!(s.dtype(), DataType::Date) {
         let mut df = source.clone();
         df.try_apply(index_column, |s| {
@@ -140,43 +149,36 @@ fn upsample_single_impl(
     use DataType::*;
     match index_column.dtype() {
         Datetime(tu, tz) => {
-            let s = index_column.cast(&DataType::Int64).unwrap();
+            let s = index_column.cast(&Int64).unwrap();
             let ca = s.i64().unwrap();
             let first = ca.into_iter().flatten().next();
             let last = ca.into_iter().flatten().next_back();
             match (first, last) {
                 (Some(first), Some(last)) => {
-                    let first = match tu {
-                        TimeUnit::Nanoseconds => offset.add_ns(first),
-                        TimeUnit::Microseconds => offset.add_us(first),
-                        TimeUnit::Milliseconds => offset.add_ms(first),
-                    };
-                    let range = match tz {
+                    let (first, last) = match tz {
                         #[cfg(feature = "timezones")]
-                        Some(tz) => date_range_impl(
-                            index_col_name,
-                            first,
-                            last,
-                            every,
-                            ClosedWindow::Both,
-                            *tu,
-                            Some(&"UTC".to_string()),
-                        )?
-                        .convert_time_zone(tz.clone())?
-                        .into_series()
-                        .into_frame(),
-                        _ => date_range_impl(
-                            index_col_name,
-                            first,
-                            last,
-                            every,
-                            ClosedWindow::Both,
-                            *tu,
-                            None,
-                        )?
-                        .into_series()
-                        .into_frame(),
+                        Some(tz) => (
+                            unlocalize_timestamp(first, *tu, tz.parse::<Tz>().unwrap()),
+                            unlocalize_timestamp(last, *tu, tz.parse::<Tz>().unwrap()),
+                        ),
+                        _ => (first, last),
                     };
+                    let first = match tu {
+                        TimeUnit::Nanoseconds => offset.add_ns(first, None)?,
+                        TimeUnit::Microseconds => offset.add_us(first, None)?,
+                        TimeUnit::Milliseconds => offset.add_ms(first, None)?,
+                    };
+                    let range = date_range_impl(
+                        index_col_name,
+                        first,
+                        last,
+                        every,
+                        ClosedWindow::Both,
+                        *tu,
+                        tz.as_ref(),
+                    )?
+                    .into_series()
+                    .into_frame();
                     range.join(
                         source,
                         &[index_col_name],
@@ -185,13 +187,13 @@ fn upsample_single_impl(
                         None,
                     )
                 }
-                _ => Err(PolarsError::ComputeError(
-                    "Cannot determine upsample boundaries. All elements are null.".into(),
-                )),
+                _ => polars_bail!(
+                    ComputeError: "cannot determine upsample boundaries: all elements are null"
+                ),
             }
         }
-        dt => Err(PolarsError::ComputeError(
-            format!("upsample not allowed for index_column of dtype {dt:?}").into(),
-        )),
+        dt => polars_bail!(
+            ComputeError: "upsample not allowed for index column of dtype {}", dt,
+        ),
     }
 }

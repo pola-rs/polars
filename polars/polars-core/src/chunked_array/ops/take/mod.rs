@@ -58,6 +58,16 @@ macro_rules! take_opt_iter_n_chunks_unchecked {
     }};
 }
 
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
+    fn finish_from_array(&self, array: Box<dyn Array>) -> Self {
+        let keep_fast_explode = array.null_count() == 0;
+        self.copy_with_chunks(vec![array], false, keep_fast_explode)
+    }
+}
+
 impl<T> ChunkTake for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -97,7 +107,7 @@ where
                         }
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::Iter(iter) => {
                 if self.is_empty() {
@@ -118,7 +128,7 @@ where
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::IterNulls(iter) => {
                 if self.is_empty() {
@@ -139,7 +149,7 @@ where
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
         }
     }
@@ -188,7 +198,7 @@ impl ChunkTake for BooleanChunked {
                         }
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::Iter(iter) => {
                 if self.is_empty() {
@@ -205,7 +215,7 @@ impl ChunkTake for BooleanChunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::IterNulls(iter) => {
                 if self.is_empty() {
@@ -225,7 +235,7 @@ impl ChunkTake for BooleanChunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
         }
     }
@@ -250,64 +260,7 @@ impl ChunkTake for Utf8Chunked {
         I: TakeIterator,
         INulls: TakeIteratorNulls,
     {
-        let mut chunks = self.downcast_iter();
-        match indices {
-            TakeIdx::Array(array) => {
-                if array.null_count() == array.len() {
-                    return Self::full_null(self.name(), array.len());
-                }
-                let array = match self.chunks.len() {
-                    1 => take_utf8_unchecked(chunks.next().unwrap(), array) as ArrayRef,
-                    _ => {
-                        return if !array.has_validity() {
-                            let iter = array.values().iter().map(|i| *i as usize);
-                            let mut ca: Utf8Chunked = take_iter_n_chunks_unchecked!(self, iter);
-                            ca.rename(self.name());
-                            ca
-                        } else {
-                            let iter = array
-                                .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
-                            let mut ca: Utf8Chunked = take_opt_iter_n_chunks_unchecked!(self, iter);
-                            ca.rename(self.name());
-                            ca
-                        }
-                    }
-                };
-                self.copy_with_chunks(vec![array], false)
-            }
-            TakeIdx::Iter(iter) => {
-                let array = match (self.has_validity(), self.chunks.len()) {
-                    (false, 1) => {
-                        take_no_null_utf8_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
-                    }
-                    (_, 1) => take_utf8_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef,
-                    _ => {
-                        let mut ca: Utf8Chunked = take_iter_n_chunks_unchecked!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
-                    }
-                };
-                self.copy_with_chunks(vec![array], false)
-            }
-            TakeIdx::IterNulls(iter) => {
-                let array = match (self.has_validity(), self.chunks.len()) {
-                    (false, 1) => {
-                        take_no_null_utf8_opt_iter_unchecked(chunks.next().unwrap(), iter)
-                            as ArrayRef
-                    }
-                    (_, 1) => {
-                        take_utf8_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
-                    }
-                    _ => {
-                        let mut ca: Utf8Chunked = take_opt_iter_n_chunks_unchecked!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
-                    }
-                };
-                self.copy_with_chunks(vec![array], false)
-            }
-        }
+        self.as_binary().take_unchecked(indices).to_utf8()
     }
 
     fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
@@ -316,14 +269,11 @@ impl ChunkTake for Utf8Chunked {
         I: TakeIterator,
         INulls: TakeIteratorNulls,
     {
-        indices.check_bounds(self.len())?;
-        // Safety:
-        // just checked bounds
-        Ok(unsafe { self.take_unchecked(indices) })
+        let out = self.as_binary().take(indices)?;
+        Ok(unsafe { out.to_utf8() })
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkTake for BinaryChunked {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
@@ -356,7 +306,7 @@ impl ChunkTake for BinaryChunked {
                         }
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::Iter(iter) => {
                 let array = match (self.has_validity(), self.chunks.len()) {
@@ -370,7 +320,7 @@ impl ChunkTake for BinaryChunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::IterNulls(iter) => {
                 let array = match (self.has_validity(), self.chunks.len()) {
@@ -387,7 +337,7 @@ impl ChunkTake for BinaryChunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
         }
     }
@@ -430,24 +380,22 @@ impl ChunkTake for ListChunked {
                 let array = match ca_self.chunks.len() {
                     1 => Box::new(take_list_unchecked(chunks.next().unwrap(), array)) as ArrayRef,
                     _ => {
-                        return if !array.has_validity() {
+                        if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);
                             let mut ca: ListChunked =
                                 take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
-                            ca.rename(ca_self.name());
-                            ca
+                            ca.chunks.pop().unwrap()
                         } else {
                             let iter = array
                                 .into_iter()
                                 .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
                             let mut ca: ListChunked =
                                 take_opt_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
-                            ca.rename(ca_self.name());
-                            ca
+                            ca.chunks.pop().unwrap()
                         }
                     }
                 };
-                ca_self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             // todo! fast path for single chunk
             TakeIdx::Iter(iter) => {
@@ -456,8 +404,7 @@ impl ChunkTake for ListChunked {
                     ca_self.take_unchecked((&idx.into_inner()).into())
                 } else {
                     let mut ca: ListChunked = take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
-                    ca.rename(ca_self.name());
-                    ca
+                    self.finish_from_array(ca.chunks.pop().unwrap())
                 }
             }
             TakeIdx::IterNulls(iter) => {
@@ -467,9 +414,55 @@ impl ChunkTake for ListChunked {
                 } else {
                     let mut ca: ListChunked =
                         take_opt_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
-                    ca.rename(ca_self.name());
-                    ca
+                    self.finish_from_array(ca.chunks.pop().unwrap())
                 }
+            }
+        }
+    }
+
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
+    where
+        Self: std::marker::Sized,
+        I: TakeIterator,
+        INulls: TakeIteratorNulls,
+    {
+        indices.check_bounds(self.len())?;
+        // Safety:
+        // just checked bounds
+        Ok(unsafe { self.take_unchecked(indices) })
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ChunkTake for ArrayChunked {
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: TakeIterator,
+        INulls: TakeIteratorNulls,
+    {
+        let ca_self = self.rechunk();
+        match indices {
+            TakeIdx::Array(idx_array) => {
+                if idx_array.null_count() == idx_array.len() {
+                    return Self::full_null_with_dtype(
+                        self.name(),
+                        idx_array.len(),
+                        &self.inner_dtype(),
+                        ca_self.width(),
+                    );
+                }
+                let arr = self.chunks[0].as_ref();
+                let arr = take_unchecked(arr, idx_array);
+                self.finish_from_array(arr)
+            }
+            TakeIdx::Iter(iter) => {
+                let idx: NoNull<IdxCa> = iter.map(|v| v as IdxSize).collect();
+                ca_self.take_unchecked((&idx.into_inner()).into())
+            }
+            TakeIdx::IterNulls(iter) => {
+                let idx: IdxCa = iter.map(|v| v.map(|v| v as IdxSize)).collect();
+                ca_self.take_unchecked((&idx).into())
             }
         }
     }

@@ -1,3 +1,5 @@
+use polars_core::frame::groupby::GroupsIndicator;
+
 use super::*;
 
 #[cfg(feature = "dtype-u8")]
@@ -23,8 +25,8 @@ impl ToDummies for Series {
         // safety: groups are in bounds
         let columns = unsafe { self.agg_first(&groups) }
             .iter()
-            .zip(groups.into_idx())
-            .map(|(av, (_, group))| {
+            .zip(groups.iter())
+            .map(|(av, group)| {
                 // strings are formatted with extra \" \" in polars, so we
                 // extract the string
                 let name = if let Some(s) = av.get_str() {
@@ -33,7 +35,15 @@ impl ToDummies for Series {
                     // other types don't have this formatting issue
                     format!("{col_name}{sep}{av}")
                 };
-                let ca = dummies_helper(group, self.len(), &name);
+
+                let ca = match group {
+                    GroupsIndicator::Idx((_, group)) => {
+                        dummies_helper_idx(group, self.len(), &name)
+                    }
+                    GroupsIndicator::Slice([offset, len]) => {
+                        dummies_helper_slice(offset, len, self.len(), &name)
+                    }
+                };
                 ca.into_series()
             })
             .collect();
@@ -42,13 +52,26 @@ impl ToDummies for Series {
     }
 }
 
-fn dummies_helper(mut groups: Vec<IdxSize>, len: usize, name: &str) -> DummyCa {
-    groups.sort_unstable();
-
-    // let mut group_member_iter = groups.into_iter();
+fn dummies_helper_idx(groups: &[IdxSize], len: usize, name: &str) -> DummyCa {
     let mut av = vec![0 as DummyType; len];
 
-    for idx in groups {
+    for &idx in groups {
+        let elem = unsafe { av.get_unchecked_mut(idx as usize) };
+        *elem = 1;
+    }
+
+    ChunkedArray::from_vec(name, av)
+}
+
+fn dummies_helper_slice(
+    group_offset: IdxSize,
+    group_len: IdxSize,
+    len: usize,
+    name: &str,
+) -> DummyCa {
+    let mut av = vec![0 as DummyType; len];
+
+    for idx in group_offset..(group_offset + group_len) {
         let elem = unsafe { av.get_unchecked_mut(idx as usize) };
         *elem = 1;
     }

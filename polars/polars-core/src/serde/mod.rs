@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::prelude::*;
 
 pub mod chunked_array;
+mod df;
 pub mod series;
 
 /// Intermediate enum. Needed because [crate::datatypes::DataType] has
@@ -50,7 +51,6 @@ impl From<&DataType> for DeDataType<'_> {
             DataType::Boolean => DeDataType::Boolean,
             DataType::Null => DeDataType::Null,
             DataType::List(_) => DeDataType::List,
-            #[cfg(feature = "dtype-binary")]
             DataType::Binary => DeDataType::Binary,
             #[cfg(feature = "object")]
             DataType::Object(s) => DeDataType::Object(s),
@@ -133,7 +133,6 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "dtype-binary")]
     fn test_serde_binary_series_owned_bincode() {
         let s1 = Series::new(
             "foo",
@@ -179,8 +178,8 @@ mod test {
         )));
         let row_3 = AnyValue::Null;
 
-        let s =
-            Series::from_any_values_and_dtype("item", &vec![row_1, row_2, row_3], &dtype).unwrap();
+        let s = Series::from_any_values_and_dtype("item", &[row_1, row_2, row_3], &dtype, false)
+            .unwrap();
         let df = DataFrame::new(vec![s]).unwrap();
 
         let df_str = serde_json::to_string(&df).unwrap();

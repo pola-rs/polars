@@ -12,8 +12,7 @@ fn test_duration() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .with_columns(&[col("date").str().strptime(StrpTimeOptions {
-            date_dtype: DataType::Date,
+        .with_columns(&[col("date").str().to_date(StrptimeOptions {
             ..Default::default()
         })])
         .with_column(
@@ -50,4 +49,112 @@ fn test_duration() -> PolarsResult<()> {
         );
     }
     Ok(())
+}
+
+fn print_plans(lf: &LazyFrame) {
+    println!("LOGICAL PLAN\n\n{}\n", lf.describe_plan());
+    println!(
+        "OPTIMIZED LOGICAL PLAN\n\n{}\n",
+        lf.describe_optimized_plan().unwrap()
+    );
+}
+
+#[test]
+fn test_lazy_arithmetic() {
+    let df = get_df();
+    let lf = df
+        .lazy()
+        .select(&[((col("sepal.width") * lit(100)).alias("super_wide"))])
+        .sort("super_wide", SortOptions::default());
+
+    print_plans(&lf);
+
+    let new = lf.collect().unwrap();
+    println!("{:?}", new);
+    assert_eq!(new.height(), 7);
+    assert_eq!(
+        new.column("super_wide").unwrap().f64().unwrap().get(0),
+        Some(300.0)
+    );
+}
+
+#[test]
+fn test_lazy_logical_plan_filter_and_alias_combined() {
+    let df = get_df();
+    let lf = df
+        .lazy()
+        .filter(col("sepal.width").lt(lit(3.5)))
+        .select(&[col("variety").alias("foo")]);
+
+    print_plans(&lf);
+    let df = lf.collect().unwrap();
+    println!("{:?}", df);
+}
+
+#[test]
+fn test_lazy_logical_plan_schema() {
+    let df = get_df();
+    let lp = df
+        .clone()
+        .lazy()
+        .select(&[col("variety").alias("foo")])
+        .logical_plan;
+
+    assert!(lp.schema().unwrap().get("foo").is_some());
+
+    let lp = df
+        .lazy()
+        .groupby([col("variety")])
+        .agg([col("sepal.width").min()])
+        .logical_plan;
+    assert!(lp.schema().unwrap().get("sepal.width").is_some());
+}
+
+#[test]
+fn test_lazy_logical_plan_join() {
+    let left = df!("days" => &[0, 1, 2, 3, 4],
+    "temp" => [22.1, 19.9, 7., 2., 3.],
+    "rain" => &[0.1, 0.2, 0.3, 0.4, 0.5]
+    )
+    .unwrap();
+
+    let right = df!(
+    "days" => &[1, 2],
+    "rain" => &[0.1, 0.2]
+    )
+    .unwrap();
+
+    // check if optimizations succeeds without selection
+    {
+        let lf = left
+            .clone()
+            .lazy()
+            .left_join(right.clone().lazy(), col("days"), col("days"));
+
+        print_plans(&lf);
+        // implicitly checks logical plan == optimized logical plan
+        let _df = lf.collect().unwrap();
+    }
+
+    // check if optimization succeeds with selection
+    {
+        let lf = left
+            .clone()
+            .lazy()
+            .left_join(right.clone().lazy(), col("days"), col("days"))
+            .select(&[col("temp")]);
+
+        let _df = lf.collect().unwrap();
+    }
+
+    // check if optimization succeeds with selection of a renamed column due to the join
+    {
+        let lf = left
+            .lazy()
+            .left_join(right.lazy(), col("days"), col("days"))
+            .select(&[col("temp"), col("rain_right")]);
+
+        print_plans(&lf);
+        let _df = lf.collect().unwrap();
+    }
 }

@@ -17,9 +17,7 @@ pub(super) fn sign(s: &Series) -> PolarsResult<Series> {
             let s = s.cast(&Float64)?;
             sign(&s)
         }
-        dt => Err(PolarsError::ComputeError(
-            format!("cannot use 'sign' on Series of dtype: {dt:?}").into(),
-        )),
+        dt => polars_bail!(opq = sign, dt),
     }
 }
 

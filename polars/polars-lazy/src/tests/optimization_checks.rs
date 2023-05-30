@@ -57,6 +57,32 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     })
 }
 
+pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    matches!(
+        lp_arena.get(lp),
+        ALogicalPlan::MapFunction {
+            function: FunctionNode::Pipeline { .. },
+            ..
+        }
+    )
+}
+
+pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    (&lp_arena).iter(lp).any(|(_, lp)| {
+        matches!(
+            lp,
+            ALogicalPlan::MapFunction {
+                function: FunctionNode::Pipeline { .. },
+                ..
+            }
+        )
+    })
+}
+
 fn slice_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -506,7 +532,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
     }));
     assert_eq!(
         q.schema().unwrap().as_ref(),
-        &Schema::from([Field::new("c1", DataType::Int32)].into_iter())
+        &Schema::from_iter([Field::new("c1", DataType::Int32)])
     );
     Ok(())
 }
@@ -524,5 +550,30 @@ fn test_slice_at_scan_groupby() -> PolarsResult<()> {
         .select([col("fats_g")]);
 
     assert!(slice_at_scan(q));
+    Ok(())
+}
+
+#[test]
+fn test_flatten_unions() -> PolarsResult<()> {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+
+    let lf = df! {
+        "a" => [1,2,3,4,5],
+    }
+    .unwrap()
+    .lazy();
+
+    let lf2 = concat(&[lf.clone(), lf.clone()], false, true).unwrap();
+    let lf3 = concat(&[lf.clone(), lf.clone(), lf.clone()], false, true).unwrap();
+    let lf4 = concat(&[lf2.clone(), lf3], false, true).unwrap();
+    let root = lf4.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    let lp = lp_arena.get(root);
+    match lp {
+        ALogicalPlan::Union { inputs, .. } => {
+            // we make sure that the nested unions are flattened into a single union
+            assert_eq!(inputs.len(), 5);
+        }
+        _ => panic!(),
+    }
     Ok(())
 }

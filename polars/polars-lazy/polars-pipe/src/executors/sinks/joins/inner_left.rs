@@ -8,6 +8,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
+use smartstring::alias::String as SmartString;
 
 use crate::executors::sinks::joins::generic_build::*;
 use crate::executors::sinks::utils::hash_series;
@@ -52,7 +53,7 @@ pub struct GenericJoinProbe {
     // these column locations need to be dropped from the rhs
     join_column_idx: Option<Vec<usize>>,
     // cached output names
-    output_names: Option<Vec<String>>,
+    output_names: Option<Vec<SmartString>>,
     how: JoinType,
 }
 
@@ -144,7 +145,7 @@ impl GenericJoinProbe {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        // A left join holds the right table als build table
+        // A left join holds the right table as build table
         // and streams the left table through. This allows us to maintain
         // the left table order
 
@@ -205,7 +206,7 @@ impl GenericJoinProbe {
                 self.output_names = Some(out.get_column_names_owned());
                 out
             }
-            Some(names) => {
+            Some(names) => unsafe {
                 left_df
                     .get_columns_mut()
                     .extend_from_slice(right_df.get_columns());
@@ -217,7 +218,7 @@ impl GenericJoinProbe {
                         s.rename(name);
                     });
                 left_df
-            }
+            },
         };
 
         Ok(OperatorResult::Finished(chunk.with_data(out)))
@@ -295,12 +296,14 @@ impl GenericJoinProbe {
             }
             Some(names) => {
                 a.hstack_mut(b.get_columns()).unwrap();
-                a.get_columns_mut()
-                    .iter_mut()
-                    .zip(names)
-                    .for_each(|(s, name)| {
-                        s.rename(name);
-                    });
+                unsafe {
+                    a.get_columns_mut()
+                        .iter_mut()
+                        .zip(names)
+                        .for_each(|(s, name)| {
+                            s.rename(name);
+                        });
+                }
                 a
             }
         };

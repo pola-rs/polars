@@ -2,7 +2,7 @@
 use arrow::array::UInt32Array;
 #[cfg(feature = "bigidx")]
 use arrow::array::UInt64Array;
-use num::{NumCast, Signed, Zero};
+use num_traits::{NumCast, Signed, Zero};
 
 pub trait IndexToUsize {
     /// Translate the negative index to an offset.

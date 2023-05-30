@@ -1,9 +1,18 @@
+use arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
 use arrow::types::PrimitiveType;
+#[cfg(feature = "dtype-struct")]
+use polars_arrow::trusted_len::PushUnchecked;
+#[cfg(feature = "dtype-struct")]
+use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
+#[cfg(feature = "dtype-struct")]
+use crate::prelude::any_value::arr_to_any_value;
 
 #[cfg(feature = "object")]
 #[derive(Debug)]
@@ -62,8 +71,10 @@ pub enum AnyValue<'a> {
     // If syncptr is_null the data is in the rev-map
     // otherwise it is in the array pointer
     Categorical(u32, &'a RevMapping, SyncPtr<Utf8Array<i64>>),
-    /// Nested type, contains arrays that are filled with one of the datetypes.
+    /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
+    #[cfg(feature = "dtype-array")]
+    Array(Series, usize),
     #[cfg(feature = "object")]
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
     #[cfg(feature = "object")]
@@ -72,15 +83,19 @@ pub enum AnyValue<'a> {
     ObjectOwned(OwnedObject),
     #[cfg(feature = "dtype-struct")]
     // 3 pointers and thus not larger than string/vec
+    // - idx in the `&StructArray`
+    // - The array itself
+    // - The fields
     Struct(usize, &'a StructArray, &'a [Field]),
     #[cfg(feature = "dtype-struct")]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// An UTF8 encoded string type.
     Utf8Owned(smartstring::alias::String),
-    #[cfg(feature = "dtype-binary")]
     Binary(&'a [u8]),
-    #[cfg(feature = "dtype-binary")]
     BinaryOwned(Vec<u8>),
+    /// A 128-bit fixed point decimal number.
+    #[cfg(feature = "dtype-decimal")]
+    Decimal(i128, usize),
 }
 
 #[cfg(feature = "serde")]
@@ -109,9 +124,7 @@ impl Serialize for AnyValue<'_> {
             AnyValue::Utf8Owned(v) => {
                 serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v.as_str())
             }
-            #[cfg(feature = "dtype-binary")]
             AnyValue::Binary(v) => serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v),
-            #[cfg(feature = "dtype-binary")]
             AnyValue::BinaryOwned(v) => {
                 serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v)
             }
@@ -142,7 +155,6 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
             List,
             Bool,
             Utf8Owned,
-            #[cfg(feature = "dtype-binary")]
             BinaryOwned,
         }
         const VARIANTS: &[&str] = &[
@@ -162,10 +174,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
             "Utf8Owned",
             "BinaryOwned",
         ];
-        #[cfg(feature = "dtype-binary")]
         const LAST: u8 = unsafe { std::mem::transmute::<_, u8>(AvField::BinaryOwned) };
-        #[cfg(not(feature = "dtype-binary"))]
-        const LAST: u8 = unsafe { std::mem::transmute::<_, u8>(AvField::Utf8Owned) };
 
         struct FieldVisitor;
 
@@ -228,7 +237,6 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                     b"List" => AvField::List,
                     b"Bool" => AvField::Bool,
                     b"Utf8Owned" | b"Utf8" => AvField::Utf8Owned,
-                    #[cfg(feature = "dtype-binary")]
                     b"BinaryOwned" | b"Binary" => AvField::BinaryOwned,
                     _ => {
                         return Err(serde::de::Error::unknown_variant(
@@ -317,7 +325,6 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                         let value: String = variant.newtype_variant()?;
                         AnyValue::Utf8Owned(value.into())
                     }
-                    #[cfg(feature = "dtype-binary")]
                     (AvField::BinaryOwned, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::BinaryOwned(value)
@@ -362,7 +369,6 @@ impl<'a> AnyValue<'a> {
             Struct(_, _, fields) => DataType::Struct(fields.to_vec()),
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.clone()),
-            #[cfg(feature = "dtype-binary")]
             Binary(_) => DataType::Binary,
             _ => unimplemented!(),
         }
@@ -374,7 +380,6 @@ impl<'a> AnyValue<'a> {
     pub fn extract<T: NumCast>(&self) -> Option<T> {
         use AnyValue::*;
         match self {
-            Null => None,
             Int8(v) => NumCast::from(*v),
             Int16(v) => NumCast::from(*v),
             Int32(v) => NumCast::from(*v),
@@ -393,6 +398,8 @@ impl<'a> AnyValue<'a> {
             Time(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-duration")]
             Duration(v, _) => NumCast::from(*v),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(v, _) => NumCast::from(*v),
             Boolean(v) => {
                 if *v {
                     NumCast::from(1)
@@ -400,21 +407,116 @@ impl<'a> AnyValue<'a> {
                     NumCast::from(0)
                 }
             }
-            dt => panic!("Cannot extract numeric value from {dt:?}"),
+            _ => None,
         }
     }
 
     #[inline]
     pub fn try_extract<T: NumCast>(&self) -> PolarsResult<T> {
         self.extract().ok_or_else(|| {
-            PolarsError::ComputeError(
-                format!(
-                    "could not extract number from AnyValue of dtype: '{:?}'",
-                    self.dtype()
-                )
-                .into(),
+            polars_err!(
+                ComputeError: "could not extract number from any-value of dtype: '{:?}'",
+                self.dtype(),
             )
         })
+    }
+
+    pub fn is_signed(&self) -> bool {
+        matches!(
+            self,
+            AnyValue::Int8(_) | AnyValue::Int16(_) | AnyValue::Int32(_) | AnyValue::Int64(_)
+        )
+    }
+
+    pub fn is_unsigned(&self) -> bool {
+        matches!(
+            self,
+            AnyValue::UInt8(_) | AnyValue::UInt16(_) | AnyValue::UInt32(_) | AnyValue::UInt64(_)
+        )
+    }
+
+    pub fn cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
+        macro_rules! cast_to (
+            ($av:expr) => {
+                match dtype {
+                    DataType::UInt8 => AnyValue::UInt8($av as u8),
+                    DataType::UInt16 => AnyValue::UInt16($av as u16),
+                    DataType::UInt32 => AnyValue::UInt32($av as u32),
+                    DataType::UInt64 => AnyValue::UInt64($av as u64),
+                    DataType::Int8 => AnyValue::Int8($av as i8),
+                    DataType::Int16 => AnyValue::Int16($av as i16),
+                    DataType::Int32 => AnyValue::Int32($av as i32),
+                    DataType::Int64 => AnyValue::Int64($av as i64),
+                    DataType::Float32 => AnyValue::Float32($av as f32),
+                    DataType::Float64 => AnyValue::Float64($av as f64),
+                    #[cfg(feature="dtype-date")]
+                    DataType::Date => AnyValue::Date($av as i32),
+                    #[cfg(feature="dtype-datetime")]
+                    DataType::Datetime(tu, tz) => AnyValue::Datetime($av as i64, *tu, tz),
+                    #[cfg(feature="dtype-duration")]
+                    DataType::Duration(tu) => AnyValue::Duration($av as i64, *tu),
+                    #[cfg(feature="dtype-time")]
+                    DataType::Time => AnyValue::Time($av as i64),
+                    _ => polars_bail!(
+                        ComputeError: "cannot cast any-value {:?} to dtype '{}'", self, dtype,
+                    ),
+                }
+
+            }
+        );
+
+        let new_av = match self {
+            AnyValue::Boolean(v) => cast_to!(*v as u8),
+            AnyValue::Float32(_) | AnyValue::Float64(_) => cast_to!(self.extract::<f64>().unwrap()),
+            av if av.is_signed() => cast_to!(av.extract::<i64>().unwrap()),
+            av if av.is_unsigned() => cast_to!(av.extract::<u64>().unwrap()),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::Datetime(v, tu, None) => match dtype {
+                DataType::Int64 => AnyValue::Int64(*v),
+                #[cfg(feature = "dtype-date")]
+                DataType::Date => {
+                    let convert = match tu {
+                        TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+                        TimeUnit::Microseconds => timestamp_us_to_datetime,
+                        TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+                    };
+                    let ndt = convert(*v);
+                    let date_value = naive_datetime_to_date(ndt);
+                    AnyValue::Date(date_value)
+                }
+                _ => polars_bail!(
+                    ComputeError: format!("cannot cast 'datetime' any-value to dtype {dtype}")
+                ),
+            },
+            #[cfg(feature = "dtype-time")]
+            AnyValue::Time(v) => match dtype {
+                DataType::Int64 => AnyValue::Int64(*v),
+                _ => polars_bail!(
+                    ComputeError: format!("cannot cast 'time' any-value to dtype {dtype}")
+                ),
+            },
+            #[cfg(feature = "dtype-date")]
+            AnyValue::Date(v) => match dtype {
+                DataType::Int32 => AnyValue::Int32(*v),
+                DataType::Int64 => AnyValue::Int64(*v as i64),
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(tu, None) => {
+                    let ndt = arrow::temporal_conversions::date32_to_datetime(*v);
+                    let func = match tu {
+                        TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+                        TimeUnit::Microseconds => datetime_to_timestamp_us,
+                        TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+                    };
+                    let value = func(ndt);
+                    AnyValue::Datetime(value, *tu, &None)
+                }
+                _ => polars_bail!(
+                    ComputeError: format!("cannot cast 'date' any-value to dtype {dtype}")
+                ),
+            },
+            _ => polars_bail!(ComputeError: "cannot cast non numeric any-value to numeric dtype"),
+        };
+        Ok(new_av)
     }
 }
 
@@ -441,9 +543,7 @@ impl<'a> Hash for AnyValue<'a> {
             Utf8Owned(v) => state.write(v.as_bytes()),
             Float32(v) => state.write_u32(v.to_bits()),
             Float64(v) => state.write_u64(v.to_bits()),
-            #[cfg(feature = "dtype-binary")]
             Binary(v) => state.write(v),
-            #[cfg(feature = "dtype-binary")]
             BinaryOwned(v) => state.write(v),
             Boolean(v) => state.write_u8(*v as u8),
             List(v) => Hash::hash(&Wrap(v.clone()), state),
@@ -523,7 +623,6 @@ impl<'a> AnyValue<'a> {
     #[inline]
     pub fn as_borrowed(&self) -> AnyValue<'_> {
         match self {
-            #[cfg(feature = "dtype-binary")]
             AnyValue::BinaryOwned(data) => AnyValue::Binary(data),
             AnyValue::Utf8Owned(data) => AnyValue::Utf8(data),
             av => av.clone(),
@@ -555,17 +654,30 @@ impl<'a> AnyValue<'a> {
             List(v) => List(v),
             Utf8(v) => Utf8Owned(v.into()),
             Utf8Owned(v) => Utf8Owned(v),
-            #[cfg(feature = "dtype-binary")]
             Binary(v) => BinaryOwned(v.to_vec()),
-            #[cfg(feature = "dtype-binary")]
             BinaryOwned(v) => BinaryOwned(v),
             #[cfg(feature = "object")]
             Object(v) => ObjectOwned(OwnedObject(v.to_boxed())),
-            dt => {
-                return Err(PolarsError::ComputeError(
-                    format!("cannot get static AnyValue from {dt}").into(),
-                ))
+            #[cfg(feature = "dtype-struct")]
+            Struct(idx, arr, fields) => {
+                let avs = struct_to_avs_static(idx, arr, fields);
+                StructOwned(Box::new((avs, fields.to_vec())))
             }
+            #[cfg(feature = "dtype-struct")]
+            StructOwned(payload) => {
+                let av = StructOwned(payload);
+                // safety: owned is already static
+                unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
+            }
+            #[cfg(feature = "object")]
+            ObjectOwned(payload) => {
+                let av = ObjectOwned(payload);
+                // safety: owned is already static
+                unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
+            }
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(val, scale) => Decimal(val, scale),
+            dt => polars_bail!(ComputeError: "cannot get static any-value from {}", dt),
         };
         Ok(av)
     }
@@ -587,6 +699,16 @@ impl<'a> AnyValue<'a> {
             _ => None,
         }
     }
+
+    pub fn is_nested_null(&self) -> bool {
+        match self {
+            AnyValue::Null => true,
+            AnyValue::List(s) => s.dtype().is_nested_null(),
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
+            _ => false,
+        }
+    }
 }
 
 impl<'a> From<AnyValue<'a>> for Option<i64> {
@@ -606,32 +728,37 @@ impl PartialEq for AnyValue<'_> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         use AnyValue::*;
-        match (self.as_borrowed(), other.as_borrowed()) {
-            (UInt8(l), UInt8(r)) => l == r,
-            (UInt16(l), UInt16(r)) => l == r,
-            (UInt32(l), UInt32(r)) => l == r,
-            (UInt64(l), UInt64(r)) => l == r,
-            (Int8(l), Int8(r)) => l == r,
-            (Int16(l), Int16(r)) => l == r,
-            (Int32(l), Int32(r)) => l == r,
-            (Int64(l), Int64(r)) => l == r,
-            (Float32(l), Float32(r)) => l == r,
-            (Float64(l), Float64(r)) => l == r,
-            #[cfg(feature = "dtype-time")]
-            (Time(l), Time(r)) => l == r,
-            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
-            (Date(l), Date(r)) => l == r,
-            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
-            (Datetime(l, tul, tzl), Datetime(r, tur, tzr)) => l == r && tul == tur && tzl == tzr,
-            (Boolean(l), Boolean(r)) => l == r,
-            (List(l), List(r)) => l == r,
-            #[cfg(feature = "dtype-binary")]
-            (Binary(l), Binary(r)) => l == r,
+        match (self, other) {
+            (UInt8(l), UInt8(r)) => *l == *r,
+            (UInt16(l), UInt16(r)) => *l == *r,
+            (UInt32(l), UInt32(r)) => *l == *r,
+            (UInt64(l), UInt64(r)) => *l == *r,
+            (Int8(l), Int8(r)) => *l == *r,
+            (Int16(l), Int16(r)) => *l == *r,
+            (Int32(l), Int32(r)) => *l == *r,
+            (Int64(l), Int64(r)) => *l == *r,
+            (Float32(l), Float32(r)) => *l == *r,
+            (Float64(l), Float64(r)) => *l == *r,
             (Utf8(l), Utf8(r)) => l == r,
-            #[cfg(feature = "object")]
-            (Object(_), Object(_)) => panic!("eq between object not supported"),
+            (Utf8(l), Utf8Owned(r)) => l == r,
+            (Utf8Owned(l), Utf8(r)) => l == r,
+            (Utf8Owned(l), Utf8Owned(r)) => l == r,
+            (Boolean(l), Boolean(r)) => *l == *r,
+            (Binary(l), Binary(r)) => l == r,
+            (BinaryOwned(l), BinaryOwned(r)) => l == r,
+            (Binary(l), BinaryOwned(r)) => l == r,
+            (BinaryOwned(l), Binary(r)) => l == r,
             // should it?
             (Null, Null) => true,
+            #[cfg(feature = "dtype-time")]
+            (Time(l), Time(r)) => *l == *r,
+            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
+            (Date(l), Date(r)) => *l == *r,
+            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
+            (Datetime(l, tul, tzl), Datetime(r, tur, tzr)) => {
+                *l == *r && *tul == *tur && tzl == tzr
+            }
+            (List(l), List(r)) => l == r,
             #[cfg(feature = "dtype-categorical")]
             (Categorical(idx_l, rev_l, _), Categorical(idx_r, rev_r, _)) => match (rev_l, rev_r) {
                 (RevMapping::Global(_, _, id_l), RevMapping::Global(_, _, id_r)) => {
@@ -644,6 +771,25 @@ impl PartialEq for AnyValue<'_> {
             },
             #[cfg(feature = "dtype-duration")]
             (Duration(l, tu_l), Duration(r, tu_r)) => l == r && tu_l == tu_r,
+            #[cfg(feature = "dtype-struct")]
+            (StructOwned(l), StructOwned(r)) => {
+                let l = &*l.0;
+                let r = &*r.0;
+                l == r
+            }
+            // TODO! add structowned with idx and arced structarray
+            #[cfg(feature = "dtype-struct")]
+            (StructOwned(l), Struct(idx, arr, fields)) => {
+                let fields_left = &*l.0;
+                let avs = struct_to_avs_static(*idx, arr, fields);
+                fields_left == avs
+            }
+            #[cfg(feature = "dtype-struct")]
+            (Struct(idx, arr, fields), StructOwned(r)) => {
+                let fields_right = &*r.0;
+                let avs = struct_to_avs_static(*idx, arr, fields);
+                fields_right == avs
+            }
             _ => false,
         }
     }
@@ -665,11 +811,26 @@ impl PartialOrd for AnyValue<'_> {
             (Float32(l), Float32(r)) => l.partial_cmp(r),
             (Float64(l), Float64(r)) => l.partial_cmp(r),
             (Utf8(l), Utf8(r)) => l.partial_cmp(*r),
-            #[cfg(feature = "dtype-binary")]
             (Binary(l), Binary(r)) => l.partial_cmp(*r),
             _ => None,
         }
     }
+}
+
+#[cfg(feature = "dtype-struct")]
+fn struct_to_avs_static(idx: usize, arr: &StructArray, fields: &[Field]) -> Vec<AnyValue<'static>> {
+    let arrs = arr.values();
+    let mut avs = Vec::with_capacity(arrs.len());
+    // amortize loop counter
+    for i in 0..arrs.len() {
+        unsafe {
+            let arr = &**arrs.get_unchecked_release(i);
+            let field = fields.get_unchecked_release(i);
+            let av = arr_to_any_value(arr, idx, &field.dtype);
+            avs.push_unchecked(av.into_static().unwrap());
+        }
+    }
+    avs
 }
 
 #[cfg(test)]
@@ -715,9 +876,7 @@ mod test {
             ),
             (ArrowDataType::LargeUtf8, DataType::Utf8),
             (ArrowDataType::Utf8, DataType::Utf8),
-            #[cfg(feature = "dtype-binary")]
             (ArrowDataType::LargeBinary, DataType::Binary),
-            #[cfg(feature = "dtype-binary")]
             (ArrowDataType::Binary, DataType::Binary),
             (
                 ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),

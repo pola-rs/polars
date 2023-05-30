@@ -5,13 +5,13 @@ use arrow::types::NativeType;
 use crate::index::IdxSize;
 
 /// Find partition indexes such that every partition contains unique groups.
-fn find_partition_points<T>(values: &[T], n: usize, reverse: bool) -> Vec<usize>
+fn find_partition_points<T>(values: &[T], n: usize, descending: bool) -> Vec<usize>
 where
     T: Debug + NativeType + PartialOrd,
 {
     let len = values.len();
     if n > len {
-        return find_partition_points(values, len / 2, reverse);
+        return find_partition_points(values, len / 2, descending);
     }
     if n < 2 {
         return vec![];
@@ -31,7 +31,7 @@ where
         let part = &values[start_idx..end_idx];
 
         let latest_val = values[end_idx];
-        let idx = if reverse {
+        let idx = if descending {
             part.partition_point(|v| *v > latest_val)
         } else {
             part.partition_point(|v| *v < latest_val)
@@ -46,11 +46,11 @@ where
     partition_points
 }
 
-pub fn create_clean_partitions<T>(values: &[T], n: usize, reverse: bool) -> Vec<&[T]>
+pub fn create_clean_partitions<T>(values: &[T], n: usize, descending: bool) -> Vec<&[T]>
 where
     T: Debug + NativeType + PartialOrd,
 {
-    let part_idx = find_partition_points(values, n, reverse);
+    let part_idx = find_partition_points(values, n, descending);
     let mut out = Vec::with_capacity(n + 1);
 
     let mut start_idx = 0_usize;

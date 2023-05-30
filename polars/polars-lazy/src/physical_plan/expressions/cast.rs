@@ -41,15 +41,35 @@ impl PhysicalExpr for CastExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
-        // before we flatten, make sure that groups are updated
-        ac.groups();
-        let s = ac.flat_naive();
-        let s = self.finish(s.as_ref())?;
 
-        if ac.is_literal() {
-            ac.with_literal(s);
-        } else {
-            ac.with_series(s, false);
+        match ac.agg_state() {
+            // this will not explode and potentially increase memory due to overlapping groups
+            AggState::AggregatedList(s) => {
+                let ca = s.list().unwrap();
+                let casted = ca.apply_to_inner(&|s| self.finish(&s))?;
+                ac.with_series(casted.into_series(), true, None)?;
+            }
+            AggState::AggregatedFlat(s) => {
+                let s = self.finish(s)?;
+                if ac.is_literal() {
+                    ac.with_literal(s);
+                } else {
+                    ac.with_series(s, true, None)?;
+                }
+            }
+            _ => {
+                // before we flatten, make sure that groups are updated
+                ac.groups();
+
+                let s = ac.flat_naive();
+                let s = self.finish(s.as_ref())?;
+
+                if ac.is_literal() {
+                    ac.with_literal(s);
+                } else {
+                    ac.with_series(s, false, None)?;
+                }
+            }
         }
 
         Ok(ac)

@@ -1,8 +1,8 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
-use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::export::arrow::array::PrimitiveArray;
+use polars_core::export::arrow::bitmap::Bitmap;
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::{
     default_join_ids, private_left_join_multiple_keys, JoinOptIds,
@@ -10,14 +10,13 @@ use polars_core::frame::hash_join::{
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
-use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
+use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
 use super::*;
-use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -41,8 +40,6 @@ enum MapStrategy {
     Join,
     // explode now
     Explode,
-    // will be exploded by subsequent `.flatten()` call
-    ExplodeLater,
     // Use an arg_sort to map the values back
     Map,
     Nothing,
@@ -176,27 +173,23 @@ impl WindowExpr {
                         }
                     });
 
-            return if let Some((output, group)) = non_matching_group {
+            if let Some((output, group)) = non_matching_group {
                 let first = group.first();
                 let group = groupby_columns
                     .iter()
-                    .map(|s| format!("{}", s.get(first as usize).unwrap()))
+                    .map(|s| format_smartstring!("{}", s.get(first as usize).unwrap()))
                     .collect::<Vec<_>>();
-                let err_msg = format!(
-                    "{}\n> Group: ",
-                    "The length of the window expression did not match that of the group."
+                polars_bail!(
+                    expr = self.expr, ComputeError:
+                    "the length of the window expression did not match that of the group\
+                    \n> group: {}\n> group length: {}\n> output: '{:?}'",
+                    comma_delimited(String::new(), &group), group.len(), output.unwrap()
                 );
-                let err_msg = column_delimited(err_msg, &group);
-                let err_msg = format!(
-                    "{}\n> Group length: {}\n> Output: '{:?}'",
-                    err_msg,
-                    group.len(),
-                    output.unwrap()
-                );
-                Err(expression_err!(err_msg, self.expr, ComputeError))
             } else {
-                let msg = "The length of the window expression did not match that of the group.";
-                Err(expression_err!(msg, self.expr, ComputeError))
+                polars_bail!(
+                    expr = self.expr, ComputeError:
+                    "the length of the window expression did not match that of the group"
+                );
             };
         }
         self.map_list_agg_by_arg_sort(out_column, flattened, ac, gb, state, cache_key)
@@ -215,13 +208,13 @@ impl WindowExpr {
     }
 
     fn is_explicit_list_agg(&self) -> bool {
-        // col("foo").list()
-        // col("foo").list().alias()
+        // col("foo").implode()
+        // col("foo").implode().alias()
         // ..
-        // col("foo").list().alias().alias()
+        // col("foo").implode().alias().alias()
         //
         // but not:
-        // col("foo").list().sum().alias()
+        // col("foo").implode().sum().alias()
         // ..
         // col("foo").min()
         let mut explicit_list = false;
@@ -231,7 +224,7 @@ impl WindowExpr {
                 let mut finishes_list = false;
                 for e in &**function {
                     match e {
-                        Expr::Agg(AggExpr::List(_)) => {
+                        Expr::Agg(AggExpr::Implode(_)) => {
                             finishes_list = true;
                         }
                         Expr::Alias(_, _) => {}
@@ -326,27 +319,24 @@ impl WindowExpr {
         &self,
         agg_state: &AggState,
         sorted_keys: bool,
-        explicit_list: bool,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
-        match (self.options.explode, explicit_list, agg_state) {
+        match (self.options.mapping, agg_state) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
-            (true, true, _) => Ok(MapStrategy::ExplodeLater),
-            // Explode all the aggregated lists. Maybe add later?
-            (true, false, _) => {
-                let msg = "This operation is likely not what you want (you may need '.list()'). Please open an issue if you really want to do this";
-                Err(expression_err!(msg, self.expr, ComputeError))
-            }
-            // explicit list
-            // `(col("x").sum() * col("y")).list().over("groups")`
-            (false, true, _) => Ok(MapStrategy::Join),
+            (WindowMapping::Explode, _) => Ok(MapStrategy::Explode),
+            // // explicit list
+            // // `(col("x").sum() * col("y")).list().over("groups")`
+            // (false, false, _) => Ok(MapStrategy::Join),
             // aggregations
             //`sum("foo").over("groups")`
-            (false, false, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
+            (_, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
-            (false, false, AggState::AggregatedList(_)) => {
+            (WindowMapping::Join, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),
+            // no explicit aggregations, map over the groups
+            //`(col("x").sum() * col("y")).over("groups")`
+            (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
                 if sorted_keys {
                     if let GroupsProxy::Idx(g) = gb.get_groups() {
                         debug_assert!(g.is_sorted_flag())
@@ -363,7 +353,7 @@ impl WindowExpr {
             // or an aggregation that has been flattened
             // we have to check which one
             //`col("foo").over("groups")`
-            (false, false, AggState::NotAggregated(_)) => {
+            (WindowMapping::GroupsToRows, AggState::NotAggregated(_)) => {
                 // col()
                 // or col().alias()
                 if self.is_simple_column_expr() {
@@ -372,8 +362,9 @@ impl WindowExpr {
                     Ok(MapStrategy::Map)
                 }
             }
+            (WindowMapping::Join, AggState::NotAggregated(_)) => Ok(MapStrategy::Join),
             // literals, do nothing and let broadcast
-            (false, false, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
+            (_, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
         }
     }
 }
@@ -410,6 +401,12 @@ impl PhysicalExpr for WindowExpr {
         //          This can be used to reverse, sort, shuffle etc. the values in a group
 
         // 4. select the final column and return
+
+        if df.height() == 0 {
+            let field = self.phys_function.to_field(&df.schema())?;
+            return Ok(Series::full_null(field.name(), 0, field.data_type()));
+        }
+
         let groupby_columns = self
             .group_by
             .iter()
@@ -425,18 +422,8 @@ impl PhysicalExpr for WindowExpr {
         });
         let explicit_list_agg = self.is_explicit_list_agg();
 
-        // A `sort()` in a window function is one level flatter
-        // Assume we have column a : i32
-        // than a sort in a groupby. A groupby sorts the groups and returns array: list[i32]
-        // whereas a window function returns array: i32
-        // So a `sort().list()` in a groupby returns: list[list[i32]]
-        // whereas in a window function would return: list[i32]
-        if explicit_list_agg {
-            state.set_finalize_window_as_list();
-        }
-
         // if we flatten this column we need to make sure the groups are sorted.
-        let mut sort_groups = self.options.explode ||
+        let mut sort_groups = matches!(self.options.mapping, WindowMapping::Explode) ||
             // if not
             //      `col().over()`
             // and not
@@ -460,7 +447,7 @@ impl PhysicalExpr for WindowExpr {
         };
 
         // Try to get cached grouptuples
-        let (groups, _, cache_key) = if state.cache_window() {
+        let (mut groups, _, cache_key) = if state.cache_window() {
             let mut cache_key = String::with_capacity(32 * groupby_columns.len());
             write!(&mut cache_key, "{}", state.branch_idx).unwrap();
             for s in &groupby_columns {
@@ -475,9 +462,6 @@ impl PhysicalExpr for WindowExpr {
                 if df.height() > 0 {
                     assert!(!gt.is_empty());
                 };
-                if sort_groups {
-                    gt.sort()
-                }
 
                 // We take now, but it is important that we set this before we return!
                 // a next windows function may get this cached key and get an empty if this
@@ -496,12 +480,20 @@ impl PhysicalExpr for WindowExpr {
             .iter()
             .map(|s| s.as_ref().to_string())
             .collect();
+
+        // some window expressions need sorted groups
+        // to make sure that the caches align we sort
+        // the groups, so that the cached groups and join keys
+        // are consistent among all windows
+        if sort_groups || state.cache_window() {
+            groups.sort()
+        }
         let gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
 
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
-        match self.determine_map_strategy(ac.agg_state(), sorted_keys, explicit_list_agg, &gb)? {
+        match self.determine_map_strategy(ac.agg_state(), sorted_keys, &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
                 cache_gb(gb, state, &cache_key);
@@ -512,14 +504,6 @@ impl PhysicalExpr for WindowExpr {
             }
             Explode => {
                 let mut out = ac.aggregated().explode()?;
-                cache_gb(gb, state, &cache_key);
-                if let Some(name) = &self.out_name {
-                    out.rename(name.as_ref());
-                }
-                Ok(out)
-            }
-            ExplodeLater => {
-                let mut out = ac.aggregated();
                 cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.as_ref());
@@ -552,9 +536,10 @@ impl PhysicalExpr for WindowExpr {
                 // we try to flatten/extend the array by repeating the aggregated value n times
                 // where n is the number of members in that group. That way we can try to reuse
                 // the same map by arg_sort logic as done for listed aggregations
+                let update_groups = !matches!(&ac.update_groups, UpdateGroups::No);
                 match (
                     &ac.update_groups,
-                    set_by_groups(&out_column, &ac.groups, df.height()),
+                    set_by_groups(&out_column, &ac.groups, df.height(), update_groups),
                 ) {
                     // for aggregations that reduce like sum, mean, first and are numeric
                     // we take the group locations to directly map them to the right place
@@ -622,9 +607,7 @@ impl PhysicalExpr for WindowExpr {
         _groups: &'a GroupsProxy,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        Err(PolarsError::InvalidOperation(
-            "window expression not allowed in aggregation".into(),
-        ))
+        polars_bail!(InvalidOperation: "window expression not allowed in aggregation");
     }
 
     fn as_expression(&self) -> Option<&Expr> {
@@ -668,7 +651,15 @@ fn cache_gb(gb: GroupBy, state: &ExecutionState, cache_key: &str) {
 }
 
 /// Simple reducing aggregation can be set by the groups
-fn set_by_groups(s: &Series, groups: &GroupsProxy, len: usize) -> Option<Series> {
+fn set_by_groups(
+    s: &Series,
+    groups: &GroupsProxy,
+    len: usize,
+    update_groups: bool,
+) -> Option<Series> {
+    if update_groups {
+        return None;
+    }
     if s.dtype().to_physical().is_numeric() {
         let dtype = s.dtype();
         let s = s.to_physical_repr();
@@ -751,13 +742,15 @@ where
         unsafe { values.set_len(len) }
         Some(ChunkedArray::new_vec(ca.name(), values).into_series())
     } else {
-        let mut validity = MutableBitmap::with_capacity(len);
-        validity.extend_constant(len, true);
-        let validity_ptr = validity.as_slice_mut().as_mut_ptr();
+        // We don't use a mutable bitmap as bits will have have race conditions!
+        // A single byte might alias if we write from single threads.
+        let mut validity: Vec<bool> = Vec::with_capacity(len);
+        let validity_ptr = validity.as_mut_ptr();
         let sync_ptr_validity = unsafe { SyncPtr::new(validity_ptr) };
 
         let n_threads = POOL.current_num_threads();
         let offsets = _split_offsets(ca.len(), n_threads);
+
         match groups {
             GroupsProxy::Idx(groups) => offsets.par_iter().for_each(|(offset, offset_len)| {
                 let offset = *offset;
@@ -765,6 +758,7 @@ where
                 let ca = ca.slice(offset as i64, offset_len);
                 let groups = &groups.all()[offset..offset + offset_len];
                 let values_ptr = sync_ptr_values.get();
+                let validity_ptr = sync_ptr_validity.get();
 
                 ca.into_iter().zip(groups.iter()).for_each(|(opt_v, g)| {
                     for idx in g {
@@ -774,10 +768,11 @@ where
                             match opt_v {
                                 Some(v) => {
                                     *values_ptr.add(idx) = v;
+                                    *validity_ptr.add(idx) = true;
                                 }
                                 None => {
                                     *values_ptr.add(idx) = T::Native::default();
-                                    unset_bit_raw(sync_ptr_validity.get(), idx)
+                                    *validity_ptr.add(idx) = false;
                                 }
                             };
                         }
@@ -791,6 +786,7 @@ where
                     let ca = ca.slice(offset as i64, offset_len);
                     let groups = &groups[offset..offset + offset_len];
                     let values_ptr = sync_ptr_values.get();
+                    let validity_ptr = sync_ptr_validity.get();
 
                     for (opt_v, [start, g_len]) in ca.into_iter().zip(groups.iter()) {
                         let start = *start as usize;
@@ -801,10 +797,11 @@ where
                                 match opt_v {
                                     Some(v) => {
                                         *values_ptr.add(idx) = v;
+                                        *validity_ptr.add(idx) = true;
                                     }
                                     None => {
                                         *values_ptr.add(idx) = T::Native::default();
-                                        unset_bit_raw(sync_ptr_validity.get(), idx)
+                                        *validity_ptr.add(idx) = false;
                                     }
                                 };
                             }
@@ -815,10 +812,12 @@ where
         }
         // safety: we have written all slots
         unsafe { values.set_len(len) }
+        unsafe { validity.set_len(len) }
+        let validity = Bitmap::from(validity);
         let arr = PrimitiveArray::new(
             T::get_dtype().to_physical().to_arrow(),
             values.into(),
-            Some(validity.into()),
+            Some(validity),
         );
         Some(Series::try_from((ca.name(), arr.boxed())).unwrap())
     }

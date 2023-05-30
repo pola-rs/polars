@@ -9,17 +9,19 @@ description = "Time related code for the polars dataframe library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4"
+arrow.workspace = true
+atoi = "2.0.0"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = { version = "0.8", optional = true }
-lexical = { version = "6", default-features = false, features = ["std", "parse-floats", "parse-integers"] }
 now = "0.1"
 once_cell.workspace = true
-polars-arrow = { version = "0.27.1", path = "../polars-arrow", features = ["compute", "temporal"] }
-polars-core = { version = "0.27.1", path = "../polars-core", default-features = false, features = ["private", "dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
-polars-ops = { version = "0.27.1", path = "../polars-ops" }
-polars-utils = { version = "0.27.1", path = "../polars-utils" }
+polars-arrow = { version = "0.30.0", path = "../polars-arrow", features = ["compute", "temporal"] }
+polars-core = { version = "0.30.0", path = "../polars-core", default-features = false, features = ["private", "dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
+polars-ops = { version = "0.30.0", path = "../polars-ops" }
+polars-utils = { version = "0.30.0", path = "../polars-utils" }
 regex = "1.7.1"
 serde = { version = "1", features = ["derive"], optional = true }
+smartstring.workspace = true
 
 [features]
 dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]
@@ -29,7 +31,7 @@ dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
 rolling_window = ["polars-core/rolling_window", "dtype-duration"]
 private = []
 fmt = ["polars-core/fmt"]
-timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones"]
+timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "polars-arrow/timezones"]
 
 test = ["dtype-date", "dtype-datetime", "polars-core/fmt"]
 

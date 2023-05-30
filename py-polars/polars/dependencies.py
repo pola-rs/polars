@@ -8,13 +8,14 @@ from importlib.util import find_spec
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Hashable, cast
 
+_DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
+_HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
+_PYDANTIC_AVAILABLE = True
 _ZONEINFO_AVAILABLE = True
-_HYPOTHESIS_AVAILABLE = True
-_DELTALAKE_AVAILABLE = True
 
 
 class _LazyModule(ModuleType):
@@ -80,13 +81,15 @@ class _LazyModule(ModuleType):
             # import the module and return the requested attribute
             module = self._import()
             return getattr(module, attr)
-        else:
-            # user has not installed the proxied module
-            if re.match(r"^__\w+__$", attr):
-                # allow some minimal introspection on private module
-                # attrs to avoid unnecessary error-handling elsewhere
-                return None
 
+        # user has not installed the proxied/lazy module
+        elif attr == "__name__":
+            return self._module_name
+        elif re.match(r"^__\w+__$", attr) and attr != "__version__":
+            # allow some minimal introspection on private module
+            # attrs to avoid unnecessary error-handling elsewhere
+            return None
+        else:
             # all other attribute access raises a helpful exception
             pfx = self._mod_pfx.get(self._module_name, "")
             raise ModuleNotFoundError(
@@ -140,24 +143,40 @@ def _lazy_import(module_name: str) -> tuple[ModuleType, bool]:
 
 
 if TYPE_CHECKING:
+    import dataclasses
+    import html
+    import json
+    import pickle
+    import subprocess
+
     import deltalake
     import fsspec
     import hypothesis
     import numpy
     import pandas
     import pyarrow
+    import pydantic
 
     if sys.version_info >= (3, 9):
         import zoneinfo
     else:
         from backports import zoneinfo
 else:
+    # infrequently-used builtins
+    dataclasses, _ = _lazy_import("dataclasses")
+    html, _ = _lazy_import("html")
+    json, _ = _lazy_import("json")
+    pickle, _ = _lazy_import("pickle")
+    subprocess, _ = _lazy_import("subprocess")
+
+    # heavy/optional third party libs
+    deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
+    hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
-    hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
-    deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
+    pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
     zoneinfo, _ZONEINFO_AVAILABLE = (
         _lazy_import("zoneinfo")
         if sys.version_info >= (3, 9)
@@ -187,22 +206,37 @@ def _check_for_pyarrow(obj: Any) -> bool:
     return _PYARROW_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pyarrow")
 
 
+def _check_for_pydantic(obj: Any) -> bool:
+    return _PYDANTIC_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pydantic")
+
+
 __all__ = [
+    # lazy-load rarely-used/heavy builtins (for fast startup)
+    "dataclasses",
+    "html",
+    "json",
+    "pickle",
+    "subprocess",
+    # lazy-load third party libs
+    "deltalake",
     "fsspec",
     "numpy",
     "pandas",
+    "pydantic",
     "pyarrow",
-    "deltalake",
     "zoneinfo",
-    "_LazyModule",
-    "_FSSPEC_AVAILABLE",
-    "_NUMPY_AVAILABLE",
+    # lazy utilities
     "_check_for_numpy",
-    "_PANDAS_AVAILABLE",
     "_check_for_pandas",
-    "_PYARROW_AVAILABLE",
     "_check_for_pyarrow",
-    "_ZONEINFO_AVAILABLE",
-    "_HYPOTHESIS_AVAILABLE",
+    "_check_for_pydantic",
+    "_LazyModule",
+    # exported flags/guards
     "_DELTALAKE_AVAILABLE",
+    "_FSSPEC_AVAILABLE",
+    "_HYPOTHESIS_AVAILABLE",
+    "_NUMPY_AVAILABLE",
+    "_PANDAS_AVAILABLE",
+    "_PYARROW_AVAILABLE",
+    "_ZONEINFO_AVAILABLE",
 ]

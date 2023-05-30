@@ -33,22 +33,26 @@ import doctest
 import importlib
 import sys
 import unittest
+import warnings
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import ModuleType
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 
 import polars
 
+if TYPE_CHECKING:
+    from types import ModuleType
+
 
 def doctest_teardown(d: doctest.DocTest) -> None:
-    # don't let config changes leak between tests
+    # don't let config changes or string cache state leak between tests
     polars.Config.restore_defaults()
+    polars.enable_string_cache(False)
 
 
 def modules_in_path(p: Path) -> Iterator[ModuleType]:
     for file in p.rglob("*.py"):
-        # Construct path as string for import, for instance "internals.frame"
+        # Construct path as string for import, for instance "dataframe.frame"
         # The -3 drops the ".py"
         file_name_import = ".".join(file.relative_to(p).parts)[:-3]
         temp_module = importlib.import_module(p.name + "." + file_name_import)
@@ -65,6 +69,9 @@ if __name__ == "__main__":
     # the code block. The difference with SKIP is that if the code errors on running,
     # that will still be reported.
     IGNORE_RESULT = doctest.register_optionflag("IGNORE_RESULT")
+
+    # Set doctests to fail on warnings
+    warnings.simplefilter("error", DeprecationWarning)
 
     OutputChecker = doctest.OutputChecker
 

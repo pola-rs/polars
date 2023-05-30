@@ -1,14 +1,14 @@
 //! Implementations of arithmetic operations on ChunkedArray's.
-use std::borrow::Cow;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow::array::PrimitiveArray;
 use arrow::compute::arithmetics::basic;
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 use arrow::compute::arithmetics::decimal;
 use arrow::compute::arity_assign;
 use arrow::types::NativeType;
-use num::{Num, NumCast, ToPrimitive};
+use num_traits::{Num, NumCast, ToPrimitive, Zero};
+use polars_arrow::utils::combine_validities_and;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -61,7 +61,7 @@ macro_rules! native_array_arithmetics {
 
 native_array_arithmetics!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
 
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 impl ArrayArithmetics for i128 {
     fn add(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
         decimal::add(lhs, rhs)
@@ -93,51 +93,7 @@ impl ArrayArithmetics for i128 {
     }
 }
 
-macro_rules! apply_operand_on_chunkedarray_by_iter {
-
-    ($self:ident, $rhs:ident, $operand:tt) => {
-            {
-                match ($self.has_validity(), $rhs.has_validity()) {
-                    (false, false) => {
-                        let a: NoNull<ChunkedArray<_>> = $self
-                        .into_no_null_iter()
-                        .zip($rhs.into_no_null_iter())
-                        .map(|(left, right)| left $operand right)
-                        .collect_trusted();
-                        a.into_inner()
-                    },
-                    (false, _) => {
-                        $self
-                        .into_no_null_iter()
-                        .zip($rhs.into_iter())
-                        .map(|(left, opt_right)| opt_right.map(|right| left $operand right))
-                        .collect_trusted()
-                    },
-                    (_, false) => {
-                        $self
-                        .into_iter()
-                        .zip($rhs.into_no_null_iter())
-                        .map(|(opt_left, right)| opt_left.map(|left| left $operand right))
-                        .collect_trusted()
-                    },
-                    (_, _) => {
-                    $self.into_iter()
-                        .zip($rhs.into_iter())
-                        .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
-                            (None, None) => None,
-                            (None, Some(_)) => None,
-                            (Some(_), None) => None,
-                            (Some(left), Some(right)) => Some(left $operand right),
-                        })
-                        .collect_trusted()
-
-                    }
-                }
-            }
-    }
-}
-
-fn arithmetic_helper<T, Kernel, F>(
+pub(super) fn arithmetic_helper<T, Kernel, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<T>,
     kernel: Kernel,
@@ -156,7 +112,7 @@ where
                 .zip(rhs.downcast_iter())
                 .map(|(lhs, rhs)| Box::new(kernel(lhs, rhs)) as ArrayRef)
                 .collect();
-            lhs.copy_with_chunks(chunks, false)
+            lhs.copy_with_chunks(chunks, false, false)
         }
         // broadcast right path
         (_, 1) => {
@@ -398,7 +354,9 @@ where
 
     fn add(self, rhs: N) -> Self::Output {
         let adder: T::Native = NumCast::from(rhs).unwrap();
-        self.apply(|val| val + adder)
+        let mut out = self.apply(|val| val + adder);
+        out.set_sorted_flag(self.is_sorted_flag());
+        out
     }
 }
 
@@ -411,7 +369,9 @@ where
 
     fn sub(self, rhs: N) -> Self::Output {
         let subber: T::Native = NumCast::from(rhs).unwrap();
-        self.apply(|val| val - subber)
+        let mut out = self.apply(|val| val - subber);
+        out.set_sorted_flag(self.is_sorted_flag());
+        out
     }
 }
 
@@ -424,7 +384,15 @@ where
 
     fn div(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::div_scalar(arr, &rhs)))
+        let mut out = self
+            .apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::div_scalar(arr, &rhs)));
+
+        if rhs < T::Native::zero() {
+            out.set_sorted_flag(self.is_sorted_flag().reverse());
+        } else {
+            out.set_sorted_flag(self.is_sorted_flag());
+        }
+        out
     }
 }
 
@@ -436,8 +404,10 @@ where
     type Output = ChunkedArray<T>;
 
     fn mul(self, rhs: N) -> Self::Output {
+        // don't set sorted flag as probability of overflow is higher
         let multiplier: T::Native = NumCast::from(rhs).unwrap();
-        self.apply(|val| val * multiplier)
+        let rhs = ChunkedArray::from_vec("", vec![multiplier]);
+        self.mul(&rhs)
     }
 }
 
@@ -450,7 +420,8 @@ where
 
     fn rem(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::rem_scalar(arr, &rhs)))
+        let rhs = ChunkedArray::from_vec("", vec![rhs]);
+        self.rem(&rhs)
     }
 }
 
@@ -461,14 +432,8 @@ where
 {
     type Output = ChunkedArray<T>;
 
-    fn add(mut self, rhs: N) -> Self::Output {
-        if std::env::var("ASSIGN").is_ok() {
-            let adder: T::Native = NumCast::from(rhs).unwrap();
-            self.apply_mut(|val| val + adder);
-            self
-        } else {
-            (&self).add(rhs)
-        }
+    fn add(self, rhs: N) -> Self::Output {
+        (&self).add(rhs)
     }
 }
 
@@ -479,14 +444,8 @@ where
 {
     type Output = ChunkedArray<T>;
 
-    fn sub(mut self, rhs: N) -> Self::Output {
-        if std::env::var("ASSIGN").is_ok() {
-            let subber: T::Native = NumCast::from(rhs).unwrap();
-            self.apply_mut(|val| val - subber);
-            self
-        } else {
-            (&self).sub(rhs)
-        }
+    fn sub(self, rhs: N) -> Self::Output {
+        (&self).sub(rhs)
     }
 }
 
@@ -510,13 +469,9 @@ where
     type Output = ChunkedArray<T>;
 
     fn mul(mut self, rhs: N) -> Self::Output {
-        if std::env::var("ASSIGN").is_ok() {
-            let multiplier: T::Native = NumCast::from(rhs).unwrap();
-            self.apply_mut(|val| val * multiplier);
-            self
-        } else {
-            (&self).mul(rhs)
-        }
+        let multiplier: T::Native = NumCast::from(rhs).unwrap();
+        self.apply_mut(|val| val * multiplier);
+        self
     }
 }
 
@@ -532,54 +487,18 @@ where
     }
 }
 
-fn concat_strings(l: &str, r: &str) -> String {
-    // fastest way to concat strings according to https://github.com/hoodie/concatenation_benchmarks-rs
-    let mut s = String::with_capacity(l.len() + r.len());
-    s.push_str(l);
-    s.push_str(r);
-    s
-}
+fn concat_binary_arrs(l: &[u8], r: &[u8], buf: &mut Vec<u8>) {
+    buf.clear();
 
-#[cfg(feature = "dtype-binary")]
-fn concat_binary_arrs(l: &[u8], r: &[u8]) -> Vec<u8> {
-    let mut v = Vec::with_capacity(l.len() + r.len());
-    v.extend_from_slice(l);
-    v.extend_from_slice(r);
-    v
+    buf.extend_from_slice(l);
+    buf.extend_from_slice(r);
 }
 
 impl Add for &Utf8Chunked {
     type Output = Utf8Chunked;
 
     fn add(self, rhs: Self) -> Self::Output {
-        // broadcasting path rhs
-        if rhs.len() == 1 {
-            let rhs = rhs.get(0);
-            return match rhs {
-                Some(rhs) => self.add(rhs),
-                None => Utf8Chunked::full_null(self.name(), self.len()),
-            };
-        }
-        // broadcasting path lhs
-        if self.len() == 1 {
-            let lhs = self.get(0);
-            return match lhs {
-                Some(lhs) => rhs.apply(|s| Cow::Owned(concat_strings(lhs, s))),
-                None => Utf8Chunked::full_null(self.name(), rhs.len()),
-            };
-        }
-
-        // todo! add no_null variants. Need 4 paths.
-        let mut ca: Self::Output = self
-            .into_iter()
-            .zip(rhs.into_iter())
-            .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                (Some(l), Some(r)) => Some(concat_strings(l, r)),
-                _ => None,
-            })
-            .collect_trusted();
-        ca.rename(self.name());
-        ca
+        unsafe { (self.as_binary() + rhs.as_binary()).to_utf8() }
     }
 }
 
@@ -595,22 +514,26 @@ impl Add<&str> for &Utf8Chunked {
     type Output = Utf8Chunked;
 
     fn add(self, rhs: &str) -> Self::Output {
-        let mut ca: Self::Output = match self.has_validity() {
-            false => self
-                .into_no_null_iter()
-                .map(|l| concat_strings(l, rhs))
-                .collect_trusted(),
-            _ => self
-                .into_iter()
-                .map(|opt_l| opt_l.map(|l| concat_strings(l, rhs)))
-                .collect_trusted(),
-        };
-        ca.rename(self.name());
-        ca
+        unsafe { ((&self.as_binary()) + rhs.as_bytes()).to_utf8() }
     }
 }
 
-#[cfg(feature = "dtype-binary")]
+fn concat_binary(a: &BinaryArray<i64>, b: &BinaryArray<i64>) -> BinaryArray<i64> {
+    let validity = combine_validities_and(a.validity(), b.validity());
+    let mut values = Vec::with_capacity(a.get_values_size() + b.get_values_size());
+    let mut offsets = Vec::with_capacity(a.len() + 1);
+    let mut offset_so_far = 0i64;
+    offsets.push(offset_so_far);
+
+    for (a, b) in a.values_iter().zip(b.values_iter()) {
+        values.extend_from_slice(a);
+        values.extend_from_slice(b);
+        offset_so_far = values.len() as i64;
+        offsets.push(offset_so_far)
+    }
+    unsafe { BinaryArray::from_data_unchecked_default(offsets.into(), values.into(), validity) }
+}
+
 impl Add for &BinaryChunked {
     type Output = BinaryChunked;
 
@@ -618,35 +541,48 @@ impl Add for &BinaryChunked {
         // broadcasting path rhs
         if rhs.len() == 1 {
             let rhs = rhs.get(0);
+            let mut buf = vec![];
             return match rhs {
-                Some(rhs) => self.add(rhs),
+                Some(rhs) => {
+                    self.apply_mut(|s| {
+                        concat_binary_arrs(s, rhs, &mut buf);
+                        let out = buf.as_slice();
+                        // safety: lifetime is bound to the outer scope and the
+                        // ref is valid for the lifetime of this closure
+                        unsafe { std::mem::transmute::<_, &'static [u8]>(out) }
+                    })
+                }
                 None => BinaryChunked::full_null(self.name(), self.len()),
             };
         }
         // broadcasting path lhs
         if self.len() == 1 {
             let lhs = self.get(0);
+            let mut buf = vec![];
             return match lhs {
-                Some(lhs) => rhs.apply(|s| Cow::Owned(concat_binary_arrs(lhs, s))),
+                Some(lhs) => rhs.apply_mut(|s| {
+                    concat_binary_arrs(lhs, s, &mut buf);
+
+                    let out = buf.as_slice();
+                    // safety: lifetime is bound to the outer scope and the
+                    // ref is valid for the lifetime of this closure
+                    unsafe { std::mem::transmute::<_, &'static [u8]>(out) }
+                }),
                 None => BinaryChunked::full_null(self.name(), rhs.len()),
             };
         }
 
-        // todo! add no_null variants. Need 4 paths.
-        let mut ca: Self::Output = self
-            .into_iter()
-            .zip(rhs.into_iter())
-            .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                (Some(l), Some(r)) => Some(concat_binary_arrs(l, r)),
-                _ => None,
-            })
-            .collect_trusted();
-        ca.rename(self.name());
-        ca
+        let (lhs, rhs) = align_chunks_binary(self, rhs);
+        let chunks = lhs
+            .downcast_iter()
+            .zip(rhs.downcast_iter())
+            .map(|(a, b)| Box::new(concat_binary(a, b)) as ArrayRef)
+            .collect();
+
+        unsafe { BinaryChunked::from_chunks(self.name(), chunks) }
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl Add for BinaryChunked {
     type Output = BinaryChunked;
 
@@ -655,23 +591,59 @@ impl Add for BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl Add<&[u8]> for &BinaryChunked {
     type Output = BinaryChunked;
 
     fn add(self, rhs: &[u8]) -> Self::Output {
-        let mut ca: Self::Output = match self.has_validity() {
-            false => self
-                .into_no_null_iter()
-                .map(|l| concat_binary_arrs(l, rhs))
-                .collect_trusted(),
-            _ => self
-                .into_iter()
-                .map(|opt_l| opt_l.map(|l| concat_binary_arrs(l, rhs)))
-                .collect_trusted(),
-        };
-        ca.rename(self.name());
-        ca
+        let arr = BinaryArray::<i64>::from_slice([rhs]);
+        let rhs = unsafe { BinaryChunked::from_chunks("", vec![Box::new(arr) as ArrayRef]) };
+        self.add(&rhs)
+    }
+}
+
+fn add_boolean(a: &BooleanArray, b: &BooleanArray) -> PrimitiveArray<IdxSize> {
+    let validity = combine_validities_and(a.validity(), b.validity());
+
+    let values = a
+        .values_iter()
+        .zip(b.values_iter())
+        .map(|(a, b)| a as IdxSize + b as IdxSize)
+        .collect::<Vec<_>>();
+    PrimitiveArray::from_data_default(values.into(), validity)
+}
+
+impl Add for &BooleanChunked {
+    type Output = IdxCa;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        // broadcasting path rhs
+        if rhs.len() == 1 {
+            let rhs = rhs.get(0);
+            return match rhs {
+                Some(rhs) => self.apply_cast_numeric(|v| v as IdxSize + rhs as IdxSize),
+                None => IdxCa::full_null(self.name(), self.len()),
+            };
+        }
+        // broadcasting path lhs
+        if self.len() == 1 {
+            return rhs.add(self);
+        }
+        let (lhs, rhs) = align_chunks_binary(self, rhs);
+        let chunks = lhs
+            .downcast_iter()
+            .zip(rhs.downcast_iter())
+            .map(|(a, b)| Box::new(add_boolean(a, b)) as ArrayRef)
+            .collect::<Vec<_>>();
+
+        unsafe { IdxCa::from_chunks(self.name(), chunks) }
+    }
+}
+
+impl Add for BooleanChunked {
+    type Output = IdxCa;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        (&self).add(&rhs)
     }
 }
 

@@ -5,7 +5,6 @@ use super::{private, IntoSeries, SeriesTrait};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -71,22 +70,13 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            self.0.append(other.as_ref().as_ref())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot append Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append(other.as_ref().as_ref())
     }
+
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            self.0.extend(other.as_ref().as_ref())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot extend Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), extend);
+        self.0.extend(other.as_ref().as_ref())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
@@ -114,10 +104,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
         Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
-    }
-
-    fn take_every(&self, n: usize) -> Series {
-        self.0.take_every(n).into_series()
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
@@ -204,9 +190,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
     fn min_as_series(&self) -> Series {
         ChunkAggSeries::min_as_series(&self.0)
-    }
-    fn fmt_list(&self) -> String {
-        FmtList::fmt_list(&self.0)
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))

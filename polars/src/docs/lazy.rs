@@ -82,10 +82,10 @@
 //! // sort this DataFrame by multiple columns
 //!
 //! // ordering of the columns
-//! let reverse = vec![true, false];
+//! let descending = vec![true, false];
 //!
 //! let sorted = df.lazy()
-//!     .sort_by_exprs(vec![col("b"), col("a")], reverse, false)
+//!     .sort_by_exprs(vec![col("b"), col("a")], descending, false)
 //!     .collect()?;
 //!
 //! // sorted:
@@ -106,7 +106,7 @@
 //!
 //! ## Groupby
 //!
-//! This example is from the polars [user guide](https://pola-rs.github.io/polars-book/user-guide/howcani/df/groupby.html).
+//! This example is from the polars [user guide](https://pola-rs.github.io/polars-book/user-guide/concepts/contexts/#groupby-aggregation).
 //!
 //! ```
 //! use polars::prelude::*;
@@ -223,7 +223,7 @@
 //! // │ 1     ┆ "foo" ┆ "bar" ┆ "bar"      │
 //! // │ 2     ┆ "foo" ┆ "bar" ┆ "bar"      │
 //! // │ 3     ┆ "foo" ┆ "bar" ┆ "bar"      │
-//! // │ ...   ┆ ...   ┆ ...   ┆ ...        │
+//! // │ …     ┆ …     ┆ …     ┆ …          │
 //! // │ 5     ┆ "foo" ┆ "bar" ┆ "foo"      │
 //! // │ 6     ┆ "foo" ┆ "bar" ┆ "foo"      │
 //! // │ 7     ┆ "foo" ┆ "bar" ┆ "foo"      │
@@ -254,7 +254,7 @@
 //!         "b" => [3.0, 5.1, 0.3]
 //!     ]?
 //!     .lazy()
-//!     .select([concat_lst(["col_a", "col_b"]).map(
+//!     .select([concat_list(["col_a", "col_b"]).map(
 //!         |s| {
 //!             let ca = s.struct_()?;
 //!

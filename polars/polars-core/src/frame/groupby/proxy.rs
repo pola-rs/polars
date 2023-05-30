@@ -2,11 +2,12 @@ use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
 use polars_arrow::utils::CustomIterTools;
+use polars_utils::sync::SyncPtr;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 
 use crate::prelude::*;
-use crate::utils::{slice_slice, NoNull};
+use crate::utils::{flatten, slice_slice, NoNull};
 use crate::POOL;
 
 /// Indexes of the groups, the first index is stored separately.
@@ -44,9 +45,100 @@ impl From<Vec<IdxItem>> for GroupsIdx {
     }
 }
 
+impl From<Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>> for GroupsIdx {
+    fn from(v: Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>) -> Self {
+        // we have got the hash tables so we can determine the final
+        let cap = v.iter().map(|v| v.0.len()).sum::<usize>();
+        let offsets = v
+            .iter()
+            .scan(0_usize, |acc, v| {
+                let out = *acc;
+                *acc += v.0.len();
+                Some(out)
+            })
+            .collect::<Vec<_>>();
+        let mut global_first = Vec::with_capacity(cap);
+        let global_first_ptr = unsafe { SyncPtr::new(global_first.as_mut_ptr()) };
+        let mut global_all = Vec::with_capacity(cap);
+        let global_all_ptr = unsafe { SyncPtr::new(global_all.as_mut_ptr()) };
+
+        POOL.install(|| {
+            v.into_par_iter().zip(offsets).for_each(
+                |((local_first_vals, mut local_all_vals), offset)| unsafe {
+                    let global_first: *mut IdxSize = global_first_ptr.get();
+                    let global_all: *mut Vec<IdxSize> = global_all_ptr.get();
+                    let global_first = global_first.add(offset);
+                    let global_all = global_all.add(offset);
+
+                    std::ptr::copy_nonoverlapping(
+                        local_first_vals.as_ptr(),
+                        global_first,
+                        local_first_vals.len(),
+                    );
+                    std::ptr::copy_nonoverlapping(
+                        local_all_vals.as_ptr(),
+                        global_all,
+                        local_all_vals.len(),
+                    );
+                    // local_all_vals: Vec<Vec<IdxSize>>
+                    // we just copied the contents: Vec<IdxSize> to a new buffer
+                    // now, we want to free the outer vec, without freeing
+                    // the inner vecs as they are moved, so we set the len to 0
+                    local_all_vals.set_len(0);
+                },
+            );
+        });
+        unsafe {
+            global_all.set_len(cap);
+            global_first.set_len(cap);
+        }
+        GroupsIdx {
+            sorted: false,
+            first: global_first,
+            all: global_all,
+        }
+    }
+}
+
 impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
     fn from(v: Vec<Vec<IdxItem>>) -> Self {
-        v.into_iter().flatten().collect()
+        // single threaded flatten: 10% faster than `iter().flatten().collect()
+        // this is the multi-threaded impl of that
+        let (cap, offsets) = flatten::cap_and_offsets(&v);
+        let mut first = Vec::with_capacity(cap);
+        let first_ptr = first.as_ptr() as usize;
+        let mut all = Vec::with_capacity(cap);
+        let all_ptr = all.as_ptr() as usize;
+
+        POOL.install(|| {
+            v.into_par_iter()
+                .zip(offsets)
+                .for_each(|(mut inner, offset)| {
+                    unsafe {
+                        let first = (first_ptr as *const IdxSize as *mut IdxSize).add(offset);
+                        let all = (all_ptr as *const Vec<IdxSize> as *mut Vec<IdxSize>).add(offset);
+
+                        let inner_ptr = inner.as_mut_ptr();
+                        for i in 0..inner.len() {
+                            let (first_val, vals) = std::ptr::read(inner_ptr.add(i));
+                            std::ptr::write(first.add(i), first_val);
+                            std::ptr::write(all.add(i), vals);
+                        }
+                        // set len to 0 so that the contents will not get dropped
+                        // they are moved to `first` and `all`
+                        inner.set_len(0);
+                    }
+                });
+        });
+        unsafe {
+            all.set_len(cap);
+            first.set_len(cap);
+        }
+        GroupsIdx {
+            sorted: false,
+            first,
+            all,
+        }
     }
 }
 
@@ -193,11 +285,14 @@ impl IntoParallelIterator for GroupsIdx {
 ///  - first value is an index to the start of the group
 ///  - second value is the length of the group
 /// Only used when group values are stored together
+///
+/// This type should have the invariant that it is always sorted in ascending order.
 pub type GroupsSlice = Vec<[IdxSize; 2]>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupsProxy {
     Idx(GroupsIdx),
+    /// Slice is always sorted in ascending order.
     Slice {
         // the groups slices
         groups: GroupsSlice,
@@ -239,11 +334,16 @@ impl GroupsProxy {
                     groups.sort()
                 }
             }
-            GroupsProxy::Slice { groups, rolling } => {
-                if !*rolling {
-                    groups.sort_unstable_by_key(|[first, _]| *first);
-                }
+            GroupsProxy::Slice { .. } => {
+                // invariant of the type
             }
+        }
+    }
+
+    pub(crate) fn is_sorted_flag(&self) -> bool {
+        match self {
+            GroupsProxy::Idx(groups) => groups.is_sorted_flag(),
+            GroupsProxy::Slice { .. } => true,
         }
     }
 
@@ -366,6 +466,24 @@ impl GroupsProxy {
         }
     }
 
+    pub fn unroll(self) -> GroupsProxy {
+        match self {
+            GroupsProxy::Idx(_) => self,
+            GroupsProxy::Slice { rolling: false, .. } => self,
+            GroupsProxy::Slice { mut groups, .. } => {
+                let mut offset = 0 as IdxSize;
+                for g in groups.iter_mut() {
+                    g[0] = offset;
+                    offset += g[1];
+                }
+                GroupsProxy::Slice {
+                    groups,
+                    rolling: false,
+                }
+            }
+        }
+    }
+
     pub fn slice(&self, offset: i64, len: usize) -> SlicedGroups {
         // Safety:
         // we create new `Vec`s from the sliced groups. But we wrap them in ManuallyDrop
@@ -458,8 +576,13 @@ impl<'a> GroupsProxyIter<'a> {
 impl<'a> Iterator for GroupsProxyIter<'a> {
     type Item = GroupsIndicator<'a>;
 
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.idx = self.idx.saturating_add(n);
+        self.next()
+    }
+
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx == self.len {
+        if self.idx >= self.len {
             return None;
         }
 

@@ -3,14 +3,15 @@ use std::iter::FlatMap;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
+use smartstring::alias::String as SmartString;
 
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
-/// Utility to write comma delimited
-pub fn column_delimited(mut s: String, items: &[String]) -> String {
+/// Utility to write comma delimited strings
+pub fn comma_delimited(mut s: String, items: &[SmartString]) -> String {
     s.push('(');
     for c in items {
         s.push_str(c);
@@ -70,7 +71,7 @@ impl PushNode for [Option<Node>; 1] {
 
 pub(crate) fn is_scan(plan: &ALogicalPlan) -> bool {
     match plan {
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         ALogicalPlan::CsvScan { .. } => true,
         ALogicalPlan::DataFrameScan { .. } => true,
         #[cfg(feature = "parquet")]
@@ -135,34 +136,29 @@ pub fn has_null(current_expr: &Expr) -> bool {
 }
 
 /// output name of expr
-pub(crate) fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
+pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
         match e {
             // don't follow the partition by branch
             Expr::Window { function, .. } => return expr_output_name(function),
             Expr::Column(name) => return Ok(name.clone()),
             Expr::Alias(_, name) => return Ok(name.clone()),
-            Expr::KeepName(_) | Expr::Wildcard | Expr::RenameAlias { .. } => {
-                return Err(PolarsError::ComputeError(
-                    "Cannot determine an output column without a context for this expression"
-                        .into(),
-                ))
-            }
-            Expr::Columns(_) | Expr::DtypeColumn(_) => {
-                return Err(PolarsError::ComputeError(
-                    "This expression might produce multiple output names".into(),
-                ))
-            }
+            Expr::KeepName(_) | Expr::Wildcard | Expr::RenameAlias { .. } => polars_bail!(
+                ComputeError:
+                "cannot determine output column without a context for this expression"
+            ),
+            Expr::Columns(_) | Expr::DtypeColumn(_) => polars_bail!(
+                ComputeError:
+                "this expression may produce multiple output names"
+            ),
             Expr::Count => return Ok(Arc::from(COUNT)),
             _ => {}
         }
     }
-    Err(PolarsError::ComputeError(
-        format!(
-            "No root column name could be found for expr '{expr:?}' when calling 'output_name'",
-        )
-        .into(),
-    ))
+    polars_bail!(
+        ComputeError:
+        "unable to find root column name for expr '{expr:?}' when calling 'output_name'",
+    );
 }
 
 /// This function should be used to find the name of the start of an expression
@@ -178,9 +174,9 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
             _ => {}
         }
     }
-    Err(PolarsError::ComputeError(
-        format!("no single leaf column found in {expr:?}").into(),
-    ))
+    polars_bail!(
+        ComputeError: "unable to find a single leaf column in {expr:?}"
+    );
 }
 
 /// This should gradually replace expr_to_root_column as this will get all names in the tree.
@@ -194,22 +190,16 @@ pub fn expr_to_leaf_column_names(expr: &Expr) -> Vec<Arc<str>> {
 /// unpack alias(col) to name of the root column name
 pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     let mut roots = expr_to_root_column_exprs(expr);
-    match roots.len() {
-        0 => Err(PolarsError::ComputeError(
-            "no root column name found".into(),
-        )),
-        1 => match roots.pop().unwrap() {
-            Expr::Wildcard => Err(PolarsError::ComputeError(
-                "wildcard has not root column name".into(),
-            )),
-            Expr::Column(name) => Ok(name),
-            _ => {
-                unreachable!();
-            }
-        },
-        _ => Err(PolarsError::ComputeError(
-            "found more than one root column name".into(),
-        )),
+    polars_ensure!(roots.len() <= 1, ComputeError: "found more than one root column name");
+    match roots.pop() {
+        Some(Expr::Column(name)) => Ok(name),
+        Some(Expr::Wildcard) => polars_bail!(
+            ComputeError: "wildcard has not root column name",
+        ),
+        Some(_) => unreachable!(),
+        None => polars_bail!(
+            ComputeError: "no root column name found",
+        ),
     }
 }
 
@@ -324,10 +314,9 @@ pub fn expressions_to_schema(
     ctxt: Context,
 ) -> PolarsResult<Schema> {
     let mut expr_arena = Arena::with_capacity(4 * expr.len());
-    let fields = expr
-        .iter()
-        .map(|expr| expr.to_field_amortized(schema, ctxt, &mut expr_arena));
-    Schema::try_from_fallible(fields)
+    expr.iter()
+        .map(|expr| expr.to_field_amortized(schema, ctxt, &mut expr_arena))
+        .collect()
 }
 
 pub fn aexpr_to_leaf_names_iter(
@@ -347,6 +336,10 @@ pub fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
     aexpr_to_leaf_names_iter(node, arena).collect()
 }
 
+pub fn aexpr_to_leaf_name(node: Node, arena: &Arena<AExpr>) -> Arc<str> {
+    aexpr_to_leaf_names_iter(node, arena).next().unwrap()
+}
+
 /// check if a selection/projection can be done on the downwards schema
 pub(crate) fn check_input_node(
     node: Node,
@@ -363,10 +356,9 @@ pub(crate) fn aexprs_to_schema(
     ctxt: Context,
     arena: &Arena<AExpr>,
 ) -> Schema {
-    let fields = expr
-        .iter()
-        .map(|expr| arena.get(*expr).to_field(schema, ctxt, arena).unwrap());
-    Schema::from(fields)
+    expr.iter()
+        .map(|expr| arena.get(*expr).to_field(schema, ctxt, arena).unwrap())
+        .collect()
 }
 
 pub fn combine_predicates_expr<I>(iter: I) -> Expr

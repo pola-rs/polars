@@ -25,9 +25,9 @@ pub enum PivotAgg {
 
 fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
     // restore logical type
-    match logical_type {
+    match (logical_type, s.dtype()) {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(Some(rev_map)) => {
+        (DataType::Categorical(Some(rev_map)), _) => {
             let cats = s.u32().unwrap().clone();
             // safety:
             // the rev-map comes from these categoricals
@@ -36,21 +36,36 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
                     .into_series()
             }
         }
-        DataType::Float32 if matches!(s.dtype(), DataType::UInt32) => {
+        (DataType::Float32, DataType::UInt32) => {
             let ca = s.u32().unwrap();
             ca._reinterpret_float().into_series()
         }
-        DataType::Float64 if matches!(s.dtype(), DataType::UInt64) => {
+        (DataType::Float64, DataType::UInt64) => {
             let ca = s.u64().unwrap();
             ca._reinterpret_float().into_series()
         }
-        DataType::Int32 if matches!(s.dtype(), DataType::UInt32) => {
+        (DataType::Int32, DataType::UInt32) => {
             let ca = s.u32().unwrap();
-            ca.reinterpret_signed().into_series()
+            ca.reinterpret_signed()
         }
-        DataType::Int64 if matches!(s.dtype(), DataType::UInt64) => {
+        (DataType::Int64, DataType::UInt64) => {
             let ca = s.u64().unwrap();
-            ca.reinterpret_signed().into_series()
+            ca.reinterpret_signed()
+        }
+        #[cfg(feature = "dtype-duration")]
+        (DataType::Duration(_), DataType::UInt64) => {
+            let ca = s.u64().unwrap();
+            ca.reinterpret_signed().cast(logical_type).unwrap()
+        }
+        #[cfg(feature = "dtype-datetime")]
+        (DataType::Datetime(_, _), DataType::UInt64) => {
+            let ca = s.u64().unwrap();
+            ca.reinterpret_signed().cast(logical_type).unwrap()
+        }
+        #[cfg(feature = "dtype-date")]
+        (DataType::Date, DataType::UInt32) => {
+            let ca = s.u32().unwrap();
+            ca.reinterpret_signed().cast(logical_type).unwrap()
         }
         _ => s.cast(logical_type).unwrap(),
     }
@@ -66,8 +81,8 @@ pub fn pivot<I0, S0, I1, S1, I2, S2>(
     values: I0,
     index: I1,
     columns: I2,
-    agg_fn: PivotAgg,
     sort_columns: bool,
+    agg_fn: Option<PivotAgg>,
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
@@ -112,8 +127,8 @@ pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
     values: I0,
     index: I1,
     columns: I2,
-    agg_fn: PivotAgg,
     sort_columns: bool,
+    agg_fn: Option<PivotAgg>,
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
@@ -160,26 +175,22 @@ fn pivot_impl(
     // the rows of this nested groupby will be pivoted as header column values
     columns: &[String],
     // aggregation function
-    agg_fn: PivotAgg,
+    agg_fn: Option<PivotAgg>,
     sort_columns: bool,
     stable: bool,
     // used as separator/delimiter in generated column names.
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame> {
     let sep = separator.unwrap_or("_");
-    if index.is_empty() {
-        return Err(PolarsError::ComputeError(
-            "index cannot be zero length".into(),
-        ));
-    }
+    polars_ensure!(!index.is_empty(), ComputeError: "index cannot be zero length");
 
     let mut final_cols = vec![];
 
     let mut count = 0;
     let out: PolarsResult<()> = POOL.install(|| {
-        for column in columns {
+        for column_column_name in columns {
             let mut groupby = index.to_vec();
-            groupby.push(column.clone());
+            groupby.push(column_column_name.clone());
 
             let groups = pivot_df.groupby_stable(groupby)?.take_groups();
 
@@ -189,7 +200,7 @@ fn pivot_impl(
             };
 
             let (col, row) = POOL.join(
-                || positioning::compute_col_idx(pivot_df, column, &groups),
+                || positioning::compute_col_idx(pivot_df, column_column_name, &groups),
                 || positioning::compute_row_idx(pivot_df, index, &groups, count),
             );
             let (col_locations, column_agg) = col?;
@@ -200,31 +211,37 @@ fn pivot_impl(
 
                 use PivotAgg::*;
                 let value_agg = unsafe {
-                    match agg_fn {
-                        Sum => value_col.agg_sum(&groups),
-                        Min => value_col.agg_min(&groups),
-                        Max => value_col.agg_max(&groups),
-                        Last => value_col.agg_last(&groups),
-                        First => value_col.agg_first(&groups),
-                        Mean => value_col.agg_mean(&groups),
-                        Median => value_col.agg_median(&groups),
-                        Count => groups.group_count().into_series(),
-                        Expr(ref expr) => {
-                            let name = expr.root_name()?;
-                            let mut value_col = value_col.clone();
-                            value_col.rename(name);
-                            let tmp_df = DataFrame::new_no_checks(vec![value_col]);
-                            let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
-                            aggregated.rename(value_col_name);
-                            aggregated
+                    match &agg_fn {
+                        None => match value_col.len() > groups.len() {
+                            true => polars_bail!(ComputeError: "found multiple elements in the same group, please specify an aggregation function"),
+                            false => value_col.agg_first(&groups),
                         }
+                        Some(agg_fn) => match agg_fn {
+                            Sum => value_col.agg_sum(&groups),
+                            Min => value_col.agg_min(&groups),
+                            Max => value_col.agg_max(&groups),
+                            Last => value_col.agg_last(&groups),
+                            First => value_col.agg_first(&groups),
+                            Mean => value_col.agg_mean(&groups),
+                            Median => value_col.agg_median(&groups),
+                            Count => groups.group_count().into_series(),
+                            Expr(ref expr) => {
+                                let name = expr.root_name()?;
+                                let mut value_col = value_col.clone();
+                                value_col.rename(name);
+                                let tmp_df = DataFrame::new_no_checks(vec![value_col]);
+                                let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
+                                aggregated.rename(value_col_name);
+                                aggregated
+                            }
+                        },
                     }
                 };
 
                 let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
                 let mut headers = headers.utf8().unwrap().clone();
                 if values.len() > 1 {
-                    headers = headers.apply(|v| Cow::from(format!("{value_col_name}{sep}{v}")))
+                    headers = headers.apply(|v| Cow::from(format!("{value_col_name}{sep}{column_column_name}{sep}{v}")))
                 }
 
                 let n_cols = headers.len();

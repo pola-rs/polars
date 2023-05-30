@@ -223,33 +223,6 @@ impl PredicatePushDown {
                 Ok(lp)
             }
 
-            Melt {
-                input,
-                args,
-                schema,
-            } => {
-                let variable_name = args.variable_name.as_deref().unwrap_or("variable");
-                let value_name = args.value_name.as_deref().unwrap_or("value");
-
-                // predicates that will be done at this level
-                let condition = |name: Arc<str>| {
-                    let name = &*name;
-                    name == variable_name
-                        || name == value_name
-                        || args.value_vars.iter().any(|s| s.as_str() == name)
-                };
-                let local_predicates =
-                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-
-                let lp = ALogicalPlan::Melt {
-                    input,
-                    args,
-                    schema,
-                };
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-            }
             LocalProjection { expr, input, .. } => {
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
 
@@ -310,7 +283,7 @@ impl PredicatePushDown {
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 path,
                 file_info,
@@ -376,53 +349,45 @@ impl PredicatePushDown {
                 }
             }
 
-            Explode { input, columns, schema } => {
-                let condition = |name: Arc<str>| columns.iter().any(|s| s.as_str() == &*name);
-
-                // first columns that refer to the exploded columns should be done here
-                let mut local_predicates =
-                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-
-                // if any predicate is a pushdown boundary, thus influenced by order of predicates e.g.: sum(), over(), sort
-                // we do all here. #5950
-                if acc_predicates.values().chain(local_predicates.iter()).any(|node| predicate_is_pushdown_boundary(*node, expr_arena)) {
-                    local_predicates.extend(acc_predicates.drain().map(|(_name, node)| node))
-                }
-
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                let lp = Explode { input, columns, schema };
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-            }
             Distinct {
                 input,
                 options
             } => {
-                // currently the distinct operation only keeps the first occurrences.
-                // this may have influence on the pushed down predicates. If the pushed down predicates
-                // contain a binary expression (thus depending on values in multiple columns)
-                // the final result may differ if it is pushed down.
 
-                let mut root_count = 0;
+                if matches!(options.keep_strategy, UniqueKeepStrategy::Any | UniqueKeepStrategy::None) {
+                    // currently the distinct operation only keeps the first occurrences.
+                    // this may have influence on the pushed down predicates. If the pushed down predicates
+                    // contain a binary expression (thus depending on values in multiple columns)
+                    // the final result may differ if it is pushed down.
 
-                // if this condition is called more than once, its a binary or ternary operation.
-                let condition = |_| {
-                    if root_count == 0 {
-                        root_count += 1;
-                        false
-                    } else {
-                        true
-                    }
-                };
-                let mut local_predicates =
-                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-                local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
+                    let mut root_count = 0;
 
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                let lp = Distinct {
-                    input,
-                    options
-                };
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                    // if this condition is called more than once, its a binary or ternary operation.
+                    let condition = |_| {
+                        if root_count == 0 {
+                            root_count += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    };
+                    let mut local_predicates =
+                        transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
+                    local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
+
+                    self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+                    let lp = Distinct {
+                        input,
+                        options
+                    };
+                    Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                } else {
+                    let lp = Distinct {
+                        input,
+                        options
+                    };
+                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+                }
             }
             Join {
                 input_left,
@@ -441,11 +406,26 @@ impl PredicatePushDown {
 
                 for (_, predicate) in acc_predicates {
                     // unique and duplicated can be caused by joins
-                    let matches =
-                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsDuplicated | FunctionExpr::IsUnique, ..});
+                    #[cfg(feature = "is_unique")]
+                    let matches = {
+                        |e: &AExpr| matches!(e, AExpr::Function{
+                            function: FunctionExpr::Boolean(BooleanFunction::IsDuplicated)
+                                | FunctionExpr::Boolean(BooleanFunction::IsUnique),
+                            ..
+                        })
+                    };
+                    #[cfg(not(feature = "is_unique"))]
+                        let matches = {
+                        |_e: &AExpr| false
+                    };
+
 
                     let checks_nulls =
-                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsNotNull | FunctionExpr::IsNull, ..} ) ||
+                        |e: &AExpr| matches!(e, AExpr::Function{
+                            function: FunctionExpr::Boolean(BooleanFunction::IsNotNull)
+                                | FunctionExpr::Boolean(BooleanFunction::IsNull),
+                            ..
+                        }) ||
                             // any operation that checks for equality or ordering can be wrong because
                             // the join can produce null values
                             matches!(e, AExpr::BinaryExpr {op, ..} if !matches!(op, Operator::NotEq));
@@ -532,7 +512,48 @@ impl PredicatePushDown {
                             )?;
                             let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
                             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-                        }, _ => {
+                        },
+                        FunctionNode::Explode {columns, ..} => {
+
+                            let condition = |name: Arc<str>| columns.iter().any(|s| s.as_ref() == &*name);
+
+                            // first columns that refer to the exploded columns should be done here
+                            let mut local_predicates =
+                                transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
+
+                            // if any predicate is a pushdown boundary, thus influenced by order of predicates e.g.: sum(), over(), sort
+                            // we do all here. #5950
+                            if acc_predicates.values().chain(local_predicates.iter()).any(|node| predicate_is_pushdown_boundary(*node, expr_arena)) {
+                                local_predicates.extend(acc_predicates.drain().map(|(_name, node)| node))
+                            }
+
+                            let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                            Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+
+                        }
+                        FunctionNode::Melt {
+                            args,
+                            ..
+                        } => {
+
+                            let variable_name = args.variable_name.as_deref().unwrap_or("variable");
+                            let value_name = args.value_name.as_deref().unwrap_or("value");
+
+                            // predicates that will be done at this level
+                            let condition = |name: Arc<str>| {
+                                let name = &*name;
+                                name == variable_name
+                                    || name == value_name
+                                    || args.value_vars.iter().any(|s| s.as_str() == name)
+                            };
+                            let local_predicates =
+                                transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
+
+                            let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                            Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+
+                        }
+                        _ => {
                             self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                         }
                     }
@@ -557,8 +578,22 @@ impl PredicatePushDown {
                 let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
+            lp @ Sort{..} => {
+                let mut local_predicates = vec![];
+                acc_predicates.retain(|_, predicate| {
+                    if predicate_is_sort_boundary(*predicate, expr_arena) {
+                        local_predicates.push(*predicate);
+                        false
+                    } else {
+                        true
+                    }
+                });
+                let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+
+            }
             // Pushed down passed these nodes
-            lp @ Sort { .. } |lp @ FileSink {..} => {
+            lp@ FileSink {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {
@@ -579,6 +614,13 @@ impl PredicatePushDown {
                     let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
                     if let Some(predicate) = predicate {
+                        // simplify expressions before we translate them to pyarrow
+                        let lp = PythonScan {options: options.clone(), predicate: Some(predicate)};
+                        let lp_top = lp_arena.add(lp);
+                        let stack_opt = StackOptimizer{};
+                        let lp_top = stack_opt.optimize_loop(&mut [Box::new(SimplifyExprRule{})], expr_arena, lp_arena, lp_top).unwrap();
+                        let PythonScan {options: _, predicate: Some(predicate)} = lp_arena.take(lp_top) else {unreachable!()};
+
                         match super::super::pyarrow::predicate_to_pa(predicate, expr_arena) {
                             // we we able to create a pyarrow string, mutate the options
                             Some(eval_str) => {

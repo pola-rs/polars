@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import sys
 import typing
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -12,7 +13,80 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
+from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.utils._construction import type_hints
+
+if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
+
+
+# -----------------------------------------------------------------------------------
+# nested dataclasses, models, namedtuple classes (can't be defined inside test func)
+# -----------------------------------------------------------------------------------
+@dataclasses.dataclass
+class _TestBazDC:
+    d: datetime
+    e: float
+    f: str
+
+
+@dataclasses.dataclass
+class _TestBarDC:
+    a: str
+    b: int
+    c: _TestBazDC
+
+
+@dataclasses.dataclass
+class _TestFooDC:
+    x: int
+    y: _TestBarDC
+
+
+class _TestBazPD(pydantic.BaseModel):
+    d: datetime
+    e: float
+    f: str
+
+
+class _TestBarPD(pydantic.BaseModel):
+    a: str
+    b: int
+    c: _TestBazPD
+
+
+class _TestFooPD(pydantic.BaseModel):
+    x: int
+    y: _TestBarPD
+
+
+class _TestBazNT(NamedTuple):
+    d: datetime
+    e: float
+    f: str
+
+
+class _TestBarNT(NamedTuple):
+    a: str
+    b: int
+    c: _TestBazNT
+
+
+class _TestFooNT(NamedTuple):
+    x: int
+    y: _TestBarNT
+
+
+# --------------------------------------------------------------------------------
 
 
 def test_init_dict() -> None:
@@ -32,9 +106,9 @@ def test_init_dict() -> None:
         assert df.shape == (0, 2)
         assert df.schema == {"a": pl.Date, "b": pl.Utf8}
 
-    # List of empty list/tuple
-    df = pl.DataFrame({"a": [[]], "b": [()]})
-    expected = {"a": pl.List(pl.Float64), "b": pl.List(pl.Float64)}
+    # List of empty list
+    df = pl.DataFrame({"a": [[]], "b": [[]]})
+    expected = {"a": pl.List(pl.Null), "b": pl.List(pl.Null)}
     assert df.schema == expected
     assert df.rows() == [([], [])]
 
@@ -93,7 +167,7 @@ def test_init_dict() -> None:
     )
     assert df.schema == {"c": pl.Int8, "d": pl.Int16}
 
-    dfe = df.cleared()
+    dfe = df.clear()
     assert df.schema == dfe.schema
     assert len(dfe) == 0
 
@@ -104,16 +178,22 @@ def test_init_dict() -> None:
         assert df.to_dict(False)["field"][0] == test[0]["field"]
 
 
-def test_init_dataclasses_and_namedtuple() -> None:
-    from dataclasses import dataclass
-    from typing import NamedTuple
+def test_init_structured_objects(monkeypatch: Any) -> None:
+    # validate init from dataclass, namedtuple, and pydantic model objects
+    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
 
-    @dataclass
+    @dataclasses.dataclass
     class TradeDC:
         timestamp: datetime
         ticker: str
         price: Decimal
         size: int | None = None
+
+    class TradePD(pydantic.BaseModel):
+        timestamp: datetime
+        ticker: str
+        price: Decimal
+        size: int
 
     class TradeNT(NamedTuple):
         timestamp: datetime
@@ -126,16 +206,17 @@ def test_init_dataclasses_and_namedtuple() -> None:
         (datetime(2022, 9, 9, 10, 15, 12), "FLSY", Decimal("10.0"), 1500),
         (datetime(2022, 9, 7, 15, 30), "MU", Decimal("55.5"), 400),
     ]
+    columns = ["timestamp", "ticker", "price", "size"]
 
-    for TradeClass in (TradeDC, TradeNT):
-        trades = [TradeClass(*values) for values in raw_data]
+    for TradeClass in (TradeDC, TradeNT, TradePD):
+        trades = [TradeClass(**dict(zip(columns, values))) for values in raw_data]
 
         for DF in (pl.DataFrame, pl.from_records):
             df = DF(data=trades)  # type: ignore[operator]
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
                 "ticker": pl.Utf8,
-                "price": pl.Float64,
+                "price": pl.Decimal(None, 1),
                 "size": pl.Int64,
             }
             assert df.rows() == raw_data
@@ -148,7 +229,7 @@ def test_init_dataclasses_and_namedtuple() -> None:
             assert df.schema == {
                 "timestamp": pl.Datetime("ms"),
                 "ticker": pl.Utf8,
-                "price": pl.Float64,
+                "price": pl.Decimal(None, 1),
                 "size": pl.Int32,
             }
 
@@ -158,17 +239,176 @@ def test_init_dataclasses_and_namedtuple() -> None:
             schema=[
                 ("ts", pl.Datetime("ms")),
                 ("tk", pl.Categorical),
-                ("pc", pl.Float32),
+                ("pc", pl.Decimal(None, 1)),
                 ("sz", pl.UInt16),
             ],
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
             "tk": pl.Categorical,
-            "pc": pl.Float32,
+            "pc": pl.Decimal(None, 1),
             "sz": pl.UInt16,
         }
         assert df.rows() == raw_data
+
+        # cover a miscellaneous edge-case when detecting the annotations
+        assert type_hints(obj=type(None)) == {}
+
+
+def test_init_structured_objects_unhashable() -> None:
+    # cover an edge-case with namedtuple fields that aren't hashable
+
+    class Test(NamedTuple):
+        dt: datetime
+        info: dict[str, int]
+
+    test_data = [
+        Test(datetime(2017, 1, 1), {"a": 1, "b": 2}),
+        Test(datetime(2017, 1, 2), {"a": 2, "b": 2}),
+    ]
+    df = pl.DataFrame(test_data)
+    # shape: (2, 2)
+    # ┌─────────────────────┬───────────┐
+    # │ dt                  ┆ info      │
+    # │ ---                 ┆ ---       │
+    # │ datetime[μs]        ┆ struct[2] │
+    # ╞═════════════════════╪═══════════╡
+    # │ 2017-01-01 00:00:00 ┆ {1,2}     │
+    # │ 2017-01-02 00:00:00 ┆ {2,2}     │
+    # └─────────────────────┴───────────┘
+    assert df.schema == {
+        "dt": pl.Datetime(time_unit="us", time_zone=None),
+        "info": pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Int64)]),
+    }
+    assert df.rows() == test_data
+
+
+def test_init_structured_objects_nested() -> None:
+    for Foo, Bar, Baz in (
+        (_TestFooDC, _TestBarDC, _TestBazDC),
+        (_TestFooPD, _TestBarPD, _TestBazPD),
+        (_TestFooNT, _TestBarNT, _TestBazNT),
+    ):
+        data = [
+            Foo(
+                x=100,
+                y=Bar(
+                    a="hello",
+                    b=800,
+                    c=Baz(d=datetime(2023, 4, 12, 10, 30), e=-10.5, f="world"),
+                ),
+            )
+        ]
+        df = pl.DataFrame(data)
+        # shape: (1, 2)
+        # ┌─────┬───────────────────────────────────┐
+        # │ x   ┆ y                                 │
+        # │ --- ┆ ---                               │
+        # │ i64 ┆ struct[3]                         │
+        # ╞═════╪═══════════════════════════════════╡
+        # │ 100 ┆ {"hello",800,{2023-04-12 10:30:0… │
+        # └─────┴───────────────────────────────────┘
+
+        assert df.schema == {
+            "x": pl.Int64,
+            "y": pl.Struct(
+                [
+                    pl.Field("a", pl.Utf8),
+                    pl.Field("b", pl.Int64),
+                    pl.Field(
+                        "c",
+                        pl.Struct(
+                            [
+                                pl.Field("d", pl.Datetime("us")),
+                                pl.Field("e", pl.Float64),
+                                pl.Field("f", pl.Utf8),
+                            ]
+                        ),
+                    ),
+                ]
+            ),
+        }
+        assert df.row(0) == (
+            100,
+            {
+                "a": "hello",
+                "b": 800,
+                "c": {
+                    "d": datetime(2023, 4, 12, 10, 30),
+                    "e": -10.5,
+                    "f": "world",
+                },
+            },
+        )
+
+        # validate nested schema override
+        override_struct_schema: dict[str, PolarsDataType] = {
+            "x": pl.Int16,
+            "y": pl.Struct(
+                [
+                    pl.Field("a", pl.Utf8),
+                    pl.Field("b", pl.Int32),
+                    pl.Field(
+                        name="c",
+                        dtype=pl.Struct(
+                            [
+                                pl.Field("d", pl.Datetime("ms")),
+                                pl.Field("e", pl.Float32),
+                                pl.Field("f", pl.Utf8),
+                            ]
+                        ),
+                    ),
+                ]
+            ),
+        }
+        for schema, schema_overrides in (
+            (None, override_struct_schema),
+            (override_struct_schema, None),
+        ):
+            df = (
+                pl.DataFrame(data, schema=schema, schema_overrides=schema_overrides)
+                .unnest("y")
+                .unnest("c")
+            )
+            # shape: (1, 6)
+            # ┌─────┬───────┬─────┬─────────────────────┬───────┬───────┐
+            # │ x   ┆ a     ┆ b   ┆ d                   ┆ e     ┆ f     │
+            # │ --- ┆ ---   ┆ --- ┆ ---                 ┆ ---   ┆ ---   │
+            # │ i16 ┆ str   ┆ i32 ┆ datetime[ms]        ┆ f32   ┆ str   │
+            # ╞═════╪═══════╪═════╪═════════════════════╪═══════╪═══════╡
+            # │ 100 ┆ hello ┆ 800 ┆ 2023-04-12 10:30:00 ┆ -10.5 ┆ world │
+            # └─────┴───────┴─────┴─────────────────────┴───────┴───────┘
+            assert df.schema == {
+                "x": pl.Int16,
+                "a": pl.Utf8,
+                "b": pl.Int32,
+                "d": pl.Datetime("ms"),
+                "e": pl.Float32,
+                "f": pl.Utf8,
+            }
+            assert df.row(0) == (
+                100,
+                "hello",
+                800,
+                datetime(2023, 4, 12, 10, 30),
+                -10.5,
+                "world",
+            )
+
+
+def test_dataclasses_initvar_typing() -> None:
+    @dataclasses.dataclass
+    class ABC:
+        x: date
+        y: float
+        z: dataclasses.InitVar[list[str]] = None
+
+    # should be able to parse the initvar typing...
+    abc = ABC(x=date(1999, 12, 31), y=100.0)
+    df = pl.DataFrame([abc])
+
+    # ...but should not load the initvar field into the DataFrame
+    assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:
@@ -259,9 +499,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
         _ = pl.DataFrame(np.array([[1, 2], [3, 4]]), schema=["a"])
 
     # NumPy not available
-    monkeypatch.setattr(
-        pl.internals.dataframe.frame, "_check_for_numpy", lambda x: False
-    )
+    monkeypatch.setattr(pl.dataframe.frame, "_check_for_numpy", lambda x: False)
     with pytest.raises(ValueError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
@@ -430,6 +668,30 @@ def test_init_1d_sequence() -> None:
     # String sequence
     assert pl.DataFrame("abc", schema=["s"]).to_dict(False) == {"s": ["a", "b", "c"]}
 
+    # datetimes sequence
+    df = pl.DataFrame([datetime(2020, 1, 1)], schema={"ts": pl.Datetime("ms")})
+    assert df.schema == {"ts": pl.Datetime("ms")}
+    df = pl.DataFrame(
+        [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
+    )
+    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
+    with pytest.warns(
+        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
+    ):
+        df = pl.DataFrame(
+            [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
+            schema={"ts": pl.Datetime("ms")},
+        )
+    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
+    with pytest.warns(
+        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
+    ):
+        df = pl.DataFrame(
+            [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
+            schema={"ts": pl.Datetime("ms")},
+        )
+    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
+
 
 def test_init_pandas(monkeypatch: Any) -> None:
     pandas_df = pd.DataFrame([[1, 2], [3, 4]], columns=[1, 2])
@@ -475,9 +737,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.rows() == [(datetime(2022, 10, 31, 10, 30, 45, 123456),)]
 
     # pandas is not available
-    monkeypatch.setattr(
-        pl.internals.dataframe.frame, "_check_for_pandas", lambda x: False
-    )
+    monkeypatch.setattr(pl.dataframe.frame, "_check_for_pandas", lambda x: False)
     with pytest.raises(ValueError):
         pl.DataFrame(pandas_df)
 
@@ -524,22 +784,23 @@ def test_init_records_schema_order() -> None:
     ]
     lookup = {"a": 1, "b": 2, "c": 3, "d": 4, "e": None}
 
-    # ensure field values are loaded according to the declared schema order
-    for _ in range(8):
-        shuffle(data)
-        shuffle(cols)
+    for constructor in (pl.from_dicts, pl.DataFrame):
+        # ensure field values are loaded according to the declared schema order
+        for _ in range(8):
+            shuffle(data)
+            shuffle(cols)
 
-        df = pl.from_dicts(dicts=data, schema=cols)
+            df = constructor(data, schema=cols)  # type: ignore[operator]
+            for col in df.columns:
+                assert all(value in (None, lookup[col]) for value in df[col].to_list())
+
+        # have schema override inferred types, omit some columns, add a new one
+        schema = {"a": pl.Int8, "c": pl.Int16, "e": pl.Int32}
+        df = constructor(data, schema=schema)  # type: ignore[operator]
+
+        assert df.schema == schema
         for col in df.columns:
             assert all(value in (None, lookup[col]) for value in df[col].to_list())
-
-    # have schema override inferred types, omit some columns, add a new one
-    schema = {"a": pl.Int8, "c": pl.Int16, "e": pl.Int32}
-    df = pl.from_dicts(dicts=data, schema=schema)
-
-    assert df.schema == schema
-    for col in df.columns:
-        assert all(value in (None, lookup[col]) for value in df[col].to_list())
 
 
 def test_init_only_columns() -> None:
@@ -571,9 +832,9 @@ def test_init_only_columns() -> None:
         assert df.shape == (0, 4)
         assert_frame_equal(df, expected)
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
-        assert df.schema["d"].inner == pl.UInt8  # type: ignore[union-attr]
+        assert pl.List(pl.UInt8).is_(df.schema["d"])
 
-        dfe = df.cleared()
+        dfe = df.clear()
         assert len(dfe) == 0
         assert df.schema == dfe.schema
         assert dfe.shape == df.shape
@@ -618,7 +879,9 @@ def test_upcast_primitive_and_strings() -> None:
     assert pl.Series([1, 1.0, "1.0"]).dtype == pl.Utf8
     assert pl.Series([True, 1]).dtype == pl.Int64
     assert pl.Series([True, 1.0]).dtype == pl.Float64
-    assert pl.Series([True, "1.0"]).dtype == pl.Utf8
+    assert pl.Series([True, 1], dtype=pl.Boolean).dtype == pl.Boolean
+    assert pl.Series([False, 1.0], dtype=pl.Boolean).dtype == pl.Boolean
+    assert pl.Series([False, "1.0"]).dtype == pl.Utf8
     assert pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]}).dtypes == [
         pl.Float64,
         pl.Float64,
@@ -824,3 +1087,168 @@ def test_from_categorical_in_struct_defined_by_schema() -> None:
     out = df.unnest("a")
     assert out.schema == {"value": pl.Categorical, "counts": pl.UInt32}
     assert out.to_dict(False) == {"value": ["foo", "bar"], "counts": [1, 2]}
+
+
+def test_nested_schema_construction() -> None:
+    schema = {
+        "node_groups": pl.List(
+            pl.Struct(
+                [
+                    pl.Field("parent_node_group_id", pl.UInt8),
+                    pl.Field(
+                        "nodes",
+                        pl.List(
+                            pl.Struct(
+                                [
+                                    pl.Field("name", pl.Utf8),
+                                    pl.Field(
+                                        "sub_nodes",
+                                        pl.List(
+                                            pl.Struct(
+                                                [
+                                                    pl.Field("internal_id", pl.UInt64),
+                                                    pl.Field("value", pl.UInt32),
+                                                ]
+                                            )
+                                        ),
+                                    ),
+                                ]
+                            )
+                        ),
+                    ),
+                ]
+            )
+        )
+    }
+    df = pl.DataFrame(
+        {
+            "node_groups": [
+                [{"nodes": []}, {"nodes": [{"name": "", "sub_nodes": []}]}],
+            ]
+        },
+        schema=schema,
+    )
+    assert df.schema == schema
+    assert df.to_dict(False) == {
+        "node_groups": [
+            [
+                {"parent_node_group_id": None, "nodes": []},
+                {
+                    "parent_node_group_id": None,
+                    "nodes": [{"name": "", "sub_nodes": []}],
+                },
+            ]
+        ]
+    }
+
+    schema = {
+        "node_groups": pl.List(
+            pl.Struct(
+                [
+                    pl.Field(
+                        "nodes",
+                        pl.List(
+                            pl.Struct(
+                                [pl.Field("name", pl.Utf8), pl.Field("time", pl.UInt32)]
+                            )
+                        ),
+                    )
+                ]
+            )
+        )
+    }
+    df = pl.DataFrame(
+        [
+            {"node_groups": [{"nodes": [{"name": "a", "time": 0}]}]},
+            {"node_groups": [{"nodes": []}]},
+        ],
+        schema=schema,
+    )
+    assert df.schema == schema
+    assert df.to_dict(False) == {
+        "node_groups": [[{"nodes": [{"name": "a", "time": 0}]}], [{"nodes": []}]]
+    }
+
+
+def test_arrow_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
+    from polars.utils._construction import arrow_to_pyseries
+
+    original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
+    pyseries = arrow_to_pyseries("", original_array)
+    assert (
+        pyseries.get_chunks()[0]._get_ptr()
+        == original_array.chunks[0].buffers()[1].address
+    )
+
+
+def test_init_with_explicit_binary_schema() -> None:
+    df = pl.DataFrame({"a": [b"hello", b"world"]}, schema={"a": pl.Binary})
+    assert df.schema == {"a": pl.Binary}
+    assert df["a"].to_list() == [b"hello", b"world"]
+
+    s = pl.Series("a", [b"hello", b"world"], dtype=pl.Binary)
+    assert s.dtype == pl.Binary
+    assert s.to_list() == [b"hello", b"world"]
+
+
+def test_nested_categorical() -> None:
+    s = pl.Series([["a"]], dtype=pl.List(pl.Categorical))
+    assert s.to_list() == [["a"]]
+    assert s.dtype == pl.List(pl.Categorical)
+
+
+def test_datetime_date_subclasses() -> None:
+    class FakeDate(date):
+        ...
+
+    class FakeDatetime(FakeDate, datetime):
+        ...
+
+    result = pl.Series([FakeDatetime(2020, 1, 1, 3)])
+    expected = pl.Series([datetime(2020, 1, 1, 3)])
+    assert_series_equal(result, expected)
+    result = pl.Series([FakeDate(2020, 1, 1)])
+    expected = pl.Series([date(2020, 1, 1)])
+    assert_series_equal(result, expected)
+
+
+def test_list_null_constructor() -> None:
+    s = pl.Series("a", [[None], [None]], dtype=pl.List(pl.Null))
+    assert s.dtype == pl.List(pl.Null)
+    assert s.to_list() == [None, None]
+
+    # nested
+    dtype = pl.List(pl.List(pl.Int8))
+    values = [
+        [],
+        [[], []],
+        [[33, 112]],
+    ]
+    s = pl.Series(
+        name="colx",
+        values=values,
+        dtype=dtype,
+    )
+    assert s.dtype == dtype
+    assert s.to_list() == values
+
+    # nested
+    # small order change has influence
+    dtype = pl.List(pl.List(pl.Int8))
+    values = [
+        [[], []],
+        [],
+        [[33, 112]],
+    ]
+    s = pl.Series(
+        name="colx",
+        values=values,
+        dtype=dtype,
+    )
+    assert s.dtype == dtype
+    assert s.to_list() == values
+
+
+def test_numpy_float_construction_av() -> None:
+    np_dict = {"a": np.float64(1)}
+    assert_frame_equal(pl.DataFrame(np_dict), pl.DataFrame({"a": 1.0}))

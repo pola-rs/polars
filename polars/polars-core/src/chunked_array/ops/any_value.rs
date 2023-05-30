@@ -1,7 +1,3 @@
-use std::convert::TryFrom;
-
-#[cfg(feature = "dtype-categorical")]
-use polars_arrow::is_valid::IsValid;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 
@@ -34,10 +30,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             arr.value_unchecked(idx)
         }};
     }
-    // TODO: insert types
     match dtype {
         DataType::Utf8 => downcast_and_pack!(LargeStringArray, Utf8),
-        #[cfg(feature = "dtype-binary")]
         DataType::Binary => downcast_and_pack!(LargeBinaryArray, Binary),
         DataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
         DataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
@@ -52,24 +46,28 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray);
-            let mut s = Series::try_from(("", v)).unwrap();
-
-            match &**dt {
-                #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(Some(rev_map)) => {
-                    let cats = s.u32().unwrap().clone();
-                    let out =
-                        CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.clone());
-                    s = out.into_series();
-                }
-                DataType::Date
-                | DataType::Datetime(_, _)
-                | DataType::Time
-                | DataType::Duration(_) => s = s.cast(dt).unwrap(),
-                _ => {}
+            if dt.is_primitive() {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], dt);
+                AnyValue::List(s)
+            } else {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], &dt.to_physical())
+                    .cast_unchecked(dt)
+                    .unwrap();
+                AnyValue::List(s)
             }
-
-            AnyValue::List(s)
+        }
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(dt, width) => {
+            let v: ArrayRef = downcast!(FixedSizeListArray);
+            if dt.is_primitive() {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], dt);
+                AnyValue::Array(s, *width)
+            } else {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], &dt.to_physical())
+                    .cast_unchecked(dt)
+                    .unwrap();
+                AnyValue::Array(s, *width)
+            }
         }
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(rev_map) => {
@@ -106,6 +104,12 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             let v = arr.value_unchecked(idx);
             AnyValue::Time(v)
         }
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) => {
+            let arr = &*(arr as *const dyn Array as *const Int128Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Decimal(v, scale.unwrap_or_else(|| unreachable!()))
+        }
         #[cfg(feature = "object")]
         DataType::Object(_) => {
             // We should almost never hit this. The only known exception is when we put objects in
@@ -130,6 +134,7 @@ impl<'a> AnyValue<'a> {
                         // so we set the array pointer with values of the dictionary array.
                         #[cfg(feature = "dtype-categorical")]
                         {
+                            use polars_arrow::is_valid::{IsValid as _};
                             if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
                                 let keys = arr.keys();
                                 let values = arr.values();
@@ -183,14 +188,10 @@ macro_rules! get_any_value {
     ($self:ident, $index:expr) => {{
         let (chunk_idx, idx) = $self.index_to_chunked_index($index);
         let arr = &*$self.chunks[chunk_idx];
-
-        if idx < arr.len() {
-            // SAFETY
-            // bounds are checked
-            Ok(unsafe { arr_to_any_value(arr, idx, $self.dtype()) })
-        } else {
-            Err(PolarsError::ComputeError("index is out of bounds".into()))
-        }
+        polars_ensure!(idx < arr.len(), oob = idx, arr.len());
+        // SAFETY
+        // bounds are checked
+        Ok(unsafe { arr_to_any_value(arr, idx, $self.dtype()) })
     }};
 }
 
@@ -230,7 +231,6 @@ impl ChunkAnyValue for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkAnyValue for BinaryChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
@@ -253,6 +253,18 @@ impl ChunkAnyValue for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+impl ChunkAnyValue for ArrayChunked {
+    #[inline]
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+        get_any_value_unchecked!(self, index)
+    }
+
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+        get_any_value!(self, index)
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {
     #[inline]
@@ -265,7 +277,7 @@ impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {
 
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
         match self.get_object(index) {
-            None => Err(PolarsError::ComputeError("index is out of bounds".into())),
+            None => Err(polars_err!(ComputeError: "index is out of bounds")),
             Some(v) => Ok(AnyValue::Object(v)),
         }
     }

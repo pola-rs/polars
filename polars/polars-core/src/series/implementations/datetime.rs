@@ -6,7 +6,6 @@ use ahash::RandomState;
 use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::*;
 use crate::prelude::*;
@@ -133,9 +132,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             }
-            (dtl, dtr) => Err(PolarsError::ComputeError(
-                format!("cannot do subtraction on these date types: {dtl:?}, {dtr:?}",).into(),
-            )),
+            (dtl, dtr) => polars_bail!(opq = sub, dtl, dtr),
         }
     }
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -149,40 +146,32 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             }
-            (dtl, dtr) => Err(PolarsError::ComputeError(
-                format!("cannot do addition on these date types: {dtl:?}, {dtr:?}",).into(),
-            )),
+            (dtl, dtr) => polars_bail!(opq = add, dtl, dtr),
         }
     }
-    fn multiply(&self, _rhs: &Series) -> PolarsResult<Series> {
-        Err(PolarsError::ComputeError(
-            "cannot do multiplication on logical".into(),
-        ))
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+        polars_bail!(opq = mul, self.dtype(), rhs.dtype());
     }
-    fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
-        Err(PolarsError::ComputeError(
-            "Cannot divide Series of dtype: 'Datetime'.".into(),
-        ))
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+        polars_bail!(opq = div, self.dtype(), rhs.dtype());
     }
-    fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
-        Err(PolarsError::ComputeError(
-            "cannot do remainder operation on logical".into(),
-        ))
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        polars_bail!(opq = rem, self.dtype(), rhs.dtype());
     }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }
-    #[cfg(feature = "sort_multiple")]
-    fn arg_sort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.deref().arg_sort_multiple(by, reverse)
+
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        self.0.deref().arg_sort_multiple(options)
     }
 }
 
 impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn is_sorted_flag(&self) -> IsSorted {
-        if self.0.is_sorted_flag() {
+        if self.0.is_sorted_ascending_flag() {
             IsSorted::Ascending
-        } else if self.0.is_sorted_reverse_flag() {
+        } else if self.0.is_sorted_descending_flag() {
             IsSorted::Descending
         } else {
             IsSorted::Not
@@ -224,27 +213,17 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            let other = other.to_physical_repr();
-            self.0.append(other.as_ref().as_ref().as_ref());
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot append Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        let other = other.to_physical_repr();
+        self.0.append(other.as_ref().as_ref().as_ref());
+        Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            let other = other.to_physical_repr();
-            self.0.extend(other.as_ref().as_ref().as_ref());
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot extend Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), extend);
+        let other = other.to_physical_repr();
+        self.0.extend(other.as_ref().as_ref().as_ref());
+        Ok(())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
@@ -282,13 +261,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         })
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        self.0
-            .take_every(n)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
         ChunkTake::take_unchecked(self.0.deref(), iter.into())
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
@@ -298,8 +270,10 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
         let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
 
-        if self.0.is_sorted_flag() && (idx.is_sorted_flag() || idx.is_sorted_reverse_flag()) {
-            out.set_sorted_flag(idx.is_sorted_flag2())
+        if self.0.is_sorted_ascending_flag()
+            && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
+        {
+            out.set_sorted_flag(idx.is_sorted_flag())
         }
 
         Ok(out
@@ -342,13 +316,13 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match (data_type, self.0.time_unit()) {
             (DataType::Utf8, TimeUnit::Milliseconds) => {
-                Ok(self.0.strftime("%F %T%.3f")?.into_series())
+                Ok(self.0.to_string("%F %T%.3f")?.into_series())
             }
             (DataType::Utf8, TimeUnit::Microseconds) => {
-                Ok(self.0.strftime("%F %T%.6f")?.into_series())
+                Ok(self.0.to_string("%F %T%.6f")?.into_series())
             }
             (DataType::Utf8, TimeUnit::Nanoseconds) => {
-                Ok(self.0.strftime("%F %T%.9f")?.into_series())
+                Ok(self.0.to_string("%F %T%.9f")?.into_series())
             }
             _ => self.0.cast(data_type),
         }
@@ -404,14 +378,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn is_not_null(&self) -> BooleanChunked {
         self.0.is_not_null()
-    }
-
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        self.0.is_unique()
-    }
-
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        self.0.is_duplicated()
     }
 
     fn reverse(&self) -> Series {
@@ -472,10 +438,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .unwrap())
     }
 
-    fn fmt_list(&self) -> String {
-        FmtList::fmt_list(&self.0)
-    }
-
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
@@ -492,9 +454,10 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.is_in(other)
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
-        self.0
-            .repeat_by(by)
+    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
+        Ok(self
+            .0
+            .repeat_by(by)?
             .cast(&DataType::List(Box::new(DataType::Datetime(
                 self.0.time_unit(),
                 self.0.time_zone().clone(),
@@ -502,7 +465,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .unwrap()
             .list()
             .unwrap()
-            .clone()
+            .clone())
     }
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Series> {

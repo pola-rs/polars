@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -9,9 +8,10 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing._tempdir import TemporaryDirectory
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import AvroCompression
+    from polars.type_aliases import AvroCompression
 
 COMPRESSIONS = ["uncompressed", "snappy", "deflate"]
 
@@ -31,9 +31,10 @@ def test_from_to_buffer(example_df: pl.DataFrame, compression: AvroCompression) 
     assert_frame_equal(example_df, read_df)
 
 
+@pytest.mark.write_disk()
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_from_to_file(example_df: pl.DataFrame, compression: AvroCompression) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.avro"
         example_df.write_avro(file_path, compression=compression)
         df_read = pl.read_avro(file_path)

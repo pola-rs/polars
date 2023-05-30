@@ -139,11 +139,7 @@ print('out["largest2_v3"].sum()', out["largest2_v3"].sum())
 
 t0 = time.time()
 print("q9")
-out = (
-    x.groupby(["id2", "id4"])
-    .agg((pl.pearson_corr("v1", "v2") ** 2).alias("r2"))
-    .collect()
-)
+out = x.groupby(["id2", "id4"]).agg((pl.corr("v1", "v2") ** 2).alias("r2")).collect()
 print(time.time() - t0)
 print("out.shape", out.shape)
 print('out["r2"].sum()', out["r2"].sum())
@@ -261,7 +257,7 @@ t0 = time.time()
 print("q8")
 out = (
     x.drop_nulls("v3")
-    .sort("v3", reverse=True)
+    .sort("v3", descending=True)
     .groupby("id6")
     .agg(pl.col("v3").head(2).alias("largest2_v3"))
     .explode("largest2_v3")
@@ -273,11 +269,7 @@ assert np.isclose(out["largest2_v3"].sum(), 18700642.66837202)
 
 t0 = time.time()
 print("q9")
-out = (
-    x.groupby(["id2", "id4"])
-    .agg((pl.pearson_corr("v1", "v2") ** 2).alias("r2"))
-    .collect()
-)
+out = x.groupby(["id2", "id4"]).agg((pl.corr("v1", "v2") ** 2).alias("r2")).collect()
 print(time.time() - t0)
 assert out.shape == (9216, 3)
 assert np.isclose(out["r2"].sum(), 9.902706276948825)
@@ -301,7 +293,7 @@ assert out.shape == (9999995, 8)
 # but it triggers other code paths so the checksums assertion
 # are a sort of integration tests
 out = (
-    x.filter(pl.col("id1") == pl.lit("id046"))
+    x.filter(pl.col("id1").eq_missing(pl.lit("id046")))
     .select([pl.sum("id6"), pl.sum("v3")])
     .collect()
 )
@@ -310,7 +302,7 @@ assert np.isclose(out["v3"].to_list(), 4.724150165888001e6).all()
 print(out)
 
 out = (
-    x.filter(~(pl.col("id1") == pl.lit("id046")))
+    x.filter(~(pl.col("id1").eq_missing(pl.lit("id046"))))
     .select([pl.sum("id6"), pl.sum("v3")])
     .collect()
 )

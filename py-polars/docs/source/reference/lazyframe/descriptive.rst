@@ -6,6 +6,5 @@ Descriptive
 .. autosummary::
    :toctree: api/
 
-    LazyFrame.describe_plan
-    LazyFrame.describe_optimized_plan
+    LazyFrame.explain
     LazyFrame.show_graph

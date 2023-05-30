@@ -1,31 +1,36 @@
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
-#[cfg(feature = "serde")]
+use rayon::prelude::*;
+#[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String as SmartString;
 
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::try_get_supertype;
+use crate::POOL;
 
 fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
-        _ => Err(PolarsError::InvalidOperation(
-            format!("cannot explode dtype: {:?}", series.dtype()).into(),
-        )),
+        _ => polars_bail!(opq = explode, series.dtype()),
     }
 }
 
 /// Arguments for `[DataFrame::melt]` function
-#[derive(Clone, Default, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Default, Debug, PartialEq)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct MeltArgs {
-    pub id_vars: Vec<String>,
-    pub value_vars: Vec<String>,
-    pub variable_name: Option<String>,
-    pub value_name: Option<String>,
+    pub id_vars: Vec<SmartString>,
+    pub value_vars: Vec<SmartString>,
+    pub variable_name: Option<SmartString>,
+    pub value_name: Option<SmartString>,
+    /// Whether the melt may be done
+    /// in the streaming engine
+    /// This will not have a stable ordering
+    pub streamable: bool,
 }
 
 impl DataFrame {
@@ -49,35 +54,60 @@ impl DataFrame {
             df = df.drop(s.name())?;
         }
 
-        for (i, s) in columns.iter().enumerate() {
-            // Safety:
-            // offsets don't have indices exceeding Series length.
-            if let Ok((exploded, offsets)) = get_exploded(s) {
-                let col_idx = self.check_name_to_idx(s.name())?;
+        let exploded_columns = POOL.install(|| {
+            columns
+                .par_iter()
+                .map(get_exploded)
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
 
-                // expand all the other columns based the exploded first column
-                if i == 0 {
-                    let row_idx = offsets_to_indexes(offsets.as_slice(), exploded.len());
-                    let mut row_idx = IdxCa::from_vec("", row_idx);
-                    row_idx.set_sorted_flag(IsSorted::Ascending);
-
-                    // Safety
-                    // We just created indices that are in bounds.
-                    df = unsafe { df.take_unchecked(&row_idx) };
-                }
-                if exploded.len() == df.height() || df.width() == 0 {
-                    df.columns.insert(col_idx, exploded);
-                } else {
-                    return Err(PolarsError::ShapeMisMatch(
-                        format!("The exploded column(s) don't have the same length. Length DataFrame: {}. Length exploded column {}: {}", df.height(), exploded.name(), exploded.len()).into(),
-                    ));
-                }
+        fn process_column(
+            original_df: &DataFrame,
+            df: &mut DataFrame,
+            exploded: Series,
+        ) -> PolarsResult<()> {
+            if exploded.len() == df.height() || df.width() == 0 {
+                let col_idx = original_df.check_name_to_idx(exploded.name())?;
+                df.columns.insert(col_idx, exploded);
             } else {
-                return Err(PolarsError::InvalidOperation(
-                    format!("cannot explode dtype: {:?}", s.dtype()).into(),
-                ));
+                polars_bail!(
+                    ShapeMismatch: "exploded column(s) {:?} doesn't have the same length: {} \
+                    as the dataframe: {}", exploded.name(), exploded.name(), df.height(),
+                );
             }
+            Ok(())
         }
+
+        let check_offsets = || {
+            let first_offsets = exploded_columns[0].1.as_slice();
+            for (_, offsets) in &exploded_columns[1..] {
+                polars_ensure!(first_offsets == offsets.as_slice(),
+                    ShapeMismatch: "exploded columns must have matching element counts"
+                )
+            }
+            Ok(())
+        };
+        let process_first = || {
+            let (exploded, offsets) = &exploded_columns[0];
+
+            let row_idx = offsets_to_indexes(offsets.as_slice(), exploded.len());
+            let mut row_idx = IdxCa::from_vec("", row_idx);
+            row_idx.set_sorted_flag(IsSorted::Ascending);
+
+            // Safety
+            // We just created indices that are in bounds.
+            let mut df = unsafe { df.take_unchecked(&row_idx) };
+            process_column(self, &mut df, exploded.clone())?;
+            PolarsResult::Ok(df)
+        };
+        let (df, result) = POOL.join(process_first, check_offsets);
+        let mut df = df?;
+        result?;
+
+        for (exploded, _) in exploded_columns.into_iter().skip(1) {
+            process_column(self, &mut df, exploded)?
+        }
+
         Ok(df)
     }
     /// Explode `DataFrame` to long format by exploding a column with Lists.
@@ -209,8 +239,8 @@ impl DataFrame {
     /// ```
     pub fn melt<I, J>(&self, id_vars: I, value_vars: J) -> PolarsResult<Self>
     where
-        I: IntoVec<String>,
-        J: IntoVec<String>,
+        I: IntoVec<SmartString>,
+        J: IntoVec<SmartString>,
     {
         let id_vars = id_vars.into_vec();
         let value_vars = value_vars.into_vec();
@@ -242,7 +272,7 @@ impl DataFrame {
                     if id_vars_set.contains(s.name()) {
                         None
                     } else {
-                        Some(s.name().to_string())
+                        Some(s.name().into())
                     }
                 })
                 .collect();
@@ -253,7 +283,7 @@ impl DataFrame {
         let mut iter = value_vars.iter().map(|v| {
             schema
                 .get(v)
-                .ok_or_else(|| PolarsError::ColumnNotFound(v.to_string().into()))
+                .ok_or_else(|| polars_err!(ColumnNotFound: "{}", v))
         });
         let mut st = iter.next().unwrap()?.clone();
         for dt in iter {
@@ -282,7 +312,11 @@ impl DataFrame {
 
         for value_column_name in &value_vars {
             variable_col.extend_trusted_len_values(std::iter::repeat(value_column_name).take(len));
-            let value_col = self.column(value_column_name)?.cast(&st)?;
+            // ensure we go via the schema so we are O(1)
+            // self.column() is linear
+            // together with this loop that would make it O^2 over value_vars
+            let (pos, _name, _dtype) = schema.try_get_full(value_column_name)?;
+            let value_col = self.columns[pos].cast(&st).unwrap();
             values.extend_from_slice(value_col.chunks())
         }
         let values_arr = concatenate_owned_unchecked(&values)?;
@@ -350,7 +384,7 @@ mod test {
     fn test_explode_df_empty_list() -> PolarsResult<()> {
         let s0 = Series::new("a", &[1, 2, 3]);
         let s1 = Series::new("b", &[1, 1, 1]);
-        let list = Series::new("foo", &[s0, s1.clone(), s1.slice(0, 0)]);
+        let list = Series::new("foo", &[s0, s1.clone(), s1.clear()]);
         let s0 = Series::new("B", [1, 2, 3]);
         let s1 = Series::new("C", [1, 1, 1]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
@@ -364,7 +398,7 @@ mod test {
 
         assert!(out.frame_equal_missing(&expected));
 
-        let list = Series::new("foo", &[s0.clone(), s1.slice(0, 0), s1.clone()]);
+        let list = Series::new("foo", [s0.clone(), s1.clear(), s1.clone()]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
         let out = df.explode(["foo"])?;
         let expected = df![
@@ -385,7 +419,7 @@ mod test {
         let list = Series::new("foo", &[s0, s1]);
         let df = DataFrame::new(vec![list])?;
 
-        let out = df.explode(&["foo"])?;
+        let out = df.explode(["foo"])?;
         let out = out
             .column("foo")?
             .i32()?
@@ -406,7 +440,7 @@ mod test {
         )
         .unwrap();
 
-        let melted = df.melt(&["A", "B"], &["C", "D"])?;
+        let melted = df.melt(["A", "B"], ["C", "D"])?;
         assert_eq!(
             Vec::from(melted.column("value")?.i32()?),
             &[Some(10), Some(11), Some(12), Some(2), Some(4), Some(6)]
@@ -415,8 +449,7 @@ mod test {
         let args = MeltArgs {
             id_vars: vec![],
             value_vars: vec![],
-            variable_name: None,
-            value_name: None,
+            ..Default::default()
         };
 
         let melted = df.melt2(args).unwrap();
@@ -432,8 +465,7 @@ mod test {
         let args = MeltArgs {
             id_vars: vec!["A".into()],
             value_vars: vec![],
-            variable_name: None,
-            value_name: None,
+            ..Default::default()
         };
 
         let melted = df.melt2(args).unwrap();

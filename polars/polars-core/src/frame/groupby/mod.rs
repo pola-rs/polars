@@ -2,25 +2,28 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use ahash::RandomState;
-use num::NumCast;
+use num_traits::NumCast;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
 use self::hashing::*;
+use crate::hashing::{get_null_hash_value, AsU64, BytesHash};
 use crate::prelude::*;
-use crate::utils::{_set_partition_size, _split_offsets, accumulate_dataframes_vertical};
-use crate::vector_hasher::{get_null_hash_value, AsU64, BytesHash};
+use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
 use crate::POOL;
 
 pub mod aggregations;
 pub mod expr;
 pub(crate) mod hashing;
 mod into_groups;
+mod perfect;
 mod proxy;
 
 pub use into_groups::*;
-use polars_arrow::array::ValueSize;
 pub use proxy::*;
+
+#[cfg(feature = "dtype-struct")]
+use crate::prelude::sort::arg_sort_multiple::encode_rows_vertical;
 
 // This will remove the sorted flag on signed integers
 fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
@@ -53,119 +56,41 @@ impl DataFrame {
         multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupBy> {
-        if by.is_empty() {
-            return Err(PolarsError::ComputeError(
-                "expected keys in groupby operation, got nothing".into(),
-            ));
-        }
-
-        macro_rules! finish_packed_bit_path {
-            ($ca0:expr, $ca1:expr, $pack_fn:expr) => {{
-                let n_partitions = _set_partition_size();
-
-                // we split so that we can prepare the data over multiple threads.
-                // pack the bit values together and add a final byte that will be 0
-                // when there are no null values.
-                // otherwise we use two bits of this byte to represent null values.
-                let splits = _split_offsets($ca0.len(), n_partitions);
-
-                let keys = POOL.install(|| {
-                    splits
-                        .into_par_iter()
-                        .map(|(offset, len)| {
-                            let ca0 = $ca0.slice(offset as i64, len);
-                            let ca1 = $ca1.slice(offset as i64, len);
-                            ca0.into_iter()
-                                .zip(ca1.into_iter())
-                                .map(|(l, r)| $pack_fn(l, r))
-                                .collect_trusted::<Vec<_>>()
-                        })
-                        .collect::<Vec<_>>()
-                });
-
-                return Ok(GroupBy::new(
-                    self,
-                    by,
-                    groupby_threaded_num(keys, 0, n_partitions as u64, sorted),
-                    None,
-                ));
-            }};
-        }
-
+        polars_ensure!(
+            !by.is_empty(),
+            ComputeError: "at least one key is required in a groupby operation"
+        );
         let by_len = by[0].len();
 
         // we only throw this error if self.width > 0
         // so that we can still call this on a dummy dataframe where we provide the keys
         if (by_len != self.height()) && (self.width() > 0) {
-            if by_len == 1 {
-                by[0] = by[0].new_from_index(0, self.height())
-            } else {
-                return Err(PolarsError::ShapeMisMatch(
-                    "the Series used as keys should have the same length as the DataFrame".into(),
-                ));
-            }
+            polars_ensure!(
+                by_len == 1,
+                ShapeMismatch: "series used as keys should have the same length as the dataframe"
+            );
+            by[0] = by[0].new_from_index(0, self.height())
         };
 
         let n_partitions = _set_partition_size();
 
-        let groups = match by.len() {
-            1 => {
-                let series = &by[0];
-                series.group_tuples(multithreaded, sorted)
-            }
-            2 => {
-                // multiple keys is always multi-threaded
-                // reduce code paths
-                let keys_df = prepare_dataframe_unsorted(&by);
-
-                let s0 = &keys_df.get_columns()[0];
-                let s1 = &keys_df.get_columns()[1];
-
-                // fast path for numeric data
-                // uses the bit values to tightly pack those into arrays.
-                if s0.dtype().is_numeric() && s1.dtype().is_numeric() {
-                    match (s0.bit_repr_is_large(), s1.bit_repr_is_large()) {
-                        (false, false) => {
-                            let ca0 = s0.bit_repr_small();
-                            let ca1 = s1.bit_repr_small();
-                            finish_packed_bit_path!(ca0, ca1, pack_u32_tuples)
-                        }
-                        (true, true) => {
-                            let ca0 = s0.bit_repr_large();
-                            let ca1 = s1.bit_repr_large();
-                            finish_packed_bit_path!(ca0, ca1, pack_u64_tuples)
-                        }
-                        (true, false) => {
-                            let ca0 = s0.bit_repr_large();
-                            let ca1 = s1.bit_repr_small();
-                            // small first
-                            finish_packed_bit_path!(ca1, ca0, pack_u32_u64_tuples)
-                        }
-                        (false, true) => {
-                            let ca0 = s0.bit_repr_small();
-                            let ca1 = s1.bit_repr_large();
-                            // small first
-                            finish_packed_bit_path!(ca0, ca1, pack_u32_u64_tuples)
-                        }
-                    }
-                } else if matches!((s0.dtype(), s1.dtype()), (DataType::Utf8, DataType::Utf8)) {
-                    let lhs = s0.utf8().unwrap();
-                    let rhs = s1.utf8().unwrap();
-
-                    // arbitrarily chosen bound, if avg no of bytes to encode is larger than this
-                    // value we fall back to default groupby
-                    if (lhs.get_values_size() + rhs.get_values_size()) / (lhs.len() + 1) < 128 {
-                        Ok(pack_utf8_columns(lhs, rhs, n_partitions, sorted))
-                    } else {
-                        groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
-                    }
-                } else {
-                    groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+        let groups = if by.len() == 1 {
+            let series = &by[0];
+            series.group_tuples(multithreaded, sorted)
+        } else {
+            #[cfg(feature = "dtype-struct")]
+            {
+                if by.iter().any(|s| matches!(s.dtype(), DataType::Struct(_))) {
+                    let rows = encode_rows_vertical(&by)?;
+                    let groups = rows.group_tuples(multithreaded, sorted)?;
+                    return Ok(GroupBy::new(self, by, groups, None));
                 }
             }
-            _ => {
-                let keys_df = prepare_dataframe_unsorted(&by);
+            let keys_df = prepare_dataframe_unsorted(&by);
+            if multithreaded {
                 groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+            } else {
+                groupby_multiple_keys(keys_df, sorted)
             }
         };
         Ok(GroupBy::new(self, by, groups?, None))
@@ -340,7 +265,7 @@ impl<'df> GroupBy<'df> {
                 .map(|s| {
                     match groups {
                         GroupsProxy::Idx(groups) => {
-                            let mut iter = groups.iter().map(|(first, _idx)| first as usize);
+                            let mut iter = groups.first().iter().map(|first| *first as usize);
                             // Safety:
                             // groups are always in bounds
                             let mut out = unsafe { s.take_iter_unchecked(&mut iter) };
@@ -676,11 +601,10 @@ impl<'df> GroupBy<'df> {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<DataFrame> {
-        if !(0.0..=1.0).contains(&quantile) {
-            return Err(PolarsError::ComputeError(
-                "quantile should be within 0.0 and 1.0".into(),
-            ));
-        }
+        polars_ensure!(
+            (0.0..=1.0).contains(&quantile),
+            ComputeError: "`quantile` should be within 0.0 and 1.0"
+        );
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name =
@@ -841,7 +765,7 @@ impl<'df> GroupBy<'df> {
     pub fn agg_list(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::List);
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Implode);
             let mut agg = unsafe { agg_col.agg_list(&self.groups) };
             agg.rename(&new_name);
             cols.push(agg);
@@ -884,7 +808,7 @@ impl<'df> GroupBy<'df> {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
-        df.as_single_chunk();
+        df.as_single_chunk_par();
         Ok(df)
     }
 
@@ -906,7 +830,7 @@ impl<'df> GroupBy<'df> {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
-        df.as_single_chunk();
+        df.as_single_chunk_par();
         Ok(df)
     }
 }
@@ -933,7 +857,7 @@ pub enum GroupByMethod {
     NUnique,
     Quantile(f64, QuantileInterpolOptions),
     Count,
-    List,
+    Implode,
     Std(u8),
     Var(u8),
 }
@@ -955,7 +879,7 @@ impl Display for GroupByMethod {
             NUnique => "n_unique",
             Quantile(_, _) => "quantile",
             Count => "count",
-            List => "list",
+            Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
         };
@@ -979,7 +903,7 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
         Groups => "groups".to_string(),
         NUnique => format!("{name}_n_unique"),
         Count => format!("{name}_count"),
-        List => format!("{name}_agg_list"),
+        Implode => format!("{name}_agg_list"),
         Quantile(quantile, _interpol) => format!("{name}_quantile_{quantile:.2}"),
         Std(_) => format!("{name}_agg_std"),
         Var(_) => format!("{name}_agg_var"),
@@ -988,11 +912,9 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
 
 #[cfg(test)]
 mod test {
-    use num::traits::FloatConst;
+    use num_traits::FloatConst;
 
-    use crate::frame::groupby::{groupby, groupby_threaded_num};
     use crate::prelude::*;
-    use crate::utils::split_ca;
 
     #[test]
     #[cfg(feature = "dtype-date")]
@@ -1023,7 +945,7 @@ mod test {
         // Select multiple
         let out = df
             .groupby_stable(["date"])?
-            .select(&["temp", "rain"])
+            .select(["temp", "rain"])
             .mean()?;
         assert_eq!(
             out.column("temp_mean")?,
@@ -1034,7 +956,7 @@ mod test {
         #[allow(deprecated)]
         // Group by multiple
         let out = df
-            .groupby_stable(&["date", "temp"])?
+            .groupby_stable(["date", "temp"])?
             .select(["rain"])
             .mean()?;
         assert!(out.column("rain_mean").is_ok());
@@ -1080,7 +1002,7 @@ mod test {
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]
         let adf = df
-            .groupby(&[
+            .groupby([
                 "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12",
             ])
             .unwrap()
@@ -1110,13 +1032,13 @@ mod test {
 
         // Create a series for every group name.
         for series_name in &series_names {
-            let serie = Series::new(series_name, series_content.as_ref());
-            series.push(serie);
+            let group_series = Series::new(series_name, series_content.as_ref());
+            series.push(group_series);
         }
 
         // Create a series for the aggregation column.
-        let serie = Series::new("N", [1, 2, 3, 3, 4].as_ref());
-        series.push(serie);
+        let agg_series = Series::new("N", [1, 2, 3, 3, 4].as_ref());
+        series.push(agg_series);
 
         // Create the dataframe with the computed series.
         let df = DataFrame::new(series).unwrap();
@@ -1125,7 +1047,7 @@ mod test {
         #[allow(deprecated)]
         // Compute the aggregated DataFrame by the 13 columns defined in `series_names`.
         let adf = df
-            .groupby(&series_names)
+            .groupby(series_names)
             .unwrap()
             .select(["N"])
             .sum()
@@ -1191,26 +1113,6 @@ mod test {
             Vec::from(res.column("bar_sum").unwrap().i32().unwrap()),
             &[Some(2), Some(2), Some(1)]
         );
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_groupby_threaded() {
-        for slice in &[
-            vec![1, 2, 3, 4, 4, 4, 2, 1],
-            vec![1, 2, 3, 4, 4, 4, 2, 1, 1],
-            vec![1, 2, 3, 4, 4, 4],
-        ] {
-            let ca = UInt32Chunked::new("", slice);
-            let split = split_ca(&ca, 4).unwrap();
-
-            let a = groupby(ca.into_iter(), true).into_idx();
-
-            let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let b = groupby_threaded_num(keys, 0, split.len() as u64, true).into_idx();
-
-            assert_eq!(a, b);
-        }
     }
 
     #[test]

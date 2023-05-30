@@ -3,13 +3,14 @@ mod patterns;
 mod strptime;
 
 use chrono::ParseError;
-pub use patterns::Pattern;
+pub use patterns::{Pattern, PatternWithOffset};
+#[cfg(feature = "dtype-time")]
+use polars_core::chunked_array::temporal::time_to_time64ns;
 
 use super::*;
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
-#[cfg(feature = "dtype-time")]
-use crate::chunkedarray::time::time_to_time64ns;
+use crate::prelude::utf8::strptime::StrpTimeState;
 
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
@@ -100,16 +101,12 @@ enum ParseErrorKind {
 }
 
 fn get_first_val(ca: &Utf8Chunked) -> PolarsResult<&str> {
-    let idx = match ca.first_non_null() {
-        Some(idx) => idx,
-        None => {
-            return Err(PolarsError::ComputeError(
-                "Cannot determine date parsing format, all values are null".into(),
-            ))
-        }
-    };
-    let val = ca.get(idx).expect("should not be null");
-    Ok(val)
+    let idx = ca.first_non_null().ok_or_else(|| {
+        polars_err!(ComputeError:
+            "unable to determine date parsing format, all values are null",
+        )
+    })?;
+    Ok(ca.get(idx).expect("should not be null"))
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -118,9 +115,7 @@ fn sniff_fmt_datetime(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
     if let Some(pattern) = datetime_pattern(val, NaiveDateTime::parse_from_str) {
         return Ok(pattern);
     }
-    Err(PolarsError::ComputeError(
-        "Could not find an appropriate format to parse dates, please define a fmt".into(),
-    ))
+    polars_bail!(parse_fmt_idk = "date");
 }
 
 #[cfg(feature = "dtype-date")]
@@ -129,9 +124,7 @@ fn sniff_fmt_date(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
     if let Some(pattern) = date_pattern(val, NaiveDate::parse_from_str) {
         return Ok(pattern);
     }
-    Err(PolarsError::ComputeError(
-        "Could not find an appropriate format to parse dates, please define a fmt".into(),
-    ))
+    polars_bail!(parse_fmt_idk = "date");
 }
 
 #[cfg(feature = "dtype-time")]
@@ -140,9 +133,7 @@ fn sniff_fmt_time(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
     if let Some(pattern) = time_pattern(val, NaiveTime::parse_from_str) {
         return Ok(pattern);
     }
-    Err(PolarsError::ComputeError(
-        "Could not find an appropriate format to parse times, please define a fmt".into(),
-    ))
+    polars_bail!(parse_fmt_idk = "time");
 }
 
 pub trait Utf8Methods: AsUtf8 {
@@ -306,7 +297,7 @@ pub trait Utf8Methods: AsUtf8 {
         ca.rename(utf8_ca.name());
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz)),
+            Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
             _ => Ok(ca.into_datetime(tu, None)),
         }
     }
@@ -320,15 +311,16 @@ pub trait Utf8Methods: AsUtf8 {
             None => return infer::to_date(utf8_ca),
         };
         let cache = cache && utf8_ca.len() > 50;
-        let fmt = self::strptime::compile_fmt(fmt);
+        let fmt = strptime::compile_fmt(fmt)?;
         let mut cache_map = PlHashMap::new();
 
         // we can use the fast parser
-        let mut ca: Int32Chunked = if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
-            let convert = |s: &str| {
+        let mut ca: Int32Chunked = if let Some(fmt_len) = strptime::fmt_len(fmt.as_bytes()) {
+            let mut strptime_cache = StrpTimeState::default();
+            let mut convert = |s: &str| {
                 // Safety:
                 // fmt_len is correct, it was computed with this `fmt` str.
-                match unsafe { self::strptime::parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
+                match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
                     // fallback to chrono
                     None => NaiveDate::parse_from_str(s, &fmt).ok(),
                     Some(ndt) => Some(ndt.date()),
@@ -394,7 +386,6 @@ pub trait Utf8Methods: AsUtf8 {
         tu: TimeUnit,
         cache: bool,
         tz_aware: bool,
-        _utc: bool,
         tz: Option<&TimeZone>,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
@@ -402,7 +393,7 @@ pub trait Utf8Methods: AsUtf8 {
             Some(fmt) => fmt,
             None => return infer::to_datetime(utf8_ca, tu, tz),
         };
-        let fmt = self::strptime::compile_fmt(fmt);
+        let fmt = strptime::compile_fmt(fmt)?;
         let cache = cache && utf8_ca.len() > 50;
 
         let func = match tu {
@@ -417,24 +408,11 @@ pub trait Utf8Methods: AsUtf8 {
                 use chrono::DateTime;
                 use polars_arrow::export::hashbrown::hash_map::Entry;
                 let mut cache_map = PlHashMap::new();
-                let mut tz = None;
 
-                let mut convert = |s: &str| {
-                    DateTime::parse_from_str(s, &fmt).ok().map(|dt| {
-                        if !_utc {
-                            match tz {
-                                None => tz = Some(dt.timezone()),
-                                Some(tz_found) => {
-                                    if tz_found != dt.timezone() {
-                                        return Err(PolarsError::ComputeError(
-                                            "Different timezones found during 'strptime' operation. You might want to use `utc=True` and then set the time zone after parsing".into()
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                        Ok(func(dt.naive_utc()))
-                    }).transpose()
+                let convert = |s: &str| {
+                    DateTime::parse_from_str(s, &fmt)
+                        .ok()
+                        .map(|dt| func(dt.naive_utc()))
                 };
 
                 let mut ca: Int64Chunked = utf8_ca
@@ -445,14 +423,14 @@ pub trait Utf8Methods: AsUtf8 {
                                 let out = if cache {
                                     match cache_map.entry(s) {
                                         Entry::Vacant(entry) => {
-                                            let value = convert(s)?;
+                                            let value = convert(s);
                                             entry.insert(value);
                                             value
                                         }
                                         Entry::Occupied(val) => *val.get(),
                                     }
                                 } else {
-                                    convert(s)?
+                                    convert(s)
                                 };
                                 Ok(out)
                             })
@@ -462,12 +440,7 @@ pub trait Utf8Methods: AsUtf8 {
                     .collect::<PolarsResult<_>>()?;
 
                 ca.rename(utf8_ca.name());
-                if !_utc {
-                    let tz = tz.map(|of| format!("{of}"));
-                    Ok(ca.into_datetime(tu, tz))
-                } else {
-                    Ok(ca.into_datetime(tu, Some("UTC".to_string())))
-                }
+                Ok(ca.into_datetime(tu, Some("UTC".to_string())))
             }
             #[cfg(not(feature = "timezones"))]
             {
@@ -475,62 +448,68 @@ pub trait Utf8Methods: AsUtf8 {
             }
         } else {
             let mut cache_map = PlHashMap::new();
+            let transform = match tu {
+                TimeUnit::Nanoseconds => infer::transform_datetime_ns,
+                TimeUnit::Microseconds => infer::transform_datetime_us,
+                TimeUnit::Milliseconds => infer::transform_datetime_ms,
+            };
             // we can use the fast parser
-            let mut ca: Int64Chunked =
-                if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
-                    let convert = |s: &str| {
-                        // Safety:
-                        // fmt_len is correct, it was computed with this `fmt` str.
-                        unsafe { self::strptime::parse(s.as_bytes(), fmt.as_bytes(), fmt_len) }
-                            .or_else(|| NaiveDateTime::parse_from_str(s, &fmt).ok())
-                            .map(func)
-                    };
-                    if utf8_ca.null_count() == 0 {
-                        utf8_ca
-                            .into_no_null_iter()
-                            .map(|val| {
+            let mut ca: Int64Chunked = if let Some(fmt_len) =
+                self::strptime::fmt_len(fmt.as_bytes())
+            {
+                let mut strptime_cache = StrpTimeState::default();
+                let mut convert = |s: &str| {
+                    // Safety:
+                    // fmt_len is correct, it was computed with this `fmt` str.
+                    match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
+                        None => transform(s, &fmt),
+                        Some(ndt) => Some(func(ndt)),
+                    }
+                };
+                if utf8_ca.null_count() == 0 {
+                    utf8_ca
+                        .into_no_null_iter()
+                        .map(|val| {
+                            if cache {
+                                *cache_map.entry(val).or_insert_with(|| convert(val))
+                            } else {
+                                convert(val)
+                            }
+                        })
+                        .collect_trusted()
+                } else {
+                    utf8_ca
+                        .into_iter()
+                        .map(|opt_s| {
+                            opt_s.and_then(|val| {
                                 if cache {
                                     *cache_map.entry(val).or_insert_with(|| convert(val))
                                 } else {
                                     convert(val)
                                 }
                             })
-                            .collect_trusted()
-                    } else {
-                        utf8_ca
-                            .into_iter()
-                            .map(|opt_s| {
-                                opt_s.and_then(|val| {
-                                    if cache {
-                                        *cache_map.entry(val).or_insert_with(|| convert(val))
-                                    } else {
-                                        convert(val)
-                                    }
-                                })
-                            })
-                            .collect_trusted()
-                    }
-                } else {
-                    let mut cache_map = PlHashMap::new();
-                    utf8_ca
-                        .into_iter()
-                        .map(|opt_s| {
-                            opt_s.and_then(|s| {
-                                if cache {
-                                    *cache_map.entry(s).or_insert_with(|| {
-                                        NaiveDateTime::parse_from_str(s, &fmt).ok().map(func)
-                                    })
-                                } else {
-                                    NaiveDateTime::parse_from_str(s, &fmt).ok().map(func)
-                                }
-                            })
                         })
                         .collect_trusted()
-                };
+                }
+            } else {
+                let mut cache_map = PlHashMap::new();
+                utf8_ca
+                    .into_iter()
+                    .map(|opt_s| {
+                        opt_s.and_then(|s| {
+                            if cache {
+                                *cache_map.entry(s).or_insert_with(|| transform(s, &fmt))
+                            } else {
+                                transform(s, &fmt)
+                            }
+                        })
+                    })
+                    .collect_trusted()
+            };
             ca.rename(utf8_ca.name());
             match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz)),
+                Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
                 _ => Ok(ca.into_datetime(tu, None)),
             }
         }

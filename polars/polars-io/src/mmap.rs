@@ -58,7 +58,7 @@ impl<T: MmapBytesReader> MmapBytesReader for &mut T {
 pub enum ReaderBytes<'a> {
     Borrowed(&'a [u8]),
     Owned(Vec<u8>),
-    Mapped(memmap::Mmap),
+    Mapped(memmap::Mmap, &'a File),
 }
 
 impl std::ops::Deref for ReaderBytes<'_> {
@@ -67,7 +67,7 @@ impl std::ops::Deref for ReaderBytes<'_> {
         match self {
             Self::Borrowed(ref_bytes) => ref_bytes,
             Self::Owned(vec) => vec,
-            Self::Mapped(mmap) => mmap,
+            Self::Mapped(mmap, _) => mmap,
         }
     }
 }
@@ -79,7 +79,7 @@ impl<'a, T: 'a + MmapBytesReader> From<&'a T> for ReaderBytes<'a> {
             None => {
                 let f = m.to_file().unwrap();
                 let mmap = unsafe { memmap::Mmap::map(f).unwrap() };
-                ReaderBytes::Mapped(mmap)
+                ReaderBytes::Mapped(mmap, f)
             }
         }
     }

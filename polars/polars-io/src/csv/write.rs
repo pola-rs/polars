@@ -32,12 +32,11 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        df.as_single_chunk_par();
         let names = df.get_column_names();
         if self.header {
             write_impl::write_header(&mut self.buffer, &names, &self.options)?;
         }
-        write_impl::write(&mut self.buffer, df, self.batch_size, &mut self.options)
+        write_impl::write(&mut self.buffer, df, self.batch_size, &self.options)
     }
 }
 

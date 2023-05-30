@@ -1,10 +1,10 @@
 use std::io::{Read, Seek};
 
 use arrow::io::avro::{self, read};
+use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 
 use super::{finish_reader, ArrowChunk, ArrowReader, ArrowResult};
-use crate::avro::convert_err;
 use crate::prelude::*;
 
 /// Read Apache Avro format into a DataFrame
@@ -36,13 +36,13 @@ impl<R: Read + Seek> AvroReader<R> {
     /// Get schema of the Avro File
     pub fn schema(&mut self) -> PolarsResult<Schema> {
         let schema = self.arrow_schema()?;
-        Ok((schema.fields.iter()).into())
+        Ok(Schema::from_iter(&schema.fields))
     }
 
     /// Get arrow schema of the avro File, this is faster than a polars schema.
     pub fn arrow_schema(&mut self) -> PolarsResult<ArrowSchema> {
         let metadata =
-            avro::avro_schema::read::read_metadata(&mut self.reader).map_err(convert_err)?;
+            avro::avro_schema::read::read_metadata(&mut self.reader).map_err(to_compute_err)?;
         let schema = read::infer_schema(&metadata.record)?;
         Ok(schema)
     }
@@ -98,7 +98,7 @@ where
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
         let metadata =
-            avro::avro_schema::read::read_metadata(&mut self.reader).map_err(convert_err)?;
+            avro::avro_schema::read::read_metadata(&mut self.reader).map_err(to_compute_err)?;
         let schema = read::infer_schema(&metadata.record)?;
 
         if let Some(columns) = &self.columns {

@@ -1,10 +1,12 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(feature = "simd", feature(portable_simd))]
+#![allow(ambiguous_glob_reexports)]
 
 #[cfg(feature = "avro")]
 pub mod avro;
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 mod cloud;
-#[cfg(any(feature = "csv-file", feature = "json"))]
+#[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;
 #[cfg(feature = "parquet")]
 pub mod export;
@@ -13,12 +15,12 @@ pub mod ipc;
 #[cfg(feature = "json")]
 pub mod json;
 #[cfg(feature = "json")]
-pub mod ndjson_core;
-#[cfg(feature = "async")]
+pub mod ndjson;
+#[cfg(feature = "cloud")]
 pub use crate::cloud::glob as async_glob;
 
 #[cfg(any(
-    feature = "csv-file",
+    feature = "csv",
     feature = "parquet",
     feature = "ipc",
     feature = "json"
@@ -32,14 +34,14 @@ pub mod predicates;
 #[cfg(not(feature = "private"))]
 pub(crate) mod predicates;
 pub mod prelude;
-#[cfg(all(test, feature = "csv-file"))]
+#[cfg(all(test, feature = "csv"))]
 mod tests;
 pub(crate) mod utils;
 
 #[cfg(feature = "partition")]
 pub mod partition;
 
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 #[allow(unused)] // remove when updating to rust nightly >= 1.61
@@ -59,11 +61,13 @@ use crate::predicates::PhysicalIoExpr;
 
 pub trait SerReader<R>
 where
-    R: Read + Seek,
+    R: Read,
 {
+    /// Create a new instance of the `[SerReader]`
     fn new(reader: R) -> Self;
 
-    /// Rechunk to a single chunk after Reading file.
+    /// Make sure that all columns are contiguous in memory by
+    /// aggregating the chunks into a single array.
     #[must_use]
     fn set_rechunk(self, _rechunk: bool) -> Self
     where
@@ -135,7 +139,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                     .iter()
                     .map(|df: &DataFrame| df.height())
                     .sum::<usize>();
-                if std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1" {
+                if polars_core::config::verbose() {
                     eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height() - n)
                 }
                 parsed_dfs.push(df.slice(0, len));

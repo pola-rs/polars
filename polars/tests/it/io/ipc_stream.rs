@@ -1,5 +1,3 @@
-use super::*;
-
 #[cfg(test)]
 mod test {
     use std::io::Cursor;

@@ -22,6 +22,136 @@ macro_rules! unpack {
     }};
 }
 
+// `dtype_other` comes from a column
+// so we shrink literal so it fits into that column dtype.
+fn shrink_literal(dtype_other: &DataType, literal: &LiteralValue) -> Option<DataType> {
+    match (dtype_other, literal) {
+        (DataType::UInt64, LiteralValue::Int64(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt64);
+            }
+        }
+        (DataType::UInt64, LiteralValue::Int32(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt64);
+            }
+        }
+        #[cfg(feature = "dtype-i16")]
+        (DataType::UInt64, LiteralValue::Int16(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt64);
+            }
+        }
+        #[cfg(feature = "dtype-i8")]
+        (DataType::UInt64, LiteralValue::Int8(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt64);
+            }
+        }
+        (DataType::UInt32, LiteralValue::Int64(v)) => {
+            if *v > 0 && *v < u32::MAX as i64 {
+                return Some(DataType::UInt32);
+            }
+        }
+        (DataType::UInt32, LiteralValue::Int32(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt32);
+            }
+        }
+        #[cfg(feature = "dtype-i16")]
+        (DataType::UInt32, LiteralValue::Int16(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt32);
+            }
+        }
+        #[cfg(feature = "dtype-i8")]
+        (DataType::UInt32, LiteralValue::Int8(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt32);
+            }
+        }
+        (DataType::UInt16, LiteralValue::Int64(v)) => {
+            if *v > 0 && *v < u16::MAX as i64 {
+                return Some(DataType::UInt16);
+            }
+        }
+        (DataType::UInt16, LiteralValue::Int32(v)) => {
+            if *v > 0 && *v < u16::MAX as i32 {
+                return Some(DataType::UInt16);
+            }
+        }
+        #[cfg(feature = "dtype-i16")]
+        (DataType::UInt16, LiteralValue::Int16(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt16);
+            }
+        }
+        #[cfg(feature = "dtype-i8")]
+        (DataType::UInt16, LiteralValue::Int8(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt16);
+            }
+        }
+        (DataType::UInt8, LiteralValue::Int64(v)) => {
+            if *v > 0 && *v < u8::MAX as i64 {
+                return Some(DataType::UInt8);
+            }
+        }
+        (DataType::UInt8, LiteralValue::Int32(v)) => {
+            if *v > 0 && *v < u8::MAX as i32 {
+                return Some(DataType::UInt8);
+            }
+        }
+        #[cfg(feature = "dtype-i16")]
+        (DataType::UInt8, LiteralValue::Int16(v)) => {
+            if *v > 0 && *v < u8::MAX as i16 {
+                return Some(DataType::UInt8);
+            }
+        }
+        #[cfg(feature = "dtype-i8")]
+        (DataType::UInt8, LiteralValue::Int8(v)) => {
+            if *v > 0 && *v < u8::MAX as i8 {
+                return Some(DataType::UInt8);
+            }
+        }
+        (DataType::Int32, LiteralValue::Int64(v)) => {
+            if *v <= i32::MAX as i64 {
+                return Some(DataType::Int32);
+            }
+        }
+        (DataType::Int16, LiteralValue::Int64(v)) => {
+            if *v <= i16::MAX as i64 {
+                return Some(DataType::Int16);
+            }
+        }
+        (DataType::Int16, LiteralValue::Int32(v)) => {
+            if *v <= i16::MAX as i32 {
+                return Some(DataType::Int16);
+            }
+        }
+        (DataType::Int8, LiteralValue::Int64(v)) => {
+            if *v <= i8::MAX as i64 {
+                return Some(DataType::Int8);
+            }
+        }
+        (DataType::Int8, LiteralValue::Int32(v)) => {
+            if *v <= i8::MAX as i32 {
+                return Some(DataType::Int8);
+            }
+        }
+        #[cfg(feature = "dtype-i16")]
+        (DataType::Int8, LiteralValue::Int16(v)) => {
+            if *v <= i8::MAX as i16 {
+                return Some(DataType::Int8);
+            }
+        }
+        _ => {
+            // the rest is done by supertypes.
+        }
+    }
+    None
+}
+
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
 /// it would be wasteful to cast the column instead of the literal.
 fn modify_supertype(
@@ -34,34 +164,46 @@ fn modify_supertype(
     // only interesting on numerical types
     // other types will always use the supertype.
     if type_left.is_numeric() && type_right.is_numeric() {
+        use AExpr::*;
         match (left, right) {
             // don't let the literal f64 coerce the f32 column
-            (AExpr::Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)), _) if matches!(type_right, DataType::Float32) => {
-                st = DataType::Float32
-            }
-            (_, AExpr::Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_))) if matches!(type_left, DataType::Float32) => {
-                st = DataType::Float32
-            }
-
-            // do nothing and use supertype
-            (AExpr::Literal(_), AExpr::Literal(_))
+            (
+                Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
+                _,
+            ) if matches!(type_right, DataType::Float32) => st = DataType::Float32,
+            (
+                _,
+                Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
+            ) if matches!(type_left, DataType::Float32) => st = DataType::Float32,
             // always make sure that we cast to floats if one of the operands is float
-            // and the left type is integer
-            |(AExpr::Literal(LiteralValue::Float32(_) | LiteralValue::Float64(_)), _)
-            |(_, AExpr::Literal(LiteralValue::Float32(_) | LiteralValue::Float64(_)))
-            => {}
+            (Literal(lv), _) | (_, Literal(lv)) if lv.is_float() => {}
+
+            // TODO: see if we can activate this for columns as well.
+            // shrink the literal value if it fits in the column dtype
+            (Literal(LiteralValue::Series(_)), Literal(lv)) => {
+                if let Some(dtype) = shrink_literal(type_left, lv) {
+                    st = dtype;
+                }
+            }
+            // shrink the literal value if it fits in the column dtype
+            (Literal(lv), Literal(LiteralValue::Series(_))) => {
+                if let Some(dtype) = shrink_literal(type_right, lv) {
+                    st = dtype;
+                }
+            }
+            // do nothing and use supertype
+            (Literal(_), Literal(_)) => {}
 
             // cast literal to right type if they fit in the range
-            (AExpr::Literal(value), _) => {
+            (Literal(value), _) => {
                 if let Some(lit_val) = value.to_anyvalue() {
-                   if type_right.value_within_range(lit_val) {
-                       st = type_right.clone();
-                   }
+                    if type_right.value_within_range(lit_val) {
+                        st = type_right.clone();
+                    }
                 }
             }
             // cast literal to left type
-            (_, AExpr::Literal(value)) => {
-
+            (_, Literal(value)) => {
                 if let Some(lit_val) = value.to_anyvalue() {
                     if type_left.value_within_range(lit_val) {
                         st = type_left.clone();
@@ -129,22 +271,6 @@ fn get_aexpr_and_type<'a>(
     ))
 }
 
-#[cfg(feature = "python")]
-fn err_date_str_compare() -> PolarsResult<()> {
-    Err(PolarsError::ComputeError(
-        "Cannot compare 'date/datetime/time' to a string value.\n\
-        Create native python {{ 'date', 'datetime', 'time' }} or compare to a temporal column."
-            .into(),
-    ))
-}
-
-#[cfg(not(feature = "python"))]
-fn err_date_str_compare() -> PolarsResult<()> {
-    Err(PolarsError::ComputeError(
-        "Cannot compare 'date/datetime/time' to a string value.".into(),
-    ))
-}
-
 impl OptimizationRule for TypeCoercionRule {
     fn optimize_expr(
         &self,
@@ -207,7 +333,7 @@ impl OptimizationRule for TypeCoercionRule {
             } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
             #[cfg(feature = "is_in")]
             AExpr::Function {
-                function: FunctionExpr::IsIn,
+                function: FunctionExpr::Boolean(BooleanFunction::IsIn),
                 ref input,
                 options,
             } => {
@@ -221,6 +347,8 @@ impl OptimizationRule for TypeCoercionRule {
                 unpack!(early_escape(&type_left, &type_other));
 
                 let casted_expr = match (&type_left, &type_other) {
+                    // types are equal, do nothing
+                    (a, b) if a == b => return Ok(None),
                     // cast both local and global string cache
                     // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
@@ -231,6 +359,9 @@ impl OptimizationRule for TypeCoercionRule {
                             // does not matter
                             strict: false,
                         }
+                    }
+                    (dt, DataType::Utf8) => {
+                        polars_bail!(ComputeError: "cannot compare {:?} to {:?} type in 'is_in' operation", dt, type_other)
                     }
                     (DataType::List(_), _) | (_, DataType::List(_)) => return Ok(None),
                     #[cfg(feature = "dtype-struct")]
@@ -246,7 +377,7 @@ impl OptimizationRule for TypeCoercionRule {
                             strict: false,
                         }
                     }
-                    // types are equal, do nothing
+                    // do nothing
                     _ => return Ok(None),
                 };
 
@@ -255,7 +386,7 @@ impl OptimizationRule for TypeCoercionRule {
                 input[1] = other_input;
 
                 Some(AExpr::Function {
-                    function: FunctionExpr::IsIn,
+                    function: FunctionExpr::Boolean(BooleanFunction::IsIn),
                     input,
                     options,
                 })
@@ -303,15 +434,27 @@ impl OptimizationRule for TypeCoercionRule {
                 let (self_ae, type_self) =
                     unpack!(get_aexpr_and_type(expr_arena, self_node, &input_schema));
 
+                // TODO remove: false positive
+                #[allow(clippy::redundant_clone)]
                 let mut super_type = type_self.clone();
                 for other in &input[1..] {
                     let (other, type_other) =
                         unpack!(get_aexpr_and_type(expr_arena, *other, &input_schema));
 
                     // early return until Unknown is set
-                    unpack!(early_escape(&super_type, &type_other));
+                    if matches!(type_other, DataType::Unknown) {
+                        return Ok(None);
+                    }
                     let new_st = unpack!(get_supertype(&super_type, &type_other));
-                    super_type = modify_supertype(new_st, self_ae, other, &type_self, &type_other)
+                    if input.len() == 2 {
+                        // modify_supertype is a bit more conservative of casting columns
+                        // to literals
+                        super_type =
+                            modify_supertype(new_st, self_ae, other, &type_self, &type_other)
+                    } else {
+                        // when dealing with more than 1 argument, we simply find the supertypes
+                        super_type = new_st
+                    }
                 }
                 // only cast if the type is not already the super type.
                 // this can prevent an expensive flattening and subsequent aggregation
@@ -383,7 +526,7 @@ mod test {
     #[test]
     fn test_categorical_utf8() {
         let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(TypeCoercionRule {})];
-        let schema = Schema::from(vec![Field::new("fruits", DataType::Categorical(None))]);
+        let schema = Schema::from_iter([Field::new("fruits", DataType::Categorical(None))]);
 
         let expr = col("fruits").eq(lit("somestr"));
         let out = optimize_expr(expr.clone(), schema.clone(), &mut rules);

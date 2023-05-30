@@ -66,21 +66,60 @@ def test_str_decode() -> None:
 
 def test_str_decode_exception() -> None:
     s = pl.Series(["not a valid", "626172", None])
-    with pytest.raises(Exception):
+    with pytest.raises(pl.ComputeError):
         s.str.decode(encoding="hex")
-    with pytest.raises(Exception):
+    with pytest.raises(pl.ComputeError):
         s.str.decode(encoding="base64")
     with pytest.raises(ValueError):
         s.str.decode("utf8")  # type: ignore[arg-type]
 
 
+def test_hex_decode_return_dtype() -> None:
+    data = {"a": ["68656c6c6f", "776f726c64"]}
+    expr = pl.col("a").str.decode("hex")
+
+    df = pl.DataFrame(data).select(expr)
+    assert df.schema == {"a": pl.Binary}
+
+    ldf = pl.LazyFrame(data).select(expr)
+    assert ldf.schema == {"a": pl.Binary}
+
+
+def test_base64_decode_return_dtype() -> None:
+    data = {"a": ["Zm9v", "YmFy"]}
+    expr = pl.col("a").str.decode("base64")
+
+    df = pl.DataFrame(data).select(expr)
+    assert df.schema == {"a": pl.Binary}
+
+    ldf = pl.LazyFrame(data).select(expr)
+    assert ldf.schema == {"a": pl.Binary}
+
+
 def test_str_replace_str_replace_all() -> None:
-    s = pl.Series(["hello", "world", "test", "root"])
-    expected = pl.Series(["hell0", "w0rld", "test", "r0ot"])
+    s = pl.Series(["hello", "world", "test", "rooted"])
+    expected = pl.Series(["hell0", "w0rld", "test", "r0oted"])
     assert_series_equal(s.str.replace("o", "0"), expected)
 
-    expected = pl.Series(["hell0", "w0rld", "test", "r00t"])
+    expected = pl.Series(["hell0", "w0rld", "test", "r00ted"])
     assert_series_equal(s.str.replace_all("o", "0"), expected)
+
+
+def test_str_replace_n_single() -> None:
+    s = pl.Series(["aba", "abaa"])
+
+    assert s.str.replace("a", "b", n=1).to_list() == ["bba", "bbaa"]
+    assert s.str.replace("a", "b", n=2).to_list() == ["bbb", "bbba"]
+    assert s.str.replace("a", "b", n=3).to_list() == ["bbb", "bbbb"]
+
+
+def test_str_replace_n_same_length() -> None:
+    # pat and val have the same length
+    # this triggers a fast path
+    s = pl.Series(["abfeab", "foobarabfooabab"])
+    assert s.str.replace("ab", "AB", n=1).to_list() == ["ABfeab", "foobarABfooabab"]
+    assert s.str.replace("ab", "AB", n=2).to_list() == ["ABfeAB", "foobarABfooABab"]
+    assert s.str.replace("ab", "AB", n=3).to_list() == ["ABfeAB", "foobarABfooABAB"]
 
 
 def test_str_to_lowercase() -> None:
@@ -95,24 +134,54 @@ def test_str_to_uppercase() -> None:
     assert_series_equal(s.str.to_uppercase(), expected)
 
 
+def test_str_case_cyrillic() -> None:
+    vals = ["Biтpyк", "Iвaн"]
+    s = pl.Series(vals)
+    assert s.str.to_lowercase().to_list() == [a.lower() for a in vals]
+    assert s.str.to_uppercase().to_list() == [a.upper() for a in vals]
+
+
 def test_str_parse_int() -> None:
     bin = pl.Series(["110", "101", "010"])
     assert_series_equal(bin.str.parse_int(2), pl.Series([6, 5, 2]).cast(pl.Int32))
 
-    hex = pl.Series(["fa1e", "ff00", "cafe"])
+    hex = pl.Series(["fa1e", "ff00", "cafe", "invalid", None])
     assert_series_equal(
-        hex.str.parse_int(16), pl.Series([64030, 65280, 51966]).cast(pl.Int32)
+        hex.str.parse_int(16, strict=False),
+        pl.Series([64030, 65280, 51966, None, None]).cast(pl.Int32),
+        check_exact=True,
     )
+
+    with pytest.raises(pl.ComputeError):
+        hex.str.parse_int(16)
 
 
 def test_str_parse_int_df() -> None:
-    df = pl.DataFrame({"bin": ["110", "101", "010"], "hex": ["fa1e", "ff00", "cafe"]})
+    df = pl.DataFrame(
+        {
+            "bin": ["110", "101", "-010", "invalid", None],
+            "hex": ["fa1e", "ff00", "cafe", "invalid", None],
+        }
+    )
     out = df.with_columns(
-        [pl.col("bin").str.parse_int(2), pl.col("hex").str.parse_int(16)]
+        [
+            pl.col("bin").str.parse_int(2, strict=False),
+            pl.col("hex").str.parse_int(16, strict=False),
+        ]
     )
 
-    expected = pl.DataFrame({"bin": [6, 5, 2], "hex": [64030, 65280, 51966]})
+    expected = pl.DataFrame(
+        {
+            "bin": [6, 5, -2, None, None],
+            "hex": [64030, 65280, 51966, None, None],
+        }
+    )
     assert out.frame_equal(expected)
+
+    with pytest.raises(pl.ComputeError):
+        df.with_columns(
+            [pl.col("bin").str.parse_int(2), pl.col("hex").str.parse_int(16)]
+        )
 
 
 def test_str_strip() -> None:
@@ -180,6 +249,38 @@ def test_str_split() -> None:
         assert out[2].to_list() == ["ab,", "c,", "de"]
 
 
+def test_json_extract_series() -> None:
+    s = pl.Series(["[1, 2, 3]", None, "[4, 5, 6]"])
+    expected = pl.Series([[1, 2, 3], None, [4, 5, 6]])
+    dtype = pl.List(pl.Int64)
+    assert_series_equal(s.str.json_extract(None), expected)
+    assert_series_equal(s.str.json_extract(dtype), expected)
+
+    s = pl.Series(['{"a": 1, "b": true}', None, '{"a": 2, "b": false}'])
+    expected = pl.Series([{"a": 1, "b": True}, None, {"a": 2, "b": False}])
+    dtype2 = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
+    assert_series_equal(s.str.json_extract(None), expected)
+    assert_series_equal(s.str.json_extract(dtype2), expected)
+
+    expected = pl.Series([{"a": 1}, None, {"a": 2}])
+    dtype2 = pl.Struct([pl.Field("a", pl.Int64)])
+    assert_series_equal(s.str.json_extract(dtype2), expected)
+
+
+def test_json_extract_lazy_expr() -> None:
+    dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
+    ldf = (
+        pl.DataFrame({"json": ['{"a": 1, "b": true}', None, '{"a": 2, "b": false}']})
+        .lazy()
+        .select(pl.col("json").str.json_extract(dtype))
+    )
+    expected = pl.DataFrame(
+        {"json": [{"a": 1, "b": True}, None, {"a": 2, "b": False}]}
+    ).lazy()
+    assert ldf.schema == {"json": dtype}
+    assert_frame_equal(ldf, expected)
+
+
 def test_jsonpath_single() -> None:
     s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
     expected = pl.Series(["1", None, "2", "2.1", "true"])
@@ -218,6 +319,19 @@ def test_auto_explode() -> None:
 
 
 def test_contains() -> None:
+    # test strict/non strict
+    s_txt = pl.Series(["123", "456", "789"])
+    assert (
+        pl.Series([None, None, None]).cast(pl.Boolean).to_list()
+        == s_txt.str.contains("(not_valid_regex", literal=False, strict=False).to_list()
+    )
+    with pytest.raises(pl.ComputeError):
+        s_txt.str.contains("(not_valid_regex", literal=False, strict=True)
+    assert (
+        pl.Series([True, False, False]).cast(pl.Boolean).to_list()
+        == s_txt.str.contains("1", literal=False, strict=False).to_list()
+    )
+
     df = pl.DataFrame(
         data=[(1, "some * * text"), (2, "(with) special\n * chars"), (3, "**etc...?$")],
         schema=["idx", "text"],
@@ -513,17 +627,6 @@ def test_decode_strict() -> None:
     ) == {"strings": [b"\xd0\x86\xd0\xbd77", None, None]}
     with pytest.raises(pl.ComputeError):
         df.select(pl.col("strings").str.decode("base64", strict=True))
-
-
-def test_wildcard_expansion() -> None:
-    # one function requires wildcard expansion the other need
-    # this tests the nested behavior
-    # see: #2867
-
-    df = pl.DataFrame({"a": ["x", "Y", "z"], "b": ["S", "o", "S"]})
-    assert df.select(
-        pl.concat_str(pl.all()).str.to_lowercase()
-    ).to_series().to_list() == ["xs", "yo", "zs"]
 
 
 def test_split() -> None:

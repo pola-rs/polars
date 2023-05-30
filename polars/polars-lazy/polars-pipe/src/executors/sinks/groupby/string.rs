@@ -1,12 +1,13 @@
 use std::any::Any;
+use std::sync::Mutex;
 
 use hashbrown::hash_map::RawEntryMut;
-use num::NumCast;
+use num_traits::NumCast;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
-use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
-use polars_core::POOL;
+use polars_core::utils::_set_partition_size;
+use polars_core::{IdBuildHasher, POOL};
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
@@ -15,8 +16,11 @@ use rayon::prelude::*;
 use super::aggregates::AggregateFn;
 use super::generic::Key;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
+use crate::executors::sinks::groupby::ooc_state::OocState;
 use crate::executors::sinks::groupby::physical_agg_to_logical;
-use crate::executors::sinks::groupby::utils::compute_slices;
+use crate::executors::sinks::groupby::primitive::apply_aggregation;
+use crate::executors::sinks::groupby::utils::{compute_slices, finalize_groupby};
+use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
@@ -54,6 +58,8 @@ pub struct Utf8GroupbySink {
     aggregation_series: Vec<Series>,
     hashes: Vec<u64>,
     slice: Option<(i64, usize)>,
+
+    ooc_state: OocState,
 }
 
 impl Utf8GroupbySink {
@@ -65,6 +71,29 @@ impl Utf8GroupbySink {
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
+        Self::new_inner(
+            key_column,
+            aggregation_columns,
+            agg_fns,
+            input_schema,
+            output_schema,
+            slice,
+            None,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_inner(
+        key_column: Arc<dyn PhysicalPipedExpr>,
+        aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        agg_fns: Vec<AggregateFunction>,
+        input_schema: SchemaRef,
+        output_schema: SchemaRef,
+        slice: Option<(i64, usize)>,
+        io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
+        ooc: bool,
+    ) -> Self {
         let hb = Default::default();
         let partitions = _set_partition_size();
 
@@ -73,7 +102,7 @@ impl Utf8GroupbySink {
         let aggregators =
             Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len() * partitions);
 
-        Self {
+        let mut out = Self {
             thread_no: 0,
             pre_agg_partitions: pre_agg,
             keys,
@@ -87,7 +116,12 @@ impl Utf8GroupbySink {
             aggregation_series: vec![],
             hashes: vec![],
             slice,
+            ooc_state: OocState::new(io_thread, ooc),
+        };
+        if ooc {
+            out.ooc_state.init_ooc(out.input_schema.clone()).unwrap();
         }
+        out
     }
 
     #[inline]
@@ -165,62 +199,152 @@ impl Utf8GroupbySink {
             Ok(dfs)
         })
     }
-}
+    fn prepare_key_and_aggregation_series(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: &DataChunk,
+    ) -> PolarsResult<Series> {
+        let s = self
+            .key_column
+            .evaluate(chunk, context.execution_state.as_any())?;
+        let s = s.to_physical_repr();
+        let s = s.rechunk();
 
-impl Sink for Utf8GroupbySink {
-    fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
-        let num_aggs = self.number_of_aggs();
-
-        // todo! amortize allocation
+        // todo! ammortize allocation
         for phys_e in self.aggregation_columns.iter() {
-            let s = phys_e.evaluate(&chunk, context.execution_state.as_any())?;
+            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }
-        let s = self
-            .key_column
-            .evaluate(&chunk, context.execution_state.as_any())?;
-        let s = s.rechunk();
         s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        Ok(s)
+    }
+    #[inline]
+    fn get_partitions(&mut self, h: u64) -> &mut PlIdHashMap<Key, IdxSize> {
+        let partition = hash_to_partition(h, self.pre_agg_partitions.len());
+        let current_partition =
+            unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
+
+        current_partition
+    }
+
+    fn sink_ooc(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: DataChunk,
+    ) -> PolarsResult<SinkResult> {
+        let s = self.prepare_key_and_aggregation_series(context, &chunk)?;
+
+        // take containers to please bchk
+        // we put them back once done
+        let mut hashes = std::mem::take(&mut self.hashes);
+        let keys = std::mem::take(&mut self.keys);
+        let agg_fns = std::mem::take(&mut self.agg_fns);
+        let mut aggregators = std::mem::take(&mut self.aggregators);
+
         // write the hashes to self.hashes buffer
         // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
         // now we have written hashes, we take the pointer to this buffer
         // we will write the aggregation_function indexes in the same buffer
         // this is unsafe and we must check that we only write the hashes that
         // already read/taken. So we write on the slots we just read
-        let agg_idx_ptr = self.hashes.as_ptr() as *mut i64 as *mut IdxSize;
+        let agg_idx_ptr = hashes.as_ptr() as *mut u64 as *mut IdxSize;
         // array of the keys
         let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
 
-        for (iteration_idx, (key_val, &h)) in keys_arr.iter().zip(&self.hashes).enumerate() {
-            let partition = hash_to_partition(h, self.pre_agg_partitions.len());
-            let current_partition =
-                unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
-            let current_aggregators = &mut self.aggregators;
+        // set all bits to false
+        self.ooc_state.reset_ooc_filter_rows(chunk.data.height());
 
-            let entry = current_partition.raw_entry_mut().from_hash(h, |key| {
-                // first compare the hash before we incur the cache miss
-                key.hash == h && {
-                    let idx = key.idx as usize;
-                    unsafe { self.keys.get_unchecked_release(idx).as_deref() == key_val }
+        let mut processed = 0;
+        for (iteration_idx, (key_val, &h)) in keys_arr.iter().zip(&hashes).enumerate() {
+            let current_partition = self.get_partitions(h);
+            let entry = get_entry(key_val, h, current_partition, &keys);
+
+            match entry {
+                RawEntryMut::Vacant(_) => {
+                    // set this row to true: e.g. processed ooc
+                    // safety: we correctly set the length with `reset_ooc_filter_rows`
+                    unsafe {
+                        self.ooc_state.set_row_as_ooc(iteration_idx);
+                    }
                 }
-            });
+                RawEntryMut::Occupied(entry) => {
+                    let agg_idx = *entry.get();
+                    // # Safety
+                    // we write to the hashes buffer we iterate over at the moment.
+                    // this is sound because we writes are trailing from iteration
+                    unsafe { write_agg_idx(agg_idx_ptr, processed, agg_idx) };
+                    processed += 1;
+                }
+            };
+        }
+
+        // note that this slice looks into the self.hashes buffer
+        let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, processed) };
+
+        apply_aggregation(
+            agg_idxs,
+            &chunk,
+            self.number_of_aggs(),
+            &self.aggregation_series,
+            &agg_fns,
+            &mut aggregators,
+        );
+        self.ooc_state.dump(chunk.data, &mut hashes);
+
+        self.aggregation_series.clear();
+        self.hashes = hashes;
+        self.keys = keys;
+        self.agg_fns = agg_fns;
+        self.aggregators = aggregators;
+        self.hashes.clear();
+        self.ooc_state.check_memory_usage(&self.input_schema)?;
+        Ok(SinkResult::CanHaveMoreInput)
+    }
+}
+
+impl Sink for Utf8GroupbySink {
+    fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        if self.ooc_state.ooc {
+            return self.sink_ooc(context, chunk);
+        }
+        let s = self.prepare_key_and_aggregation_series(context, &chunk)?;
+
+        // take containers to please bchk
+        // we put them back once done
+        let hashes = std::mem::take(&mut self.hashes);
+        let mut keys = std::mem::take(&mut self.keys);
+        let agg_fns = std::mem::take(&mut self.agg_fns);
+        let mut aggregators = std::mem::take(&mut self.aggregators);
+
+        // write the hashes to self.hashes buffer
+        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // now we have written hashes, we take the pointer to this buffer
+        // we will write the aggregation_function indexes in the same buffer
+        // this is unsafe and we must check that we only write the hashes that
+        // already read/taken. So we write on the slots we just read
+        let agg_idx_ptr = hashes.as_ptr() as *mut u64 as *mut IdxSize;
+        // array of the keys
+        let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
+
+        for (iteration_idx, (key_val, &h)) in keys_arr.iter().zip(&hashes).enumerate() {
+            let current_partition = self.get_partitions(h);
+            let entry = get_entry(key_val, h, current_partition, &keys);
 
             let agg_idx = match entry {
                 RawEntryMut::Vacant(entry) => {
-                    let value_offset = unsafe {
-                        NumCast::from(current_aggregators.len()).unwrap_unchecked_release()
-                    };
+                    let value_offset =
+                        unsafe { NumCast::from(aggregators.len()).unwrap_unchecked_release() };
                     let keys_offset = unsafe {
-                        Key::new(h, NumCast::from(self.keys.len()).unwrap_unchecked_release())
+                        Key::new(h, NumCast::from(keys.len()).unwrap_unchecked_release())
                     };
                     entry.insert(keys_offset, value_offset);
 
-                    self.keys.push(key_val.map(|s| s.into()));
+                    keys.push(key_val.map(|s| s.into()));
 
                     // initialize the aggregators
-                    for agg_fn in &self.agg_fns {
-                        current_aggregators.push(agg_fn.split2())
+                    for agg_fn in &agg_fns {
+                        aggregators.push(agg_fn.split())
                     }
                     value_offset
                 }
@@ -235,25 +359,26 @@ impl Sink for Utf8GroupbySink {
         // note that this slice looks into the self.hashes buffer
         let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, keys_arr.len()) };
 
-        for (agg_i, aggregation_s) in (0..num_aggs).zip(&self.aggregation_series) {
-            let has_physical_agg = self.agg_fns[agg_i].has_physical_agg();
-            apply_aggregate(
-                agg_i,
-                chunk.chunk_index,
-                agg_idxs,
-                aggregation_s,
-                has_physical_agg,
-                &mut self.aggregators,
-            );
-        }
-
+        apply_aggregation(
+            agg_idxs,
+            &chunk,
+            self.number_of_aggs(),
+            &self.aggregation_series,
+            &agg_fns,
+            &mut aggregators,
+        );
         self.aggregation_series.clear();
+        self.hashes = hashes;
+        self.keys = keys;
+        self.agg_fns = agg_fns;
+        self.aggregators = aggregators;
         self.hashes.clear();
+        self.ooc_state.check_memory_usage(&self.input_schema)?;
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, mut other: Box<dyn Sink>) {
-        // don't parallel this as this is already done in parallel.
+    fn combine(&mut self, other: &mut dyn Sink) {
+        // don't parallelize this as this is already done in parallel.
 
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         let n_partitions = self.pre_agg_partitions.len();
@@ -307,7 +432,7 @@ impl Sink for Utf8GroupbySink {
                             entry.insert(key, values_offset);
                             // initialize the new aggregators
                             for agg_fn in &self.agg_fns {
-                                self.aggregators.push(agg_fn.split2())
+                                self.aggregators.push(agg_fn.split())
                             }
                             values_offset
                         }
@@ -331,13 +456,15 @@ impl Sink for Utf8GroupbySink {
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {
-        let mut new = Self::new(
+        let mut new = Self::new_inner(
             self.key_column.clone(),
             self.aggregation_columns.clone(),
-            self.agg_fns.iter().map(|func| func.split2()).collect(),
+            self.agg_fns.iter().map(|func| func.split()).collect(),
             self.input_schema.clone(),
             self.output_schema.clone(),
             self.slice,
+            Some(self.ooc_state.io_thread.clone()),
+            self.ooc_state.ooc,
         );
         new.hb = self.hb.clone();
         new.thread_no = thread_no;
@@ -346,13 +473,19 @@ impl Sink for Utf8GroupbySink {
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
-        if dfs.is_empty() {
-            return Ok(FinalizedSink::Finished(DataFrame::from(
-                self.output_schema.as_ref(),
-            )));
-        }
-        let mut df = accumulate_dataframes_vertical_unchecked(dfs);
-        DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished)
+        let payload = if self.ooc_state.ooc {
+            let mut iot = self.ooc_state.io_thread.lock().unwrap();
+            // make sure that we reset the shared states
+            // the OOC groupby will call split as well and it should
+            // not send continue spilling to disk
+            let iot = iot.take().unwrap();
+            self.ooc_state.ooc = false;
+
+            Some((iot, self.split(0)))
+        } else {
+            None
+        };
+        finalize_groupby(dfs, &self.output_schema, self.slice, payload)
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
@@ -421,4 +554,20 @@ pub(super) fn apply_aggregate(
             agg_fn.pre_agg(chunk_idx, &mut iter)
         }
     }
+}
+
+#[inline]
+fn get_entry<'a>(
+    key_val: Option<&str>,
+    h: u64,
+    current_partition: &'a mut PlIdHashMap<Key, IdxSize>,
+    keys: &[Option<smartstring::alias::String>],
+) -> RawEntryMut<'a, Key, IdxSize, IdBuildHasher> {
+    current_partition.raw_entry_mut().from_hash(h, |key| {
+        // first compare the hash before we incur the cache miss
+        key.hash == h && {
+            let idx = key.idx as usize;
+            unsafe { keys.get_unchecked_release(idx).as_deref() == key_val }
+        }
+    })
 }

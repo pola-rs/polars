@@ -38,7 +38,8 @@ impl ColumnStats {
         let min_val = &*self.0.min_value;
 
         let dtype = DataType::from(min_val.data_type());
-        if dtype.is_numeric() || matches!(dtype, DataType::Utf8) {
+
+        if Self::use_min_max(dtype) {
             let arr = concatenate(&[min_val, max_val]).unwrap();
             let s = Series::try_from(("", arr)).unwrap();
             if s.null_count() > 0 {
@@ -49,6 +50,48 @@ impl ColumnStats {
         } else {
             None
         }
+    }
+
+    pub fn to_min(&self) -> Option<Series> {
+        let min_val = self.0.min_value.clone();
+        let dtype = DataType::from(min_val.data_type());
+
+        if !Self::use_min_max(dtype) || min_val.len() != 1 {
+            return None;
+        }
+
+        let s = Series::try_from(("", min_val)).unwrap();
+        if s.null_count() > 0 {
+            None
+        } else {
+            Some(s)
+        }
+    }
+
+    pub fn to_max(&self) -> Option<Series> {
+        let max_val = self.0.max_value.clone();
+        let dtype = DataType::from(max_val.data_type());
+
+        if !Self::use_min_max(dtype) || max_val.len() != 1 {
+            return None;
+        }
+
+        let s = Series::try_from(("", max_val)).unwrap();
+        if s.null_count() > 0 {
+            None
+        } else {
+            Some(s)
+        }
+    }
+
+    #[cfg(feature = "dtype-binary")]
+    fn use_min_max(dtype: DataType) -> bool {
+        dtype.is_numeric() || matches!(dtype, DataType::Utf8) || matches!(dtype, DataType::Binary)
+    }
+
+    #[cfg(not(feature = "dtype-binary"))]
+    fn use_min_max(dtype: DataType) -> bool {
+        dtype.is_numeric() || matches!(dtype, DataType::Utf8)
     }
 }
 
@@ -84,8 +127,8 @@ pub(crate) fn collect_statistics(
             // we select a single row group and collect only those stats
             Some(rg) => deserialize(fld, &md[rg..rg + 1])?,
         };
-        schema.with_column(fld.name.to_string(), (&fld.data_type).into());
-        stats.push(ColumnStats(st, Field::from(fld)));
+        schema.with_column((&fld.name).into(), (&fld.data_type).into());
+        stats.push(ColumnStats(st, fld.into()));
     }
 
     Ok(if stats.is_empty() {

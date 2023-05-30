@@ -48,7 +48,6 @@ fn partsupp() -> LazyFrame {
 }
 
 #[test]
-#[cfg(feature = "cse")]
 fn test_q2() -> PolarsResult<()> {
     let q1 = part()
         .inner_join(partsupp(), "p_partkey", "ps_partkey")
@@ -86,19 +85,16 @@ fn test_q2() -> PolarsResult<()> {
         .with_common_subplan_elimination(true);
 
     let out = q.collect()?;
-    let schema = Schema::from(
-        [
-            Field::new("s_acctbal", DataType::Float64),
-            Field::new("s_name", DataType::Utf8),
-            Field::new("n_name", DataType::Utf8),
-            Field::new("p_partkey", DataType::Int64),
-            Field::new("p_mfgr", DataType::Utf8),
-            Field::new("s_address", DataType::Utf8),
-            Field::new("s_phone", DataType::Utf8),
-            Field::new("s_comment", DataType::Utf8),
-        ]
-        .into_iter(),
-    );
+    let schema = Schema::from_iter([
+        Field::new("s_acctbal", DataType::Float64),
+        Field::new("s_name", DataType::Utf8),
+        Field::new("n_name", DataType::Utf8),
+        Field::new("p_partkey", DataType::Int64),
+        Field::new("p_mfgr", DataType::Utf8),
+        Field::new("s_address", DataType::Utf8),
+        Field::new("s_phone", DataType::Utf8),
+        Field::new("s_comment", DataType::Utf8),
+    ]);
     assert_eq!(&out.schema(), &schema);
 
     Ok(())

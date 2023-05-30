@@ -13,13 +13,12 @@ pub(super) fn process_generic(
     let inputs = lp.get_inputs();
     let exprs = lp.get_exprs();
 
-    let mut first_schema = None;
-    let mut names = None;
+    // let mut first_schema = None;
+    // let mut names = None;
 
     let new_inputs = inputs
         .iter()
-        .enumerate()
-        .map(|(i, &node)| {
+        .map(|&node| {
             let alp = lp_arena.take(node);
             let mut alp = proj_pd.push_down(
                 alp,
@@ -32,27 +31,23 @@ pub(super) fn process_generic(
 
             // double projection can mess up the schema ordering
             // here we ensure the ordering is maintained.
+            //
+            // Consider this query
+            // df1 => a, b
+            // df2 => a, b
+            //
+            // df3 = df1.join(df2, on = a, b)
+            //
+            // concat([df1, df3]).select(a)
+            //
+            // schema after projection pd
+            // df3 => a, b
+            // df1 => a
+            // so we ensure we do the 'a' projection again before we concatenate
             if !acc_projections.is_empty() && inputs.len() > 1 {
-                let schema = alp.schema(lp_arena);
-                if i == 0 {
-                    first_schema = Some(schema.into_owned());
-                } else if first_schema.as_ref().unwrap() != schema.as_ref() {
-                    if names.is_none() {
-                        names = Some(
-                            first_schema
-                                .as_ref()
-                                .unwrap()
-                                .iter()
-                                .map(|(name, _)| {
-                                    expr_arena.add(AExpr::Column(Arc::from(name.as_str())))
-                                })
-                                .collect::<Vec<_>>(),
-                        );
-                    }
-                    alp = ALogicalPlanBuilder::from_lp(alp, expr_arena, lp_arena)
-                        .project(names.as_ref().unwrap().clone())
-                        .build()
-                }
+                alp = ALogicalPlanBuilder::from_lp(alp, expr_arena, lp_arena)
+                    .project(acc_projections.clone())
+                    .build()
             }
             lp_arena.replace(node, alp);
             Ok(node)

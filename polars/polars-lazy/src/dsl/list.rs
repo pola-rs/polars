@@ -1,15 +1,13 @@
-#[cfg(feature = "list_eval")]
 use std::sync::Mutex;
 
-#[cfg(feature = "list_eval")]
 use polars_arrow::utils::CustomIterTools;
-#[cfg(feature = "list_eval")]
 use polars_core::prelude::*;
-#[cfg(feature = "list_eval")]
+use polars_plan::constants::MAP_LIST_NAME;
 use polars_plan::dsl::*;
-#[cfg(feature = "list_eval")]
 use rayon::prelude::*;
 
+use crate::physical_plan::exotic::prepare_expression_for_context;
+use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub trait IntoListNameSpace {
@@ -22,14 +20,131 @@ impl IntoListNameSpace for ListNameSpace {
     }
 }
 
+fn offsets_to_groups(offsets: &[i64]) -> Option<GroupsProxy> {
+    let mut start = offsets[0];
+    let end = *offsets.last().unwrap();
+    let fits_into_idx = (end - start) <= IdxSize::MAX as i64;
+
+    if fits_into_idx {
+        let groups = offsets
+            .iter()
+            .skip(1)
+            .map(|end| {
+                let offset = start as IdxSize;
+                let len = (*end - start) as IdxSize;
+                start = *end;
+                [offset, len]
+            })
+            .collect();
+        Some(GroupsProxy::Slice {
+            groups,
+            rolling: false,
+        })
+    } else {
+        None
+    }
+}
+
+fn run_per_sublist(
+    s: Series,
+    lst: &ListChunked,
+    expr: &Expr,
+    parallel: bool,
+    output_field: Field,
+) -> PolarsResult<Option<Series>> {
+    let phys_expr = prepare_expression_for_context("", expr, &lst.inner_dtype(), Context::Default)?;
+
+    let state = ExecutionState::new();
+
+    let mut err = None;
+    let mut ca: ListChunked = if parallel {
+        let m_err = Mutex::new(None);
+        let ca: ListChunked = lst
+            .par_iter()
+            .map(|opt_s| {
+                opt_s.and_then(|s| {
+                    let df = DataFrame::new_no_checks(vec![s]);
+                    let out = phys_expr.evaluate(&df, &state);
+                    match out {
+                        Ok(s) => Some(s),
+                        Err(e) => {
+                            *m_err.lock().unwrap() = Some(e);
+                            None
+                        }
+                    }
+                })
+            })
+            .collect();
+        err = m_err.lock().unwrap().take();
+        ca
+    } else {
+        let mut df_container = DataFrame::new_no_checks(vec![]);
+
+        lst.into_iter()
+            .map(|s| {
+                s.and_then(|s| unsafe {
+                    df_container.get_columns_mut().push(s);
+                    let out = phys_expr.evaluate(&df_container, &state);
+                    df_container.get_columns_mut().clear();
+                    match out {
+                        Ok(s) => Some(s),
+                        Err(e) => {
+                            err = Some(e);
+                            None
+                        }
+                    }
+                })
+            })
+            .collect_trusted()
+    };
+    if let Some(err) = err {
+        return Err(err);
+    }
+
+    ca.rename(s.name());
+
+    if ca.dtype() != output_field.data_type() {
+        ca.cast(output_field.data_type()).map(Some)
+    } else {
+        Ok(Some(ca.into_series()))
+    }
+}
+
+fn run_on_groupby_engine(
+    name: &str,
+    lst: &ListChunked,
+    expr: &Expr,
+) -> PolarsResult<Option<Series>> {
+    let lst = lst.rechunk();
+    let arr = lst.downcast_iter().next().unwrap();
+    let groups = offsets_to_groups(arr.offsets()).unwrap();
+
+    // list elements in a series
+    let values = Series::try_from(("", arr.values().clone())).unwrap();
+    let inner_dtype = lst.inner_dtype();
+    // ensure we use the logical type
+    let values = values.cast(&inner_dtype).unwrap();
+
+    let df_context = DataFrame::new_no_checks(vec![values]);
+    let phys_expr = prepare_expression_for_context("", expr, &inner_dtype, Context::Aggregation)?;
+
+    let state = ExecutionState::new();
+    let mut ac = phys_expr.evaluate_on_groups(&df_context, &groups, &state)?;
+    let mut out = match ac.agg_state() {
+        AggState::AggregatedFlat(_) | AggState::Literal(_) => {
+            let out = ac.aggregated();
+            out.as_list().into_series()
+        }
+        _ => ac.aggregated(),
+    };
+    out.rename(name);
+    Ok(Some(out))
+}
+
 pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
     /// Run any [`Expr`] on these lists elements
-    #[cfg(feature = "list_eval")]
     fn eval(self, expr: Expr, parallel: bool) -> Expr {
         let this = self.into_list_name_space();
-
-        use crate::physical_plan::exotic::prepare_expression_for_context;
-        use crate::physical_plan::state::ExecutionState;
 
         let expr2 = expr.clone();
         let func = move |s: Series| {
@@ -40,20 +155,23 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                         data_type: DataType::Categorical(_),
                         ..
                     } => {
-                        return Err(PolarsError::ComputeError(
-                            "Casting to 'Categorical' not allowed in 'arr.eval'".into(),
-                        ))
+                        polars_bail!(
+                            ComputeError: "casting to categorical not allowed in `arr.eval`"
+                        )
                     }
                     Expr::Column(name) => {
-                        if !name.is_empty() {
-                            return Err(PolarsError::ComputeError(r#"Named columns not allowed in 'arr.eval'. Consider using 'element' or 'col("")'."#.into()));
-                        }
+                        polars_ensure!(
+                            name.is_empty(),
+                            ComputeError:
+                            "named columns are not allowed in `arr.eval`; consider using `element` or `col(\"\")`"
+                        );
                     }
                     _ => {}
                 }
             }
+            let lst = s.list()?.clone();
 
-            let lst = s.list()?;
+            // # fast returns
             // ensure we get the new schema
             let output_field = eval_field_to_dtype(lst.ref_field(), &expr, true);
             if lst.is_empty() {
@@ -63,62 +181,22 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                 return Ok(Some(s));
             }
 
-            let phys_expr =
-                prepare_expression_for_context("", &expr, &lst.inner_dtype(), Context::Default)?;
-
-            let state = ExecutionState::new();
-
-            let mut err = None;
-            let mut ca: ListChunked = if parallel {
-                let m_err = Mutex::new(None);
-                let ca: ListChunked = lst
-                    .par_iter()
-                    .map(|opt_s| {
-                        opt_s.and_then(|s| {
-                            let df = DataFrame::new_no_checks(vec![s]);
-                            let out = phys_expr.evaluate(&df, &state);
-                            match out {
-                                Ok(s) => Some(s),
-                                Err(e) => {
-                                    *m_err.lock().unwrap() = Some(e);
-                                    None
-                                }
-                            }
-                        })
-                    })
-                    .collect();
-                err = m_err.lock().unwrap().take();
-                ca
-            } else {
-                let mut df_container = DataFrame::new_no_checks(vec![]);
-
-                lst.into_iter()
-                    .map(|s| {
-                        s.and_then(|s| {
-                            df_container.get_columns_mut().push(s);
-                            let out = phys_expr.evaluate(&df_container, &state);
-                            df_container.get_columns_mut().clear();
-                            match out {
-                                Ok(s) => Some(s),
-                                Err(e) => {
-                                    err = Some(e);
-                                    None
-                                }
-                            }
-                        })
-                    })
-                    .collect_trusted()
+            let fits_idx_size = lst.get_values_size() <= (IdxSize::MAX as usize);
+            // if a users passes a return type to `apply`
+            // e.g. `return_dtype=pl.Int64`
+            // this fails as the list builder expects `List<Int64>`
+            // so let's skip that for now
+            let is_user_apply = || {
+                expr.into_iter().any(|e| match e {
+                    Expr::AnonymousFunction { options, .. } => options.fmt_str == MAP_LIST_NAME,
+                    _ => false,
+                })
             };
 
-            ca.rename(s.name());
-
-            if ca.dtype() != output_field.data_type() {
-                ca.cast(output_field.data_type()).map(Some)
+            if fits_idx_size && s.null_count() == 0 && !is_user_apply() {
+                run_on_groupby_engine(s.name(), &lst, &expr)
             } else {
-                match err {
-                    None => Ok(Some(ca.into_series())),
-                    Some(e) => Err(e),
-                }
+                run_per_sublist(s, &lst, &expr, parallel, output_field)
             }
         };
 

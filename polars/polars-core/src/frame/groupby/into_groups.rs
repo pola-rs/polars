@@ -2,10 +2,12 @@
 use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use polars_arrow::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use polars_arrow::prelude::*;
-use polars_utils::{flatten, HashSingle};
+use polars_utils::HashSingle;
 
 use super::*;
-use crate::utils::{_split_offsets, copy_from_slice_unchecked};
+use crate::config::verbose;
+use crate::utils::_split_offsets;
+use crate::utils::flatten::flatten_par;
 
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupsProxy {
@@ -28,38 +30,19 @@ where
     T::Native: Hash + Eq + Send + AsU64,
     Option<T::Native>: AsU64,
 {
-    // set group size hint
-    #[cfg(feature = "dtype-categorical")]
-    let group_size_hint = if let DataType::Categorical(Some(m)) = ca.dtype() {
-        ca.len() / m.len()
-    } else {
-        0
-    };
-    #[cfg(not(feature = "dtype-categorical"))]
-    let group_size_hint = 0;
-
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = _set_partition_size() as u64;
 
         // use the arrays as iterators
-        if ca.chunks.len() == 1 {
-            if !ca.has_validity() {
-                let keys = vec![ca.cont_slice().unwrap()];
-                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-            } else {
-                let keys = ca
-                    .downcast_iter()
-                    .map(|arr| arr.into_iter().map(|x| x.copied()).collect::<Vec<_>>())
-                    .collect::<Vec<_>>();
-                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-            }
-            // use the polars-iterators
-        } else if !ca.has_validity() {
-            let keys = vec![ca.into_no_null_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+        if ca.null_count() == 0 {
+            let keys = ca
+                .downcast_iter()
+                .map(|arr| arr.values().as_slice())
+                .collect::<Vec<_>>();
+            groupby_threaded_slice(keys, n_partitions, sorted)
         } else {
-            let keys = vec![ca.into_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+            let keys = ca.downcast_iter().collect::<Vec<_>>();
+            groupby_threaded_iter(&keys, n_partitions, sorted)
         }
     } else if !ca.has_validity() {
         groupby(ca.into_no_null_iter(), sorted)
@@ -74,7 +57,7 @@ where
     T::Native: NumCast,
 {
     fn create_groups_from_sorted(&self, multithreaded: bool) -> GroupsSlice {
-        if std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1" {
+        if verbose() {
             eprintln!("groupby keys are sorted; running sorted key fast path");
         }
         let arr = self.downcast_iter().next().unwrap();
@@ -103,7 +86,8 @@ where
 
         let n_threads = POOL.current_num_threads();
         let groups = if multithreaded && n_threads > 1 {
-            let parts = create_clean_partitions(values, n_threads, self.is_sorted_reverse_flag());
+            let parts =
+                create_clean_partitions(values, n_threads, self.is_sorted_descending_flag());
             let n_parts = parts.len();
 
             let first_ptr = &values[0] as *const T::Native as usize;
@@ -136,11 +120,18 @@ where
                     })
                 })
                 .collect::<Vec<_>>();
-            flatten(&groups, None)
+            flatten_par(&groups)
         } else {
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
         };
         groups
+    }
+}
+
+#[cfg(all(feature = "dtype-categorical", feature = "performant"))]
+impl IntoGroupsProxy for CategoricalChunked {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        Ok(self.group_tuples_perfect(multithreaded, sorted))
     }
 }
 
@@ -151,10 +142,10 @@ where
 {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         // sorted path
-        if self.is_sorted_flag() || self.is_sorted_reverse_flag() && self.chunks().len() == 1 {
+        if self.is_sorted_ascending_flag() || self.is_sorted_descending_flag() {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
             return Ok(GroupsProxy::Slice {
-                groups: self.create_groups_from_sorted(multithreaded),
+                groups: self.rechunk().create_groups_from_sorted(multithreaded),
                 rolling: false,
             });
         }
@@ -214,7 +205,7 @@ where
                 num_groups_proxy(ca, multithreaded, sorted)
             }
             _ => {
-                let ca = self.cast_unchecked(&DataType::UInt32).unwrap();
+                let ca = unsafe { self.cast_unchecked(&DataType::UInt32).unwrap() };
                 let ca = ca.u32().unwrap();
                 num_groups_proxy(ca, multithreaded, sorted)
             }
@@ -242,56 +233,10 @@ impl IntoGroupsProxy for BooleanChunked {
 impl IntoGroupsProxy for Utf8Chunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        let hb = RandomState::default();
-        let null_h = get_null_hash_value(hb.clone());
-
-        let out = if multithreaded {
-            let n_partitions = _set_partition_size();
-
-            let split = _split_offsets(self.len(), n_partitions);
-
-            let str_hashes = POOL.install(|| {
-                split
-                    .into_par_iter()
-                    .map(|(offset, len)| {
-                        let ca = self.slice(offset as i64, len);
-                        ca.into_iter()
-                            .map(|opt_s| {
-                                let hash = match opt_s {
-                                    Some(s) => hb.hash_single(s),
-                                    None => null_h,
-                                };
-                                // Safety:
-                                // the underlying data is tied to self
-                                unsafe {
-                                    std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(
-                                        BytesHash::new_from_str(opt_s, hash),
-                                    )
-                                }
-                            })
-                            .collect_trusted::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>()
-            });
-            groupby_threaded_num(str_hashes, 0, n_partitions as u64, sorted)
-        } else {
-            let str_hashes = self
-                .into_iter()
-                .map(|opt_s| {
-                    let hash = match opt_s {
-                        Some(s) => hb.hash_single(s),
-                        None => null_h,
-                    };
-                    BytesHash::new_from_str(opt_s, hash)
-                })
-                .collect_trusted::<Vec<_>>();
-            groupby(str_hashes.iter(), sorted)
-        };
-        Ok(out)
+        self.as_binary().group_tuples(multithreaded, sorted)
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl IntoGroupsProxy for BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
@@ -326,7 +271,8 @@ impl IntoGroupsProxy for BinaryChunked {
                     })
                     .collect::<Vec<_>>()
             });
-            groupby_threaded_num(byte_hashes, 0, n_partitions as u64, sorted)
+            let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
+            groupby_threaded_slice(byte_hashes, n_partitions as u64, sorted)
         } else {
             let byte_hashes = self
                 .into_iter()
@@ -350,11 +296,10 @@ impl IntoGroupsProxy for ListChunked {
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         #[cfg(feature = "groupby_list")]
         {
-            if !self.inner_dtype().to_physical().is_numeric() {
-                return Err(PolarsError::ComputeError(
-                    "Grouping on List type is only allowed if the inner type is numeric".into(),
-                ));
-            }
+            polars_ensure!(
+                self.inner_dtype().to_physical().is_numeric(),
+                ComputeError: "grouping on list type is only allowed if the inner type is numeric"
+            );
 
             let hb = RandomState::default();
             let null_h = get_null_hash_value(hb.clone());
@@ -393,9 +338,9 @@ impl IntoGroupsProxy for ListChunked {
                             arr_to_hashes(&ca)
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
-                    Ok(groupby_threaded_num(
+                    let bytes_hashes = bytes_hashes.iter().collect::<Vec<_>>();
+                    Ok(groupby_threaded_slice(
                         bytes_hashes,
-                        0,
                         n_partitions as u64,
                         sorted,
                     ))
@@ -413,6 +358,19 @@ impl IntoGroupsProxy for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+impl IntoGroupsProxy for ArrayChunked {
+    #[allow(clippy::needless_lifetimes)]
+    #[allow(unused_variables)]
+    fn group_tuples<'a>(
+        &'a self,
+        _multithreaded: bool,
+        _sorted: bool,
+    ) -> PolarsResult<GroupsProxy> {
+        todo!("grouping FixedSizeList not yet supported")
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T> IntoGroupsProxy for ObjectChunked<T>
 where
@@ -421,203 +379,4 @@ where
     fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         Ok(groupby(self.into_iter(), sorted))
     }
-}
-
-/// Used to tightly two 32 bit values and null information
-/// Only the bit values matter, not the meaning of the bits
-#[inline]
-pub(super) fn pack_u32_tuples(opt_l: Option<u32>, opt_r: Option<u32>) -> [u8; 9] {
-    // 4 bytes for first value
-    // 4 bytes for second value
-    // last bytes' bits are used to indicate missing values
-    let mut val = [0u8; 9];
-    let s = &mut val;
-    match (opt_l, opt_r) {
-        (Some(l), Some(r)) => {
-            // write to first 4 places
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // write to second chunk of 4 places
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..8]) }
-            // leave last byte as is
-        }
-        (Some(l), None) => {
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // set right null bit
-            s[8] = 1;
-        }
-        (None, Some(r)) => {
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..8]) }
-            // set left null bit
-            s[8] = 1 << 1;
-        }
-        (None, None) => {
-            // set two null bits
-            s[8] = 3;
-        }
-    }
-    val
-}
-
-/// Used to tightly two 64 bit values and null information
-/// Only the bit values matter, not the meaning of the bits
-#[inline]
-pub(super) fn pack_u64_tuples(opt_l: Option<u64>, opt_r: Option<u64>) -> [u8; 17] {
-    // 8 bytes for first value
-    // 8 bytes for second value
-    // last bytes' bits are used to indicate missing values
-    let mut val = [0u8; 17];
-    let s = &mut val;
-    match (opt_l, opt_r) {
-        (Some(l), Some(r)) => {
-            // write to first 4 places
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..8]) }
-            // write to second chunk of 4 places
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[8..16]) }
-            // leave last byte as is
-        }
-        (Some(l), None) => {
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..8]) }
-            // set right null bit
-            s[16] = 1;
-        }
-        (None, Some(r)) => {
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[8..16]) }
-            // set left null bit
-            s[16] = 1 << 1;
-        }
-        (None, None) => {
-            // set two null bits
-            s[16] = 3;
-        }
-    }
-    val
-}
-
-/// Used to tightly one 32 bit and a 64 bit valued type and null information
-/// Only the bit values matter, not the meaning of the bits
-#[inline]
-pub(super) fn pack_u32_u64_tuples(opt_l: Option<u32>, opt_r: Option<u64>) -> [u8; 13] {
-    // 8 bytes for first value
-    // 8 bytes for second value
-    // last bytes' bits are used to indicate missing values
-    let mut val = [0u8; 13];
-    let s = &mut val;
-    match (opt_l, opt_r) {
-        (Some(l), Some(r)) => {
-            // write to first 4 places
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // write to second chunk of 4 places
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..12]) }
-            // leave last byte as is
-        }
-        (Some(l), None) => {
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // set right null bit
-            s[12] = 1;
-        }
-        (None, Some(r)) => {
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..12]) }
-            // set left null bit
-            s[12] = 1 << 1;
-        }
-        (None, None) => {
-            // set two null bits
-            s[12] = 3;
-        }
-    }
-    val
-}
-
-/// We will pack the utf8 columns into single column. Nulls are encoded in the start of the string
-/// by either:
-/// 11 => both valid
-/// 00 => both null
-/// 10 => first valid
-/// 01 => second valid
-pub(super) fn pack_utf8_columns(
-    lhs: &Utf8Chunked,
-    rhs: &Utf8Chunked,
-    n_partitions: usize,
-    sorted: bool,
-) -> GroupsProxy {
-    let splits = _split_offsets(lhs.len(), n_partitions);
-    let hb = RandomState::default();
-    let null_h = get_null_hash_value(hb.clone());
-
-    let (hashes, _backing_bytes): (Vec<_>, Vec<_>) = splits
-        .into_par_iter()
-        .map(|(offset, len)| {
-            let lhs = lhs.slice(offset as i64, len);
-            let rhs = rhs.slice(offset as i64, len);
-
-            // the additional:
-            // 2 is needed for the validity
-            // 1 for the '_' delimiter
-            let size = lhs.get_values_size() + rhs.get_values_size() + lhs.len() * 3 + 1;
-
-            let mut values = Vec::with_capacity(size);
-            let ptr = values.as_ptr() as usize;
-            let mut str_hashes = Vec::with_capacity(lhs.len());
-
-            lhs.into_iter().zip(rhs.into_iter()).for_each(|(lhs, rhs)| {
-                match (lhs, rhs) {
-                    (Some(lhs), Some(rhs)) => {
-                        let start = values.len();
-                        values.extend_from_slice("11".as_bytes());
-                        values.extend_from_slice(lhs.as_bytes());
-                        values.push(b'_');
-                        values.extend_from_slice(rhs.as_bytes());
-                        // reallocated lifetime is invalid
-                        debug_assert_eq!(ptr, values.as_ptr() as usize);
-                        let end = values.len();
-                        // Safety:
-                        // - we know the bytes are valid utf8
-                        // - we are in bounds
-                        // - the lifetime as long as `values` not is dropped
-                        //   so `str_val` may never leave this function
-                        let str_val: &'static str = unsafe {
-                            std::mem::transmute(std::str::from_utf8_unchecked(
-                                values.get_unchecked(start..end),
-                            ))
-                        };
-                        let hash = hb.hash_single(str_val);
-                        str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
-                    }
-                    (None, Some(rhs)) => {
-                        let start = values.len();
-                        values.extend_from_slice("01".as_bytes());
-                        values.push(b'_');
-                        values.extend_from_slice(rhs.as_bytes());
-                        debug_assert_eq!(ptr, values.as_ptr() as usize);
-                        let end = values.len();
-                        let str_val: &'static str = unsafe {
-                            std::mem::transmute(std::str::from_utf8_unchecked(
-                                values.get_unchecked(start..end),
-                            ))
-                        };
-                        let hash = hb.hash_single(str_val);
-                        str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
-                    }
-                    (Some(lhs), None) => {
-                        let start = values.len();
-                        values.extend_from_slice("10".as_bytes());
-                        values.extend_from_slice(lhs.as_bytes());
-                        values.push(b'_');
-                        debug_assert_eq!(ptr, values.as_ptr() as usize);
-                        let end = values.len();
-                        let str_val: &'static str = unsafe {
-                            std::mem::transmute(std::str::from_utf8_unchecked(
-                                values.get_unchecked(start..end),
-                            ))
-                        };
-                        let hash = hb.hash_single(str_val);
-                        str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
-                    }
-                    (None, None) => str_hashes.push(BytesHash::new(None, null_h)),
-                }
-            });
-            (str_hashes, values)
-        })
-        .unzip();
-    groupby_threaded_num(hashes, 0, n_partitions as u64, sorted)
 }

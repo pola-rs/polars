@@ -1,4 +1,3 @@
-use std::ffi::OsStr;
 use std::io::Cursor;
 
 use super::*;
@@ -114,7 +113,8 @@ fn read_unordered_json() {
 
 #[test]
 fn read_ndjson_with_trailing_newline() {
-    let data = r#"{"Column1":"Value1"}\n"#;
+    let data = r#"{"Column1":"Value1"}
+"#;
 
     let file = Cursor::new(data);
     let df = JsonReader::new(file)
@@ -146,14 +146,14 @@ fn test_read_ndjson_iss_5875() {
 
     let mut schema = Schema::new();
     schema.with_column(
-        "struct".to_owned(),
+        "struct".into(),
         DataType::Struct(vec![
             field_int_inner.clone(),
             field_float_inner.clone(),
             field_str_inner.clone(),
         ]),
     );
-    schema.with_column("float".to_owned(), DataType::Float64);
+    schema.with_column("float".into(), DataType::Float64);
 
     assert_eq!(schema, df.unwrap().schema());
 }
@@ -179,11 +179,11 @@ fn test_read_ndjson_iss_5875_part2() {
     );
     let mut schema = Schema::new();
     schema.with_column(
-        "struct".to_owned(),
+        "struct".into(),
         DataType::Struct(vec![field_int_list_inner, field_float, field_str_list]),
     );
     schema.with_column(
-        "float_list_outer".to_owned(),
+        "float_list_outer".into(),
         field_float_list.data_type().clone(),
     );
 

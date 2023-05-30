@@ -4,17 +4,17 @@
 //!
 use std::ops::{BitAnd, BitOr};
 
+#[cfg(feature = "temporal")]
 use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
+#[cfg(feature = "temporal")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
-#[cfg(feature = "rank")]
-use polars_core::utils::coalesce_nulls_series;
 #[cfg(feature = "dtype-struct")]
 use polars_core::utils::get_supertype;
 
 #[cfg(feature = "arg_where")]
 use crate::dsl::function_expr::FunctionExpr;
 use crate::dsl::function_expr::ListFunction;
-#[cfg(feature = "strings")]
+#[cfg(all(feature = "concat_str", feature = "strings"))]
 use crate::dsl::function_expr::StringFunction;
 use crate::dsl::*;
 use crate::prelude::*;
@@ -179,6 +179,7 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
 ///     and thus lead to the highest rank.
 #[cfg(all(feature = "rank", feature = "propagate_nans"))]
 pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> Expr {
+    use polars_core::utils::coalesce_nulls_series;
     use polars_ops::prelude::nan_propagating_aggregate::nan_max_s;
 
     let function = move |a: Series, b: Series| {
@@ -203,14 +204,20 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
         let a = a.drop_nulls();
         let b = b.drop_nulls();
 
-        let a_idx = a.rank(RankOptions {
-            method: RankMethod::Min,
-            ..Default::default()
-        });
-        let b_idx = b.rank(RankOptions {
-            method: RankMethod::Min,
-            ..Default::default()
-        });
+        let a_idx = a.rank(
+            RankOptions {
+                method: RankMethod::Min,
+                ..Default::default()
+            },
+            None,
+        );
+        let b_idx = b.rank(
+            RankOptions {
+                method: RankMethod::Min,
+                ..Default::default()
+            },
+            None,
+        );
         let a_idx = a_idx.idx().unwrap();
         let b_idx = b_idx.idx().unwrap();
 
@@ -233,36 +240,26 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
-pub fn arg_sort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
-    let reverse = reverse.to_vec();
-    let function = SpecialEq::new(Arc::new(move |by: &mut [Series]| {
-        polars_core::functions::arg_sort_by(by, &reverse).map(|ca| Some(ca.into_series()))
-    }) as Arc<dyn SeriesUdf>);
-
-    Expr::AnonymousFunction {
-        input: by.as_ref().to_vec(),
-        function,
-        output_type: GetOutput::from_type(IDX_DTYPE),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: true,
-            fmt_str: "arg_sort_by",
-            ..Default::default()
-        },
-    }
+#[cfg(feature = "arange")]
+pub fn arg_sort_by<E: AsRef<[Expr]>>(by: E, descending: &[bool]) -> Expr {
+    let e = &by.as_ref()[0];
+    let name = expr_output_name(e).unwrap();
+    arange(lit(0 as IdxSize), count().cast(IDX_DTYPE), 1)
+        .sort_by(by, descending)
+        .alias(name.as_ref())
 }
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
 /// Horizontally concat string columns in linear time
-pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
+pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str) -> Expr {
     let input = s.as_ref().to_vec();
-    let sep = sep.to_string();
+    let separator = separator.to_string();
 
     Expr::Function {
         input,
-        function: StringFunction::ConcatHorizontal(sep).into(),
+        function: StringFunction::ConcatHorizontal(separator).into(),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
             auto_explode: true,
             ..Default::default()
@@ -278,11 +275,10 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
     // Parse the format string, and separate substrings between placeholders
     let segments: Vec<&str> = format.split("{}").collect();
 
-    if segments.len() - 1 != args.len() {
-        return Err(PolarsError::ShapeMisMatch(
-            "number of placeholders should equal the number of arguments".into(),
-        ));
-    }
+    polars_ensure!(
+        segments.len() - 1 == args.len(),
+        ShapeMismatch: "number of placeholders should equal the number of arguments"
+    );
 
     let mut exprs: Vec<Expr> = Vec::new();
 
@@ -302,10 +298,12 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
 }
 
 /// Concat lists entries.
-pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
-    let s = s.as_ref().iter().map(|e| e.clone().into()).collect();
+pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
+    let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
-    Expr::Function {
+    polars_ensure!(!s.is_empty(), ComputeError: "`concat_list` needs one or more expressions");
+
+    Ok(Expr::Function {
         input: s,
         function: FunctionExpr::ListExpr(ListFunction::Concat),
         options: FunctionOptions {
@@ -314,14 +312,45 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
             fmt_str: "concat_list",
             ..Default::default()
         },
-    }
+    })
 }
 
-/// Create list entries that are range arrays
-/// - if `low` and `high` are a column, every element will expand into an array in a list column.
-/// - if `low` and `high` are literals the output will be of `Int64`.
 #[cfg(feature = "arange")]
-pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
+fn arange_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Option<Series>>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+    std::ops::Range<T::Native>: Iterator<Item = T::Native>,
+    std::ops::RangeInclusive<T::Native>: DoubleEndedIterator<Item = T::Native>,
+{
+    let mut ca = match step {
+        1 => ChunkedArray::<T>::from_iter_values("arange", start..end),
+        2.. => ChunkedArray::<T>::from_iter_values("arange", (start..end).step_by(step as usize)),
+        _ => {
+            polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
+            ChunkedArray::<T>::from_iter_values(
+                "arange",
+                (end..=start).rev().step_by(step.unsigned_abs() as usize),
+            )
+        }
+    };
+    let is_sorted = if end < start {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    ca.set_sorted_flag(is_sorted);
+    Ok(Some(ca.into_series()))
+}
+
+// TODO! rewrite this with the apply_private architecture
+/// Create list entries that are range arrays
+/// - if `start` and `end` are a column, every element will expand into an array in a list column.
+/// - if `start` and `end` are literals the output will be of `Int64`.
+#[cfg(feature = "arange")]
+pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
+    let output_name = "arange";
+
     let has_col_without_agg = |e: &Expr| {
         has_expr(e, |ae| matches!(ae, Expr::Column(_)))
             &&
@@ -352,44 +381,66 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
         (matches!(e, Expr::Literal(_)) && !matches!(e, Expr::Literal(LiteralValue::Series(_))))
     };
 
-    let any_column_no_agg = has_col_without_agg(&low) || has_col_without_agg(&high);
-    let literal_low = has_lit(&low);
-    let literal_high = has_lit(&high);
+    let any_column_no_agg = has_col_without_agg(&start) || has_col_without_agg(&end);
+    let literal_start = has_lit(&start);
+    let literal_end = has_lit(&end);
 
-    if (literal_low || literal_high) && !any_column_no_agg {
+    if (literal_start || literal_end) && !any_column_no_agg {
         let f = move |sa: Series, sb: Series| {
-            let sa = sa.cast(&DataType::Int64)?;
-            let sb = sb.cast(&DataType::Int64)?;
-            let low = sa
-                .i64()?
-                .get(0)
-                .ok_or_else(|| PolarsError::NoData("no data in `low` evaluation".into()))?;
-            let high = sb
-                .i64()?
-                .get(0)
-                .ok_or_else(|| PolarsError::NoData("no data in `high` evaluation".into()))?;
+            polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
 
-            let mut ca = if step > 1 {
-                Int64Chunked::from_iter_values("arange", (low..high).step_by(step))
-            } else {
-                Int64Chunked::from_iter_values("arange", low..high)
-            };
-            let is_sorted = if high < low {
-                IsSorted::Descending
-            } else {
-                IsSorted::Ascending
-            };
-            ca.set_sorted_flag(is_sorted);
-            Ok(Some(ca.into_series()))
+            match sa.dtype() {
+                dt if dt == &IDX_DTYPE => {
+                    let start = sa
+                        .idx()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+                    let sb = sb.cast(&IDX_DTYPE)?;
+                    let end = sb
+                        .idx()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+                    #[cfg(feature = "bigidx")]
+                    {
+                        arange_impl::<UInt64Type>(start, end, step)
+                    }
+                    #[cfg(not(feature = "bigidx"))]
+                    {
+                        arange_impl::<UInt32Type>(start, end, step)
+                    }
+                }
+                _ => {
+                    let sa = sa.cast(&DataType::Int64)?;
+                    let sb = sb.cast(&DataType::Int64)?;
+                    let start = sa
+                        .i64()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+                    let end = sb
+                        .i64()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+                    arange_impl::<Int64Type>(start, end, step)
+                }
+            }
         };
         apply_binary(
-            low,
-            high,
+            start,
+            end,
             f,
-            GetOutput::map_field(|_| Field::new("arange", DataType::Int64)),
+            GetOutput::map_field(|input| {
+                let dtype = if input.data_type() == &IDX_DTYPE {
+                    IDX_DTYPE
+                } else {
+                    DataType::Int64
+                };
+                Field::new(output_name, dtype)
+            }),
         )
+        .alias(output_name)
     } else {
         let f = move |sa: Series, sb: Series| {
+            polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
             let mut sa = sa.cast(&DataType::Int64)?;
             let mut sb = sb.cast(&DataType::Int64)?;
 
@@ -399,56 +450,140 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 } else if sb.len() == 1 {
                     sb = sb.new_from_index(0, sa.len())
                 } else {
-                    let msg = format!("The length of the 'low' and 'high' arguments cannot be matched in the 'arange' expression.. \
-                    Length of 'low': {}, length of 'high': {}", sa.len(), sb.len());
-                    return Err(PolarsError::ComputeError(msg.into()));
+                    polars_bail!(
+                        ComputeError:
+                        "lengths of `start`: {} and `end`: {} arguments `\
+                        cannot be matched in the `arange` expression",
+                        sa.len(), sb.len()
+                    );
                 }
             }
 
-            let low = sa.i64()?;
-            let high = sb.i64()?;
+            let start = sa.i64()?;
+            let end = sb.i64()?;
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-                "arange",
-                low.len(),
-                low.len() * 3,
+                output_name,
+                start.len(),
+                start.len() * 3,
                 DataType::Int64,
             );
 
-            low.into_iter()
-                .zip(high.into_iter())
-                .for_each(|(opt_l, opt_h)| match (opt_l, opt_h) {
-                    (Some(l), Some(r)) => {
-                        if step > 1 {
-                            builder.append_iter_values((l..r).step_by(step));
-                        } else {
-                            builder.append_iter_values(l..r);
+            for (opt_start, opt_end) in start.into_iter().zip(end.into_iter()) {
+                match (opt_start, opt_end) {
+                    (Some(start_v), Some(end_v)) => match step {
+                        1 => {
+                            builder.append_iter_values(start_v..end_v);
                         }
-                    }
+                        2.. => {
+                            builder.append_iter_values((start_v..end_v).step_by(step as usize));
+                        }
+                        _ => {
+                            polars_ensure!(start_v > end_v, InvalidOperation: "range must be decreasing if 'step' is negative");
+                            builder.append_iter_values(
+                                (end_v..=start_v)
+                                    .rev()
+                                    .step_by(step.unsigned_abs() as usize),
+                            )
+                        }
+                    },
                     _ => builder.append_null(),
-                });
+                }
+            }
 
             Ok(Some(builder.finish().into_series()))
         };
         apply_binary(
-            low,
-            high,
+            start,
+            end,
             f,
-            GetOutput::map_field(|_| Field::new("arange", DataType::List(DataType::Int64.into()))),
+            GetOutput::map_field(|_| {
+                Field::new(output_name, DataType::List(DataType::Int64.into()))
+            }),
         )
+        .alias(output_name)
     }
 }
 
-#[derive(Default)]
+macro_rules! impl_unit_setter {
+    ($fn_name:ident($field:ident)) => {
+        #[doc = concat!("Set the ", stringify!($field))]
+        pub fn $fn_name(mut self, n: Expr) -> Self {
+            self.$field = n.into();
+            self
+        }
+    };
+}
+
+/// Arguments used by [`datetime`] in order to produce an `Expr` of `Datetime`
+///
+/// Construct a `DatetimeArgs` with `DatetimeArgs::new(y, m, d)`. This will set the other time units to `lit(0)`. You
+/// can then set the other fields with the `with_*` methods, or use `with_hms` to set `hour`, `minute`, and `second` all
+/// at once.
+///
+/// # Examples
+/// ```
+/// // construct a DatetimeArgs set to July 20, 1969 at 20:17
+/// let args = DatetimeArgs::new(lit(1969), lit(7), lit(20)).with_hms(lit(20), lit(17), lit(0));
+/// // or
+/// let args = DatetimeArgs::new(lit(1969), lit(7), lit(20)).with_hour(lit(20)).with_minute(lit(17));
+///
+/// // construct a DatetimeArgs using existing columns
+/// let args = DatetimeArgs::new(lit(2023), col("month"), col("day"));
+/// ```
+#[derive(Debug, Clone)]
 pub struct DatetimeArgs {
     pub year: Expr,
     pub month: Expr,
     pub day: Expr,
-    pub hour: Option<Expr>,
-    pub minute: Option<Expr>,
-    pub second: Option<Expr>,
-    pub microsecond: Option<Expr>,
+    pub hour: Expr,
+    pub minute: Expr,
+    pub second: Expr,
+    pub microsecond: Expr,
 }
 
+impl DatetimeArgs {
+    /// Construct a new `DatetimeArgs` set to `year`, `month`, `day`
+    ///
+    /// Other fields default to `lit(0)`. Use the `with_*` methods to set them.
+    pub fn new(year: Expr, month: Expr, day: Expr) -> Self {
+        Self {
+            year,
+            month,
+            day,
+            hour: lit(0),
+            minute: lit(0),
+            second: lit(0),
+            microsecond: lit(0),
+        }
+    }
+
+    /// Set `hour`, `minute`, and `second`
+    ///
+    /// Equivalent to
+    /// ```ignore
+    /// self.with_hour(hour)
+    ///     .with_minute(minute)
+    ///     .with_second(second)
+    /// ```
+    pub fn with_hms(self, hour: Expr, minute: Expr, second: Expr) -> Self {
+        Self {
+            hour,
+            minute,
+            second,
+            ..self
+        }
+    }
+
+    impl_unit_setter!(with_year(year));
+    impl_unit_setter!(with_month(month));
+    impl_unit_setter!(with_day(day));
+    impl_unit_setter!(with_hour(hour));
+    impl_unit_setter!(with_minute(minute));
+    impl_unit_setter!(with_second(second));
+    impl_unit_setter!(with_microsecond(microsecond));
+}
+
+/// Construct a column of `Datetime` from the provided [`DatetimeArgs`].
 #[cfg(feature = "temporal")]
 pub fn datetime(args: DatetimeArgs) -> Expr {
     use polars_core::export::chrono::NaiveDate;
@@ -531,15 +666,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {
-        input: vec![
-            year,
-            month,
-            day,
-            hour.unwrap_or_else(|| lit(0)),
-            minute.unwrap_or_else(|| lit(0)),
-            second.unwrap_or_else(|| lit(0)),
-            microsecond.unwrap_or_else(|| lit(0)),
-        ],
+        input: vec![year, month, day, hour, minute, second, microsecond],
         function,
         output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Microseconds, None)),
         options: FunctionOptions {
@@ -552,22 +679,117 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     .alias("datetime")
 }
 
-#[derive(Default)]
+/// Arguments used by [`duration`] in order to produce an `Expr` of `Duration`
+///
+/// To construct a `DurationArgs`, use struct literal syntax with `..Default::default()` to leave unspecified fields at
+/// their default value of `lit(0)`, as demonstrated below.
+///
+/// ```
+/// let args = DurationArgs {
+///     days: lit(5),
+///     hours: col("num_hours"),
+///     minutes: col("num_minutes"),
+///     ..Default::default()  // other fields are lit(0)
+/// };
+/// ```
+/// If you prefer builder syntax, `with_*` methods are also available.
+/// ```
+/// let args = DurationArgs::new().with_weeks(lit(42)).with_hours(lit(84));
+/// ```
+#[derive(Debug, Clone)]
 pub struct DurationArgs {
-    pub days: Option<Expr>,
-    pub seconds: Option<Expr>,
-    pub nanoseconds: Option<Expr>,
-    pub microseconds: Option<Expr>,
-    pub milliseconds: Option<Expr>,
-    pub minutes: Option<Expr>,
-    pub hours: Option<Expr>,
-    pub weeks: Option<Expr>,
+    pub weeks: Expr,
+    pub days: Expr,
+    pub hours: Expr,
+    pub minutes: Expr,
+    pub seconds: Expr,
+    pub milliseconds: Expr,
+    pub microseconds: Expr,
+    pub nanoseconds: Expr,
 }
 
+impl Default for DurationArgs {
+    fn default() -> Self {
+        Self {
+            weeks: lit(0),
+            days: lit(0),
+            hours: lit(0),
+            minutes: lit(0),
+            seconds: lit(0),
+            milliseconds: lit(0),
+            microseconds: lit(0),
+            nanoseconds: lit(0),
+        }
+    }
+}
+
+impl DurationArgs {
+    /// Create a new `DurationArgs` with all fields set to `lit(0)`. Use the `with_*` methods to set the fields.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set `hours`, `minutes`, and `seconds`
+    ///
+    /// Equivalent to
+    /// ```ignore
+    /// self.with_hours(hours)
+    ///     .with_minutes(minutes)
+    ///     .with_seconds(seconds)
+    /// ```.
+    pub fn with_hms(self, hours: Expr, minutes: Expr, seconds: Expr) -> Self {
+        Self {
+            hours,
+            minutes,
+            seconds,
+            ..self
+        }
+    }
+
+    /// Set `milliseconds`, `microseconds`, and `nanoseconds`
+    ///
+    /// Equivalent to
+    /// ```ignore
+    /// self.with_milliseconds(milliseconds)
+    ///     .with_microseconds(microseconds)
+    ///     .with_nanoseconds(nanoseconds)
+    /// ```
+    pub fn with_fractional_seconds(
+        self,
+        milliseconds: Expr,
+        microseconds: Expr,
+        nanoseconds: Expr,
+    ) -> Self {
+        Self {
+            milliseconds,
+            microseconds,
+            nanoseconds,
+            ..self
+        }
+    }
+
+    impl_unit_setter!(with_weeks(weeks));
+    impl_unit_setter!(with_days(days));
+    impl_unit_setter!(with_hours(hours));
+    impl_unit_setter!(with_minutes(minutes));
+    impl_unit_setter!(with_seconds(seconds));
+    impl_unit_setter!(with_milliseconds(milliseconds));
+    impl_unit_setter!(with_microseconds(microseconds));
+    impl_unit_setter!(with_nanoseconds(nanoseconds));
+}
+
+/// Construct a column of `Duration` from the provided [`DurationArgs`]
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         assert_eq!(s.len(), 8);
+        if s.iter().any(|s| s.is_empty()) {
+            return Ok(Some(Series::new_empty(
+                s[0].name(),
+                &DataType::Duration(TimeUnit::Nanoseconds),
+            )));
+        }
+
         let days = s[0].cast(&DataType::Int64).unwrap();
         let seconds = s[1].cast(&DataType::Int64).unwrap();
         let mut nanoseconds = s[2].cast(&DataType::Int64).unwrap();
@@ -616,14 +838,14 @@ pub fn duration(args: DurationArgs) -> Expr {
 
     Expr::AnonymousFunction {
         input: vec![
-            args.days.unwrap_or_else(|| lit(0i64)),
-            args.seconds.unwrap_or_else(|| lit(0i64)),
-            args.nanoseconds.unwrap_or_else(|| lit(0i64)),
-            args.microseconds.unwrap_or_else(|| lit(0i64)),
-            args.milliseconds.unwrap_or_else(|| lit(0i64)),
-            args.minutes.unwrap_or_else(|| lit(0i64)),
-            args.hours.unwrap_or_else(|| lit(0i64)),
-            args.weeks.unwrap_or_else(|| lit(0i64)),
+            args.days,
+            args.seconds,
+            args.nanoseconds,
+            args.microseconds,
+            args.milliseconds,
+            args.minutes,
+            args.hours,
+            args.weeks,
         ],
         function,
         output_type: GetOutput::from_type(DataType::Duration(TimeUnit::Nanoseconds)),
@@ -641,7 +863,8 @@ pub fn duration(args: DurationArgs) -> Expr {
 ///
 /// # Arguments
 ///
-/// * `name` - A string slice that holds the name of the column
+/// * `name` - A string slice that holds the name of the column. If a column with this name does not exist when the
+///   LazyFrame is collected, an error is returned.
 ///
 /// # Examples
 ///
@@ -667,12 +890,12 @@ pub fn col(name: &str) -> Expr {
     }
 }
 
-/// Selects all columns
+/// Selects all columns. Shorthand for `col("*")`.
 pub fn all() -> Expr {
     Expr::Wildcard
 }
 
-/// Select multiple columns by name
+/// Select multiple columns by name.
 pub fn cols<I: IntoVec<String>>(names: I) -> Expr {
     let names = names.into_vec();
     Expr::Columns(names)
@@ -689,37 +912,37 @@ pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Expr {
     Expr::DtypeColumn(dtypes)
 }
 
-/// Sum all the values in this Expression.
+/// Sum all the values in the column named `name`. Shorthand for `col(name).sum()`.
 pub fn sum(name: &str) -> Expr {
     col(name).sum()
 }
 
-/// Find the minimum of all the values in this Expression.
+/// Find the minimum of all the values in the column named `name`. Shorthand for `col(name).min()`.
 pub fn min(name: &str) -> Expr {
     col(name).min()
 }
 
-/// Find the maximum of all the values in this Expression.
+/// Find the maximum of all the values in the column named `name`. Shorthand for `col(name).max()`.
 pub fn max(name: &str) -> Expr {
     col(name).max()
 }
 
-/// Find the mean of all the values in this Expression.
+/// Find the mean of all the values in the column named `name`. Shorthand for `col(name).mean()`.
 pub fn mean(name: &str) -> Expr {
     col(name).mean()
 }
 
-/// Find the mean of all the values in this Expression.
+/// Find the mean of all the values in the column named `name`. Alias for [`mean`].
 pub fn avg(name: &str) -> Expr {
     col(name).mean()
 }
 
-/// Find the median of all the values in this Expression.
+/// Find the median of all the values in the column named `name`. Shorthand for `col(name).median()`.
 pub fn median(name: &str) -> Expr {
     col(name).median()
 }
 
-/// Find a specific quantile of all the values in this Expression.
+/// Find a specific quantile of all the values in the column named `name`.
 pub fn quantile(name: &str, quantile: Expr, interpol: QuantileInterpolOptions) -> Expr {
     col(name).quantile(quantile, interpol)
 }
@@ -736,6 +959,8 @@ macro_rules! prepare_binary_function {
 }
 
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
+///
+/// The closure takes two arguments, each a `Series`. `output_type` must be the output dtype of the resulting `Series`.
 pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync,
@@ -744,6 +969,9 @@ where
     a.map_many(function, &[b], output_type)
 }
 
+/// Like [`map_binary`], but used in a groupby-aggregation context.
+///
+/// See [`Expr::apply`] for the difference between [`map`](Expr::map) and [`apply`](Expr::apply).
 pub fn apply_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync,
@@ -805,6 +1033,11 @@ where
     }
 }
 
+/// Analogous to [`Iterator::reduce`](std::iter::Iterator::reduce).
+///
+/// An accumulator is initialized to the series given by the first expression in `exprs`, and then each subsequent value
+/// of the accumulator is computed from `f(acc, next_expr_series)`. If `exprs` is empty, an error is returned when
+/// `collect` is called.
 pub fn reduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
@@ -825,9 +1058,7 @@ where
                 }
                 Ok(Some(acc))
             }
-            None => Err(PolarsError::ComputeError(
-                "Reduce did not have any expressions to fold".into(),
-            )),
+            None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
     }) as Arc<dyn SeriesUdf>);
 
@@ -872,9 +1103,7 @@ where
 
                 StructChunked::new(acc.name(), &result).map(|ca| Some(ca.into_series()))
             }
-            None => Err(PolarsError::ComputeError(
-                "Reduce did not have any expressions to fold".into(),
-            )),
+            None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
     }) as Arc<dyn SeriesUdf>);
 
@@ -941,7 +1170,9 @@ where
     }
 }
 
-/// Get the the sum of the values per row
+/// Create a new column with the the sum of the values in each row.
+///
+/// The name of the resulting column will be `"sum"`; use [`alias`](Expr::alias) to choose a different name.
 pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let mut exprs = exprs.as_ref().to_vec();
     let func = |s1, s2| Ok(Some(&s1 + &s2));
@@ -953,7 +1184,9 @@ pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     fold_exprs(init, func, exprs).alias("sum")
 }
 
-/// Get the the maximum value per row
+/// Create a new column with the the maximum value per row.
+///
+/// The name of the resulting column will be `"max"`; use [`alias`](Expr::alias) to choose a different name.
 pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
     if exprs.is_empty() {
@@ -966,6 +1199,9 @@ pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     reduce_exprs(func, exprs).alias("max")
 }
 
+/// Create a new column with the the minimum value per row.
+///
+/// The name of the resulting column will be `"min"`; use [`alias`](Expr::alias) to choose a different name.
 pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
     if exprs.is_empty() {
@@ -978,36 +1214,44 @@ pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     reduce_exprs(func, exprs).alias("min")
 }
 
-/// Evaluate all the expressions with a bitwise or
+/// Create a new column with the the bitwise-or of the elements in each row.
+///
+/// The name of the resulting column is arbitrary; use [`alias`](Expr::alias) to choose a different name.
 pub fn any_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
     let func = |s1: Series, s2: Series| Ok(Some(s1.bool()?.bitor(s2.bool()?).into_series()));
     fold_exprs(lit(false), func, exprs)
 }
 
-/// Evaluate all the expressions with a bitwise and
+/// Create a new column with the the bitwise-and of the elements in each row.
+///
+/// The name of the resulting column is arbitrary; use [`alias`](Expr::alias) to choose a different name.
 pub fn all_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
     let func = |s1: Series, s2: Series| Ok(Some(s1.bool()?.bitand(s2.bool()?).into_series()));
     fold_exprs(lit(true), func, exprs)
 }
 
-/// [Not](Expr::Not) expression.
+/// Negates a boolean column.
 pub fn not(expr: Expr) -> Expr {
     expr.not()
 }
 
-/// [IsNull](Expr::IsNotNull) expression
+/// A column which is `true` wherever `expr` is null, `false` elsewhere.
 pub fn is_null(expr: Expr) -> Expr {
     expr.is_null()
 }
 
-/// [IsNotNull](Expr::IsNotNull) expression.
+/// A column which is `false` wherever `expr` is null, `true` elsewhere.
 pub fn is_not_null(expr: Expr) -> Expr {
     expr.is_not_null()
 }
 
-/// [Cast](Expr::Cast) expression.
+/// Casts the column given by `Expr` to a different type.
+///
+/// Follows the rules of Rust casting, with the exception that integers and floats can be cast to `DataType::Date` and
+/// `DataType::DateTime(_, _)`. A column consisting entirely of of `Null` can be cast to any type, regardless of the
+/// nominal type of the column.
 pub fn cast(expr: Expr, data_type: DataType) -> Expr {
     Expr::Cast {
         expr: Box::new(expr),
@@ -1047,26 +1291,34 @@ pub fn range<T: Range<T>>(low: T, high: T) -> Expr {
 #[cfg(feature = "dtype-struct")]
 pub fn as_struct(exprs: &[Expr]) -> Expr {
     map_multiple(
-        |s| StructChunked::new("", s).map(|ca| Some(ca.into_series())),
+        |s| StructChunked::new(s[0].name(), s).map(|ca| Some(ca.into_series())),
         exprs,
         GetOutput::map_fields(|fld| Field::new(fld[0].name(), DataType::Struct(fld.to_vec()))),
     )
     .with_function_options(|mut options| {
         options.input_wildcard_expansion = true;
         options.fmt_str = "as_struct";
+        options.pass_name_to_apply = true;
         options
     })
 }
 
-/// Repeat a literal `value` `n` times.
-pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
+/// Create a column of length `n` containing `n` copies of the literal `value`. Generally you won't need this function,
+/// as `lit(value)` already represents a column containing only `value` whose length is automatically set to the correct
+/// number of rows.
+pub fn repeat<L: Literal>(value: L, n: Expr) -> Expr {
     let function = |s: Series, n: Series| {
-        let n = n.get(0).unwrap().extract::<usize>().ok_or_else(|| {
-            PolarsError::ComputeError(format!("could not extract a size from {n:?}").into())
-        })?;
+        polars_ensure!(
+            n.dtype().is_integer(),
+            SchemaMismatch: "expected expression of dtype 'integer', got '{}'", n.dtype()
+        );
+        let first_value = n.get(0)?;
+        let n = first_value.extract::<usize>().ok_or_else(
+            || polars_err!(ComputeError: "could not parse value '{}' as a size.", first_value),
+        )?;
         Ok(Some(s.new_from_index(0, n)))
     };
-    apply_binary(lit(value), n_times, function, GetOutput::same_type())
+    apply_binary(lit(value), n, function, GetOutput::same_type()).alias("repeat")
 }
 
 #[cfg(feature = "arg_where")]
@@ -1078,13 +1330,14 @@ pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
         function: FunctionExpr::ArgWhere,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            fmt_str: "arg_where",
             ..Default::default()
         },
     }
 }
 
-/// Folds the expressions from left to right keeping the first no null values.
+/// Folds the expressions from left to right keeping the first non-null values.
+///
+/// It is an error to provide an empty `exprs`.
 pub fn coalesce(exprs: &[Expr]) -> Expr {
     let input = exprs.to_vec();
     Expr::Function {
@@ -1099,10 +1352,9 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
     }
 }
 
-///  Create a date range from a `start` and `stop` expression.
+/// Create a date range from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
 pub fn date_range(
-    name: String,
     start: Expr,
     end: Expr,
     every: Duration,
@@ -1113,16 +1365,93 @@ pub fn date_range(
 
     Expr::Function {
         input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRange {
-            name,
-            every,
-            closed,
-            tz,
-        }),
+        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRange { every, closed, tz }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: true,
+            allow_rename: true,
             ..Default::default()
         },
     }
+}
+
+/// Create a time range from a `start` and `stop` expression.
+#[cfg(feature = "temporal")]
+pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
+    let input = vec![start, end];
+
+    Expr::Function {
+        input,
+        function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRange { every, closed }),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: false,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
+}
+
+#[cfg(feature = "rolling_window")]
+pub fn rolling_corr(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
+    let x = x.cache();
+    let y = y.cache();
+    // see: https://github.com/pandas-dev/pandas/blob/v1.5.1/pandas/core/window/rolling.py#L1780-L1804
+    let rolling_options = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: options.min_periods as usize,
+        ..Default::default()
+    };
+
+    let mean_x_y = (x.clone() * y.clone()).rolling_mean(rolling_options.clone());
+    let mean_x = x.clone().rolling_mean(rolling_options.clone());
+    let mean_y = y.clone().rolling_mean(rolling_options.clone());
+    let var_x = x.clone().rolling_var(rolling_options.clone());
+    let var_y = y.clone().rolling_var(rolling_options);
+
+    let rolling_options_count = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: 0,
+        ..Default::default()
+    };
+    let ddof = options.ddof as f64;
+    let count_x_y = (x + y)
+        .is_not_null()
+        .cast(DataType::Float64)
+        .rolling_sum(rolling_options_count)
+        .cache();
+    let numerator = (mean_x_y - mean_x * mean_y) * (count_x_y.clone() / (count_x_y - lit(ddof)));
+    let denominator = (var_x * var_y).pow(lit(0.5));
+
+    numerator / denominator
+}
+
+#[cfg(feature = "rolling_window")]
+pub fn rolling_cov(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
+    let x = x.cache();
+    let y = y.cache();
+    // see: https://github.com/pandas-dev/pandas/blob/91111fd99898d9dcaa6bf6bedb662db4108da6e6/pandas/core/window/rolling.py#L1700
+    let rolling_options = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: options.min_periods as usize,
+        ..Default::default()
+    };
+
+    let mean_x_y = (x.clone() * y.clone()).rolling_mean(rolling_options.clone());
+    let mean_x = x.clone().rolling_mean(rolling_options.clone());
+    let mean_y = y.clone().rolling_mean(rolling_options);
+    let rolling_options_count = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: 0,
+        ..Default::default()
+    };
+    let count_x_y = (x + y)
+        .is_not_null()
+        .cast(DataType::Float64)
+        .rolling_sum(rolling_options_count)
+        .cache();
+
+    let ddof = options.ddof as f64;
+
+    (mean_x_y - mean_x * mean_y) * (count_x_y.clone() / (count_x_y - lit(ddof)))
 }

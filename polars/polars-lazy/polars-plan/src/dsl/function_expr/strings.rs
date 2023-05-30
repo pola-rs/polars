@@ -9,7 +9,8 @@ use regex::{escape, Regex};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "timezones")]
-static TZ_AWARE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%#z)|(^%\+$)").unwrap());
+static TZ_AWARE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
 
 use super::*;
 
@@ -42,15 +43,16 @@ pub enum StringFunction {
     ExtractAll,
     CountMatch(String),
     #[cfg(feature = "temporal")]
-    Strptime(StrpTimeOptions),
+    Strptime(DataType, StrptimeOptions),
     #[cfg(feature = "concat_str")]
     ConcatVertical(String),
     #[cfg(feature = "concat_str")]
     ConcatHorizontal(String),
     #[cfg(feature = "regex")]
     Replace {
-        // replace_single or replace_all
-        all: bool,
+        // negative is replace all
+        // how many matches to replace
+        n: i64,
         literal: bool,
     },
     Uppercase,
@@ -59,12 +61,45 @@ pub enum StringFunction {
     RStrip(Option<String>),
     LStrip(Option<String>),
     #[cfg(feature = "string_from_radix")]
-    FromRadix(Option<u32>),
+    FromRadix(u32, bool),
+    Slice(i64, Option<u64>),
+    Explode,
+    #[cfg(feature = "dtype-decimal")]
+    ToDecimal(usize),
+}
+
+impl StringFunction {
+    pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
+        use StringFunction::*;
+        match self {
+            #[cfg(feature = "regex")]
+            Contains { .. } => mapper.with_dtype(DataType::Boolean),
+            EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
+            Extract { .. } => mapper.with_same_dtype(),
+            ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
+            CountMatch(_) => mapper.with_dtype(DataType::UInt32),
+            #[cfg(feature = "string_justify")]
+            Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "temporal")]
+            Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
+            #[cfg(feature = "concat_str")]
+            ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
+            #[cfg(feature = "regex")]
+            Replace { .. } => mapper.with_dtype(DataType::Utf8),
+            Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) | Slice(_, _) => {
+                mapper.with_dtype(DataType::Utf8)
+            }
+            #[cfg(feature = "string_from_radix")]
+            FromRadix { .. } => mapper.with_dtype(DataType::Int32),
+            Explode => mapper.with_same_dtype(),
+            #[cfg(feature = "dtype-decimal")]
+            ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
+        }
+    }
 }
 
 impl Display for StringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use self::*;
         let s = match self {
             #[cfg(feature = "regex")]
             StringFunction::Contains { .. } => "contains",
@@ -80,7 +115,7 @@ impl Display for StringFunction {
             StringFunction::ExtractAll => "extract_all",
             StringFunction::CountMatch(_) => "count_match",
             #[cfg(feature = "temporal")]
-            StringFunction::Strptime(_) => "strptime",
+            StringFunction::Strptime(_, _) => "strptime",
             #[cfg(feature = "concat_str")]
             StringFunction::ConcatVertical(_) => "concat_vertical",
             #[cfg(feature = "concat_str")]
@@ -94,6 +129,10 @@ impl Display for StringFunction {
             StringFunction::RStrip(_) => "rstrip",
             #[cfg(feature = "string_from_radix")]
             StringFunction::FromRadix { .. } => "from_radix",
+            StringFunction::Slice(_, _) => "str_slice",
+            StringFunction::Explode => "explode",
+            #[cfg(feature = "dtype-decimal")]
+            StringFunction::ToDecimal(_) => "to_decimal",
         };
 
         write!(f, "str.{s}")
@@ -121,7 +160,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                 if literal {
                     ca.contains_literal(pat)?
                 } else {
-                    ca.contains(pat)?
+                    ca.contains(pat, strict)?
                 }
             }
             None => BooleanChunked::full(ca.name(), false, ca.len()),
@@ -150,10 +189,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                 ca.into_iter()
                     .zip(pat.into_iter())
                     .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-                        (Some(src), Some(pat)) => {
-                            let re = Regex::new(pat).ok()?;
-                            Some(re.is_match(src))
-                        }
+                        (Some(src), Some(pat)) => Regex::new(pat).ok().map(|re| re.is_match(src)),
                         _ => Some(false),
                     })
                     .collect_trusted()
@@ -301,7 +337,7 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
     if pat.len() == 1 {
         let pat = pat
             .get(0)
-            .ok_or_else(|| PolarsError::ComputeError("Expected a pattern got null".into()))?;
+            .ok_or_else(|| polars_err!(ComputeError: "expected a pattern, got null"))?;
         ca.extract_all(pat).map(|ca| ca.into_series())
     } else {
         ca.extract_all_many(pat).map(|ca| ca.into_series())
@@ -316,84 +352,120 @@ pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "temporal")]
-pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Series> {
-    let tz_aware = match (options.tz_aware, &options.fmt) {
-        (true, Some(_)) => true,
-        (true, None) => {
-            return Err(PolarsError::ComputeError(
-                "Passing 'tz_aware=True' without 'fmt' is not yet supported. Please specify 'fmt'."
-                    .into(),
-            ));
+pub(super) fn strptime(
+    s: &Series,
+    dtype: DataType,
+    options: &StrptimeOptions,
+) -> PolarsResult<Series> {
+    match dtype {
+        DataType::Date => to_date(s, options),
+        DataType::Datetime(time_unit, time_zone) => {
+            to_datetime(s, &time_unit, time_zone.as_ref(), options)
         }
-        #[cfg(feature = "timezones")]
-        (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
-        (false, _) => false,
-    };
-    #[cfg(feature = "timezones")]
-    if !tz_aware && options.utc {
-        return Err(PolarsError::ComputeError(
-            "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.convert_time_zone('UTC')`.".into(),
-        ));
+        DataType::Time => to_time(s, options),
+        dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
     }
-    let ca = s.utf8()?;
+}
 
-    let out = match &options.date_dtype {
-        DataType::Date => {
-            if options.exact {
-                ca.as_date(options.fmt.as_deref(), options.cache)?
-                    .into_series()
-            } else {
-                ca.as_date_not_exact(options.fmt.as_deref())?.into_series()
-            }
-        }
-        DataType::Datetime(tu, tz) => {
-            if tz.is_some() && tz_aware {
-                return Err(PolarsError::ComputeError(
-                    "Cannot use strptime with both 'tz_aware=True' and tz-aware Datetime.".into(),
-                ));
-            }
-            if options.exact {
-                ca.as_datetime(
-                    options.fmt.as_deref(),
-                    *tu,
-                    options.cache,
-                    tz_aware,
-                    options.utc,
-                    tz.as_ref(),
-                )?
+#[cfg(feature = "dtype-date")]
+fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    let out = {
+        if options.exact {
+            ca.as_date(options.format.as_deref(), options.cache)?
                 .into_series()
-            } else {
-                ca.as_datetime_not_exact(options.fmt.as_deref(), *tu, tz.as_ref())?
-                    .into_series()
-            }
-        }
-        DataType::Time => {
-            if options.exact {
-                ca.as_time(options.fmt.as_deref(), options.cache)?
-                    .into_series()
-            } else {
-                return Err(PolarsError::ComputeError(
-                    format!("non-exact not implemented for dtype {:?}", DataType::Time).into(),
-                ));
-            }
-        }
-        dt => {
-            return Err(PolarsError::ComputeError(
-                format!("not implemented for dtype {dt:?}").into(),
-            ))
+        } else {
+            ca.as_date_not_exact(options.format.as_deref())?
+                .into_series()
         }
     };
+
     if options.strict {
-        if out.null_count() != ca.null_count() {
-            Err(PolarsError::ComputeError(
-                "strict conversion to dates failed, maybe set strict=False".into(),
-            ))
-        } else {
-            Ok(out.into_series())
-        }
-    } else {
-        Ok(out.into_series())
+        polars_ensure!(
+            out.null_count() == ca.null_count(),
+            ComputeError:
+            "strict conversion to dates failed.\n\
+            \n\
+            You might want to try:\n\
+            - setting `strict=False`\n\
+            - explicitly specifying a `format`"
+        );
     }
+    Ok(out.into_series())
+}
+
+#[cfg(feature = "dtype-datetime")]
+fn to_datetime(
+    s: &Series,
+    time_unit: &TimeUnit,
+    time_zone: Option<&TimeZone>,
+    options: &StrptimeOptions,
+) -> PolarsResult<Series> {
+    let tz_aware = match &options.format {
+        #[cfg(feature = "timezones")]
+        Some(format) => TZ_AWARE_RE.is_match(format),
+        _ => false,
+    };
+    if let (Some(_), true) = (time_zone, tz_aware) {
+        polars_bail!(
+            ComputeError:
+            "cannot use strptime with both a tz-aware format and a tz-aware dtype, \
+            please drop time zone from the dtype"
+        )
+    };
+
+    let ca = s.utf8()?;
+    let out = if options.exact {
+        ca.as_datetime(
+            options.format.as_deref(),
+            *time_unit,
+            options.cache,
+            tz_aware,
+            time_zone,
+        )?
+        .into_series()
+    } else {
+        ca.as_datetime_not_exact(options.format.as_deref(), *time_unit, time_zone)?
+            .into_series()
+    };
+
+    if options.strict {
+        polars_ensure!(
+            out.null_count() == ca.null_count(),
+            ComputeError:
+            "strict conversion to datetimes failed.\n\
+            \n\
+            You might want to try:\n\
+            - setting `strict=False`\n\
+            - explicitly specifying a `format`"
+        );
+    }
+    Ok(out.into_series())
+}
+
+#[cfg(feature = "dtype-time")]
+fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
+    polars_ensure!(
+        options.exact, ComputeError: "non-exact not implemented for Time data type"
+    );
+
+    let ca = s.utf8()?;
+    let out = ca
+        .as_time(options.format.as_deref(), options.cache)?
+        .into_series();
+
+    if options.strict {
+        polars_ensure!(
+            out.null_count() == ca.null_count(),
+            ComputeError:
+            "strict conversion to times failed.\n\
+            \n\
+            You might want to try:\n\
+            - setting `strict=False`\n\
+            - explicitly specifying a `format`"
+        );
+    }
+    Ok(out.into_series())
 }
 
 #[cfg(feature = "concat_str")]
@@ -414,9 +486,9 @@ impl From<StringFunction> for FunctionExpr {
 
 #[cfg(feature = "regex")]
 fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
-    pat.get(0).ok_or_else(|| {
-        PolarsError::ComputeError("pattern may not be 'null' in 'replace' expression".into())
-    })
+    pat.get(0).ok_or_else(
+        || polars_err!(ComputeError: "pattern cannot be 'null' in 'replace' expression"),
+    )
 }
 
 // used only if feature="regex"
@@ -439,33 +511,52 @@ where
 }
 
 #[cfg(feature = "regex")]
-fn replace_single<'a>(
+fn is_literal_pat(pat: &str) -> bool {
+    pat.chars().all(|c| !c.is_ascii_punctuation())
+}
+
+#[cfg(feature = "regex")]
+fn replace_n<'a>(
     ca: &'a Utf8Chunked,
     pat: &'a Utf8Chunked,
     val: &'a Utf8Chunked,
     literal: bool,
+    n: usize,
 ) -> PolarsResult<Utf8Chunked> {
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
-            let val = val.get(0).ok_or_else(|| PolarsError::ComputeError("value may not be 'null' in 'replace' expression".into()))?;
+            let val = val.get(0).ok_or_else(
+                || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
+            )?;
+            let literal = literal || is_literal_pat(pat);
 
             match literal {
-                true => ca.replace_literal(pat, val),
-                false => ca.replace(pat, val),
+                true => ca.replace_literal(pat, val, n),
+                false => {
+                    if n > 1 {
+                        polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
+                    }
+                    ca.replace(pat, val)
+                }
             }
         }
         (1, len_val) => {
-            let mut pat = get_pat(pat)?.to_string();
-            if len_val != ca.len() {
-                return Err(PolarsError::ComputeError(format!("The replacement value expression in 'str.replace' should be equal to the length of the string column.\
-                Got column length: {} and replacement value length: {}", ca.len(), len_val).into()))
+            if n > 1 {
+                polars_bail!(ComputeError: "multivalue replacement with 'n > 1' not yet supported")
             }
+            let mut pat = get_pat(pat)?.to_string();
+            polars_ensure!(
+                len_val == ca.len(),
+                ComputeError:
+                "replacement value length ({}) does not match string column length ({})",
+                len_val, ca.len(),
+            );
+            let literal = literal || is_literal_pat(&pat);
 
             if literal {
                 pat = escape(&pat)
             }
-
 
             let reg = Regex::new(&pat)?;
             let lit = pat.chars().all(|c| !c.is_ascii_punctuation());
@@ -479,7 +570,9 @@ fn replace_single<'a>(
             };
             Ok(iter_and_replace(ca, val, f))
         }
-        _ => Err(PolarsError::ComputeError("A dynamic pattern length in the 'str.replace' expressions are not yet supported. Consider open a feature request for this.".into()))
+        _ => polars_bail!(
+            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
+        ),
     }
 }
 
@@ -493,7 +586,10 @@ fn replace_all<'a>(
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
-            let val = val.get(0).ok_or_else(|| PolarsError::ComputeError("value may not be 'null' in 'replace' expression".into()))?;
+            let val = val.get(0).ok_or_else(
+                || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
+            )?;
+            let literal = literal || is_literal_pat(pat);
 
             match literal {
                 true => ca.replace_literal_all(pat, val),
@@ -502,10 +598,13 @@ fn replace_all<'a>(
         }
         (1, len_val) => {
             let mut pat = get_pat(pat)?.to_string();
-            if len_val != ca.len() {
-                return Err(PolarsError::ComputeError(format!("The replacement value expression in 'str.replace' should be equal to the length of the string column.\
-                Got column length: {} and replacement value length: {}", ca.len(), len_val).into()))
-            }
+            polars_ensure!(
+                len_val == ca.len(),
+                ComputeError:
+                "replacement value length ({}) does not match string column length ({})",
+                len_val, ca.len(),
+            );
+            let literal = literal || is_literal_pat(&pat);
 
             if literal {
                 pat = escape(&pat)
@@ -513,20 +612,22 @@ fn replace_all<'a>(
 
             let reg = Regex::new(&pat)?;
 
-            let f = |s: &'a str, val: &'a str| {
-                reg.replace_all(s, val)
-            };
+            let f = |s: &'a str, val: &'a str| reg.replace_all(s, val);
             Ok(iter_and_replace(ca, val, f))
         }
-        _ => Err(PolarsError::ComputeError("A dynamic pattern length in the 'str.replace' expressions are not yet supported. Consider open a feature request for this.".into()))
+        _ => polars_bail!(
+            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
+        ),
     }
 }
 
 #[cfg(feature = "regex")]
-pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> PolarsResult<Series> {
+pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Series> {
     let column = &s[0];
     let pat = &s[1];
     let val = &s[2];
+
+    let all = n < 0;
 
     let column = column.utf8()?;
     let pat = pat.utf8()?;
@@ -535,13 +636,28 @@ pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> PolarsResult<Se
     if all {
         replace_all(column, pat, val, literal)
     } else {
-        replace_single(column, pat, val, literal)
+        replace_n(column, pat, val, literal, n as usize)
     }
     .map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "string_from_radix")]
-pub(super) fn from_radix(s: &Series, radix: Option<u32>) -> PolarsResult<Series> {
+pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    Ok(ca.parse_int(radix).into_series())
+    ca.parse_int(radix, strict).map(|ok| ok.into_series())
+}
+pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.str_slice(start, length).map(|ca| ca.into_series())
+}
+
+pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.explode()
+}
+
+#[cfg(feature = "dtype-decimal")]
+pub(super) fn to_decimal(s: &Series, infer_len: usize) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.to_decimal(infer_len)
 }

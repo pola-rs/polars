@@ -15,6 +15,7 @@ Conversion
     from_numpy
     from_pandas
     from_records
+    from_repr
 
 Eager/Lazy functions
 ~~~~~~~~~~~~~~~~~~~~
@@ -23,10 +24,9 @@ Eager/Lazy functions
 
     arg_where
     concat
-    cut
     date_range
-    get_dummies
     ones
+    time_range
     zeros
 
 Miscellaneous
@@ -42,12 +42,11 @@ Parallelization
    :toctree: api/
 
    collect_all
-   threadpool_size
 
 StringCache
 ~~~~~~~~~~~
 .. autosummary::
    :toctree: api/
 
-    toggle_string_cache
+    enable_string_cache
     StringCache

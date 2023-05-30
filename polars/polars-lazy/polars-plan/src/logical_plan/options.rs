@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use polars_core::prelude::*;
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 use polars_io::csv::{CsvEncoding, NullValues};
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcCompression;
@@ -17,7 +17,7 @@ use crate::prelude::Expr;
 
 pub type FileCount = u32;
 
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
@@ -36,7 +36,7 @@ pub struct CsvParserOptions {
     pub rechunk: bool,
     pub encoding: CsvEncoding,
     pub row_count: Option<RowCount>,
-    pub parse_dates: bool,
+    pub try_parse_dates: bool,
     pub file_counter: FileCount,
 }
 
@@ -52,6 +52,7 @@ pub struct ParquetOptions {
     pub row_count: Option<RowCount>,
     pub file_counter: FileCount,
     pub low_memory: bool,
+    pub use_statistics: bool,
 }
 
 #[cfg(feature = "parquet")]
@@ -120,31 +121,39 @@ impl From<IpcScanOptions> for IpcScanOptionsInner {
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
-    pub slice: bool,
-    pub slice_offset: i64,
-    pub slice_len: IdxSize,
+    pub slice: Option<(i64, usize)>,
     pub parallel: bool,
     // known row_output, estimated row output
     pub rows: (Option<usize>, usize),
     pub from_partitioned_ds: bool,
+    pub flattened_by_opt: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
     #[cfg(feature = "dynamic_groupby")]
     pub dynamic: Option<DynamicGroupOptions>,
     #[cfg(feature = "dynamic_groupby")]
     pub rolling: Option<RollingGroupOptions>,
+    /// Take only a slice of the result
     pub slice: Option<(i64, usize)>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
+    /// Subset of columns that will be taken into account.
     pub subset: Option<Arc<Vec<String>>>,
+    /// This will maintain the order of the input.
+    /// Note that this is more expensive.
+    /// `maintain_order` is not supported in the streaming
+    /// engine.
     pub maintain_order: bool,
+    /// Which rows to keep.
     pub keep_strategy: UniqueKeepStrategy,
+    /// Take only a slice of the result
+    pub slice: Option<(i64, usize)>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -160,14 +169,6 @@ pub enum ApplyOptions {
     // do not collect before apply
     // e.g. [g1, g1, g2] -> [g1, g1, g2]
     ApplyFlat,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct WindowOptions {
-    /// Explode the aggregated list and just do a hstack instead of a join
-    /// this requires the groups to be sorted to make any sense
-    pub explode: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -214,6 +215,8 @@ pub struct FunctionOptions {
     // if set, then the `Series` passed to the function in the groupby operation
     // will ensure the name is set. This is an extra heap allocation per group.
     pub pass_name_to_apply: bool,
+    // For example a `unique` or a `slice`
+    pub changes_length: bool,
 }
 
 impl FunctionOptions {
@@ -236,6 +239,7 @@ impl Default for FunctionOptions {
             cast_to_supertypes: false,
             allow_rename: false,
             pass_name_to_apply: false,
+            changes_length: false,
         }
     }
 }
@@ -250,11 +254,10 @@ pub struct LogicalPlanUdfOptions {
     pub fmt_str: &'static str,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SortArguments {
-    pub reverse: Vec<bool>,
-    // Can only be true in case of a single column.
+    pub descending: Vec<bool>,
     pub nulls_last: bool,
     pub slice: Option<(i64, usize)>,
 }
@@ -272,6 +275,8 @@ pub struct PythonOptions {
     // a pyarrow predicate python expression
     // can be evaluated with python.eval
     pub predicate: Option<String>,
+    // a `head` call passed to pyarrow
+    pub n_rows: Option<usize>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -293,7 +298,6 @@ pub struct FileSinkOptions {
     pub file_type: FileType,
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc"))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum FileType {
@@ -301,7 +305,5 @@ pub enum FileType {
     Parquet(ParquetWriteOptions),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
+    Memory,
 }
-
-#[cfg(not(any(feature = "parquet", feature = "ipc")))]
-pub type FileType = ();

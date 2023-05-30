@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime, time, timedelta
+from typing import Any
+
 import pytest
 
 import polars as pl
 from polars.exceptions import InvalidAssert
 from polars.testing import (
     assert_frame_equal,
+    assert_frame_not_equal,
     assert_series_equal,
     assert_series_not_equal,
 )
@@ -78,6 +82,12 @@ def test_compare_series_nans_assert_equal() -> None:
         assert_series_equal(srs5, srs6, check_dtype=False)
     assert_series_not_equal(srs5, srs6, check_dtype=True)
 
+    # nested
+    for float_type in (pl.Float32, pl.Float64):
+        srs = pl.Series([[0.0, nan]], dtype=pl.List(float_type))
+        assert srs.dtype == pl.List(float_type)
+        assert_series_equal(srs, srs)
+
 
 def test_compare_series_nulls() -> None:
     srs1 = pl.Series([1, 2, None])
@@ -86,16 +96,42 @@ def test_compare_series_nulls() -> None:
 
     srs1 = pl.Series([1, 2, 3])
     srs2 = pl.Series([1, None, None])
+    assert_series_not_equal(srs1, srs2)
 
-    with pytest.raises(AssertionError, match="Value mismatch"):
+    with pytest.raises(AssertionError, match="null_count is not equal"):
         assert_series_equal(srs1, srs2)
-    with pytest.raises(AssertionError, match="Exact value mismatch"):
-        assert_series_equal(srs1, srs2, check_exact=True)
+
+
+def test_series_cmp_fast_paths() -> None:
+    assert (
+        pl.Series([None], dtype=pl.Int32) != pl.Series([1, 2], dtype=pl.Int32)
+    ).to_list() == [None, None]
+    assert (
+        pl.Series([None], dtype=pl.Int32) == pl.Series([1, 2], dtype=pl.Int32)
+    ).to_list() == [None, None]
+
+    assert (
+        pl.Series([None], dtype=pl.Utf8) != pl.Series(["a", "b"], dtype=pl.Utf8)
+    ).to_list() == [None, None]
+    assert (
+        pl.Series([None], dtype=pl.Utf8) == pl.Series(["a", "b"], dtype=pl.Utf8)
+    ).to_list() == [None, None]
+
+    assert (
+        pl.Series([None], dtype=pl.Boolean)
+        != pl.Series([True, False], dtype=pl.Boolean)
+    ).to_list() == [None, None]
+    assert (
+        pl.Series([None], dtype=pl.Boolean)
+        == pl.Series([False, False], dtype=pl.Boolean)
+    ).to_list() == [None, None]
 
 
 def test_compare_series_value_mismatch_string() -> None:
     srs1 = pl.Series(["hello", "no"])
     srs2 = pl.Series(["hello", "yes"])
+
+    assert_series_not_equal(srs1, srs2)
     with pytest.raises(
         AssertionError, match="Series are different.\n\nExact value mismatch"
     ):
@@ -105,12 +141,14 @@ def test_compare_series_value_mismatch_string() -> None:
 def test_compare_series_type_mismatch() -> None:
     srs1 = pl.Series([1, 2, 3])
     srs2 = pl.DataFrame({"col1": [2, 3, 4]})
+
     with pytest.raises(
         AssertionError, match="Inputs are different.\n\nUnexpected input types"
     ):
         assert_series_equal(srs1, srs2)  # type: ignore[arg-type]
 
     srs3 = pl.Series([1.0, 2.0, 3.0])
+    assert_series_not_equal(srs1, srs3)
     with pytest.raises(AssertionError, match="Series are different.\n\nDtype mismatch"):
         assert_series_equal(srs1, srs3)
 
@@ -125,6 +163,8 @@ def test_compare_series_name_mismatch() -> None:
 def test_compare_series_shape_mismatch() -> None:
     srs1 = pl.Series(values=[1, 2, 3, 4], name="srs1")
     srs2 = pl.Series(values=[1, 2, 3], name="srs2")
+
+    assert_series_not_equal(srs1, srs2)
     with pytest.raises(
         AssertionError, match="Series are different.\n\nLength mismatch"
     ):
@@ -141,9 +181,7 @@ def test_compare_series_value_exact_mismatch() -> None:
 
 
 def test_compare_frame_equal_nans() -> None:
-    # NaN values do not _compare_ equal, but should _assert_ as equal here
     nan = float("NaN")
-
     df1 = pl.DataFrame(
         data={"x": [1.0, nan], "y": [nan, 2.0]},
         schema=[("x", pl.Float32), ("y", pl.Float64)],
@@ -154,8 +192,77 @@ def test_compare_frame_equal_nans() -> None:
         data={"x": [1.0, nan], "y": [None, 2.0]},
         schema=[("x", pl.Float32), ("y", pl.Float64)],
     )
+    assert_frame_not_equal(df1, df2)
     with pytest.raises(AssertionError, match="Values for column 'y' are different"):
         assert_frame_equal(df1, df2, check_exact=True)
+
+
+def test_compare_frame_equal_nested_nans() -> None:
+    nan = float("NaN")
+
+    # list dtype
+    df1 = pl.DataFrame(
+        data={"x": [[1.0, nan]], "y": [[nan, 2.0]]},
+        schema=[("x", pl.List(pl.Float32)), ("y", pl.List(pl.Float64))],
+    )
+    assert_frame_equal(df1, df1, check_exact=True)
+
+    df2 = pl.DataFrame(
+        data={"x": [[1.0, nan]], "y": [[None, 2.0]]},
+        schema=[("x", pl.List(pl.Float32)), ("y", pl.List(pl.Float64))],
+    )
+    assert_frame_not_equal(df1, df2)
+    with pytest.raises(AssertionError, match="Values for column 'y' are different"):
+        assert_frame_equal(df1, df2, check_exact=True)
+
+    # struct dtype
+    df3 = pl.from_dicts(
+        [
+            {
+                "id": 1,
+                "struct": [
+                    {"x": "text", "y": [0.0, nan]},
+                    {"x": "text", "y": [0.0, nan]},
+                ],
+            },
+            {
+                "id": 2,
+                "struct": [
+                    {"x": "text", "y": [1]},
+                    {"x": "text", "y": [1]},
+                ],
+            },
+        ]
+    )
+    df4 = pl.from_dicts(
+        [
+            {
+                "id": 1,
+                "struct": [
+                    {"x": "text", "y": [0.0, nan], "z": ["$"]},
+                    {"x": "text", "y": [0.0, nan], "z": ["$"]},
+                ],
+            },
+            {
+                "id": 2,
+                "struct": [
+                    {"x": "text", "y": [nan, 1], "z": ["!"]},
+                    {"x": "text", "y": [nan, 1], "z": ["?"]},
+                ],
+            },
+        ]
+    )
+
+    assert_frame_equal(df3, df3)
+    assert_frame_not_equal(df3, df3, nans_compare_equal=False)
+
+    assert_frame_equal(df4, df4)
+    assert_frame_not_equal(df4, df4, nans_compare_equal=False)
+
+    assert_frame_not_equal(df3, df4)
+    for check_dtype in (True, False):
+        with pytest.raises(AssertionError, match="mismatch|different"):
+            assert_frame_equal(df3, df4, check_dtype=check_dtype)
 
 
 def test_assert_frame_equal_pass() -> None:
@@ -206,12 +313,7 @@ def test_assert_frame_equal_column_mismatch_order() -> None:
     with pytest.raises(AssertionError, match="Columns are not in the same order"):
         assert_frame_equal(df1, df2)
 
-    # preferred/new param name
     assert_frame_equal(df1, df2, check_column_order=False)
-
-    # deprecated param name
-    with pytest.deprecated_call():
-        assert_frame_equal(df1, df2, check_column_names=False)  # type: ignore[call-arg]
 
 
 def test_assert_frame_equal_ignore_row_order() -> None:
@@ -259,3 +361,27 @@ def test_assert_series_equal_int_overflow() -> None:
         assert_series_equal(s0, s0, check_exact=check_exact)
         with pytest.raises(AssertionError):
             assert_series_equal(s1, s2, check_exact=check_exact)
+
+
+def test_assert_series_equal_uint_overflow() -> None:
+    # 'atol' is checked following "(left-right).abs()", which can overflow on uint
+    s1 = pl.Series([1, 2, 3], dtype=pl.UInt8)
+    s2 = pl.Series([2, 3, 4], dtype=pl.UInt8)
+
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, atol=0)
+    assert_series_equal(s1, s2, atol=1)
+
+
+@pytest.mark.parametrize(
+    ("data1", "data2"),
+    [
+        ([datetime(2022, 10, 2, 12)], [datetime(2022, 10, 2, 13)]),
+        ([time(10, 0, 0)], [time(10, 0, 10)]),
+        ([timedelta(10, 0, 0)], [timedelta(10, 0, 10)]),
+    ],
+)
+def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
+    s1 = pl.Series(data1)
+    s2 = pl.Series(data2)
+    assert_series_not_equal(s1, s2)

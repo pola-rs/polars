@@ -12,15 +12,36 @@ from polars.testing.parametric import column, dataframes
 
 
 @given(df=dataframes())
-@settings(max_examples=50)
 def test_repr(df: pl.DataFrame) -> None:
     assert isinstance(repr(df), str)
-    assert_frame_equal(df, df, check_exact=True, nans_compare_equal=True)
+
+
+@given(df=dataframes())
+def test_equal(df: pl.DataFrame) -> None:
+    assert_frame_equal(df, df.clone(), check_exact=True)
 
 
 @given(
     df=dataframes(
-        min_size=1, min_cols=1, null_probability=0.25, excluded_dtypes=[pl.Utf8]
+        cols=10,
+        max_size=1,
+        allowed_dtypes=[pl.Int8, pl.UInt16, pl.List(pl.Int32)],
+    )
+)
+@settings(max_examples=3)
+def test_dtype_integer_cols(df: pl.DataFrame) -> None:
+    # ensure dtype constraint works in conjunction with 'n' cols
+    assert all(
+        tp in (pl.Int8, pl.UInt16, pl.List(pl.Int32)) for tp in df.schema.values()
+    )
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        min_cols=1,
+        null_probability=0.25,
+        excluded_dtypes=[pl.Utf8, pl.List],
     )
 )
 @example(df=pl.DataFrame(schema=["x", "y", "z"]))

@@ -43,8 +43,8 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 PolarsError::SchemaFieldNotFound(name) => {
                     SchemaFieldNotFoundError::new_err(name.to_string())
                 }
-                PolarsError::SchemaMisMatch(err) => SchemaError::new_err(err.to_string()),
-                PolarsError::ShapeMisMatch(err) => ShapeError::new_err(err.to_string()),
+                PolarsError::SchemaMismatch(err) => SchemaError::new_err(err.to_string()),
+                PolarsError::ShapeMismatch(err) => ShapeError::new_err(err.to_string()),
                 PolarsError::StructFieldNotFound(name) => {
                     StructFieldNotFoundError::new_err(name.to_string())
                 }

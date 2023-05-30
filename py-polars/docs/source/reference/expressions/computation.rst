@@ -7,6 +7,7 @@ Computation
    :toctree: api/
 
     Expr.abs
+    Expr.approx_unique
     Expr.arccos
     Expr.arccosh
     Expr.arcsin
@@ -33,11 +34,11 @@ Computation
     Expr.kurtosis
     Expr.log
     Expr.log10
+    Expr.log1p
     Expr.mode
     Expr.n_unique
     Expr.null_count
     Expr.pct_change
-    Expr.pow
     Expr.rank
     Expr.rolling_apply
     Expr.rolling_max

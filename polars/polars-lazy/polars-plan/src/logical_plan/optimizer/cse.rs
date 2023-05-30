@@ -154,7 +154,7 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
                 && options_l == options_r
                 && predicate_equal(*predicate_l, *predicate_r, expr_arena)
         }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         (
             CsvScan {
                 path: path_left,
@@ -178,7 +178,6 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
         }
         (Projection { expr: l, .. }, Projection { expr: r, .. })
         | (HStack { exprs: l, .. }, HStack { exprs: r, .. }) => expr_nodes_equal(l, r, expr_arena),
-        (Melt { args: l, .. }, Melt { args: r, .. }) => Arc::ptr_eq(l, r),
         (
             Slice {
                 offset: offset_l,
@@ -203,7 +202,6 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
                 ..
             },
         ) => expr_nodes_equal(by_l, by_r, expr_arena) && args_l == args_r,
-        (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
         (Distinct { options: l, .. }, Distinct { options: r, .. }) => l == r,
         (MapFunction { function: l, .. }, MapFunction { function: r, .. }) => l == r,
         (
@@ -441,7 +439,7 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
                 options.file_counter -= acc_count as FileCount
             }
         }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         CsvScan { options, .. } => {
             if acc_count >= options.file_counter {
                 options.file_counter = 1;

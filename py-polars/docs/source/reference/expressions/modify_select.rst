@@ -8,8 +8,9 @@ Manipulation/selection
 
     Expr.append
     Expr.arg_sort
-    Expr.argsort
+    Expr.arg_true
     Expr.backward_fill
+    Expr.bottom_k
     Expr.cast
     Expr.ceil
     Expr.clip
@@ -31,6 +32,7 @@ Manipulation/selection
     Expr.limit
     Expr.lower_bound
     Expr.map_dict
+    Expr.pipe
     Expr.rechunk
     Expr.reinterpret
     Expr.repeat_by

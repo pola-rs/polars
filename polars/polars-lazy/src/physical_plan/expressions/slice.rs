@@ -7,7 +7,6 @@ use polars_core::POOL;
 use rayon::prelude::*;
 use AnyValue::Null;
 
-use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -19,32 +18,27 @@ pub struct SliceExpr {
 }
 
 fn extract_offset(offset: &Series, expr: &Expr) -> PolarsResult<i64> {
-    if offset.len() > 1 {
-        let msg = format!(
-            "Invalid argument to slice; expected an offset literal but got a Series of length {}.",
-            offset.len()
-        );
-        return Err(expression_err!(msg, expr, ComputeError));
-    }
-    offset.get(0).unwrap().extract::<i64>().ok_or_else(|| {
-        PolarsError::ComputeError(format!("could not get an offset from {offset:?}").into())
-    })
+    polars_ensure!(
+        offset.len() <= 1, expr = expr, ComputeError:
+        "invalid argument to slice; expected an offset literal, got series of length {}",
+        offset.len()
+    );
+    offset.get(0).unwrap().extract().ok_or_else(
+        || polars_err!(expr = expr, ComputeError: "unable to extract offset from {:?}", offset),
+    )
 }
 
 fn extract_length(length: &Series, expr: &Expr) -> PolarsResult<usize> {
-    if length.len() > 1 {
-        let msg = format!(
-            "Invalid argument to slice; expected a length literal but got a Series of length {}.",
-            length.len()
-        );
-        return Err(expression_err!(msg, expr, ComputeError));
-    }
+    polars_ensure!(
+        length.len() <= 1, expr = expr, ComputeError:
+        "invalid argument to slice; expected a length literal, got series of length {}",
+        length.len()
+    );
     match length.get(0).unwrap() {
         Null => Ok(usize::MAX),
-        v => v.extract::<usize>().ok_or_else(|| {
-            let msg = format!("Could not get a length from {length:?}.");
-            expression_err!(msg, expr, ComputeError)
-        }),
+        v => v.extract().ok_or_else(
+            || polars_err!(expr = expr, ComputeError: "unable to extract length from {:?}", length),
+        ),
     }
 }
 
@@ -53,19 +47,20 @@ fn extract_args(offset: &Series, length: &Series, expr: &Expr) -> PolarsResult<(
 }
 
 fn check_argument(arg: &Series, groups: &GroupsProxy, name: &str, expr: &Expr) -> PolarsResult<()> {
-    if let DataType::List(_) = arg.dtype() {
-        let msg = format!("Invalid slice argument: cannot use an array as {name} argument.",);
-        Err(expression_err!(msg, expr, ComputeError))
-    } else if arg.len() != groups.len() {
-        let msg = format!("Invalid slice argument: the evaluated length expression was of different {name} than the number of groups.");
-        Err(expression_err!(msg, expr, ComputeError))
-    } else if arg.null_count() > 0 {
-        let msg =
-            format!("Invalid slice argument: the {name} expression should not have null values.",);
-        Err(expression_err!(msg, expr, ComputeError))
-    } else {
-        Ok(())
-    }
+    polars_ensure!(
+        !matches!(arg.dtype(), DataType::List(_)), expr = expr, ComputeError:
+        "invalid slice argument: cannot use an array as {} argument", name,
+    );
+    polars_ensure!(
+        arg.len() == groups.len(), expr = expr, ComputeError:
+        "invalid slice argument: the evaluated length expression was \
+        of different {} than the number of groups", name
+    );
+    polars_ensure!(
+        arg.null_count() == 0, expr = expr, ComputeError:
+        "invalid slice argument: the {} expression has nulls", name
+    );
+    Ok(())
 }
 
 fn slice_groups_idx(offset: i64, length: usize, first: IdxSize, idx: &[IdxSize]) -> IdxItem {

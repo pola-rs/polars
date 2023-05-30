@@ -1,6 +1,7 @@
 use std::any::Any;
 
 use super::*;
+use crate::hashing::series_to_hashes;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
@@ -63,15 +64,23 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
             .unwrap();
         Ok(gb.take_groups())
     }
+
+    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+        series_to_hashes(self.0.fields(), Some(random_state), buf)?;
+        Ok(())
+    }
+
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        for field in self.0.fields() {
+            field.vec_hash_combine(build_hasher.clone(), hashes)?;
+        }
+        Ok(())
+    }
 }
 
 impl SeriesTrait for SeriesWrap<StructChunked> {
     fn rename(&mut self, name: &str) {
         self.0.rename(name)
-    }
-
-    fn take_every(&self, n: usize) -> Series {
-        self.0.apply_fields(|s| s.take_every(n)).into_series()
     }
 
     fn has_validity(&self) -> bool {
@@ -104,40 +113,52 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     /// When offset is negative the offset is counted from the
     /// end of the array
     fn slice(&self, offset: i64, length: usize) -> Series {
-        self.0
-            .apply_fields(|s| s.slice(offset, length))
-            .into_series()
+        let mut out = self.0.apply_fields(|s| s.slice(offset, length));
+        out.update_chunks(0);
+        out.into_series()
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         let other = other.struct_()?;
-        let offset = self.chunks().len();
-
-        for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
-            let lhs_name = lhs.name();
-            let rhs_name = rhs.name();
-            if lhs_name != rhs_name {
-                return Err(PolarsError::SchemaMisMatch(format!("cannot append field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+        if self.is_empty() {
+            self.0 = other.clone();
+            Ok(())
+        } else if other.is_empty() {
+            Ok(())
+        } else {
+            let offset = self.chunks().len();
+            for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
+                polars_ensure!(
+                    lhs.name() == rhs.name(), SchemaMismatch:
+                    "cannot append field with name {:?} to struct with field name {:?}",
+                    rhs.name(), lhs.name(),
+                );
+                lhs.append(rhs)?;
             }
-            lhs.append(rhs)?;
+            self.0.update_chunks(offset);
+            Ok(())
         }
-        self.0.update_chunks(offset);
-        Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         let other = other.struct_()?;
-
-        for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
-            let lhs_name = lhs.name();
-            let rhs_name = rhs.name();
-            if lhs_name != rhs_name {
-                return Err(PolarsError::SchemaMisMatch(format!("cannot extend field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+        if self.is_empty() {
+            self.0 = other.clone();
+            Ok(())
+        } else if other.is_empty() {
+            Ok(())
+        } else {
+            for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
+                polars_ensure!(
+                    lhs.name() == rhs.name(), SchemaMismatch:
+                    "cannot extend field with name {:?} to struct with field name {:?}",
+                    rhs.name(), lhs.name(),
+                );
+                lhs.extend(rhs)?;
             }
-            lhs.extend(rhs)?;
+            self.0.update_chunks(0);
+            Ok(())
         }
-        self.0.update_chunks(0);
-        Ok(())
     }
 
     /// Filter by boolean mask. This operation clones data.
@@ -250,46 +271,17 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     /// Count the null values.
     fn null_count(&self) -> usize {
-        if self
-            .0
-            .fields()
-            .iter()
-            .map(|s| s.null_count())
-            .sum::<usize>()
-            > 0
-        {
-            let mut null_count = 0;
-
-            let chunks_lens = self.0.fields()[0].chunks().len();
-
-            for i in 0..chunks_lens {
-                // If all fields are null we count it as null
-                // so we bitand every chunk
-                let mut validity_agg = None;
-
-                for s in self.0.fields() {
-                    let arr = &s.chunks()[i];
-
-                    match (&validity_agg, arr.validity()) {
-                        (Some(agg), Some(validity)) => validity_agg = Some(validity.bitand(agg)),
-                        (None, Some(validity)) => validity_agg = Some(validity.clone()),
-                        _ => {}
-                    }
-                    if let Some(validity) = &validity_agg {
-                        null_count += validity.unset_bits()
-                    }
-                }
-            }
-
-            null_count
-        } else {
-            0
-        }
+        self.0.null_count()
     }
 
     /// Get unique values in the Series.
     fn unique(&self) -> PolarsResult<Series> {
-        let groups = self.group_tuples(true, false);
+        // this can called in aggregation, so this fast path can be worth a lot
+        if self.len() < 2 {
+            return Ok(self.0.clone().into_series());
+        }
+        let main_thread = POOL.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, false);
         // safety:
         // groups are in bounds
         Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
@@ -297,13 +289,28 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     /// Get unique values in the Series.
     fn n_unique(&self) -> PolarsResult<usize> {
-        let groups = self.group_tuples(true, false)?;
-        Ok(groups.len())
+        // this can called in aggregation, so this fast path can be worth a lot
+        match self.len() {
+            0 => Ok(0),
+            1 => Ok(1),
+            _ => {
+                // TODO! try row encoding
+                let main_thread = POOL.current_thread_index().is_none();
+                let groups = self.group_tuples(main_thread, false)?;
+                Ok(groups.len())
+            }
+        }
     }
 
     /// Get first indexes of unique values.
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        let groups = self.group_tuples(true, false)?;
+        // this can called in aggregation, so this fast path can be worth a lot
+        if self.len() == 1 {
+            return Ok(IdxCa::new_vec(self.name(), vec![0 as IdxSize]));
+        }
+        // TODO! try row encoding
+        let main_thread = POOL.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, false)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name(), first))
     }
@@ -339,15 +346,35 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.is_in(other)
     }
 
-    fn fmt_list(&self) -> String {
-        self.0.fmt_list()
-    }
-
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn sort_with(&self, options: SortOptions) -> Series {
+        let df = self.0.clone().unnest();
+
+        let desc = if options.descending {
+            vec![true; df.width()]
+        } else {
+            vec![false; df.width()]
+        };
+        let out = df
+            .sort_impl(
+                df.columns.clone(),
+                desc,
+                options.nulls_last,
+                None,
+                options.multithreaded,
+            )
+            .unwrap();
+        StructChunked::new_unchecked(self.name(), &out.columns).into_series()
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.0.arg_sort(options)
     }
 }

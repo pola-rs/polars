@@ -1,8 +1,15 @@
-from typing import Any, List
+from typing import Any, Iterator, List
 
 import pytest
 
 import polars as pl
+
+
+@pytest.fixture(autouse=True)
+def _environ() -> Iterator[None]:
+    """Fixture to ensure we run with default Config settings during tests."""
+    with pl.Config(restore_defaults=True):
+        yield
 
 
 @pytest.mark.parametrize(
@@ -12,7 +19,7 @@ import polars as pl
             """shape: (1,)
 Series: 'foo' [str]
 [
-	"Somelongstring...
+	"Somelongstring…
 ]
 """,
             ["Somelongstringto eeat wit me oundaf"],
@@ -22,7 +29,7 @@ Series: 'foo' [str]
             """shape: (1,)
 Series: 'foo' [str]
 [
-	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎...
+	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎…
 ]
 """,
             ["😀😁😂😃😄😅😆😇😈😉😊😋😌😎😏😐😑😒😓"],
@@ -54,7 +61,7 @@ Series: 'foo' [i64]
 	9
 	10
 	11
-	...
+	…
 	87
 	88
 	89
@@ -127,3 +134,45 @@ def test_fmt_float_full() -> None:
         assert str(s) == fmt_float_full
 
     assert str(s) != fmt_float_full
+
+
+def test_date_list_fmt() -> None:
+    df = pl.DataFrame(
+        {
+            "mydate": ["2020-01-01", "2020-01-02", "2020-01-05", "2020-01-05"],
+            "index": [1, 2, 5, 5],
+        }
+    )
+
+    df = df.with_columns(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
+    assert (
+        str(df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
+        == """shape: (3,)
+Series: 'mydate' [list[date]]
+[
+	[2020-01-01]
+	[2020-01-02]
+	[2020-01-05, 2020-01-05]
+]"""
+    )
+
+
+def test_fmt_series_cat_list() -> None:
+    s = pl.Series(
+        [
+            ["a", "b"],
+            ["b", "a"],
+            ["b"],
+        ],
+    ).cast(pl.List(pl.Categorical))
+
+    assert (
+        str(s)
+        == """shape: (3,)
+Series: '' [list[cat]]
+[
+	["a", "b"]
+	["b", "a"]
+	["b"]
+]"""
+    )

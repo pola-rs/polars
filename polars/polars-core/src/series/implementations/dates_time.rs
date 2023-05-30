@@ -17,7 +17,6 @@ use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::ops::ToBitRepr;
 use crate::chunked_array::AsSinglePtr;
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::*;
 use crate::prelude::*;
@@ -129,13 +128,7 @@ macro_rules! impl_dyn_series {
                         .unwrap())
                         - rhs)
                         .cast(&DataType::Date),
-                    (dtl, dtr) => Err(PolarsError::ComputeError(
-                        format!(
-                            "cannot do subtraction on these date types: {:?}, {:?}",
-                            dtl, dtr
-                        )
-                        .into(),
-                    )),
+                    (dtl, dtr) => polars_bail!(opq = sub, dtl, dtr),
                 }
             }
             fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -145,48 +138,30 @@ macro_rules! impl_dyn_series {
                         .unwrap())
                         + rhs)
                         .cast(&DataType::Date),
-                    (dtl, dtr) => Err(PolarsError::ComputeError(
-                        format!(
-                            "cannot do addition on these date types: {:?}, {:?}",
-                            dtl, dtr
-                        )
-                        .into(),
-                    )),
+                    (dtl, dtr) => polars_bail!(opq = add, dtl, dtr),
                 }
             }
-            fn multiply(&self, _rhs: &Series) -> PolarsResult<Series> {
-                Err(PolarsError::ComputeError(
-                    "cannot do multiplication on logical".into(),
-                ))
+            fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_bail!(opq = mul, self.0.dtype(), rhs.dtype());
             }
-            fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
-                Err(PolarsError::ComputeError(
-                    "Cannot divide Series of dtype: 'Date/Time'.".into(),
-                ))
+            fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_bail!(opq = div, self.0.dtype(), rhs.dtype());
             }
-            fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
-                Err(PolarsError::ComputeError(
-                    "Cannot do remainder operation on Series of dtype: 'Date/Time'.".into(),
-                ))
+            fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_bail!(opq = rem, self.0.dtype(), rhs.dtype());
             }
             fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
                 self.0.group_tuples(multithreaded, sorted)
             }
-            #[cfg(feature = "sort_multiple")]
-            fn arg_sort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-                self.0.deref().arg_sort_multiple(by, reverse)
+
+            fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+                self.0.deref().arg_sort_multiple(options)
             }
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
             fn is_sorted_flag(&self) -> IsSorted {
-                if self.0.is_sorted_flag() {
-                    IsSorted::Ascending
-                } else if self.0.is_sorted_reverse_flag() {
-                    IsSorted::Descending
-                } else {
-                    IsSorted::Not
-                }
+                self.0.is_sorted_flag()
             }
 
             fn rename(&mut self, name: &str) {
@@ -221,34 +196,24 @@ macro_rules! impl_dyn_series {
             }
 
             fn append(&mut self, other: &Series) -> PolarsResult<()> {
-                if self.0.dtype() == other.dtype() {
-                    let other = other.to_physical_repr();
-                    // 3 refs
-                    // ref Cow
-                    // ref SeriesTrait
-                    // ref ChunkedArray
-                    self.0.append(other.as_ref().as_ref().as_ref());
-                    Ok(())
-                } else {
-                    Err(PolarsError::SchemaMisMatch(
-                        "cannot append Series; data types don't match".into(),
-                    ))
-                }
+                polars_ensure!(self.0.dtype() == other.dtype(), append);
+                let other = other.to_physical_repr();
+                // 3 refs
+                // ref Cow
+                // ref SeriesTrait
+                // ref ChunkedArray
+                self.0.append(other.as_ref().as_ref().as_ref());
+                Ok(())
             }
             fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-                if self.0.dtype() == other.dtype() {
-                    // 3 refs
-                    // ref Cow
-                    // ref SeriesTrait
-                    // ref ChunkedArray
-                    let other = other.to_physical_repr();
-                    self.0.extend(other.as_ref().as_ref().as_ref());
-                    Ok(())
-                } else {
-                    Err(PolarsError::SchemaMisMatch(
-                        "cannot extend Series; data types don't match".into(),
-                    ))
-                }
+                polars_ensure!(self.0.dtype() == other.dtype(), extend);
+                // 3 refs
+                // ref Cow
+                // ref SeriesTrait
+                // ref ChunkedArray
+                let other = other.to_physical_repr();
+                self.0.extend(other.as_ref().as_ref().as_ref());
+                Ok(())
             }
 
             fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
@@ -279,10 +244,6 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            fn take_every(&self, n: usize) -> Series {
-                self.0.take_every(n).$into_logical().into_series()
-            }
-
             unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
                 ChunkTake::take_unchecked(self.0.deref(), iter.into())
                     .$into_logical()
@@ -292,9 +253,10 @@ macro_rules! impl_dyn_series {
             unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
                 let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
 
-                if self.0.is_sorted_flag() && (idx.is_sorted_flag() || idx.is_sorted_reverse_flag())
+                if self.0.is_sorted_ascending_flag()
+                    && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
                 {
-                    out.set_sorted_flag(idx.is_sorted_flag2())
+                    out.set_sorted_flag(idx.is_sorted_flag())
                 }
 
                 Ok(out.$into_logical().into_series())
@@ -335,8 +297,29 @@ macro_rules! impl_dyn_series {
                         .into_series()
                         .date()
                         .unwrap()
-                        .strftime("%Y-%m-%d")
+                        .to_string("%Y-%m-%d")
                         .into_series()),
+                    (DataType::Time, DataType::Utf8) => Ok(self
+                        .0
+                        .clone()
+                        .into_series()
+                        .time()
+                        .unwrap()
+                        .to_string("%T")
+                        .into_series()),
+                    #[cfg(feature = "dtype-datetime")]
+                    (DataType::Time, DataType::Datetime(_, _)) => {
+                        polars_bail!(
+                            ComputeError:
+                            "cannot cast `Time` to `Datetime`; consider using 'dt.combine'"
+                        );
+                    }
+                    #[cfg(feature = "dtype-datetime")]
+                    (DataType::Date, DataType::Datetime(_, _)) => {
+                        let mut out = self.0.cast(data_type)?;
+                        out.set_sorted_flag(self.0.is_sorted_flag());
+                        Ok(out)
+                    }
                     _ => self.0.cast(data_type),
                 }
             }
@@ -385,14 +368,6 @@ macro_rules! impl_dyn_series {
 
             fn is_not_null(&self) -> BooleanChunked {
                 self.0.is_not_null()
-            }
-
-            fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-                self.0.is_unique()
-            }
-
-            fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-                self.0.is_duplicated()
             }
 
             fn reverse(&self) -> Series {
@@ -448,10 +423,6 @@ macro_rules! impl_dyn_series {
                     .into())
             }
 
-            fn fmt_list(&self) -> String {
-                FmtList::fmt_list(&self.0)
-            }
-
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
             }
@@ -468,24 +439,24 @@ macro_rules! impl_dyn_series {
                 self.0.is_in(other)
             }
             #[cfg(feature = "repeat_by")]
-            fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+            fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
                 match self.0.dtype() {
-                    DataType::Date => self
+                    DataType::Date => Ok(self
                         .0
-                        .repeat_by(by)
+                        .repeat_by(by)?
                         .cast(&DataType::List(Box::new(DataType::Date)))
                         .unwrap()
                         .list()
                         .unwrap()
-                        .clone(),
-                    DataType::Time => self
+                        .clone()),
+                    DataType::Time => Ok(self
                         .0
-                        .repeat_by(by)
+                        .repeat_by(by)?
                         .cast(&DataType::List(Box::new(DataType::Time)))
                         .unwrap()
                         .list()
                         .unwrap()
-                        .clone(),
+                        .clone()),
                     _ => unreachable!(),
                 }
             }

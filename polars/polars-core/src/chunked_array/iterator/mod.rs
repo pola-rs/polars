@@ -8,7 +8,6 @@ use crate::series::iterator::SeriesIter;
 use crate::utils::CustomIterTools;
 
 type LargeStringArray = Utf8Array<i64>;
-#[cfg(feature = "dtype-binary")]
 type LargeBinaryArray = BinaryArray<i64>;
 type LargeListArray = ListArray<i64>;
 pub mod par;
@@ -211,7 +210,6 @@ impl Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> IntoIterator for &'a BinaryChunked {
     type Item = Option<&'a [u8]>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
@@ -221,14 +219,12 @@ impl<'a> IntoIterator for &'a BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 pub struct BinaryIterNoNull<'a> {
     array: &'a LargeBinaryArray,
     current: usize,
     current_end: usize,
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> BinaryIterNoNull<'a> {
     /// create a new iterator
     pub fn new(array: &'a LargeBinaryArray) -> Self {
@@ -240,7 +236,6 @@ impl<'a> BinaryIterNoNull<'a> {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> Iterator for BinaryIterNoNull<'a> {
     type Item = &'a [u8];
 
@@ -262,7 +257,6 @@ impl<'a> Iterator for BinaryIterNoNull<'a> {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> DoubleEndedIterator for BinaryIterNoNull<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.current_end == self.current {
@@ -274,11 +268,9 @@ impl<'a> DoubleEndedIterator for BinaryIterNoNull<'a> {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 /// all arrays have known size.
 impl<'a> ExactSizeIterator for BinaryIterNoNull<'a> {}
 
-#[cfg(feature = "dtype-binary")]
 impl BinaryChunked {
     #[allow(clippy::wrong_self_convention)]
     #[doc(hidden)]
@@ -419,6 +411,137 @@ impl ListChunked {
         unsafe {
             self.downcast_iter()
                 .flat_map(move |arr| ListIterNoNull::new(arr, inner_type.clone()))
+                .trust_my_length(self.len())
+        }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl<'a> IntoIterator for &'a ArrayChunked {
+    type Item = Option<Series>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        let dtype = self.inner_dtype();
+
+        if self.null_count() == 0 {
+            // we know that we only iterate over length == self.len()
+            unsafe {
+                Box::new(
+                    self.downcast_iter()
+                        .flat_map(|arr| arr.iter().unwrap_required())
+                        .trust_my_length(self.len())
+                        .map(move |arr| {
+                            Some(Series::from_chunks_and_dtype_unchecked(
+                                "",
+                                vec![arr],
+                                &dtype,
+                            ))
+                        }),
+                )
+            }
+        } else {
+            // we know that we only iterate over length == self.len()
+            unsafe {
+                Box::new(
+                    self.downcast_iter()
+                        .flat_map(|arr| arr.iter())
+                        .trust_my_length(self.len())
+                        .map(move |arr| {
+                            arr.map(|arr| {
+                                Series::from_chunks_and_dtype_unchecked("", vec![arr], &dtype)
+                            })
+                        }),
+                )
+            }
+        }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+pub struct FixedSizeListIterNoNull<'a> {
+    array: &'a FixedSizeListArray,
+    inner_type: DataType,
+    current: usize,
+    current_end: usize,
+}
+
+#[cfg(feature = "dtype-array")]
+impl<'a> FixedSizeListIterNoNull<'a> {
+    /// create a new iterator
+    pub fn new(array: &'a FixedSizeListArray, inner_type: DataType) -> Self {
+        FixedSizeListIterNoNull {
+            array,
+            inner_type,
+            current: 0,
+            current_end: array.len(),
+        }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl<'a> Iterator for FixedSizeListIterNoNull<'a> {
+    type Item = Series;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current == self.current_end {
+            None
+        } else {
+            let old = self.current;
+            self.current += 1;
+            unsafe {
+                Some(Series::from_chunks_and_dtype_unchecked(
+                    "",
+                    vec![self.array.value_unchecked(old)],
+                    &self.inner_type,
+                ))
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            self.array.len() - self.current,
+            Some(self.array.len() - self.current),
+        )
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl<'a> DoubleEndedIterator for FixedSizeListIterNoNull<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.current_end == self.current {
+            None
+        } else {
+            self.current_end -= 1;
+            unsafe {
+                Some(Series::try_from(("", self.array.value_unchecked(self.current_end))).unwrap())
+            }
+        }
+    }
+}
+
+/// all arrays have known size.
+#[cfg(feature = "dtype-array")]
+impl<'a> ExactSizeIterator for FixedSizeListIterNoNull<'a> {}
+
+#[cfg(feature = "dtype-array")]
+impl ArrayChunked {
+    #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
+    pub fn into_no_null_iter(
+        &self,
+    ) -> impl Iterator<Item = Series>
+           + '_
+           + Send
+           + Sync
+           + ExactSizeIterator
+           + DoubleEndedIterator
+           + TrustedLen {
+        // we know that we only iterate over length == self.len()
+        let inner_type = self.inner_dtype();
+        unsafe {
+            self.downcast_iter()
+                .flat_map(move |arr| FixedSizeListIterNoNull::new(arr, inner_type.clone()))
                 .trust_my_length(self.len())
         }
     }

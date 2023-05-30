@@ -47,7 +47,7 @@ impl Series {
 
     #[doc(hidden)]
     pub unsafe fn agg_first(&self, groups: &GroupsProxy) -> Series {
-        let out = match groups {
+        let mut out = match groups {
             GroupsProxy::Idx(groups) => {
                 let mut iter = groups.iter().map(|(first, idx)| {
                     if idx.is_empty() {
@@ -76,6 +76,9 @@ impl Series {
                 self.take_opt_iter_unchecked(&mut iter)
             }
         };
+        if groups.is_sorted_flag() {
+            out.set_sorted_flag(self.is_sorted_flag())
+        }
         self.restore_logical(out)
     }
 
@@ -138,12 +141,8 @@ impl Series {
         use DataType::*;
 
         match self.dtype() {
-            Float32 => {
-                SeriesWrap(self.f32().unwrap().clone()).agg_quantile(groups, quantile, interpol)
-            }
-            Float64 => {
-                SeriesWrap(self.f64().unwrap().clone()).agg_quantile(groups, quantile, interpol)
-            }
+            Float32 => self.f32().unwrap().agg_quantile(groups, quantile, interpol),
+            Float64 => self.f64().unwrap().agg_quantile(groups, quantile, interpol),
             dt if dt.is_numeric() || dt.is_temporal() => {
                 let ca = self.to_physical_repr();
                 let physical_type = ca.dtype();

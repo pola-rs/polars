@@ -106,12 +106,11 @@ impl SlicePushDown {
                 file_info,
                 output_schema,
                 predicate,
-                options,
+                mut options,
             },
                 // TODO! we currently skip slice pushdown if there is a predicate.
                 // we can modify the readers to only limit after predicates have been applied
                 Some(state)) if state.offset == 0 && predicate.is_none() => {
-                let mut options = options;
                 options.n_rows = Some(state.len as usize);
                 let lp = AnonymousScan {
                     function,
@@ -123,6 +122,21 @@ impl SlicePushDown {
 
                 Ok(lp)
             },
+            #[cfg(feature = "python")]
+            (PythonScan {
+                mut options,
+                predicate,
+            },
+            // TODO! we currently skip slice pushdown if there is a predicate.
+            // we can modify the readers to only limit after predicates have been applied
+                Some(state)) if state.offset == 0 && predicate.is_none() => {
+                options.n_rows = Some(state.len as usize);
+                let lp = PythonScan {
+                    options,
+                    predicate
+                };
+                Ok(lp)
+            }
 
             #[cfg(feature = "parquet")]
             (ParquetScan {
@@ -130,14 +144,13 @@ impl SlicePushDown {
                 file_info,
                 output_schema,
                 predicate,
-                options,
+                mut options,
                 cloud_options,
 
             },
                 // TODO! we currently skip slice pushdown if there is a predicate.
                 // we can modify the readers to only limit after predicates have been applied
                 Some(state)) if state.offset == 0 && predicate.is_none() => {
-                let mut options = options;
                 options.n_rows = Some(state.len as usize);
                 let lp = ParquetScan {
                     path,
@@ -155,9 +168,8 @@ impl SlicePushDown {
             file_info,
                 output_schema,
                 predicate,
-                options
+                mut options
             }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-                let mut options = options;
                 options.n_rows = Some(state.len as usize);
                 let lp = IpcScan {
                     path,
@@ -171,15 +183,14 @@ impl SlicePushDown {
 
             }
 
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             (CsvScan {
                 path,
                 file_info,
                 output_schema,
-                options,
+                mut options,
                 predicate,
             }, Some(state)) if state.offset >= 0 && predicate.is_none() => {
-                let mut options = options;
                 options.skip_rows += state.offset as usize;
                 options.n_rows = Some(state.len as usize);
 
@@ -194,9 +205,7 @@ impl SlicePushDown {
             }
 
             (Union {inputs, mut options }, Some(state)) => {
-                options.slice = true;
-                options.slice_offset = state.offset;
-                options.slice_len = state.len;
+                options.slice = Some((state.offset, state.len as usize));
                 Ok(Union {inputs, options})
             },
             (Join {
@@ -245,6 +254,17 @@ impl SlicePushDown {
                     apply,
                     maintain_order,
                     options
+                })
+            }
+            (Distinct {input, mut options}, Some(state)) => {
+                // first restart optimization in inputs and get the updated LP
+                let input_lp = lp_arena.take(input);
+                let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
+                let input= lp_arena.add(input_lp);
+                options.slice = Some((state.offset, state.len as usize));
+                Ok(Distinct {
+                    input,
+                    options,
                 })
             }
             (Sort {input, by_column, mut args}, Some(state)) => {
@@ -300,8 +320,8 @@ impl SlicePushDown {
             // other blocking nodes
             | m @ (DataFrameScan {..}, _)
             | m @ (Sort {..}, _)
-            | m @ (Explode {..}, _)
-            | m @ (Melt {..}, _)
+            | m @ (MapFunction {function: FunctionNode::Explode {..}, ..}, _)
+            | m @ (MapFunction {function: FunctionNode::Melt {..}, ..}, _)
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
             | m @ (HStack {..},_)

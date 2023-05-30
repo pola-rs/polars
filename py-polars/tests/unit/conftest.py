@@ -53,11 +53,13 @@ def fruits_cars() -> pl.DataFrame:
             "fruits": ["banana", "banana", "apple", "apple", "banana"],
             "B": [5, 4, 3, 2, 1],
             "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        }
+        },
+        schema_overrides={"A": pl.Int64, "B": pl.Int64},
     )
 
 
-ISO8601_FORMATS = []
+ISO8601_FORMATS_DATETIME = []
+
 for T in ["T", " "]:
     for hms in (
         [
@@ -70,11 +72,46 @@ for T in ["T", " "]:
         + [f"{T}%H%M%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
         + [""]
     ):
-        for date_sep in ("/", "-", ""):
+        for date_sep in ("/", "-"):
             fmt = f"%Y{date_sep}%m{date_sep}%d{hms}"
-            ISO8601_FORMATS.append(fmt)
+            ISO8601_FORMATS_DATETIME.append(fmt)
 
 
-@pytest.fixture(params=ISO8601_FORMATS)
-def iso8601_format(request: pytest.FixtureRequest) -> list[str]:
+@pytest.fixture(params=ISO8601_FORMATS_DATETIME)
+def iso8601_format_datetime(request: pytest.FixtureRequest) -> list[str]:
+    return cast(List[str], request.param)
+
+
+ISO8601_TZ_AWARE_FORMATS_DATETIME = []
+
+for T in ["T", " "]:
+    for hms in (
+        [
+            f"{T}%H:%M:%S",
+            f"{T}%H%M%S",
+            f"{T}%H:%M",
+            f"{T}%H%M",
+        ]
+        + [f"{T}%H:%M:%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
+        + [f"{T}%H%M%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
+    ):
+        for date_sep in ("/", "-"):
+            fmt = f"%Y{date_sep}%m{date_sep}%d{hms}%#z"
+            ISO8601_TZ_AWARE_FORMATS_DATETIME.append(fmt)
+
+
+@pytest.fixture(params=ISO8601_TZ_AWARE_FORMATS_DATETIME)
+def iso8601_tz_aware_format_datetime(request: pytest.FixtureRequest) -> list[str]:
+    return cast(List[str], request.param)
+
+
+ISO8601_FORMATS_DATE = []
+
+for date_sep in ("/", "-"):
+    fmt = f"%Y{date_sep}%m{date_sep}%d"
+    ISO8601_FORMATS_DATE.append(fmt)
+
+
+@pytest.fixture(params=ISO8601_FORMATS_DATE)
+def iso8601_format_date(request: pytest.FixtureRequest) -> list[str]:
     return cast(List[str], request.param)

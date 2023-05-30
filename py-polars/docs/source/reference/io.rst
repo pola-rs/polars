@@ -35,12 +35,13 @@ Parquet
    read_parquet_schema
    DataFrame.write_parquet
 
-SQL
-~~~
+Database
+~~~~~~~~
 .. autosummary::
    :toctree: api/
 
-   read_sql
+   read_database
+   DataFrame.write_database
 
 JSON
 ~~~~
@@ -67,6 +68,7 @@ Excel
    :toctree: api/
 
    read_excel
+   DataFrame.write_excel
 
 Delta Lake
 ~~~~~~~~~~
@@ -75,6 +77,7 @@ Delta Lake
 
    scan_delta
    read_delta
+   DataFrame.write_delta
 
 Datasets
 ~~~~~~~~
@@ -83,14 +86,14 @@ Connect to pyarrow datasets.
 .. autosummary::
    :toctree: api/
 
-   scan_ds
+   scan_pyarrow_dataset
 
 
 BatchedCsvReader
 ~~~~~~~~~~~~~~~~
 This reader comes available by calling `pl.read_csv_batched`.
 
-.. currentmodule:: polars.internals.batched
+.. currentmodule:: polars.io.csv.batched_reader
 
 .. autosummary::
    :toctree: api/

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::*;
 
 pub struct CsvExec {
@@ -20,15 +22,12 @@ impl CsvExec {
             with_columns = None;
         }
         let n_rows = _set_n_rows_for_scan(self.options.n_rows);
-        let predicate = self
-            .predicate
-            .clone()
-            .map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
+        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
 
         CsvReader::from_path(&self.path)
             .unwrap()
             .has_header(self.options.has_header)
-            .with_schema(&self.schema)
+            .with_dtypes(Some(self.schema.clone()))
             .with_delimiter(self.options.delimiter)
             .with_ignore_errors(self.options.ignore_errors)
             .with_skip_rows(self.options.skip_rows)
@@ -44,7 +43,7 @@ impl CsvExec {
             .with_encoding(self.options.encoding)
             .with_rechunk(self.options.rechunk)
             .with_row_count(std::mem::take(&mut self.options.row_count))
-            .with_parse_dates(self.options.parse_dates)
+            .with_try_parse_dates(self.options.try_parse_dates)
             .finish()
     }
 }
@@ -61,11 +60,11 @@ impl Executor for CsvExec {
         };
 
         let profile_name = if state.has_node_timer() {
-            let mut ids = vec![self.path.to_string_lossy().to_string()];
+            let mut ids = vec![self.path.to_string_lossy().into()];
             if self.predicate.is_some() {
-                ids.push("predicate".to_string())
+                ids.push("predicate".into())
             }
-            let name = column_delimited("csv".to_string(), &ids);
+            let name = comma_delimited("csv".to_string(), &ids);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

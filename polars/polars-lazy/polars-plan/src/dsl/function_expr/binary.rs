@@ -13,14 +13,13 @@ pub enum BinaryFunction {
 
 impl Display for BinaryFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use self::*;
+        use BinaryFunction::*;
         let s = match self {
-            BinaryFunction::Contains { .. } => "contains",
-            BinaryFunction::StartsWith(_) => "starts_with",
-            BinaryFunction::EndsWith(_) => "ends_with",
+            Contains { .. } => "contains",
+            StartsWith(_) => "starts_with",
+            EndsWith(_) => "ends_with",
         };
-
-        write!(f, "str.{s}")
+        write!(f, "bin.{s}")
     }
 }
 

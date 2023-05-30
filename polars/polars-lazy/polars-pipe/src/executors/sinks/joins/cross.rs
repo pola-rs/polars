@@ -7,6 +7,7 @@ use std::vec;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use smartstring::alias::String as SmartString;
 
 use crate::operators::{
     chunks_to_df_unchecked, DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext,
@@ -34,7 +35,7 @@ impl Sink for CrossJoin {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, mut other: Box<dyn Sink>) {
+    fn combine(&mut self, other: &mut dyn Sink) {
         let other = other.as_any().downcast_mut::<Self>().unwrap();
         let other_chunks = std::mem::take(&mut other.chunks);
         self.chunks.extend(other_chunks.into_iter());
@@ -75,7 +76,7 @@ pub struct CrossJoinProbe {
     in_process_left: Option<StepBy<Range<usize>>>,
     in_process_right: Option<StepBy<Range<usize>>>,
     in_process_left_df: DataFrame,
-    output_names: Option<Vec<String>>,
+    output_names: Option<Vec<SmartString>>,
 }
 
 impl Operator for CrossJoinProbe {

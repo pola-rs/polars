@@ -1,6 +1,8 @@
 use polars_arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
+#[cfg(feature = "dtype-struct")]
+use polars_utils::format_smartstring;
 
 use super::function_expr::StringFunction;
 use super::*;
@@ -21,7 +23,8 @@ impl StringNameSpace {
         )
     }
 
-    /// Check if a string value contains a Regex substring.
+    /// Check if this column of strings contains a Regex. If `strict` is `true`, then it is an error if any `pat` is
+    /// an invalid regex, whereas if `strict` is `false`, an invalid regex will simply evaluate to `false`.
     #[cfg(feature = "regex")]
     pub fn contains(self, pat: Expr, strict: bool) -> Expr {
         self.0.map_many_private(
@@ -52,7 +55,7 @@ impl StringNameSpace {
         )
     }
 
-    /// Extract a regex pattern from the a string value.
+    /// Extract a regex pattern from the a string value. If `group_index` is out of bounds, null is returned.
     pub fn extract(self, pat: &str, group_index: usize) -> Expr {
         let pat = pat.to_string();
         self.0
@@ -98,9 +101,60 @@ impl StringNameSpace {
         self.0.map_private(StringFunction::CountMatch(pat).into())
     }
 
+    /// Convert a Utf8 column into a Date/Datetime/Time column.
     #[cfg(feature = "temporal")]
-    pub fn strptime(self, options: StrpTimeOptions) -> Expr {
-        self.0.map_private(StringFunction::Strptime(options).into())
+    pub fn strptime(self, dtype: DataType, options: StrptimeOptions) -> Expr {
+        self.0
+            .map_private(StringFunction::Strptime(dtype, options).into())
+    }
+
+    /// Convert a Utf8 column into a Date column.
+    #[cfg(feature = "dtype-date")]
+    pub fn to_date(self, options: StrptimeOptions) -> Expr {
+        self.strptime(DataType::Date, options)
+    }
+
+    /// Convert a Utf8 column into a Datetime column.
+    #[cfg(feature = "dtype-datetime")]
+    pub fn to_datetime(
+        self,
+        time_unit: Option<TimeUnit>,
+        time_zone: Option<TimeZone>,
+        options: StrptimeOptions,
+    ) -> Expr {
+        // If time_unit is None, try to infer it from the format or set a default
+        let time_unit = match (&options.format, time_unit) {
+            (_, Some(time_unit)) => time_unit,
+            (Some(format), None) => {
+                if format.contains("%.9f")
+                    || format.contains("%9f")
+                    || format.contains("%f")
+                    || format.contains("%.f")
+                {
+                    TimeUnit::Nanoseconds
+                } else if format.contains("%.3f") || format.contains("%3f") {
+                    TimeUnit::Milliseconds
+                } else {
+                    TimeUnit::Microseconds
+                }
+            }
+            (None, None) => TimeUnit::Microseconds,
+        };
+
+        self.strptime(DataType::Datetime(time_unit, time_zone), options)
+    }
+
+    /// Convert a Utf8 column into a Time column.
+    #[cfg(feature = "dtype-time")]
+    pub fn to_time(self, options: StrptimeOptions) -> Expr {
+        self.strptime(DataType::Time, options)
+    }
+
+    /// Convert a Utf8 column into a Decimal column.
+    #[cfg(feature = "dtype-decimal")]
+    pub fn to_decimal(self, infer_length: usize) -> Expr {
+        self.0
+            .map_private(StringFunction::ToDecimal(infer_length).into())
     }
 
     /// Concat the values into a string array.
@@ -217,7 +271,9 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n + 1)
-                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
+                        .map(|i| {
+                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
+                        })
                         .collect(),
                 )),
             )
@@ -269,7 +325,9 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n + 1)
-                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
+                        .map(|i| {
+                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
+                        })
                         .collect(),
                 )),
             )
@@ -321,7 +379,9 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n)
-                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
+                        .map(|i| {
+                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
+                        })
                         .collect(),
                 )),
             )
@@ -332,10 +392,17 @@ impl StringNameSpace {
     /// Replace values that match a regex `pat` with a `value`.
     pub fn replace(self, pat: Expr, value: Expr, literal: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Replace {
-                all: false,
-                literal,
-            }),
+            FunctionExpr::StringExpr(StringFunction::Replace { n: 1, literal }),
+            &[pat, value],
+            true,
+        )
+    }
+
+    #[cfg(feature = "regex")]
+    /// Replace values that match a regex `pat` with a `value`.
+    pub fn replace_n(self, pat: Expr, value: Expr, literal: bool, n: i64) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Replace { n, literal }),
             &[pat, value],
             true,
         )
@@ -345,7 +412,7 @@ impl StringNameSpace {
     /// Replace all values that match a regex `pat` with a `value`.
     pub fn replace_all(self, pat: Expr, value: Expr, literal: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Replace { all: true, literal }),
+            FunctionExpr::StringExpr(StringFunction::Replace { n: -1, literal }),
             &[pat, value],
             true,
         )
@@ -383,8 +450,23 @@ impl StringNameSpace {
 
     #[cfg(feature = "string_from_radix")]
     /// Parse string in base radix into decimal
-    pub fn from_radix(self, radix: Option<u32>) -> Expr {
+    pub fn from_radix(self, radix: u32, strict: bool) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::FromRadix(radix)))
+            .map_private(FunctionExpr::StringExpr(StringFunction::FromRadix(
+                radix, strict,
+            )))
+    }
+
+    /// Slice the string values.
+    pub fn str_slice(self, start: i64, length: Option<u64>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Slice(
+                start, length,
+            )))
+    }
+
+    pub fn explode(self) -> Expr {
+        self.0
+            .apply_private(FunctionExpr::StringExpr(StringFunction::Explode))
     }
 }

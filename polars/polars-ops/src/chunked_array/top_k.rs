@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
-use std::collections::binary_heap::BinaryHeap;
 
+use either::Either;
 use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_core::downcast_as_macro_arg_physical;
-use polars_core::export::num::NumCast;
+use polars_core::prelude::sort::{sort_slice_ascending, sort_slice_descending};
 use polars_core::prelude::*;
 
 #[repr(transparent)]
@@ -31,36 +31,48 @@ impl<T: PartialOrd + IsFloat> Ord for Compare<T> {
     }
 }
 
-fn top_k_impl<T>(
-    ca: &ChunkedArray<T>,
-    k: usize,
-    mult_order: T::Native,
-) -> PolarsResult<ChunkedArray<T>>
-where
-    T: PolarsNumericType,
-{
-    // mult_order should be -1 / +1 to determine the order of the heap
-    let k = std::cmp::min(k, ca.len());
-
-    let mut heap = BinaryHeap::with_capacity(ca.len());
-
-    for arr in ca.downcast_iter() {
-        for v in arr {
-            heap.push(v.map(|v| Compare(*v * mult_order)));
-        }
+fn arg_partition<T: IsFloat + PartialOrd>(v: &mut [T], k: usize, descending: bool) -> &[T] {
+    let (lower, _el, upper) = v.select_nth_unstable_by(k, |a, b| compare_fn_nan_max(a, b));
+    if descending {
+        sort_slice_ascending(lower);
+        lower
+    } else {
+        sort_slice_descending(upper);
+        upper
     }
-    let mut out: ChunkedArray<_> = (0..k)
-        .map(|_| {
-            heap.pop()
-                .unwrap()
-                .map(|compare_struct| compare_struct.0 * mult_order)
-        })
-        .collect();
-    out.rename(ca.name());
-    Ok(out)
 }
 
-pub fn top_k(s: &Series, k: usize, reverse: bool) -> PolarsResult<Series> {
+fn top_k_impl<T>(ca: &ChunkedArray<T>, k: usize, descending: bool) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: ChunkSort<T>,
+{
+    if k >= ca.len() {
+        return ca.sort(!descending);
+    }
+
+    // descending is opposite from sort as top-k returns largest
+    let k = if descending {
+        std::cmp::min(k, ca.len())
+    } else {
+        ca.len().saturating_sub(k + 1)
+    };
+
+    match ca.to_vec_null_aware() {
+        Either::Left(mut v) => {
+            let values = arg_partition(&mut v, k, descending);
+            ChunkedArray::from_slice(ca.name(), values)
+        }
+        Either::Right(mut v) => {
+            let values = arg_partition(&mut v, k, descending);
+            let mut out = ChunkedArray::from_iter(values.iter().copied());
+            out.rename(ca.name());
+            out
+        }
+    }
+}
+
+pub fn top_k(s: &Series, k: usize, descending: bool) -> PolarsResult<Series> {
     if s.is_empty() {
         return Ok(s.clone());
     }
@@ -70,10 +82,9 @@ pub fn top_k(s: &Series, k: usize, reverse: bool) -> PolarsResult<Series> {
 
     macro_rules! dispatch {
         ($ca:expr) => {{
-            let mult_order = if reverse { -1 } else { 1 };
-            top_k_impl($ca, k, NumCast::from(mult_order).unwrap()).map(|ca| ca.into_series())
+            top_k_impl($ca, k, descending).into_series()
         }};
     }
 
-    downcast_as_macro_arg_physical!(&s, dispatch).and_then(|s| s.cast(dtype))
+    downcast_as_macro_arg_physical!(&s, dispatch).cast(dtype)
 }

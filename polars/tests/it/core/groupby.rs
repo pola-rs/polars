@@ -31,7 +31,7 @@ fn test_sorted_groupby() -> PolarsResult<()> {
         assert_eq!(out.unwrap_slice(), &[[0, 3], [3, 2], [5, 1]]);
     }
 
-    // nulls first reverse sorted
+    // nulls first descending sorted
     let mut s = Series::new(
         "a",
         &[
@@ -51,7 +51,7 @@ fn test_sorted_groupby() -> PolarsResult<()> {
         assert_eq!(out.unwrap_slice(), &[[0, 2], [2, 2], [4, 3], [7, 1]]);
     }
 
-    // nulls last reverse sorted
+    // nulls last descending sorted
     let mut s = Series::new(
         "a",
         &[

@@ -57,7 +57,7 @@ where
     /// # Safety
     /// The caller must ensure:
     ///     * the length remains correct.
-    ///     * the flags (sorted, etc) are correct.
+    ///     * the flags (sorted, etc) remain correct.
     pub unsafe fn downcast_iter_mut(
         &mut self,
     ) -> impl Iterator<Item = &mut PrimitiveArray<T::Native>> + DoubleEndedIterator {
@@ -131,7 +131,6 @@ impl Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 #[doc(hidden)]
 impl BinaryChunked {
     pub fn downcast_iter(&self) -> impl Iterator<Item = &BinaryArray<i64>> + DoubleEndedIterator {
@@ -168,6 +167,30 @@ impl ListChunked {
         })
     }
     pub fn downcast_chunks(&self) -> Chunks<'_, ListArray<i64>> {
+        Chunks::new(&self.chunks)
+    }
+
+    #[inline]
+    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        if self.chunks.len() == 1 {
+            return (0, index);
+        }
+        index_to_chunked_index(self.downcast_iter().map(|arr| arr.len()), index)
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+#[doc(hidden)]
+impl ArrayChunked {
+    pub fn downcast_iter(&self) -> impl Iterator<Item = &FixedSizeListArray> + DoubleEndedIterator {
+        // Safety:
+        // This is the array type that must be in a ArrayChunked
+        self.chunks.iter().map(|arr| {
+            let arr = &**arr;
+            unsafe { &*(arr as *const dyn Array as *const FixedSizeListArray) }
+        })
+    }
+    pub fn downcast_chunks(&self) -> Chunks<'_, FixedSizeListArray> {
         Chunks::new(&self.chunks)
     }
 

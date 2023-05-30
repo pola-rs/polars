@@ -1,8 +1,11 @@
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc"))]
 mod file_sink;
 pub(crate) mod groupby;
+mod io;
 mod joins;
+mod memory;
 mod ordered;
+mod reproject;
 mod slice;
 mod sort;
 mod utils;
@@ -11,6 +14,7 @@ mod utils;
 pub(crate) use file_sink::*;
 pub(crate) use joins::*;
 pub(crate) use ordered::*;
+pub(crate) use reproject::*;
 pub(crate) use slice::*;
 pub(crate) use sort::*;
 

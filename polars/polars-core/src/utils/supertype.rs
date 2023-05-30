@@ -3,11 +3,9 @@ use super::*;
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 #[cfg(feature = "private")]
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
-    get_supertype(l, r).ok_or_else(|| {
-        PolarsError::ComputeError(
-            format!("Failed to determine supertype of {l:?} and {r:?}").into(),
-        )
-    })
+    get_supertype(l, r).ok_or_else(
+        || polars_err!(ComputeError: "failed to determine supertype of {} and {}", l, r),
+    )
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
@@ -196,10 +194,8 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (Time, Float64) => Some(Float64),
 
             // every known type can be casted to a string except binary
-            #[cfg(feature = "dtype-binary")]
             (dt, Utf8) if dt != &DataType::Unknown && dt != &DataType::Binary => Some(Utf8),
 
-            #[cfg(not(feature = "dtype-binary"))]
             (dt, Utf8) if dt != &DataType::Unknown => Some(Utf8),
 
             (dt, Null) => Some(dt.clone()),
@@ -221,22 +217,12 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             #[cfg(feature = "dtype-duration")]
             (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(lu, ru))),
 
-            // None and Some("") timezones
-            // we cast from more precision to higher precision as that always fits with occasional loss of precision
-            #[cfg(feature = "dtype-datetime")]
-            (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r))
-                if (tz_l.is_none() || tz_l.as_deref() == Some(""))
-                    && (tz_r.is_none() || tz_r.as_deref() == Some("")) =>
-            {
-                let tu = get_time_units(tu_l, tu_r);
-                Some(Datetime(tu, None))
-            }
-            // None and Some("<tz>") timezones
+            // both None or both Some("<tz>") timezones
             // we cast from more precision to higher precision as that always fits with occasional loss of precision
             #[cfg(feature = "dtype-datetime")]
             (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) if
                 // both are none
-                tz_l.is_none() && tz_r.is_some()
+                (tz_l.is_none() && tz_r.is_none())
                 // both have the same time zone
                 || (tz_l.is_some() && (tz_l == tz_r)) => {
                 let tu = get_time_units(tu_l, tu_r);
@@ -265,6 +251,14 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 }
                 Some(Struct(new_fields))
             }
+            #[cfg(feature = "dtype-decimal")]
+            (d @ Decimal(_, _), dt) if dt.is_signed() || dt.is_unsigned() => Some(d.clone()),
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(p1, s1), Decimal(p2, s2)) => {
+                Some(Decimal((*p1).zip(*p2).map(|(p1, p2)| p1.max(p2)), (*s1).max(*s2)))
+            }
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(_, _), f @ (Float32 | Float64)) => Some(f.clone()),
             _ => None,
         }
     }

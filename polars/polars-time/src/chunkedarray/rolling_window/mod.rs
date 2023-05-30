@@ -68,6 +68,7 @@ pub struct RollingOptionsImpl<'a> {
     pub center: bool,
     pub by: Option<&'a [i64]>,
     pub tu: Option<TimeUnit>,
+    pub tz: Option<&'a TimeZone>,
     pub closed_window: Option<ClosedWindow>,
 }
 
@@ -87,6 +88,7 @@ impl From<RollingOptions> for RollingOptionsImpl<'static> {
             center: options.center,
             by: None,
             tu: None,
+            tz: None,
             closed_window: None,
         }
     }
@@ -120,6 +122,7 @@ impl Default for RollingOptionsImpl<'static> {
             center: false,
             by: None,
             tu: None,
+            tz: None,
             closed_window: None,
         }
     }
@@ -204,13 +207,11 @@ pub trait RollingAgg {
 /// utility
 #[cfg(feature = "rolling_window")]
 fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
-    if min_periods > window_size {
-        Err(PolarsError::ComputeError(
-            "`windows_size` should be >= `min_periods`".into(),
-        ))
-    } else {
-        Ok(())
-    }
+    polars_ensure!(
+        min_periods <= window_size,
+        ComputeError: "`min_periods` should be <= `window_size`",
+    );
+    Ok(())
 }
 
 #[cfg(feature = "rolling_window")]
@@ -227,7 +228,15 @@ fn rolling_agg<T>(
         Option<&[f64]>,
     ) -> ArrayRef,
     rolling_agg_fn_dynamic: Option<
-        &dyn Fn(&[T::Native], Duration, Duration, &[i64], ClosedWindow, TimeUnit) -> ArrayRef,
+        &dyn Fn(
+            &[T::Native],
+            Duration,
+            Duration,
+            &[i64],
+            ClosedWindow,
+            TimeUnit,
+            Option<&TimeZone>,
+        ) -> PolarsResult<ArrayRef>,
     >,
 ) -> PolarsResult<Series>
 where
@@ -243,9 +252,8 @@ where
     let arr = if options.window_size.parsed_int {
         let options: RollingOptionsFixedWindow = options.into();
         check_input(options.window_size, options.min_periods)?;
-        let ca = ca.rechunk();
 
-        match ca.null_count() {
+        Ok(match ca.null_count() {
             0 => rolling_agg_fn(
                 arr.values().as_slice(),
                 options.window_size,
@@ -260,7 +268,7 @@ where
                 options.center,
                 options.weights.as_deref(),
             ),
-        }
+        })
     } else {
         if arr.null_count() > 0 {
             panic!("'rolling by' not yet supported for series with null values, consider using 'groupby_rolling'")
@@ -276,7 +284,7 @@ where
             "'rolling by' not yet supported for this expression, consider using 'groupby_rolling'",
         );
 
-        func(values, duration, offset, by, closed_window, tu)
-    };
+        func(values, duration, offset, by, closed_window, tu, options.tz)
+    }?;
     Series::try_from((ca.name(), arr))
 }

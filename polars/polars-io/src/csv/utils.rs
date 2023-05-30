@@ -13,7 +13,8 @@ use regex::{Regex, RegexBuilder};
 
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use crate::csv::parser::next_line_position_naive;
-use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitFields, SplitLines};
+use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitLines};
+use crate::csv::splitfields::SplitFields;
 use crate::csv::CsvEncoding;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::NullValues;
@@ -56,13 +57,18 @@ pub(crate) fn get_file_chunks(
     offsets
 }
 
-pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
-    reader: &mut R,
-) -> PolarsResult<ReaderBytes<'_>> {
+pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
+    reader: &'a mut R,
+) -> PolarsResult<ReaderBytes<'a>> {
     // we have a file so we can mmap
     if let Some(file) = reader.to_file() {
         let mmap = unsafe { memmap::Mmap::map(file)? };
-        Ok(ReaderBytes::Mapped(mmap))
+
+        // somehow bck thinks borrows alias
+        // this is sound as file was already bound to 'a
+        use std::fs::File;
+        let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
+        Ok(ReaderBytes::Mapped(mmap, file))
     } else {
         // we can get the bytes for free
         if reader.to_bytes().is_some() {
@@ -96,18 +102,23 @@ static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// Infer the data type of a record
-fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
+fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
     // Utf8 for them
     if string.starts_with('"') {
-        if parse_dates {
+        if try_parse_dates {
             #[cfg(feature = "polars-time")]
             {
                 match date_infer::infer_pattern_single(&string[1..string.len() - 1]) {
-                    Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
-                        DataType::Datetime(TimeUnit::Microseconds, None)
-                    }
-                    Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
+                    Some(pattern_with_offset) => match pattern_with_offset {
+                        Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
+                            DataType::Datetime(TimeUnit::Microseconds, None)
+                        }
+                        Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
+                        Pattern::DatetimeYMDZ => {
+                            DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
+                        }
+                    },
                     None => DataType::Utf8,
                 }
             }
@@ -126,14 +137,19 @@ fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
         DataType::Float64
     } else if INTEGER_RE.is_match(string) {
         DataType::Int64
-    } else if parse_dates {
+    } else if try_parse_dates {
         #[cfg(feature = "polars-time")]
         {
             match date_infer::infer_pattern_single(string) {
-                Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
-                    DataType::Datetime(TimeUnit::Microseconds, None)
-                }
-                Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
+                Some(pattern_with_offset) => match pattern_with_offset {
+                    Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
+                        DataType::Datetime(TimeUnit::Microseconds, None)
+                    }
+                    Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
+                    Pattern::DatetimeYMDZ => {
+                        DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
+                    }
+                },
                 None => DataType::Utf8,
             }
         }
@@ -151,19 +167,18 @@ pub(crate) fn parse_bytes_with_encoding(
     bytes: &[u8],
     encoding: CsvEncoding,
 ) -> PolarsResult<Cow<str>> {
-    let s = match encoding {
+    Ok(match encoding {
         CsvEncoding::Utf8 => simdutf8::basic::from_utf8(bytes)
-            .map_err(anyhow::Error::from)?
+            .map_err(|_| polars_err!(ComputeError: "invalid utf-8 sequence"))?
             .into(),
         CsvEncoding::LossyUtf8 => String::from_utf8_lossy(bytes),
-    };
-    Ok(s)
+    })
 }
 
-/// Infer the schema of a CSV file by reading through the first n records of the file,
-/// with `max_read_records` controlling the maximum number of records to read.
+/// Infer the schema of a CSV file by reading through the first n rows of the file,
+/// with `max_read_rows` controlling the maximum number of rows to read.
 ///
-/// If `max_read_records` is not set, the whole file is read to infer its schema.
+/// If `max_read_rows` is not set, the whole file is read to infer its schema.
 ///
 /// Returns
 ///     - inferred schema
@@ -173,7 +188,7 @@ pub(crate) fn parse_bytes_with_encoding(
 pub fn infer_file_schema(
     reader_bytes: &ReaderBytes,
     delimiter: u8,
-    max_read_lines: Option<usize>,
+    max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
     // we take &mut because we maybe need to skip more rows dependent
@@ -184,7 +199,7 @@ pub fn infer_file_schema(
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<&NullValues>,
-    parse_dates: bool,
+    try_parse_dates: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -194,9 +209,7 @@ pub fn infer_file_schema(
     let encoding = CsvEncoding::LossyUtf8;
 
     let bytes = skip_line_ending(skip_bom(reader_bytes), eol_char);
-    if bytes.is_empty() {
-        return Err(PolarsError::NoData("empty csv".into()));
-    }
+    polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
     let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
     // it can be that we have a single line without eol char
     let has_eol = bytes.contains(&eol_char);
@@ -285,7 +298,7 @@ pub fn infer_file_schema(
         return infer_file_schema(
             &ReaderBytes::Owned(buf),
             delimiter,
-            max_read_lines,
+            max_read_rows,
             has_header,
             schema_overwrite,
             skip_rows,
@@ -294,10 +307,10 @@ pub fn infer_file_schema(
             quote_char,
             eol_char,
             null_values,
-            parse_dates,
+            try_parse_dates,
         );
     } else {
-        return Err(PolarsError::NoData("empty csv".into()));
+        polars_bail!(NoData: "empty CSV");
     };
     if !has_header {
         // re-init lines so that the header is included in type inference.
@@ -319,7 +332,19 @@ pub fn infer_file_schema(
 
     let mut end_ptr = start_ptr;
     for mut line in records_ref
-        .take(max_read_lines.unwrap_or(usize::MAX))
+        .take(match max_read_rows {
+            Some(max_read_rows) => {
+                if max_read_rows <= (usize::MAX - skip_rows_after_header) {
+                    // read skip_rows_after_header more rows for inferring
+                    // the correct schema as the first skip_rows_after_header
+                    // rows will be skipped
+                    max_read_rows + skip_rows_after_header
+                } else {
+                    max_read_rows
+                }
+            }
+            None => usize::MAX,
+        })
         .skip(skip_rows_after_header)
     {
         rows_count += 1;
@@ -357,16 +382,16 @@ pub fn infer_file_schema(
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
                     match &null_values {
                         None => {
-                            column_types[i].insert(infer_field_schema(&s, parse_dates));
+                            column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                         }
                         Some(NullValues::AllColumns(names)) => {
                             if !names.iter().any(|nv| nv == s.as_ref()) {
-                                column_types[i].insert(infer_field_schema(&s, parse_dates));
+                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
                         }
                         Some(NullValues::AllColumnsSingle(name)) => {
                             if s.as_ref() != name {
-                                column_types[i].insert(infer_field_schema(&s, parse_dates));
+                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
                         }
                         Some(NullValues::Named(names)) => {
@@ -375,10 +400,10 @@ pub fn infer_file_schema(
 
                             if let Some(null_name) = null_name {
                                 if null_name.1 != s.as_ref() {
-                                    column_types[i].insert(infer_field_schema(&s, parse_dates));
+                                    column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                                 }
                             } else {
-                                column_types[i].insert(infer_field_schema(&s, parse_dates));
+                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
                         }
                     }
@@ -396,6 +421,15 @@ pub fn infer_file_schema(
             if let Some((_, name, dtype)) = schema_overwrite.get_full(field_name) {
                 fields.push(Field::new(name, dtype.clone()));
                 continue;
+            }
+
+            // column might have been renamed
+            // execute only if schema is complete
+            if schema_overwrite.len() == header_length {
+                if let Some((name, dtype)) = schema_overwrite.get_at_index(i) {
+                    fields.push(Field::new(name, dtype.clone()));
+                    continue;
+                }
             }
         }
 
@@ -446,7 +480,7 @@ pub fn infer_file_schema(
         return infer_file_schema(
             &ReaderBytes::Owned(rb),
             delimiter,
-            max_read_lines,
+            max_read_rows,
             has_header,
             schema_overwrite,
             skip_rows,
@@ -455,15 +489,11 @@ pub fn infer_file_schema(
             quote_char,
             eol_char,
             null_values,
-            parse_dates,
+            try_parse_dates,
         );
     }
 
-    Ok((
-        Schema::from(fields.into_iter()),
-        rows_count,
-        end_ptr - start_ptr,
-    ))
+    Ok((Schema::from_iter(fields), rows_count, end_ptr - start_ptr))
 }
 
 // magic numbers

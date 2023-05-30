@@ -345,11 +345,11 @@
 //! // sort this DataFrame by multiple columns
 //!
 //! // ordering of the columns
-//! let reverse = vec![true, false];
+//! let descending = vec![true, false];
 //! // columns to sort by
 //! let by = &["b", "a"];
 //! // do the sort operation
-//! let sorted = df.sort(by, reverse)?;
+//! let sorted = df.sort(by, descending)?;
 //!
 //! // sorted:
 //!

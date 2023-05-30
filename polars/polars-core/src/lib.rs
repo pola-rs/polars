@@ -1,11 +1,13 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(feature = "simd", feature(portable_simd))]
+#![allow(ambiguous_glob_reexports)]
 extern crate core;
 
 #[macro_use]
 pub mod utils;
 pub mod chunked_array;
 pub mod cloud;
-pub(crate) mod config;
+pub mod config;
 pub mod datatypes;
 #[cfg(feature = "docs")]
 pub mod doc;
@@ -14,6 +16,7 @@ pub mod export;
 pub mod fmt;
 pub mod frame;
 pub mod functions;
+pub mod hashing;
 mod named_from;
 pub mod prelude;
 pub mod schema;
@@ -23,11 +26,11 @@ pub mod series;
 pub mod testing;
 #[cfg(test)]
 mod tests;
-pub(crate) mod vector_hasher;
 
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub use hashing::IdBuildHasher;
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 

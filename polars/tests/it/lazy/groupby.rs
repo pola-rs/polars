@@ -1,3 +1,4 @@
+#[cfg(feature = "rank")]
 use polars_core::series::ops::NullBehavior;
 // used only if feature="dtype-duration", "dtype-struct"
 #[allow(unused_imports)]
@@ -6,6 +7,7 @@ use polars_core::SINGLE_LOCK;
 use super::*;
 
 #[test]
+#[cfg(feature = "rank")]
 fn test_filter_sort_diff_2984() -> PolarsResult<()> {
     // make sort that sort doest not oob if filter returns no values
     let df = df![
@@ -54,6 +56,7 @@ fn test_filter_after_tail() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "diff")]
 fn test_filter_diff_arithmetic() -> PolarsResult<()> {
     let df = df![
         "user" => [1, 1, 1, 1, 2],
@@ -97,6 +100,7 @@ fn test_groupby_lit_agg() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "diff")]
 fn test_groupby_agg_list_with_not_aggregated() -> PolarsResult<()> {
     let df = df![
     "group" => ["a", "a", "a", "a", "a", "a", "b", "b", "b", "b", "b", "b"],
@@ -124,7 +128,7 @@ fn test_groupby_agg_list_with_not_aggregated() -> PolarsResult<()> {
 #[test]
 #[cfg(all(feature = "dtype-duration", feature = "dtype-struct"))]
 fn test_logical_mean_partitioned_groupby_block() -> PolarsResult<()> {
-    let guard = SINGLE_LOCK.lock();
+    let _guard = SINGLE_LOCK.lock();
     let df = df![
         "a" => [1, 1, 2],
         "duration" => [1000, 2000, 3000]
@@ -145,5 +149,31 @@ fn test_logical_mean_partitioned_groupby_block() -> PolarsResult<()> {
         AnyValue::Duration(1500, TimeUnit::Microseconds)
     );
 
+    Ok(())
+}
+
+#[test]
+fn test_filter_aggregated_expression() -> PolarsResult<()> {
+    let df: DataFrame = df![
+    "day" => [2, 2, 2, 2, 2, 2, 1, 1],
+    "y" => [Some(4), Some(5), Some(8), Some(7), Some(9), None, None, None],
+    "x" => [1, 2, 3, 4, 5, 6, 1, 2],
+    ]?;
+
+    let f = col("y").is_not_null().and(col("x").is_not_null());
+
+    let df = df
+        .lazy()
+        .groupby([col("day")])
+        .agg([(col("x") - col("x").first()).filter(f)])
+        .sort("day", Default::default())
+        .collect()
+        .unwrap();
+    let x = df.column("x")?;
+
+    assert_eq!(
+        x.get(1).unwrap(),
+        AnyValue::List(Series::new("", [0, 1, 2, 3, 4]))
+    );
     Ok(())
 }

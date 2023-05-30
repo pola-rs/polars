@@ -1,3 +1,5 @@
+import typing
+
 import pytest
 
 import polars as pl
@@ -34,11 +36,6 @@ def test_fill_null_minimal_upcast_4056() -> None:
     df = df.with_columns(pl.col("a").cast(pl.Int8))
     assert df.with_columns(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
     assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
-
-
-def test_with_column_duplicates() -> None:
-    df = pl.DataFrame({"a": [0, None, 2, 3, None], "b": [None, 1, 2, 3, None]})
-    assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
 
 
 def test_pow_dtype() -> None:
@@ -147,7 +144,7 @@ def test_lazy_map_schema() -> None:
 def test_join_as_of_by_schema() -> None:
     a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
-    q = a.join_asof(b, on="a", by="b")
+    q = a.join_asof(b, on=pl.col("a").set_sorted(), by="b")
     assert q.collect().columns == q.columns
 
 
@@ -302,10 +299,10 @@ def test_all_null_cast_5826() -> None:
     assert out.item() is None
 
 
-def test_emtpy_list_eval_schema_5734() -> None:
+def test_empty_list_eval_schema_5734() -> None:
     df = pl.DataFrame({"a": [[{"b": 1, "c": 2}]]})
     assert df.filter(False).select(
-        pl.col("a").arr.eval(pl.element().struct.field("b"))
+        pl.col("a").list.eval(pl.element().struct.field("b"))
     ).schema == {"a": pl.List(pl.Int64)}
 
 
@@ -338,12 +335,19 @@ def test_rename_schema_order_6660() -> None:
 def test_from_dicts_all_cols_6716() -> None:
     dicts = [{"a": None} for _ in range(20)] + [{"a": "crash"}]
 
-    with pytest.raises(pl.PanicException, match="Cannot extract numeric value from"):
+    with pytest.raises(
+        pl.ComputeError, match="make sure that all rows have the same schema"
+    ):
         pl.from_dicts(dicts, infer_schema_length=20)
     assert pl.from_dicts(dicts, infer_schema_length=None).dtypes == [pl.Utf8]
 
 
-def test_duration_divison_schema() -> None:
+def test_from_dicts_empty() -> None:
+    with pytest.raises(pl.NoDataError, match="No rows. Cannot infer schema."):
+        pl.from_dicts([])
+
+
+def test_duration_division_schema() -> None:
     df = pl.DataFrame({"a": [1]})
     q = (
         df.lazy()
@@ -353,3 +357,99 @@ def test_duration_divison_schema() -> None:
 
     assert q.schema == {"a": pl.Float64}
     assert q.collect().to_dict(False) == {"a": [1.0]}
+
+
+def test_int_operator_stability() -> None:
+    for dt in pl.datatypes.INTEGER_DTYPES:
+        s = pl.Series(values=[10], dtype=dt)
+        assert pl.select(pl.lit(s) // 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) + 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) - 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) * 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) / 2).dtypes == [pl.Float64]
+
+
+def test_deep_subexpression_f32_schema_7129() -> None:
+    df = pl.DataFrame({"a": [1.1, 2.3, 3.4, 4.5]}, schema={"a": pl.Float32()})
+    assert df.with_columns(pl.col("a") - pl.col("a").median()).dtypes == [pl.Float32]
+    assert df.with_columns(
+        (pl.col("a") - pl.col("a").mean()) / (pl.col("a").std() + 0.001)
+    ).dtypes == [pl.Float32]
+
+
+def test_absence_off_null_prop_8224() -> None:
+    # a reminder to self to not do null propagation
+    # it is inconsistent and makes output dtype
+    # dependent of the data, big no!
+
+    def sub_col_min(column: str, min_column: str) -> pl.Expr:
+        return pl.col(column).sub(pl.col(min_column).min())
+
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 2, 2],
+            "vals_num": [10.0, 11.0, 12.0, 13.0],
+            "vals_partial": [None, None, 12.0, 13.0],
+            "vals_null": [None, None, None, None],
+        }
+    )
+
+    q = (
+        df.lazy()
+        .groupby("group")
+        .agg(
+            [
+                sub_col_min("vals_num", "vals_num").alias("sub_num"),
+                sub_col_min("vals_num", "vals_partial").alias("sub_partial"),
+                sub_col_min("vals_num", "vals_null").alias("sub_null"),
+            ]
+        )
+    )
+
+    assert q.collect().dtypes == [
+        pl.Int64,
+        pl.List(pl.Float64),
+        pl.List(pl.Float64),
+        pl.List(pl.Float64),
+    ]
+
+
+@typing.no_type_check
+def test_schemas() -> None:
+    # add all expression output tests here:
+    args = [
+        # coalesce
+        {
+            "data": {"x": ["x"], "y": ["y"]},
+            "expr": pl.coalesce(pl.col("x"), pl.col("y")),
+            "expected_select": {"x": pl.Utf8},
+            "expected_gb": {"x": pl.List(pl.Utf8)},
+        },
+        # boolean sum
+        {
+            "data": {"x": [True]},
+            "expr": pl.col("x").sum(),
+            "expected_select": {"x": pl.UInt32},
+            "expected_gb": {"x": pl.UInt32},
+        },
+    ]
+    for arg in args:
+        df = pl.DataFrame(arg["data"])
+
+        # test selection schema
+        schema = df.select(arg["expr"]).schema
+        for key, dtype in arg["expected_select"].items():
+            assert schema[key] == dtype
+
+        # test groupby schema
+        schema = df.groupby(pl.lit(1)).agg(arg["expr"]).schema
+        for key, dtype in arg["expected_gb"].items():
+            assert schema[key] == dtype
+
+
+def test_list_null_constructor_schema() -> None:
+    expected = pl.List(pl.Null)
+    assert pl.Series([[]]).dtype == expected
+    assert pl.Series([[]], dtype=pl.List).dtype == expected
+    assert pl.DataFrame({"a": [[]]}).dtypes[0] == expected
+    assert pl.DataFrame(schema={"a": pl.List}).dtypes[0] == expected

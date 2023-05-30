@@ -1,4 +1,6 @@
 #[cfg(feature = "dynamic_groupby")]
+use polars_core::frame::groupby::GroupBy;
+#[cfg(feature = "dynamic_groupby")]
 use polars_time::RollingGroupOptions;
 
 use super::*;
@@ -12,6 +14,7 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) options: RollingGroupOptions,
     pub(crate) input_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
+    pub(crate) apply: Option<Arc<dyn DataFrameUdf>>,
 }
 
 impl GroupByRollingExec {
@@ -30,6 +33,16 @@ impl GroupByRollingExec {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let (mut time_key, mut keys, groups) = df.groupby_rolling(keys, &self.options)?;
+
+        if let Some(f) = &self.apply {
+            let gb = GroupBy::new(&df, vec![], groups, None);
+            let out = gb.apply(move |df| f.call_udf(df))?;
+            return Ok(if let Some((offset, len)) = self.slice {
+                out.slice(offset, len)
+            } else {
+                out
+            });
+        }
 
         let mut groups = &groups;
         #[allow(unused_assignments)]
@@ -67,25 +80,18 @@ impl GroupByRollingExec {
             }
         };
 
-        // a rolling groupby has overlapping windows
-        state.set_has_overlapping_groups();
-
+        state.expr_cache = Some(Default::default());
         let agg_columns = POOL.install(|| {
             self.aggs
                 .par_iter()
                 .map(|expr| {
                     let agg = expr.evaluate_on_groups(&df, groups, state)?.aggregated();
-                    if agg.len() != groups.len() {
-                        return Err(PolarsError::ComputeError(
-                            format!("returned aggregation is a different length: {} than the group lengths: {}",
-                                    agg.len(),
-                                    groups.len()).into()
-                        ))
-                    }
+                    polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
                     Ok(agg)
                 })
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
+        state.expr_cache = None;
 
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
         columns.extend_from_slice(&keys);
@@ -117,7 +123,7 @@ impl Executor for GroupByRollingExec {
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let name = column_delimited("groupby_rolling".to_string(), &by);
+            let name = comma_delimited("groupby_rolling".to_string(), &by);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

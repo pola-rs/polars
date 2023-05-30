@@ -24,6 +24,7 @@ impl OptimizationRule for DelayRechunk {
     ) -> Option<ALogicalPlan> {
         match lp_arena.get(node) {
             // An aggregation can be partitioned, its wasteful to rechunk before that partition.
+            #[allow(unused_mut)]
             ALogicalPlan::Aggregate { input, .. } => {
                 if !self.processed.insert(node.0) {
                     return None;
@@ -41,7 +42,7 @@ impl OptimizationRule for DelayRechunk {
                             input_node = Some(node);
                             break;
                         }
-                        #[cfg(feature = "csv-file")]
+                        #[cfg(feature = "csv")]
                         CsvScan { .. } => {
                             input_node = Some(node);
                             break;
@@ -61,7 +62,7 @@ impl OptimizationRule for DelayRechunk {
 
                 if let Some(node) = input_node {
                     match lp_arena.get_mut(node) {
-                        #[cfg(feature = "csv-file")]
+                        #[cfg(feature = "csv")]
                         CsvScan { options, .. } => {
                             options.rechunk = false;
                         }

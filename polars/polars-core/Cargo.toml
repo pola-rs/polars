@@ -10,21 +10,21 @@ description = "Core of the Polars DataFrame library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-simd = ["arrow/simd"]
+simd = ["arrow/simd", "polars-arrow/simd"]
 nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "polars-arrow/nightly"]
 avx512 = []
 docs = []
-temporal = ["regex", "chrono"]
+temporal = ["regex", "chrono", "polars-error/regex"]
 random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "private"]
-lazy = ["sort_multiple"]
+lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 # more fast paths, slower compilation
 performant = ["polars-arrow/performant"]
 
 # extra utilities for Utf8Chunked
-strings = ["regex", "polars-arrow/strings", "arrow/compute_substring"]
+strings = ["regex", "polars-arrow/strings", "arrow/compute_substring", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
 
@@ -78,7 +78,6 @@ semi_anti_join = []
 chunked_ids = []
 describe = []
 timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
-
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 
 # opt-in datatypes for Series
@@ -86,14 +85,14 @@ dtype-date = ["temporal"]
 dtype-datetime = ["temporal"]
 dtype-duration = ["temporal"]
 dtype-time = ["temporal"]
+dtype-array = ["polars-arrow/dtype-array"]
 dtype-i8 = []
 dtype-i16 = []
-dtype-i128 = []
+dtype-decimal = ["dep:itoap", "polars-arrow/dtype-decimal"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
 dtype-struct = []
-dtype-binary = []
 
 parquet = ["arrow/io_parquet"]
 
@@ -101,12 +100,12 @@ parquet = ["arrow/io_parquet"]
 bigidx = ["polars-arrow/bigidx"]
 python = []
 
-serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde"]
+serde = ["dep:serde", "smartstring/serde"]
+serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
 
 docs-selection = [
   "ndarray",
   "is_in",
-  "sort_multiple",
   "rows",
   "docs",
   "strings",
@@ -152,20 +151,23 @@ docs-selection = [
 
 [dependencies]
 ahash.workspace = true
-anyhow.workspace = true
 arrow.workspace = true
 bitflags.workspace = true
-chrono = { version = "0.4", optional = true }
+chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
 chrono-tz = { version = "0.8", optional = true }
 comfy-table = { version = "6.1.4", optional = true, default_features = false }
+either.workspace = true
 hashbrown.workspace = true
-indexmap = { version = "1", features = ["std"] }
+indexmap.workspace = true
+itoap = { version = "1", optional = true, feature = ["simd"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
-num.workspace = true
+num-traits.workspace = true
 object_store = { version = "0.5.3", default-features = false, optional = true }
 once_cell.workspace = true
-polars-arrow = { version = "0.27.1", path = "../polars-arrow", features = ["compute"] }
-polars-utils = { version = "0.27.1", path = "../polars-utils" }
+polars-arrow = { version = "0.30.0", path = "../polars-arrow", features = ["compute"] }
+polars-error = { version = "0.30.0", path = "../polars-error" }
+polars-row = { version = "0.30.0", path = "../polars-row" }
+polars-utils = { version = "0.30.0", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon.workspace = true
@@ -173,7 +175,7 @@ regex = { version = "1.6", optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
-smartstring = { version = "1" }
+smartstring.workspace = true
 thiserror.workspace = true
 url = { version = "2.3.1", optional = true }
 xxhash-rust.workspace = true

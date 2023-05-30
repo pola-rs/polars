@@ -39,34 +39,16 @@ fn filter_true_lit() -> PolarsResult<()> {
         .with_predicate_pushdown(false)
         .with_projection_pushdown(false)
         .collect()?;
-    let res = with_true.vstack(&with_not_true)?;
-    assert!(res.frame_equal_missing(&df));
-    Ok(())
-}
-
-#[test]
-fn test_combine_columns_in_filter() -> PolarsResult<()> {
-    let df = df![
-        "a" => [1, 2, 3],
-        "b" => [None, Some("a"), Some("b")]
-    ]?;
-
-    let out = df
+    let with_null = df
+        .clone()
         .lazy()
-        .filter(
-            cols(vec!["a".to_string(), "b".to_string()])
-                .cast(DataType::Utf8)
-                .gt(lit("2")),
-        )
+        .filter(col("a").is_null())
+        .with_predicate_pushdown(false)
+        .with_projection_pushdown(false)
         .collect()?;
-
-    let expected = df![
-        "a" => [3],
-        "b" => ["b"],
-    ]?;
-
-    // "b" > "2" == true
-    assert!(out.frame_equal(&expected));
+    let res = with_true.vstack(&with_not_true)?;
+    let res = res.vstack(&with_null)?;
+    assert!(res.frame_equal_missing(&df));
     Ok(())
 }
 

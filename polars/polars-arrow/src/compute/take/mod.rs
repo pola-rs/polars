@@ -1,4 +1,7 @@
+pub mod bitmap;
 mod boolean;
+#[cfg(feature = "dtype-array")]
+mod fixed_size_list;
 
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
@@ -15,6 +18,9 @@ use crate::utils::{with_match_primitive_type, CustomIterTools};
 /// # Safety
 /// Does not do bounds checks
 pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
+    if idx.null_count() == idx.len() {
+        return new_null_array(arr.data_type().clone(), idx.len());
+    }
     use PhysicalType::*;
     match arr.data_type().to_physical_type() {
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
@@ -32,6 +38,11 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
         Boolean => {
             let arr = arr.as_any().downcast_ref().unwrap();
             Box::new(boolean::take_unchecked(arr, idx))
+        }
+        #[cfg(feature = "dtype-array")]
+        FixedSizeList => {
+            let arr = arr.as_any().downcast_ref().unwrap();
+            Box::new(fixed_size_list::take_unchecked(arr, idx))
         }
         // TODO! implement proper unchecked version
         #[cfg(feature = "compute")]
@@ -760,7 +771,7 @@ mod test {
     fn test_utf8_kernel() {
         let s = LargeStringArray::from(vec![Some("foo"), None, Some("bar")]);
         unsafe {
-            let out = take_utf8_unchecked(&s, &IdxArr::from_slice(&[1, 2]));
+            let out = take_utf8_unchecked(&s, &IdxArr::from_slice([1, 2]));
             assert!(out.is_null(0));
             assert!(out.is_valid(1));
             let out = take_utf8_unchecked(&s, &IdxArr::from(vec![None, Some(2)]));

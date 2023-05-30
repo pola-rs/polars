@@ -40,7 +40,7 @@ impl OptimizationRule for ReplaceDropNulls {
                     matches!(
                         e,
                         &AExpr::Function {
-                            function: FunctionExpr::IsNotNull,
+                            function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
                             ..
                         }
                     )
@@ -72,12 +72,7 @@ impl OptimizationRule for ReplaceDropNulls {
                     }
                 }
                 if not_null_count == column_count && binary_and_count < column_count {
-                    let subset = Arc::new(
-                        aexpr_to_leaf_names(*predicate, expr_arena)
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect::<Vec<_>>(),
-                    );
+                    let subset = Arc::from(aexpr_to_leaf_names(*predicate, expr_arena));
 
                     Some(ALogicalPlan::MapFunction {
                         input: *input,
@@ -89,79 +84,5 @@ impl OptimizationRule for ReplaceDropNulls {
             }
             _ => None,
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use polars_core::prelude::*;
-
-    use super::*;
-    use crate::tests::fruits_cars;
-
-    #[test]
-    fn test_drop_nulls_optimization() -> PolarsResult<()> {
-        let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(ReplaceDropNulls {})];
-        let df = fruits_cars();
-
-        for subset in [
-            Some(vec![col("fruits")]),
-            Some(vec![col("fruits"), col("cars")]),
-            Some(vec![col("fruits"), col("cars"), col("A")]),
-            None,
-        ] {
-            let lp = df.clone().lazy().drop_nulls(subset).logical_plan;
-
-            let out = optimize_lp(lp, &mut rules);
-            assert!(matches!(out, LogicalPlan::MapFunction { .. }));
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_filter() -> PolarsResult<()> {
-        // This tests if the filter does not accidentally is optimized by ReplaceNulls
-
-        let data = vec![
-            None,
-            None,
-            None,
-            None,
-            Some(false),
-            Some(false),
-            Some(true),
-            Some(false),
-            Some(true),
-            Some(false),
-            Some(true),
-            Some(false),
-            Some(true),
-            Some(false),
-            Some(true),
-            Some(false),
-            Some(false),
-            None,
-        ];
-        let series = Series::new("data", data);
-        let df = DataFrame::new(vec![series])?;
-
-        let column_name = "data";
-        let shift_col_1 = col(column_name)
-            .shift_and_fill(1, lit(true))
-            .lt(col(column_name));
-        let shift_col_neg_1 = col(column_name).shift(-1).lt(col(column_name));
-
-        let out = df
-            .lazy()
-            .with_columns(vec![
-                shift_col_1.alias("shift_1"),
-                shift_col_neg_1.alias("shift_neg_1"),
-            ])
-            .with_column(col("shift_1").and(col("shift_neg_1")).alias("diff"))
-            .filter(col("diff"))
-            .collect()?;
-        assert_eq!(out.shape(), (5, 4));
-
-        Ok(())
     }
 }

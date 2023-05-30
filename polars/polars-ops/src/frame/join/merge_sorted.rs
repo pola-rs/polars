@@ -15,11 +15,10 @@ pub fn _merge_sorted_dfs(
     let dtype_lhs = left_s.dtype();
     let dtype_rhs = right_s.dtype();
 
-    if dtype_lhs != dtype_rhs {
-        return Err(PolarsError::ComputeError(
-            "DataTypes in merge sort should be equal".into(),
-        ));
-    }
+    polars_ensure!(
+        dtype_lhs == dtype_rhs,
+        ComputeError: "merge-sort datatype mismatch: {} != {}", dtype_lhs, dtype_rhs
+    );
 
     let merge_indicator = series_to_merge_indicator(left_s, right_s);
     let new_columns = left
@@ -50,17 +49,20 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> Series 
             merge_ca(lhs, rhs, merge_indicator).into_series()
         }
         Utf8 => {
-            let lhs = lhs.utf8().unwrap();
-            let rhs = rhs.utf8().unwrap();
-            merge_ca(lhs, rhs, merge_indicator).into_series()
+            // dispatch via binary
+            let lhs = lhs.cast(&Binary).unwrap();
+            let rhs = rhs.cast(&Binary).unwrap();
+            let lhs = lhs.binary().unwrap();
+            let rhs = rhs.binary().unwrap();
+            let out = merge_ca(lhs, rhs, merge_indicator);
+            unsafe { out.cast_unchecked(&Utf8).unwrap() }
         }
-        #[cfg(feature = "dtype-binary")]
         Binary => {
             let lhs = lhs.binary().unwrap();
             let rhs = rhs.binary().unwrap();
             merge_ca(lhs, rhs, merge_indicator).into_series()
         }
-        #[cfg(feature = "dtype-binary")]
+        #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let lhs = lhs.struct_().unwrap();
             let rhs = rhs.struct_().unwrap();

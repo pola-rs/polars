@@ -17,21 +17,22 @@ pub enum IsSorted {
     Not,
 }
 
-macro_rules! invalid_operation {
-    ($s:expr) => {
-        Err(PolarsError::InvalidOperation(
-            format!(
-                "this operation is not implemented/valid for this dtype: {:?}",
-                $s._dtype()
-            )
-            .into(),
-        ))
-    };
+impl IsSorted {
+    pub(crate) fn reverse(self) -> Self {
+        use IsSorted::*;
+        match self {
+            Ascending => Descending,
+            Descending => Ascending,
+            Not => Not,
+        }
+    }
 }
+
 macro_rules! invalid_operation_panic {
-    ($s:expr) => {
+    ($op:ident, $s:expr) => {
         panic!(
-            "this operation is not implemented/valid for this dtype: {:?}",
+            "`{}` operation not supported for dtype `{}`",
+            stringify!($op),
             $s._dtype()
         )
     };
@@ -65,7 +66,7 @@ pub(crate) mod private {
             _values_capacity: usize,
             _list_capacity: usize,
         ) -> Box<dyn ListBuilderTrait> {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(get_list_builder, self)
         }
 
         /// Get field (used in schema)
@@ -73,12 +74,10 @@ pub(crate) mod private {
 
         fn _dtype(&self) -> &DataType;
 
-        fn compute_len(&mut self) {
-            unimplemented!()
-        }
+        fn compute_len(&mut self);
 
         fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(explode_by_offsets, self)
         }
 
         /// Get an array with the cumulative max computed at every element
@@ -94,7 +93,7 @@ pub(crate) mod private {
         }
 
         fn _set_sorted_flag(&mut self, _is_sorted: IsSorted) {
-            invalid_operation_panic!(self)
+            // ignore
         }
 
         unsafe fn equal_element(
@@ -103,25 +102,25 @@ pub(crate) mod private {
             _idx_other: usize,
             _other: &Series,
         ) -> bool {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(equal_element, self)
         }
         #[allow(clippy::wrong_self_convention)]
         fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(into_partial_eq_inner, self)
         }
         #[allow(clippy::wrong_self_convention)]
         fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(into_partial_ord_inner, self)
         }
         fn vec_hash(&self, _build_hasher: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
-            invalid_operation!(self)
+            polars_bail!(opq = vec_hash, self._dtype());
         }
         fn vec_hash_combine(
             &self,
             _build_hasher: RandomState,
             _hashes: &mut [u64],
         ) -> PolarsResult<()> {
-            invalid_operation!(self)
+            polars_bail!(opq = vec_hash_combine, self._dtype());
         }
         unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
@@ -149,39 +148,38 @@ pub(crate) mod private {
             _right_column: &Series,
             _opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
         ) -> Series {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(zip_outer_join_column, self)
         }
 
         fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(sub, self)
         }
         fn add_to(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(add, self)
         }
         fn multiply(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(mul, self)
         }
         fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(div, self)
         }
         fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(rem, self)
         }
         fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
-            invalid_operation!(self)
+            invalid_operation_panic!(group_tuples, self)
         }
+        #[cfg(feature = "zip_with")]
         fn zip_with_same_type(
             &self,
             _mask: &BooleanChunked,
             _other: &Series,
         ) -> PolarsResult<Series> {
-            invalid_operation_panic!(self)
+            invalid_operation_panic!(zip_with_same_type, self)
         }
-        #[cfg(feature = "sort_multiple")]
-        fn arg_sort_multiple(&self, _by: &[Series], _reverse: &[bool]) -> PolarsResult<IdxCa> {
-            Err(PolarsError::InvalidOperation(
-                "arg_sort_multiple is not implemented for this Series".into(),
-            ))
+
+        fn arg_sort_multiple(&self, _options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+            polars_bail!(opq = arg_sort_multiple, self._dtype());
         }
     }
 }
@@ -198,39 +196,20 @@ pub trait SeriesTrait:
     fn rename(&mut self, name: &str);
 
     fn bitand(&self, _other: &Series) -> PolarsResult<Series> {
-        Err(PolarsError::InvalidOperation(
-            format!(
-                "bitwise 'AND' operation not supported for dtype {:?}",
-                self.dtype()
-            )
-            .into(),
-        ))
+        polars_bail!(opq = bitand, self._dtype());
     }
 
     fn bitor(&self, _other: &Series) -> PolarsResult<Series> {
-        Err(PolarsError::InvalidOperation(
-            format!(
-                "bitwise 'OR' operation not supported for dtype {:?}",
-                self.dtype()
-            )
-            .into(),
-        ))
+        polars_bail!(opq = bitor, self._dtype());
     }
 
     fn bitxor(&self, _other: &Series) -> PolarsResult<Series> {
-        Err(PolarsError::InvalidOperation(
-            format!(
-                "bitwise 'XOR' operation not supported for dtype {:?}",
-                self.dtype()
-            )
-            .into(),
-        ))
+        polars_bail!(opq = bitxor, self._dtype());
     }
 
     /// Get the lengths of the underlying chunks
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        invalid_operation_panic!(self)
-    }
+    fn chunk_lengths(&self) -> ChunkIdIter;
+
     /// Name of series.
     fn name(&self) -> &str;
 
@@ -254,7 +233,7 @@ pub trait SeriesTrait:
 
     /// Shrink the capacity of this array to fit its length.
     fn shrink_to_fit(&mut self) {
-        panic!("shrink to fit not supported for dtype {:?}", self.dtype())
+        invalid_operation_panic!(shrink_to_fit, self);
     }
 
     /// Take `num_elements` from the top as a zero copy view.
@@ -314,7 +293,7 @@ pub trait SeriesTrait:
     /// todo! remove?
     #[cfg(feature = "take_opt_iter")]
     fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        invalid_operation_panic!(self)
+        invalid_operation_panic!(take_opt_iter, self)
     }
 
     /// Take by index. This operation is clone.
@@ -330,9 +309,6 @@ pub trait SeriesTrait:
 
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
-
-    /// Take every nth value as a new Series
-    fn take_every(&self, n: usize) -> Series;
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {
@@ -382,17 +358,17 @@ pub trait SeriesTrait:
     /// Does not do any bounds checking
     #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
-        invalid_operation_panic!(self)
+        invalid_operation_panic!(get_unchecked, self)
     }
 
     fn sort_with(&self, _options: SortOptions) -> Series {
-        invalid_operation_panic!(self)
+        invalid_operation_panic!(sort_with, self)
     }
 
     /// Retrieve the indexes needed for a sort.
     #[allow(unused)]
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        invalid_operation_panic!(self)
+        invalid_operation_panic!(arg_sort, self)
     }
 
     /// Count the null values.
@@ -404,17 +380,17 @@ pub trait SeriesTrait:
 
     /// Get unique values in the Series.
     fn unique(&self) -> PolarsResult<Series> {
-        invalid_operation!(self)
+        polars_bail!(opq = unique, self._dtype());
     }
 
     /// Get unique values in the Series.
     fn n_unique(&self) -> PolarsResult<usize> {
-        invalid_operation_panic!(self)
+        polars_bail!(opq = n_unique, self._dtype());
     }
 
     /// Get first indexes of unique values.
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        invalid_operation_panic!(self)
+        polars_bail!(opq = arg_unique, self._dtype());
     }
 
     /// Get a mask of the null values.
@@ -423,25 +399,13 @@ pub trait SeriesTrait:
     /// Get a mask of the non-null values.
     fn is_not_null(&self) -> BooleanChunked;
 
-    /// Get a mask of all the unique values.
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        invalid_operation_panic!(self)
-    }
-
-    /// Get a mask of all the duplicated values.
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        invalid_operation_panic!(self)
-    }
-
     /// return a Series in reversed order
     fn reverse(&self) -> Series;
 
     /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
     fn as_single_ptr(&mut self) -> PolarsResult<usize> {
-        Err(PolarsError::InvalidOperation(
-            "operation 'as_single_ptr' not supported".into(),
-        ))
+        polars_bail!(opq = as_single_ptr, self._dtype());
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -477,15 +441,15 @@ pub trait SeriesTrait:
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
     fn _sum_as_series(&self) -> Series {
-        invalid_operation_panic!(self)
+        Series::full_null(self.name(), 1, self.dtype())
     }
     /// Get the max of the Series as a new Series of length 1.
     fn max_as_series(&self) -> Series {
-        invalid_operation_panic!(self)
+        Series::full_null(self.name(), 1, self.dtype())
     }
     /// Get the min of the Series as a new Series of length 1.
     fn min_as_series(&self) -> Series {
-        invalid_operation_panic!(self)
+        Series::full_null(self.name(), 1, self.dtype())
     }
     /// Get the median of the Series as a new Series of length 1.
     fn median_as_series(&self) -> Series {
@@ -508,61 +472,55 @@ pub trait SeriesTrait:
         Ok(Series::full_null(self.name(), 1, self.dtype()))
     }
 
-    fn fmt_list(&self) -> String {
-        "fmt implemented".into()
-    }
-
     /// Clone inner ChunkedArray and wrap in a new Arc
-    fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
-        invalid_operation_panic!(self)
-    }
+    fn clone_inner(&self) -> Arc<dyn SeriesTrait>;
 
     #[cfg(feature = "object")]
     /// Get the value at this index as a downcastable Any trait ref.
     fn get_object(&self, _index: usize) -> Option<&dyn PolarsObjectSafe> {
-        invalid_operation_panic!(self)
+        invalid_operation_panic!(get_object, self)
     }
 
     /// Get a hold to self as `Any` trait reference.
     /// Only implemented for ObjectType
     fn as_any(&self) -> &dyn Any {
-        invalid_operation_panic!(self)
+        invalid_operation_panic!(as_any, self)
     }
 
     /// Get a hold to self as `Any` trait reference.
     /// Only implemented for ObjectType
     fn as_any_mut(&mut self) -> &mut dyn Any {
-        invalid_operation_panic!(self)
+        invalid_operation_panic!(as_any_mut, self)
     }
 
     /// Get a boolean mask of the local maximum peaks.
     fn peak_max(&self) -> BooleanChunked {
-        invalid_operation_panic!(self)
+        invalid_operation_panic!(peak_max, self)
     }
 
     /// Get a boolean mask of the local minimum peaks.
     fn peak_min(&self) -> BooleanChunked {
-        invalid_operation_panic!(self)
+        invalid_operation_panic!(peak_min, self)
     }
 
     /// Check if elements of this Series are in the right Series, or List values of the right Series.
     #[cfg(feature = "is_in")]
     fn is_in(&self, _other: &Series) -> PolarsResult<BooleanChunked> {
-        invalid_operation_panic!(self)
+        polars_bail!(opq = is_in, self._dtype());
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
-        invalid_operation_panic!(self)
+    fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
+        polars_bail!(opq = repeat_by, self._dtype());
     }
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {
-        invalid_operation_panic!(self)
+        polars_bail!(opq = checked_div, self._dtype());
     }
 
     #[cfg(feature = "mode")]
     /// Compute the most occurring element in the array.
     fn mode(&self) -> PolarsResult<Series> {
-        invalid_operation_panic!(self)
+        polars_bail!(opq = mode, self._dtype());
     }
 
     #[cfg(feature = "rolling_window")]
@@ -573,7 +531,7 @@ pub trait SeriesTrait:
         _f: &dyn Fn(&Series) -> Series,
         _options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series> {
-        panic!("rolling apply not implemented for this dtype. Only implemented for numeric data.")
+        polars_bail!(opq = rolling_apply, self._dtype());
     }
     #[cfg(feature = "concat_str")]
     /// Concat the values into a string array.
@@ -581,7 +539,11 @@ pub trait SeriesTrait:
     ///
     /// * `delimiter` - A string that will act as delimiter between values.
     fn str_concat(&self, _delimiter: &str) -> Utf8Chunked {
-        invalid_operation_panic!(self)
+        invalid_operation_panic!(str_concat, self);
+    }
+
+    fn tile(&self, _n: usize) -> Series {
+        invalid_operation_panic!(tile, self);
     }
 }
 
@@ -590,12 +552,7 @@ impl<'a> (dyn SeriesTrait + 'a) {
     where
         N: PolarsDataType,
     {
-        if &N::get_dtype() == self.dtype() {
-            Ok(self.as_ref())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot unpack Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(&N::get_dtype() == self.dtype(), unpack);
+        Ok(self.as_ref())
     }
 }

@@ -13,7 +13,7 @@ fn ternary_apply<T>(predicate: bool, truthy: T, falsy: T) -> T {
 }
 
 fn prepare_mask(mask: &BooleanArray) -> BooleanArray {
-    // make sure that zip works same as master branch
+    // make sure that zip works same as main branch
     // that is that null are ignored from mask and that we take from the right array
 
     match mask.validity() {
@@ -59,9 +59,8 @@ macro_rules! impl_ternary_broadcast {
                 val.rename($self.name());
                 Ok(val)
             }
-            (_, _) => Err(PolarsError::ShapeMisMatch(
-                "Shape of parameter `mask` and `other` could not be used in zip_with operation"
-                    .into(),
+            (_, _) => Err(polars_err!(
+                ShapeMismatch: "shapes of `mask` and `other` are not suitable for `zip_with` operation"
             )),
         }
     }};
@@ -143,7 +142,6 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkZip<BinaryType> for BinaryChunked {
     fn zip_with(
         &self,
@@ -170,11 +168,25 @@ impl ChunkZip<BinaryType> for BinaryChunked {
 }
 
 impl ChunkZip<ListType> for ListChunked {
-    fn zip_with(
-        &self,
-        mask: &BooleanChunked,
-        other: &ChunkedArray<ListType>,
-    ) -> PolarsResult<ChunkedArray<ListType>> {
+    fn zip_with(&self, mask: &BooleanChunked, other: &ListChunked) -> PolarsResult<ListChunked> {
+        let (left, right, mask) = align_chunks_ternary(self, other, mask);
+        let chunks = left
+            .downcast_iter()
+            .zip(right.downcast_iter())
+            .zip(mask.downcast_iter())
+            .map(|((left_c, right_c), mask_c)| {
+                let mask_c = prepare_mask(mask_c);
+                let arr = if_then_else(&mask_c, left_c, right_c)?;
+                Ok(arr)
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        unsafe { Ok(ChunkedArray::from_chunks(self.name(), chunks)) }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ChunkZip<FixedSizeListType> for ArrayChunked {
+    fn zip_with(&self, mask: &BooleanChunked, other: &ArrayChunked) -> PolarsResult<ArrayChunked> {
         let (left, right, mask) = align_chunks_ternary(self, other, mask);
         let chunks = left
             .downcast_iter()

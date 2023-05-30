@@ -1,4 +1,6 @@
-use arrow::array::{Array, BinaryArray, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use arrow::array::{
+    Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, Utf8Array,
+};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
 use arrow::offset::Offsets;
@@ -8,10 +10,16 @@ use crate::prelude::*;
 use crate::utils::CustomIterTools;
 
 pub mod default_arrays;
+#[cfg(feature = "dtype-array")]
+pub mod fixed_size_list;
 mod get;
 pub mod list;
+pub mod null;
+pub mod slice;
+pub mod utf8;
 
 pub use get::ArrowGetItem;
+pub use slice::*;
 
 pub trait ValueSize {
     /// Useful for a Utf8 or a List to get underlying value size.
@@ -20,6 +28,12 @@ pub trait ValueSize {
 }
 
 impl ValueSize for ListArray<i64> {
+    fn get_values_size(&self) -> usize {
+        self.values().len()
+    }
+}
+
+impl ValueSize for FixedSizeListArray {
     fn get_values_size(&self) -> usize {
         self.values().len()
     }
@@ -45,9 +59,19 @@ impl ValueSize for ArrayRef {
                 .downcast_ref::<Utf8Array<i64>>()
                 .unwrap()
                 .get_values_size(),
+            DataType::FixedSizeList(_, _) => self
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .unwrap()
+                .get_values_size(),
             DataType::LargeList(_) => self
                 .as_any()
                 .downcast_ref::<ListArray<i64>>()
+                .unwrap()
+                .get_values_size(),
+            DataType::LargeBinary => self
+                .as_any()
+                .downcast_ref::<BinaryArray<i64>>()
                 .unwrap()
                 .get_values_size(),
             _ => unimplemented!(),

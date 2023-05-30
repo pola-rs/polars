@@ -71,17 +71,25 @@ where
             // make sure we have a single ref count coming in.
             drop(arr);
 
-            match owned_arr.into_mut() {
-                Left(immutable) => Box::new(arrow::compute::arity::unary(
-                    &immutable,
+            let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
+                Box::new(arrow::compute::arity::unary(
+                    arr,
                     f,
                     S::get_dtype().to_arrow(),
-                )),
-                Right(mut mutable) => {
-                    let vals = mutable.values_mut_slice();
-                    vals.iter_mut().for_each(|v| *v = f(*v));
-                    let a: PrimitiveArray<_> = mutable.into();
-                    Box::new(a) as ArrayRef
+                ))
+            };
+
+            if owned_arr.values().is_sliced() {
+                compute_immutable(&owned_arr)
+            } else {
+                match owned_arr.into_mut() {
+                    Left(immutable) => compute_immutable(&immutable),
+                    Right(mut mutable) => {
+                        let vals = mutable.values_mut_slice();
+                        vals.iter_mut().for_each(|v| *v = f(*v));
+                        let a: PrimitiveArray<_> = mutable.into();
+                        Box::new(a) as ArrayRef
+                    }
                 }
             }
         })
@@ -105,6 +113,16 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
             let s = self.cast(&S::get_dtype()).unwrap();
             s.chunks().clone()
         };
+        apply_in_place_impl(self.name(), chunks, f)
+    }
+
+    /// Cast a numeric array to another numeric data type and apply a function in place.
+    /// This saves an allocation.
+    pub fn apply_in_place<F>(mut self, f: F) -> Self
+    where
+        F: Fn(T::Native) -> T::Native + Copy,
+    {
+        let chunks = std::mem::take(&mut self.chunks);
         apply_in_place_impl(self.name(), chunks, f)
     }
 }
@@ -351,6 +369,44 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     }
 }
 
+impl Utf8Chunked {
+    pub fn apply_mut<'a, F>(&'a self, mut f: F) -> Self
+    where
+        F: FnMut(&'a str) -> &'a str,
+    {
+        use polars_arrow::array::utf8::Utf8FromIter;
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let iter = arr.values_iter().map(&mut f);
+                let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
+                let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), value_size);
+                Box::new(new.with_validity(arr.validity().cloned())) as ArrayRef
+            })
+            .collect();
+        unsafe { Utf8Chunked::from_chunks(self.name(), chunks) }
+    }
+}
+
+impl BinaryChunked {
+    pub fn apply_mut<'a, F>(&'a self, mut f: F) -> Self
+    where
+        F: FnMut(&'a [u8]) -> &'a [u8],
+    {
+        use polars_arrow::array::utf8::BinaryFromIter;
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let iter = arr.values_iter().map(&mut f);
+                let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
+                let new = BinaryArray::<i64>::from_values_iter(iter, arr.len(), value_size);
+                Box::new(new.with_validity(arr.validity().cloned())) as ArrayRef
+            })
+            .collect();
+        unsafe { BinaryChunked::from_chunks(self.name(), chunks) }
+    }
+}
+
 impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     fn apply_cast_numeric<F, S>(&'a self, f: F) -> ChunkedArray<S>
     where
@@ -388,7 +444,17 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     where
         F: Fn(&'a str) -> Cow<'a, str> + Copy,
     {
-        apply!(self, f)
+        use polars_arrow::array::utf8::Utf8FromIter;
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let iter = arr.values_iter().map(f);
+                let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
+                let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), value_size);
+                Box::new(new.with_validity(arr.validity().cloned())) as ArrayRef
+            })
+            .collect();
+        unsafe { Utf8Chunked::from_chunks(self.name(), chunks) }
     }
 
     fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
@@ -442,7 +508,6 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
     fn apply_cast_numeric<F, S>(&'a self, f: F) -> ChunkedArray<S>
     where
@@ -582,7 +647,6 @@ impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkApplyKernel<LargeBinaryArray> for BinaryChunked {
     fn apply_kernel(&self, f: &dyn Fn(&LargeBinaryArray) -> ArrayRef) -> Self {
         self.apply_kernel_cast(&f)

@@ -10,7 +10,6 @@ use crate::chunked_array::ops::compare_inner::{
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::{AsSinglePtr, ChunkIdIter};
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
@@ -99,17 +98,19 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    #[cfg(feature = "sort_multiple")]
-    fn arg_sort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.arg_sort_multiple(by, reverse)
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(options)
+    }
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        NumOpsDispatch::add_to(&self.0, rhs)
     }
 }
 
 impl SeriesTrait for SeriesWrap<BooleanChunked> {
     fn is_sorted_flag(&self) -> IsSorted {
-        if self.0.is_sorted_flag() {
+        if self.0.is_sorted_ascending_flag() {
             IsSorted::Ascending
-        } else if self.0.is_sorted_reverse_flag() {
+        } else if self.0.is_sorted_descending_flag() {
             IsSorted::Descending
         } else {
             IsSorted::Not
@@ -154,25 +155,15 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            self.0.append(other.as_ref().as_ref());
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot append Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append(other.as_ref().as_ref());
+        Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            self.0.extend(other.as_ref().as_ref());
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot extend Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), extend);
+        self.0.extend(other.as_ref().as_ref());
+        Ok(())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
@@ -204,10 +195,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
         Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
-    }
-
-    fn take_every(&self, n: usize) -> Series {
-        self.0.take_every(n).into_series()
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
@@ -294,14 +281,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.is_not_null()
     }
 
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        ChunkUnique::is_unique(&self.0)
-    }
-
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        ChunkUnique::is_duplicated(&self.0)
-    }
-
     fn reverse(&self) -> Series {
         ChunkReverse::reverse(&self.0).into_series()
     }
@@ -355,9 +334,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
             .cast(&DataType::Float64)
             .unwrap()
     }
-    fn fmt_list(&self) -> String {
-        FmtList::fmt_list(&self.0)
-    }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
@@ -367,7 +343,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         IsIn::is_in(&self.0, other)
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
         RepeatBy::repeat_by(&self.0, by)
     }
 

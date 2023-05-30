@@ -1,3 +1,5 @@
+use smartstring::alias::String as SmartString;
+
 use super::*;
 
 /// Characterizes the name and the [`DataType`] of a column.
@@ -7,7 +9,7 @@ use super::*;
     derive(Serialize, Deserialize)
 )]
 pub struct Field {
-    pub name: String,
+    pub name: SmartString,
     pub dtype: DataType,
 }
 
@@ -25,12 +27,12 @@ impl Field {
     #[inline]
     pub fn new(name: &str, dtype: DataType) -> Self {
         Field {
-            name: name.to_string(),
+            name: name.into(),
             dtype,
         }
     }
 
-    pub fn from_owned(name: String, dtype: DataType) -> Self {
+    pub fn from_owned(name: SmartString, dtype: DataType) -> Self {
         Field { name, dtype }
     }
 
@@ -45,7 +47,7 @@ impl Field {
     /// assert_eq!(f.name(), "Year");
     /// ```
     #[inline]
-    pub fn name(&self) -> &String {
+    pub fn name(&self) -> &SmartString {
         &self.name
     }
 
@@ -86,11 +88,11 @@ impl Field {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let mut f = Field::new("Atomic number", DataType::UInt32);
-    /// f.set_name("Proton".to_owned());
+    /// f.set_name("Proton".into());
     ///
     /// assert_eq!(f, Field::new("Proton", DataType::UInt32));
     /// ```
-    pub fn set_name(&mut self, name: String) {
+    pub fn set_name(&mut self, name: SmartString) {
         self.name = name;
     }
 
@@ -106,7 +108,7 @@ impl Field {
     /// assert_eq!(f.to_arrow(), af);
     /// ```
     pub fn to_arrow(&self) -> ArrowField {
-        ArrowField::new(&self.name, self.dtype.to_arrow(), true)
+        ArrowField::new(self.name.as_str(), self.dtype.to_arrow(), true)
     }
 }
 
@@ -125,22 +127,21 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Boolean => DataType::Boolean,
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
-            ArrowDataType::LargeList(f) => DataType::List(Box::new(f.data_type().into())),
-            ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
+            #[cfg(feature = "dtype-array")]
+            ArrowDataType::FixedSizeList(f, size) => DataType::Array(Box::new(f.data_type().into()), *size),
+            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
             ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => DataType::Utf8,
-            #[cfg(feature = "dtype-binary")]
             ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::Binary,
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(fields) => {
-                let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
-                DataType::Struct(fields)
+                DataType::Struct(fields.iter().map(|fld| fld.into()).collect())
             }
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
@@ -152,6 +153,8 @@ impl From<&ArrowDataType> for DataType {
                     panic!("activate the 'object' feature to be able to load POLARS_EXTENSION_TYPE")
                 }
             }
+            #[cfg(feature = "dtype-decimal")]
+            ArrowDataType::Decimal(precision, scale) => DataType::Decimal(Some(*precision), Some(*scale)),
             dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to activate that data-type feature."),
         }
     }

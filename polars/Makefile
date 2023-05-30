@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-BASE ?= master
+BASE ?= main
 
 .PHONY: fmt check check-features clippy clippy-default test test-doc integration-tests
 
@@ -8,39 +8,52 @@ fmt:
 	cargo fmt --all
 	dprint fmt
 
+generate_test_files:
+	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o parquet > ../examples/datasets/foods1.parquet
+	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o arrow > ../examples/datasets/foods1.ipc
+
 check:
 	cargo check --all-features \
-	    -p polars-core \
-	    -p polars-io \
-	    -p polars-lazy \
-	    -p polars-arrow \
-	    -p polars-time \
-	    -p polars-ops
+		-p polars-core \
+		-p polars-io \
+		-p polars-lazy \
+		-p polars-arrow \
+		-p polars-time \
+		-p polars-error \
+		-p polars-ops \
+		-p polars-sql \
+		-p polars-json
 
 clippy:
 	cargo clippy --all-features \
-	    -p polars-core \
-	    -p polars-io \
-	    -p polars-lazy \
-	    -p polars-arrow \
-	    -p polars-utils \
-	    -p polars-ops \
-	    -p polars-time
+		-p polars-core \
+		-p polars-io \
+		-p polars-lazy \
+		-p polars-arrow \
+		-p polars-utils \
+		-p polars-ops \
+		-p polars-error \
+		-p polars-row \
+		-p polars-time \
+		-p polars-sql \
+		-p polars-json
 
 clippy-default:
 	cargo clippy
 
 test:  ## Run tests
-	POLARS_MAX_THREADS=4 cargo t -p polars-core test_4_threads
+	POLARS_NO_STREAMING_GROUPBY=1 POLARS_MAX_THREADS=4 cargo t -p polars-core test_4_threads
 	cargo test --all-features \
-	    -p polars-lazy \
-	    -p polars-io \
-	    -p polars-core \
-	    -p polars-arrow \
-	    -p polars-time \
-	    -p polars-utils \
-	    -- \
-	    --test-threads=2
+		-p polars-lazy \
+		-p polars-io \
+		-p polars-core \
+		-p polars-arrow \
+		-p polars-time \
+		-p polars-utils \
+		-p polars-row \
+		-p polars-sql \
+		-- \
+		--test-threads=2
 
 integration-tests:
 	cargo t --all-features --test it -- --test-threads=2
@@ -63,13 +76,14 @@ test-doc:
 	    -p polars-lazy \
 	    -p polars-io \
 	    -p polars-core \
-	    -p polars-arrow
+	    -p polars-arrow \
+			-p polars-sql
 
 pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 
 check-features:
-	cargo hack check --each-feature --no-dev-deps --features private
+	cargo hack check --each-feature --no-dev-deps --features private 
 
 bench-save:
 	cargo bench --features=random --bench $(BENCH) -- --save-baseline $(SAVE)
@@ -86,31 +100,25 @@ doctest:
 	cargo doc --all-features -p polars-io
 	cargo doc --all-features -p polars-lazy
 	cargo doc --features=docs-selection -p polars
+	cargo doc --all-features -p polars-sql
 
 publish:
-	cargo publish --allow-dirty -p polars-arrow
-	sleep 20
+	cargo publish --allow-dirty -p polars-error
 	cargo publish --allow-dirty -p polars-utils
-	sleep 20
+	cargo publish --allow-dirty -p polars-row
+	cargo publish --allow-dirty -p polars-arrow
+	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
-	sleep 20
 	cargo publish --allow-dirty -p polars-ops
-	sleep 20
 	cargo publish --allow-dirty -p polars-time
-	sleep 20
 	cargo publish --allow-dirty -p polars-io
-	sleep 20
 	cargo publish --allow-dirty -p polars-plan
-	sleep 20
 	cargo publish --allow-dirty -p polars-pipe
-	sleep 20
 	cargo publish --allow-dirty -p polars-lazy
-	sleep 20
 	cargo publish --allow-dirty -p polars-algo
-	sleep 20
 	cargo publish --allow-dirty -p polars-sql
-	sleep 20
 	cargo publish --allow-dirty -p polars
+	cd .. && cargo publish --allow-dirty -p polars-cli
 
 .PHONY: help
 help:  ## Display this help screen

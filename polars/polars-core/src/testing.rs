@@ -17,20 +17,14 @@ impl Series {
     /// Two `Datetime` series are *not* equal if their timezones are different, regardless
     /// if they represent the same UTC time or not.
     pub fn series_equal_missing(&self, other: &Series) -> bool {
-        // TODO! remove this? Default behavior already includes equal missing
-        #[cfg(feature = "timezones")]
-        {
-            use crate::datatypes::DataType::Datetime;
-
-            if let Datetime(_, tz_lhs) = self.dtype() {
-                if let Datetime(_, tz_rhs) = other.dtype() {
-                    if tz_lhs != tz_rhs {
-                        return false;
-                    }
-                } else {
+        match (self.dtype(), other.dtype()) {
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(_, tz_lhs), DataType::Datetime(_, tz_rhs)) => {
+                if tz_lhs != tz_rhs {
                     return false;
                 }
             }
+            _ => {}
         }
 
         // differences from Partial::eq in that numerical dtype may be different
@@ -38,7 +32,7 @@ impl Series {
             && self.name() == other.name()
             && self.null_count() == other.null_count()
             && {
-                let eq = self.equal(other);
+                let eq = self.equal_missing(other);
                 match eq {
                     Ok(b) => b.sum().map(|s| s as usize).unwrap_or(0) == self.len(),
                     Err(_) => false,
@@ -64,16 +58,7 @@ impl Series {
 
 impl PartialEq for Series {
     fn eq(&self, other: &Self) -> bool {
-        self.len() == other.len()
-            && self.field() == other.field()
-            && self.null_count() == other.null_count()
-            && self
-                .equal(other)
-                .unwrap()
-                .sum()
-                .map(|s| s as usize)
-                .unwrap_or(0)
-                == self.len()
+        self.series_equal_missing(other)
     }
 }
 
@@ -81,14 +66,16 @@ impl DataFrame {
     /// Check if `DataFrames` schemas are equal.
     pub fn frame_equal_schema(&self, other: &DataFrame) -> PolarsResult<()> {
         for (lhs, rhs) in self.iter().zip(other.iter()) {
-            if lhs.name() != rhs.name() {
-                return Err(PolarsError::SchemaMisMatch(format!("Name of the left hand DataFrame: '{}' does not match that of the right hand DataFrame '{}'", lhs.name(), rhs.name()).into()));
-            }
-            if lhs.dtype() != rhs.dtype() {
-                return Err(PolarsError::SchemaMisMatch(
-                    format!("Dtype of the left hand DataFrame: '{}' does not match that of the right hand DataFrame '{}'", lhs.dtype(), rhs.dtype()).into())
-                );
-            }
+            polars_ensure!(
+                lhs.name() == rhs.name(),
+                SchemaMismatch: "column name mismatch: left-hand = '{}', right-hand = '{}'",
+                lhs.name(), rhs.name()
+            );
+            polars_ensure!(
+                lhs.dtype() == rhs.dtype(),
+                SchemaMismatch: "column datatype mismatch: left-hand = '{}', right-hand = '{}'",
+                lhs.dtype(), rhs.dtype()
+            );
         }
         Ok(())
     }
@@ -173,7 +160,7 @@ impl PartialEq for DataFrame {
                 .columns
                 .iter()
                 .zip(other.columns.iter())
-                .all(|(s1, s2)| s1 == s2)
+                .all(|(s1, s2)| s1.series_equal_missing(s2))
     }
 }
 
@@ -206,23 +193,6 @@ mod test {
         let df1 = DataFrame::new(vec![a, b]).unwrap();
         let df2 = df1.clone();
         assert!(df1.frame_equal(&df2))
-    }
-
-    #[test]
-    fn test_series_partialeq() {
-        let s1 = Series::new("a", &[1_i32, 2_i32, 3_i32]);
-        let s1_bis = Series::new("b", &[1_i32, 2_i32, 3_i32]);
-        let s1_ter = Series::new("a", &[1.0_f64, 2.0_f64, 3.0_f64]);
-        let s2 = Series::new("", &[Some(1), Some(0)]);
-        let s3 = Series::new("", &[Some(1), None]);
-        let s4 = Series::new("", &[1.0, f64::NAN]);
-
-        assert_eq!(s1, s1);
-        assert_ne!(s1, s1_bis);
-        assert_ne!(s1, s1_ter);
-        assert_eq!(s2, s2);
-        assert_ne!(s2, s3);
-        assert_ne!(s4, s4);
     }
 
     #[test]

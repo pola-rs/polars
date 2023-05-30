@@ -5,7 +5,6 @@ use ahash::RandomState;
 
 use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::object::PolarsObjectSafe;
-use crate::fmt::FmtList;
 use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -25,6 +24,10 @@ where
         _list_capacity: usize,
     ) -> Box<dyn ListBuilderTrait> {
         ObjectChunked::<T>::get_list_builder(_name, _values_capacity, _list_capacity)
+    }
+
+    fn compute_len(&mut self) {
+        self.0.compute_len()
     }
 
     fn _field(&self) -> Cow<Field> {
@@ -92,18 +95,15 @@ where
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.dtype() == other.dtype() {
-            ObjectChunked::append(&mut self.0, other.as_ref().as_ref());
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot append Series; data types don't match".into(),
-            ))
+        if self.dtype() != other.dtype() {
+            polars_bail!(append);
         }
+        ObjectChunked::append(&mut self.0, other.as_ref().as_ref());
+        Ok(())
     }
 
     fn extend(&mut self, _other: &Series) -> PolarsResult<()> {
-        panic!("extend not implemented for Object dtypes")
+        polars_bail!(opq = extend, self.dtype());
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
@@ -159,18 +159,18 @@ where
         self.rechunk_object().into_series()
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        self.0.take_every(n).into_series()
-    }
-
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, _data_type: &DataType) -> PolarsResult<Series> {
-        Err(PolarsError::InvalidOperation(
-            "cannot cast array of type ObjectChunked to arrow datatype".into(),
-        ))
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        if matches!(data_type, DataType::Object(_)) {
+            Ok(self.0.clone().into_series())
+        } else {
+            Err(PolarsError::ComputeError(
+                "cannot cast 'Object' type".into(),
+            ))
+        }
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
@@ -204,24 +204,12 @@ where
         ObjectChunked::is_not_null(&self.0)
     }
 
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        ChunkUnique::is_unique(&self.0)
-    }
-
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        ChunkUnique::is_duplicated(&self.0)
-    }
-
     fn reverse(&self) -> Series {
         ChunkReverse::reverse(&self.0).into_series()
     }
 
     fn shift(&self, periods: i64) -> Series {
         ChunkShift::shift(&self.0, periods).into_series()
-    }
-
-    fn fmt_list(&self) -> String {
-        FmtList::fmt_list(&self.0)
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

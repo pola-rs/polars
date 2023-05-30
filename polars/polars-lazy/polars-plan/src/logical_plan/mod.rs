@@ -1,6 +1,5 @@
-use std::borrow::Cow;
 use std::fmt::Debug;
-#[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "csv", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -42,17 +41,11 @@ pub use functions::*;
 pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
-use polars_core::frame::explode::MeltArgs;
 pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv-file",
-    feature = "cse"
-))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
 pub use crate::logical_plan::optimizer::file_caching::{
     collect_fingerprints, find_column_union_and_fingerprints, FileCacher, FileFingerPrint,
 };
@@ -72,7 +65,20 @@ pub enum ErrorState {
     AlreadyEncountered { prev_err_msg: String },
 }
 
-#[derive(Debug, Clone)]
+impl std::fmt::Display for ErrorState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ErrorState::NotYetEncountered { err } => write!(f, "NotYetEncountered({err})")?,
+            ErrorState::AlreadyEncountered { prev_err_msg } => {
+                write!(f, "AlreadyEncountered({prev_err_msg})")?
+            }
+        };
+
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 pub struct ErrorStateSync(Arc<Mutex<ErrorState>>);
 
 impl std::ops::Deref for ErrorStateSync {
@@ -83,24 +89,36 @@ impl std::ops::Deref for ErrorStateSync {
     }
 }
 
+impl std::fmt::Debug for ErrorStateSync {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ErrorStateSync({})", &*self.0.lock().unwrap())
+    }
+}
+
 impl ErrorStateSync {
     fn take(&self) -> PolarsError {
-        let mut err = self.0.lock().unwrap();
-        match &*err {
+        let mut curr_err = self.0.lock().unwrap();
+
+        match &*curr_err {
             ErrorState::NotYetEncountered { err: polars_err } => {
-                let msg = format!("{polars_err:?}");
-                let err = std::mem::replace(
-                    &mut *err,
-                    ErrorState::AlreadyEncountered { prev_err_msg: msg },
+                // Need to finish using `polars_err` here so that NLL considers `err` dropped
+                let prev_err_msg = polars_err.to_string();
+                // Place AlreadyEncountered in `self` for future users of `self`
+                let prev_err = std::mem::replace(
+                    &mut *curr_err,
+                    ErrorState::AlreadyEncountered { prev_err_msg },
                 );
-                let ErrorState::NotYetEncountered { err } = err else {
-                    unreachable!("polars bug in LogicalPlan error handling")
-                };
-                err
+                // Since we're in this branch, we know err was a NotYetEncountered
+                match prev_err {
+                    ErrorState::NotYetEncountered { err } => err,
+                    ErrorState::AlreadyEncountered { .. } => unreachable!(),
+                }
             }
-            ErrorState::AlreadyEncountered { prev_err_msg } => PolarsError::ComputeError(
-                format!("LogicalPlan already failed with error: `{prev_err_msg}`").into(),
-            ),
+            ErrorState::AlreadyEncountered { prev_err_msg } => {
+                polars_err!(
+                    ComputeError: "LogicalPlan already failed with error: '{}'", prev_err_msg,
+                )
+            }
         }
     }
 }
@@ -136,7 +154,7 @@ pub enum LogicalPlan {
         count: usize,
     },
     /// Scan a CSV file
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     CsvScan {
         path: PathBuf,
         file_info: FileInfo,
@@ -220,23 +238,11 @@ pub enum LogicalPlan {
         by_column: Vec<Expr>,
         args: SortArguments,
     },
-    /// An explode operation
-    Explode {
-        input: Box<LogicalPlan>,
-        columns: Vec<String>,
-        schema: SchemaRef,
-    },
     /// Slice the table
     Slice {
         input: Box<LogicalPlan>,
         offset: i64,
         len: IdxSize,
-    },
-    /// A Melt operation
-    Melt {
-        input: Box<LogicalPlan>,
-        args: Arc<MeltArgs>,
-        schema: SchemaRef,
     },
     /// A (User Defined) Function
     MapFunction {
@@ -280,173 +286,7 @@ impl Default for LogicalPlan {
 }
 
 impl LogicalPlan {
-    #[cfg(test)]
-    pub(crate) fn into_alp(self) -> (Node, Arena<ALogicalPlan>, Arena<AExpr>) {
-        let mut lp_arena = Arena::with_capacity(16);
-        let mut expr_arena = Arena::with_capacity(16);
-        let root = to_alp(self, &mut expr_arena, &mut lp_arena).unwrap();
-        (root, lp_arena, expr_arena)
-    }
-}
-
-impl LogicalPlan {
-    pub fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
-        use LogicalPlan::*;
-        match self {
-            #[cfg(feature = "python")]
-            PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
-            Union { inputs, .. } => inputs[0].schema(),
-            Cache { input, .. } => input.schema(),
-            Sort { input, .. } => input.schema(),
-            Explode { schema, .. } => Ok(Cow::Borrowed(schema)),
-            #[cfg(feature = "parquet")]
-            ParquetScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
-            #[cfg(feature = "ipc")]
-            IpcScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
-            DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
-            AnonymousScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
-            Selection { input, .. } => input.schema(),
-            #[cfg(feature = "csv-file")]
-            CsvScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
-            Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
-            LocalProjection { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Join { schema, .. } => Ok(Cow::Borrowed(schema)),
-            HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Distinct { input, .. } | FileSink { input, .. } => input.schema(),
-            Slice { input, .. } => input.schema(),
-            Melt { schema, .. } => Ok(Cow::Borrowed(schema)),
-            MapFunction {
-                input, function, ..
-            } => {
-                let input_schema = input.schema()?;
-                match input_schema {
-                    Cow::Owned(schema) => Ok(Cow::Owned(function.schema(&schema)?.into_owned())),
-                    Cow::Borrowed(schema) => function.schema(schema),
-                }
-            }
-            Error { err, .. } => Err(err.take()),
-            ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
-        }
-    }
     pub fn describe(&self) -> String {
         format!("{self:#?}")
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use polars_core::df;
-    use polars_core::prelude::*;
-
-    use crate::prelude::*;
-    use crate::tests::get_df;
-
-    fn print_plans(lf: &LazyFrame) {
-        println!("LOGICAL PLAN\n\n{}\n", lf.describe_plan());
-        println!(
-            "OPTIMIZED LOGICAL PLAN\n\n{}\n",
-            lf.describe_optimized_plan().unwrap()
-        );
-    }
-
-    #[test]
-    fn test_lazy_arithmetic() {
-        let df = get_df();
-        let lf = df
-            .lazy()
-            .select(&[((col("sepal.width") * lit(100)).alias("super_wide"))])
-            .sort("super_wide", SortOptions::default());
-
-        print_plans(&lf);
-
-        let new = lf.collect().unwrap();
-        println!("{:?}", new);
-        assert_eq!(new.height(), 7);
-        assert_eq!(
-            new.column("super_wide").unwrap().f64().unwrap().get(0),
-            Some(300.0)
-        );
-    }
-
-    #[test]
-    fn test_lazy_logical_plan_filter_and_alias_combined() {
-        let df = get_df();
-        let lf = df
-            .lazy()
-            .filter(col("sepal.width").lt(lit(3.5)))
-            .select(&[col("variety").alias("foo")]);
-
-        print_plans(&lf);
-        let df = lf.collect().unwrap();
-        println!("{:?}", df);
-    }
-
-    #[test]
-    fn test_lazy_logical_plan_schema() {
-        let df = get_df();
-        let lp = df
-            .clone()
-            .lazy()
-            .select(&[col("variety").alias("foo")])
-            .logical_plan;
-
-        assert!(lp.schema().unwrap().get("foo").is_some());
-
-        let lp = df
-            .lazy()
-            .groupby([col("variety")])
-            .agg([col("sepal.width").min()])
-            .logical_plan;
-        assert!(lp.schema().unwrap().get("sepal.width").is_some());
-    }
-
-    #[test]
-    fn test_lazy_logical_plan_join() {
-        let left = df!("days" => &[0, 1, 2, 3, 4],
-        "temp" => [22.1, 19.9, 7., 2., 3.],
-        "rain" => &[0.1, 0.2, 0.3, 0.4, 0.5]
-        )
-        .unwrap();
-
-        let right = df!(
-        "days" => &[1, 2],
-        "rain" => &[0.1, 0.2]
-        )
-        .unwrap();
-
-        // check if optimizations succeeds without selection
-        {
-            let lf = left
-                .clone()
-                .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"));
-
-            print_plans(&lf);
-            // implicitly checks logical plan == optimized logical plan
-            let _df = lf.collect().unwrap();
-        }
-
-        // check if optimization succeeds with selection
-        {
-            let lf = left
-                .clone()
-                .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"))
-                .select(&[col("temp")]);
-
-            let _df = lf.collect().unwrap();
-        }
-
-        // check if optimization succeeds with selection of a renamed column due to the join
-        {
-            let lf = left
-                .lazy()
-                .left_join(right.lazy(), col("days"), col("days"))
-                .select(&[col("temp"), col("rain_right")]);
-
-            print_plans(&lf);
-            let _df = lf.collect().unwrap();
-        }
     }
 }

@@ -21,7 +21,7 @@ trait SinkWriter {
     fn _finish(&mut self) -> PolarsResult<()>;
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc"))]
+#[cfg(feature = "parquet")]
 impl SinkWriter for polars_io::parquet::BatchedWriter<std::fs::File> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)
@@ -61,6 +61,9 @@ impl ParquetSink {
             .with_data_pagesize_limit(options.data_pagesize_limit)
             .with_statistics(options.statistics)
             .with_row_group_size(options.row_group_size)
+            // This is important! Otherwise we will deadlock
+            // See: #7074
+            .set_parallel(false)
             .batched(schema)?;
 
         let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
@@ -177,7 +180,7 @@ impl Sink for FilesSink {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, _other: Box<dyn Sink>) {
+    fn combine(&mut self, _other: &mut dyn Sink) {
         // already synchronized
     }
 

@@ -1,5 +1,11 @@
 use super::*;
 
+fn float_type(field: &mut Field) {
+    if field.dtype.is_numeric() && !matches!(&field.dtype, DataType::Float32) {
+        field.coerce(DataType::Float64)
+    }
+}
+
 impl AExpr {
     /// Get Field result of the expression. The schema is the input data.
     pub fn to_field(
@@ -19,7 +25,7 @@ impl AExpr {
             Explode(expr) => {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
 
-                if let DataType::List(inner) = field.data_type() {
+                if let List(inner) = field.data_type() {
                     Ok(Field::new(field.name(), *inner.clone()))
                 } else {
                     Ok(field)
@@ -32,18 +38,21 @@ impl AExpr {
             Column(name) => {
                 let field = schema
                     .get_field(name)
-                    .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()));
+                    .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name));
 
                 match ctxt {
                     Context::Default => field,
                     Context::Aggregation => field.map(|mut field| {
-                        let dtype = DataType::List(Box::new(field.data_type().clone()));
+                        let dtype = List(Box::new(field.data_type().clone()));
                         field.coerce(dtype);
                         field
                     }),
                 }
             }
-            Literal(sv) => Ok(Field::new("literal", sv.get_datatype())),
+            Literal(sv) => Ok(match sv {
+                LiteralValue::Series(s) => s.field().into_owned(),
+                _ => Field::new("literal", sv.get_datatype()),
+            }),
             BinaryExpr { left, right, op } => {
                 use DataType::*;
 
@@ -86,26 +95,29 @@ impl AExpr {
                     Sum(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        if matches!(field.data_type(), UInt8 | Int8 | Int16 | UInt16) {
-                            field.coerce(DataType::Int64);
+                        let dt = match field.data_type() {
+                            Boolean => Some(IDX_DTYPE),
+                            UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
+                            _ => None,
+                        };
+                        if let Some(dt) = dt {
+                            field.coerce(dt);
                         }
                         Ok(field)
                     }
                     Median(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        if field.data_type() != &DataType::Utf8 {
-                            field.coerce(DataType::Float64);
-                        }
+                        float_type(&mut field);
                         Ok(field)
                     }
                     Mean(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        coerce_numeric_aggregation(&mut field);
+                        float_type(&mut field);
                         Ok(field)
                     }
-                    List(expr) => {
+                    Implode(expr) => {
                         // default context because `col()` would return a list in aggregation context
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
@@ -115,19 +127,19 @@ impl AExpr {
                     Std(expr, _) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        coerce_numeric_aggregation(&mut field);
+                        float_type(&mut field);
                         Ok(field)
                     }
                     Var(expr, _) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        coerce_numeric_aggregation(&mut field);
+                        float_type(&mut field);
                         Ok(field)
                     }
                     NUnique(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        field.coerce(DataType::UInt32);
+                        field.coerce(IDX_DTYPE);
                         Ok(field)
                     }
                     Count(expr) => {
@@ -138,13 +150,13 @@ impl AExpr {
                     }
                     AggGroups(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::List(IDX_DTYPE.into()));
+                        field.coerce(List(IDX_DTYPE.into()));
                         Ok(field)
                     }
                     Quantile { expr, .. } => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        coerce_numeric_aggregation(&mut field);
+                        float_type(&mut field);
                         Ok(field)
                     }
                 }
@@ -188,6 +200,7 @@ impl AExpr {
                 function.get_field(schema, ctxt, &fields)
             }
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
+            Cache { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
             Nth(_) => panic!("should be no nth at this point"),
         }
@@ -202,33 +215,58 @@ fn get_arithmetic_field(
     ctxt: Context,
     schema: &Schema,
 ) -> PolarsResult<Field> {
+    use DataType::*;
+    let left_ae = arena.get(left);
+    let right_ae = arena.get(right);
+
     // don't traverse tree until strictly needed. Can have terrible performance.
     // # 3210
 
     // take the left field as a whole.
     // don't take dtype and name separate as that splits the tree every node
     // leading to quadratic behavior. # 4736
-    use DataType::*;
-    let mut left_field = arena.get(left).to_field(schema, ctxt, arena)?;
-    let right_type = arena.get(right).get_type(schema, ctxt, arena)?;
+    //
+    // further right_type is only determined when needed.
+    let mut left_field = left_ae.to_field(schema, ctxt, arena)?;
 
     let super_type = match op {
-        Operator::Minus => match (&left_field.dtype, right_type) {
-            // T - T != T if T is a datetime / date
-            (Datetime(tul, _), Datetime(tur, _)) => Duration(get_time_units(tul, &tur)),
-            (Date, Date) => Duration(TimeUnit::Milliseconds),
-            (left, right) => try_get_supertype(left, &right)?,
-        },
-        _ => try_get_supertype(&left_field.dtype, &right_type)?,
+        Operator::Minus => {
+            let right_type = right_ae.get_type(schema, ctxt, arena)?;
+            match (&left_field.dtype, right_type) {
+                // T - T != T if T is a datetime / date
+                (Datetime(tul, _), Datetime(tur, _)) => Duration(get_time_units(tul, &tur)),
+                (Date, Date) => Duration(TimeUnit::Milliseconds),
+                (left, right) => try_get_supertype(left, &right)?,
+            }
+        }
+        Operator::Plus
+            if left_field.dtype == Boolean
+                && right_ae.get_type(schema, Context::Default, arena)? == Boolean =>
+        {
+            IDX_DTYPE
+        }
+        _ => {
+            match (left_ae, right_ae) {
+                (AExpr::Literal(_), AExpr::Literal(_)) => {}
+                (AExpr::Literal(_), _) => {
+                    // literal will be coerced to match right type
+                    let right_type = right_ae.get_type(schema, ctxt, arena)?;
+                    left_field.coerce(right_type);
+                    return Ok(left_field);
+                }
+                (_, AExpr::Literal(_)) => {
+                    // literal will be coerced to match right type
+                    return Ok(left_field);
+                }
+                _ => {}
+            }
+            let right_type = right_ae.get_type(schema, ctxt, arena)?;
+            try_get_supertype(&left_field.dtype, &right_type)?
+        }
     };
+
     left_field.coerce(super_type);
     Ok(left_field)
-}
-
-fn coerce_numeric_aggregation(field: &mut Field) {
-    if field.dtype.is_numeric() && !matches!(&field.dtype, DataType::Float32) {
-        field.coerce(DataType::Float64)
-    }
 }
 
 fn get_truediv_field(

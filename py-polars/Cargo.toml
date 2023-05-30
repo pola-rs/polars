@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.16.4"
+version = "0.18.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -15,17 +15,20 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [dependencies]
 ahash = "0.8"
-bincode = "1.3"
+ciborium = "0.2.0"
+lexical-core = "0.8"
 # todo: unfix when compilation problem is solved
 libc = "0.2"
 ndarray = "0.15"
 numpy = "0.18"
 once_cell = "1"
+polars-algo = { path = "../polars/polars-algo", default-features = false }
 polars-core = { path = "../polars/polars-core", features = ["python"], default-features = false }
 polars-lazy = { path = "../polars/polars-lazy", features = ["python"], default-features = false }
 pyo3 = { version = "0.18.0", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
 pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
+smartstring = "1"
 thiserror = "^1.0"
 
 # features are only there to enable building a slim binary for the benchmark in CI
@@ -48,7 +51,7 @@ meta = ["polars/meta"]
 search_sorted = ["polars/search_sorted"]
 decompress = ["polars/decompress"]
 lazy_regex = ["polars/lazy_regex"]
-csv-file = ["polars/csv-file"]
+csv = ["polars/csv"]
 object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
@@ -61,6 +64,7 @@ timezones = ["polars/timezones"]
 cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
 list_take = ["polars/list_take"]
+list_count = ["polars/list_count"]
 binary_encoding = ["polars/binary_encoding"]
 
 all = [
@@ -80,7 +84,7 @@ all = [
   "meta",
   "decompress",
   "lazy_regex",
-  "csv-file",
+  "csv",
   "extract_jsonpath",
   "timezones",
   "object",
@@ -90,15 +94,16 @@ all = [
   "cse",
   "propagate_nans",
   "polars/groupby_list",
+  "polars/fused",
   "sql",
-  "polars/dtype-binary",
   "binary_encoding",
   "streaming",
   "performant",
   "list_take",
+  "list_count",
 ]
 
-# we cannot conditionaly activate simd
+# we cannot conditionally activate simd
 # https://github.com/rust-lang/cargo/issues/1197
 # so we have an indirection and compile
 # with --no-default-features --features=all for targets without simd
@@ -123,6 +128,7 @@ features = [
   "private",
   "round_series",
   "is_first",
+  "is_unique",
   "dot_product",
   "concat_str",
   "row_hash",
@@ -159,6 +165,7 @@ features = [
   "string_from_radix",
   "arg_where",
   "date_offset",
+  "approx_unique",
 ]
 
 [lib]
@@ -174,4 +181,7 @@ lto = "fat"
 # target-cpu = "native"
 
 [build-dependencies]
-built = { version = "0.5", features = ["chrono", "git2"], optional = true }
+built = { version = "0.6", features = ["chrono", "git2"], optional = true }
+
+[patch.crates-io]
+# simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }

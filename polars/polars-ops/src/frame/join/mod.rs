@@ -156,18 +156,29 @@ pub trait DataFrameJoinOps: IntoDf {
             }
         }
 
-        if selected_right.len() != selected_left.len() {
-            return Err(PolarsError::ComputeError(
-                "the number of columns given as join key should be equal".into(),
-            ));
-        }
-        if selected_left
+        polars_ensure!(
+            selected_left.len() == selected_right.len(),
+            ComputeError:
+                format!(
+                    "the number of columns given as join key (left: {}, right:{}) should be equal",
+                    selected_left.len(),
+                    selected_right.len()
+                )
+        );
+
+        if let Some((l, r)) = selected_left
             .iter()
             .zip(&selected_right)
-            .any(|(l, r)| l.dtype() != r.dtype())
+            .find(|(l, r)| l.dtype() != r.dtype())
         {
-            return Err(PolarsError::ComputeError("the dtype of the join keys don't match. first cast your columns to the correct dtype".into()));
-        }
+            polars_bail!(
+                ComputeError:
+                    format!(
+                        "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
+                        l.name(), l.dtype(), r.name(), r.dtype()
+                    )
+            );
+        };
 
         #[cfg(feature = "dtype-categorical")]
         for (l, r) in selected_left.iter().zip(&selected_right) {
@@ -208,6 +219,7 @@ pub trait DataFrameJoinOps: IntoDf {
                             right_by,
                             options.strategy,
                             options.tolerance,
+                            suffix.as_deref(),
                             slice,
                         ),
                         (None, None) => left_df._join_asof(
@@ -326,9 +338,9 @@ pub trait DataFrameJoinOps: IntoDf {
                 _finish_join(df_left, df_right, suffix.as_deref())
             }
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf(_) => Err(PolarsError::ComputeError(
-                "asof join not supported for join on multiple keys".into(),
-            )),
+            JoinType::AsOf(_) => polars_bail!(
+                ComputeError: "asof join not supported for join on multiple keys"
+            ),
             #[cfg(feature = "semi_anti_join")]
             JoinType::Anti | JoinType::Semi => {
                 let mut left = DataFrame::new_no_checks(selected_left_physical);

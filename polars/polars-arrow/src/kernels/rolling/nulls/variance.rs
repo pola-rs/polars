@@ -1,7 +1,7 @@
 use mean::MeanWindow;
 use nulls;
 use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
-use num::pow::Pow;
+use num_traits::pow::Pow;
 
 use super::*;
 

@@ -21,9 +21,10 @@ use std::sync::Arc;
 
 use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
+use arrow::offset::Offsets;
 pub use from::*;
-pub use iterator::SeriesIter;
-use num::NumCast;
+pub use iterator::{SeriesIter, SeriesPhysIter};
+use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
@@ -158,6 +159,21 @@ impl Series {
         Series::full_null(name, 0, dtype)
     }
 
+    pub fn clear(&self) -> Series {
+        // only the inner of objects know their type
+        // so use this hack
+        #[cfg(feature = "object")]
+        if matches!(self.dtype(), DataType::Object(_)) {
+            return if self.is_empty() {
+                self.clone()
+            } else {
+                let av = self.get(0).unwrap();
+                Series::new(self.name(), [av]).slice(0, 0)
+            };
+        }
+        Series::new_empty(self.name(), self.dtype())
+    }
+
     #[doc(hidden)]
     #[cfg(feature = "private")]
     pub fn _get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
@@ -169,7 +185,7 @@ impl Series {
 
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
-    pub(crate) unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
         let chunks = ca.chunks() as *const Vec<ArrayRef> as *mut Vec<ArrayRef>;
@@ -214,9 +230,9 @@ impl Series {
         Ok(self)
     }
 
-    pub fn sort(&self, reverse: bool) -> Self {
+    pub fn sort(&self, descending: bool) -> Self {
         self.sort_with(SortOptions {
-            descending: reverse,
+            descending,
             ..Default::default()
         })
     }
@@ -228,6 +244,10 @@ impl Series {
 
     /// Cast `[Series]` to another `[DataType]`
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
+        // best leave as is.
+        if matches!(dtype, DataType::Unknown) {
+            return Ok(self.clone());
+        }
         match self.0.cast(dtype) {
             Ok(out) => Ok(out),
             Err(err) => {
@@ -247,11 +267,24 @@ impl Series {
     /// This can lead to invalid memory access in downstream code.
     pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
         match self.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {
+                let ca = self.struct_().unwrap();
+                ca.cast_unchecked(dtype)
+            }
+            DataType::List(_) => {
+                let ca = self.list().unwrap();
+                ca.cast_unchecked(dtype)
+            }
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                     let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
                         ca.cast_unchecked(dtype)
                 })
+            }
+            DataType::Binary => {
+                let ca = self.binary().unwrap();
+                ca.cast_unchecked(dtype)
             }
             _ => self.cast(dtype),
         }
@@ -313,18 +346,11 @@ impl Series {
             .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
 
-    /// Explode a list or utf8 Series. This expands every item to a new row..
+    /// Explode a list Series. This expands every item to a new row..
     pub fn explode(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::List(_) => self.list().unwrap().explode(),
-            DataType::Utf8 => self.utf8().unwrap().explode(),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "explode not supported for Series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => Ok(self.clone()),
         }
     }
 
@@ -333,13 +359,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "'is_nan' not supported for series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_nan, self.dtype()),
         }
     }
 
@@ -348,13 +368,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "'is_not_nan' not supported for series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_not_nan, self.dtype()),
         }
     }
 
@@ -363,13 +377,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "'is_finite' not supported for series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_finite, self.dtype()),
         }
     }
 
@@ -378,13 +386,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "'is_infinite' not supported for series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_infinite, self.dtype()),
         }
     }
 
@@ -403,14 +405,16 @@ impl Series {
     /// * Datetime-> Int64
     /// * Time -> Int64
     /// * Categorical -> UInt32
+    /// * List(inner) -> List(physical of inner)
     ///
     pub fn to_physical_repr(&self) -> Cow<Series> {
         use DataType::*;
         match self.dtype() {
-            Date => Cow::Owned(self.cast(&DataType::Int32).unwrap()),
-            Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&DataType::Int64).unwrap()),
+            Date => Cow::Owned(self.cast(&Int32).unwrap()),
+            Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => Cow::Owned(self.cast(&DataType::UInt32).unwrap()),
+            Categorical(_) => Cow::Owned(self.cast(&UInt32).unwrap()),
+            List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
             _ => Cow::Borrowed(self),
         }
     }
@@ -551,8 +555,10 @@ impl Series {
     /// first cast to `Int64` to prevent overflow issues.
     pub fn sum_as_series(&self) -> Series {
         use DataType::*;
-        if self.is_empty() && self.dtype().is_numeric() {
-            return Series::new("", [0])
+        if self.is_empty()
+            && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
+        {
+            return Series::new(self.name(), [0])
                 .cast(self.dtype())
                 .unwrap()
                 .sum_as_series();
@@ -626,6 +632,12 @@ impl Series {
                     let ca = self.f64().unwrap();
                     ca.cumsum(reverse).into_series()
                 }
+                #[cfg(feature = "dtype-duration")]
+                Duration(tu) => {
+                    let ca = self.to_physical_repr();
+                    let ca = ca.i64().unwrap();
+                    ca.cumsum(reverse).cast(&Duration(*tu)).unwrap()
+                }
                 dt => panic!("cumsum not supported for dtype: {dt:?}"),
             }
         }
@@ -685,12 +697,16 @@ impl Series {
             use DataType::*;
             match self.dtype() {
                 Boolean => self.cast(&DataType::Int64).unwrap().product(),
-                Int8 | UInt8 | Int16 | UInt16 => {
+                Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 => {
                     let s = self.cast(&Int64).unwrap();
                     s.product()
                 }
                 Int64 => {
                     let ca = self.i64().unwrap();
+                    ca.prod_as_series()
+                }
+                UInt64 => {
+                    let ca = self.u64().unwrap();
                     ca.prod_as_series()
                 }
                 Float32 => {
@@ -711,32 +727,35 @@ impl Series {
     }
 
     #[cfg(feature = "rank")]
-    pub fn rank(&self, options: RankOptions) -> Series {
-        rank(self, options.method, options.descending)
+    pub fn rank(&self, options: RankOptions, seed: Option<u64>) -> Series {
+        rank(self, options.method, options.descending, seed)
     }
 
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         let null_count = self.null_count();
         let len = self.len();
-        if null_count == len {
-            return Ok(Series::full_null(self.name(), len, dtype));
+
+        match self.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {}
+            _ => {
+                if null_count == len {
+                    return Ok(Series::full_null(self.name(), len, dtype));
+                }
+            }
         }
         let s = self.0.cast(dtype)?;
         if null_count != s.null_count() {
             let failure_mask = !self.is_null() & s.is_null();
             let failures = self.filter_threaded(&failure_mask, false)?.unique()?;
-            Err(PolarsError::ComputeError(
-                format!(
-                    "Strict conversion from {:?} to {:?} failed for values {}. \
-                    If you were trying to cast Utf8 to Date, Time, or Datetime, \
-                    consider using `strptime`.",
-                    self.dtype(),
-                    dtype,
-                    failures.fmt_list(),
-                )
-                .into(),
-            ))
+            polars_bail!(
+                ComputeError:
+                "strict conversion from `{}` to `{}` failed for value(s) {}; \
+                if you were trying to cast Utf8 to temporal dtypes, consider using `strptime`",
+                self.dtype(), dtype, failures.fmt_list(),
+
+            );
         } else {
             Ok(s)
         }
@@ -843,13 +862,9 @@ impl Series {
             UInt8 | UInt16 | UInt32 | UInt64 => self.clone(),
             Float32 => a.f32().unwrap().abs().into_series(),
             Float64 => a.f64().unwrap().abs().into_series(),
-            dt => {
-                return Err(PolarsError::InvalidOperation(
-                    format!("abs not supported for series of type {dt:?}").into(),
-                ));
-            }
+            dt => polars_bail!(opq = abs, dt),
         };
-        Ok(out)
+        out.cast(self.dtype())
     }
 
     #[cfg(feature = "private")]
@@ -959,6 +974,22 @@ impl Series {
 
         size
     }
+
+    /// Packs every element into a list
+    pub fn as_list(&self) -> ListChunked {
+        let s = self.rechunk();
+        let values = s.to_arrow(0);
+        let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
+        let offsets = unsafe { Offsets::new_unchecked(offsets) };
+
+        let new_arr = LargeListArray::new(
+            DataType::List(Box::new(s.dtype().clone())).to_arrow(),
+            offsets.into(),
+            values,
+            None,
+        );
+        unsafe { ListChunked::from_chunks(s.name(), vec![Box::new(new_arr)]) }
+    }
 }
 
 impl Deref for Series {
@@ -986,17 +1017,23 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        if &T::get_dtype() == self.dtype() ||
-            // needed because we want to get ref of List no matter what the inner type is.
-            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
-        {
-            unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
-        } else {
-            panic!(
-                "implementation error, cannot get ref {:?} from {:?}",
-                T::get_dtype(),
-                self.dtype()
-            )
+        match T::get_dtype() {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(None, None) => panic!("impl error"),
+            _ => {
+                if &T::get_dtype() == self.dtype() ||
+                    // needed because we want to get ref of List no matter what the inner type is.
+                    (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
+                {
+                    unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
+                } else {
+                    panic!(
+                        "implementation error, cannot get ref {:?} from {:?}",
+                        T::get_dtype(),
+                        self.dtype()
+                    );
+                }
+            }
         }
     }
 }
@@ -1052,12 +1089,12 @@ mod test {
     fn new_series_from_empty_structs() {
         let dtype = DataType::Struct(vec![]);
         let empties = vec![AnyValue::StructOwned(Box::new((vec![], vec![]))); 3];
-        let s = Series::from_any_values_and_dtype("", &empties, &dtype).unwrap();
+        let s = Series::from_any_values_and_dtype("", &empties, &dtype, false).unwrap();
         assert_eq!(s.len(), 3);
     }
     #[test]
     fn new_series_from_arrow_primitive_array() {
-        let array = UInt32Array::from_slice(&[1, 2, 3, 4, 5]);
+        let array = UInt32Array::from_slice([1, 2, 3, 4, 5]);
         let array_ref: ArrayRef = Box::new(array);
 
         let _ = Series::try_from(("foo", array_ref)).unwrap();

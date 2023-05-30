@@ -41,6 +41,18 @@ pub trait DatetimeMethods: AsDatetime {
         cast_and_apply(self.as_datetime(), temporal::year)
     }
 
+    /// Extract year from underlying NaiveDate representation.
+    /// Returns whether the year is a leap year.
+    fn is_leap_year(&self) -> BooleanChunked {
+        let ca = self.as_datetime();
+        let f = match ca.time_unit() {
+            TimeUnit::Nanoseconds => datetime_to_is_leap_year_ns,
+            TimeUnit::Microseconds => datetime_to_is_leap_year_us,
+            TimeUnit::Milliseconds => datetime_to_is_leap_year_ms,
+        };
+        ca.apply_kernel_cast::<BooleanType>(&f)
+    }
+
     fn iso_year(&self) -> Int32Chunked {
         let ca = self.as_datetime();
         let f = match ca.time_unit() {
@@ -177,9 +189,9 @@ mod test {
         );
         assert_eq!(
             [
-                588470416000_000_000,
-                1441497364000_000_000,
-                1356048000000_000_000
+                588_470_416_000_000_000,
+                1_441_497_364_000_000_000,
+                1_356_048_000_000_000_000
             ],
             dt.cont_slice().unwrap()
         );

@@ -9,12 +9,10 @@ pub use polars_arrow::kernels::ewm::EWMOptions;
 pub use polars_arrow::prelude::*;
 pub(crate) use polars_arrow::trusted_len::TrustedLen;
 
-#[cfg(feature = "dtype-binary")]
-pub use crate::chunked_array::builder::{BinaryChunkedBuilder, ListBinaryChunkedBuilder};
 pub use crate::chunked_array::builder::{
-    BooleanChunkedBuilder, ChunkedBuilder, ListBooleanChunkedBuilder, ListBuilderTrait,
-    ListPrimitiveChunkedBuilder, ListUtf8ChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder,
-    Utf8ChunkedBuilder,
+    BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,
+    ListBooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,
+    ListUtf8ChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 pub use crate::chunked_array::iterator::PolarsIterator;
 #[cfg(feature = "dtype-categorical")]
@@ -32,7 +30,7 @@ pub use crate::chunked_array::temporal::conversion::*;
 pub use crate::chunked_array::ChunkedArray;
 pub(crate) use crate::chunked_array::{to_array, ChunkIdIter};
 pub use crate::datatypes::*;
-pub use crate::error::{PolarsError, PolarsResult};
+pub use crate::error::{polars_bail, polars_ensure, polars_err, PolarsError, PolarsResult};
 #[cfg(feature = "asof_join")]
 pub use crate::frame::asof_join::*;
 pub use crate::frame::explode::MeltArgs;
@@ -41,6 +39,7 @@ pub use crate::frame::groupby::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsP
 pub use crate::frame::hash_join::JoinType;
 pub(crate) use crate::frame::hash_join::*;
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};
+pub use crate::hashing::{FxHash, VecHash};
 pub use crate::named_from::{NamedFrom, NamedFromOwned};
 pub use crate::schema::*;
 #[cfg(feature = "checked_arithmetic")]
@@ -50,5 +49,4 @@ pub use crate::series::{IntoSeries, Series, SeriesTrait};
 pub use crate::testing::*;
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;
-pub use crate::vector_hasher::{VecHash, VecHashSingle};
 pub use crate::{cloud, datatypes, df};

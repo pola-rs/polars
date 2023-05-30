@@ -75,7 +75,7 @@ impl Sink for SliceSink {
         }
     }
 
-    fn combine(&mut self, _other: Box<dyn Sink>) {
+    fn combine(&mut self, _other: &mut dyn Sink) {
         // no-op
     }
 

@@ -1,13 +1,15 @@
-mod batched;
+mod batched_mmap;
+mod batched_read;
 
-use std::borrow::Cow;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-pub use batched::*;
+pub use batched_mmap::*;
+pub use batched_read::*;
 use polars_arrow::array::*;
+use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
@@ -15,7 +17,6 @@ use polars_core::POOL;
 use polars_time::prelude::*;
 use polars_utils::flatten;
 use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
 
 use crate::csv::buffer::*;
 use crate::csv::parser::*;
@@ -32,20 +33,18 @@ pub(crate) fn cast_columns(
     to_cast: &[Field],
     parallel: bool,
 ) -> PolarsResult<()> {
-    use DataType::*;
-
     let cast_fn = |s: &Series, fld: &Field| match (s.dtype(), fld.data_type()) {
         #[cfg(feature = "temporal")]
-        (Utf8, Date) => s
+        (DataType::Utf8, DataType::Date) => s
             .utf8()
             .unwrap()
             .as_date(None, false)
             .map(|ca| ca.into_series()),
         #[cfg(feature = "temporal")]
-        (Utf8, Datetime(tu, _)) => s
+        (DataType::Utf8, DataType::Datetime(tu, _)) => s
             .utf8()
             .unwrap()
-            .as_datetime(None, *tu, false, false, false, None)
+            .as_datetime(None, *tu, false, false, None)
             .map(|ca| ca.into_series()),
         (_, dt) => s.cast(dt),
     };
@@ -66,7 +65,10 @@ pub(crate) fn cast_columns(
     } else {
         // cast to the original dtypes in the schema
         for fld in to_cast {
-            df.try_apply(fld.name(), |s| cast_fn(s, fld))?;
+            // field may not be projected
+            if let Some(idx) = df.find_idx_by_name(fld.name()) {
+                df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
+            }
         }
     }
     Ok(())
@@ -76,7 +78,7 @@ pub(crate) fn cast_columns(
 pub(crate) struct CoreReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     /// Explicit schema for the CSV file
-    schema: Cow<'a, Schema>,
+    schema: SchemaRef,
     /// Optional projection for which columns to load (zero-based column indices)
     projection: Option<Vec<usize>>,
     /// Current line number, used in error reporting
@@ -172,11 +174,11 @@ impl<'a> CoreReader<'a> {
         delimiter: Option<u8>,
         has_header: bool,
         ignore_errors: bool,
-        schema: Option<&'a Schema>,
+        schema: Option<SchemaRef>,
         columns: Option<Vec<String>>,
         encoding: CsvEncoding,
         n_threads: Option<usize>,
-        schema_overwrite: Option<&'a Schema>,
+        schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<&'a [DataType]>,
         sample_size: usize,
         chunk_size: usize,
@@ -190,21 +192,24 @@ impl<'a> CoreReader<'a> {
         to_cast: Vec<Field>,
         skip_rows_after_header: usize,
         row_count: Option<RowCount>,
-        parse_dates: bool,
+        try_parse_dates: bool,
     ) -> PolarsResult<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
 
         #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
         if is_compressed(&reader_bytes) {
-            return Err(PolarsError::ComputeError("cannot read compressed csv file; compile with feature 'decompress' or 'decompress-fast'".into()));
+            polars_bail!(
+                ComputeError: "cannot read compressed CSV file; \
+                compile with feature 'decompress' or 'decompress-fast'"
+            );
         }
 
         // check if schema should be inferred
         let delimiter = delimiter.unwrap_or(b',');
 
         let mut schema = match schema {
-            Some(schema) => Cow::Borrowed(schema),
+            Some(schema) => schema,
             None => {
                 {
                     // We keep track of the inferred schema bool
@@ -222,25 +227,24 @@ impl<'a> CoreReader<'a> {
                         delimiter,
                         max_records,
                         has_header,
-                        schema_overwrite,
+                        schema_overwrite.as_deref(),
                         &mut skip_rows,
                         skip_rows_after_header,
                         comment_char,
                         quote_char,
                         eol_char,
                         null_values.as_ref(),
-                        parse_dates,
+                        try_parse_dates,
                     )?;
-                    Cow::Owned(inferred_schema)
+                    Arc::new(inferred_schema)
                 }
             }
         };
         if let Some(dtypes) = dtype_overwrite {
-            let mut s = schema.into_owned();
+            let s = Arc::make_mut(&mut schema);
             for (index, dt) in dtypes.iter().enumerate() {
-                s.coerce_by_index(index, dt.clone()).unwrap();
+                s.set_dtype_at_index(index, dt.clone()).unwrap();
             }
-            schema = Cow::Owned(s);
         }
 
         // create a null value for every column
@@ -291,6 +295,7 @@ impl<'a> CoreReader<'a> {
     fn find_starting_point<'b>(
         &self,
         mut bytes: &'b [u8],
+        quote_char: Option<u8>,
         eol_char: u8,
     ) -> PolarsResult<(&'b [u8], Option<usize>)> {
         let starting_point_offset = bytes.as_ptr() as usize;
@@ -305,13 +310,13 @@ impl<'a> CoreReader<'a> {
 
         // If there is a header we skip it.
         if self.has_header {
-            bytes = skip_header(bytes, eol_char).0;
+            bytes = skip_header(bytes, quote_char, eol_char);
         }
 
         if self.skip_rows_before_header > 0 {
             for _ in 0..self.skip_rows_before_header {
                 let pos = next_line_position_naive(bytes, eol_char)
-                    .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
+                    .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
                 bytes = &bytes[pos..];
             }
         }
@@ -327,7 +332,7 @@ impl<'a> CoreReader<'a> {
                     // no matter the no. of fields
                     _ => next_line_position(bytes, None, self.delimiter, self.quote_char, eol_char),
                 }
-                .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
+                .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
 
                 bytes = &bytes[pos..];
             }
@@ -342,19 +347,19 @@ impl<'a> CoreReader<'a> {
         Ok((bytes, starting_point_offset))
     }
 
-    #[allow(clippy::type_complexity)]
-    fn determine_file_chunks_and_statistics(
+    /// Estimates number of rows and optionally ensure we don't read more than `n_rows`
+    /// by slicing `bytes` to the upper bound.
+    fn estimate_rows_and_set_upper_bound<'b>(
         &self,
-        n_threads: &mut usize,
-        bytes: &'a [u8],
+        mut bytes: &'b [u8],
         logging: bool,
-        streaming: bool,
-    ) -> PolarsResult<(Vec<(usize, usize)>, usize, usize, Option<usize>, &'a [u8])> {
-        // Make the variable mutable so that we can reassign the sliced file to this variable.
-        let (mut bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
-
+        set_upper_bound: bool,
+    ) -> (&'b [u8], usize, Option<&'b [u8]>) {
         // initial row guess. We use the line statistic to guess the number of rows to allocate
         let mut total_rows = 128;
+
+        // if we set an upper bound on bytes, keep a reference to the bytes beyond the bound
+        let mut remaining_bytes = None;
 
         // if None, there are less then 128 rows in the file and the statistics don't matter that much
         if let Some((mean, std)) = get_line_stats(
@@ -370,6 +375,7 @@ impl<'a> CoreReader<'a> {
             }
 
             // x % upper bound of byte length per line assuming normally distributed
+            // this upper bound assumption is not guaranteed to be accurate
             let line_length_upper_bound = mean + 1.1 * std;
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
 
@@ -389,7 +395,10 @@ impl<'a> CoreReader<'a> {
                         self.quote_char,
                         self.eol_char,
                     ) {
-                        bytes = &bytes[..n_bytes + pos]
+                        if set_upper_bound {
+                            (bytes, remaining_bytes) =
+                                (&bytes[..n_bytes + pos], Some(&bytes[n_bytes + pos..]))
+                        }
                     }
                 }
             }
@@ -397,6 +406,29 @@ impl<'a> CoreReader<'a> {
                 eprintln!("initial row estimate: {total_rows}")
             }
         }
+        (bytes, total_rows, remaining_bytes)
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn determine_file_chunks_and_statistics(
+        &self,
+        n_threads: &mut usize,
+        bytes: &'a [u8],
+        logging: bool,
+    ) -> PolarsResult<(
+        Vec<(usize, usize)>,
+        usize,
+        usize,
+        Option<usize>,
+        &'a [u8],
+        Option<&'a [u8]>,
+    )> {
+        // Make the variable mutable so that we can reassign the sliced file to this variable.
+        let (bytes, starting_point_offset) =
+            self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
+
+        let (bytes, total_rows, remaining_bytes) =
+            self.estimate_rows_and_set_upper_bound(bytes, logging, true);
         if total_rows == 128 {
             *n_threads = 1;
 
@@ -406,33 +438,36 @@ impl<'a> CoreReader<'a> {
         }
 
         let chunk_size = std::cmp::min(self.chunk_size, total_rows);
-        let n_chunks = total_rows / chunk_size;
-        if logging {
-            eprintln!(
-                "no. of chunks: {n_chunks} processed by: {n_threads} threads at 1 chunk/thread",
-            );
-        }
-
-        let n_file_chunks = if streaming { n_chunks } else { *n_threads };
+        let n_file_chunks = *n_threads;
 
         // split the file by the nearest new line characters such that every thread processes
         // approximately the same number of rows.
+
+        let chunks = get_file_chunks(
+            bytes,
+            n_file_chunks,
+            self.schema.len(),
+            self.delimiter,
+            self.quote_char,
+            self.eol_char,
+        );
+
+        if logging {
+            eprintln!(
+                "no. of chunks: {} processed by: {n_threads} threads.",
+                chunks.len()
+            );
+        }
+
         Ok((
-            get_file_chunks(
-                bytes,
-                n_file_chunks,
-                self.schema.len(),
-                self.delimiter,
-                self.quote_char,
-                self.eol_char,
-            ),
+            chunks,
             chunk_size,
             total_rows,
             starting_point_offset,
             bytes,
+            remaining_bytes,
         ))
     }
-
     fn get_projection(&mut self) -> Vec<usize> {
         // we also need to sort the projection to have predictable output.
         // the `parse_lines` function expects this.
@@ -445,26 +480,36 @@ impl<'a> CoreReader<'a> {
             .unwrap_or_else(|| (0..self.schema.len()).collect())
     }
 
-    fn get_string_columns(&self, projection: &[usize]) -> PolarsResult<Vec<&str>> {
+    fn get_string_columns(&self, projection: &[usize]) -> PolarsResult<StringColumns> {
         // keep track of the maximum capacity that needs to be allocated for the utf8-builder
         // Per string column we keep a statistic of the maximum length of string bytes per chunk
         // We must the names, not the indexes, (the indexes are incorrect due to projection
         // pushdown)
-        let mut str_columns = Vec::with_capacity(projection.len());
+
+        let mut new_projection = Vec::with_capacity(projection.len());
+
         for i in projection {
-            let (name, dtype) = self.schema.get_index(*i).ok_or_else(||
-                PolarsError::ComputeError(
-                    format!("the given projection index: {} is out of bounds for csv schema with {} columns", i, self.schema.len()).into())
-            )?;
+            let (_, dtype) = self.schema.get_at_index(*i).ok_or_else(|| {
+                polars_err!(
+                    ComputeError:
+                    "projection index {} is out of bounds for CSV schema with {} columns",
+                    i, self.schema.len(),
+                )
+            })?;
 
             if dtype == &DataType::Utf8 {
-                str_columns.push(name.as_str())
+                new_projection.push(*i)
             }
         }
-        Ok(str_columns)
+
+        Ok(StringColumns::new(self.schema.clone(), new_projection))
     }
 
-    fn init_string_size_stats(&self, str_columns: &[&str], capacity: usize) -> Vec<RunningSize> {
+    fn init_string_size_stats(
+        &self,
+        str_columns: &StringColumns,
+        capacity: usize,
+    ) -> Vec<RunningSize> {
         // assume 10 chars per str
         // this is not updated in low memory mode
         let init_str_bytes = capacity * 10;
@@ -480,30 +525,12 @@ impl<'a> CoreReader<'a> {
         bytes: &[u8],
         predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<DataFrame> {
-        let logging = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1";
-        let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes) =
-            self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging, false)?;
+        let logging = verbose();
+        let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes, remaining_bytes) =
+            self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
         let projection = self.get_projection();
         let str_columns = self.get_string_columns(&projection)?;
 
-        // If the number of threads given by the user is lower than our global thread pool we create
-        // new one.
-        #[cfg(not(target_family = "wasm"))]
-        let owned_pool;
-        #[cfg(not(target_family = "wasm"))]
-        let pool = if POOL.current_num_threads() != n_threads {
-            owned_pool = Some(
-                ThreadPoolBuilder::new()
-                    .num_threads(n_threads)
-                    .build()
-                    .unwrap(),
-            );
-            owned_pool.as_ref().unwrap()
-        } else {
-            &POOL
-        };
-        #[cfg(target_family = "wasm")] // use a pre-created pool for wasm
-        let pool = &POOL;
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
             // TODO! add DataFrame::new_from_schema
@@ -530,7 +557,7 @@ impl<'a> CoreReader<'a> {
         //      the inner vec has got buffers from all the columns.
         if let Some(predicate) = predicate {
             let str_capacities = self.init_string_size_stats(&str_columns, chunk_size);
-            let dfs = pool.install(|| {
+            let dfs = POOL.install(|| {
                 file_chunks
                     .into_par_iter()
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
@@ -575,6 +602,7 @@ impl<'a> CoreReader<'a> {
                                 ignore_errors,
                                 chunk_size,
                                 self.schema.len(),
+                                &self.schema,
                             )?;
 
                             let mut local_df = DataFrame::new_no_checks(
@@ -622,7 +650,7 @@ impl<'a> CoreReader<'a> {
 
             let str_capacities = self.init_string_size_stats(&str_columns, capacity);
 
-            let mut dfs = pool.install(|| {
+            let mut dfs = POOL.install(|| {
                 file_chunks
                     .into_par_iter()
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
@@ -636,7 +664,7 @@ impl<'a> CoreReader<'a> {
                             self.quote_char,
                             self.eol_char,
                             self.comment_char,
-                            chunk_size,
+                            capacity,
                             &str_capacities,
                             self.encoding,
                             self.null_values.as_ref(),
@@ -660,6 +688,56 @@ impl<'a> CoreReader<'a> {
                     })
                     .collect::<PolarsResult<Vec<_>>>()
             })?;
+            if let (Some(n_rows), Some(remaining_bytes)) = (self.n_rows, remaining_bytes) {
+                let rows_already_read: usize = dfs.iter().map(|x| x.1 as usize).sum();
+                if rows_already_read < n_rows {
+                    dfs.push({
+                        let mut df = {
+                            let remaining_rows = n_rows - rows_already_read;
+                            let mut buffers = init_buffers(
+                                &projection,
+                                remaining_rows,
+                                self.schema.as_ref(),
+                                &str_capacities,
+                                self.quote_char,
+                                self.encoding,
+                                self.ignore_errors,
+                            )?;
+
+                            parse_lines(
+                                remaining_bytes,
+                                0,
+                                self.delimiter,
+                                self.comment_char,
+                                self.quote_char,
+                                self.eol_char,
+                                self.null_values.as_ref(),
+                                self.missing_is_null,
+                                &projection,
+                                &mut buffers,
+                                self.ignore_errors,
+                                remaining_rows - 1,
+                                self.schema.len(),
+                                self.schema.as_ref(),
+                            )?;
+
+                            DataFrame::new_no_checks(
+                                buffers
+                                    .into_iter()
+                                    .map(|buf| buf.into_series())
+                                    .collect::<PolarsResult<_>>()?,
+                            )
+                        };
+
+                        cast_columns(&mut df, &self.to_cast, false)?;
+                        if let Some(rc) = &self.row_count {
+                            df.with_row_count_mut(&rc.name, Some(rc.offset));
+                        }
+                        let n_read = df.height() as IdxSize;
+                        (df, n_read)
+                    });
+                }
+            }
             if self.row_count.is_some() {
                 update_row_counts(&mut dfs, 0)
             }
@@ -689,7 +767,7 @@ impl<'a> CoreReader<'a> {
 
 fn update_string_stats(
     str_capacities: &[RunningSize],
-    str_columns: &[&str],
+    str_columns: &StringColumns,
     local_df: &DataFrame,
 ) -> PolarsResult<()> {
     // update the running str bytes statistics
@@ -757,6 +835,7 @@ fn read_chunk(
             ignore_errors,
             chunk_size,
             schema.len(),
+            schema,
         )?;
     }
 
@@ -766,4 +845,28 @@ fn read_chunk(
             .map(|buf| buf.into_series())
             .collect::<PolarsResult<_>>()?,
     ))
+}
+
+/// List of strings, which are stored inside of a [Schema].
+///
+/// Conceptually it is `Vec<&str>` with `&str` tied to the lifetime of
+/// the [Schema].
+struct StringColumns {
+    schema: SchemaRef,
+    fields: Vec<usize>,
+}
+
+impl StringColumns {
+    /// New [StringColumns], where the list `fields` has indices
+    /// of fields in the `schema`.
+    fn new(schema: SchemaRef, fields: Vec<usize>) -> Self {
+        Self { schema, fields }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &str> {
+        self.fields.iter().map(|schema_i| {
+            let (name, _) = self.schema.get_at_index(*schema_i).unwrap();
+            name.as_str()
+        })
+    }
 }

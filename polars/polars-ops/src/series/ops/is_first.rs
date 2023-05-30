@@ -6,7 +6,7 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 
-use crate::series::ops::arg_min_max::arg_max;
+use crate::series::ops::arg_min_max::arg_max_bool;
 
 fn is_first_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
@@ -28,7 +28,6 @@ where
     unsafe { BooleanChunked::from_chunks(ca.name(), chunks) }
 }
 
-#[cfg(feature = "dtype-binary")]
 fn is_first_bin(ca: &BinaryChunked) -> BooleanChunked {
     let mut unique = PlHashSet::new();
     let chunks = ca
@@ -48,7 +47,7 @@ fn is_first_bin(ca: &BinaryChunked) -> BooleanChunked {
 fn is_first_boolean(ca: &BooleanChunked) -> BooleanChunked {
     let mut out = MutableBitmap::with_capacity(ca.len());
     out.extend_constant(ca.len(), false);
-    if let Some(index) = arg_max(ca) {
+    if let Some(index) = arg_max_bool(ca) {
         out.set(index, true)
     }
     if let Some(index) = ca.first_non_null() {
@@ -85,12 +84,10 @@ pub fn is_first(s: &Series) -> PolarsResult<BooleanChunked> {
             let ca = s.bool().unwrap();
             is_first_boolean(ca)
         }
-        #[cfg(feature = "dtype-binary")]
         Binary => {
             let ca = s.binary().unwrap();
             is_first_bin(ca)
         }
-        #[cfg(feature = "dtype-binary")]
         Utf8 => {
             let s = s.cast(&Binary).unwrap();
             return is_first(&s);
@@ -111,7 +108,7 @@ pub fn is_first(s: &Series) -> PolarsResult<BooleanChunked> {
         }
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_first_struct(&s),
-        dt => panic!("dtype {dt} not supported in 'is_first' operation"),
+        dt => polars_bail!(opq = is_first, dt),
     };
     Ok(out)
 }

@@ -3,23 +3,27 @@ from __future__ import annotations
 import textwrap
 from typing import Any
 
-import polars.internals as pli
+from polars import functions as F
+from polars.dataframe import DataFrame
 from polars.datatypes import (
-    Boolean,
+    FLOAT_DTYPES,
+    UNSIGNED_INTEGER_DTYPES,
     Categorical,
     DataTypeClass,
-    Float32,
-    Float64,
+    List,
+    Struct,
     dtype_to_py_type,
+    unpack_dtypes,
 )
-from polars.exceptions import InvalidAssert, PanicException
-from polars.utils import deprecated_alias
+from polars.exceptions import ComputeError, InvalidAssert
+from polars.lazyframe import LazyFrame
+from polars.series import Series
 
 
-@deprecated_alias(check_column_names="check_column_order")
 def assert_frame_equal(
-    left: pli.DataFrame | pli.LazyFrame,
-    right: pli.DataFrame | pli.LazyFrame,
+    left: DataFrame | LazyFrame,
+    right: DataFrame | LazyFrame,
+    *,
     check_dtype: bool = True,
     check_exact: bool = False,
     rtol: float = 1.0e-5,
@@ -64,10 +68,10 @@ def assert_frame_equal(
     >>> assert_frame_equal(df1, df2)  # doctest: +SKIP
     AssertionError: Values for column 'a' are different.
     """
-    if isinstance(left, pli.LazyFrame) and isinstance(right, pli.LazyFrame):
+    if isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
         left, right = left.collect(), right.collect()
         obj = "LazyFrames"
-    elif isinstance(left, pli.DataFrame) and isinstance(right, pli.DataFrame):
+    elif isinstance(left, DataFrame) and isinstance(right, DataFrame):
         obj = "DataFrames"
     else:
         raise_assert_detail("Inputs", "Unexpected input types", type(left), type(right))
@@ -95,7 +99,7 @@ def assert_frame_equal(
         try:
             left = left.sort(by=left.columns)
             right = right.sort(by=left.columns)
-        except PanicException as exc:
+        except ComputeError as exc:
             raise InvalidAssert(
                 "Cannot set 'check_row_order=False' on frame with unsortable columns."
             ) from exc
@@ -118,8 +122,9 @@ def assert_frame_equal(
 
 
 def assert_frame_not_equal(
-    left: pli.DataFrame | pli.LazyFrame,
-    right: pli.DataFrame | pli.LazyFrame,
+    left: DataFrame | LazyFrame,
+    right: DataFrame | LazyFrame,
+    *,
     check_dtype: bool = True,
     check_exact: bool = False,
     rtol: float = 1.0e-5,
@@ -183,8 +188,9 @@ def assert_frame_not_equal(
 
 
 def assert_series_equal(
-    left: pli.Series,
-    right: pli.Series,
+    left: Series,
+    right: Series,
+    *,
     check_dtype: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
@@ -224,8 +230,8 @@ def assert_series_equal(
 
     """
     if not (
-        isinstance(left, pli.Series)  # type: ignore[redundant-expr]
-        and isinstance(right, pli.Series)
+        isinstance(left, Series)  # type: ignore[redundant-expr]
+        and isinstance(right, Series)
     ):
         raise_assert_detail("Inputs", "Unexpected input types", type(left), type(right))
 
@@ -241,8 +247,9 @@ def assert_series_equal(
 
 
 def assert_series_not_equal(
-    left: pli.Series,
-    right: pli.Series,
+    left: Series,
+    right: Series,
+    *,
     check_dtype: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
@@ -299,8 +306,8 @@ def assert_series_not_equal(
 
 
 def _assert_series_inner(
-    left: pli.Series,
-    right: pli.Series,
+    left: Series,
+    right: Series,
     check_dtype: bool,
     check_exact: bool,
     nans_compare_equal: bool,
@@ -313,34 +320,62 @@ def _assert_series_inner(
     except NotImplementedError:
         can_be_subtracted = False
 
-    check_exact = check_exact or not can_be_subtracted or left.dtype == Boolean
+    check_exact = (
+        check_exact or not can_be_subtracted or left.is_boolean() or left.is_temporal()
+    )
     if check_dtype and left.dtype != right.dtype:
         raise_assert_detail("Series", "Dtype mismatch", left.dtype, right.dtype)
 
-    # confirm that we can call 'is_nan' on both sides
-    left_is_float = left.dtype in (Float32, Float64)
-    right_is_float = right.dtype in (Float32, Float64)
-    comparing_float_dtypes = left_is_float and right_is_float
+    if left.null_count() != right.null_count():
+        raise_assert_detail(
+            "Series", "null_count is not equal", left.null_count(), right.null_count()
+        )
 
     # create mask of which (if any) values are unequal
-    unequal = left != right
-    if unequal.any() and nans_compare_equal and comparing_float_dtypes:
-        # handle NaN values (which compare unequal to themselves)
-        unequal = unequal & ~(
-            (left.is_nan() & right.is_nan()).fill_null(pli.lit(False))
-        )
+    unequal = left.ne_missing(right)
+
+    # handle NaN values (which compare unequal to themselves)
+    comparing_float_dtypes = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
+    if unequal.any() and nans_compare_equal:
+        # when both dtypes are scalar floats
+        if comparing_float_dtypes:
+            unequal = unequal & ~(
+                (left.is_nan() & right.is_nan()).fill_null(F.lit(False))
+            )
+
+        # account for float values in nested dtypes
+        elif left.dtype.is_nested or right.dtype.is_nested:
+            if _assert_series_nested_nans_equal(
+                left=left.filter(unequal),
+                right=right.filter(unequal),
+                check_dtype=check_dtype,
+                check_exact=check_exact,
+                atol=atol,
+                rtol=rtol,
+            ):
+                return
 
     # assert exact, or with tolerance
     if unequal.any():
         if check_exact:
             raise_assert_detail(
-                "Series", "Exact value mismatch", left=list(left), right=list(right)
+                "Series",
+                "Exact value mismatch",
+                left=list(left),
+                right=list(right),
             )
         else:
             # apply check with tolerance (to the known-unequal matches).
             left, right = left.filter(unequal), right.filter(unequal)
+
+            if all(tp in UNSIGNED_INTEGER_DTYPES for tp in (left.dtype, right.dtype)):
+                # avoid potential "subtract-with-overflow" panic on uint math
+                s_diff = Series("diff", [abs(v1 - v2) for v1, v2 in zip(left, right)])
+            else:
+                s_diff = (left - right).abs()
+
             mismatch, nan_info = False, ""
-            if (((left - right).abs() > (atol + rtol * right.abs())).sum() != 0) or (
+            if ((s_diff > (atol + rtol * right.abs())).sum() != 0) or (
                 left.is_null() != right.is_null()
             ).any():
                 mismatch = True
@@ -360,6 +395,71 @@ def _assert_series_inner(
                     left=list(left),
                     right=list(right),
                 )
+
+
+def _assert_series_nested_nans_equal(
+    left: Series,
+    right: Series,
+    check_dtype: bool,
+    check_exact: bool,
+    atol: float,
+    rtol: float,
+) -> bool:
+    # check that float values exist at _some_ level of nesting
+    if not any(tp in FLOAT_DTYPES for tp in unpack_dtypes(left.dtype, right.dtype)):
+        return False
+
+    # compare nested lists element-wise
+    elif left.dtype == List == right.dtype:
+        for s1, s2 in zip(left, right):
+            if s1 is None and s2 is None:
+                continue
+            elif (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
+                raise_assert_detail("Series", "Nested value mismatch", s1, s2)
+            elif len(s1) != len(s2):
+                raise_assert_detail(
+                    "Series", "Nested list length mismatch", len(s1), len(s2)
+                )
+            _assert_series_inner(
+                s1,
+                s2,
+                check_dtype=check_dtype,
+                check_exact=check_exact,
+                nans_compare_equal=True,
+                atol=atol,
+                rtol=rtol,
+            )
+        return True
+
+    # unnest structs as series and compare
+    elif left.dtype == Struct == right.dtype:
+        ls, rs = left.struct.unnest(), right.struct.unnest()
+        if len(ls.columns) != len(rs.columns):
+            raise_assert_detail(
+                "Series",
+                "Nested struct fields mismatch",
+                len(ls.columns),
+                len(rs.columns),
+            )
+        elif len(ls) != len(rs):
+            raise_assert_detail(
+                "Series", "Nested struct length mismatch", len(ls), len(rs)
+            )
+        for s1, s2 in zip(ls, rs):
+            _assert_series_inner(
+                s1,
+                s2,
+                check_dtype=check_dtype,
+                check_exact=check_exact,
+                nans_compare_equal=True,
+                atol=atol,
+                rtol=rtol,
+            )
+        return True
+    else:
+        # fall-back to outer codepath (if mismatched dtypes we would expect
+        # the equality check to fail - unless ALL series values are null)
+        return False
 
 
 def raise_assert_detail(
@@ -394,9 +494,7 @@ def is_categorical_dtype(data_type: Any) -> bool:
     )
 
 
-def assert_frame_equal_local_categoricals(
-    df_a: pli.DataFrame, df_b: pli.DataFrame
-) -> None:
+def assert_frame_equal_local_categoricals(df_a: DataFrame, df_b: DataFrame) -> None:
     """Assert frame equal for frames containing categoricals."""
     for (a_name, a_value), (b_name, b_value) in zip(
         df_a.schema.items(), df_b.schema.items()
@@ -408,7 +506,7 @@ def assert_frame_equal_local_categoricals(
             print(f"{a_value} != {b_value}")
             raise AssertionError
 
-    cat_to_str = pli.col(Categorical).cast(str)
+    cat_to_str = F.col(Categorical).cast(str)
     assert_frame_equal(df_a.with_columns(cat_to_str), df_b.with_columns(cat_to_str))
-    cat_to_phys = pli.col(Categorical).to_physical()
+    cat_to_phys = F.col(Categorical).to_physical()
     assert_frame_equal(df_a.with_columns(cat_to_phys), df_b.with_columns(cat_to_phys))

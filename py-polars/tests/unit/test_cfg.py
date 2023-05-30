@@ -6,13 +6,14 @@ from typing import Iterator
 import pytest
 
 import polars as pl
+from polars.config import _get_float_fmt
 from polars.testing import assert_frame_equal
 
 
 @pytest.fixture(autouse=True)
 def _environ() -> Iterator[None]:
-    """Fixture to restore the environment variables/state after the test."""
-    with pl.StringCache(), pl.Config():
+    """Fixture to restore the environment after/during tests."""
+    with pl.StringCache(), pl.Config(restore_defaults=True):
         yield
 
 
@@ -20,8 +21,7 @@ def test_ascii_tables() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
 
     # note: expect to render ascii only within the given scope
-    with pl.Config() as cfg:
-        cfg.set_ascii_tables(True)
+    with pl.Config(set_ascii_tables=True):
         assert (
             str(df) == "shape: (3, 3)\n"
             "+-----+-----+-----+\n"
@@ -82,9 +82,9 @@ def test_set_tbl_cols() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
 
     pl.Config.set_tbl_cols(1)
-    assert str(df).split("\n")[2] == "│ a   ┆ ... │"
+    assert str(df).split("\n")[2] == "│ a   ┆ … │"
     pl.Config.set_tbl_cols(2)
-    assert str(df).split("\n")[2] == "│ a   ┆ ... ┆ c   │"
+    assert str(df).split("\n")[2] == "│ a   ┆ … ┆ c   │"
     pl.Config.set_tbl_cols(3)
     assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ c   │"
 
@@ -92,9 +92,9 @@ def test_set_tbl_cols() -> None:
         {"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9], "d": [10, 11, 12]}
     )
     pl.Config.set_tbl_cols(2)
-    assert str(df).split("\n")[2] == "│ a   ┆ ... ┆ d   │"
+    assert str(df).split("\n")[2] == "│ a   ┆ … ┆ d   │"
     pl.Config.set_tbl_cols(3)
-    assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ ... ┆ d   │"
+    assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ … ┆ d   │"
     pl.Config.set_tbl_cols(-1)
     assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ c   ┆ d   │"
 
@@ -111,10 +111,10 @@ def test_set_tbl_rows() -> None:
         "│ --- ┆ --- ┆ --- │\n"
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
-        "│ ... ┆ ... ┆ ... │\n"
+        "│ …   ┆ …   ┆ …   │\n"
         "└─────┴─────┴─────┘"
     )
-    assert str(ser) == "shape: (5,)\n" "Series: 'ser' [i64]\n" "[\n" "\t...\n" "]"
+    assert str(ser) == "shape: (5,)\n" "Series: 'ser' [i64]\n" "[\n" "\t…\n" "]"
 
     pl.Config.set_tbl_rows(1)
     assert (
@@ -125,12 +125,10 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 5   ┆ 9   │\n"
-        "│ ... ┆ ... ┆ ... │\n"
+        "│ …   ┆ …   ┆ …   │\n"
         "└─────┴─────┴─────┘"
     )
-    assert (
-        str(ser) == "shape: (5,)\n" "Series: 'ser' [i64]\n" "[\n" "\t1\n" "\t...\n" "]"
-    )
+    assert str(ser) == "shape: (5,)\n" "Series: 'ser' [i64]\n" "[\n" "\t1\n" "\t…\n" "]"
 
     pl.Config.set_tbl_rows(2)
     assert (
@@ -141,7 +139,7 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 5   ┆ 9   │\n"
-        "│ ... ┆ ... ┆ ... │\n"
+        "│ …   ┆ …   ┆ …   │\n"
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
@@ -150,7 +148,7 @@ def test_set_tbl_rows() -> None:
         "Series: 'ser' [i64]\n"
         "[\n"
         "\t1\n"
-        "\t...\n"
+        "\t…\n"
         "\t5\n"
         "]"
     )
@@ -164,7 +162,7 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 5   ┆ 9   │\n"
-        "│ ... ┆ ... ┆ ... │\n"
+        "│ 2   ┆ 6   ┆ 10  │\n"
         "│ 3   ┆ 7   ┆ 11  │\n"
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
@@ -174,7 +172,7 @@ def test_set_tbl_rows() -> None:
         "Series: 'ser' [i64]\n"
         "[\n"
         "\t1\n"
-        "\t...\n"
+        "\t…\n"
         "\t4\n"
         "\t5\n"
         "]"
@@ -200,7 +198,7 @@ def test_set_tbl_rows() -> None:
         "[\n"
         "\t1\n"
         "\t2\n"
-        "\t...\n"
+        "\t3\n"
         "\t4\n"
         "\t5\n"
         "]"
@@ -223,7 +221,7 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 6   ┆ 11  │\n"
-        "│ ... ┆ ... ┆ ... │\n"
+        "│ …   ┆ …   ┆ …   │\n"
         "│ 4   ┆ 9   ┆ 14  │\n"
         "│ 5   ┆ 10  ┆ 15  │\n"
         "└─────┴─────┴─────┘"
@@ -279,8 +277,7 @@ def test_set_tbl_formats() -> None:
     )
 
     pl.Config().set_tbl_formatting("ASCII_BORDERS_ONLY_CONDENSED")
-    with pl.Config() as cfg:
-        cfg.set_tbl_hide_dtype_separator(True)
+    with pl.Config(tbl_hide_dtype_separator=True):
         assert str(df) == (
             "shape: (3, 3)\n"
             "+-----------------+\n"
@@ -294,8 +291,10 @@ def test_set_tbl_formats() -> None:
         )
 
     # temporarily scope "nothing" style, with no data types
-    with pl.Config() as cfg:
-        cfg.set_tbl_formatting("NOTHING").set_tbl_hide_column_data_types(True)
+    with pl.Config(
+        tbl_formatting="NOTHING",
+        tbl_hide_column_data_types=True,
+    ):
         assert str(df) == (
             "shape: (3, 3)\n"
             " foo  bar  ham \n"
@@ -327,7 +326,7 @@ def test_set_tbl_width_chars() -> None:
             "this is 10": [4, 5, 6],
         }
     )
-    assert max(len(line) for line in str(df).split("\n")) == 72
+    assert max(len(line) for line in str(df).split("\n")) == 70
 
     pl.Config.set_tbl_width_chars(60)
     assert max(len(line) for line in str(df).split("\n")) == 60
@@ -387,12 +386,87 @@ def test_shape_below_table_and_inlined_dtype() -> None:
     )
 
 
+def test_shape_format_for_big_numbers() -> None:
+    df = pl.DataFrame({"a": range(1, 1001), "b": range(1001, 1001 + 1000)})
+
+    pl.Config.set_tbl_column_data_type_inline(True).set_tbl_dataframe_shape_below(True)
+    pl.Config.set_tbl_formatting("UTF8_FULL", rounded_corners=True)
+    assert (
+        str(df) == ""
+        "╭─────────┬─────────╮\n"
+        "│ a (i64) ┆ b (i64) │\n"
+        "╞═════════╪═════════╡\n"
+        "│ 1       ┆ 1001    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 2       ┆ 1002    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 3       ┆ 1003    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 4       ┆ 1004    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 997     ┆ 1997    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 998     ┆ 1998    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 999     ┆ 1999    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 1000    ┆ 2000    │\n"
+        "╰─────────┴─────────╯\n"
+        "shape: (1_000, 2)"
+    )
+
+    pl.Config.set_tbl_column_data_type_inline(True).set_tbl_dataframe_shape_below(False)
+    assert (
+        str(df) == "shape: (1_000, 2)\n"
+        "╭─────────┬─────────╮\n"
+        "│ a (i64) ┆ b (i64) │\n"
+        "╞═════════╪═════════╡\n"
+        "│ 1       ┆ 1001    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 2       ┆ 1002    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 3       ┆ 1003    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 4       ┆ 1004    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 997     ┆ 1997    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 998     ┆ 1998    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 999     ┆ 1999    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 1000    ┆ 2000    │\n"
+        "╰─────────┴─────────╯"
+    )
+
+    pl.Config.set_tbl_rows(0)
+    ser = pl.Series("ser", range(1000))
+    assert str(ser) == "shape: (1_000,)\n" "Series: 'ser' [i64]\n" "[\n" "\t…\n" "]"
+
+    pl.Config.set_tbl_rows(1)
+    pl.Config.set_tbl_cols(1)
+    df = pl.DataFrame({str(col_num): 1 for col_num in range(1000)})
+
+    assert (
+        str(df) == "shape: (1, 1_000)\n"
+        "╭─────────┬───╮\n"
+        "│ 0 (i64) ┆ … │\n"
+        "╞═════════╪═══╡\n"
+        "│ 1       ┆ … │\n"
+        "╰─────────┴───╯"
+    )
+
+
 def test_string_cache() -> None:
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
 
     # ensure cache is off when casting to categorical; the join will fail
-    pl.toggle_string_cache(False)
+    pl.enable_string_cache(False)
     assert pl.using_string_cache() is False
 
     df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
@@ -401,7 +475,7 @@ def test_string_cache() -> None:
         _ = df1a.join(df2a, on="a", how="inner")
 
     # now turn on the cache
-    pl.toggle_string_cache(True)
+    pl.enable_string_cache(True)
     assert pl.using_string_cache() is True
 
     df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
@@ -418,6 +492,7 @@ def test_config_load_save() -> None:
     # set some config options...
     pl.Config.set_tbl_cols(12)
     pl.Config.set_verbose(True)
+    pl.Config.set_fmt_float("full")
     assert os.environ.get("POLARS_VERBOSE") == "1"
 
     cfg = pl.Config.save()
@@ -435,6 +510,7 @@ def test_config_load_save() -> None:
     # ...and confirm the saved options were set.
     assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
     assert os.environ.get("POLARS_VERBOSE") == "1"
+    assert _get_float_fmt() == "full"
 
     # restore all default options (unsets from env)
     pl.Config.restore_defaults()
@@ -444,6 +520,7 @@ def test_config_load_save() -> None:
 
     assert os.environ.get("POLARS_FMT_MAX_COLS") is None
     assert os.environ.get("POLARS_VERBOSE") is None
+    assert _get_float_fmt() == "mixed"
 
 
 def test_config_scope() -> None:

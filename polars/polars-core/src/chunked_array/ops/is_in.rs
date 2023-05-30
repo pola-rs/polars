@@ -1,7 +1,5 @@
 use std::hash::Hash;
 
-use hashbrown::hash_set::HashSet;
-
 use crate::prelude::*;
 use crate::utils::{try_get_supertype, CustomIterTools};
 
@@ -10,7 +8,7 @@ where
     T: PolarsNumericType,
     P: Eq + Hash + Copy,
 {
-    let mut set = HashSet::with_capacity(other.len());
+    let mut set = PlHashSet::with_capacity(other.len());
 
     let other = ca.unpack_series_matching_type(other)?;
     other.downcast_iter().for_each(|iter| {
@@ -105,13 +103,7 @@ where
                     DataType::UInt16 | DataType::Int16 => unsafe {
                         is_in_helper::<T, u16>(self, other)
                     },
-                    _ => Err(PolarsError::ComputeError(
-                        format!(
-                            "Data type {:?} not supported in is_in operation",
-                            self.dtype()
-                        )
-                        .into(),
-                    )),
+                    dt => polars_bail!(opq = is_in, dt),
                 }
             }
         }
@@ -170,67 +162,19 @@ impl IsIn for Utf8Chunked {
                     unreachable!()
                 }
             }
-            DataType::List(dt) if DataType::Utf8 == **dt => {
-                let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
-                    let value = self.get(0);
-                    other
-                        .list()?
-                        .amortized_iter()
-                        .map(|opt_s| {
-                            opt_s.map(|s| {
-                                let ca = s.as_ref().unpack::<Utf8Type>().unwrap();
-                                ca.into_iter().any(|a| a == value)
-                            }) == Some(true)
-                        })
-                        .collect_trusted()
-                } else {
-                    self.into_iter()
-                        .zip(other.list()?.amortized_iter())
-                        .map(|(value, series)| match (value, series) {
-                            (val, Some(series)) => {
-                                let ca = series.as_ref().unpack::<Utf8Type>().unwrap();
-                                ca.into_iter().any(|a| a == val)
-                            }
-                            _ => false,
-                        })
-                        .collect_trusted()
-                };
-                ca.rename(self.name());
-                Ok(ca)
-            }
-            DataType::Utf8 => {
-                let mut set = HashSet::with_capacity(other.len());
-
-                let other = other.utf8()?;
-                other.downcast_iter().for_each(|iter| {
-                    iter.into_iter().for_each(|opt_val| {
-                        set.insert(opt_val);
-                    })
-                });
-                let mut ca: BooleanChunked = self
-                    .into_iter()
-                    .map(|opt_val| set.contains(&opt_val))
-                    .collect_trusted();
-                ca.rename(self.name());
-                Ok(ca)
-            }
-            _ => Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
-                    self.dtype(),
-                    other.dtype()
-                )
-                .into(),
-            )),
+            DataType::List(dt) if DataType::Utf8 == **dt => self.as_binary().is_in(
+                &other
+                    .cast(&DataType::List(Box::new(DataType::Binary)))
+                    .unwrap(),
+            ),
+            DataType::Utf8 => self
+                .as_binary()
+                .is_in(&other.cast(&DataType::Binary).unwrap()),
+            _ => polars_bail!(opq = is_in, self.dtype(), other.dtype()),
         }
-        .map(|mut ca| {
-            ca.rename(self.name());
-            ca
-        })
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl IsIn for BinaryChunked {
     fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         match other.dtype() {
@@ -263,7 +207,7 @@ impl IsIn for BinaryChunked {
                 Ok(ca)
             }
             DataType::Binary => {
-                let mut set = HashSet::with_capacity(other.len());
+                let mut set = PlHashSet::with_capacity(other.len());
 
                 let other = other.binary()?;
                 other.downcast_iter().for_each(|iter| {
@@ -278,14 +222,7 @@ impl IsIn for BinaryChunked {
                 ca.rename(self.name());
                 Ok(ca)
             }
-            _ => Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
-                    self.dtype(),
-                    other.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_in, self.dtype(), other.dtype()),
         }
         .map(|mut ca| {
             ca.rename(self.name());
@@ -335,14 +272,7 @@ impl IsIn for BooleanChunked {
                 let has_false = !other.all();
                 Ok(self.apply(|v| if v { has_true } else { has_false }))
             }
-            _ => Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
-                    self.dtype(),
-                    other.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_in, self.dtype(), other.dtype()),
         }
         .map(|mut ca| {
             ca.rename(self.name());
@@ -389,28 +319,39 @@ impl IsIn for StructChunked {
                 Ok(ca)
             }
             _ => {
+                let other = other.cast(&other.dtype().to_physical()).unwrap();
                 let other = other.struct_()?;
 
-                if self.fields().len() != other.fields().len() {
-                    return Err(PolarsError::ComputeError(format!("Cannot compare structs in 'is_in', the number of fields differ. Fields left: {}, fields right: {}", self.fields().len(), other.fields().len()).into()));
-                }
+                polars_ensure!(
+                    self.fields().len() == other.fields().len(),
+                    ComputeError: "`is_in`: mismatch in the number of struct fields: {} and {}",
+                    self.fields().len(), other.fields().len()
+                );
 
-                let out = self
-                    .fields()
-                    .iter()
-                    .zip(other.fields())
-                    .map(|(lhs, rhs)| lhs.is_in(rhs))
-                    .collect::<PolarsResult<Vec<_>>>()?;
-
-                let out = out.into_iter().reduce(|acc, val| {
-                    // all false
-                    if !acc.any() {
-                        acc
-                    } else {
-                        acc & val
-                    }
+                let mut anyvalues = Vec::with_capacity(other.len() * other.fields().len());
+                // Safety:
+                // the iterator is unsafe as the lifetime is tied to the iterator
+                // so we copy to an owned buffer first
+                other.into_iter().for_each(|val| {
+                    anyvalues.extend_from_slice(val);
                 });
-                out.ok_or_else(|| PolarsError::ComputeError("no fields in struct".into()))
+
+                // then we fill the set
+                let mut set = PlHashSet::with_capacity(other.len());
+                for key in anyvalues.chunks_exact(other.fields().len()) {
+                    set.insert(key);
+                }
+                // physical self
+                let self_ca = self.cast(&self.dtype().to_physical()).unwrap();
+                let self_ca = self_ca.struct_().unwrap();
+
+                // and then we check for membership
+                let mut ca: BooleanChunked = self_ca
+                    .into_iter()
+                    .map(|vals| set.contains(&vals))
+                    .collect();
+                ca.rename(self.name());
+                Ok(ca)
             }
         }
     }

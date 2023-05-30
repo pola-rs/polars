@@ -1,8 +1,8 @@
+mod functions;
 mod generic;
 mod groupby;
 mod hstack;
 mod joins;
-mod melt;
 mod projection;
 mod rename;
 #[cfg(feature = "semi_anti_join")]
@@ -19,7 +19,6 @@ use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::groupby::process_groupby;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
-use crate::prelude::optimizer::projection_pushdown::melt::process_melt;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
 use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
@@ -107,7 +106,7 @@ fn add_str_to_accumulated(
     expr_arena: &mut Arena<AExpr>,
 ) {
     // if empty: all columns are already projected.
-    if !acc_projections.is_empty() {
+    if !acc_projections.is_empty() && !projected_names.contains(name) {
         let node = expr_arena.add(AExpr::Column(Arc::from(name)));
         add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
     }
@@ -128,9 +127,7 @@ fn update_scan_schema(
     for node in acc_projections.iter() {
         for name in aexpr_to_leaf_names(*node, expr_arena) {
             let item = schema.get_full(&name).ok_or_else(|| {
-                PolarsError::ComputeError(
-                    format!("column '{name}' not available in schema {schema:?}").into(),
-                )
+                polars_err!(ComputeError: "column '{}' not available in schema {:?}", name, schema)
             })?;
             new_cols.push(item);
         }
@@ -497,7 +494,7 @@ impl ProjectionPushDown {
                 };
                 Ok(PythonScan { options, predicate })
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 path,
                 file_info,
@@ -562,44 +559,30 @@ impl ProjectionPushDown {
                     args,
                 })
             }
-            Explode {
-                input,
-                columns,
-                schema,
-            } => {
-                columns.iter().for_each(|name| {
-                    add_str_to_accumulated(
-                        name,
-                        &mut acc_projections,
-                        &mut projected_names,
-                        expr_arena,
-                    )
-                });
-                self.pushdown_and_assign(
-                    input,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
-                Ok(Explode {
-                    input,
-                    columns,
-                    schema,
-                })
-            }
             Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
-                if let Some(subset) = options.subset.as_ref() {
-                    subset.iter().for_each(|name| {
-                        add_str_to_accumulated(
-                            name,
-                            &mut acc_projections,
-                            &mut projected_names,
-                            expr_arena,
-                        )
-                    })
+                if !acc_projections.is_empty() {
+                    if let Some(subset) = options.subset.as_ref() {
+                        subset.iter().for_each(|name| {
+                            add_str_to_accumulated(
+                                name,
+                                &mut acc_projections,
+                                &mut projected_names,
+                                expr_arena,
+                            )
+                        })
+                    } else {
+                        // distinct needs all columns
+                        let input_schema = lp_arena.get(input).schema(lp_arena);
+                        for name in input_schema.iter_names() {
+                            add_str_to_accumulated(
+                                name.as_str(),
+                                &mut acc_projections,
+                                &mut projected_names,
+                                expr_arena,
+                            )
+                        }
+                    }
                 }
 
                 self.pushdown_and_assign(
@@ -632,21 +615,6 @@ impl ProjectionPushDown {
                 )?;
                 Ok(Selection { predicate, input })
             }
-            Melt {
-                input,
-                args,
-                schema,
-            } => process_melt(
-                self,
-                input,
-                args,
-                schema,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            ),
             Aggregate {
                 input,
                 keys,
@@ -755,88 +723,16 @@ impl ProjectionPushDown {
             MapFunction {
                 input,
                 ref function,
-            } => {
-                let lp = MapFunction {
-                    input,
-                    function: function.clone(),
-                };
-
-                if let FunctionNode::Rename {
-                    existing,
-                    new,
-                    swapping,
-                } = function
-                {
-                    process_rename(
-                        &mut acc_projections,
-                        &mut projected_names,
-                        expr_arena,
-                        existing,
-                        new,
-                        *swapping,
-                    )?;
-                    self.pushdown_and_assign(
-                        input,
-                        acc_projections,
-                        projected_names,
-                        projections_seen,
-                        lp_arena,
-                        expr_arena,
-                    )?;
-                    return Ok(lp);
-                }
-
-                let MapFunction {ref function, ..} = lp else { unreachable!() };
-
-                if function.allow_projection_pd() && !acc_projections.is_empty() {
-                    let original_acc_projection_len = acc_projections.len();
-
-                    // add columns needed for the function.
-                    for name in function.additional_projection_pd_columns() {
-                        let node = expr_arena.add(AExpr::Column(name.clone()));
-                        add_expr_to_accumulated(
-                            node,
-                            &mut acc_projections,
-                            &mut projected_names,
-                            expr_arena,
-                        )
-                    }
-                    let expands_schema = matches!(function, FunctionNode::Unnest { .. });
-
-                    let local_projections = self.pushdown_and_assign_check_schema(
-                        input,
-                        acc_projections,
-                        projections_seen,
-                        lp_arena,
-                        expr_arena,
-                        expands_schema,
-                    )?;
-                    if local_projections.is_empty() {
-                        Ok(lp)
-                    } else {
-                        // if we would project, we would remove pushed down predicates
-                        if local_projections.len() < original_acc_projection_len {
-                            Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                                .with_columns(local_projections)
-                                .build())
-                            // all projections are local
-                        } else {
-                            Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                                .project(local_projections)
-                                .build())
-                        }
-                    }
-                } else {
-                    // restart projection pushdown
-                    self.no_pushdown_restart_opt(
-                        lp,
-                        acc_projections,
-                        projections_seen,
-                        lp_arena,
-                        expr_arena,
-                    )
-                }
-            }
+            } => functions::process_functions(
+                self,
+                input,
+                function,
+                acc_projections,
+                projected_names,
+                projections_seen,
+                lp_arena,
+                expr_arena,
+            ),
             lp @ Union { .. } => {
                 self.has_joins_or_unions = true;
                 process_generic(

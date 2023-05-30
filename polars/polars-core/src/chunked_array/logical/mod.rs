@@ -6,9 +6,9 @@ pub use date::*;
 mod datetime;
 #[cfg(feature = "dtype-datetime")]
 pub use datetime::*;
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 mod decimal;
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 pub use decimal::*;
 #[cfg(feature = "dtype-duration")]
 mod duration;

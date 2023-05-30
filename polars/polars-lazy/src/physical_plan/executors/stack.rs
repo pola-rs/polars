@@ -13,6 +13,7 @@ impl StackExec {
         state: &mut ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
+        state.expr_cache = Some(Default::default());
         let res = if self.has_windows {
             // we have a different run here
             // to ensure the window functions run sequential and share caches
@@ -25,7 +26,8 @@ impl StackExec {
                     .collect::<PolarsResult<Vec<_>>>()
             })?
         };
-        state.clear_expr_cache();
+        state.clear_window_expr_cache();
+        state.expr_cache = None;
 
         let schema = &*self.input_schema;
         df._add_columns(res, schema)?;
@@ -50,7 +52,7 @@ impl Executor for StackExec {
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let name = column_delimited("with_column".to_string(), &by);
+            let name = comma_delimited("with_column".to_string(), &by);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

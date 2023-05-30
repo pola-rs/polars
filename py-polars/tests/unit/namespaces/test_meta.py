@@ -12,6 +12,9 @@ def test_meta_pop_and_cmp() -> None:
     assert first.meta == pl.col("foo")
     assert first.meta != pl.col("bar")
 
+    assert first.meta.eq(pl.col("foo"))
+    assert first.meta.ne(pl.col("bar"))
+
 
 def test_root_and_output_names() -> None:
     e = pl.col("foo") * pl.col("bar")
@@ -35,7 +38,7 @@ def test_root_and_output_names() -> None:
 
     with pytest.raises(
         pl.ComputeError,
-        match="Cannot determine an output column without a context for this expression",
+        match="cannot determine output column without a context for this expression",
     ):
         pl.all().suffix("_").meta.output_name()
 

@@ -1,6 +1,7 @@
-#[cfg(feature = "dtype-binary")]
 mod binary;
 mod boolean;
+#[cfg(feature = "dtype-array")]
+pub mod fixed_size_list;
 mod from;
 pub mod list;
 mod primitive;
@@ -13,9 +14,10 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-#[cfg(feature = "dtype-binary")]
 pub use binary::*;
 pub use boolean::*;
+#[cfg(feature = "dtype-array")]
+pub(crate) use fixed_size_list::*;
 pub use list::*;
 pub use primitive::*;
 pub use utf8::*;
@@ -167,7 +169,6 @@ where
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<B> NewChunkedArray<BinaryType, B> for BinaryChunked
 where
     B: AsRef<[u8]>,

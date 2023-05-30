@@ -52,10 +52,12 @@ mod private {
 macro_rules! impl_is_float {
     ($tp:ty) => {
         unsafe impl IsFloat for $tp {
+            #[inline]
             fn is_float() -> bool {
                 true
             }
 
+            #[inline]
             fn is_nan(&self) -> bool {
                 <$tp>::is_nan(*self)
             }

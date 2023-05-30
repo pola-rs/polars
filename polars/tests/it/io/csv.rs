@@ -341,6 +341,21 @@ fn test_new_line_escape() {
 }
 
 #[test]
+fn test_new_line_escape_on_header() {
+    let s = r#""length","header with
+new line character","width"
+5.1,3.5,1.4
+"#;
+    let file: Cursor<&str> = Cursor::new(s);
+    let df: DataFrame = CsvReader::new(file).has_header(true).finish().unwrap();
+    assert_eq!(df.shape(), (1, 3));
+    assert_eq!(
+        df.get_column_names(),
+        &["length", "header with\nnew line character", "width"]
+    );
+}
+
+#[test]
 fn test_quoted_numeric() {
     // CSV fields may be quoted
     let s = r#""foo","bar"
@@ -357,13 +372,13 @@ fn test_quoted_numeric() {
 #[test]
 fn test_empty_bytes_to_dataframe() {
     let fields = vec![Field::new("test_field", DataType::Utf8)];
-    let schema = Schema::from(fields.into_iter());
+    let schema = Schema::from_iter(fields);
     let file = Cursor::new(vec![]);
 
     let result = CsvReader::new(file)
         .has_header(false)
-        .with_columns(Some(schema.iter_names().cloned().collect()))
-        .with_schema(&schema)
+        .with_columns(Some(schema.iter_names().map(|s| s.to_string()).collect()))
+        .with_schema(Arc::new(schema))
         .finish();
     assert!(result.is_ok())
 }
@@ -392,14 +407,11 @@ fn test_missing_value() {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_schema(&Schema::from(
-            vec![
-                Field::new("foo", DataType::UInt32),
-                Field::new("bar", DataType::UInt32),
-                Field::new("ham", DataType::UInt32),
-            ]
-            .into_iter(),
-        ))
+        .with_schema(Arc::new(Schema::from_iter([
+            Field::new("foo", DataType::UInt32),
+            Field::new("bar", DataType::UInt32),
+            Field::new("ham", DataType::UInt32),
+        ])))
         .finish()
         .unwrap();
     assert_eq!(df.column("ham").unwrap().len(), 3)
@@ -417,13 +429,10 @@ AUDCAD,1616455921,0.96212,0.95666,1
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_dtypes(Some(&Schema::from(
-            vec![Field::new(
-                "b",
-                DataType::Datetime(TimeUnit::Nanoseconds, None),
-            )]
-            .into_iter(),
-        )))
+        .with_dtypes(Some(Arc::new(Schema::from_iter([Field::new(
+            "b",
+            DataType::Datetime(TimeUnit::Nanoseconds, None),
+        )]))))
         .finish()?;
 
     assert_eq!(
@@ -590,7 +599,7 @@ fn test_automatic_datetime_parsing() -> PolarsResult<()> {
 ";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).with_parse_dates(true).finish()?;
+    let df = CsvReader::new(file).with_try_parse_dates(true).finish()?;
 
     let ts = df.column("timestamp")?;
     assert_eq!(
@@ -606,14 +615,14 @@ fn test_automatic_datetime_parsing() -> PolarsResult<()> {
 #[cfg(feature = "temporal")]
 fn test_automatic_datetime_parsing_default_formats() -> PolarsResult<()> {
     let csv = r"ts_dmy,ts_dmy_f,ts_dmy_p
-01/01/21 00:00:00,31-01-2021T00:00:00.123,31-01-2021 11:00 AM
-01/01/21 00:15:00,31-01-2021T00:15:00.123,31-01-2021 01:00 PM
-01/01/21 00:30:00,31-01-2021T00:30:00.123,31-01-2021 01:15 PM
-01/01/21 00:45:00,31-01-2021T00:45:00.123,31-01-2021 01:30 PM
+01/01/2021 00:00:00,31-01-2021T00:00:00.123,31-01-2021 11:00
+01/01/2021 00:15:00,31-01-2021T00:15:00.123,31-01-2021 01:00
+01/01/2021 00:30:00,31-01-2021T00:30:00.123,31-01-2021 01:15
+01/01/2021 00:45:00,31-01-2021T00:45:00.123,31-01-2021 01:30
 ";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).with_parse_dates(true).finish()?;
+    let df = CsvReader::new(file).with_try_parse_dates(true).finish()?;
 
     for col in df.get_column_names() {
         let ts = df.column(col)?;
@@ -701,7 +710,7 @@ fn test_ignore_parse_dates() -> PolarsResult<()> {
     use DataType::*;
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
-        .with_parse_dates(true)
+        .with_try_parse_dates(true)
         .with_dtypes_slice(Some(&[Utf8, Utf8, Utf8]))
         .finish()?;
 
@@ -1033,7 +1042,7 @@ fn test_empty_csv() {
 }
 
 #[test]
-fn test_parse_dates() -> PolarsResult<()> {
+fn test_try_parse_dates() -> PolarsResult<()> {
     let csv = "date
 1745-04-02
 1742-03-21
@@ -1044,7 +1053,7 @@ fn test_parse_dates() -> PolarsResult<()> {
 ";
     let file = Cursor::new(csv);
 
-    let out = CsvReader::new(file).with_parse_dates(true).finish()?;
+    let out = CsvReader::new(file).with_try_parse_dates(true).finish()?;
     assert_eq!(out.dtypes(), &[DataType::Date]);
     assert_eq!(out.column("date")?.null_count(), 1);
     Ok(())
@@ -1066,15 +1075,30 @@ fn test_whitespace_skipping() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_parse_dates_3380() -> PolarsResult<()> {
+fn test_try_parse_dates_3380() -> PolarsResult<()> {
     let csv = "lat;lon;validdate;t_2m:C;precip_1h:mm
 46.685;7.953;2022-05-10T07:07:12Z;6.1;0.00
 46.685;7.953;2022-05-10T08:07:12Z;8.8;0.00";
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .with_delimiter(b';')
-        .with_parse_dates(true)
+        .with_try_parse_dates(true)
         .finish()?;
     assert_eq!(df.column("validdate")?.null_count(), 0);
+    Ok(())
+}
+
+#[test]
+fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
+    let csv = r#"
+"ABC","DEF",
+"24.5","  4.1"
+"#;
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let col_1 = df.column("ABC").unwrap();
+    let col_2 = df.column("DEF").unwrap();
+    assert_eq!(col_1.get(0)?, AnyValue::Float64(24.5));
+    assert_eq!(col_2.get(0)?, AnyValue::Float64(4.1));
     Ok(())
 }

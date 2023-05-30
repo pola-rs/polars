@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use dirs::home_dir;
+use home::home_dir;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 
@@ -51,13 +51,6 @@ pub(crate) fn columns_to_projection(
 ) -> PolarsResult<Vec<usize>> {
     use ahash::AHashMap;
 
-    let err = |column: &str| {
-        let valid_columns: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
-        PolarsError::ColumnNotFound(
-            format!("Unable to find \"{column}\". Valid columns: {valid_columns:?}",).into(),
-        )
-    };
-
     let mut prj = Vec::with_capacity(columns.len());
     if columns.len() > 100 {
         let mut column_names = AHashMap::with_capacity(schema.fields.len());
@@ -66,11 +59,13 @@ pub(crate) fn columns_to_projection(
         });
 
         for column in columns.iter() {
-            if let Some(&i) = column_names.get(column.as_str()) {
-                prj.push(i)
-            } else {
-                return Err(err(column));
-            }
+            let Some(&i) = column_names.get(column.as_str()) else {
+                polars_bail!(
+                    ColumnNotFound:
+                    "unable to find column {:?}; valid columns: {:?}", column, schema.get_names(),
+                );
+            };
+            prj.push(i);
         }
     } else {
         for column in columns.iter() {
@@ -88,10 +83,25 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSiz
     if !dfs.is_empty() {
         let mut previous = dfs[0].1 + offset;
         for (df, n_read) in &mut dfs[1..] {
-            if let Some(s) = df.get_columns_mut().get_mut(0) {
+            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
                 *s = &*s + previous;
             }
             previous += *n_read;
+        }
+    }
+}
+
+/// Because of threading every row starts from `0` or from `offset`.
+/// We must correct that so that they are monotonically increasing.
+pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
+    if !dfs.is_empty() {
+        let mut previous = dfs[0].height() as IdxSize + offset;
+        for df in &mut dfs[1..] {
+            let n_read = df.height() as IdxSize;
+            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
+                *s = &*s + previous;
+            }
+            previous += n_read;
         }
     }
 }

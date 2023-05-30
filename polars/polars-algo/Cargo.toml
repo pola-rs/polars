@@ -1,7 +1,6 @@
 [package]
 name = "polars-algo"
 version.workspace = true
-authors = ["hpux735 <william@housedillon.com>"]
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"
@@ -10,9 +9,9 @@ description = "Algorithms built upon Polars primitives"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars-core = { version = "0.27.1", path = "../polars-core", features = ["private", "dtype-categorical", "asof_join"], default-features = false }
-polars-lazy = { version = "0.27.1", path = "../polars-lazy", features = ["asof_join", "concat_str", "strings"] }
-polars-ops = { version = "0.27.1", path = "../polars-ops", features = ["dtype-categorical", "asof_join"], default-features = false }
+polars-core = { version = "0.30.0", path = "../polars-core", features = ["private", "dtype-categorical", "asof_join"], default-features = false }
+polars-lazy = { version = "0.30.0", path = "../polars-lazy", features = ["asof_join", "concat_str", "strings"] }
+polars-ops = { version = "0.30.0", path = "../polars-ops", features = ["dtype-categorical", "asof_join"], default-features = false }
 
 [package.metadata.docs.rs]
 all-features = true
