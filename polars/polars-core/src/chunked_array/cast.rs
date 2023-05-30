@@ -174,7 +174,7 @@ impl ChunkCast for Utf8Chunked {
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => match (precision, scale) {
-                (Some(precision), Some(scale)) => {
+                (precision, Some(scale)) => {
                     let chunks = self
                         .downcast_iter()
                         .map(|arr| {
@@ -185,7 +185,7 @@ impl ChunkCast for Utf8Chunked {
                         .collect();
                     unsafe {
                         Ok(Int128Chunked::from_chunks(self.name(), chunks)
-                            .into_decimal_unchecked(Some(*precision), *scale)
+                            .into_decimal_unchecked(*precision, *scale)
                             .into_series())
                     }
                 }

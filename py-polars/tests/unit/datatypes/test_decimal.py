@@ -118,3 +118,19 @@ def test_utf8_to_decimal() -> None:
         D("143.09"),
         D("143.90"),
     ]
+
+
+def test_read_csv_decimal(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
+    csv = """a,b
+    123.12,a
+    1.1,a
+    0.01,a"""
+
+    df = pl.read_csv(csv.encode(), dtypes={"a": pl.Decimal})
+    assert df.dtypes == [pl.Decimal(None, 20), pl.Utf8]
+    assert df["a"].to_list() == [
+        D("123.12000000000000000000"),
+        D("1.10000000000000000000"),
+        D("0.10000000000000000000"),
+    ]
