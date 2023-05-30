@@ -61,7 +61,8 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8
                     else if rhs_s < scale {
                         // scale: 2
                         // number: x.09
-                        // sign digits: 1
+                        // significant digits: 1
+                        // leading_zeros: 1
                         // parsed: 9
                         // so this is correct
                         if leading_zeros_rhs + rhs_s == scale {
@@ -69,17 +70,17 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8
                         }
                         // scale: 2
                         // number: x.9
-                        // sign digits: 1
+                        // significant digits: 1
                         // parsed: 9
                         // so we must multiply by 10 to get 90
                         else {
-                            let diff = scale as u32 - rhs_s as u32;
+                            let diff = scale as u32 - (rhs_s + leading_zeros_rhs) as u32;
                             Some((lhs, rhs * 10i128.pow(diff)))
                         }
                     }
                     // scale: 2
                     // number: x.90
-                    // sign digits: 2
+                    // significant digits: 2
                     // parsed: 90
                     // so this is correct
                     else {
@@ -128,6 +129,13 @@ mod test {
         assert_eq!(
             deserialize_decimal(val.as_bytes(), precision, scale),
             Some(14390)
+        );
+
+        let scale = 20;
+        let val = "0.01";
+        assert_eq!(
+            deserialize_decimal(val.as_bytes(), precision, scale),
+            Some(1000000000000000000)
         );
     }
 }
