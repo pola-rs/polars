@@ -68,6 +68,8 @@ To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 
 ## Python
 
+hi
+
 ```python
 >>> import polars as pl
 >>> df = pl.DataFrame(
