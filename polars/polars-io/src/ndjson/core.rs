@@ -159,7 +159,6 @@ impl<'a> CoreJsonReader<'a> {
                 let mut cursor = Cursor::new(bytes);
 
                 let data_type = polars_json::ndjson::infer(&mut cursor, infer_schema_len)?;
-                dbg!(&data_type);
                 let schema = StructArray::get_fields(&data_type).iter().collect();
 
                 Cow::Owned(schema)
