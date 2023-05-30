@@ -1,11 +1,11 @@
 name: Test Python
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
-    paths:
-      - py-polars/**
-      - polars/**
-      - .github/workflows/test-python.yml
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
