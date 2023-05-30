@@ -555,7 +555,7 @@ def _pandas_series_to_arrow(
         # contains duplicated columns and a duplicated column is requested with df["a"].
         raise ValueError(
             "Duplicate column names found: "
-            + f"{str(values.columns.tolist())}"  # type: ignore[union-attr]
+            + f"{values.columns.tolist()!s}"  # type: ignore[union-attr]
         )
 
 

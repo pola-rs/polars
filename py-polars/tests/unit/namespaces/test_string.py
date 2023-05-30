@@ -66,9 +66,9 @@ def test_str_decode() -> None:
 
 def test_str_decode_exception() -> None:
     s = pl.Series(["not a valid", "626172", None])
-    with pytest.raises(Exception):
+    with pytest.raises(pl.ComputeError):
         s.str.decode(encoding="hex")
-    with pytest.raises(Exception):
+    with pytest.raises(pl.ComputeError):
         s.str.decode(encoding="base64")
     with pytest.raises(ValueError):
         s.str.decode("utf8")  # type: ignore[arg-type]
