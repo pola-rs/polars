@@ -197,6 +197,20 @@ pub fn to_compute_err(err: impl Display) -> PolarsError {
     PolarsError::ComputeError(err.to_string().into())
 }
 
+#[macro_export]
+macro_rules! feature_gated {
+    ($feature:expr, $content:expr) => {{
+        #[cfg(feature = $feature)]
+        {
+            $content
+        }
+        #[cfg(not(feature = $feature))]
+        {
+            panic!("activate '{}' feature", $feature)
+        }
+    }};
+}
+
 // Not public, referenced by macros only.
 #[doc(hidden)]
 pub mod __private {
