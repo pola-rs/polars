@@ -1,0 +1,34 @@
+name: Cache Rust
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: shared
+          workspaces: py-polars
+
+      - name: Run cargo build
+        env:
+          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+        run: cargo build

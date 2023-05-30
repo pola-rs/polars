@@ -112,7 +112,9 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          shared-key: shared
           workspaces: py-polars
+          save-if: false
 
       - name: Install Polars
         shell: bash
