@@ -370,12 +370,16 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         )
     }
 
-    fn prepare_schema_overwrite(&self, overwriting_schema: &Schema) -> (Schema, Vec<Field>, bool) {
+    fn prepare_schema_overwrite(
+        &self,
+        overwriting_schema: &Schema,
+    ) -> PolarsResult<(Schema, Vec<Field>, bool)> {
         // This branch we check if there are dtypes we cannot parse.
         // We only support a few dtypes in the parser and later cast to the required dtype
         let mut to_cast = Vec::with_capacity(overwriting_schema.len());
 
         let mut _has_categorical = false;
+        let mut _err: Option<PolarsError> = None;
 
         let schema = overwriting_schema
             .iter_fields()
@@ -398,17 +402,53 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                         _has_categorical = true;
                         Some(fld)
                     }
+                    #[cfg(feature = "dtype-decimal")]
+                    Decimal(precision, scale) => {
+                        match (precision, scale) {
+                            (None, Some(_)) | (Some(_), Some(_)) => {
+                                to_cast.push(fld.clone());
+                                fld.coerce(Utf8);
+                                Some(fld)
+                            }
+                            // branches below scale is not set
+                            // so we set it to something sensible
+                            // if the values don't fit, they will be null
+                            //  the caller can always improve the decimal
+                            // parameters that are set.
+                            (Some(p), None) => {
+                                // set scale to precision::max - p
+                                let scale = 38 - *p;
+                                let mut cast_field = fld.clone();
+                                cast_field.coerce(Decimal(None, Some(scale)));
+                                to_cast.push(cast_field);
+                                fld.coerce(Utf8);
+                                Some(fld)
+                            }
+                            (None, None) => {
+                                // set scale to 20, that leaves 18 digits for the lhs
+                                let mut cast_field = fld.clone();
+                                cast_field.coerce(Decimal(None, Some(20)));
+                                to_cast.push(cast_field);
+                                fld.coerce(Utf8);
+                                Some(fld)
+                            }
+                        }
+                    }
                     _ => Some(fld),
                 }
             })
             .collect::<Schema>();
 
-        (schema, to_cast, _has_categorical)
+        if let Some(err) = _err {
+            Err(err)
+        } else {
+            Ok((schema, to_cast, _has_categorical))
+        }
     }
 
     pub fn batched_borrowed_mmap(&'a mut self) -> PolarsResult<BatchedCsvReaderMmap<'a>> {
         if let Some(schema) = self.schema_overwrite.as_deref() {
-            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema);
+            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema)?;
             let schema = Arc::new(schema);
 
             let csv_reader = self.core_reader(Some(schema), to_cast)?;
@@ -420,7 +460,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
     }
     pub fn batched_borrowed_read(&'a mut self) -> PolarsResult<BatchedCsvReaderRead<'a>> {
         if let Some(schema) = self.schema_overwrite.as_deref() {
-            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema);
+            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema)?;
             let schema = Arc::new(schema);
 
             let csv_reader = self.core_reader(Some(schema), to_cast)?;
@@ -539,7 +579,7 @@ where
         let mut _cat_lock = None;
 
         let mut df = if let Some(schema) = schema_overwrite.as_deref() {
-            let (schema, to_cast, _has_cat) = self.prepare_schema_overwrite(schema);
+            let (schema, to_cast, _has_cat) = self.prepare_schema_overwrite(schema)?;
 
             #[cfg(feature = "dtype-categorical")]
             if _has_cat {

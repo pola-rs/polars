@@ -36,6 +36,7 @@ timezones = [
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-struct = ["polars-core/dtype-struct"]
+dtype-decimal = ["polars-core/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]

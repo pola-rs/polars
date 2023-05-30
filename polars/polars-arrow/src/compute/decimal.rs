@@ -41,8 +41,9 @@ pub fn infer_params(bytes: &[u8]) -> Option<(u8, u8)> {
 /// Deserializes bytes to a single i128 representing a decimal
 /// The decimal precision and scale are not checked.
 #[inline]
-pub(super) fn deserialize_decimal(bytes: &[u8], precision: u8, scale: u8) -> Option<i128> {
+pub(super) fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8) -> Option<i128> {
     let (lhs, rhs) = split_decimal_bytes(bytes);
+    let precision = precision.unwrap_or(u8::MAX);
     match (lhs, rhs) {
         (Some(lhs), Some(rhs)) => atoi::<i128>(lhs).and_then(|x| {
             atoi::<i128>(rhs)
@@ -60,7 +61,8 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: u8, scale: u8) -> Opt
                     else if rhs_s < scale {
                         // scale: 2
                         // number: x.09
-                        // sign digits: 1
+                        // significant digits: 1
+                        // leading_zeros: 1
                         // parsed: 9
                         // so this is correct
                         if leading_zeros_rhs + rhs_s == scale {
@@ -68,17 +70,17 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: u8, scale: u8) -> Opt
                         }
                         // scale: 2
                         // number: x.9
-                        // sign digits: 1
+                        // significant digits: 1
                         // parsed: 9
                         // so we must multiply by 10 to get 90
                         else {
-                            let diff = scale as u32 - rhs_s as u32;
+                            let diff = scale as u32 - (rhs_s + leading_zeros_rhs) as u32;
                             Some((lhs, rhs * 10i128.pow(diff)))
                         }
                     }
                     // scale: 2
                     // number: x.90
-                    // sign digits: 2
+                    // significant digits: 2
                     // parsed: 90
                     // so this is correct
                     else {
@@ -88,13 +90,13 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: u8, scale: u8) -> Opt
                 .map(|(lhs, rhs)| lhs * 10i128.pow(scale as u32) + rhs)
         }),
         (None, Some(rhs)) => {
-            if rhs.len() != precision as usize || rhs.len() != scale as usize {
+            if rhs.len() > precision as usize || rhs.len() != scale as usize {
                 return None;
             }
             atoi::<i128>(rhs)
         }
         (Some(lhs), None) => {
-            if lhs.len() != precision as usize || scale != 0 {
+            if lhs.len() > precision as usize || scale != 0 {
                 return None;
             }
             atoi::<i128>(lhs)
@@ -108,7 +110,7 @@ mod test {
     use super::*;
     #[test]
     fn test_decimal() {
-        let precision = 8;
+        let precision = Some(8);
         let scale = 2;
 
         let val = "12.09";
@@ -127,6 +129,13 @@ mod test {
         assert_eq!(
             deserialize_decimal(val.as_bytes(), precision, scale),
             Some(14390)
+        );
+
+        let scale = 20;
+        let val = "0.01";
+        assert_eq!(
+            deserialize_decimal(val.as_bytes(), precision, scale),
+            Some(1000000000000000000)
         );
     }
 }
