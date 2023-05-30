@@ -1308,10 +1308,14 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
 /// number of rows.
 pub fn repeat<L: Literal>(value: L, n: Expr) -> Expr {
     let function = |s: Series, n: Series| {
-        let n =
-            n.get(0).unwrap().extract::<usize>().ok_or_else(
-                || polars_err!(ComputeError: "could not extract a size from {:?}", n),
-            )?;
+        polars_ensure!(
+            n.dtype().is_integer(),
+            SchemaMismatch: "expected expression of dtype 'integer', got '{}'", n.dtype()
+        );
+        let first_value = n.get(0)?;
+        let n = first_value.extract::<usize>().ok_or_else(
+            || polars_err!(ComputeError: "could not parse value '{}' as a size.", first_value),
+        )?;
         Ok(Some(s.new_from_index(0, n)))
     };
     apply_binary(lit(value), n, function, GetOutput::same_type()).alias("repeat")

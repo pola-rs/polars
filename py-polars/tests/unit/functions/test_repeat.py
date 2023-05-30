@@ -56,6 +56,30 @@ def test_repeat_expr_input_lazy() -> None:
     assert_series_equal(result, expected)
 
 
+def test_repeat_n_zero() -> None:
+    assert pl.repeat(1, n=0, eager=True).len() == 0
+
+
+@pytest.mark.parametrize(
+    "n",
+    [1.5, 2.0, date(1971, 1, 2), "hello"],
+)
+def test_repeat_n_non_integer(n: Any) -> None:
+    with pytest.raises(pl.SchemaError, match="expected expression of dtype 'integer'"):
+        pl.repeat(1, n=pl.lit(n), eager=True)
+
+
+def test_repeat_n_empty() -> None:
+    df = pl.DataFrame(schema={"a": pl.Int32})
+    with pytest.raises(pl.ComputeError, match="index 0 is out of bounds"):
+        df.select(pl.repeat(1, n=pl.col("a")))
+
+
+def test_repeat_n_negative() -> None:
+    with pytest.raises(pl.ComputeError, match="could not parse value '-1' as a size"):
+        pl.repeat(1, n=-1, eager=True)
+
+
 @pytest.mark.parametrize(
     ("n", "dtype", "expected_dtype"),
     [
