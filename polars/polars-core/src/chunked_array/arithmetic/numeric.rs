@@ -6,10 +6,10 @@ pub(crate) fn arithmetic_helper<T, Kernel, F>(
     kernel: Kernel,
     operation: F,
 ) -> ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        Kernel: Fn(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
-        F: Fn(T::Native, T::Native) -> T::Native,
+where
+    T: PolarsNumericType,
+    Kernel: Fn(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
+    F: Fn(T::Native, T::Native) -> T::Native,
 {
     let mut ca = match (lhs.len(), rhs.len()) {
         (a, b) if a == b => {
@@ -49,10 +49,10 @@ fn arithmetic_helper_owned<T, Kernel, F>(
     kernel: Kernel,
     operation: F,
 ) -> ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        Kernel: Fn(&mut PrimitiveArray<T::Native>, &mut PrimitiveArray<T::Native>),
-        F: Fn(T::Native, T::Native) -> T::Native,
+where
+    T: PolarsNumericType,
+    Kernel: Fn(&mut PrimitiveArray<T::Native>, &mut PrimitiveArray<T::Native>),
+    F: Fn(T::Native, T::Native) -> T::Native,
 {
     let ca = match (lhs.len(), rhs.len()) {
         (a, b) if a == b => {
@@ -96,8 +96,8 @@ fn arithmetic_helper_owned<T, Kernel, F>(
 // Operands on ChunkedArray & ChunkedArray
 
 impl<T> Add for &ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     type Output = ChunkedArray<T>;
 
@@ -112,8 +112,8 @@ impl<T> Add for &ChunkedArray<T>
 }
 
 impl<T> Div for &ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     type Output = ChunkedArray<T>;
 
@@ -128,8 +128,8 @@ impl<T> Div for &ChunkedArray<T>
 }
 
 impl<T> Mul for &ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     type Output = ChunkedArray<T>;
 
@@ -144,8 +144,8 @@ impl<T> Mul for &ChunkedArray<T>
 }
 
 impl<T> Rem for &ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     type Output = ChunkedArray<T>;
 
@@ -160,8 +160,8 @@ impl<T> Rem for &ChunkedArray<T>
 }
 
 impl<T> Sub for &ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     type Output = ChunkedArray<T>;
 
@@ -176,8 +176,8 @@ impl<T> Sub for &ChunkedArray<T>
 }
 
 impl<T> Add for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     type Output = Self;
 
@@ -192,8 +192,8 @@ impl<T> Add for ChunkedArray<T>
 }
 
 impl<T> Div for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     type Output = Self;
 
@@ -208,8 +208,8 @@ impl<T> Div for ChunkedArray<T>
 }
 
 impl<T> Mul for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     type Output = Self;
 
@@ -224,8 +224,8 @@ impl<T> Mul for ChunkedArray<T>
 }
 
 impl<T> Sub for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     type Output = Self;
 
@@ -240,8 +240,8 @@ impl<T> Sub for ChunkedArray<T>
 }
 
 impl<T> Rem for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     type Output = ChunkedArray<T>;
 
@@ -253,9 +253,9 @@ impl<T> Rem for ChunkedArray<T>
 // Operands on ChunkedArray & Num
 
 impl<T, N> Add<N> for &ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        N: Num + ToPrimitive,
+where
+    T: PolarsNumericType,
+    N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
 
@@ -268,9 +268,9 @@ impl<T, N> Add<N> for &ChunkedArray<T>
 }
 
 impl<T, N> Sub<N> for &ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        N: Num + ToPrimitive,
+where
+    T: PolarsNumericType,
+    N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
 
@@ -283,9 +283,9 @@ impl<T, N> Sub<N> for &ChunkedArray<T>
 }
 
 impl<T, N> Div<N> for &ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        N: Num + ToPrimitive,
+where
+    T: PolarsNumericType,
+    N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
 
@@ -304,9 +304,9 @@ impl<T, N> Div<N> for &ChunkedArray<T>
 }
 
 impl<T, N> Mul<N> for &ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        N: Num + ToPrimitive,
+where
+    T: PolarsNumericType,
+    N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
 
@@ -319,9 +319,9 @@ impl<T, N> Mul<N> for &ChunkedArray<T>
 }
 
 impl<T, N> Rem<N> for &ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        N: Num + ToPrimitive,
+where
+    T: PolarsNumericType,
+    N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
 
@@ -333,9 +333,9 @@ impl<T, N> Rem<N> for &ChunkedArray<T>
 }
 
 impl<T, N> Add<N> for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        N: Num + ToPrimitive,
+where
+    T: PolarsNumericType,
+    N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
 
@@ -345,9 +345,9 @@ impl<T, N> Add<N> for ChunkedArray<T>
 }
 
 impl<T, N> Sub<N> for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        N: Num + ToPrimitive,
+where
+    T: PolarsNumericType,
+    N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
 
@@ -357,9 +357,9 @@ impl<T, N> Sub<N> for ChunkedArray<T>
 }
 
 impl<T, N> Div<N> for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        N: Num + ToPrimitive,
+where
+    T: PolarsNumericType,
+    N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
 
@@ -369,9 +369,9 @@ impl<T, N> Div<N> for ChunkedArray<T>
 }
 
 impl<T, N> Mul<N> for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        N: Num + ToPrimitive,
+where
+    T: PolarsNumericType,
+    N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
 
@@ -383,9 +383,9 @@ impl<T, N> Mul<N> for ChunkedArray<T>
 }
 
 impl<T, N> Rem<N> for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        N: Num + ToPrimitive,
+where
+    T: PolarsNumericType,
+    N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
 

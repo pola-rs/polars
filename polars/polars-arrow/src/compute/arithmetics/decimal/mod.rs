@@ -1,9 +1,18 @@
 use arrow::datatypes::DataType;
 use polars_error::{PolarsError, PolarsResult};
+use arrow::array::PrimitiveArray;
+use commutative::{
+    commutative_scalar, commutative, non_commutative, non_commutative_scalar_swapped, non_commutative_scalar
+};
 
 mod add;
+mod sub;
+mod mul;
+mod commutative;
 
 pub use add::*;
+pub use sub::*;
+pub use mul::*;
 
 /// Maximum value that can exist with a selected precision
 #[inline]

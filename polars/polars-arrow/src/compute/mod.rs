@@ -1,8 +1,11 @@
 use arrow::array::PrimitiveArray;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
+
 use crate::utils::combine_validities_and;
 
+pub mod arithmetics;
+pub mod arity;
 pub mod bitwise;
 #[cfg(feature = "compute")]
 pub mod cast;
@@ -10,8 +13,6 @@ pub mod cast;
 pub mod decimal;
 pub mod take;
 pub mod tile;
-pub mod arithmetics;
-pub mod arity;
 
 #[inline]
 pub fn binary_mut<T, D, F>(
@@ -20,10 +21,10 @@ pub fn binary_mut<T, D, F>(
     data_type: DataType,
     mut op: F,
 ) -> PrimitiveArray<T>
-    where
-        T: NativeType,
-        D: NativeType,
-        F: FnMut(T, D) -> T,
+where
+    T: NativeType,
+    D: NativeType,
+    F: FnMut(T, D) -> T,
 {
     assert_eq!(lhs.len(), rhs.len());
     let validity = combine_validities_and(lhs.validity(), rhs.validity());
@@ -40,11 +41,15 @@ pub fn binary_mut<T, D, F>(
 }
 
 #[inline]
-pub fn unary_mut<I, F, O>(array: &PrimitiveArray<I>, mut op: F, data_type: DataType) -> PrimitiveArray<O>
-    where
-        I: NativeType,
-        O: NativeType,
-        F: FnMut(I) -> O,
+pub fn unary_mut<I, F, O>(
+    array: &PrimitiveArray<I>,
+    mut op: F,
+    data_type: DataType,
+) -> PrimitiveArray<O>
+where
+    I: NativeType,
+    O: NativeType,
+    F: FnMut(I) -> O,
 {
     let values = array.values().iter().map(|v| op(*v)).collect::<Vec<_>>();
 

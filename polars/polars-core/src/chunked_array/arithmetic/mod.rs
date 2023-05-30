@@ -1,6 +1,7 @@
 //! Implementations of arithmetic operations on ChunkedArray's.
-mod numeric;
+#[cfg(feature = "dtype-decimal")]
 mod decimal;
+mod numeric;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
@@ -9,12 +10,12 @@ use arrow::compute::arithmetics::basic;
 use arrow::compute::arity_assign;
 use arrow::types::NativeType;
 use num_traits::{Num, NumCast, ToPrimitive, Zero};
+pub(super) use numeric::arithmetic_helper;
 use polars_arrow::utils::combine_validities_and;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned};
-pub(super) use numeric::arithmetic_helper;
 
 pub trait ArrayArithmetics
 where
@@ -62,8 +63,6 @@ macro_rules! native_array_arithmetics {
 }
 
 native_array_arithmetics!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
-
-
 
 fn concat_binary_arrs(l: &[u8], r: &[u8], buf: &mut Vec<u8>) {
     buf.clear();
