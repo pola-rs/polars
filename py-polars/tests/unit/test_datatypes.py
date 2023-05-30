@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pickle
+import typing
 from datetime import datetime, timedelta
 
 import pytest
@@ -117,3 +118,49 @@ def test_dtypes_hashable() -> None:
 )
 def test_repr(dtype: pl.PolarsDataType, representation: str) -> None:
     assert repr(dtype) == representation
+
+
+@typing.no_type_check
+def test_conversion_dtype() -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "id_column": [1, 2, 3, 4],
+                "some_column": ["a", "b", "c", "d"],
+                "some_partition_column": [
+                    "partition_1",
+                    "partition_2",
+                    "partition_1",
+                    "partition_2",
+                ],
+            }
+        )
+        .select(
+            [
+                pl.struct(
+                    [pl.col("id_column"), pl.col("some_column").cast(pl.Categorical)]
+                ).alias("struct"),
+                pl.col("some_partition_column"),
+            ]
+        )
+        .groupby(["some_partition_column"], maintain_order=True)
+        .agg([pl.col(["struct"])])
+    )
+
+    df = pl.from_arrow(df.to_arrow())
+    # the assertion is not the real test
+    # this tests if dtype as bubbled up correctly in conversion
+    # if not we would UB
+    assert df.to_dict(False) == {
+        "some_partition_column": ["partition_1", "partition_2"],
+        "struct": [
+            [
+                {"id_column": 1, "some_column": "a"},
+                {"id_column": 3, "some_column": "c"},
+            ],
+            [
+                {"id_column": 2, "some_column": "b"},
+                {"id_column": 4, "some_column": "d"},
+            ],
+        ],
+    }

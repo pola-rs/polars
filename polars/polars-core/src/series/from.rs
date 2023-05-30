@@ -10,6 +10,7 @@ use arrow::temporal_conversions::*;
 use polars_arrow::compute::cast::cast;
 #[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
+use polars_error::feature_gated;
 
 use crate::chunked_array::cast::cast_chunks;
 #[cfg(feature = "object")]
@@ -142,13 +143,23 @@ impl Series {
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             }
             ArrowDataType::List(_) | ArrowDataType::LargeList(_) => {
-                let chunks = chunks.iter().map(convert_inner_types).collect();
-                Ok(ListChunked::from_chunks(name, chunks).into_series())
+                let (chunks, dtype) = to_physical_and_dtype(chunks);
+                unsafe {
+                    Ok(
+                        ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype)
+                            .into_series(),
+                    )
+                }
             }
             #[cfg(feature = "dtype-array")]
             ArrowDataType::FixedSizeList(_, _) => {
-                let chunks = chunks.iter().map(convert_inner_types).collect();
-                Ok(ArrayChunked::from_chunks(name, chunks).into_series())
+                let (chunks, dtype) = to_physical_and_dtype(chunks);
+                unsafe {
+                    Ok(
+                        ArrayChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype)
+                            .into_series(),
+                    )
+                }
             }
             ArrowDataType::Boolean => Ok(BooleanChunked::from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-u8")]
@@ -321,13 +332,14 @@ impl Series {
             }
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(logical_fields) => {
+                // We don't have to convert inner types, as that already
+                // happens on `Field: Series` construction
                 let arr = if chunks.len() > 1 {
                     // don't spuriously call this. This triggers a read on memmapped data
                     concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
                 } else {
                     chunks[0].clone()
                 };
-                let arr = convert_inner_types(&arr);
                 let mut struct_arr =
                     std::borrow::Cow::Borrowed(arr.as_any().downcast_ref::<StructArray>().unwrap());
 
@@ -462,66 +474,142 @@ fn map_arrays_to_series(name: &str, chunks: Vec<ArrayRef>) -> PolarsResult<Serie
     Series::try_from((name, chunks))
 }
 
-fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
-    match arr.data_type() {
-        ArrowDataType::Utf8 => {
-            let arr = arr.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-            Box::from(utf8_to_large_utf8(arr))
+fn convert<F: Fn(&dyn Array) -> ArrayRef>(arr: &[ArrayRef], f: F) -> Vec<ArrayRef> {
+    arr.iter().map(|arr| f(&**arr)).collect()
+}
+
+/// Converts to physical types and bubbles up the correct [`DataType`].
+fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
+    match arrays[0].data_type() {
+        ArrowDataType::Utf8 => (
+            convert(&arrays, |arr| {
+                let arr = arr.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
+                Box::from(utf8_to_large_utf8(arr))
+            }),
+            DataType::Utf8,
+        ),
+        #[allow(unused_variables)]
+        dt @ ArrowDataType::Dictionary(_, _, _) => {
+            feature_gated!("dtype-categorical", {
+                let s = unsafe {
+                    let dt = dt.clone();
+                    Series::try_from_arrow_unchecked("", arrays, &dt)
+                }
+                .unwrap();
+                (s.chunks().clone(), s.dtype().clone())
+            })
         }
         ArrowDataType::List(field) => {
-            let out = cast(&**arr, &ArrowDataType::LargeList(field.clone())).unwrap();
-            convert_inner_types(&out)
+            let out = convert(&arrays, |arr| {
+                cast(arr, &ArrowDataType::LargeList(field.clone())).unwrap()
+            });
+            to_physical_and_dtype(out)
         }
         #[cfg(feature = "dtype-array")]
+        #[allow(unused_variables)]
         ArrowDataType::FixedSizeList(_, size) => {
-            let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
-            let values = convert_inner_types(arr.values());
-            let dtype = FixedSizeListArray::default_datatype(values.data_type().clone(), *size);
-            Box::from(FixedSizeListArray::new(
-                dtype,
-                values,
-                arr.validity().cloned(),
-            ))
+            feature_gated!("dtype-array", {
+                let values = arrays
+                    .iter()
+                    .map(|arr| {
+                        let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+                        arr.values().clone()
+                    })
+                    .collect::<Vec<_>>();
+
+                let (converted_values, dtype) = to_physical_and_dtype(values);
+
+                let arrays = arrays
+                    .iter()
+                    .zip(converted_values)
+                    .map(|(arr, values)| {
+                        let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+
+                        let dtype =
+                            FixedSizeListArray::default_datatype(values.data_type().clone(), *size);
+                        Box::from(FixedSizeListArray::new(
+                            dtype,
+                            values,
+                            arr.validity().cloned(),
+                        )) as ArrayRef
+                    })
+                    .collect();
+                (arrays, DataType::Array(Box::new(dtype), *size))
+            })
         }
         ArrowDataType::FixedSizeBinary(_) | ArrowDataType::Binary => {
-            let out = cast(&**arr, &ArrowDataType::LargeBinary).unwrap();
-            convert_inner_types(&out)
+            let out = convert(&arrays, |arr| {
+                cast(arr, &ArrowDataType::LargeBinary).unwrap()
+            });
+            to_physical_and_dtype(out)
         }
         ArrowDataType::LargeList(_) => {
-            let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
-            let values = convert_inner_types(arr.values());
-            let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
-            Box::from(ListArray::<i64>::new(
-                dtype,
-                arr.offsets().clone(),
-                values,
-                arr.validity().cloned(),
-            ))
-        }
-        ArrowDataType::Struct(fields) => {
-            let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-            let values = arr
-                .values()
+            let values = arrays
                 .iter()
-                .map(convert_inner_types)
+                .map(|arr| {
+                    let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+                    arr.values().clone()
+                })
                 .collect::<Vec<_>>();
 
-            let fields = values
+            let (converted_values, dtype) = to_physical_and_dtype(values);
+
+            let arrays = arrays
                 .iter()
-                .zip(fields.iter())
-                .map(|(arr, field)| ArrowField::new(&field.name, arr.data_type().clone(), true))
+                .zip(converted_values)
+                .map(|(arr, values)| {
+                    let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+
+                    let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
+                    Box::from(ListArray::<i64>::new(
+                        dtype,
+                        arr.offsets().clone(),
+                        values,
+                        arr.validity().cloned(),
+                    )) as ArrayRef
+                })
                 .collect();
-            Box::new(StructArray::new(
-                ArrowDataType::Struct(fields),
-                values,
-                arr.validity().cloned(),
-            ))
+            (arrays, DataType::List(Box::new(dtype)))
         }
-        _ => arr.clone(),
+        ArrowDataType::Struct(_fields) => {
+            feature_gated!("dtype-struct", {
+                debug_assert_eq!(arrays.len(), 1);
+                let arr = arrays[0].clone();
+                let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                let (values, dtypes): (Vec<_>, Vec<_>) = arr
+                    .values()
+                    .iter()
+                    .map(|value| {
+                        let mut out = to_physical_and_dtype(vec![value.clone()]);
+                        (out.0.pop().unwrap(), out.1)
+                    })
+                    .unzip();
+
+                let arrow_fields = values
+                    .iter()
+                    .zip(_fields.iter())
+                    .map(|(arr, field)| ArrowField::new(&field.name, arr.data_type().clone(), true))
+                    .collect();
+                let arrow_array = Box::new(StructArray::new(
+                    ArrowDataType::Struct(arrow_fields),
+                    values,
+                    arr.validity().cloned(),
+                )) as ArrayRef;
+                let polars_fields = _fields
+                    .iter()
+                    .zip(dtypes.into_iter())
+                    .map(|(field, dtype)| Field::new(&field.name, dtype))
+                    .collect();
+                (vec![arrow_array], DataType::Struct(polars_fields))
+            })
+        }
+        dt => {
+            let dtype = dt.into();
+            (arrays, dtype)
+        }
     }
 }
 
-// TODO: add types
 impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
     type Error = PolarsError;
 
