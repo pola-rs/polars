@@ -2145,10 +2145,10 @@ def test_schema() -> None:
 
 def test_df_schema_unique() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    with pytest.raises(Exception):
+    with pytest.raises(pl.DuplicateError):
         df.columns = ["a", "a"]
 
-    with pytest.raises(Exception):
+    with pytest.raises(pl.DuplicateError):
         df.rename({"b": "a"})
 
 
