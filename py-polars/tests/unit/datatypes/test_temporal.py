@@ -2704,31 +2704,18 @@ def test_groupby_dynamic() -> None:
         datetime(2022, 3, 31, 0, 0, 1),
         datetime(2022, 4, 1, 0, 0, 1),
     ]
-    df = (
-        pl.DataFrame({
-            "dt": dts
-        })
-    )
+    df = pl.DataFrame({"dt": dts})
     result = (
-        df
-        .sort("dt")
-        .groupby_dynamic(
-            "dt",
-            every="1q"
-        )
-        .agg(
-            pl.col("dt").count().alias("num_points")
-        )
+        df.sort("dt")
+        .groupby_dynamic("dt", every="1q")
+        .agg(pl.col("dt").count().alias("num_points"))
         .sort("dt")
     )
-    expected_result = (
-        pl.DataFrame(
-            {
-                "dt": [datetime(2021, 10, 1), datetime(2022, 1, 1), datetime(2022, 4, 1)],
-                "num_points": [1, 2, 1],
-            },
-            schema={"dt": pl.Datetime, "num_points": pl.UInt32}
-        )
-        .sort("dt")
-    )
+    expected_result = pl.DataFrame(
+        {
+            "dt": [datetime(2021, 10, 1), datetime(2022, 1, 1), datetime(2022, 4, 1)],
+            "num_points": [1, 2, 1],
+        },
+        schema={"dt": pl.Datetime, "num_points": pl.UInt32},
+    ).sort("dt")
     assert_frame_equal(result, expected_result)
