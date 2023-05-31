@@ -173,13 +173,13 @@ def test_decimal_groupby_agg() -> None:
         }
     )
 
-    assert df.groupby("g").agg(
+    assert df.groupby("g", maintain_order=True).agg(
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),
     ).to_dict(False) == {
-        "g": [2, 1],
-        "sum": [D("9100.13"), D("10.20")],
-        "min": [D("100.01"), D("0.10")],
-        "max": [D("9000.12"), D("10.10")],
+        "g": [1, 2],
+        "sum": [D("10.20"), D("9100.13")],
+        "min": [D("0.10"), D("100.01")],
+        "max": [D("10.10"), D("9000.12")],
     }
