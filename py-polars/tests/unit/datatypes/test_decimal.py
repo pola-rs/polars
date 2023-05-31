@@ -165,7 +165,7 @@ def test_decimal_arithmetic() -> None:
     }
 
 
-def test_decimal_groupby_agg() -> None:
+def test_decimal_aggregations() -> None:
     df = pl.DataFrame(
         {
             "g": [1, 1, 2, 2],
@@ -183,3 +183,11 @@ def test_decimal_groupby_agg() -> None:
         "min": [D("0.10"), D("100.01")],
         "max": [D("10.10"), D("9000.12")],
     }
+
+    assert df.select(
+        sum=pl.sum("a"),
+        min=pl.min("a"),
+        max=pl.max("a"),
+    ).to_dict(
+        False
+    ) == {"sum": [D("9110.33")], "min": [D("0.10")], "max": [D("9000.12")]}
