@@ -134,3 +134,16 @@ impl Mul for &DecimalChunked {
         )
     }
 }
+
+impl Div for &DecimalChunked {
+    type Output = PolarsResult<DecimalChunked>;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        self.arithmetic_helper(
+            rhs,
+            decimal::div,
+            |lhs, rhs_val| decimal::div_scalar(lhs, rhs_val, &rhs.dtype().to_arrow()),
+            |lhs_val, rhs| decimal::div_scalar_swapped(lhs_val, &self.dtype().to_arrow(), rhs),
+        )
+    }
+}

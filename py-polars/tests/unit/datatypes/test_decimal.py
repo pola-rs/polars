@@ -134,3 +134,32 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
         D("1.10000000000000000000"),
         D("0.01000000000000000000"),
     ]
+
+
+def test_decimal_arithmetic() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [D("0.1"), D("10.1"), D("100.01")],
+            "b": [D("20.1"), D("10.19"), D("39.21")],
+        }
+    )
+
+    out = df.select(
+        out1=pl.col("a") * pl.col("b"),
+        out2=pl.col("a") + pl.col("b"),
+        out3=pl.col("a") / pl.col("b"),
+        out4=pl.col("a") - pl.col("b"),
+    )
+    assert out.dtypes == [
+        pl.Decimal(precision=None, scale=2),
+        pl.Decimal(precision=None, scale=2),
+        pl.Decimal(precision=None, scale=2),
+        pl.Decimal(precision=None, scale=2),
+    ]
+
+    assert out.to_dict(False) == {
+        "out1": [D("2.01"), D("102.91"), D("3921.39")],
+        "out2": [D("20.20"), D("20.29"), D("139.22")],
+        "out3": [D("0.00"), D("0.99"), D("2.55")],
+        "out4": [D("-20.00"), D("-0.09"), D("60.80")],
+    }
