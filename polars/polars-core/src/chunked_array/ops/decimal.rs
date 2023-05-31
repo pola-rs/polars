@@ -7,24 +7,18 @@ impl Utf8Chunked {
     /// If the decimal `precision` and `scale` are already known, consider
     /// using the `cast` method.
     pub fn to_decimal(&self, infer_length: usize) -> PolarsResult<Series> {
-        let mut precision = 0;
         let mut scale = 0;
         let mut iter = self.into_iter();
         let mut valid_count = 0;
         while let Some(Some(v)) = iter.next() {
-            if let Some(p) = polars_arrow::compute::decimal::infer_params(v.as_bytes()) {
-                precision = std::cmp::max(precision, p.0);
-                scale = std::cmp::max(scale, p.1);
+            if let Some(scale_value) = polars_arrow::compute::decimal::infer_scale(v.as_bytes()) {
+                scale = std::cmp::max(scale, scale_value);
                 valid_count += 1;
                 if valid_count == infer_length {
                     break;
                 }
             }
         }
-        polars_ensure!(precision > 0, ComputeError: "could not infer decimal parameters");
-        self.cast(&DataType::Decimal(
-            Some(precision as usize),
-            Some(scale as usize),
-        ))
+        self.cast(&DataType::Decimal(None, Some(scale as usize)))
     }
 }

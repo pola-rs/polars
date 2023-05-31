@@ -297,7 +297,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Decimal(precision, scale) => pl
                 .getattr("Decimal")
                 .unwrap()
-                .call1((*precision, *scale))
+                .call1((*scale, *precision))
                 .unwrap()
                 .into(),
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
