@@ -13,19 +13,25 @@ type DummyType = i32;
 type DummyCa = Int32Chunked;
 
 pub trait ToDummies {
-    fn to_dummies(&self, separator: Option<&str>) -> PolarsResult<DataFrame>;
+    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame>;
 }
 
 impl ToDummies for Series {
-    fn to_dummies(&self, separator: Option<&str>) -> PolarsResult<DataFrame> {
+    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
         let groups = self.group_tuples(true, false)?;
 
         // safety: groups are in bounds
-        let columns = unsafe { self.agg_first(&groups) }
-            .iter()
-            .zip(groups.iter())
+        let columns = unsafe { self.agg_first(&groups) };
+
+        let columns = if drop_first {
+            columns.iter().zip(groups.iter()).skip(1)
+        } else {
+            columns.iter().zip(groups.iter()).skip(0)
+        };
+
+        let columns = columns
             .map(|(av, group)| {
                 // strings are formatted with extra \" \" in polars, so we
                 // extract the string

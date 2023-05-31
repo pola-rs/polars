@@ -538,10 +538,10 @@ impl PySeries {
         Ok(s.into())
     }
 
-    fn to_dummies(&self, separator: Option<&str>) -> PyResult<PyDataFrame> {
+    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PyResult<PyDataFrame> {
         let df = self
             .series
-            .to_dummies(separator)
+            .to_dummies(separator, drop_first)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
