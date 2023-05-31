@@ -325,19 +325,19 @@ class ExprStringNameSpace:
         ... )
         >>> df.select(pl.col("numbers").str.to_decimal())
         shape: (7, 1)
-        ┌──────────────┐
-        │ numbers      │
-        │ ---          │
-        │ decimal[8,2] │
-        ╞══════════════╡
-        │ 40.12        │
-        │ 3420.13      │
-        │ 120134.19    │
-        │ 3212.98      │
-        │ 12.9         │
-        │ 143.09       │
-        │ 143.9        │
-        └──────────────┘
+        ┌────────────┐
+        │ numbers    │
+        │ ---        │
+        │ decimal[2] │
+        ╞════════════╡
+        │ 40.12      │
+        │ 3420.13    │
+        │ 120134.19  │
+        │ 3212.98    │
+        │ 12.9       │
+        │ 143.09     │
+        │ 143.9      │
+        └────────────┘
 
         """
         return wrap_expr(self._pyexpr.str_to_decimal(inference_length))

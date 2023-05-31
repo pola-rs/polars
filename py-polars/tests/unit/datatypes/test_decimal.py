@@ -163,3 +163,31 @@ def test_decimal_arithmetic() -> None:
         "out3": [D("0.00"), D("0.99"), D("2.55")],
         "out4": [D("-20.00"), D("-0.09"), D("60.80")],
     }
+
+
+def test_decimal_aggregations() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2, 2],
+            "a": [D("0.1"), D("10.1"), D("100.01"), D("9000.12")],
+        }
+    )
+
+    assert df.groupby("g", maintain_order=True).agg(
+        sum=pl.sum("a"),
+        min=pl.min("a"),
+        max=pl.max("a"),
+    ).to_dict(False) == {
+        "g": [1, 2],
+        "sum": [D("10.20"), D("9100.13")],
+        "min": [D("0.10"), D("100.01")],
+        "max": [D("10.10"), D("9000.12")],
+    }
+
+    assert df.select(
+        sum=pl.sum("a"),
+        min=pl.min("a"),
+        max=pl.max("a"),
+    ).to_dict(
+        False
+    ) == {"sum": [D("9110.33")], "min": [D("0.10")], "max": [D("9000.12")]}
