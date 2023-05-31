@@ -828,6 +828,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof))]
+    #[allow(clippy::too_many_arguments)]
     fn rolling_std(
         &self,
         window_size: &str,
@@ -852,6 +853,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof))]
+    #[allow(clippy::too_many_arguments)]
     fn rolling_var(
         &self,
         window_size: &str,
