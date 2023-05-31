@@ -4630,7 +4630,7 @@ class Series:
         center
             Set the labels at the center of the window
         ddof
-            "Delta Degrees of Freedom": The denominator for a window of length N is N - ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Examples
         --------
@@ -4690,7 +4690,7 @@ class Series:
         center
             Set the labels at the center of the window
         ddof
-            "Delta Degrees of Freedom": The denominator for a window of length N is N - ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Examples
         --------

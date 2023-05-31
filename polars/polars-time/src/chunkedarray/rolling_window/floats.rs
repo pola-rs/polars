@@ -152,8 +152,15 @@ where
             let options_fixed: RollingOptionsFixedWindow = options.clone().into();
             check_input(options_fixed.window_size, options.min_periods)?;
         }
-        println!("Near Actual Rolling {:?}",
-                options.fn_params.as_ref().unwrap().as_ref().downcast_ref::<RollingVarParams>());
+        println!(
+            "Near Actual Rolling {:?}",
+            options
+                .fn_params
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .downcast_ref::<RollingVarParams>()
+        );
         // weights is only implemented by var kernel
         if options.weights.is_some() {
             return self

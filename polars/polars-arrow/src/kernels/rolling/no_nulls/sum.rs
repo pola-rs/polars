@@ -73,7 +73,7 @@ pub fn rolling_sum<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: DynArgs
+    _params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,

@@ -5,9 +5,8 @@ import typing
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from numpy import nan
-
 import pytest
+from numpy import nan
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -394,9 +393,16 @@ def test_rolling_var_numerical_stability_5197() -> None:
     s = pl.Series([*[1.2] * 4, *[3.3] * 7])
     res = s.to_frame("a").with_columns(pl.col("a").rolling_var(5))[:, 0].to_list()
     assert res[4:] == pytest.approx(
-        [0.882, 1.3229999999999997, 1.3229999999999997, 0.8819999999999983,
-        0.0, 0.0, 0.0]
-        )
+        [
+            0.882,
+            1.3229999999999997,
+            1.3229999999999997,
+            0.8819999999999983,
+            0.0,
+            0.0,
+            0.0,
+        ]
+    )
     assert res[:4] == [None] * 4
 
 
@@ -640,7 +646,7 @@ def test_rolling_cov_corr() -> None:
         ]
     ).to_dict(False)
     assert res["cov"][2:] == pytest.approx([0.0, 0.0, 5.333333333333336])
-    assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok = True)
+    assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok=True)
     assert res["cov"][:2] == [None] * 2
     assert res["corr"][:2] == [None] * 2
 

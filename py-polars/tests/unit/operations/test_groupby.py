@@ -364,25 +364,29 @@ def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
     every: str | timedelta, period: str | timedelta, time_zone: str | None
 ) -> None:
     res = (
-        pl.DataFrame(
-            {
-                "a": [
-                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(10)
-                ],
-                "b": [float(i) for i in range(10)],
-            }
+        (
+            pl.DataFrame(
+                {
+                    "a": [
+                        datetime(2021, 1, 1) + timedelta(seconds=2**i)
+                        for i in range(10)
+                    ],
+                    "b": [float(i) for i in range(10)],
+                }
+            )
+            .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
+            .lazy()
+            .set_sorted("a")
+            .groupby_dynamic("a", every=every, period=period)
+            .agg([pl.col("b").var().sqrt().alias("corr")])
         )
-        .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
-        .lazy()
-        .set_sorted("a")
-        .groupby_dynamic("a", every=every, period=period)
-        .agg([pl.col("b").var().sqrt().alias("corr")])
-    ).collect().sum().to_dict(False) 
-    
+        .collect()
+        .sum()
+        .to_dict(False)
+    )
+
     assert res["corr"] == pytest.approx([6.988674024215477])
     assert res["a"] == [None]
-
-    
 
 
 def test_take_in_groupby() -> None:

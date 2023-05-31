@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
@@ -6,8 +8,6 @@ use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyFloat};
-
-use std::any::Any;
 
 use crate::apply::lazy::{call_lambda_with_series, map_single};
 use crate::conversion::{parse_fill_null_strategy, Wrap};
@@ -845,7 +845,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            fn_params: Some(Arc::new(RollingVarParams{ddof}) as Arc<dyn Any + Send + Sync>),
+            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
         };
 
         self.inner.clone().rolling_std(options).into()
@@ -869,7 +869,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            fn_params: Some(Arc::new(RollingVarParams{ddof}) as Arc<dyn Any + Send + Sync>),
+            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
         };
 
         self.inner.clone().rolling_var(options).into()

@@ -1,6 +1,6 @@
 //! Traits for miscellaneous operations on ChunkedArray
 use arrow::offset::OffsetsBuffer;
-use polars_arrow::prelude::{QuantileInterpolOptions};
+use polars_arrow::prelude::QuantileInterpolOptions;
 
 pub use self::take::*;
 #[cfg(feature = "object")]

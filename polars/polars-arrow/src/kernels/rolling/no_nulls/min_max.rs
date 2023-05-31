@@ -313,7 +313,7 @@ pub fn rolling_max<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: DynArgs
+    _params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
@@ -413,7 +413,7 @@ pub fn rolling_min<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: DynArgs
+    _params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType + PartialOrd + NumCast + Mul<Output = T> + Bounded + IsFloat,

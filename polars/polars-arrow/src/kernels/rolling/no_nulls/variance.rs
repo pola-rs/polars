@@ -104,7 +104,12 @@ impl<
             sum_of_squares: SumSquaredWindow::new(slice, start, end, None),
             ddof: match params {
                 None => 1,
-                Some(pars) => pars.as_ref().downcast_ref::<RollingVarParams>().unwrap().ddof,
+                Some(pars) => {
+                    pars.as_ref()
+                        .downcast_ref::<RollingVarParams>()
+                        .unwrap()
+                        .ddof
+                }
             },
         }
     }
@@ -284,7 +289,7 @@ mod test {
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(8.0), Some(2.0), Some(0.5)]);
 
-        let testpars = Some(Arc::new(RollingVarParams{ddof: 0}) as Arc<dyn Any + Send + Sync>);
+        let testpars = Some(Arc::new(RollingVarParams { ddof: 0 }) as Arc<dyn Any + Send + Sync>);
         let out = rolling_var(values, 2, 2, false, None, testpars);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
@@ -314,11 +319,11 @@ mod test {
                 &[
                     None,
                     None,
-                    Some(52.33333333333333),
+                    Some(52.333333333333336),
                     Some(f64::nan()),
                     Some(f64::nan()),
                     Some(f64::nan()),
-                    Some(0.9999999999999964)
+                    Some(1.0)
                 ]
             )
         );

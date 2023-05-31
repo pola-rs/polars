@@ -48,7 +48,13 @@ impl<'a, T: NativeType> SortedMinMax<'a, T> {
 }
 
 impl<'a, T: NativeType> RollingAggWindowNulls<'a, T> for SortedMinMax<'a, T> {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, _params: DynArgs) -> Self {
+    unsafe fn new(
+        slice: &'a [T],
+        validity: &'a Bitmap,
+        start: usize,
+        end: usize,
+        _params: DynArgs,
+    ) -> Self {
         let mut out = Self {
             slice,
             validity,
@@ -295,7 +301,13 @@ fn take_min<T: NativeType + IsFloat + PartialOrd>(a: T, b: T) -> T {
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MinWindow<'a, T> {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, _params: DynArgs) -> Self {
+    unsafe fn new(
+        slice: &'a [T],
+        validity: &'a Bitmap,
+        start: usize,
+        end: usize,
+        _params: DynArgs,
+    ) -> Self {
         Self {
             inner: MinMaxWindow::new(
                 slice,
@@ -324,7 +336,7 @@ pub fn rolling_min<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: DynArgs
+    _params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + PartialOrd + Bounded + IsFloat,
@@ -339,7 +351,7 @@ where
             window_size,
             min_periods,
             det_offsets_center,
-            None
+            None,
         )
     } else {
         rolling_apply_agg_window::<MinWindow<_>, _, _>(
@@ -348,7 +360,7 @@ where
             window_size,
             min_periods,
             det_offsets,
-            None
+            None,
         )
     }
 }
@@ -362,7 +374,13 @@ fn take_max<T: NativeType + IsFloat + PartialOrd>(a: T, b: T) -> T {
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MaxWindow<'a, T> {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, _params: DynArgs) -> Self {
+    unsafe fn new(
+        slice: &'a [T],
+        validity: &'a Bitmap,
+        start: usize,
+        end: usize,
+        _params: DynArgs,
+    ) -> Self {
         Self {
             inner: MinMaxWindow::new(
                 slice,
@@ -407,7 +425,7 @@ where
                 window_size,
                 min_periods,
                 det_offsets_center,
-                None
+                None,
             )
         } else {
             rolling_apply_agg_window::<MaxWindow<_>, _, _>(
@@ -416,7 +434,7 @@ where
                 window_size,
                 min_periods,
                 det_offsets_center,
-                None
+                None,
             )
         }
     } else if is_reverse_sorted_max_nulls(arr.values().as_slice(), arr.validity().as_ref().unwrap())
@@ -427,7 +445,7 @@ where
             window_size,
             min_periods,
             det_offsets,
-            None
+            None,
         )
     } else {
         rolling_apply_agg_window::<MaxWindow<_>, _, _>(
@@ -436,7 +454,7 @@ where
             window_size,
             min_periods,
             det_offsets,
-            None
+            None,
         )
     }
 }

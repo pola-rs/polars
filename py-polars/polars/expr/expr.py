@@ -5093,7 +5093,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
-        ddof: int = 1
+        ddof: int = 1,
     ) -> Self:
         """
         Compute a rolling standard deviation.
@@ -5152,6 +5152,8 @@ class Expr:
             be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Warnings
         --------
@@ -5205,7 +5207,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
-        ddof: int = 1
+        ddof: int = 1,
     ) -> Self:
         """
         Compute a rolling variance.
@@ -5264,6 +5266,8 @@ class Expr:
             be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Warnings
         --------
@@ -5304,7 +5308,13 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_var(
-                window_size, weights, min_periods, center, by, closed, ddof,
+                window_size,
+                weights,
+                min_periods,
+                center,
+                by,
+                closed,
+                ddof,
             )
         )
 

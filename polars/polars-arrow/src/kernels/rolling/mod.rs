@@ -2,9 +2,9 @@ pub mod no_nulls;
 pub mod nulls;
 mod window;
 
+use std::any::Any;
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
-use std::any::Any;
 use std::sync::Arc;
 
 use arrow::array::PrimitiveArray;
@@ -139,4 +139,6 @@ where
 
 //Parameters allowed for rolling operations.
 #[derive(Clone, Copy, Debug)]
-pub struct RollingVarParams { pub ddof: u8 }
+pub struct RollingVarParams {
+    pub ddof: u8,
+}

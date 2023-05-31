@@ -1,4 +1,4 @@
-use polars_arrow::prelude::{DynArgs};
+use polars_arrow::prelude::DynArgs;
 
 #[derive(Clone)]
 pub struct RollingOptionsFixedWindow {
@@ -21,7 +21,7 @@ impl Default for RollingOptionsFixedWindow {
             min_periods: 1,
             weights: None,
             center: false,
-            fn_params: None
+            fn_params: None,
         }
     }
 }

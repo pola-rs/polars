@@ -4,7 +4,6 @@ mod dispatch;
 mod utf8;
 
 pub use agg_list::*;
-
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
@@ -12,11 +11,11 @@ use num_traits::pow::Pow;
 use num_traits::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::data_types::IsFloat;
 use polars_arrow::kernels::rolling;
-use polars_arrow::kernels::rolling::{RollingVarParams, DynArgs};
 use polars_arrow::kernels::rolling::no_nulls::{
     MaxWindow, MeanWindow, MinWindow, RollingAggWindowNoNulls, StdWindow, SumWindow, VarWindow,
 };
 use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
+use polars_arrow::kernels::rolling::{DynArgs, RollingVarParams};
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::PushUnchecked;
@@ -59,7 +58,7 @@ pub fn _rolling_apply_agg_window_nulls<'a, Agg, T, O>(
     values: &'a [T],
     validity: &'a Bitmap,
     offsets: O,
-    params: DynArgs
+    params: DynArgs,
 ) -> ArrayRef
 where
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
@@ -115,7 +114,11 @@ where
 }
 
 // Use an aggregation window that maintains the state
-pub fn _rolling_apply_agg_window_no_nulls<'a, Agg, T, O>(values: &'a [T], offsets: O, params: DynArgs) -> ArrayRef
+pub fn _rolling_apply_agg_window_no_nulls<'a, Agg, T, O>(
+    values: &'a [T],
+    offsets: O,
+    params: DynArgs,
+) -> ArrayRef
 where
     // items (offset, len) -> so offsets are offset, offset + len
     Agg: RollingAggWindowNoNulls<'a, T>,
@@ -420,13 +423,15 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _>(
                             values,
                             offset_iter,
-                            None
+                            None,
                         ),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
                             rolling::nulls::MinWindow<_>,
                             _,
                             _,
-                        >(values, validity, offset_iter, None),
+                        >(
+                            values, validity, offset_iter, None
+                        ),
                     };
                     Self::from_chunks("", vec![arr]).into_series()
                 } else {
@@ -501,13 +506,15 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _>(
                             values,
                             offset_iter,
-                            None
+                            None,
                         ),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
                             rolling::nulls::MaxWindow<_>,
                             _,
                             _,
-                        >(values, validity, offset_iter, None),
+                        >(
+                            values, validity, offset_iter, None
+                        ),
                     };
                     Self::from_chunks("", vec![arr]).into_series()
                 } else {
@@ -566,13 +573,15 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<SumWindow<_>, _, _>(
                             values,
                             offset_iter,
-                            None
+                            None,
                         ),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
                             rolling::nulls::SumWindow<_>,
                             _,
                             _,
-                        >(values, validity, offset_iter, None),
+                        >(
+                            values, validity, offset_iter, None
+                        ),
                     };
                     Self::from_chunks("", vec![arr]).into_series()
                 } else {
@@ -658,13 +667,15 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<MeanWindow<_>, _, _>(
                             values,
                             offset_iter,
-                            None
+                            None,
                         ),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
                             rolling::nulls::MeanWindow<_>,
                             _,
                             _,
-                        >(values, validity, offset_iter, None),
+                        >(
+                            values, validity, offset_iter, None
+                        ),
                     };
                     ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
                 } else {
@@ -713,13 +724,16 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<VarWindow<_>, _, _>(
                             values,
                             offset_iter,
-                            Some(Arc::new(RollingVarParams { ddof }))
+                            Some(Arc::new(RollingVarParams { ddof })),
                         ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::VarWindow<_>,
-                            _,
-                            _,
-                        >(values, validity, offset_iter, Some(Arc::new(RollingVarParams { ddof }))),
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
+                                values,
+                                validity,
+                                offset_iter,
+                                Some(Arc::new(RollingVarParams { ddof })),
+                            )
+                        }
                     };
                     ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
                 } else {
@@ -766,13 +780,16 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<StdWindow<_>, _, _>(
                             values,
                             offset_iter,
-                            Some(Arc::new(RollingVarParams { ddof }))
+                            Some(Arc::new(RollingVarParams { ddof })),
                         ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::StdWindow<_>,
-                            _,
-                            _,
-                        >(values, validity, offset_iter, Some(Arc::new(RollingVarParams { ddof }))),
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<rolling::nulls::StdWindow<_>, _, _>(
+                                values,
+                                validity,
+                                offset_iter,
+                                Some(Arc::new(RollingVarParams { ddof })),
+                            )
+                        }
                     };
                     ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
                 } else {

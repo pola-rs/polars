@@ -136,7 +136,7 @@ where
                     None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _>(
                         values,
                         offset_iter,
-                        None
+                        None,
                     ),
                     Some(validity) => _rolling_apply_agg_window_nulls::<
                         rolling::nulls::MaxWindow<_>,
@@ -208,7 +208,7 @@ where
                     None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _>(
                         values,
                         offset_iter,
-                        None
+                        None,
                     ),
                     Some(validity) => _rolling_apply_agg_window_nulls::<
                         rolling::nulls::MinWindow<_>,

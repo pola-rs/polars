@@ -30,7 +30,7 @@ pub fn rolling_mean<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: DynArgs
+    _params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,

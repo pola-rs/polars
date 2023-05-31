@@ -124,7 +124,7 @@ pub fn rolling_median<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: DynArgs
+    _params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType
