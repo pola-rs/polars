@@ -2698,34 +2698,38 @@ def test_pytime_conversion(tm: time) -> None:
 
 
 @pytest.mark.parametrize(
-    "input_df,expected_grouped_df",
+    ("input_df", "expected_grouped_df"),
     [
         (
-            pl.DataFrame(
-                {
-                    "dt": [
-                        datetime(2021, 12, 31, 0, 0, 0),
-                        datetime(2022, 1, 1, 0, 0, 1),
-                        datetime(2022, 3, 31, 0, 0, 1),
-                        datetime(2022, 4, 1, 0, 0, 1),
-                    ]
-                },
+            (
                 pl.DataFrame(
                     {
                         "dt": [
-                            datetime(2021, 10, 1),
-                            datetime(2022, 1, 1),
-                            datetime(2022, 4, 1),
-                        ],
-                        "num_points": [1, 2, 1],
-                    },
-                    schema={"dt": pl.Datetime, "num_points": pl.UInt32},
-                ).sort("dt"),
-            )
+                            datetime(2021, 12, 31, 0, 0, 0),
+                            datetime(2022, 1, 1, 0, 0, 1),
+                            datetime(2022, 3, 31, 0, 0, 1),
+                            datetime(2022, 4, 1, 0, 0, 1),
+                        ]
+                    }
+                )
+            ),
+            pl.DataFrame(
+                {
+                    "dt": [
+                        datetime(2021, 10, 1),
+                        datetime(2022, 1, 1),
+                        datetime(2022, 4, 1),
+                    ],
+                    "num_points": [1, 2, 1],
+                },
+                schema={"dt": pl.Datetime, "num_points": pl.UInt32},
+            ).sort("dt"),
         )
     ],
 )
-def test_groupby_dynamic(input_df, expected_grouped_df) -> None:
+def test_groupby_dynamic(
+    input_df: pl.DataFrame, expected_grouped_df: pl.DataFrame
+) -> None:
     result = (
         input_df.sort("dt")
         .groupby_dynamic("dt", every="1q")
