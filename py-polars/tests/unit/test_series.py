@@ -494,7 +494,7 @@ def test_series_dtype_is() -> None:
     s = pl.Series("s", ["testing..."])
     assert s.is_utf8()
 
-    s = pl.Series("s", [], dtype=pl.Decimal(20, 15))
+    s = pl.Series("s", [], dtype=pl.Decimal(scale=15, precision=20))
     assert not s.is_float()
     assert s.is_numeric()
     assert s.is_empty()
