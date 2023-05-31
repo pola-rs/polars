@@ -10,10 +10,32 @@ unsafe impl IntoSeries for DecimalChunked {
 impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {}
 
 impl SeriesWrap<DecimalChunked> {
-    fn apply_logical<F: Fn(&Int128Chunked) -> Int128Chunked>(&self, f: F) -> Series {
+    fn apply_physical<F: Fn(&Int128Chunked) -> Int128Chunked>(&self, f: F) -> Series {
         f(&self.0)
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
+    }
+
+    fn agg_helper<F: Fn(&Int128Chunked) -> Series>(&self, f: F) -> Series {
+        let agg_s = f(&self.0);
+        let ca = agg_s.decimal().unwrap();
+        let ca = ca.as_ref().clone();
+        let precision = self.0.precision();
+        let scale = self.0.scale();
+        ca.into_decimal_unchecked(precision, scale).into_series()
+    }
+}
+
+unsafe impl IntoSeries for Int128Chunked {
+    fn into_series(self) -> Series
+    where
+        Self: Sized,
+    {
+        // this is incorrect as it ignores the datatype
+        // the caller must correct this.
+        let mut ca = DecimalChunked::new_logical(self);
+        ca.2 = Some(DataType::Decimal(None, None));
+        ca.into_series()
     }
 }
 
@@ -37,6 +59,23 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
+
+    unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+        self.agg_helper(|ca| ca.agg_sum(groups))
+    }
+
+    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+        self.agg_helper(|ca| ca.agg_min(groups))
+    }
+
+    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+        self.agg_helper(|ca| ca.agg_max(groups))
+    }
+
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_list(groups)
+    }
+
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         let rhs = rhs.decimal()?;
         ((&self.0) - rhs).map(|ca| ca.into_series())
@@ -73,7 +112,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
-        self.apply_logical(|ca| ca.slice(offset, length))
+        self.apply_physical(|ca| ca.slice(offset, length))
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
@@ -106,7 +145,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     #[cfg(feature = "chunked_ids")]
     unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        self.apply_logical(|ca| ca.take_opt_chunked_unchecked(by))
+        self.apply_physical(|ca| ca.take_opt_chunked_unchecked(by))
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
@@ -197,11 +236,11 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn reverse(&self) -> Series {
-        self.apply_logical(|ca| ca.reverse())
+        self.apply_physical(|ca| ca.reverse())
     }
 
     fn shift(&self, periods: i64) -> Series {
-        self.apply_logical(|ca| ca.shift(periods))
+        self.apply_physical(|ca| ca.shift(periods))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
