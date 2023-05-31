@@ -85,6 +85,7 @@ where
             dtype @ DataType::Array(_, _) => from_chunks_list_dtype(&mut chunks, dtype),
             dt => dt,
         };
+        debug_assert_eq!(chunks[0].data_type(), &dtype.to_physical().to_arrow());
         let field = Arc::new(Field::new(name, dtype));
         let mut out = ChunkedArray {
             field,

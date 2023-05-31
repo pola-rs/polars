@@ -448,3 +448,9 @@ def test_list_tail_underflow_9087() -> None:
     assert pl.Series([["a", "b", "c"]]).list.tail(pl.lit(1, pl.UInt32)).to_list() == [
         ["c"]
     ]
+
+
+def test_list_count_match_boolean_nulls_9141() -> None:
+    a = pl.DataFrame({"a": [[True, None, False]]})
+
+    assert a.select(pl.col("a").list.count_match(True))["a"].to_list() == [1]
