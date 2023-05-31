@@ -4786,6 +4786,7 @@ class DataFrame:
         - 1d    (1 day)
         - 1w    (1 week)
         - 1mo   (1 calendar month)
+        - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
         - 1i    (1 index count)
 
@@ -5229,6 +5230,7 @@ class DataFrame:
         - 1d    (1 day)
         - 1w    (1 week)
         - 1mo   (1 calendar month)
+        - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
         - 1i    (1 index count)
 
@@ -5368,6 +5370,7 @@ class DataFrame:
                 - 1d    (1 day)
                 - 1w    (1 week)
                 - 1mo   (1 calendar month)
+                - 1q    (1 calendar quarter)
                 - 1y    (1 calendar year)
                 - 1i    (1 index count)
 
