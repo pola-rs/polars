@@ -254,7 +254,7 @@ class Decimal(FractionalType):
     precision: int | None
     scale: int
 
-    def __init__(self, precision: int | None, scale: int):
+    def __init__(self, scale: int, precision: int | None = None):
         self.precision = precision
         self.scale = scale
 

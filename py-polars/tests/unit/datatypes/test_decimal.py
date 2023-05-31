@@ -26,7 +26,7 @@ def test_series_from_pydecimal_and_ints() -> None:
     # TODO: check what happens if there are strings, floats arrow scalars in the list
     for data in permutations_int_dec_none():
         s = pl.Series("name", data)
-        assert s.dtype == pl.Decimal(None, 7)  # inferred scale = 7, precision = None
+        assert s.dtype == pl.Decimal(7)  # inferred scale = 7, precision = None
         assert s.name == "name"
         assert s.null_count() == 1
         for i, d in enumerate(data):
@@ -50,7 +50,7 @@ def test_frame_from_pydecimal_and_ints(monkeypatch: Any) -> None:
             for ctor in (pl.DataFrame, pl.from_records):
                 df = ctor(data=list(map(cls, data)))  # type: ignore[operator]
                 assert df.schema == {
-                    "a": pl.Decimal(None, 7),
+                    "a": pl.Decimal(7),
                 }
                 assert df.rows() == row_data
 
@@ -107,7 +107,7 @@ def test_utf8_to_decimal() -> None:
     s = pl.Series(
         ["40.12", "3420.13", "120134.19", "3212.98", "12.90", "143.09", "143.9"]
     ).str.to_decimal()
-    assert s.dtype == pl.Decimal(8, 2)
+    assert s.dtype == pl.Decimal(2)
 
     assert s.to_list() == [
         D("40.12"),
@@ -127,12 +127,12 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
     1.1,a
     0.01,a"""
 
-    df = pl.read_csv(csv.encode(), dtypes={"a": pl.Decimal})
-    assert df.dtypes == [pl.Decimal(None, 20), pl.Utf8]
+    df = pl.read_csv(csv.encode(), dtypes={"a": pl.Decimal(scale=2)})
+    assert df.dtypes == [pl.Decimal(2, None), pl.Utf8]
     assert df["a"].to_list() == [
-        D("123.12000000000000000000"),
-        D("1.10000000000000000000"),
-        D("0.01000000000000000000"),
+        D("123.12"),
+        D("1.10"),
+        D("0.01"),
     ]
 
 

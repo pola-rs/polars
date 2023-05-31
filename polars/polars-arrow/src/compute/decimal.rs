@@ -15,27 +15,9 @@ fn split_decimal_bytes(bytes: &[u8]) -> (Option<&[u8]>, Option<&[u8]>) {
     (lhs, rhs)
 }
 
-pub fn infer_params(bytes: &[u8]) -> Option<(u8, u8)> {
-    let (lhs, rhs) = split_decimal_bytes(bytes);
-    match (lhs, rhs) {
-        (Some(lhs), Some(rhs)) => {
-            let lhs_s = significant_digits(lhs);
-            let rhs_s = significant_digits(rhs);
-
-            let precision = lhs_s + rhs_s;
-            let scale = rhs_s;
-            Some((precision, scale))
-        }
-        (None, Some(rhs)) => {
-            let precision = rhs.len() as u8;
-            Some((precision, precision))
-        }
-        (Some(lhs), None) => {
-            let precision = lhs.len() as u8;
-            Some((precision, 0))
-        }
-        (None, None) => None,
-    }
+pub fn infer_scale(bytes: &[u8]) -> Option<u8> {
+    let (_lhs, rhs) = split_decimal_bytes(bytes);
+    rhs.map(significant_digits)
 }
 
 /// Deserializes bytes to a single i128 representing a decimal

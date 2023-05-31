@@ -403,37 +403,19 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                         Some(fld)
                     }
                     #[cfg(feature = "dtype-decimal")]
-                    Decimal(precision, scale) => {
-                        match (precision, scale) {
-                            (None, Some(_)) | (Some(_), Some(_)) => {
-                                to_cast.push(fld.clone());
-                                fld.coerce(Utf8);
-                                Some(fld)
-                            }
-                            // branches below scale is not set
-                            // so we set it to something sensible
-                            // if the values don't fit, they will be null
-                            //  the caller can always improve the decimal
-                            // parameters that are set.
-                            (Some(p), None) => {
-                                // set scale to precision::max - p
-                                let scale = 38 - *p;
-                                let mut cast_field = fld.clone();
-                                cast_field.coerce(Decimal(None, Some(scale)));
-                                to_cast.push(cast_field);
-                                fld.coerce(Utf8);
-                                Some(fld)
-                            }
-                            (None, None) => {
-                                // set scale to 20, that leaves 18 digits for the lhs
-                                let mut cast_field = fld.clone();
-                                cast_field.coerce(Decimal(None, Some(20)));
-                                to_cast.push(cast_field);
-                                fld.coerce(Utf8);
-                                Some(fld)
-                            }
+                    Decimal(precision, scale) => match (precision, scale) {
+                        (_, Some(_)) => {
+                            to_cast.push(fld.clone());
+                            fld.coerce(Utf8);
+                            Some(fld)
                         }
-                    }
+                        _ => {
+                            _err = Some(PolarsError::ComputeError(
+                                "'scale' must be set when reading csv column as Decimal".into(),
+                            ));
+                            None
+                        }
+                    },
                     _ => Some(fld),
                 }
             })
