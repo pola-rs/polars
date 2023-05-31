@@ -20,7 +20,9 @@ pub fn deserialize_iter<'a>(
         buf.push_str(row);
         buf.push(',')
     }
-    let _ = buf.pop();
+    if buf.len() > 1 {
+        let _ = buf.pop();
+    }
     buf.push(']');
     let slice = unsafe { buf.as_bytes_mut() };
     let out = simd_json::to_borrowed_value(slice)
