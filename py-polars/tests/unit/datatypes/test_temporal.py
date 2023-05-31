@@ -1784,7 +1784,7 @@ def test_shift_and_fill_group_logicals() -> None:
         schema=["d", "s"],
     )
     assert df.select(
-        pl.col("d").shift_and_fill(-1, pl.col("d").max()).over("s")
+        pl.col("d").shift_and_fill(pl.col("d").max(), periods=-1).over("s")
     ).dtypes == [pl.Date]
 
 
@@ -2698,7 +2698,6 @@ def test_pytime_conversion(tm: time) -> None:
 
 
 def test_groupby_dynamic() -> None:
-    import warnings
     dts = [
         datetime(2021, 12, 31, 0, 0, 0),
         datetime(2022, 1, 1, 0, 0, 1),
@@ -2710,14 +2709,26 @@ def test_groupby_dynamic() -> None:
             "dt": dts
         })
     )
-    out = (
+    result = (
         df
+        .sort("dt")
         .groupby_dynamic(
             "dt",
             every="1q"
         )
         .agg(
-            pl.col("dt").agg_groups().alias("grouped_indices")
+            pl.col("dt").count().alias("num_points")
         )
+        .sort("dt")
     )
-    warnings.warn(str(out))
+    expected_result = (
+        pl.DataFrame(
+            {
+                "dt": [datetime(2021, 10, 1), datetime(2022, 1, 1), datetime(2022, 4, 1)],
+                "num_points": [1, 2, 1],
+            },
+            schema={"dt": pl.Datetime, "num_points": pl.UInt32}
+        )
+        .sort("dt")
+    )
+    assert_frame_equal(result, expected_result)
