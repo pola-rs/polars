@@ -1,5 +1,4 @@
-use std::any::Any;
-use std::sync::Arc;
+use polars_arrow::prelude::{DynArgs};
 
 #[derive(Clone)]
 pub struct RollingOptionsFixedWindow {
@@ -12,7 +11,7 @@ pub struct RollingOptionsFixedWindow {
     pub weights: Option<Vec<f64>>,
     /// Set the labels at the center of the window.
     pub center: bool,
-    pub fn_params: Option<Arc<dyn Any + Sync + Send>>,
+    pub fn_params: DynArgs,
 }
 
 impl Default for RollingOptionsFixedWindow {

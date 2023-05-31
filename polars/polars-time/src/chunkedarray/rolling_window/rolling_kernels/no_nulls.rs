@@ -9,7 +9,7 @@ use super::*;
 pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(
     values: &'a [T],
     offsets: O,
-    params: Option<Arc<dyn Any + Sync + Send>>,
+    params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
     // items (offset, len) -> so offsets are offset, offset + len
@@ -55,7 +55,7 @@ pub(crate) fn rolling_min<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: Option<Arc<dyn Any + Sync + Send>>,
+    _params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
@@ -83,7 +83,7 @@ pub(crate) fn rolling_max<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: Option<Arc<dyn Any + Sync + Send>>,
+    _params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
@@ -111,7 +111,7 @@ pub(crate) fn rolling_sum<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: Option<Arc<dyn Any + Sync + Send>>,
+    _params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
@@ -139,7 +139,7 @@ pub(crate) fn rolling_mean<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: Option<Arc<dyn Any + Sync + Send>>,
+    _params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
@@ -167,7 +167,7 @@ pub(crate) fn rolling_var<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    params: Option<Arc<dyn Any + Sync + Send>>,
+    params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
@@ -195,7 +195,7 @@ pub(crate) fn rolling_std<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    params: Option<Arc<dyn Any + Sync + Send>>,
+    params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType

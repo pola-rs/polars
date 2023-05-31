@@ -22,6 +22,7 @@ type End = usize;
 type Idx = usize;
 type WindowSize = usize;
 type Len = usize;
+pub type DynArgs = Option<Arc<dyn Any + Sync + Send>>;
 
 #[inline]
 /// NaN will be smaller than every valid value

@@ -42,7 +42,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
 impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Output = T>>
     RollingAggWindowNulls<'a, T> for SumSquaredWindow<'a, T>
 {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, _params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, _params: DynArgs) -> Self {
         let mut out = Self {
             slice,
             validity,
@@ -146,7 +146,7 @@ impl<
             + Sub<Output = T>,
     > RollingAggWindowNulls<'a, T> for VarWindow<'a, T>
 {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: DynArgs) -> Self {
         Self {
             mean: MeanWindow::new(slice, validity, start, end, None),
             sum_of_squares: SumSquaredWindow::new(slice, validity, start, end, None),
@@ -188,7 +188,7 @@ pub fn rolling_var<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: Option<Arc<dyn Any + Sync + Send>>
+    _params: DynArgs
 ) -> ArrayRef
 where
     T: NativeType + std::iter::Sum<T> + Zero + AddAssign + SubAssign + IsFloat + Float,
@@ -228,7 +228,7 @@ impl<
             + Pow<T, Output = T>,
     > RollingAggWindowNulls<'a, T> for StdWindow<'a, T>
 {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: DynArgs) -> Self {
         Self {
             var: VarWindow::new(slice, validity, start, end, params),
         }
@@ -250,7 +250,7 @@ pub fn rolling_std<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: Option<Arc<dyn Any + Sync + Send>>
+    params: DynArgs
 ) -> ArrayRef
 where
     T: NativeType

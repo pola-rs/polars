@@ -363,7 +363,7 @@ def test_groupby_dynamic_flat_agg_4814() -> None:
 def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
     every: str | timedelta, period: str | timedelta, time_zone: str | None
 ) -> None:
-    assert (
+    res = (
         pl.DataFrame(
             {
                 "a": [
@@ -377,9 +377,12 @@ def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
         .set_sorted("a")
         .groupby_dynamic("a", every=every, period=period)
         .agg([pl.col("b").var().sqrt().alias("corr")])
-    ).collect().sum().to_dict(False) == pytest.approx(
-        {"a": [None], "corr": [6.988674024215477]}
-    )
+    ).collect().sum().to_dict(False) 
+    
+    assert res["corr"] == pytest.approx([6.988674024215477])
+    assert res["a"] == [None]
+
+    
 
 
 def test_take_in_groupby() -> None:

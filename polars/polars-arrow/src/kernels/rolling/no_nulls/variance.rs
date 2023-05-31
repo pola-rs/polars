@@ -17,7 +17,7 @@ pub(super) struct SumSquaredWindow<'a, T> {
 impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<Output = T>>
     RollingAggWindowNoNulls<'a, T> for SumSquaredWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, _params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
         let sum = slice[start..end].iter().map(|v| *v * *v).sum::<T>();
         Self {
             slice,
@@ -98,7 +98,7 @@ impl<
             + Sub<Output = T>,
     > RollingAggWindowNoNulls<'a, T> for VarWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
         Self {
             mean: MeanWindow::new(slice, start, end, None),
             sum_of_squares: SumSquaredWindow::new(slice, start, end, None),
@@ -138,7 +138,7 @@ pub fn rolling_var<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: Option<Arc<dyn Any + Sync + Send>>,
+    params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType
@@ -216,7 +216,7 @@ impl<
             + Pow<T, Output = T>,
     > RollingAggWindowNoNulls<'a, T> for StdWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
         Self {
             var: VarWindow::new(slice, start, end, params),
         }
@@ -234,7 +234,7 @@ pub fn rolling_std<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: Option<Arc<dyn Any + Sync + Send>>,
+    params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType

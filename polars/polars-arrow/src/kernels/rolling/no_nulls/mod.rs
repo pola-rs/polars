@@ -5,7 +5,6 @@ mod sum;
 mod variance;
 
 use std::fmt::Debug;
-use std::any::Any;
 
 use arrow::array::PrimitiveArray;
 use arrow::datatypes::DataType;
@@ -23,7 +22,7 @@ use super::*;
 use crate::utils::CustomIterTools;
 
 pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
-    fn new(slice: &'a [T], start: usize, end: usize, params: Option<Arc<dyn Any + Sync + Send>>) -> Self;
+    fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self;
 
     /// Update and recompute the window
     /// # Safety
@@ -37,7 +36,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
-    params: Option<Arc<dyn Any + Sync + Send>>,
+    params: DynArgs,
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),

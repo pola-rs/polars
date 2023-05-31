@@ -13,7 +13,7 @@ pub struct SumWindow<'a, T> {
 impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
     RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, _params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
         let sum = slice[start..end].iter().copied().sum::<T>();
         Self {
             slice,
@@ -73,7 +73,7 @@ pub fn rolling_sum<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: Option<Arc<dyn Any + Sync + Send>>
+    _params: DynArgs
 ) -> ArrayRef
 where
     T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
