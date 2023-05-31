@@ -4,6 +4,8 @@ mod window;
 
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+use std::any::Any;
+use std::sync::Arc;
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::{Bitmap, MutableBitmap};
@@ -135,7 +137,5 @@ where
 }
 
 //Parameters allowed for rolling operations.
-#[derive(Clone, Copy)]
-pub enum RollingFnParams {
-    RollingVarParams { ddof: u8 },
-}
+#[derive(Clone, Copy, Debug)]
+pub struct RollingVarParams { pub ddof: u8 }

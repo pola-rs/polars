@@ -17,7 +17,7 @@ pub(super) struct SumSquaredWindow<'a, T> {
 impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<Output = T>>
     RollingAggWindowNoNulls<'a, T> for SumSquaredWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, _params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
         let sum = slice[start..end].iter().map(|v| *v * *v).sum::<T>();
         Self {
             slice,
@@ -98,14 +98,13 @@ impl<
             + Sub<Output = T>,
     > RollingAggWindowNoNulls<'a, T> for VarWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
         Self {
             mean: MeanWindow::new(slice, start, end, None),
             sum_of_squares: SumSquaredWindow::new(slice, start, end, None),
             ddof: match params {
                 None => 1,
-                Some(RollingFnParams::RollingVarParams{ddof}) => ddof,
-                _ => panic!("Called RollingVarWindow with wrong parameters"),
+                Some(pars) => pars.as_ref().downcast_ref::<RollingVarParams>().unwrap().ddof,
             },
         }
     }
@@ -139,7 +138,7 @@ pub fn rolling_var<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: Option<RollingFnParams>,
+    params: Option<Arc<dyn Any + Sync + Send>>,
 ) -> ArrayRef
 where
     T: NativeType
@@ -217,7 +216,7 @@ impl<
             + Pow<T, Output = T>,
     > RollingAggWindowNoNulls<'a, T> for StdWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
         Self {
             var: VarWindow::new(slice, start, end, params),
         }
@@ -235,7 +234,7 @@ pub fn rolling_std<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: Option<RollingFnParams>,
+    params: Option<Arc<dyn Any + Sync + Send>>,
 ) -> ArrayRef
 where
     T: NativeType
@@ -284,6 +283,12 @@ mod test {
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(8.0), Some(2.0), Some(0.5)]);
+
+        let testpars = Some(Arc::new(RollingVarParams{ddof: 0}) as Arc<dyn Any + Send + Sync>);
+        let out = rolling_var(values, 2, 2, false, None, testpars);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, Some(4.0), Some(1.0), Some(0.25)]);
 
         let out = rolling_var(values, 2, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();

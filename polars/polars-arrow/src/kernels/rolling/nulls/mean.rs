@@ -10,7 +10,7 @@ impl<
         T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + NumCast + Div<Output = T>,
     > RollingAggWindowNulls<'a, T> for MeanWindow<'a, T>
 {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
         Self {
             sum: SumWindow::new(slice, validity, start, end, params),
         }
@@ -31,7 +31,7 @@ pub fn rolling_mean<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: Option<RollingFnParams>
+    _params: Option<Arc<dyn Any + Sync + Send>>
 ) -> ArrayRef
 where
     T: NativeType

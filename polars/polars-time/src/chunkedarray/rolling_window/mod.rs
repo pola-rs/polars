@@ -6,6 +6,8 @@ mod rolling_kernels;
 #[cfg(feature = "rolling_window")]
 use std::convert::TryFrom;
 use std::ops::SubAssign;
+use std::any::Any;
+use std::sync::Arc;
 
 #[cfg(feature = "rolling_window")]
 use arrow::array::{Array, PrimitiveArray};
@@ -39,7 +41,7 @@ pub struct RollingOptions {
     /// The closed window of that time window if given
     pub closed_window: Option<ClosedWindow>,
     /// Optional parameters for the rolling function
-    pub fn_params: Option<rolling::RollingFnParams>,
+    pub fn_params: Option<Arc<dyn Any + Sync + Send>>,
 }
 
 #[cfg(feature = "rolling_window")]
@@ -73,7 +75,7 @@ pub struct RollingOptionsImpl<'a> {
     pub tu: Option<TimeUnit>,
     pub tz: Option<&'a TimeZone>,
     pub closed_window: Option<ClosedWindow>,
-    pub fn_params: Option<rolling::RollingFnParams>,
+    pub fn_params: Option<Arc<dyn Any + Sync + Send>>,
 }
 
 #[cfg(feature = "rolling_window")]
@@ -94,7 +96,7 @@ impl From<RollingOptions> for RollingOptionsImpl<'static> {
             tu: None,
             tz: None,
             closed_window: None,
-            fn_params: None
+            fn_params: options.fn_params
         }
     }
 }
@@ -227,14 +229,14 @@ fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
 fn rolling_agg<T>(
     ca: &ChunkedArray<T>,
     options: RollingOptionsImpl,
-    rolling_agg_fn: &dyn Fn(&[T::Native], usize, usize, bool, Option<&[f64]>, Option<rolling::RollingFnParams>) -> ArrayRef,
+    rolling_agg_fn: &dyn Fn(&[T::Native], usize, usize, bool, Option<&[f64]>, Option<Arc<dyn Any + Sync + Send>>) -> ArrayRef,
     rolling_agg_fn_nulls: &dyn Fn(
         &PrimitiveArray<T::Native>,
         usize,
         usize,
         bool,
         Option<&[f64]>,
-        Option<rolling::RollingFnParams>
+        Option<Arc<dyn Any + Sync + Send>>
     ) -> ArrayRef,
     rolling_agg_fn_dynamic: Option<
         &dyn Fn(
@@ -245,7 +247,7 @@ fn rolling_agg<T>(
             ClosedWindow,
             TimeUnit,
             Option<&TimeZone>,
-            Option<rolling::RollingFnParams>
+            Option<Arc<dyn Any + Sync + Send>>
         ) -> PolarsResult<ArrayRef>,
     >,
 ) -> PolarsResult<Series>

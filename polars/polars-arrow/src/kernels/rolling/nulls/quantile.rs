@@ -206,7 +206,7 @@ pub fn rolling_median<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: Option<RollingFnParams>
+    _params: Option<Arc<dyn Any + Sync + Send>>
 ) -> ArrayRef
 where
     T: NativeType

@@ -1,3 +1,6 @@
+use std::any::Any;
+use std::sync::Arc;
+
 #[derive(Clone)]
 pub struct RollingOptionsFixedWindow {
     /// The length of the window.
@@ -9,7 +12,7 @@ pub struct RollingOptionsFixedWindow {
     pub weights: Option<Vec<f64>>,
     /// Set the labels at the center of the window.
     pub center: bool,
-    pub fn_params: Option<polars_arrow::kernels::rolling::RollingFnParams>,
+    pub fn_params: Option<Arc<dyn Any + Sync + Send>>,
 }
 
 impl Default for RollingOptionsFixedWindow {

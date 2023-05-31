@@ -15,7 +15,7 @@ use super::*;
 pub trait RollingAggWindowNulls<'a, T: NativeType> {
     /// # Safety
     /// `start` and `end` must be in bounds for `slice` and `validity`
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<RollingFnParams>) -> Self;
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<Arc<dyn Any + Sync + Send>>) -> Self;
 
     /// # Safety
     /// `start` and `end` must be in bounds of `slice` and `bitmap`
@@ -31,7 +31,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
-    params: Option<RollingFnParams>
+    params: Option<Arc<dyn Any + Sync + Send>>
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End) + Copy,

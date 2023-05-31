@@ -8,7 +8,7 @@ pub struct SortedMinMax<'a, T: NativeType> {
 }
 
 impl<'a, T: NativeType> RollingAggWindowNoNulls<'a, T> for SortedMinMax<'a, T> {
-    fn new(slice: &'a [T], _start: usize, _end: usize, _params: Option<RollingFnParams>) -> Self {
+    fn new(slice: &'a [T], _start: usize, _end: usize, _params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
         Self { slice }
     }
 
@@ -26,7 +26,7 @@ pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MinWindow<'a, T> {
-    fn new(slice: &'a [T], start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, _params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
         let min = *slice[start..end]
             .iter()
             .min_by(|a, b| compare_fn_nan_min(*a, *b))
@@ -150,7 +150,7 @@ pub struct MaxWindow<'a, T: NativeType> {
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MaxWindow<'a, T> {
-    fn new(slice: &'a [T], start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, _params: Option<Arc<dyn Any + Sync + Send>>) -> Self {
         let max = *slice[start..end]
             .iter()
             .max_by(|a, b| compare_fn_nan_max(*a, *b))
@@ -313,7 +313,7 @@ pub fn rolling_max<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: Option<RollingFnParams>
+    _params: Option<Arc<dyn Any + Sync + Send>>
 ) -> ArrayRef
 where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
@@ -413,7 +413,7 @@ pub fn rolling_min<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: Option<RollingFnParams>
+    _params: Option<Arc<dyn Any + Sync + Send>>
 ) -> ArrayRef
 where
     T: NativeType + PartialOrd + NumCast + Mul<Output = T> + Bounded + IsFloat,
