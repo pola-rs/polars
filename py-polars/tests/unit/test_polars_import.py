@@ -9,7 +9,7 @@ import polars as pl
 def _import_timings() -> bytes:
     # assemble suitable command to get polars module import timing;
     # run in a separate process to ensure clean timing results.
-    cmd = f'{sys.executable} -X importtime -c "import polars"'
+    cmd = f'{sys.executable} -S -X importtime -c "import polars"'
     return (
         subprocess.run(cmd, shell=True, capture_output=True)
         .stderr.replace(b"import time:", b"")
