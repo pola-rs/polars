@@ -81,3 +81,20 @@ def test_append_root_columns() -> None:
             ]
         )
     ).columns == ["col2", "col1", "prefix_col1", "col1_suffix"]
+
+
+def test_multiple_columns_length_9137() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1],
+            "b": ["c", "d"],
+        }
+    )
+
+    # list is larger than groups
+    cmp_list = ["a", "b", "c"]
+
+    assert df.groupby("a").agg(pl.col("b").is_in(cmp_list)).to_dict(False) == {
+        "a": [1],
+        "b": [[True, False]],
+    }
