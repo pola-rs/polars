@@ -60,3 +60,13 @@ def test_empty_sort_by_args() -> None:
     df = pl.DataFrame([1, 2, 3])
     with pytest.raises(pl.InvalidOperationError):
         df.select(pl.all().sort_by([]))
+
+
+def test_empty_9137() -> None:
+    out = (
+        pl.DataFrame({"id": [], "value": []})
+        .groupby("id")
+        .agg(pl.col("value").pow(2).mean())
+    )
+    assert out.shape == (0, 2)
+    assert out.dtypes == [pl.Float32, pl.Float32]

@@ -3,14 +3,19 @@ use super::*;
 pub struct FusedArithmetic {}
 
 fn get_expr(input: Vec<Node>, op: FusedOperator) -> AExpr {
+    let mut options = FunctionOptions {
+        collect_groups: ApplyOptions::ApplyFlat,
+        cast_to_supertypes: true,
+        ..Default::default()
+    };
+    // order of operations change because of FMA
+    // so we must toggle this check off
+    // it is still safe as it is a trusted operation
+    unsafe { options.no_check_lengths() }
     AExpr::Function {
         input,
         function: FunctionExpr::Fused(op),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
-            cast_to_supertypes: true,
-            ..Default::default()
-        },
+        options,
     }
 }
 
