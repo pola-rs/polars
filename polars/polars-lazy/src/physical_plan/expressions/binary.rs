@@ -56,6 +56,8 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::Multiply => Ok(left * right),
         Operator::Divide => Ok(left / right),
         Operator::TrueDivide => match left.dtype() {
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => Ok(left / right),
             Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
             _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
         },

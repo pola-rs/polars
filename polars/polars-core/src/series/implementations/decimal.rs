@@ -37,6 +37,22 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+        let rhs = rhs.decimal()?;
+        ((&self.0) - rhs).map(|ca| ca.into_series())
+    }
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        let rhs = rhs.decimal()?;
+        ((&self.0) + rhs).map(|ca| ca.into_series())
+    }
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+        let rhs = rhs.decimal()?;
+        ((&self.0) * rhs).map(|ca| ca.into_series())
+    }
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+        let rhs = rhs.decimal()?;
+        ((&self.0) / rhs).map(|ca| ca.into_series())
+    }
 }
 
 impl SeriesTrait for SeriesWrap<DecimalChunked> {
