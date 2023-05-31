@@ -47,6 +47,7 @@ where
     Ok(Box::new(out))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn rolling_min<T>(
     values: &[T],
     period: Duration,
