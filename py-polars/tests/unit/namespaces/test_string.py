@@ -266,6 +266,11 @@ def test_json_extract_series() -> None:
     dtype2 = pl.Struct([pl.Field("a", pl.Int64)])
     assert_series_equal(s.str.json_extract(dtype2), expected)
 
+    s = pl.Series([], dtype=pl.Utf8)
+    expected = pl.Series([], dtype=pl.List(pl.Int64))
+    dtype = pl.List(pl.Int64)
+    assert_series_equal(s.str.json_extract(dtype), expected)
+
 
 def test_json_extract_lazy_expr() -> None:
     dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
