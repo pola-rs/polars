@@ -393,3 +393,12 @@ def test_fast_unique_flag_from_arrow() -> None:
 
     filtered = df.to_arrow().filter([True, False, True, True, False, True, True, True])
     assert pl.from_arrow(filtered).select(pl.col("colB").n_unique()).item() == 4
+
+
+def test_construct_with_null() -> None:
+    # Example from https://github.com/pola-rs/polars/issues/7188
+    df = pl.from_dicts([{"A": None}, {"A": "foo"}], schema={"A": pl.Categorical})
+    assert df.to_series().to_list() == [None, "foo"]
+
+    s = pl.Series([{"struct_A": None}], dtype=pl.Struct({"struct_A": pl.Categorical}))
+    assert s.to_list() == [{"struct_A": None}]

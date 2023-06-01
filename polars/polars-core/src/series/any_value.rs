@@ -331,7 +331,7 @@ impl Series {
             DataType::Categorical(_) => {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
-                        AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) => {
+                        AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) | AnyValue::Null => {
                             any_values_to_utf8(av, strict)?
                         }
                         _ => polars_bail!(
