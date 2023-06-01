@@ -104,12 +104,7 @@ impl<
             sum_of_squares: SumSquaredWindow::new(slice, start, end, None),
             ddof: match params {
                 None => 1,
-                Some(pars) => {
-                    pars.as_ref()
-                        .downcast_ref::<RollingVarParams>()
-                        .unwrap()
-                        .ddof
-                }
+                Some(pars) => pars.downcast_ref::<RollingVarParams>().unwrap().ddof,
             },
         }
     }

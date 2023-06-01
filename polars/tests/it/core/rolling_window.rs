@@ -267,18 +267,25 @@ fn test_rolling_var() {
             ..Default::default()
         })
         .unwrap();
-    let out = out.f64().unwrap();
+    let out = out.f64().unwrap().to_vec();
 
-    assert_eq!(
-        Vec::from(out),
-        &[
-            None,
-            Some(17.333333333333332),
-            Some(11.583333333333334),
-            Some(21.583333333333332),
-            Some(24.666666666666668),
-            Some(34.33333333333334)
-        ]
+    let expres = &[
+        None,
+        Some(17.333333333333332),
+        Some(11.583333333333334),
+        Some(21.583333333333332),
+        Some(24.666666666666668),
+        Some(34.33333333333334),
+    ];
+    let testres = out.iter().zip(expres.iter()).all(|(&a, &b)| match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => (a - b).abs() < 1e-12,
+        (_, _) => false,
+    });
+    assert!(
+        testres,
+        "{:?} is not approximately equal to {:?}",
+        out, expres
     );
 }
 
