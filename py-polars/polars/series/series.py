@@ -3401,7 +3401,7 @@ class Series:
                 writable=writable,
                 use_pyarrow=use_pyarrow,
             )
-            np_array.shape = (self.len(), self.dtype.width)
+            np_array.shape = (self.len(), self.dtype.width)  # type: ignore[union-attr]
             return np_array
 
         if (
