@@ -18,7 +18,6 @@ impl ListChunked {
         let field = Arc::make_mut(&mut self.field);
         field.coerce(DataType::List(Box::new(dtype)));
     }
-    #[cfg(feature = "private")]
     pub fn set_fast_explode(&mut self) {
         self.bit_settings.insert(Settings::FAST_EXPLODE_LIST)
     }

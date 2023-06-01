@@ -187,7 +187,7 @@ where
                         swapped,
                         join_columns_left,
                         join_columns_right,
-                    ))
+                    )) as Box<dyn Sink>
                 }
                 _ => unimplemented!(),
             }

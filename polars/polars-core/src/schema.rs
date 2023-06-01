@@ -381,7 +381,6 @@ impl IntoIterator for Schema {
 }
 
 /// This trait exists to be unify the API of polars Schema and arrows Schema
-#[cfg(feature = "private")]
 pub trait IndexOfSchema: Debug {
     /// Get the index of a column by name.
     fn index_of(&self, name: &str) -> Option<usize>;

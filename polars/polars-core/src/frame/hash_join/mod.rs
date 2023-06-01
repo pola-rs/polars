@@ -32,7 +32,6 @@ use single_keys_semi_anti::*;
 pub use sort_merge::*;
 pub(crate) use zip_outer::*;
 
-#[cfg(feature = "private")]
 pub use self::multiple_keys::private_left_join_multiple_keys;
 use crate::datatypes::PlHashMap;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;

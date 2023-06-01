@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use std::sync::Arc;
 
 use arrow::bitmap::Bitmap;
 

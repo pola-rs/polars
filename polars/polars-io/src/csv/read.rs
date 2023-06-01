@@ -313,7 +313,6 @@ where
         self
     }
 
-    #[cfg(feature = "private")]
     pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
         self.predicate = predicate;
         self

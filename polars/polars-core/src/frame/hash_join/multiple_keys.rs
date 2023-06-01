@@ -240,7 +240,6 @@ pub fn _inner_join_multiple_keys(
     })
 }
 
-#[cfg(feature = "private")]
 pub fn private_left_join_multiple_keys(
     a: &DataFrame,
     b: &DataFrame,

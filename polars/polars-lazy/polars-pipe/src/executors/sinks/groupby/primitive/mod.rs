@@ -12,9 +12,9 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
+use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
-use polars_utils::{hash_to_partition, HashSingle};
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
@@ -225,7 +225,7 @@ where
         for group in &self.sort_partitions {
             let [offset, length] = group;
             let first_g_value = unsafe { *values.get_unchecked_release(*offset as usize) };
-            let h = self.hb.hash_single(first_g_value);
+            let h = self.hb.hash_one(first_g_value);
 
             let agg_idx = insert_and_get(
                 h,

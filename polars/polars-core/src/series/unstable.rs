@@ -7,7 +7,6 @@ use crate::prelude::*;
 
 /// A wrapper type that should make it a bit more clear that we should not clone Series
 #[derive(Copy, Clone)]
-#[cfg(feature = "private")]
 pub struct UnstableSeries<'a> {
     lifetime: PhantomData<&'a Series>,
     // A series containing a single chunk ArrayRef

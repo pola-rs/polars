@@ -29,10 +29,7 @@ pub mod mmap;
 mod options;
 #[cfg(feature = "parquet")]
 pub mod parquet;
-#[cfg(feature = "private")]
 pub mod predicates;
-#[cfg(not(feature = "private"))]
-pub(crate) mod predicates;
 pub mod prelude;
 #[cfg(all(test, feature = "csv"))]
 mod tests;

@@ -84,7 +84,6 @@ fn sort_branch<T, Fd, Fr>(
     }
 }
 
-#[cfg(feature = "private")]
 pub fn arg_sort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], descending: bool, parallel: bool)
 where
     T: PartialOrd + Send + IsFloat,

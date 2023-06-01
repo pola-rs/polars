@@ -5,7 +5,6 @@ use polars_core::export::ahash::{self};
 use polars_core::export::rayon::prelude::*;
 use polars_core::utils::NoNull;
 use polars_core::POOL;
-use polars_utils::HashSingle;
 
 use super::*;
 
@@ -31,7 +30,7 @@ where
         for opt_v in arr.iter() {
             match opt_v {
                 Some(v) => {
-                    let r = random_state.hash_single(v);
+                    let r = random_state.hash_one(v);
                     hash_agg = _boost_hash_combine(hash_agg, r);
                 }
                 None => {

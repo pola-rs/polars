@@ -49,7 +49,6 @@ use serde::{Deserialize, Serialize};
 pub use crate::logical_plan::optimizer::file_caching::{
     collect_fingerprints, find_column_union_and_fingerprints, FileCacher, FileFingerPrint,
 };
-use crate::logical_plan::schema::FileInfo;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Context {

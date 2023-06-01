@@ -28,7 +28,7 @@ ciborium = "0.2.0"
 clap = { version = "4.2.2", features = ["derive", "cargo"] }
 nu-ansi-term = { version = "0.47.0", optional = true }
 once_cell.workspace = true
-polars = { version = "0.30.0", path = "../polars", features = ["lazy", "sql", "dtype-full", "private", "serde-lazy"] }
+polars = { version = "0.30.0", path = "../polars", features = ["lazy", "sql", "dtype-full", "serde-lazy"] }
 reedline = { version = "0.19.0" }
 serde = { version = "1.0.160", features = ["derive"] }
 sqlparser = "0.34"
