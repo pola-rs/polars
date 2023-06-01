@@ -31,7 +31,6 @@ pub fn list_count_match(ca: &ListChunked, value: AnyValue) -> PolarsResult<Serie
     let ca = ca.apply_to_inner(&|s| {
         ChunkCompare::<&Series>::equal_missing(&s, &value).map(|ca| ca.into_series())
     })?;
-    dbg!(&ca);
     let out = count_boolean_bits(&ca);
     Ok(out.into_series())
 }
