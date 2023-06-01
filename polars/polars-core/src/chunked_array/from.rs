@@ -89,10 +89,8 @@ where
         // that check if the data types in the arrays are as expected
         #[cfg(debug_assertions)]
         {
-            match &dtype {
-                #[cfg(feature = "object")]
-                DataType::Object(_) => {}
-                dt => assert_eq!(chunks[0].data_type(), &dt.to_physical().to_arrow()),
+            if dtype.is_primitive() {
+                assert_eq!(chunks[0].data_type(), &dtype.to_physical().to_arrow())
             }
         }
         let field = Arc::new(Field::new(name, dtype));
