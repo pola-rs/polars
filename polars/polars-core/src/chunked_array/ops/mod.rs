@@ -24,6 +24,7 @@ mod cum_agg;
 mod decimal;
 pub(crate) mod downcast;
 pub(crate) mod explode;
+mod explode_and_offsets;
 mod extend;
 mod fill_null;
 mod filter;
