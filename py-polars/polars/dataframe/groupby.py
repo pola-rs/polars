@@ -960,9 +960,9 @@ class DynamicGroupBy:
         start_by: StartBy,
         check_sorted: bool,
     ):
+        every = _timedelta_to_pl_duration(every)
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
-        every = _timedelta_to_pl_duration(every)
 
         self.df = df
         self.time_column = index_column
