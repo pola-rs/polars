@@ -89,7 +89,7 @@ where
         // that check if the data types in the arrays are as expected
         #[cfg(debug_assertions)]
         {
-            if dtype.is_primitive() {
+            if !chunks.is_empty() && dtype.is_primitive() {
                 assert_eq!(chunks[0].data_type(), &dtype.to_physical().to_arrow())
             }
         }
