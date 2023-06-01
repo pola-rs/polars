@@ -2695,3 +2695,45 @@ def test_misc_precision_any_value_conversion(time_zone: Any, warn: bool) -> None
 def test_pytime_conversion(tm: time) -> None:
     s = pl.Series("tm", [tm])
     assert s.to_list() == [tm]
+
+
+@pytest.mark.parametrize(
+    ("input_df", "expected_grouped_df"),
+    [
+        (
+            (
+                pl.DataFrame(
+                    {
+                        "dt": [
+                            datetime(2021, 12, 31, 0, 0, 0),
+                            datetime(2022, 1, 1, 0, 0, 1),
+                            datetime(2022, 3, 31, 0, 0, 1),
+                            datetime(2022, 4, 1, 0, 0, 1),
+                        ]
+                    }
+                )
+            ),
+            pl.DataFrame(
+                {
+                    "dt": [
+                        datetime(2021, 10, 1),
+                        datetime(2022, 1, 1),
+                        datetime(2022, 4, 1),
+                    ],
+                    "num_points": [1, 2, 1],
+                },
+                schema={"dt": pl.Datetime, "num_points": pl.UInt32},
+            ).sort("dt"),
+        )
+    ],
+)
+def test_groupby_dynamic(
+    input_df: pl.DataFrame, expected_grouped_df: pl.DataFrame
+) -> None:
+    result = (
+        input_df.sort("dt")
+        .groupby_dynamic("dt", every="1q")
+        .agg(pl.col("dt").count().alias("num_points"))
+        .sort("dt")
+    )
+    assert_frame_equal(result, expected_grouped_df)
