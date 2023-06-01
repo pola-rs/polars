@@ -1845,8 +1845,11 @@ class DataFrame:
         bar: [["a","b","c","d","e","f"]]
 
         """
-        record_batches = self._df.to_arrow()
-        return pa.Table.from_batches(record_batches)
+        if self.shape[1]:  # all except 0x0 dataframe
+            record_batches = self._df.to_arrow()
+            return pa.Table.from_batches(record_batches)
+        else:  # 0x0 dataframe, cannot infer schema from batches
+            return pa.table({})
 
     @overload
     def to_dict(self, as_series: Literal[True] = ...) -> dict[str, Series]:

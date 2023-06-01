@@ -220,6 +220,23 @@ def test_arrow_null_roundtrip() -> None:
         assert c1.to_pylist() == c2.to_pylist()
 
 
+def test_arrow_empty_dataframe() -> None:
+    # 0x0 dataframe
+    df = pl.DataFrame({})
+    tbl = pa.table({})
+    assert df.to_arrow() == tbl
+    df2 = cast(pl.DataFrame, pl.from_arrow(df.to_arrow()))
+    assert_frame_equal(df2, df)
+
+    # 0 row dataframe
+    df = pl.DataFrame({}, schema={"a": pl.Int32})
+    tbl = pa.Table.from_batches([], pa.schema([pa.field("a", pa.int32())]))
+    assert df.to_arrow() == tbl
+    df2 = cast(pl.DataFrame, pl.from_arrow(df.to_arrow()))
+    assert df2.schema == {"a": pl.Int32}
+    assert df2.shape == (0, 1)
+
+
 def test_arrow_dict_to_polars() -> None:
     pa_dict = pa.DictionaryArray.from_arrays(
         indices=np.array([0, 1, 2, 3, 1, 0, 2, 3, 3, 2]),
