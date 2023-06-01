@@ -904,3 +904,9 @@ def test_struct_name_passed_in_agg_apply() -> None:
             ]
         ],
     }
+
+
+def test_struct_null_count_strict_cast() -> None:
+    s = pl.Series([{"a": None}]).cast(pl.Struct({"a": pl.Categorical}))
+    assert s.dtype == pl.Struct([pl.Field("a", pl.Categorical)])
+    assert s.to_list() == [{"a": None}]
