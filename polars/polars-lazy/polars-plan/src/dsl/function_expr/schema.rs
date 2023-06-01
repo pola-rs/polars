@@ -234,7 +234,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map a single dtype with a potentially failing mapper function.
-    #[cfg(feature = "timezones")]
+    #[cfg(any(feature = "timezones", feature = "dtype-array"))]
     pub(super) fn try_map_dtype(
         &self,
         func: impl Fn(&DataType) -> PolarsResult<DataType>,
