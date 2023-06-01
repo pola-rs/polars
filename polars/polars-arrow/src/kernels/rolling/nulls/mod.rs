@@ -179,6 +179,16 @@ mod test {
 
         assert_eq!(out, &[0.0, 0.0, 2.0, 12.5]);
 
+        let testpars = Some(Arc::new(RollingVarParams { ddof: 0 }) as Arc<dyn Any + Send + Sync>);
+        let out = rolling_var(arr, 3, 1, false, None, testpars.clone());
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out
+            .into_iter()
+            .map(|v| v.copied().unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(out, &[0.0, 0.0, 1.0, 6.25]);
+
         let out = rolling_var(arr, 4, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out
@@ -186,6 +196,14 @@ mod test {
             .map(|v| v.copied().unwrap())
             .collect::<Vec<_>>();
         assert_eq!(out, &[0.0, 0.0, 2.0, 6.333333333333334]);
+
+        let out = rolling_var(arr, 4, 1, false, None, testpars.clone());
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out
+            .into_iter()
+            .map(|v| v.copied().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(out, &[0.0, 0.0, 1.0, 4.222222222222222]);
     }
 
     #[test]
