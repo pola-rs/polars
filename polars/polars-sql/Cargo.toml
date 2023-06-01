@@ -13,7 +13,6 @@ json = ["polars-lazy/json"]
 default = []
 ipc = ["polars-lazy/ipc"]
 parquet = ["polars-lazy/parquet"]
-private = []
 
 [dependencies]
 polars-arrow = { version = "0.30.0", path = "../polars-arrow", features = ["like"] }

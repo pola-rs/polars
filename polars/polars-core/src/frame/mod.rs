@@ -525,7 +525,6 @@ impl DataFrame {
         &self.columns
     }
 
-    #[cfg(feature = "private")]
     #[inline]
     /// Get mutable access to the underlying columns.
     /// # Safety
@@ -1786,7 +1785,6 @@ impl DataFrame {
     }
 
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
-    #[cfg(feature = "private")]
     pub fn sort_impl(
         &self,
         by_column: Vec<Series>,

@@ -6,7 +6,6 @@ use super::*;
 use crate::utils::create_chunked_index_mapping;
 
 impl Series {
-    #[cfg(feature = "private")]
     #[doc(hidden)]
     pub fn hash_join_left(&self, other: &Series) -> LeftJoinIds {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());

@@ -21,12 +21,10 @@ impl ArrayChunked {
     /// this function still needs precautions. The returned should never be cloned or taken longer
     /// than a single iteration, as every call on `next` of the iterator will change the contents of
     /// that Series.
-    #[cfg(feature = "private")]
     pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
         self.amortized_iter_with_name("")
     }
 
-    #[cfg(feature = "private")]
     pub fn amortized_iter_with_name(
         &self,
         name: &str,

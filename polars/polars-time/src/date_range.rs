@@ -12,7 +12,6 @@ pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
     !(ndt.year() > 2554 || ndt.year() < 1386)
 }
 
-#[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn date_range_impl(
     name: &str,
@@ -75,7 +74,6 @@ pub fn date_range(
     date_range_impl(name, start, stop, every, closed, tu, tz.as_ref())
 }
 
-#[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn time_range_impl(
     name: &str,

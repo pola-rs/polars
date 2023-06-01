@@ -16,8 +16,8 @@ chrono-tz = { version = "0.8", optional = true }
 futures = { version = "0.3.25", optional = true }
 once_cell.workspace = true
 polars-arrow = { version = "0.30.0", path = "../../polars-arrow" }
-polars-core = { version = "0.30.0", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.30.0", path = "../../polars-io", features = ["lazy", "csv", "private"], default-features = false }
+polars-core = { version = "0.30.0", path = "../../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.30.0", path = "../../polars-io", features = ["lazy", "csv"], default-features = false }
 polars-ops = { version = "0.30.0", path = "../../polars-ops", default-features = false }
 polars-time = { version = "0.30.0", path = "../../polars-time", optional = true }
 polars-utils = { version = "0.30.0", path = "../../polars-utils" }
@@ -34,7 +34,7 @@ python = ["pyo3"]
 # make sure we don't compile unneeded things even though
 # this dependency gets activated
 compile = []
-default = ["compile", "private"]
+default = ["compile"]
 streaming = []
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 async = []
@@ -116,9 +116,6 @@ cse = []
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
 fused = []
-
-# no guarantees whatsoever
-private = ["polars-time/private"]
 
 bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
 

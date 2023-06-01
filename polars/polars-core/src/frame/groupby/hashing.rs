@@ -4,7 +4,6 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
-use polars_utils::HashSingle;
 use rayon::prelude::*;
 
 use super::GroupsProxy;
@@ -219,14 +218,14 @@ where
                         cnt += 1;
 
                         if this_partition(k.as_u64(), thread_no, n_partitions) {
-                            let hash = hasher.hash_single(k);
+                            let hash = hasher.hash_one(k);
                             let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
                                     let tuples = vec![idx];
                                     entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
-                                        hasher.hash_single(k)
+                                        hasher.hash_one(k)
                                     });
                                 }
                                 RawEntryMut::Occupied(mut entry) => {
@@ -283,14 +282,14 @@ where
                         cnt += 1;
 
                         if this_partition(k.as_u64(), thread_no, n_partitions) {
-                            let hash = hasher.hash_single(k);
+                            let hash = hasher.hash_one(k);
                             let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, &k);
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
                                     let tuples = vec![idx];
                                     entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
-                                        hasher.hash_single(k)
+                                        hasher.hash_one(k)
                                     });
                                 }
                                 RawEntryMut::Occupied(mut entry) => {
