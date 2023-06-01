@@ -200,7 +200,7 @@ pub fn rolling_var<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: DynArgs,
+    params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType + std::iter::Sum<T> + Zero + AddAssign + SubAssign + IsFloat + Float,
@@ -219,7 +219,7 @@ where
         window_size,
         min_periods,
         offsets_fn,
-        None,
+        params,
     )
 }
 
