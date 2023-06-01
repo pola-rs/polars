@@ -22,4 +22,16 @@ impl ArrayNameSpace {
         self.0
             .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Sum))
     }
+
+    /// Keep only the unique values in every sub-array.
+    pub fn unique(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Unique(false)))
+    }
+
+    /// Keep only the unique values in every sub-array.
+    pub fn unique_stable(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Unique(true)))
+    }
 }

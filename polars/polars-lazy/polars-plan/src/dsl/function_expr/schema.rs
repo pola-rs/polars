@@ -106,6 +106,13 @@ impl FunctionExpr {
                 match af {
                     Min | Max => mapper.with_same_dtype(),
                     Sum => mapper.nested_sum_type(),
+                    Unique(_) => mapper.try_map_dtype(|dt| {
+                        if let DataType::Array(inner, _) = dt {
+                            Ok(DataType::List(inner.clone()))
+                        } else {
+                            polars_bail!(ComputeError: "expected array dtype")
+                        }
+                    }),
                 }
             }
             #[cfg(feature = "dtype-struct")]
@@ -227,7 +234,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map a single dtype with a potentially failing mapper function.
-    #[cfg(feature = "timezones")]
+    #[cfg(any(feature = "timezones", feature = "dtype-array"))]
     pub(super) fn try_map_dtype(
         &self,
         func: impl Fn(&DataType) -> PolarsResult<DataType>,

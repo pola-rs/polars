@@ -41,6 +41,16 @@ pub trait ArrayNameSpace: AsArray {
             dt => sum_with_nulls(ca, &dt),
         }
     }
+
+    fn array_unique(&self) -> PolarsResult<ListChunked> {
+        let ca = self.as_array();
+        ca.try_apply_amortized(|s| s.as_ref().unique())
+    }
+
+    fn array_unique_stable(&self) -> PolarsResult<ListChunked> {
+        let ca = self.as_array();
+        ca.try_apply_amortized(|s| s.as_ref().unique_stable())
+    }
 }
 
 impl ArrayNameSpace for ArrayChunked {}

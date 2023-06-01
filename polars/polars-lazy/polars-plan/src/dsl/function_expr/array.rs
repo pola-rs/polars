@@ -8,6 +8,7 @@ pub enum ArrayFunction {
     Min,
     Max,
     Sum,
+    Unique(bool),
 }
 
 impl Display for ArrayFunction {
@@ -17,6 +18,7 @@ impl Display for ArrayFunction {
             Min => "min",
             Max => "max",
             Sum => "sum",
+            Unique(_) => "unique",
         };
 
         write!(f, "arr.{name}")
@@ -33,4 +35,14 @@ pub(super) fn min(s: &Series) -> PolarsResult<Series> {
 
 pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
     s.array()?.array_sum()
+}
+
+pub(super) fn unique(s: &Series, stable: bool) -> PolarsResult<Series> {
+    let ca = s.array()?;
+    let out = if stable {
+        ca.array_unique_stable()
+    } else {
+        ca.array_unique()
+    };
+    out.map(|ca| ca.into_series())
 }
