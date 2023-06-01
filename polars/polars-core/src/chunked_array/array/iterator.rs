@@ -2,7 +2,7 @@ use std::ptr::NonNull;
 
 use super::*;
 use crate::chunked_array::list::iterator::AmortizedListIter;
-use crate::series::unstable::ArrayBox;
+use crate::series::unstable::{ArrayBox, UnstableSeries};
 
 impl ArrayChunked {
     /// This is an iterator over a ListChunked that save allocations.
@@ -63,5 +63,42 @@ impl ArrayChunked {
             self.downcast_iter().flat_map(|arr| arr.iter()),
             inner_dtype,
         )
+    }
+
+    pub fn try_apply_amortized<'a, F>(&'a self, mut f: F) -> PolarsResult<ListChunked>
+    where
+        F: FnMut(UnstableSeries<'a>) -> PolarsResult<Series>,
+    {
+        if self.is_empty() {
+            return Ok(Series::new_empty(
+                self.name(),
+                &DataType::List(Box::new(self.inner_dtype())),
+            )
+            .list()
+            .unwrap()
+            .clone());
+        }
+        let mut fast_explode = self.null_count() == 0;
+        let mut ca: ListChunked = self
+            .amortized_iter()
+            .map(|opt_v| {
+                opt_v
+                    .map(|v| {
+                        let out = f(v);
+                        if let Ok(out) = &out {
+                            if out.is_empty() {
+                                fast_explode = false
+                            }
+                        };
+                        out
+                    })
+                    .transpose()
+            })
+            .collect::<PolarsResult<_>>()?;
+        ca.rename(self.name());
+        if fast_explode {
+            ca.set_fast_explode();
+        }
+        Ok(ca)
     }
 }

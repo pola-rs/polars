@@ -15,4 +15,11 @@ impl PyExpr {
     fn array_sum(&self) -> Self {
         self.inner.clone().arr().sum().into()
     }
+    fn array_unique(&self, maintain_order: bool) -> Self {
+        if maintain_order {
+            self.inner.clone().arr().unique_stable().into()
+        } else {
+            self.inner.clone().arr().unique().into()
+        }
+    }
 }

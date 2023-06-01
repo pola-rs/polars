@@ -12,3 +12,4 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.max
     Expr.arr.min
     Expr.arr.sum
+    Expr.arr.unique

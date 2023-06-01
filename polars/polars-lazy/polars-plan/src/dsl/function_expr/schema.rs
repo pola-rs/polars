@@ -106,6 +106,13 @@ impl FunctionExpr {
                 match af {
                     Min | Max => mapper.with_same_dtype(),
                     Sum => mapper.nested_sum_type(),
+                    Unique(_) => mapper.try_map_dtype(|dt| {
+                        if let DataType::Array(inner, _) = dt {
+                            Ok(DataType::List(inner.clone()))
+                        } else {
+                            polars_bail!(ComputeError: "expected array dtype")
+                        }
+                    }),
                 }
             }
             #[cfg(feature = "dtype-struct")]

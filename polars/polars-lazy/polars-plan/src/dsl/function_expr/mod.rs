@@ -430,6 +430,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Min => map!(array::min),
                     Max => map!(array::max),
                     Sum => map!(array::sum),
+                    Unique(stable) => map!(array::unique, stable),
                 }
             }
             #[cfg(feature = "dtype-struct")]
