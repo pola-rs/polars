@@ -298,9 +298,29 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
                     if value {
-                        self.clone()
+                        if self.null_count() == 0 {
+                            self.clone()
+                        } else {
+                            self.apply_kernel(&|arr| {
+                                if let Some(validity) = arr.validity() {
+                                    Box::new(BooleanArray::from_data_default(
+                                        arr.values() & validity,
+                                        None,
+                                    )) as ArrayRef
+                                } else {
+                                    Box::new(arr.clone())
+                                }
+                            })
+                        }
                     } else {
-                        self.not()
+                        self.apply_kernel(&|arr| {
+                            let bitmap = if let Some(validity) = arr.validity() {
+                                arr.values() ^ validity
+                            } else {
+                                arr.values().not()
+                            };
+                            Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
+                        })
                     }
                 } else {
                     self.is_null()
