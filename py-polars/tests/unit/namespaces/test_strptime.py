@@ -5,6 +5,7 @@ This method gets its own module due to its complexity.
 """
 from __future__ import annotations
 
+import contextlib
 import sys
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -12,7 +13,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ArrowError, ComputeError
+from polars.exceptions import ArrowError, ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import assert_series_equal
 
 if sys.version_info >= (3, 9):
@@ -132,6 +133,65 @@ def test_to_date_non_exact_strptime() -> None:
 
     with pytest.raises(pl.ComputeError):
         s.str.to_date(format, strict=True, exact=True)
+
+
+@pytest.mark.parametrize(
+    ("offset", "time_zone", "tzinfo", "format"),
+    [
+        ("+01:00", "UTC", timezone(timedelta(hours=1)), "%Y-%m-%dT%H:%M%z"),
+        ("", None, None, "%Y-%m-%dT%H:%M"),
+    ],
+)
+def test_to_datetime_non_exact_strptime(
+    offset: str, time_zone: str | None, tzinfo: timezone | None, format: str
+) -> None:
+    msg = "Series with UTC time zone"
+    context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
+    if offset:
+        context_manager = pytest.warns(TimeZoneAwareConstructorWarning, match=msg)
+    else:
+        context_manager = contextlib.nullcontext()
+
+    s = pl.Series(
+        "a",
+        [
+            f"2022-01-16T00:00{offset}",
+            f"2022-01-17T00:00{offset}",
+            f"foo2022-01-18T00:00{offset}",
+            f"b2022-01-19T00:00{offset}ar",
+        ],
+    )
+
+    result = s.str.to_datetime(format, strict=False, exact=True)
+    with context_manager:
+        expected = pl.Series(
+            "a",
+            [
+                datetime(2022, 1, 16, tzinfo=tzinfo),
+                datetime(2022, 1, 17, tzinfo=tzinfo),
+                None,
+                None,
+            ],
+        )
+    assert_series_equal(result, expected)
+    assert result.dtype == pl.Datetime("us", time_zone)
+
+    result = s.str.to_datetime(format, strict=False, exact=False)
+    with context_manager:
+        expected = pl.Series(
+            "a",
+            [
+                datetime(2022, 1, 16, tzinfo=tzinfo),
+                datetime(2022, 1, 17, tzinfo=tzinfo),
+                datetime(2022, 1, 18, tzinfo=tzinfo),
+                datetime(2022, 1, 19, tzinfo=tzinfo),
+            ],
+        )
+    assert_series_equal(result, expected)
+    assert result.dtype == pl.Datetime("us", time_zone)
+
+    with pytest.raises(pl.ComputeError):
+        s.str.to_datetime(format, strict=True, exact=True)
 
 
 def test_to_datetime_dates_datetimes() -> None:

@@ -1,4 +1,5 @@
 pub mod infer;
+use chrono::DateTime;
 mod patterns;
 mod strptime;
 
@@ -250,6 +251,7 @@ pub trait Utf8Methods: AsUtf8 {
         &self,
         fmt: Option<&str>,
         tu: TimeUnit,
+        tz_aware: bool,
         tz: Option<&TimeZone>,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
@@ -275,19 +277,39 @@ pub trait Utf8Methods: AsUtf8 {
                         if s.is_empty() {
                             return None;
                         }
-                        match NaiveDateTime::parse_from_str(s, fmt).map(func) {
-                            Ok(nd) => return Some(nd),
-                            Err(e) => {
-                                let e: ParseErrorByteCopy = e.into();
-                                match e.0 {
-                                    ParseErrorKind::TooLong => {
-                                        s = &s[..s.len() - 1];
-                                    }
-                                    _ => {
-                                        s = &s[i..];
+                        match tz_aware {
+                            true => {
+                                match DateTime::parse_from_str(s, fmt)
+                                    .map(|dt| func(dt.naive_utc()))
+                                {
+                                    Ok(nd) => return Some(nd),
+                                    Err(e) => {
+                                        let e: ParseErrorByteCopy = e.into();
+                                        match e.0 {
+                                            ParseErrorKind::TooLong => {
+                                                s = &s[..s.len() - 1];
+                                            }
+                                            _ => {
+                                                s = &s[i..];
+                                            }
+                                        }
                                     }
                                 }
                             }
+                            false => match NaiveDateTime::parse_from_str(s, fmt).map(func) {
+                                Ok(nd) => return Some(nd),
+                                Err(e) => {
+                                    let e: ParseErrorByteCopy = e.into();
+                                    match e.0 {
+                                        ParseErrorKind::TooLong => {
+                                            s = &s[..s.len() - 1];
+                                        }
+                                        _ => {
+                                            s = &s[i..];
+                                        }
+                                    }
+                                }
+                            },
                         }
                     }
                     None
@@ -295,9 +317,16 @@ pub trait Utf8Methods: AsUtf8 {
             })
             .collect_trusted();
         ca.rename(utf8_ca.name());
-        match tz {
+        match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
-            Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
+            (false, Some(tz)) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
+            #[cfg(feature = "timezones")]
+            (true, None) => Ok(ca.into_datetime(tu, Some("UTC".to_string()))),
+            (true, Some(_)) => {
+                // Can't use tz-aware format with tz-aware dtype, this would already have
+                // errored earlier.
+                unreachable!()
+            }
             _ => Ok(ca.into_datetime(tu, None)),
         }
     }
@@ -405,7 +434,6 @@ pub trait Utf8Methods: AsUtf8 {
         if tz_aware {
             #[cfg(feature = "timezones")]
             {
-                use chrono::DateTime;
                 use polars_arrow::export::hashbrown::hash_map::Entry;
                 let mut cache_map = PlHashMap::new();
 
