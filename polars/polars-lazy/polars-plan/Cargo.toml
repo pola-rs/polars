@@ -21,7 +21,7 @@ polars-io = { version = "0.30.0", path = "../../polars-io", features = ["lazy", 
 polars-ops = { version = "0.30.0", path = "../../polars-ops", default-features = false }
 polars-time = { version = "0.30.0", path = "../../polars-time", optional = true }
 polars-utils = { version = "0.30.0", path = "../../polars-utils" }
-pyo3 = { version = "0.18", optional = true }
+pyo3 = { version = "0.19", optional = true }
 rayon.workspace = true
 regex = { version = "1.6", optional = true }
 serde = { version = "1", features = ["derive", "rc"], optional = true }
