@@ -11,7 +11,6 @@ mod into;
 pub(crate) mod iterator;
 pub mod ops;
 mod series_trait;
-#[cfg(feature = "private")]
 pub mod unstable;
 
 use std::borrow::Cow;
@@ -175,7 +174,6 @@ impl Series {
     }
 
     #[doc(hidden)]
-    #[cfg(feature = "private")]
     pub fn _get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
         if Arc::weak_count(&self.0) + Arc::strong_count(&self.0) != 1 {
             self.0 = self.0.clone_inner();
@@ -867,7 +865,6 @@ impl Series {
         out.cast(self.dtype())
     }
 
-    #[cfg(feature = "private")]
     // used for formatting
     pub fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
         let out = match self.0.get(index)? {

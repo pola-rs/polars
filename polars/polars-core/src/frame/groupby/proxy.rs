@@ -308,7 +308,6 @@ impl Default for GroupsProxy {
 }
 
 impl GroupsProxy {
-    #[cfg(feature = "private")]
     pub fn into_idx(self) -> GroupsIdx {
         match self {
             GroupsProxy::Idx(groups) => groups,
@@ -326,7 +325,6 @@ impl GroupsProxy {
         GroupsProxyIter::new(self)
     }
 
-    #[cfg(feature = "private")]
     pub fn sort(&mut self) {
         match self {
             GroupsProxy::Idx(groups) => {
@@ -369,7 +367,6 @@ impl GroupsProxy {
         }
     }
 
-    #[cfg(feature = "private")]
     pub fn par_iter(&self) -> GroupsProxyParIter {
         GroupsProxyParIter::new(self)
     }

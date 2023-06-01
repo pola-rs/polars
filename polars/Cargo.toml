@@ -156,7 +156,6 @@ fused = ["polars-ops/fused", "polars-lazy/fused"]
 
 test = [
   "lazy",
-  "private",
   "rolling_window",
   "rank",
   "round_series",
@@ -171,9 +170,6 @@ test = [
   "ipc_streaming",
   "json",
 ]
-
-# don't use this
-private = ["polars-lazy/private", "polars-core/private", "polars-time/private", "polars-sql/private"]
 
 # all opt-in datatypes
 dtype-full = [
@@ -308,9 +304,9 @@ bench = [
 
 [dependencies]
 polars-algo = { version = "0.30.0", path = "./polars-algo", optional = true }
-polars-core = { version = "0.30.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.30.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.30.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-core = { version = "0.30.0", path = "./polars-core", features = ["docs"], default-features = false }
+polars-io = { version = "0.30.0", path = "./polars-io", features = [], default-features = false, optional = true }
+polars-lazy = { version = "0.30.0", path = "./polars-lazy", features = [], default-features = false, optional = true }
 polars-ops = { version = "0.30.0", path = "./polars-ops" }
 polars-sql = { version = "0.30.0", path = "./polars-sql", default-features = false, optional = true }
 polars-time = { version = "0.30.0", path = "./polars-time", default-features = false, optional = true }

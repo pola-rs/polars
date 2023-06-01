@@ -16,7 +16,7 @@ avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "private"]
+default = ["docs", "temporal"]
 lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
@@ -37,8 +37,6 @@ sort_multiple = []
 # create from row values
 # and include pivot operation
 rows = []
-# dont use this
-private = []
 
 # operations
 is_in = []

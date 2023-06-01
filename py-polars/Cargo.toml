@@ -125,7 +125,6 @@ features = [
   "fmt",
   "dtype-full",
   "rows",
-  "private",
   "round_series",
   "is_first",
   "is_unique",
