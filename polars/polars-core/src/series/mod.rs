@@ -348,6 +348,8 @@ impl Series {
     pub fn explode(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::List(_) => self.list().unwrap().explode(),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => self.array().unwrap().explode(),
             _ => Ok(self.clone()),
         }
     }
