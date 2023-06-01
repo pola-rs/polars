@@ -2,7 +2,6 @@ use arrow::bitmap::utils::get_bit_unchecked;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
 use polars_arrow::utils::CustomIterTools;
-use polars_utils::HashSingle;
 use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 
@@ -222,8 +221,8 @@ impl VecHash for BooleanChunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
         buf.clear();
         buf.reserve(self.len());
-        let true_h = random_state.hash_single(true);
-        let false_h = random_state.hash_single(false);
+        let true_h = random_state.hash_one(true);
+        let false_h = random_state.hash_one(false);
         let null_h = get_null_hash_value(random_state);
         self.downcast_iter().for_each(|arr| {
             if arr.null_count() == 0 {
@@ -239,8 +238,8 @@ impl VecHash for BooleanChunked {
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
-        let true_h = random_state.hash_single(true);
-        let false_h = random_state.hash_single(false);
+        let true_h = random_state.hash_one(true);
+        let false_h = random_state.hash_one(false);
         let null_h = get_null_hash_value(random_state);
 
         let mut offset = 0;
