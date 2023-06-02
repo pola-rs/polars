@@ -5553,7 +5553,7 @@ class Expr:
             * rolling_mean
             * rolling_sum
 
-        The window at a given row will the row itself and the `window_size - 1`
+        The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
         Parameters

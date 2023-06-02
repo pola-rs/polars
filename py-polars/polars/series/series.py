@@ -4389,7 +4389,7 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        The window at a given row will the row itself and the `window_size - 1`
+        The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
         Parameters
@@ -4445,7 +4445,7 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        The window at a given row will the row itself and the `window_size - 1`
+        The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
         Parameters
@@ -4501,7 +4501,7 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        The window at a given row will the row itself and the `window_size - 1`
+        The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
         Parameters
@@ -4557,7 +4557,7 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        The window at a given row will the row itself and the `window_size - 1`
+        The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
         Parameters
@@ -4613,7 +4613,7 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        The window at a given row will the row itself and the `window_size - 1`
+        The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
         Parameters
@@ -4670,7 +4670,7 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        The window at a given row will the row itself and the `window_size - 1`
+        The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
         Parameters
@@ -4731,7 +4731,7 @@ class Series:
             * rolling_mean
             * rolling_sum
 
-        The window at a given row will the row itself and the `window_size - 1`
+        The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
         Parameters
@@ -4790,7 +4790,7 @@ class Series:
         center
             Set the labels at the center of the window
 
-        The window at a given row will the row itself and the `window_size - 1`
+        The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
         Examples
@@ -4835,7 +4835,7 @@ class Series:
         """
         Compute a rolling quantile.
 
-        The window at a given row will the row itself and the `window_size - 1`
+        The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
         Parameters
