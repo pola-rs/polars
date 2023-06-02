@@ -64,7 +64,7 @@ impl<K: PolarsDataType, T: PolarsDataType> DerefMut for Logical<K, T> {
 }
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T> {
-    pub fn new_logical<J: PolarsDataType>(ca: ChunkedArray<T>) -> Logical<J, T> {
+    pub(crate) fn new_logical<J: PolarsDataType>(ca: ChunkedArray<T>) -> Logical<J, T> {
         Logical(ca, PhantomData, None)
     }
 }
