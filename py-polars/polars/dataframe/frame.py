@@ -4769,13 +4769,19 @@ class DataFrame:
         check_sorted: bool = True,
     ) -> RollingGroupBy:
         """
-        Create rolling groups based on a time column.
-
-        Also works for index values of type Int32 or Int64.
+        Create rolling groups based on a time, Int32, or Int64 column.
 
         Different from a ``dynamic_groupby`` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
-        *groupby_dynamic*
+        *groupby_dynamic*.
+
+        If you have a time series ``[t_0, t_1, ..., t_n]``, then by default the
+        windows created will be
+
+            * (t_0 - period, t_0]
+            * (t_1 - period, t_1]
+            * ...
+            * (t_n - period, t_n]
 
         The `period` and `offset` arguments are created either from a timedelta, or
         by using the following string language:

@@ -2587,6 +2587,9 @@ def rolling_cov(
     """
     Compute the rolling covariance between two columns/ expressions.
 
+    The window at a given row includes the row itself and the
+    `window_size - 1` elements before it.
+
     Parameters
     ----------
     a
@@ -2624,6 +2627,9 @@ def rolling_corr(
 ) -> Expr:
     """
     Compute the rolling correlation between two columns/ expressions.
+
+    The window at a given row includes the row itself and the
+    `window_size - 1` elements before it.
 
     Parameters
     ----------

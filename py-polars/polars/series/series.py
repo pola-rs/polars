@@ -4389,6 +4389,17 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you have pass a ``by`` column ``[t_0, t_1, ..., t_2]``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the `window_size`
+        elements before that given row.
+
         Parameters
         ----------
         window_size
@@ -4441,6 +4452,17 @@ class Series:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        If you have pass a ``by`` column ``[t_0, t_1, ..., t_2]``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the `window_size`
+        elements before that given row.
 
         Parameters
         ----------
@@ -4495,6 +4517,17 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you have pass a ``by`` column ``[t_0, t_1, ..., t_2]``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the `window_size`
+        elements before that given row.
+
         Parameters
         ----------
         window_size
@@ -4547,6 +4580,17 @@ class Series:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        If you have pass a ``by`` column ``[t_0, t_1, ..., t_2]``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the `window_size`
+        elements before that given row.
 
         Parameters
         ----------
@@ -4601,6 +4645,17 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you have pass a ``by`` column ``[t_0, t_1, ..., t_2]``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the `window_size`
+        elements before that given row.
+
         Parameters
         ----------
         window_size
@@ -4654,6 +4709,17 @@ class Series:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        If you have pass a ``by`` column ``[t_0, t_1, ..., t_2]``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the `window_size`
+        elements before that given row.
 
         Parameters
         ----------
@@ -4713,6 +4779,17 @@ class Series:
             * rolling_mean
             * rolling_sum
 
+        If you have pass a ``by`` column ``[t_0, t_1, ..., t_2]``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the `window_size`
+        elements before that given row.
+
         Parameters
         ----------
         function
@@ -4769,6 +4846,17 @@ class Series:
         center
             Set the labels at the center of the window
 
+        If you have pass a ``by`` column ``[t_0, t_1, ..., t_2]``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the `window_size`
+        elements before that given row.
+
         Examples
         --------
         >>> s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
@@ -4810,6 +4898,17 @@ class Series:
     ) -> Series:
         """
         Compute a rolling quantile.
+
+        If you have pass a ``by`` column ``[t_0, t_1, ..., t_2]``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the `window_size`
+        elements before that given row.
 
         Parameters
         ----------
@@ -4877,6 +4976,9 @@ class Series:
         """
         Compute a rolling skew.
 
+        The window at a given row includes the row itself and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -4886,18 +4988,20 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
-        >>> s.rolling_skew(window_size=3)
-        shape: (6,)
-        Series: 'a' [f64]
+        >>> pl.Series([1, 4, 2, 9]).rolling_skew(3)
+        shape: (4,)
+        Series: '' [f64]
         [
-                null
-                null
-                0.0
-                0.0
-                0.381802
-                0.0
+            null
+            null
+            0.381802
+            0.47033
         ]
+
+        Note how the values match the following:
+
+        >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
+        (0.38180177416060584, 0.47033046033698594)
 
         """
 
