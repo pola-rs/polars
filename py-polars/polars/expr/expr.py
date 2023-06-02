@@ -4664,8 +4664,8 @@ class Expr:
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the `window_size`
-        elements before it.
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
@@ -4775,8 +4775,8 @@ class Expr:
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the `window_size`
-        elements before it.
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
@@ -4886,8 +4886,8 @@ class Expr:
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the `window_size`
-        elements before it.
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
@@ -4997,8 +4997,8 @@ class Expr:
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the `window_size`
-        elements before it.
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
@@ -5108,8 +5108,8 @@ class Expr:
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the `window_size`
-        elements before it.
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
@@ -5219,8 +5219,8 @@ class Expr:
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the `window_size`
-        elements before it.
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
@@ -5326,8 +5326,8 @@ class Expr:
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the `window_size`
-        elements before it.
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
@@ -5435,8 +5435,8 @@ class Expr:
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the `window_size`
-        elements before it.
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
