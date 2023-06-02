@@ -133,7 +133,7 @@ impl StructChunked {
                 .iter()
                 .map(|s| match s.dtype() {
                     #[cfg(feature = "object")]
-                    DataType::Object(_) => s.to_arrow(0),
+                    DataType::Object(_) => s.to_arrow(i),
                     _ => s.chunks()[i].clone(),
                 })
                 .collect::<Vec<_>>();
