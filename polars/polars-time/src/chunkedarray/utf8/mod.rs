@@ -277,39 +277,23 @@ pub trait Utf8Methods: AsUtf8 {
                         if s.is_empty() {
                             return None;
                         }
-                        match tz_aware {
-                            true => {
-                                match DateTime::parse_from_str(s, fmt)
-                                    .map(|dt| func(dt.naive_utc()))
-                                {
-                                    Ok(nd) => return Some(nd),
-                                    Err(e) => {
-                                        let e: ParseErrorByteCopy = e.into();
-                                        match e.0 {
-                                            ParseErrorKind::TooLong => {
-                                                s = &s[..s.len() - 1];
-                                            }
-                                            _ => {
-                                                s = &s[i..];
-                                            }
-                                        }
+                        let timestamp = match tz_aware {
+                            true => DateTime::parse_from_str(s, fmt).map(|dt| func(dt.naive_utc())),
+                            false => NaiveDateTime::parse_from_str(s, fmt).map(func),
+                        };
+                        match timestamp {
+                            Ok(ts) => return Some(ts),
+                            Err(e) => {
+                                let e: ParseErrorByteCopy = e.into();
+                                match e.0 {
+                                    ParseErrorKind::TooLong => {
+                                        s = &s[..s.len() - 1];
+                                    }
+                                    _ => {
+                                        s = &s[i..];
                                     }
                                 }
                             }
-                            false => match NaiveDateTime::parse_from_str(s, fmt).map(func) {
-                                Ok(nd) => return Some(nd),
-                                Err(e) => {
-                                    let e: ParseErrorByteCopy = e.into();
-                                    match e.0 {
-                                        ParseErrorKind::TooLong => {
-                                            s = &s[..s.len() - 1];
-                                        }
-                                        _ => {
-                                            s = &s[i..];
-                                        }
-                                    }
-                                }
-                            },
                         }
                     }
                     None
