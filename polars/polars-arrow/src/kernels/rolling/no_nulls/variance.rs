@@ -121,7 +121,7 @@ impl<
         } else if denom <= T::zero() {
             //ddof would be greater than # of observations
             T::infinity()
-        }else {
+        } else {
             let out = (sum_of_squares - count * mean * mean) / denom;
             // variance cannot be negative.
             // if it is negative it is due to numeric instability
