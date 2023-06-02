@@ -4775,7 +4775,7 @@ class DataFrame:
         individual values and are not of constant intervals. For constant intervals use
         *groupby_dynamic*.
 
-        If you have a time series ``[t_0, t_1, ..., t_n]``, then by default the
+        If you have a time series ``<t_0, t_1, ..., t_n>``, then by default the
         windows created will be
 
             * (t_0 - period, t_0]
