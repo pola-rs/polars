@@ -321,12 +321,7 @@ pub trait Utf8Methods: AsUtf8 {
             #[cfg(feature = "timezones")]
             (false, Some(tz)) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
             #[cfg(feature = "timezones")]
-            (true, None) => Ok(ca.into_datetime(tu, Some("UTC".to_string()))),
-            (true, Some(_)) => {
-                // Can't use tz-aware format with tz-aware dtype, this would already have
-                // errored earlier.
-                unreachable!()
-            }
+            (true, _) => Ok(ca.into_datetime(tu, Some("UTC".to_string()))),
             _ => Ok(ca.into_datetime(tu, None)),
         }
     }
