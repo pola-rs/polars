@@ -425,7 +425,7 @@ fn to_datetime(
         )?
         .into_series()
     } else {
-        ca.as_datetime_not_exact(options.format.as_deref(), *time_unit, time_zone)?
+        ca.as_datetime_not_exact(options.format.as_deref(), *time_unit, tz_aware, time_zone)?
             .into_series()
     };
 
