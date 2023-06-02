@@ -91,7 +91,7 @@ from polars.utils._construction import (
     series_to_pydf,
 )
 from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_ldf, wrap_s
+from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import get_index_type
@@ -7910,7 +7910,7 @@ class DataFrame:
             subset = [subset]
 
         if isinstance(subset, Sequence) and len(subset) == 1:
-            expr = parse_as_expression(subset[0])
+            expr = wrap_expr(parse_as_expression(subset[0]))
         else:
             struct_fields = F.all() if (subset is None) else subset
             expr = F.struct(struct_fields)  # type: ignore[call-overload]

@@ -1920,9 +1920,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(predicate, list):
             predicate = pl.Series(predicate)
 
-        return self._from_pyldf(
-            self._ldf.filter(parse_as_expression(predicate)._pyexpr)
-        )
+        predicate = parse_as_expression(predicate)
+        return self._from_pyldf(self._ldf.filter(predicate))
 
     def select(
         self,
@@ -2268,7 +2267,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────────┴───────┴───────┴───────┘
 
         """
-        index_column = parse_as_expression(index_column)._pyexpr
+        index_column = parse_as_expression(index_column)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(period)}"
 
@@ -2581,7 +2580,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
         """  # noqa: W505
-        index_column = parse_as_expression(index_column)._pyexpr
+        index_column = parse_as_expression(index_column)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
 
@@ -4145,7 +4144,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        quantile = parse_as_expression(quantile)._pyexpr
+        quantile = parse_as_expression(quantile)
         return self._from_pyldf(self._ldf.quantile(quantile, interpolation))
 
     def explode(
@@ -4639,6 +4638,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether the columns are sorted in descending order.
         """
         columns = parse_as_list_of_expressions(column, *more_columns)
+
         return self.with_columns(
             [wrap_expr(e).set_sorted(descending=descending) for e in columns]
         )

@@ -1358,10 +1358,10 @@ def cumsum(
         elif isinstance(exprs, str):
             return col(exprs).cumsum()
 
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    pyexprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
 
     # (Expr): use u32 as that will not cast to float as eagerly
-    exprs_wrapped = [wrap_expr(e) for e in exprs]
     return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, exprs_wrapped).alias(
         "cumsum"
     )
@@ -1715,7 +1715,7 @@ def fold(
     └─────┴─────┘
     """
     # in case of pl.col("*")
-    acc = parse_as_expression(acc, str_as_lit=True)._pyexpr
+    acc = parse_as_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
@@ -1856,7 +1856,7 @@ def cumfold(
 
     """  # noqa: W505
     # in case of pl.col("*")
-    acc = parse_as_expression(acc, str_as_lit=True)._pyexpr
+    acc = parse_as_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
@@ -2010,9 +2010,9 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
         elif isinstance(exprs, str):
             return col(exprs).any()
 
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    pyexprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
 
-    exprs_wrapped = [wrap_expr(e) for e in exprs]
     return fold(
         lit(False), lambda a, b: a.cast(bool) | b.cast(bool), exprs_wrapped
     ).alias("any")
@@ -2099,9 +2099,9 @@ def all(
         elif isinstance(exprs, str):
             return col(exprs).all()
 
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    pyexprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
 
-    exprs_wrapped = [wrap_expr(e) for e in exprs]
     return fold(
         lit(True), lambda a, b: a.cast(bool) & b.cast(bool), exprs_wrapped
     ).alias("all")
@@ -2446,7 +2446,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
             )
         return condition.to_frame().select(arg_where(col(condition.name))).to_series()
     else:
-        condition = parse_as_expression(condition)._pyexpr
+        condition = parse_as_expression(condition)
         return wrap_expr(plr.arg_where(condition))
 
 
