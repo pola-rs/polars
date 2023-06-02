@@ -4656,7 +4656,7 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you have pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
         windows will be:
 
             - [t_0 - window_size, t_0)
@@ -4767,7 +4767,7 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you have pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
         windows will be:
 
             - [t_0 - window_size, t_0)
@@ -4878,7 +4878,7 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you have pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
         windows will be:
 
             - [t_0 - window_size, t_0)
@@ -4989,7 +4989,7 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you have pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
         windows will be:
 
             - [t_0 - window_size, t_0)
@@ -5100,7 +5100,7 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you have pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
         windows will be:
 
             - [t_0 - window_size, t_0)
@@ -5211,7 +5211,7 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you have pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
         windows will be:
 
             - [t_0 - window_size, t_0)
@@ -5318,7 +5318,7 @@ class Expr:
         """
         Compute a rolling median.
 
-        If you have pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
         windows will be:
 
             - [t_0 - window_size, t_0)
@@ -5427,7 +5427,7 @@ class Expr:
         """
         Compute a rolling quantile.
 
-        If you have pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
         windows will be:
 
             - [t_0 - window_size, t_0)
