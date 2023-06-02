@@ -499,7 +499,7 @@ impl PyDataFrame {
             .map(|(key, val)| {
                 let name = key.extract::<&str>()?;
 
-                let s = if val.is_instance_of::<PyDict>()? {
+                let s = if val.is_instance_of::<PyDict>() {
                     let df = Self::read_dict(py, val.extract::<&PyDict>()?)?;
                     df.df.into_struct(name).into_series()
                 } else {
