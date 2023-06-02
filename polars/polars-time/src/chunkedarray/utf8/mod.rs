@@ -4,7 +4,7 @@ mod patterns;
 mod strptime;
 
 use chrono::ParseError;
-pub use patterns::{Pattern, PatternWithOffset};
+pub use patterns::Pattern;
 #[cfg(feature = "dtype-time")]
 use polars_core::chunked_array::temporal::time_to_time64ns;
 

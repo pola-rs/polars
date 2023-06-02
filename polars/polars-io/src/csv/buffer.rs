@@ -534,10 +534,10 @@ pub(crate) fn init_buffers<'a>(
                     ignore_errors,
                 )),
                 #[cfg(feature = "dtype-datetime")]
-                DataType::Datetime(tu, offset) => Buffer::Datetime {
+                DataType::Datetime(time_unit, time_zone) => Buffer::Datetime {
                     buf: DatetimeField::new(name, capacity),
-                    tu: *tu,
-                    offset: offset.clone(),
+                    time_unit: *time_unit,
+                    time_zone: time_zone.clone(),
                 },
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
@@ -568,8 +568,8 @@ pub(crate) enum Buffer<'a> {
     #[cfg(feature = "dtype-datetime")]
     Datetime {
         buf: DatetimeField<Int64Type>,
-        tu: TimeUnit,
-        offset: Option<String>,
+        time_unit: TimeUnit,
+        time_zone: Option<TimeZone>,
     },
     #[cfg(feature = "dtype-date")]
     Date(DatetimeField<Int32Type>),
@@ -588,11 +588,15 @@ impl<'a> Buffer<'a> {
             Buffer::Float32(v) => v.finish().into_series(),
             Buffer::Float64(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-datetime")]
-            Buffer::Datetime { buf, tu, offset } => buf
+            Buffer::Datetime {
+                buf,
+                time_unit,
+                time_zone,
+            } => buf
                 .builder
                 .finish()
                 .into_series()
-                .cast(&DataType::Datetime(tu, offset))
+                .cast(&DataType::Datetime(time_unit, time_zone))
                 .unwrap(),
             #[cfg(feature = "dtype-date")]
             Buffer::Date(v) => v
@@ -700,7 +704,7 @@ impl<'a> Buffer<'a> {
             Buffer::Float64(_) => DataType::Float64,
             Buffer::Utf8(_) => DataType::Utf8,
             #[cfg(feature = "dtype-datetime")]
-            Buffer::Datetime { tu, .. } => DataType::Datetime(*tu, None),
+            Buffer::Datetime { time_unit, .. } => DataType::Datetime(*time_unit, None),
             #[cfg(feature = "dtype-date")]
             Buffer::Date(_) => DataType::Date,
             Buffer::Categorical(_) => {
