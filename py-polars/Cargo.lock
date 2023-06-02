@@ -1414,6 +1414,7 @@ dependencies = [
  "atoi",
  "chrono",
  "chrono-tz",
+ "ethnum",
  "hashbrown 0.13.2",
  "multiversion",
  "num-traits",

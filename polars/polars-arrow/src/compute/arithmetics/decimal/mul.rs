@@ -1,3 +1,5 @@
+use ethnum::I256;
+
 use super::*;
 
 #[inline]
@@ -10,7 +12,13 @@ fn decimal_mul(a: i128, b: i128, scale: i128) -> i128 {
     //   222.222 -->      222222
     // --------          -------
     // 24691.308 <-- 24691308642
-    a * b / scale
+
+    // operate in I256 space to reduce overflow
+    let a = I256::new(a);
+    let b = I256::new(b);
+    let scale = I256::new(scale);
+
+    (a * b / scale).as_i128()
 }
 
 pub fn mul(
