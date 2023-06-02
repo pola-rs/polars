@@ -53,8 +53,8 @@ class ExprStringNameSpace:
             in the target string.
 
             .. note::
-                This introduces a performance penalty - cleaning your data beforehand
-                will almost certainly be more performant.
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the conversion.
 
@@ -109,8 +109,8 @@ class ExprStringNameSpace:
             in the target string.
 
             .. note::
-                This introduces a performance penalty - cleaning your data beforehand
-                will almost certainly be more performant.
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
         utc
@@ -224,8 +224,8 @@ class ExprStringNameSpace:
             in the target string. Conversion to the Time type is always exact.
 
             .. note::
-                This introduces a performance penalty - cleaning your data beforehand
-                will almost certainly be more performant.
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         utc
