@@ -649,3 +649,9 @@ def test_rolling_cov_corr() -> None:
         )
         == "{'cov': [None, None, 0.0, 0.0, 5.333333333333336], 'corr': [None, None, nan, nan, 0.9176629354822473]}"
     )
+
+
+def test_rolling_window_size_9160() -> None:
+    assert pl.Series([1, 5]).rolling_apply(
+        lambda x: sum(x), window_size=2, min_periods=1
+    ).to_list() == [1, 6]
