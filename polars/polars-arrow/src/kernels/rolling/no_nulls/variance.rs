@@ -116,12 +116,12 @@ impl<
         let mean = self.mean.update(start, end);
 
         let denom = count - NumCast::from(self.ddof).unwrap();
-        if denom <= T::zero() {
+        if end - start == 1 {
+            T::zero()
+        } else if denom <= T::zero() {
             //ddof would be greater than # of observations
             T::infinity()
-        } else if end - start == 1 {
-            T::zero()
-        } else {
+        }else {
             let out = (sum_of_squares - count * mean * mean) / denom;
             // variance cannot be negative.
             // if it is negative it is due to numeric instability
