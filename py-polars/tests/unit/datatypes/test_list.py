@@ -415,3 +415,15 @@ def test_list_null_list_categorical_cast() -> None:
     s = pl.Series([[]], dtype=pl.List(pl.Null)).cast(expected)
     assert s.dtype == expected
     assert s.to_list() == [[]]
+
+
+def test_struct_with_nulls_as_list() -> None:
+    df = pl.DataFrame([[{"a": 1, "b": 2}], [{"c": 3, "d": None}]])
+    assert df.select(pl.concat_list(pl.all()).alias("as_list")).to_dict(False) == {
+        "as_list": [
+            [
+                {"a": 1, "b": 2, "c": None, "d": None},
+                {"a": None, "b": None, "c": 3, "d": None},
+            ]
+        ]
+    }
