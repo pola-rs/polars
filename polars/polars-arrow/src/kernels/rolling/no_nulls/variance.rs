@@ -87,6 +87,7 @@ impl<
         'a,
         T: NativeType
             + IsFloat
+            + Float
             + std::iter::Sum
             + AddAssign
             + SubAssign
@@ -114,10 +115,11 @@ impl<
         let sum_of_squares = self.sum_of_squares.update(start, end);
         let mean = self.mean.update(start, end);
 
-        // If ddof == 1, Bessel's correction for an unbiased estimator
         let denom = count - NumCast::from(self.ddof).unwrap();
-
-        if end - start == 1 || denom <= T::zero() {
+        if denom <= T::zero() {
+            //ddof would be greater than # of observations
+            T::infinity()
+        } else if end - start == 1 {
             T::zero()
         } else {
             let out = (sum_of_squares - count * mean * mean) / denom;
@@ -204,6 +206,7 @@ impl<
         'a,
         T: NativeType
             + IsFloat
+            + Float
             + std::iter::Sum
             + AddAssign
             + SubAssign

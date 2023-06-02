@@ -695,7 +695,10 @@ where
         }
     }
 
-    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series
+    where
+        <T as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    {
         let ca = &self.0.rechunk();
         match groups {
             GroupsProxy::Idx(groups) => {
@@ -752,7 +755,10 @@ where
             }
         }
     }
-    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series
+    where
+        <T as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    {
         let ca = &self.0.rechunk();
         match groups {
             GroupsProxy::Idx(groups) => {

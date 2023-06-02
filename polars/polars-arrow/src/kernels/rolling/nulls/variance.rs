@@ -140,6 +140,7 @@ impl<
         'a,
         T: NativeType
             + IsFloat
+            + Float
             + std::iter::Sum
             + AddAssign
             + SubAssign
@@ -176,17 +177,18 @@ impl<
 
         let mean = self.mean.update(start, end)?;
         let ddof = NumCast::from(self.ddof).unwrap();
-        // If ddof == 1, Bessel's correction for an unbiased estimator
+
         let denom = count - ddof;
 
         if count == T::zero() {
             None
-        } else if count == T::one() || count <= ddof {
+        } else if count == T::one() {
             NumCast::from(0)
+        } else if denom <= T::zero() {
+            Some(T::infinity())
         } else {
             let var = (sum_of_squares - count * mean * mean) / denom;
-
-            Some(var)
+            Some(if var < T::zero() { T::zero() } else { var })
         }
     }
     fn is_valid(&self, min_periods: usize) -> bool {
@@ -231,6 +233,7 @@ impl<
         'a,
         T: NativeType
             + IsFloat
+            + Float
             + std::iter::Sum
             + AddAssign
             + SubAssign
