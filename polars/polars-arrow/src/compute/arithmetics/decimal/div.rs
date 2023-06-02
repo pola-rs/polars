@@ -1,3 +1,5 @@
+use ethnum::I256;
+
 use super::*;
 
 #[inline]
@@ -10,7 +12,12 @@ fn decimal_div(a: i128, b: i128, scale: i128) -> i128 {
     //   123.456 -->     123456
     // --------       ---------
     //     1.800 <--       1800
-    a * scale / b
+
+    // operate in I256 space to reduce overflow
+    let a = I256::new(a);
+    let b = I256::new(b);
+    let scale = I256::new(scale);
+    (a * scale / b).as_i128()
 }
 
 pub fn div(
