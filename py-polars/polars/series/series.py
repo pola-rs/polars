@@ -28,6 +28,7 @@ from polars.datatypes import (
     SIGNED_INTEGER_DTYPES,
     TEMPORAL_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
+    Array,
     Boolean,
     Categorical,
     Date,
@@ -3394,6 +3395,15 @@ class Series:
             if zero_copy_only:
                 raise ValueError("Cannot return a zero-copy array")
 
+        if self.dtype == Array:
+            np_array = self.explode().to_numpy(
+                zero_copy_only=zero_copy_only,
+                writable=writable,
+                use_pyarrow=use_pyarrow,
+            )
+            np_array.shape = (self.len(), self.dtype.width)  # type: ignore[union-attr]
+            return np_array
+
         if (
             use_pyarrow
             and _PYARROW_AVAILABLE
@@ -3403,6 +3413,7 @@ class Series:
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
+
         elif self.dtype == Time:
             raise_no_zero_copy()
             # note: there is no native numpy "time" dtype
