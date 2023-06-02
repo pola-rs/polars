@@ -52,6 +52,10 @@ class StringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string.
+
+            .. note::
+                This introduces a performance penalty - cleaning your data beforehand
+                will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the conversion.
 
@@ -102,6 +106,10 @@ class StringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string.
+
+            .. note::
+                This introduces a performance penalty - cleaning your data beforehand
+                will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
         utc
@@ -190,6 +198,10 @@ class StringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string. Conversion to the Time type is always exact.
+
+            .. note::
+                This introduces a performance penalty - cleaning your data beforehand
+                will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         utc
