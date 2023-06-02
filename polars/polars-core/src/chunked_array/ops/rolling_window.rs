@@ -82,7 +82,7 @@ mod inner_mod {
                 return s.rolling_apply(f, options);
             }
 
-            if options.window_size >= self.len() {
+            if options.window_size > self.len() {
                 return Ok(Self::full_null(self.name(), self.len()).into_series());
             }
 
