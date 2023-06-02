@@ -4665,7 +4665,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         Otherwise, the window at a given row will include the `window_size`
-        elements before that given row.
+        elements before it.
 
         Parameters
         ----------
@@ -4703,7 +4703,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -4776,7 +4776,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         Otherwise, the window at a given row will include the `window_size`
-        elements before that given row.
+        elements before it.
 
         Parameters
         ----------
@@ -4814,7 +4814,7 @@ class Expr:
         by
             If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -4887,7 +4887,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         Otherwise, the window at a given row will include the `window_size`
-        elements before that given row.
+        elements before it.
 
         Parameters
         ----------
@@ -4925,7 +4925,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -4998,7 +4998,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         Otherwise, the window at a given row will include the `window_size`
-        elements before that given row.
+        elements before it.
 
         Parameters
         ----------
@@ -5109,7 +5109,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         Otherwise, the window at a given row will include the `window_size`
-        elements before that given row.
+        elements before it.
 
         Parameters
         ----------
@@ -5147,7 +5147,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -5220,7 +5220,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         Otherwise, the window at a given row will include the `window_size`
-        elements before that given row.
+        elements before it.
 
         Parameters
         ----------
@@ -5258,7 +5258,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -5327,7 +5327,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         Otherwise, the window at a given row will include the `window_size`
-        elements before that given row.
+        elements before it.
 
         Parameters
         ----------
@@ -5365,7 +5365,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -5436,7 +5436,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         Otherwise, the window at a given row will include the `window_size`
-        elements before that given row.
+        elements before it.
 
         Parameters
         ----------
@@ -5478,7 +5478,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -5562,7 +5562,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         Otherwise, the window at a given row will include the `window_size`
-        elements before that given row.
+        elements before it.
 
         Parameters
         ----------
