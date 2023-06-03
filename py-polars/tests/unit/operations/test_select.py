@@ -1,5 +1,3 @@
-import pytest
-
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -36,13 +34,6 @@ def test_select_args_kwargs() -> None:
     # Mixed
     result = ldf.select(["bar"], "foo", oof="foo")
     expected = pl.LazyFrame({"bar": [3, 4], "foo": [1, 2], "oof": [1, 2]})
-    assert_frame_equal(result, expected)
-
-
-@pytest.mark.skip("Does not work yet - refactor needed.")
-def test_select_no_input() -> None:
-    result = pl.select()
-    expected = pl.DataFrame()
     assert_frame_equal(result, expected)
 
 
