@@ -32,7 +32,7 @@ pub(super) fn set_cache_states(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
-    has_caches: bool,
+    _has_caches: bool,
 ) {
     let mut loop_count = 0;
     let mut stack = Vec::with_capacity(4);
@@ -69,62 +69,43 @@ pub(super) fn set_cache_states(
             lp.copy_inputs(scratch);
 
             use ALogicalPlan::*;
-            match lp {
-                // don't allow parallelism as caches need each others work
-                // also self-referencing plans can deadlock on the files they lock
-                Join { options, .. } if has_caches && options.allow_parallel => {
-                    if let Join { options, .. } = lp_arena.get_mut(current_node) {
-                        options.allow_parallel = false;
+            if let Cache { input, id, .. } = lp {
+                caches_seen += 1;
+
+                // no need to run the same cache optimization twice
+                if loop_count > caches_seen {
+                    continue;
+                }
+
+                max_cache_depth = std::cmp::max(caches_seen, max_cache_depth);
+                if let Some(cache_id) = cache_id {
+                    previous_cache = Some(cache_id)
+                }
+                if let Some(parent_node) = parent {
+                    // projection pushdown has already run and blocked on cache nodes
+                    // the pushed down columns are projected just above this cache
+                    // if there were no pushed down column, we just take the current
+                    // nodes schema
+                    // we never want to naively take parents, as a join or aggregate for instance
+                    // change the schema
+
+                    let (children, union_names) = cache_schema_and_children
+                        .entry(*id)
+                        .or_insert_with(|| (Vec::new(), PlHashSet::new()));
+                    children.push(*input);
+
+                    if let Some(names) = get_upper_projections(parent_node, lp_arena, expr_arena) {
+                        union_names.extend(names);
+                    }
+                    // There was no explicit projection and we must take
+                    // all columns
+                    else {
+                        let schema = lp.schema(lp_arena);
+                        union_names
+                            .extend(schema.iter_names().map(|name| Arc::from(name.as_str())));
                     }
                 }
-                // don't allow parallelism as caches need each others work
-                // also self-referencing plans can deadlock on the files they lock
-                Union { options, .. } if has_caches && options.parallel => {
-                    if let Union { options, .. } = lp_arena.get_mut(current_node) {
-                        options.parallel = false;
-                    }
-                }
-                Cache { input, id, .. } => {
-                    caches_seen += 1;
-
-                    // no need to run the same cache optimization twice
-                    if loop_count > caches_seen {
-                        continue;
-                    }
-
-                    max_cache_depth = std::cmp::max(caches_seen, max_cache_depth);
-                    if let Some(cache_id) = cache_id {
-                        previous_cache = Some(cache_id)
-                    }
-                    if let Some(parent_node) = parent {
-                        // projection pushdown has already run and blocked on cache nodes
-                        // the pushed down columns are projected just above this cache
-                        // if there were no pushed down column, we just take the current
-                        // nodes schema
-                        // we never want to naively take parents, as a join or aggregate for instance
-                        // change the schema
-
-                        let (children, union_names) = cache_schema_and_children
-                            .entry(*id)
-                            .or_insert_with(|| (Vec::new(), PlHashSet::new()));
-                        children.push(*input);
-
-                        if let Some(names) =
-                            get_upper_projections(parent_node, lp_arena, expr_arena)
-                        {
-                            union_names.extend(names);
-                        }
-                        // There was no explicit projection and we must take
-                        // all columns
-                        else {
-                            let schema = lp.schema(lp_arena);
-                            union_names
-                                .extend(schema.iter_names().map(|name| Arc::from(name.as_str())));
-                        }
-                    }
-                    cache_id = Some(*id);
-                }
-                _ => {}
+                cache_id = Some(*id);
             }
 
             parent = Some(current_node);
