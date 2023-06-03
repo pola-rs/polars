@@ -423,37 +423,27 @@ where
         return Ok(());
     };
 
-    match &buf.compiled {
-        Some(compiled) => match DatetimeInfer::<T::Native>::try_from(compiled.pattern) {
-            Ok(mut infer) => {
-                let parsed = infer.parse(val);
-                buf.compiled = Some(infer);
-                buf.builder.append_option(parsed);
-                Ok(())
-            }
-            Err(_) => {
-                buf.builder.append_null();
-                Ok(())
-            }
-        },
+    let pattern = match &buf.compiled {
+        Some(compiled) => compiled.pattern,
         None => match infer_pattern_single(val) {
+            Some(pattern) => pattern,
             None => {
                 buf.builder.append_null();
-                Ok(())
+                return Ok(());
             }
-            Some(pattern) => match DatetimeInfer::<T::Native>::try_from(pattern) {
-                Ok(mut infer) => {
-                    let parsed = infer.parse(val);
-                    buf.compiled = Some(infer);
-                    buf.builder.append_option(parsed);
-                    Ok(())
-                }
-                Err(_) => {
-                    buf.builder.append_null();
-                    Ok(())
-                }
-            },
         },
+    };
+    match DatetimeInfer::<T::Native>::try_from(pattern) {
+        Ok(mut infer) => {
+            let parsed = infer.parse(val);
+            buf.compiled = Some(infer);
+            buf.builder.append_option(parsed);
+            Ok(())
+        }
+        Err(_) => {
+            buf.builder.append_null();
+            Ok(())
+        }
     }
 }
 
