@@ -11,4 +11,4 @@ crate-type = ["cdylib"]
 [dependencies]
 polars = { path = "../../polars" }
 polars-arrow = { path = "../../polars/polars-arrow" }
-pyo3 = { version = "0.18.0", features = ["extension-module"] }
+pyo3 = { version = "0.19", features = ["extension-module"] }
