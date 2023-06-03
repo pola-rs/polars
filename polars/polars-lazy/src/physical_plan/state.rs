@@ -1,9 +1,8 @@
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 
 use bitflags::bitflags;
-use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::frame::hash_join::JoinOptIds;
@@ -59,9 +58,9 @@ impl From<u8> for StateFlags {
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<Mutex<PlHashMap<usize, Arc<OnceCell<DataFrame>>>>>,
+    df_cache: Arc<Mutex<PlHashMap<usize, Arc<OnceLock<DataFrame>>>>>,
     #[allow(clippy::type_complexity)]
-    pub(crate) expr_cache: Option<Arc<Mutex<PlHashMap<usize, Arc<OnceCell<Series>>>>>>,
+    pub(crate) expr_cache: Option<Arc<Mutex<PlHashMap<usize, Arc<OnceLock<Series>>>>>>,
     // cache file reads until all branches got there file, then we delete it
     #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
     pub(crate) file_cache: FileCache,
@@ -195,20 +194,20 @@ impl ExecutionState {
         lock.clone()
     }
 
-    pub(crate) fn get_df_cache(&self, key: usize) -> Arc<OnceCell<DataFrame>> {
+    pub(crate) fn get_df_cache(&self, key: usize) -> Arc<OnceLock<DataFrame>> {
         let mut guard = self.df_cache.lock().unwrap();
         guard
             .entry(key)
-            .or_insert_with(|| Arc::new(OnceCell::new()))
+            .or_insert_with(|| Arc::new(OnceLock::new()))
             .clone()
     }
 
-    pub(crate) fn get_expr_cache(&self, key: usize) -> Option<Arc<OnceCell<Series>>> {
+    pub(crate) fn get_expr_cache(&self, key: usize) -> Option<Arc<OnceLock<Series>>> {
         self.expr_cache.as_ref().map(|cache| {
             let mut guard = cache.lock().unwrap();
             guard
                 .entry(key)
-                .or_insert_with(|| Arc::new(OnceCell::new()))
+                .or_insert_with(|| Arc::new(OnceLock::new()))
                 .clone()
         })
     }
