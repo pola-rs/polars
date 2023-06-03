@@ -2,11 +2,14 @@ name: Benchmark
 
 on:
   pull_request:
-    paths:
-      - polars/**
-      - Cargo.toml
-      - py-polars/tests/benchmark/**
-      - .github/workflows/benchmark.yml
+    # paths:
+    #   - polars/**
+    #   - Cargo.toml
+    #   - py-polars/tests/benchmark/**
+    #   - .github/workflows/benchmark.yml
+  push:
+    branches:
+      - main
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
