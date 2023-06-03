@@ -4,13 +4,14 @@ Selectors
 .. currentmodule:: polars
 
 The selector class :class:`s` allows for the intuitive selection of
-:class:`DataFrame` or :class:`LazyFrame` columns based on their
-name, dtype or other properties.
+:class:`DataFrame` or :class:`LazyFrame` columns based on their name,
+dtype or other properties. This class unifies and builds on similar
+functionality that is available through the :meth:`col` expression.
 
 .. currentmodule:: polars.selectors
 
 .. py:class:: s
-    :canonical: ~polars.selectors.s
+    :canonical: polars.selectors.s
 
      .. automethod:: all
      .. automethod:: by_dtype
