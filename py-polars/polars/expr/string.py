@@ -311,14 +311,14 @@ class ExprStringNameSpace:
         inference_length: int = 100,
     ) -> Expr:
         """
-        Convert a Utf8 column into a Date column.
+        Convert a Utf8 column into a Decimal column.
 
         This method infers the needed parameters ``precision`` and ``scale``.
 
         Parameters
         ----------
         inference_length
-            Number of elements to parse to determine the `precision` and `scale`
+            Number of elements to parse to determine the `precision` and `scale`.
 
         Examples
         --------
