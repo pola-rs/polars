@@ -4656,6 +4656,17 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -4692,7 +4703,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -4756,6 +4767,17 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -4792,7 +4814,7 @@ class Expr:
         by
             If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -4856,6 +4878,17 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -4892,7 +4925,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -4955,6 +4988,17 @@ class Expr:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
@@ -5056,6 +5100,17 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -5092,7 +5147,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -5156,6 +5211,17 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -5192,7 +5258,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -5252,6 +5318,17 @@ class Expr:
         """
         Compute a rolling median.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -5288,7 +5365,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -5350,6 +5427,17 @@ class Expr:
         """
         Compute a rolling quantile.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         quantile
@@ -5390,7 +5478,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -5465,6 +5553,9 @@ class Expr:
             * rolling_mean
             * rolling_sum
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Parameters
         ----------
         function
@@ -5518,12 +5609,36 @@ class Expr:
         """
         Compute a rolling skew.
 
+        The window at a given row includes the row itself and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
             Integer size of the rolling window.
         bias
             If False, the calculations are corrected for statistical bias.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 4, 2, 9]})
+        >>> df.select(pl.col("a").rolling_skew(3))
+        shape: (4, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        │ null     │
+        │ 0.381802 │
+        │ 0.47033  │
+        └──────────┘
+
+        Note how the values match the following:
+
+        >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
+        (0.38180177416060584, 0.47033046033698594)
 
         """
         return self._from_pyexpr(self._pyexpr.rolling_skew(window_size, bias))

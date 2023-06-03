@@ -4389,6 +4389,9 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Parameters
         ----------
         window_size
@@ -4441,6 +4444,9 @@ class Series:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -4495,6 +4501,9 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Parameters
         ----------
         window_size
@@ -4547,6 +4556,9 @@ class Series:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -4601,6 +4613,9 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Parameters
         ----------
         window_size
@@ -4654,6 +4669,9 @@ class Series:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -4713,6 +4731,9 @@ class Series:
             * rolling_mean
             * rolling_sum
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Parameters
         ----------
         function
@@ -4769,6 +4790,9 @@ class Series:
         center
             Set the labels at the center of the window
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Examples
         --------
         >>> s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
@@ -4810,6 +4834,9 @@ class Series:
     ) -> Series:
         """
         Compute a rolling quantile.
+
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -4877,6 +4904,9 @@ class Series:
         """
         Compute a rolling skew.
 
+        The window at a given row includes the row itself and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -4886,18 +4916,20 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
-        >>> s.rolling_skew(window_size=3)
-        shape: (6,)
-        Series: 'a' [f64]
+        >>> pl.Series([1, 4, 2, 9]).rolling_skew(3)
+        shape: (4,)
+        Series: '' [f64]
         [
-                null
-                null
-                0.0
-                0.0
-                0.381802
-                0.0
+            null
+            null
+            0.381802
+            0.47033
         ]
+
+        Note how the values match
+
+        >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
+        (0.38180177416060584, 0.47033046033698594)
 
         """
 
