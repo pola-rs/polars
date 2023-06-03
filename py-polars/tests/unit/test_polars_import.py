@@ -42,7 +42,7 @@ def _import_timings_as_frame(best_of: int) -> pl.DataFrame:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unreliable on Windows")
 def test_polars_import() -> None:
-    # note: take the fastest of three runs to reduce noise.
+    # note: take the fastest of several runs to reduce noise.
     df_import = _import_timings_as_frame(best_of=3)
 
     with pl.Config() as cfg:
@@ -61,8 +61,9 @@ def test_polars_import() -> None:
             assert not_imported, f"{if_err}\n{df_import}"
 
         # ensure that we do not have an import speed regression.
-        total_import_time = df_import["cumulative_time"].max()
-        assert isinstance(total_import_time, int)
+        polars_import = df_import.filter(pl.col("import").str.strip() == "polars")
+        polars_import_time = polars_import["cumulative_time"].item()
+        assert isinstance(polars_import_time, int)
 
-        if_err = f"Possible import speed regression; took {total_import_time//1_000}ms"
-        assert total_import_time < 200_000, f"{if_err}\n{df_import}"
+        if_err = f"Possible import speed regression; took {polars_import_time//1_000}ms"
+        assert polars_import_time < 200_000, f"{if_err}\n{df_import}"
