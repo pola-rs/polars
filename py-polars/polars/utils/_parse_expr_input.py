@@ -14,8 +14,7 @@ if TYPE_CHECKING:
 
 
 def parse_as_list_of_expressions(
-    inputs: IntoExpr | Iterable[IntoExpr] | None = None,
-    *more_inputs: IntoExpr,
+    *inputs: IntoExpr | Iterable[IntoExpr],
     structify: bool = False,
     **named_inputs: IntoExpr,
 ) -> list[PyExpr]:
@@ -24,11 +23,8 @@ def parse_as_list_of_expressions(
 
     Parameters
     ----------
-    inputs
-        Inputs to be parsed as expressions.
-    *more_inputs
-        Additional inputs to be parsed as expressions, specified as positional
-        arguments.
+    *inputs
+        Inputs to be parsed as expressions, specified as positional arguments.
     **named_inputs
         Additional inputs to be parsed as expressions, specified as keyword arguments.
         The expressions will be renamed to the keyword used.
@@ -36,8 +32,7 @@ def parse_as_list_of_expressions(
         Convert multi-column expressions to a single struct expression.
 
     """
-    exprs = _parse_regular_inputs(inputs, more_inputs, structify=structify)
-
+    exprs = _parse_regular_inputs(inputs, structify=structify)
     if named_inputs:
         named_exprs = _parse_named_inputs(named_inputs, structify=structify)
         exprs.extend(named_exprs)
@@ -46,17 +41,20 @@ def parse_as_list_of_expressions(
 
 
 def _parse_regular_inputs(
-    inputs: IntoExpr | Iterable[IntoExpr] | None,
-    more_inputs: tuple[IntoExpr, ...],
+    inputs: tuple[IntoExpr | Iterable[IntoExpr], ...],
     structify: bool = False,
 ) -> list[PyExpr]:
-    inputs = _inputs_to_list(inputs)
-    if more_inputs:
-        inputs.extend(more_inputs)
-    return [parse_as_expression(e, structify=structify)._pyexpr for e in inputs]
+    if not inputs:
+        return []
+
+    input_list = _first_input_to_list(inputs[0])
+    input_list.extend(inputs[1:])  # type: ignore[arg-type]
+    return [parse_as_expression(e, structify=structify)._pyexpr for e in input_list]
 
 
-def _inputs_to_list(inputs: IntoExpr | Iterable[IntoExpr] | None) -> list[IntoExpr]:
+def _first_input_to_list(
+    inputs: IntoExpr | Iterable[IntoExpr] | None,
+) -> list[IntoExpr]:
     if inputs is None:
         return []
     elif not isinstance(inputs, Iterable) or isinstance(inputs, (str, pl.Series)):
