@@ -53,6 +53,6 @@ def test_select_empty_list() -> None:
 
 
 def test_select_named_inputs_reserved() -> None:
-    result = pl.select(inputs=1)
-    expected = pl.Series("inputs", [1], dtype=pl.Int32).to_frame()
+    result = pl.select(inputs=1.0, structify=pl.lit("x"))
+    expected = pl.DataFrame({"inputs": [1.0], "structify": ["x"]})
     assert_frame_equal(result, expected)
