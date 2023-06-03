@@ -295,7 +295,7 @@ class ExprListNameSpace:
         └──────┘
 
         """
-        index = parse_as_expression(index)._pyexpr
+        index = parse_as_expression(index)
         return wrap_expr(self._pyexpr.list_get(index))
 
     def take(
@@ -323,7 +323,7 @@ class ExprListNameSpace:
         """
         if isinstance(index, list):
             index = pl.Series(index)
-        index = parse_as_expression(index)._pyexpr
+        index = parse_as_expression(index)
         return wrap_expr(self._pyexpr.list_take(index, null_on_oob))
 
     def first(self) -> Expr:
@@ -401,7 +401,7 @@ class ExprListNameSpace:
         └───────┘
 
         """
-        item = parse_as_expression(item, str_as_lit=True)._pyexpr
+        item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_contains(item))
 
     def join(self, separator: str) -> Expr:
@@ -593,8 +593,8 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = parse_as_expression(offset)._pyexpr
-        length = parse_as_expression(length)._pyexpr
+        offset = parse_as_expression(offset)
+        length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.list_slice(offset, length))
 
     def head(self, n: int | str | Expr = 5) -> Expr:
@@ -641,7 +641,7 @@ class ExprListNameSpace:
         ]
 
         """
-        n = parse_as_expression(n)._pyexpr
+        n = parse_as_expression(n)
         return wrap_expr(self._pyexpr.list_tail(n))
 
     def explode(self) -> Expr:
@@ -704,7 +704,7 @@ class ExprListNameSpace:
         └────────────────┘
 
         """
-        element = parse_as_expression(element, str_as_lit=True)._pyexpr
+        element = parse_as_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_count_match(element))
 
     @deprecated_alias(name_generator="fields")

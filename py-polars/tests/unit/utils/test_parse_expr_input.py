@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal
 from polars.utils._parse_expr_input import _first_input_to_list, parse_as_expression
+from polars.utils._wrap import wrap_expr
 
 
 def assert_expr_equal(result: pl.Expr, expected: pl.Expr) -> None:
@@ -44,20 +45,20 @@ def test_first_input_to_list_multiple(input: Any) -> None:
 
 @pytest.mark.parametrize("input", [5, 2.0, pl.Series([1, 2, 3]), date(2022, 1, 1)])
 def test_parse_as_expression_lit(input: Any) -> None:
-    result = parse_as_expression(input)
+    result = wrap_expr(parse_as_expression(input))
     expected = pl.lit(input)
     assert_expr_equal(result, expected)
 
 
 def test_parse_as_expression_col() -> None:
-    result = parse_as_expression("a")
+    result = wrap_expr(parse_as_expression("a"))
     expected = pl.col("a")
     assert_expr_equal(result, expected)
 
 
 @pytest.mark.parametrize("input", [pl.lit(4), pl.col("a")])
 def test_parse_as_expression_expr(input: pl.Expr) -> None:
-    result = parse_as_expression(input)
+    result = wrap_expr(parse_as_expression(input))
     expected = input
     assert_expr_equal(result, expected)
 
@@ -66,24 +67,24 @@ def test_parse_as_expression_expr(input: pl.Expr) -> None:
     "input", [pl.when(True).then(1), pl.when(True).then(1).when(False).then(0)]
 )
 def test_parse_as_expression_whenthen(input: Any) -> None:
-    result = parse_as_expression(input)
+    result = wrap_expr(parse_as_expression(input))
     expected = input.otherwise(None)
     assert_expr_equal(result, expected)
 
 
 def test_parse_as_expression_list() -> None:
-    result = parse_as_expression([1, 2, 3])
+    result = wrap_expr(parse_as_expression([1, 2, 3]))
     expected = pl.lit(pl.Series([[1, 2, 3]]))
     assert_expr_equal(result, expected)
 
 
 def test_parse_as_expression_str_as_lit() -> None:
-    result = parse_as_expression("a", str_as_lit=True)
+    result = wrap_expr(parse_as_expression("a", str_as_lit=True))
     expected = pl.lit("a")
     assert_expr_equal(result, expected)
 
 
 def test_parse_as_expression_structify() -> None:
-    result = parse_as_expression(pl.col("a", "b"), structify=True)
+    result = wrap_expr(parse_as_expression(pl.col("a", "b"), structify=True))
     expected = pl.struct("a", "b")
     assert_expr_equal(result, expected)
