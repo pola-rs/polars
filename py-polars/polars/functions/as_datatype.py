@@ -61,18 +61,18 @@ def datetime_(
     Expr of type `pl.Datetime`
 
     """
-    year_expr = parse_as_expression(year)._pyexpr
-    month_expr = parse_as_expression(month)._pyexpr
-    day_expr = parse_as_expression(day)._pyexpr
+    year_expr = parse_as_expression(year)
+    month_expr = parse_as_expression(month)
+    day_expr = parse_as_expression(day)
 
     if hour is not None:
-        hour = parse_as_expression(hour)._pyexpr
+        hour = parse_as_expression(hour)
     if minute is not None:
-        minute = parse_as_expression(minute)._pyexpr
+        minute = parse_as_expression(minute)
     if second is not None:
-        second = parse_as_expression(second)._pyexpr
+        second = parse_as_expression(second)
     if microsecond is not None:
-        microsecond = parse_as_expression(microsecond)._pyexpr
+        microsecond = parse_as_expression(microsecond)
 
     return wrap_expr(
         plr.datetime(
@@ -203,21 +203,21 @@ def duration(
 
     """  # noqa: W505
     if hours is not None:
-        hours = parse_as_expression(hours)._pyexpr
+        hours = parse_as_expression(hours)
     if minutes is not None:
-        minutes = parse_as_expression(minutes)._pyexpr
+        minutes = parse_as_expression(minutes)
     if seconds is not None:
-        seconds = parse_as_expression(seconds)._pyexpr
+        seconds = parse_as_expression(seconds)
     if milliseconds is not None:
-        milliseconds = parse_as_expression(milliseconds)._pyexpr
+        milliseconds = parse_as_expression(milliseconds)
     if microseconds is not None:
-        microseconds = parse_as_expression(microseconds)._pyexpr
+        microseconds = parse_as_expression(microseconds)
     if nanoseconds is not None:
-        nanoseconds = parse_as_expression(nanoseconds)._pyexpr
+        nanoseconds = parse_as_expression(nanoseconds)
     if days is not None:
-        days = parse_as_expression(days)._pyexpr
+        days = parse_as_expression(days)
     if weeks is not None:
-        weeks = parse_as_expression(weeks)._pyexpr
+        weeks = parse_as_expression(weeks)
 
     return wrap_expr(
         plr.duration(
@@ -499,7 +499,7 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     arguments = iter(args)
     for i, s in enumerate(f_string.split("{}")):
         if i > 0:
-            e = parse_as_expression(next(arguments))
+            e = wrap_expr(parse_as_expression(next(arguments)))
             exprs.append(e)
 
         if len(s) > 0:

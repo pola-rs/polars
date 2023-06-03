@@ -93,7 +93,7 @@ def when(expr: IntoExpr) -> When:
 
 
     """
-    expr = parse_as_expression(expr)._pyexpr
+    expr = parse_as_expression(expr)
     pywhen = _when(expr)
     return When(pywhen)
 
@@ -113,7 +113,7 @@ class When:
         pl.when : Documentation for `when, then, otherwise`
 
         """
-        expr = parse_as_expression(expr, str_as_lit=True)._pyexpr
+        expr = parse_as_expression(expr, str_as_lit=True)
         pywhenthen = self._pywhen.then(expr)
         return WhenThen(pywhenthen)
 
@@ -126,7 +126,7 @@ class WhenThen:
 
     def when(self, predicate: IntoExpr) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
-        predicate = parse_as_expression(predicate)._pyexpr
+        predicate = parse_as_expression(predicate)
         return WhenThenThen(self._pywhenthen.when(predicate))
 
     def otherwise(self, expr: IntoExpr) -> Expr:
@@ -138,7 +138,7 @@ class WhenThen:
         pl.when : Documentation for `when, then, otherwise`
 
         """
-        expr = parse_as_expression(expr, str_as_lit=True)._pyexpr
+        expr = parse_as_expression(expr, str_as_lit=True)
         return wrap_expr(self._pywhenthen.otherwise(expr))
 
     @typing.no_type_check
@@ -155,7 +155,7 @@ class WhenThenThen:
 
     def when(self, predicate: IntoExpr) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
-        predicate = parse_as_expression(predicate)._pyexpr
+        predicate = parse_as_expression(predicate)
         return WhenThenThen(self.pywhenthenthen.when(predicate))
 
     def then(self, expr: IntoExpr) -> WhenThenThen:
@@ -167,7 +167,7 @@ class WhenThenThen:
         pl.when : Documentation for `when, then, otherwise`
 
         """
-        expr = parse_as_expression(expr, str_as_lit=True)._pyexpr
+        expr = parse_as_expression(expr, str_as_lit=True)
         return WhenThenThen(self.pywhenthenthen.then(expr))
 
     def otherwise(self, expr: IntoExpr) -> Expr:
@@ -179,7 +179,7 @@ class WhenThenThen:
         pl.when : Documentation for `when, then, otherwise`
 
         """
-        expr = parse_as_expression(expr, str_as_lit=True)._pyexpr
+        expr = parse_as_expression(expr, str_as_lit=True)
         return wrap_expr(self.pywhenthenthen.otherwise(expr))
 
     @typing.no_type_check

@@ -42,6 +42,7 @@ def parse_as_list_of_expressions(
 
 def _parse_regular_inputs(
     inputs: tuple[IntoExpr | Iterable[IntoExpr], ...],
+    *,
     structify: bool = False,
 ) -> list[PyExpr]:
     if not inputs:
@@ -49,7 +50,7 @@ def _parse_regular_inputs(
 
     input_list = _first_input_to_list(inputs[0])
     input_list.extend(inputs[1:])  # type: ignore[arg-type]
-    return [parse_as_expression(e, structify=structify)._pyexpr for e in input_list]
+    return [parse_as_expression(e, structify=structify) for e in input_list]
 
 
 def _first_input_to_list(
@@ -64,17 +65,20 @@ def _first_input_to_list(
 
 
 def _parse_named_inputs(
-    named_inputs: dict[str, IntoExpr], structify: bool = False
+    named_inputs: dict[str, IntoExpr], *, structify: bool = False
 ) -> Iterable[PyExpr]:
     return (
-        parse_as_expression(input, structify=structify).alias(name)._pyexpr
+        parse_as_expression(input, structify=structify).alias(name)
         for name, input in named_inputs.items()
     )
 
 
 def parse_as_expression(
-    input: IntoExpr, *, str_as_lit: bool = False, structify: bool = False
-) -> Expr:
+    input: IntoExpr,
+    *,
+    str_as_lit: bool = False,
+    structify: bool = False,
+) -> PyExpr | Expr:
     """
     Parse a single input into an expression.
 
@@ -87,6 +91,8 @@ def parse_as_expression(
         strings are parsed as column names.
     structify
         Convert multi-column expressions to a single struct expression.
+    wrap
+        Return an ``Expr`` object rather than a ``PyExpr`` object.
 
     """
     if isinstance(input, pl.Expr):
@@ -114,7 +120,7 @@ def parse_as_expression(
     if structify:
         expr = _structify_expression(expr)
 
-    return expr
+    return expr._pyexpr
 
 
 def _structify_expression(expr: Expr) -> Expr:
