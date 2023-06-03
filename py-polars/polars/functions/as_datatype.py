@@ -380,7 +380,7 @@ def struct(
     {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs, **named_exprs)  # type: ignore[arg-type]
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs, **named_exprs)
     expr = wrap_expr(plr.as_struct(exprs))
 
     if schema:

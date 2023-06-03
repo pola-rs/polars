@@ -123,7 +123,7 @@ class LazyGroupBy:
         if aggs is None and not named_aggs:
             raise ValueError("Expected at least one of 'aggs' or '**named_aggs'")
 
-        exprs = parse_as_list_of_expressions(aggs, *more_aggs, **named_aggs)  # type: ignore[arg-type]
+        exprs = parse_as_list_of_expressions(aggs, *more_aggs, **named_aggs)
 
         return wrap_ldf(self.lgb.agg(exprs))
 
