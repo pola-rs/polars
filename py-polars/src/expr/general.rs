@@ -571,7 +571,7 @@ impl PyExpr {
                     }
                     Err(_) => {
                         let obj = out;
-                        let is_float = obj.as_ref(py).is_instance_of::<PyFloat>().unwrap();
+                        let is_float = obj.as_ref(py).is_instance_of::<PyFloat>();
 
                         let dtype = s.dtype();
 

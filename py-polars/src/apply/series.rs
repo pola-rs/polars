@@ -17,12 +17,12 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
     out: &'a PyAny,
     null_count: usize,
 ) -> PyResult<PySeries> {
-    if out.is_instance_of::<PyBool>().unwrap() {
+    if out.is_instance_of::<PyBool>() {
         let first_value = out.extract::<bool>().unwrap();
         applyer
             .apply_lambda_with_bool_out_type(py, lambda, null_count, Some(first_value))
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance_of::<PyFloat>().unwrap() {
+    } else if out.is_instance_of::<PyFloat>() {
         let first_value = out.extract::<f64>().unwrap();
         applyer
             .apply_lambda_with_primitive_out_type::<Float64Type>(
@@ -32,7 +32,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
                 Some(first_value),
             )
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance_of::<PyString>().unwrap() {
+    } else if out.is_instance_of::<PyString>() {
         let first_value = out.extract::<&str>().unwrap();
         applyer
             .apply_lambda_with_utf8_out_type(py, lambda, null_count, Some(first_value))
@@ -44,7 +44,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         applyer
             .apply_lambda_with_list_out_type(py, lambda.to_object(py), null_count, &series, dt)
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance_of::<PyList>().unwrap() || out.is_instance_of::<PyTuple>().unwrap() {
+    } else if out.is_instance_of::<PyList>() || out.is_instance_of::<PyTuple>() {
         let series = SERIES.call1(py, (out,))?;
         let py_pyseries = series.getattr(py, "_s").unwrap();
         let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
@@ -84,7 +84,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
                     .map(|s| s.into())
             }
         }
-    } else if out.is_instance_of::<PyDict>().unwrap() {
+    } else if out.is_instance_of::<PyDict>() {
         let first = out.extract::<Wrap<AnyValue<'_>>>()?;
         applyer.apply_to_struct(py, lambda, null_count, first.0)
     }

@@ -21,7 +21,7 @@ polars-io = { version = "0.30.0", path = "../../polars-io", features = ["lazy", 
 polars-ops = { version = "0.30.0", path = "../../polars-ops", default-features = false }
 polars-time = { version = "0.30.0", path = "../../polars-time", optional = true }
 polars-utils = { version = "0.30.0", path = "../../polars-utils" }
-pyo3 = { version = "0.18", optional = true }
+pyo3 = { version = "0.19", optional = true }
 rayon.workspace = true
 regex = { version = "1.6", optional = true }
 serde = { version = "1", features = ["derive", "rc"], optional = true }
@@ -101,7 +101,6 @@ unique_counts = ["polars-core/unique_counts"]
 log = ["polars-ops/log"]
 chunked_ids = ["polars-core/chunked_ids"]
 list_to_struct = ["polars-ops/list_to_struct"]
-# python = ["pyo3"]
 row_hash = ["polars-core/row_hash", "polars-ops/hash"]
 string_justify = ["polars-ops/string_justify"]
 string_from_radix = ["polars-ops/string_from_radix"]

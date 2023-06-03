@@ -661,19 +661,19 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        if ob.is_instance_of::<PyBool>()? {
+        if ob.is_instance_of::<PyBool>() {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
         } else if let Ok(value) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(value).into())
-        } else if ob.is_instance_of::<PyFloat>()? {
+        } else if ob.is_instance_of::<PyFloat>() {
             let value = ob.extract::<f64>().unwrap();
             Ok(AnyValue::Float64(value).into())
-        } else if ob.is_instance_of::<PyString>()? {
+        } else if ob.is_instance_of::<PyString>() {
             let value = ob.extract::<&'s str>().unwrap();
             Ok(AnyValue::Utf8(value).into())
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
-        } else if ob.is_instance_of::<PyDict>()? {
+        } else if ob.is_instance_of::<PyDict>() {
             let dict = ob.downcast::<PyDict>().unwrap();
             let len = dict.len();
             let mut keys = Vec::with_capacity(len);
@@ -686,7 +686,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 vals.push(val)
             }
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
-        } else if ob.is_instance_of::<PyList>()? || ob.is_instance_of::<PyTuple>()? {
+        } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
             materialize_list(ob)
         } else if let Ok(value) = ob.extract::<u64>() {
             Ok(AnyValue::UInt64(value).into())

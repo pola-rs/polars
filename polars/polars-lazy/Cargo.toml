@@ -26,7 +26,7 @@ polars-pipe = { version = "0.30.0", path = "./polars-pipe", optional = true }
 polars-plan = { version = "0.30.0", path = "./polars-plan" }
 polars-time = { version = "0.30.0", path = "../polars-time", optional = true }
 polars-utils = { version = "0.30.0", path = "../polars-utils" }
-pyo3 = { version = "0.18", optional = true }
+pyo3 = { version = "0.19", optional = true }
 rayon.workspace = true
 smartstring.workspace = true
 

@@ -289,7 +289,7 @@ pub fn last() -> PyExpr {
 
 #[pyfunction]
 pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
-    if let Ok(true) = value.is_instance_of::<PyBool>() {
+    if value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::lit(val).into())
     } else if let Ok(int) = value.downcast::<PyInt>() {
