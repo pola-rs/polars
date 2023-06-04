@@ -1,13 +1,18 @@
 name: Deploy Python documentation
 
 on:
+  pull_request:
+    paths:
+      - py-polars/docs/**
+      - py-polars/polars/**
+      - .github/workflows/docs-python.yml
   push:
     branches:
       - main
     paths:
       - py-polars/docs/**
       - py-polars/polars/**
-      - .github/workflows/docs-deploy-python.yml
+      - .github/workflows/docs-python.yml
     tags:
       - py-**
 
@@ -29,12 +34,12 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars/docs
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-docs.txt
+        run: pip install -r requirements-docs.txt
 
       - name: Build Python documentation
         working-directory: py-polars/docs
+        env:
+          SPHINXOPTS: -W
         run: make html
 
       - name: Deploy Python docs for latest development version
@@ -45,7 +50,7 @@ jobs:
           target-folder: py-polars/dev
 
       - name: Deploy Python docs for latest release version
-        if: ${{ github.ref_name != 'main' }}
+        if: ${{ github.ref_type == 'tag' }}
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
