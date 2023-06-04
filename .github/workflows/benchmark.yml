@@ -58,7 +58,7 @@ jobs:
 
       - name: Install Polars release build
         env:
-          RUSTFLAGS: -C embed-bitcode
+          RUSTFLAGS: -C embed-bitcode -D warnings
         working-directory: py-polars
         run: |
           source activate
