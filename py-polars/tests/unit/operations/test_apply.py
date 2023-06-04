@@ -352,3 +352,13 @@ def test_err_df_apply_return_type() -> None:
 
     with pytest.raises(pl.ComputeError, match="expected tuple, got list"):
         df.apply(cmb)
+
+
+def test_apply_shifted_chunks() -> None:
+    df = pl.DataFrame(pl.Series("texts", ["test", "test123", "tests"]))
+    assert df.select(
+        pl.col("texts"), pl.col("texts").shift(1).alias("texts_shifted")
+    ).apply(lambda x: x).to_dict(False) == {
+        "column_0": ["test", "test123", "tests"],
+        "column_1": [None, "test", "test123"],
+    }
