@@ -137,8 +137,7 @@ class GroupBy:
 
     def agg(
         self,
-        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
-        *more_aggs: IntoExpr,
+        *aggs: IntoExpr | Iterable[IntoExpr],
         **named_aggs: IntoExpr,
     ) -> DataFrame:
         """
@@ -146,14 +145,13 @@ class GroupBy:
 
         Parameters
         ----------
-        aggs
-            Aggregations to compute for each group of the groupby operation.
+        *aggs
+            Aggregations to compute for each group of the groupby operation,
+            specified as positional arguments.
             Accepts expression input. Strings are parsed as column names.
-        *more_aggs
-            Additional aggregations, specified as positional arguments.
         **named_aggs
-            Additional aggregations, specified as keyword arguments. The resulting
-            columns will be renamed to the keyword used.
+            Additional aggregations, specified as keyword arguments.
+            The resulting columns will be renamed to the keyword used.
 
         Examples
         --------
@@ -230,7 +228,7 @@ class GroupBy:
         return (
             self.df.lazy()
             .groupby(self.by, *self.more_by, maintain_order=self.maintain_order)
-            .agg(aggs, *more_aggs, **named_aggs)
+            .agg(*aggs, **named_aggs)
             .collect(no_optimization=True)
         )
 
@@ -824,8 +822,7 @@ class RollingGroupBy:
 
     def agg(
         self,
-        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
-        *more_aggs: IntoExpr,
+        *aggs: IntoExpr | Iterable[IntoExpr],
         **named_aggs: IntoExpr,
     ) -> DataFrame:
         return (
@@ -838,7 +835,7 @@ class RollingGroupBy:
                 by=self.by,
                 check_sorted=self.check_sorted,
             )
-            .agg(aggs, *more_aggs, **named_aggs)
+            .agg(*aggs, **named_aggs)
             .collect(no_optimization=True)
         )
 
@@ -1026,8 +1023,7 @@ class DynamicGroupBy:
 
     def agg(
         self,
-        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
-        *more_aggs: IntoExpr,
+        *aggs: IntoExpr | Iterable[IntoExpr],
         **named_aggs: IntoExpr,
     ) -> DataFrame:
         return (
@@ -1044,7 +1040,7 @@ class DynamicGroupBy:
                 start_by=self.start_by,
                 check_sorted=self.check_sorted,
             )
-            .agg(aggs, *more_aggs, **named_aggs)
+            .agg(*aggs, **named_aggs)
             .collect(no_optimization=True)
         )
 

@@ -856,7 +856,7 @@ def test_groupby_agg_deprecation_aggs_keyword() -> None:
     df = pl.DataFrame({"a": [1, 1, 2], "b": [3, 4, 5]})
 
     with pytest.deprecated_call():
-        result = df.groupby("a").agg(aggs="b")
+        result = df.groupby("a", maintain_order=True).agg(aggs="b")
 
     expected = pl.DataFrame({"a": [1, 2], "b": [[3, 4], [5]]})
     assert_frame_equal(result, expected)
