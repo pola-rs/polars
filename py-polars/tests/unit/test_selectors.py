@@ -1,7 +1,7 @@
 import pytest
 
 import polars as pl
-from polars.selectors import s
+import polars.selectors as s
 
 
 @pytest.fixture()

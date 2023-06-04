@@ -4,10 +4,10 @@ Selectors
 
 .. currentmodule:: polars
 
-The selector class :class:`s` allows for the intuitive selection of
-:class:`DataFrame` or :class:`LazyFrame` columns based on their name,
-dtype or other properties. This class unifies and builds on similar
-functionality that is available through the :meth:`col` expression.
+Selectors allow for more intuitive selection of columns from :class:`DataFrame`
+or :class:`LazyFrame` objets based on their name, dtype or other properties.
+They unify and build on the related functionality that is available through
+the :meth:`col` expression.
 
 .. note::
 
@@ -15,30 +15,43 @@ functionality that is available through the :meth:`col` expression.
 
     .. code-block:: python
 
-        df.select(~s.ends_with("_euro"))
+        import polars.selectors as s
+
+        # select all columns ending with "_euro"
+        s.ends_with("_euro")
+
+        # select all columns NOT ending with "_euro"
+        ~s.ends_with("_euro")
 
 
 =========
-Methods
+Importing
 =========
 
-Selectors are available as static methods on :class:`s`:
+Selectors are available as functions imported from ``polars.selectors``; the
+recommended/usual way to use them is to import the module as ``s``, like so:
 
-.. currentmodule:: polars.selectors
+.. code-block:: python
 
-.. py:class:: s
-    :canonical: polars.selectors.s
+    import polars.selectors as s
+    import polars as pl
 
-     .. automethod:: all
-     .. automethod:: by_dtype
-     .. automethod:: by_name
-     .. automethod:: contains
-     .. automethod:: ends_with
-     .. automethod:: first
-     .. automethod:: float
-     .. automethod:: integer
-     .. automethod:: last
-     .. automethod:: matches
-     .. automethod:: numeric
-     .. automethod:: starts_with
-     .. automethod:: temporal
+    df = pl.DataFrame(
+        {
+            "w": ["xx", "yy", "xx", "yy", "xx"],
+            "x": [1, 2, 1, 4, -2],
+            "y": [3.0, 4.5, 1.0, 2.5, -2.0],
+            "z": ["a", "b", "a", "b", "b"],
+        },
+    )
+    df.groupby(by=s.string()).agg(s.numeric().sum())
+
+
+=========
+Functions
+=========
+
+.. automodule:: polars.selectors
+    :members:
+    :autosummary:
+    :autosummary-no-titles:
