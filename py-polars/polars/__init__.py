@@ -340,6 +340,8 @@ __all__ = [
     "get_index_type",
     "show_versions",
     "threadpool_size",
+    # selectors
+    "selectors",
 ]
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"
