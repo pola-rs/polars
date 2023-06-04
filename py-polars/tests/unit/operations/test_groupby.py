@@ -132,6 +132,13 @@ def test_groupby_args() -> None:
     assert df.groupby("a").agg(q="b", r="c").columns == ["a", "q", "r"]
 
 
+def test_groupby_empty() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2]})
+    result = df.groupby("a").agg()
+    expected = pl.DataFrame({"a": [1, 2]})
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
 def test_groupby_iteration() -> None:
     df = pl.DataFrame(
         {
