@@ -229,6 +229,13 @@ pub fn diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<Py
 }
 
 #[pyfunction]
+pub fn concat_expr(e: Vec<PyExpr>, rechunk: bool) -> PyResult<PyExpr> {
+    let e = e.to_exprs();
+    let e = dsl::functions::concat_expr(e, rechunk).map_err(PyPolarsErr::from)?;
+    Ok(e.into())
+}
+
+#[pyfunction]
 pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
     let dtypes = vec_extract_wrapped(dtypes);
     Ok(dsl::dtype_cols(dtypes).into())
