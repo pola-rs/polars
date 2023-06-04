@@ -175,7 +175,7 @@ impl ApplyExpr {
             }
         };
 
-        ac.with_series(s, aggregated, Some(&self.expr))?;
+        ac.with_series_and_args(s, aggregated, Some(&self.expr), true)?;
         Ok(ac)
     }
     fn apply_multiple_group_aware<'a>(
@@ -404,7 +404,7 @@ fn apply_multiple_elementwise<'a>(
 
             // take the first aggregation context that as that is the input series
             let mut ac = acs.swap_remove(0);
-            ac.with_series(s, false, None)?;
+            ac.with_series_and_args(s, false, None, true)?;
             Ok(ac)
         }
     }

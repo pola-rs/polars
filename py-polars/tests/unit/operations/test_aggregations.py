@@ -258,3 +258,10 @@ def test_err_on_implode_and_agg() -> None:
         match=r"'implode' followed by an aggregation is not allowed",
     ):
         df.lazy().select(pl.col("type").implode().list.head(1).over("type")).collect()
+
+
+def test_mapped_literal_to_literal_9217() -> None:
+    df = pl.DataFrame({"unique_id": ["a", "b"]})
+    assert df.groupby(True).agg(
+        pl.struct(pl.lit("unique_id").alias("unique_id"))
+    ).to_dict(False) == {"literal": [True], "unique_id": [{"unique_id": "unique_id"}]}
