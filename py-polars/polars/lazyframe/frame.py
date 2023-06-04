@@ -2031,9 +2031,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └───────────┘
 
         """
-        if exprs is None and not named_exprs:
-            raise ValueError("Expected at least one of 'exprs' or '**named_exprs'")
-
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         exprs = parse_as_list_of_expressions(
@@ -3088,9 +3085,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┴─────────────┘
 
         """
-        if exprs is None and not named_exprs:
-            raise ValueError("Expected at least one of 'exprs' or '**named_exprs'")
-
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         exprs = parse_as_list_of_expressions(
