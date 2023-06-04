@@ -151,15 +151,9 @@ def test_read_database(
 def test_read_database_exceptions(
     engine: DbReadEngine, query: str, database: str, err: str, tmp_path: Path
 ) -> None:
-    # TODO: Why is exist_ok needed here?
-    tmp_path.mkdir(exist_ok=True)
-
-    test_db = str(tmp_path / "test.db")
-    create_temp_sqlite_db(test_db)
-
     with pytest.raises(ValueError, match=err):
         pl.read_database(
-            connection_uri=f"{database}:///{test_db}",
+            connection_uri=f"{database}://test",
             query=query,
             engine=engine,
         )
