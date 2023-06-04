@@ -2948,8 +2948,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def with_columns(
         self,
-        exprs: IntoExpr | Iterable[IntoExpr] | None = None,
-        *more_exprs: IntoExpr,
+        *exprs: IntoExpr | Iterable[IntoExpr],
         **named_exprs: IntoExpr,
     ) -> Self:
         """
@@ -2959,14 +2958,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Parameters
         ----------
-        exprs
-            Column or columns to add. Accepts expression input. Strings are parsed
-            as column names, other non-expression inputs are parsed as literals.
-        *more_exprs
-            Additional columns to add, specified as positional arguments.
+        *exprs
+            Column(s) to add, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
         **named_exprs
-            Additional columns to add, specified as keyword arguments. The columns
-            will be renamed to the keyword used.
+            Additional columns to add, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
 
         Returns
         -------
@@ -3097,9 +3095,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
-        exprs = parse_as_list_of_expressions(
-            exprs, *more_exprs, **named_exprs, __structify=structify
-        )
+        if "exprs" in named_exprs:
+            warnings.warn(
+                "passing expressions to `with_columns` using the keyword argument"
+                " `exprs` is deprecated. Use positional syntax instead.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
+            first_input = named_exprs.pop("exprs")
+            exprs = parse_as_list_of_expressions(
+                first_input, *exprs, **named_exprs, __structify=structify
+            )
+        else:
+            exprs = parse_as_list_of_expressions(
+                *exprs, **named_exprs, __structify=structify
+            )
 
         return self._from_pyldf(self._ldf.with_columns(exprs))
 

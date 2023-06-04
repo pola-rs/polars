@@ -7119,8 +7119,7 @@ class DataFrame:
 
     def with_columns(
         self,
-        exprs: IntoExpr | Iterable[IntoExpr] | None = None,
-        *more_exprs: IntoExpr,
+        *exprs: IntoExpr | Iterable[IntoExpr],
         **named_exprs: IntoExpr,
     ) -> DataFrame:
         """
@@ -7130,14 +7129,13 @@ class DataFrame:
 
         Parameters
         ----------
-        exprs
-            Column or columns to add. Accepts expression input. Strings are parsed
-            as column names, other non-expression inputs are parsed as literals.
-        *more_exprs
-            Additional columns to add, specified as positional arguments.
+        *exprs
+            Column(s) to add, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
         **named_exprs
-            Additional columns to add, specified as keyword arguments. The columns
-            will be renamed to the keyword used.
+            Additional columns to add, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
 
         Returns
         -------
@@ -7268,7 +7266,7 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .with_columns(exprs, *more_exprs, **named_exprs)
+            .with_columns(*exprs, **named_exprs)
             .collect(no_optimization=True)
         )
 
