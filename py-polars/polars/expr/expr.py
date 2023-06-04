@@ -4684,16 +4684,19 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
-        windows will be:
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        the windows will be:
 
             - [t_0 - window_size, t_0)
             - [t_1 - window_size, t_1)
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the row itself, and the
-        `window_size - 1` elements before it.
+        With `closed="right"`, the first entry is not included and the last entry is
+        included.
 
         Parameters
         ----------
@@ -4733,7 +4736,8 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -4795,16 +4799,19 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
-        windows will be:
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        the windows will be:
 
             - [t_0 - window_size, t_0)
             - [t_1 - window_size, t_1)
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the row itself, and the
-        `window_size - 1` elements before it.
+        With `closed="right"`, the first entry is not included and the last entry is
+        included.
 
         Parameters
         ----------
@@ -4844,7 +4851,8 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -4906,16 +4914,19 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
-        windows will be:
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        the windows will be:
 
             - [t_0 - window_size, t_0)
             - [t_1 - window_size, t_1)
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the row itself, and the
-        `window_size - 1` elements before it.
+        With `closed="right"`, the first entry is not included and the last entry is
+        included.
 
         Parameters
         ----------
@@ -4955,7 +4966,8 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -5017,16 +5029,19 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
-        windows will be:
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        the windows will be:
 
             - [t_0 - window_size, t_0)
             - [t_1 - window_size, t_1)
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the row itself, and the
-        `window_size - 1` elements before it.
+        With `closed="right"`, the first entry is not included and the last entry is
+        included.
 
         Parameters
         ----------
@@ -5066,7 +5081,8 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -5129,16 +5145,19 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
-        windows will be:
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        the windows will be:
 
             - [t_0 - window_size, t_0)
             - [t_1 - window_size, t_1)
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the row itself, and the
-        `window_size - 1` elements before it.
+        With `closed="right"`, the first entry is not included and the last entry is
+        included.
 
         Parameters
         ----------
@@ -5181,6 +5200,8 @@ class Expr:
             Define which sides of the temporal interval are closed (inclusive).
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -5243,16 +5264,19 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
-        windows will be:
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        the windows will be:
 
             - [t_0 - window_size, t_0)
             - [t_1 - window_size, t_1)
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the row itself, and the
-        `window_size - 1` elements before it.
+        With `closed="right"`, the first entry is not included and the last entry is
+        included.
 
         Parameters
         ----------
@@ -5295,6 +5319,8 @@ class Expr:
             Define which sides of the temporal interval are closed (inclusive).
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -5358,16 +5384,19 @@ class Expr:
         """
         Compute a rolling median.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
-        windows will be:
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        the windows will be:
 
             - [t_0 - window_size, t_0)
             - [t_1 - window_size, t_1)
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the row itself, and the
-        `window_size - 1` elements before it.
+        With `closed="right"`, the first entry is not included and the last entry is
+        included.
 
         Parameters
         ----------
@@ -5407,7 +5436,8 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -5467,16 +5497,19 @@ class Expr:
         """
         Compute a rolling quantile.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
-        windows will be:
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        the windows will be:
 
             - [t_0 - window_size, t_0)
             - [t_1 - window_size, t_1)
             - ...
             - [t_n - window_size, t_n)
 
-        Otherwise, the window at a given row will include the row itself, and the
-        `window_size - 1` elements before it.
+        With `closed="right"`, the first entry is not included and the last entry is
+        included.
 
         Parameters
         ----------
@@ -5520,7 +5553,8 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
