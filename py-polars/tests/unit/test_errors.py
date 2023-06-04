@@ -262,8 +262,6 @@ def test_err_asof_join_null_values() -> None:
 
 def test_is_nan_on_non_boolean() -> None:
     with pytest.raises(pl.InvalidOperationError):
-        pl.Series([1, 2, 3]).fill_nan(0)
-    with pytest.raises(pl.InvalidOperationError):
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
 
 
