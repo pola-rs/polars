@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import sys
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -32,19 +31,7 @@ def test_from_to_buffer(df: pl.DataFrame, compression: IpcCompression) -> None:
     assert_frame_equal_local_categoricals(df, read_df)
 
 
-@pytest.mark.parametrize(
-    "compression",
-    [
-        pytest.param(
-            "uncompressed",
-            marks=pytest.mark.xfail(
-                sys.platform == "win32", reason="Does not work on Windows"
-            ),
-        ),
-        "lz4",
-        "zstd",
-    ],
-)
+@pytest.mark.parametrize("compression", COMPRESSIONS)
 @pytest.mark.parametrize("path_as_string", [True, False])
 @pytest.mark.write_disk()
 def test_from_to_file(
@@ -64,7 +51,6 @@ def test_from_to_file(
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_select_columns_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.ipc"
@@ -174,7 +160,6 @@ def test_ipc_column_order() -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_glob_ipc(df: pl.DataFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.ipc"
