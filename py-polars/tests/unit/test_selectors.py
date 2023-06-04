@@ -6,7 +6,7 @@ import polars.selectors as s
 
 @pytest.fixture()
 def df() -> pl.DataFrame:
-    # setup an empty dataframe with plenty of columns of various dtypes
+    # set up an empty dataframe with plenty of columns of various dtypes
     df = pl.DataFrame(
         schema={
             "abc": pl.UInt16,
@@ -28,6 +28,7 @@ def df() -> pl.DataFrame:
 def test_selector_all(df: pl.DataFrame) -> None:
     assert df.schema == df.select(s.all()).schema
     assert {} == df.select(~s.all()).schema
+    assert df.schema == df.select(~(~s.all())).schema
 
 
 def test_selector_by_dtype(df: pl.DataFrame) -> None:
@@ -74,6 +75,14 @@ def test_selector_contains(df: pl.DataFrame) -> None:
         "opp",
         "qqR",
     ]
+
+
+def test_selector_datetime(df: pl.DataFrame) -> None:
+    assert df.select(s.datetime()).schema == {"opp": pl.Datetime("ms")}
+    assert df.select(s.datetime("ns")).schema == {}
+
+    all_columns = set(df.columns)
+    assert set(df.select(~s.datetime()).columns) == all_columns - {"opp"}
 
 
 def test_selector_ends_with(df: pl.DataFrame) -> None:

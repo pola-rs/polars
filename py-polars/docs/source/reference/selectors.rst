@@ -7,7 +7,8 @@ Selectors
 Selectors allow for more intuitive selection of columns from :class:`DataFrame`
 or :class:`LazyFrame` objects based on their name, dtype or other properties.
 They unify and build on the related functionality that is available through
-the :meth:`col` expression.
+the :meth:`col` expression and can also broadcast expressions over the selected
+columns.
 
 .. note::
 
@@ -27,30 +28,29 @@ the :meth:`col` expression.
 Importing
 ---------
 
-Selectors are available as functions imported from ``polars.selectors``; the
-recommended/usual way to use them is to import the module as ``s``, like so:
+* Selectors are available as functions imported from ``polars.selectors``
+* It is recommended to import the module as ``s`` and use from there.
 
-.. code-block:: python
+  .. code-block:: python
 
-    import polars.selectors as s
-    import polars as pl
+      import polars.selectors as s
+      import polars as pl
 
-    df = pl.DataFrame(
-        {
-            "w": ["xx", "yy", "xx", "yy", "xx"],
-            "x": [1, 2, 1, 4, -2],
-            "y": [3.0, 4.5, 1.0, 2.5, -2.0],
-            "z": ["a", "b", "a", "b", "b"],
-        },
-    )
-    df.groupby(by=s.string()).agg(s.numeric().sum())
+      df = pl.DataFrame(
+          {
+              "w": ["xx", "yy", "xx", "yy", "xx"],
+              "x": [1, 2, 1, 4, -2],
+              "y": [3.0, 4.5, 1.0, 2.5, -2.0],
+              "z": ["a", "b", "a", "b", "b"],
+          },
+      )
+      df.groupby(by=s.string()).agg(s.numeric().sum())
 
 
 Functions
 ---------
 
 .. automodule:: polars.selectors
-    :noindex:
     :members:
     :autosummary:
     :autosummary-no-titles:
