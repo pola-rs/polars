@@ -60,7 +60,25 @@ pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
-            fmt_str: "concat_list",
+            ..Default::default()
+        },
+    })
+}
+
+pub fn concat_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
+    s: E,
+    rechunk: bool,
+) -> PolarsResult<Expr> {
+    let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
+    polars_ensure!(!s.is_empty(), ComputeError: "`concat_expr` needs one or more expressions");
+
+    Ok(Expr::Function {
+        input: s,
+        function: FunctionExpr::ConcatExpr(rechunk),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: true,
+            cast_to_supertypes: true,
             ..Default::default()
         },
     })

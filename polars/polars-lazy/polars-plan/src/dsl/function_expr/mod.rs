@@ -11,6 +11,7 @@ mod bounds;
 mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
+mod concat;
 mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
@@ -178,6 +179,7 @@ pub enum FunctionExpr {
     LowerBound,
     #[cfg(feature = "fused")]
     Fused(fused::FusedOperator),
+    ConcatExpr(bool),
 }
 
 impl Display for FunctionExpr {
@@ -268,6 +270,7 @@ impl Display for FunctionExpr {
             Fused(fused) => return Display::fmt(fused, f),
             #[cfg(feature = "dtype-array")]
             ArrayExpr(af) => return Display::fmt(af, f),
+            ConcatExpr(_) => "concat_expr",
         };
         write!(f, "{s}")
     }
@@ -484,6 +487,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             LowerBound => map!(bounds::lower_bound),
             #[cfg(feature = "fused")]
             Fused(op) => map_as_slice!(fused::fused, op),
+            ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
         }
     }
 }

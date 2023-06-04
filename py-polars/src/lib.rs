@@ -127,6 +127,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::diag_concat_lf))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_expr))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::dtype_cols))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::duration))

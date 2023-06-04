@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Iterable, List, Sequence, cast
 import polars._reexport as pl
 from polars import functions as F
 from polars.type_aliases import FrameType
-from polars.utils._wrap import wrap_df, wrap_ldf, wrap_s
+from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.utils.various import ordered_unique
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -187,9 +187,7 @@ def concat(
             raise ValueError("'Series' only allows {'vertical'} concat strategy.")
 
     elif isinstance(first, pl.Expr):
-        out = first
-        for e in elems[1:]:
-            out = out.append(e)
+        return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
     else:
         raise ValueError(f"did not expect type: {type(first)} in 'pl.concat'.")
 
