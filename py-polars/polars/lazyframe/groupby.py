@@ -125,7 +125,7 @@ class LazyGroupBy:
 
         if "aggs" in named_aggs:
             warnings.warn(
-                "passing expressions to `select` using the keyword argument `exprs` is"
+                "passing expressions to `agg` using the keyword argument `aggs` is"
                 " deprecated. Use positional syntax instead.",
                 DeprecationWarning,
                 stacklevel=find_stacklevel(),
