@@ -194,7 +194,7 @@ pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     match roots.pop() {
         Some(Expr::Column(name)) => Ok(name),
         Some(Expr::Wildcard) => polars_bail!(
-            ComputeError: "wildcard has not root column name",
+            ComputeError: "wildcard has no root column name",
         ),
         Some(_) => unreachable!(),
         None => polars_bail!(
