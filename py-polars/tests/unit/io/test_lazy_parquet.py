@@ -53,7 +53,7 @@ def test_row_count(foods_parquet_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_categorical_parquet_statistics(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     df = pl.DataFrame(
         {
@@ -92,7 +92,7 @@ def test_categorical_parquet_statistics(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_null_parquet(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     df = pl.DataFrame([pl.Series("foo", [], dtype=pl.Int8)])
     file_path = tmp_path / "null.parquet"
@@ -103,7 +103,7 @@ def test_null_parquet(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_parquet_eq_stats(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     file_path = tmp_path / "stats.parquet"
 
@@ -124,7 +124,7 @@ def test_parquet_eq_stats(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_parquet_is_in_stats(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     file_path = tmp_path / "stats.parquet"
 
@@ -164,7 +164,7 @@ def test_parquet_is_in_stats(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_parquet_stats(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     file_path = tmp_path / "binary_stats.parquet"
 
@@ -207,7 +207,7 @@ def test_row_count_schema(parquet_file_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -244,7 +244,7 @@ def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> 
 
 @pytest.mark.write_disk()
 def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -280,7 +280,7 @@ def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) 
 
 @pytest.mark.write_disk()
 def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -316,7 +316,7 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> Non
 
 @pytest.mark.write_disk()
 def test_streaming_categorical(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     df = pl.DataFrame(
         [
@@ -345,7 +345,7 @@ def test_streaming_categorical(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_parquet_struct_categorical(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     df = pl.DataFrame(
         [

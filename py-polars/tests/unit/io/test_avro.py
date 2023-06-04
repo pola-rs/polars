@@ -37,7 +37,7 @@ def test_from_to_buffer(example_df: pl.DataFrame, compression: AvroCompression) 
 def test_from_to_file(
     example_df: pl.DataFrame, compression: AvroCompression, tmp_path: Path
 ) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     file_path = tmp_path / "small.avro"
     example_df.write_avro(file_path, compression=compression)

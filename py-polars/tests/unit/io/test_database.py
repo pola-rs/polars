@@ -107,7 +107,7 @@ def test_read_database(
     expected_dates: list[date | str],
     tmp_path: Path,
 ) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     test_db = str(tmp_path / "test.db")
     create_temp_sqlite_db(test_db)
@@ -186,7 +186,7 @@ def test_read_database_exceptions(
 def test_write_database(
     engine: DbWriteEngine, mode: DbWriteMode, sample_df: pl.DataFrame, tmp_path: Path
 ) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     test_db = str(tmp_path / "test.db")
 

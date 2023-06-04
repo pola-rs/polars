@@ -23,7 +23,7 @@ def test_to_from_buffer(df: pl.DataFrame, buf: io.IOBase) -> None:
 
 @pytest.mark.write_disk()
 def test_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     file_path = tmp_path / "small.json"
     df.write_json(file_path)

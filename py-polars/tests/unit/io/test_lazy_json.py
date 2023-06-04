@@ -40,7 +40,7 @@ def test_scan_ndjson(foods_ndjson_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_scan_with_projection(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     json = r"""
 {"text": "\"hello", "id": 1}

@@ -53,7 +53,7 @@ def test_from_to_file(
     path_as_string: bool,
     tmp_path: Path,
 ) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.ipc"
     if path_as_string:
         file_path = str(file_path)  # type: ignore[assignment]
@@ -66,7 +66,7 @@ def test_from_to_file(
 @pytest.mark.write_disk()
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_select_columns_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.ipc"
     df.write_ipc(file_path)
     df_read = pl.read_ipc(file_path, columns=["bools"])
@@ -131,7 +131,7 @@ def test_ipc_schema_from_file(
     path_as_string: bool,
     tmp_path: Path,
 ) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     file_path = tmp_path / "small.ipc"
     if path_as_string:
@@ -176,7 +176,7 @@ def test_ipc_column_order() -> None:
 @pytest.mark.write_disk()
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_glob_ipc(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.ipc"
     df.write_ipc(file_path)
 

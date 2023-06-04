@@ -36,7 +36,7 @@ def test_scan_empty_csv(io_files_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_invalid_utf8(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     np.random.seed(1)
     bts = bytes(np.random.randint(0, 255, 200))
@@ -188,7 +188,7 @@ def test_scan_slice_streaming(foods_file_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_glob_skip_rows(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     for i in range(2):
         file_path = tmp_path / f"test_{i}.csv"

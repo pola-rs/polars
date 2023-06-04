@@ -61,7 +61,7 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
 
 @pytest.mark.write_disk()
 def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     df = df_no_lists.drop("strings_nulls")
 
@@ -369,7 +369,7 @@ def test_read_csv_buffer_ownership() -> None:
 
 @pytest.mark.write_disk()
 def test_read_csv_encoding(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     bts = (
         b"Value1,Value2,Value3,Value4,Region\n"
@@ -787,7 +787,7 @@ def test_csv_string_escaping() -> None:
 
 @pytest.mark.write_disk()
 def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     df = df_no_lists.drop("strings_nulls")
     file_path = tmp_path / "small.csv"
@@ -1242,7 +1242,7 @@ def test_csv_statistics_offset() -> None:
 
 @pytest.mark.write_disk()
 def test_csv_scan_categorical(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     N = 5_000
     df = pl.DataFrame({"x": ["A"] * N})

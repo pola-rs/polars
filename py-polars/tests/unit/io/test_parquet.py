@@ -73,7 +73,7 @@ def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
 def test_to_from_file(
     df: pl.DataFrame, compression: ParquetCompression, tmp_path: Path
 ) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     file_path = tmp_path / "small.avro"
     df.write_parquet(file_path, compression=compression)
@@ -83,7 +83,7 @@ def test_to_from_file(
 
 @pytest.mark.write_disk()
 def test_to_from_file_lzo(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     file_path = tmp_path / "small.avro"
 
@@ -167,7 +167,7 @@ def test_nested_parquet() -> None:
 
 @pytest.mark.write_disk()
 def test_glob_parquet(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.parquet"
     df.write_parquet(file_path)
 
@@ -178,7 +178,7 @@ def test_glob_parquet(df: pl.DataFrame, tmp_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.parquet"
     df.write_parquet(file_path)
 
@@ -211,7 +211,7 @@ def test_chunked_round_trip() -> None:
 
 @pytest.mark.write_disk()
 def test_lazy_self_join_file_cache_prop_3979(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     file_path = tmp_path / "small.parquet"
     df.write_parquet(file_path)
@@ -361,7 +361,7 @@ def test_parquet_nested_dictionaries_6217() -> None:
 
 @pytest.mark.write_disk()
 def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     file = io_files_path / "small.parquet"
 
@@ -378,7 +378,7 @@ def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     file = io_files_path / "small.parquet"
 
@@ -395,7 +395,7 @@ def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_fetch_union(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     df1 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": [3, 4, 5], "b": [4, 5, 6]})
@@ -420,7 +420,7 @@ def test_fetch_union(tmp_path: Path) -> None:
 @pytest.mark.slow()
 @typing.no_type_check
 def test_struct_pyarrow_dataset_5796(tmp_path: Path) -> None:
-    tmp_path.mkdir()
+    tmp_path.mkdir(exist_ok=True)
 
     num_rows = 2**17 + 1
 
