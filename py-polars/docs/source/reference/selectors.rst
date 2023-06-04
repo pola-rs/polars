@@ -5,7 +5,7 @@ Selectors
 .. currentmodule:: polars
 
 Selectors allow for more intuitive selection of columns from :class:`DataFrame`
-or :class:`LazyFrame` objets based on their name, dtype or other properties.
+or :class:`LazyFrame` objects based on their name, dtype or other properties.
 They unify and build on the related functionality that is available through
 the :meth:`col` expression.
 
@@ -24,9 +24,8 @@ the :meth:`col` expression.
         ~s.ends_with("_euro")
 
 
-=========
 Importing
-=========
+---------
 
 Selectors are available as functions imported from ``polars.selectors``; the
 recommended/usual way to use them is to import the module as ``s``, like so:
@@ -47,11 +46,11 @@ recommended/usual way to use them is to import the module as ``s``, like so:
     df.groupby(by=s.string()).agg(s.numeric().sum())
 
 
-=========
 Functions
-=========
+---------
 
 .. automodule:: polars.selectors
+    :noindex:
     :members:
     :autosummary:
     :autosummary-no-titles:
