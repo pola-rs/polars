@@ -31,9 +31,7 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.txt
 
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
