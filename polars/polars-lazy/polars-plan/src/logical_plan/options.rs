@@ -127,6 +127,7 @@ pub struct UnionOptions {
     pub rows: (Option<usize>, usize),
     pub from_partitioned_ds: bool,
     pub flattened_by_opt: bool,
+    pub rechunk: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
