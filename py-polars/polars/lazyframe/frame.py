@@ -2039,15 +2039,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 stacklevel=find_stacklevel(),
             )
             first_input = named_exprs.pop("exprs")
-            exprs = parse_as_list_of_expressions(
+            pyexprs = parse_as_list_of_expressions(
                 first_input, *exprs, **named_exprs, __structify=structify
             )
         else:
-            exprs = parse_as_list_of_expressions(
+            pyexprs = parse_as_list_of_expressions(
                 *exprs, **named_exprs, __structify=structify
             )
 
-        return self._from_pyldf(self._ldf.select(exprs))
+        return self._from_pyldf(self._ldf.select(pyexprs))
 
     def groupby(
         self,
@@ -3103,15 +3103,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 stacklevel=find_stacklevel(),
             )
             first_input = named_exprs.pop("exprs")
-            exprs = parse_as_list_of_expressions(
+            pyexprs = parse_as_list_of_expressions(
                 first_input, *exprs, **named_exprs, __structify=structify
             )
         else:
-            exprs = parse_as_list_of_expressions(
+            pyexprs = parse_as_list_of_expressions(
                 *exprs, **named_exprs, __structify=structify
             )
 
-        return self._from_pyldf(self._ldf.with_columns(exprs))
+        return self._from_pyldf(self._ldf.with_columns(pyexprs))
 
     @typing.no_type_check
     def with_context(self, other: Self | list[Self]) -> Self:

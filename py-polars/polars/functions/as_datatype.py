@@ -384,11 +384,11 @@ def struct(
             stacklevel=find_stacklevel(),
         )
         first_input = named_exprs.pop("exprs")
-        exprs = parse_as_list_of_expressions(first_input, *exprs, **named_exprs)
+        pyexprs = parse_as_list_of_expressions(first_input, *exprs, **named_exprs)
     else:
-        exprs = parse_as_list_of_expressions(*exprs, **named_exprs)
+        pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
 
-    expr = wrap_expr(plr.as_struct(exprs))
+    expr = wrap_expr(plr.as_struct(pyexprs))
 
     if schema:
         if not exprs:

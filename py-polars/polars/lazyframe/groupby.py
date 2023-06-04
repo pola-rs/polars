@@ -131,11 +131,11 @@ class LazyGroupBy:
                 stacklevel=find_stacklevel(),
             )
             first_input = named_aggs.pop("aggs")
-            exprs = parse_as_list_of_expressions(first_input, *aggs, **named_aggs)
+            pyexprs = parse_as_list_of_expressions(first_input, *aggs, **named_aggs)
         else:
-            exprs = parse_as_list_of_expressions(*aggs, **named_aggs)
+            pyexprs = parse_as_list_of_expressions(*aggs, **named_aggs)
 
-        return wrap_ldf(self.lgb.agg(exprs))
+        return wrap_ldf(self.lgb.agg(pyexprs))
 
     def apply(
         self,
