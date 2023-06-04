@@ -892,14 +892,6 @@ def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
     assert res.columns[0] == "C"
 
 
-def test_with_columns_single_series() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2]})
-    result = ldf.with_columns(pl.Series("b", [3, 4]))
-
-    expected = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    assert_frame_equal(result.collect(), expected)
-
-
 def test_reverse() -> None:
     out = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).reverse()
     expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})

@@ -37,6 +37,12 @@ def test_select_args_kwargs() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_select_empty() -> None:
+    result = pl.select()
+    expected = pl.DataFrame()
+    assert_frame_equal(result, expected)
+
+
 def test_select_empty_list() -> None:
     result = pl.select([])
     expected = pl.DataFrame()
