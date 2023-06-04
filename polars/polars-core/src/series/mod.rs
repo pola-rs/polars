@@ -359,6 +359,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), false, self.len())),
             _ => polars_bail!(opq = is_nan, self.dtype()),
         }
     }
@@ -368,15 +369,17 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), true, self.len())),
             _ => polars_bail!(opq = is_not_nan, self.dtype()),
         }
     }
 
-    /// Check if float value is finite
+    /// Check if numeric value is finite
     pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), true, self.len())),
             _ => polars_bail!(opq = is_finite, self.dtype()),
         }
     }
@@ -386,6 +389,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), false, self.len())),
             _ => polars_bail!(opq = is_infinite, self.dtype()),
         }
     }
