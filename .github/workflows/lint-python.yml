@@ -24,13 +24,9 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          cache: pip
-          cache-dependency-path: py-polars/requirements-lint.txt
 
       - name: Install Python dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-lint.txt
+        run: pip install -r requirements-lint.txt
 
       - name: Lint Python
         run: |
@@ -78,14 +74,9 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: |
-            py-polars/requirements-dev.txt
-            py-polars/requirements-lint.txt
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
           pip install -r requirements-dev.txt
           pip install -r requirements-lint.txt
 

@@ -35,5 +35,5 @@ jobs:
 
       - name: Build Python documentation
         env:
-          SPHINXOPTS: -W
+          SPHINXOPTS: -W --keep-going
         run: make html
