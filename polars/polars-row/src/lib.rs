@@ -121,12 +121,12 @@
 //!
 //! ## Dictionary Encoding
 //!
-//! [`RowConverter`] needs to support converting dictionary encoded arrays with unsorted, and
+//! [`RowsEncoded`] needs to support converting dictionary encoded arrays with unsorted, and
 //! potentially distinct dictionaries. One simple mechanism to avoid this would be to reverse
 //! the dictionary encoding, and encode the array values directly, however, this would lose
 //! the benefits of dictionary encoding to reduce memory and CPU consumption.
 //!
-//! As such the [`RowConverter`] creates an order-preserving mapping
+//! As such the [`RowsEncoded`] creates an order-preserving mapping
 //! for each dictionary encoded column, which allows new dictionary
 //! values to be added whilst preserving the sort order.
 //!

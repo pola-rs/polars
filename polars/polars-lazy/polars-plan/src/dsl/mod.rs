@@ -1768,7 +1768,7 @@ impl Expr {
         list::ListNameSpace(self)
     }
 
-    /// Get the [`ArrayNameSpace`]
+    /// Get the [`array::ArrayNameSpace`]
     #[cfg(feature = "dtype-array")]
     pub fn arr(self) -> array::ArrayNameSpace {
         array::ArrayNameSpace(self)
@@ -1780,13 +1780,13 @@ impl Expr {
         cat::CategoricalNameSpace(self)
     }
 
-    /// Get the [`StructNameSpace`]
+    /// Get the [`struct_::StructNameSpace`]
     #[cfg(feature = "dtype-struct")]
     pub fn struct_(self) -> struct_::StructNameSpace {
         struct_::StructNameSpace(self)
     }
 
-    /// Get the [`MetaNameSpace`]
+    /// Get the [`meta::MetaNameSpace`]
     #[cfg(feature = "meta")]
     pub fn meta(self) -> meta::MetaNameSpace {
         meta::MetaNameSpace(self)

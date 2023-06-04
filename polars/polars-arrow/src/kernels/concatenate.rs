@@ -3,7 +3,7 @@ use arrow::error::{Error as ArrowError, Result};
 
 use crate::prelude::*;
 
-/// Concatenate multiple [Array] of the same type into a single [`Array`].
+/// Concatenate multiple [`arrow::array::Array`] of the same type into a single [`arrow::array::Array`].
 /// This does not check the arrays types.
 pub fn concatenate_owned_unchecked(arrays: &[ArrayRef]) -> Result<ArrayRef> {
     if arrays.is_empty() {
