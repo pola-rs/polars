@@ -6,11 +6,13 @@ from typing import TYPE_CHECKING, Any, Collection
 from polars import Expr
 from polars import functions as F
 from polars.datatypes import (
+    DATETIME_DTYPES,
     FLOAT_DTYPES,
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
     Categorical,
+    Datetime,
     Utf8,
     is_polars_dtype,
 )
@@ -19,6 +21,7 @@ if TYPE_CHECKING:
     import sys
 
     from polars.datatypes import PolarsDataType
+    from polars.type_aliases import TimeUnit
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -35,31 +38,34 @@ class _selector_proxy_(Expr):
     def __init__(
         self,
         expr: Expr,
-        type_: str,
+        name: str,
         parameters: dict[str, Any] | None = None,
         raw_parameters: list[Any] | None = None,
         invert: bool = False,
     ):
         self._pyexpr = expr._pyexpr
         self._inverted = invert
+
+        # note: 'params' and 'name' are primarily stored for the repr,
+        # whereas 'raw_params' is what we need to invert the expression.
         self._attrs = {
             "raw_params": raw_parameters,
             "params": parameters,
-            "type": type_,
+            "name": name,
         }
 
     def __invert__(self) -> Self:
         """Invert the selector."""
-        selector_type = self._attrs["type"]
-        if selector_type in ("first", "last"):
-            raise ValueError(f"Cannot currently invert {selector_type!r} selector")
+        name = self._attrs["name"]
+        if name in ("first", "last"):
+            raise ValueError(f"Cannot currently invert {name!r} selector")
 
         params = self._attrs["params"] or {}
         raw_params = self._attrs["raw_params"] or []
         if not raw_params and params:
             raw_params = list(params.values())
 
-        if selector_type == "all":
+        if name == "all":
             inverted_expr = F.all() if self._inverted else F.col([])
         elif self._inverted:
             inverted_expr = F.col(*raw_params)
@@ -68,7 +74,7 @@ class _selector_proxy_(Expr):
 
         return self.__class__(
             expr=inverted_expr,
-            type_=selector_type,
+            name=name,
             parameters=params,
             raw_parameters=raw_params,
             invert=not self._inverted,
@@ -78,7 +84,7 @@ class _selector_proxy_(Expr):
         params = self._attrs["params"]
         not_ = "~" if self._inverted else ""
         str_params = ",".join(f"{k}={v!r}" for k, v in (params or {}).items())
-        return f"{not_}s.{self._attrs['type']}({str_params})"
+        return f"{not_}s.{self._attrs['name']}({str_params})"
 
     # --------------------------------------------------------------------------------
     # Note: before offering operator support we need a new first-class expression
@@ -162,7 +168,7 @@ def all() -> Expr:
     last : Select the last column in the current scope.
 
     """
-    return _selector_proxy_(F.all(), type_="all")
+    return _selector_proxy_(F.all(), name="all")
 
 
 def by_dtype(
@@ -245,7 +251,7 @@ def by_dtype(
             raise TypeError(f"Invalid dtype: {tp!r}")
 
     return _selector_proxy_(
-        F.col(*all_dtypes), type_="by_dtype", parameters={"dtypes": all_dtypes}
+        F.col(*all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
     )
 
 
@@ -314,7 +320,7 @@ def by_name(*names: str | Collection[str]) -> Expr:
             TypeError(f"Invalid name: {nm!r}")
 
     return _selector_proxy_(
-        F.col(*all_names), type_="by_dtype", parameters={"names": all_names}
+        F.col(*all_names), name="by_name", parameters={"names": all_names}
     )
 
 
@@ -390,9 +396,81 @@ def contains(substring: str | Collection[str]) -> Expr:
 
     return _selector_proxy_(
         F.col(raw_params),
-        type_="contains",
+        name="contains",
         parameters={"substring": escaped_substring},
         raw_parameters=[raw_params],
+    )
+
+
+def datetime(time_unit: TimeUnit | None = None) -> Expr:
+    """
+    Select all datetime columns.
+
+    Examples
+    --------
+    >>> from datetime import datetime, date
+    >>> import polars.selectors as s
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "tstamp": [
+    ...             datetime(2000, 11, 20, 18, 12, 16, 600000),
+    ...             datetime(2020, 10, 30, 10, 20, 25, 123000),
+    ...         ],
+    ...         "dtime": [
+    ...             datetime(2010, 10, 10, 10, 25, 30, 987000),
+    ...             datetime(2024, 12, 31, 20, 30, 45, 400500),
+    ...         ],
+    ...         "dt": [date(1999, 12, 31), date(2010, 7, 5)],
+    ...     },
+    ...     schema_overrides={"tstamp": pl.Datetime("ns"), "dtime": pl.Datetime("ms")},
+    ... )
+
+    Select all datetime columns:
+
+    >>> df.select(s.datetime())
+    shape: (2, 2)
+    ┌─────────────────────────┬─────────────────────────┐
+    │ tstamp                  ┆ dtime                   │
+    │ ---                     ┆ ---                     │
+    │ datetime[ns]            ┆ datetime[ms]            │
+    ╞═════════════════════════╪═════════════════════════╡
+    │ 2000-11-20 18:12:16.600 ┆ 2010-10-10 10:25:30.987 │
+    │ 2020-10-30 10:20:25.123 ┆ 2024-12-31 20:30:45.400 │
+    └─────────────────────────┴─────────────────────────┘
+
+    Select all datetime columns that have 'ns' precision:
+
+    >>> df.select(s.datetime("ns"))
+    shape: (2, 1)
+    ┌─────────────────────────┐
+    │ tstamp                  │
+    │ ---                     │
+    │ datetime[ns]            │
+    ╞═════════════════════════╡
+    │ 2000-11-20 18:12:16.600 │
+    │ 2020-10-30 10:20:25.123 │
+    └─────────────────────────┘
+
+    Select all columns *except* for datetime columns:
+
+    >>> df.select(~s.datetime())
+    shape: (2, 1)
+    ┌────────────┐
+    │ dt         │
+    │ ---        │
+    │ date       │
+    ╞════════════╡
+    │ 1999-12-31 │
+    │ 2010-07-05 │
+    └────────────┘
+
+    """
+    datetime_dtypes = DATETIME_DTYPES if not time_unit else Datetime(time_unit)
+    return _selector_proxy_(
+        F.col(datetime_dtypes),  # type: ignore[arg-type]
+        name="datetime",
+        parameters={"time_unit": time_unit},
+        raw_parameters=[datetime_dtypes],
     )
 
 
@@ -468,7 +546,7 @@ def ends_with(*suffix: str) -> Expr:
 
     return _selector_proxy_(
         F.col(raw_params),
-        type_="ends_with",
+        name="ends_with",
         parameters={"suffix": escaped_suffix},
         raw_parameters=[raw_params],
     )
@@ -509,7 +587,7 @@ def first() -> Expr:
     last : Select the last column in the current scope.
 
     """
-    return _selector_proxy_(F.first(), type_="first")
+    return _selector_proxy_(F.first(), name="first")
 
 
 def float() -> Expr:
@@ -564,7 +642,7 @@ def float() -> Expr:
 
     """
     return _selector_proxy_(
-        F.col(FLOAT_DTYPES), type_="float", raw_parameters=[FLOAT_DTYPES]
+        F.col(FLOAT_DTYPES), name="float", raw_parameters=[FLOAT_DTYPES]
     )
 
 
@@ -620,7 +698,7 @@ def integer() -> Expr:
 
     """
     return _selector_proxy_(
-        F.col(INTEGER_DTYPES), type_="integer", raw_parameters=[INTEGER_DTYPES]
+        F.col(INTEGER_DTYPES), name="integer", raw_parameters=[INTEGER_DTYPES]
     )
 
 
@@ -659,7 +737,7 @@ def last() -> Expr:
     first : Select the first column in the current scope.
 
     """
-    return _selector_proxy_(F.last(), type_="first")
+    return _selector_proxy_(F.last(), name="last")
 
 
 def matches(pattern: str) -> Expr:
@@ -731,7 +809,7 @@ def matches(pattern: str) -> Expr:
 
         return _selector_proxy_(
             F.col(raw_params),
-            type_="matches",
+            name="matches",
             parameters={"pattern": pattern},
             raw_parameters=[raw_params],
         )
@@ -790,7 +868,7 @@ def numeric() -> Expr:
 
     """
     return _selector_proxy_(
-        F.col(NUMERIC_DTYPES), type_="numeric", raw_parameters=[NUMERIC_DTYPES]
+        F.col(NUMERIC_DTYPES), name="numeric", raw_parameters=[NUMERIC_DTYPES]
     )
 
 
@@ -866,7 +944,7 @@ def starts_with(*prefix: str) -> Expr:
 
     return _selector_proxy_(
         F.col(raw_params),
-        type_="starts_with",
+        name="starts_with",
         parameters={"prefix": prefix},
         raw_parameters=[raw_params],
     )
@@ -878,7 +956,6 @@ def string(include_categorical: bool = False) -> Expr:
 
     Examples
     --------
-    >>> from datetime import date
     >>> import polars.selectors as s
     >>> df = pl.DataFrame(
     ...     {
@@ -932,7 +1009,7 @@ def string(include_categorical: bool = False) -> Expr:
         string_dtypes.append(Categorical)
 
     return _selector_proxy_(
-        F.col(string_dtypes), type_="string", raw_parameters=[string_dtypes]
+        F.col(string_dtypes), name="string", raw_parameters=[string_dtypes]
     )
 
 
@@ -1001,7 +1078,7 @@ def temporal() -> Expr:
 
     """
     return _selector_proxy_(
-        F.col(TEMPORAL_DTYPES), type_="temporal", raw_parameters=[TEMPORAL_DTYPES]
+        F.col(TEMPORAL_DTYPES), name="temporal", raw_parameters=[TEMPORAL_DTYPES]
     )
 
 
@@ -1010,6 +1087,7 @@ __all__ = [
     "by_dtype",
     "by_name",
     "contains",
+    "datetime",
     "ends_with",
     "first",
     "float",
