@@ -521,11 +521,7 @@ fn replace_selector_inner(
             let mut rhs_members = Default::default();
             replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
 
-            *members = members
-                .intersection(&rhs_members)
-                .into_iter()
-                .cloned()
-                .collect()
+            *members = members.intersection(&rhs_members).cloned().collect()
         }
     }
     Ok(())
