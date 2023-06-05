@@ -229,6 +229,11 @@ impl PartitionGroupByExec {
         state: &mut ExecutionState,
         original_df: DataFrame,
     ) -> Option<PolarsResult<DataFrame>> {
+        #[allow(clippy::needless_update)]
+        let groupby_options = GroupbyOptions {
+            slice: self.slice,
+            ..Default::default()
+        };
         let lp = LogicalPlan::Aggregate {
             input: Box::new(original_df.lazy().logical_plan),
             keys: Arc::new(std::mem::take(&mut self.keys)),
@@ -236,10 +241,7 @@ impl PartitionGroupByExec {
             schema: self.output_schema.clone(),
             apply: None,
             maintain_order: false,
-            options: GroupbyOptions {
-                slice: self.slice,
-                ..Default::default()
-            },
+            options: groupby_options,
         };
         let mut expr_arena = Default::default();
         let mut lp_arena = Default::default();
