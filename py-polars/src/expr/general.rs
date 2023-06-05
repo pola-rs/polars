@@ -11,6 +11,7 @@ use pyo3::types::{PyBytes, PyFloat};
 
 use crate::apply::lazy::{call_lambda_with_series, map_single};
 use crate::conversion::{parse_fill_null_strategy, Wrap};
+use crate::error::PyPolarsErr;
 use crate::series::PySeries;
 use crate::utils::reinterpret;
 use crate::PyExpr;
@@ -78,39 +79,22 @@ impl PyExpr {
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
-        #[cfg(feature = "json")]
-        {
-            let s = serde_json::to_string(&self.inner).unwrap();
-            Ok(PyBytes::new(py, s.as_bytes()).to_object(py))
-        }
-        #[cfg(not(feature = "json"))]
-        {
-            panic!("activate 'json' feature")
-        }
+        let mut writer: Vec<u8> = vec![];
+        ciborium::ser::into_writer(&self.inner, &mut writer)
+            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+
+        Ok(PyBytes::new(py, &writer).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
-        #[cfg(feature = "json")]
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
-                // Safety
-                // we skipped the serializing/deserializing of the static in lifetime in `DataType`
-                // so we actually don't have a lifetime at all when serializing.
-
-                // PyBytes still has a lifetime. Bit its ok, because we drop it immediately
-                // in this scope
-                let s = unsafe { std::mem::transmute::<&'_ PyBytes, &'static PyBytes>(s) };
-                self.inner = serde_json::from_slice(s.as_bytes()).unwrap();
-
+                self.inner = ciborium::de::from_reader(s.as_bytes())
+                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
             }
             Err(e) => Err(e),
-        }
-
-        #[cfg(not(feature = "json"))]
-        {
-            panic!("activate 'json' feature")
         }
     }
 
