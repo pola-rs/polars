@@ -472,7 +472,7 @@ pub trait ChunkUnique<T: PolarsDataType> {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct SortOptions {
     pub descending: bool,

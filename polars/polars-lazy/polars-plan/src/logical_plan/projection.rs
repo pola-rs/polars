@@ -479,6 +479,58 @@ fn replace_and_add_to_results(
     Ok(())
 }
 
+fn replace_selector_inner(
+    s: Selector,
+    members: &mut PlIndexSet<Expr>,
+    scratch: &mut Vec<Expr>,
+    schema: &Schema,
+    keys: &[Expr],
+) -> PolarsResult<()> {
+    match s {
+        Selector::Root(expr) => {
+            let local_flags = find_flags(&expr);
+            replace_and_add_to_results(*expr, local_flags, scratch, schema, keys)?;
+            members.extend(scratch.drain(..))
+        }
+        Selector::Add(lhs, rhs) => {
+            replace_selector_inner(*lhs, members, scratch, schema, keys)?;
+            replace_selector_inner(*rhs, members, scratch, schema, keys)?;
+        }
+        Selector::Sub(lhs, rhs) => {
+            // fill lhs
+            replace_selector_inner(*lhs, members, scratch, schema, keys)?;
+
+            // subtract rhs
+            let mut rhs_members = Default::default();
+            replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
+
+            let mut new_members = PlIndexSet::with_capacity(members.len());
+            for e in members.drain(..) {
+                if !rhs_members.contains(&e) {
+                    new_members.insert(e);
+                }
+            }
+
+            *members = new_members;
+        }
+        Selector::InterSect(lhs, rhs) => {
+            // fill lhs
+            replace_selector_inner(*lhs, members, scratch, schema, keys)?;
+
+            // fill rhs
+            let mut rhs_members = Default::default();
+            replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
+
+            *members = members
+                .intersection(&rhs_members)
+                .into_iter()
+                .cloned()
+                .collect()
+        }
+    }
+    Ok(())
+}
+
 fn replace_selector(expr: &mut Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<()> {
     // first pass we replace the selectors
     // with Expr::Columns
@@ -486,37 +538,21 @@ fn replace_selector(expr: &mut Expr, schema: &Schema, keys: &[Expr]) -> PolarsRe
     // and then subtract the `to_subtract` columns
     expr.mutate().try_apply(|e| match e {
         Expr::Selector(s) => {
-            let mut to_add = Vec::with_capacity(s.add.len() * 3);
+            let mut swapped = Selector::Root(Box::new(Expr::Wildcard));
+            std::mem::swap(s, &mut swapped);
 
-            for add_e in std::mem::take(&mut s.add) {
-                let local_flags = find_flags(&add_e);
-                replace_and_add_to_results(add_e, local_flags, &mut to_add, schema, keys)?;
-            }
+            let mut members = PlIndexSet::new();
+            replace_selector_inner(swapped, &mut members, &mut vec![], schema, keys)?;
 
-            let mut to_subtract = Vec::with_capacity(s.subtract.len() * 3);
-            for sub_e in std::mem::take(&mut s.subtract) {
-                let local_flags = find_flags(&sub_e);
-                replace_and_add_to_results(sub_e, local_flags, &mut to_subtract, schema, keys)?;
-            }
-
-            let to_subtract = to_subtract
-                .iter()
-                .map(|e| {
-                    let Expr::Column(name) = e else {unreachable!()};
-                    name.as_ref()
-                })
-                .collect::<PlHashSet<_>>();
-
-            let mut final_names = Vec::with_capacity(to_add.len());
-            // keep a set to ensure we don't create duplicates
-            let mut added = PlHashSet::with_capacity(to_add.len());
-            for e in to_add {
-                let Expr::Column(name) = e else {unreachable!()};
-                if !to_subtract.contains(name.as_ref()) && added.insert(name.clone()) {
-                    final_names.push(name.to_string())
-                }
-            }
-            *e = Expr::Columns(final_names);
+            *e = Expr::Columns(
+                members
+                    .into_iter()
+                    .map(|e| {
+                        let Expr::Column(name) = e else {unreachable!()};
+                        name.to_string()
+                    })
+                    .collect(),
+            );
 
             Ok(true)
         }

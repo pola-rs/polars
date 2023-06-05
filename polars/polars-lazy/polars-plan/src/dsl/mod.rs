@@ -49,6 +49,7 @@ use polars_core::series::IsSorted;
 use polars_core::utils::{try_get_supertype, NoNull};
 #[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
+pub(crate) use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 
