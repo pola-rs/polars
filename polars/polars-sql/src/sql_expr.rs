@@ -498,5 +498,5 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
 
     let expr = ast.parse_expr().map_err(to_compute_err)?;
 
-    parse_sql_expr(&expr, &mut ctx)
+    parse_sql_expr(&expr, &ctx)
 }
