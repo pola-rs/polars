@@ -90,3 +90,11 @@ def test_deser_empty_list() -> None:
     s = pickle.loads(pickle.dumps(pl.Series([[[42.0]], []])))
     assert s.dtype == pl.List(pl.List(pl.Float64))
     assert s.to_list() == [[[42.0]], []]
+
+
+def test_expression_json() -> None:
+    e = pl.col("foo").sum().over("bar")
+    json = e.meta.write_json()
+
+    round_tripped = pl.Expr.from_json(json)
+    assert round_tripped.meta == e
