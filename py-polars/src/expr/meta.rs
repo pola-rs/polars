@@ -44,4 +44,34 @@ impl PyExpr {
     fn meta_is_regex_projection(&self) -> bool {
         self.inner.clone().meta().is_regex_projection()
     }
+
+    fn _meta_selector_add(&self, other: PyExpr) -> PyResult<PyExpr> {
+        let out = self
+            .inner
+            .clone()
+            .meta()
+            ._selector_add(other.inner)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    fn _meta_selector_sub(&self, other: PyExpr) -> PyResult<PyExpr> {
+        let out = self
+            .inner
+            .clone()
+            .meta()
+            ._selector_sub(other.inner)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    fn _meta_as_selector(&self) -> PyResult<PyExpr> {
+        let out = self
+            .inner
+            .clone()
+            .meta()
+            ._into_selector()
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
 }
