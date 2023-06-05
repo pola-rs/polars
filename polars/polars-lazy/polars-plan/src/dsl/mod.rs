@@ -30,11 +30,13 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 pub use arity::*;
+#[cfg(feature = "dtype-array")]
 pub use array::*;
 pub use expr::*;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
+#[cfg(feature = "meta")]
 pub use meta::*;
 pub use options::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -45,6 +47,7 @@ use polars_core::series::IsSorted;
 use polars_core::utils::{try_get_supertype, NoNull};
 #[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
+#[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 
 use crate::constants::MAP_LIST_NAME;
