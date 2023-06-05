@@ -39,7 +39,7 @@ jobs:
       - name: Build Python documentation
         working-directory: py-polars/docs
         env:
-          SPHINXOPTS: -W
+          SPHINXOPTS: -W --jobs=auto
         run: make html
 
       - name: Deploy Python docs for latest development version
