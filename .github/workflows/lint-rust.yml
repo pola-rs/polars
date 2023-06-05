@@ -55,7 +55,7 @@ jobs:
         if: ${{ github.ref_name != 'main' }}
         working-directory: polars
         env:
-          MIRIFLAGS: -Z miri-disable-isolation -Z miri-ignore-leaks -Z miri-disable-stacked-borrows
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows
           POLARS_ALLOW_EXTENSION: '1'
         run: |
           cargo miri test \
