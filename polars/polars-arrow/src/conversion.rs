@@ -14,7 +14,7 @@ pub fn chunk_to_struct(chunk: Chunk<ArrayRef>, fields: Vec<Field>) -> StructArra
 ///
 /// This operation returns [`Some`] iff this [`PrimitiveArray`]:
 /// * has not been sliced with an offset
-/// * has not been cloned (i.e. [`Arc`]`::get_mut` yields [`Some`])
+/// * has not been cloned (i.e. [`std::sync::Arc::get_mut`] yields [`Some`])
 /// * has not been imported from the c data interface (FFI)
 pub fn primitive_to_vec<T: NativeType>(arr: ArrayRef) -> Option<Vec<T>> {
     let arr_ref = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();

@@ -8,7 +8,7 @@ use polars_utils::sync::SyncPtr;
 use polars_utils::IdxSize;
 use rayon::prelude::*;
 
-#[cfg(feature = "dtype-categorical")]
+#[cfg(all(feature = "dtype-categorical", feature = "performant"))]
 use crate::config::verbose;
 use crate::datatypes::*;
 use crate::hashing::AsU64;

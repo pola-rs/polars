@@ -230,7 +230,7 @@
 //!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
 //!     - `cum_agg` - cumsum, cummin, cummax aggregation.
 //!     - `rolling_window` - rolling window functions, like rolling_mean
-//!     - `interpolate` [interpolate None values](crate::chunked_array::ops::Interpolate)
+//!     - `interpolate` [interpolate None values](polars_ops::chunked_array::interpolate)
 //!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
 //!     - `list` - List utils.
 //!         - `list_take` take sublist by multiple indices

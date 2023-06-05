@@ -378,7 +378,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
     }
 }
 
-/// Deserializes a `json` [`Value`] into an [`Array`] of [`DataType`]
+/// Deserializes a `json` [`simd_json::value::Value`] into an [`Array`] of [`DataType`]
 /// This is CPU-bounded.
 /// # Error
 /// This function errors iff either:
@@ -419,7 +419,7 @@ fn allocate_array(f: &Field) -> Box<dyn MutableArray> {
     }
 }
 
-/// Deserializes a `json` [`Value`] serialized in Pandas record format into
+/// Deserializes a `json` [`simd_json::value::Value`] serialized in Pandas record format into
 /// a [`Chunk`].
 ///
 /// Uses the `Schema` provided, which can be inferred from arbitrary JSON with
