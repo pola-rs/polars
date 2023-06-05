@@ -1,4 +1,4 @@
-//! Implementations of upstream traits for ChunkedArray<T>
+//! Implementations of upstream traits for [`ChunkedArray<T>`]
 use std::borrow::{Borrow, Cow};
 use std::collections::LinkedList;
 use std::iter::FromIterator;
@@ -117,7 +117,7 @@ where
     }
 }
 
-/// Local AsRef<T> trait to circumvent the orphan rule.
+/// Local [`AsRef<T>`] trait to circumvent the orphan rule.
 pub trait PolarsAsRef<T: ?Sized>: AsRef<T> {}
 
 impl PolarsAsRef<str> for String {}

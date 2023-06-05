@@ -2,7 +2,10 @@ use simd_json::BorrowedValue;
 
 use super::*;
 
-/// Deserializes an iterator of rows into an [`Array`] of [`DataType`].
+/// Deserializes an iterator of rows into an [`Array`][Array] of [`DataType`].
+///
+/// [Array]: arrow::array::Array
+///
 /// # Implementation
 /// This function is CPU-bounded.
 /// This function is guaranteed to return an array of length equal to the length

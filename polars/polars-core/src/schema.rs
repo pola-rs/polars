@@ -298,7 +298,7 @@ impl Schema {
     /// `Some(old_dtype)`.
     ///
     /// This method only ever modifies an existing index and never adds a new field to the schema. To add a new field,
-    /// use [`with_column`] or [`insert_at_index`][Self::insert_at_index].
+    /// use [`with_column`][Self::with_column] or [`insert_at_index`][Self::insert_at_index].
     pub fn set_dtype_at_index(&mut self, index: usize, dtype: DataType) -> Option<DataType> {
         let (_, old_dtype) = self.inner.get_index_mut(index)?;
         Some(std::mem::replace(old_dtype, dtype))

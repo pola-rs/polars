@@ -26,13 +26,15 @@ struct GlobalObjectRegistry {
 static GLOBAL_OBJECT_REGISTRY: Lazy<RwLock<Option<GlobalObjectRegistry>>> =
     Lazy::new(Default::default);
 
-/// This trait can be registers and then that global registration
+/// This trait can be registered, after which that global registration
 /// can be used to materialize object types
 pub trait AnonymousObjectBuilder {
     /// Append a `null` value.
     fn append_null(&mut self);
 
-    /// Append a `T` of [`ObjectChunked<T>`] made generic via the [`Any`] trait.
+    /// Append a `T` of [`ObjectChunked<T>`][ObjectChunked<T>] made generic via the [`Any`] trait.
+    ///
+    /// [ObjectChunked<T>]: crate::chunked_array::object::ObjectChunked
     fn append_value(&mut self, value: &dyn Any);
 
     /// Take the current state and materialize as a [`Series`]

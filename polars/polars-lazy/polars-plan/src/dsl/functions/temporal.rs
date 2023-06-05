@@ -227,12 +227,13 @@ impl DurationArgs {
 
     /// Set `hours`, `minutes`, and `seconds`
     ///
-    /// Equivalent to
+    /// Equivalent to:
+    ///
     /// ```ignore
     /// self.with_hours(hours)
     ///     .with_minutes(minutes)
     ///     .with_seconds(seconds)
-    /// ```.
+    /// ```
     pub fn with_hms(self, hours: Expr, minutes: Expr, seconds: Expr) -> Self {
         Self {
             hours,

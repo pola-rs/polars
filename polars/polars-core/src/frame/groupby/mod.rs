@@ -221,7 +221,7 @@ impl<'df> GroupBy<'df> {
 
     /// Get the internal representation of the GroupBy operation.
     /// The Vec returned contains:
-    ///     (first_idx, Vec<indexes>)
+    ///     (first_idx, [`Vec<indexes>`])
     ///     Where second value in the tuple is a vector with all matching indexes.
     pub fn get_groups(&self) -> &GroupsProxy {
         &self.groups
@@ -229,7 +229,7 @@ impl<'df> GroupBy<'df> {
 
     /// Get the internal representation of the GroupBy operation.
     /// The Vec returned contains:
-    ///     (first_idx, Vec<indexes>)
+    ///     (first_idx, [`Vec<indexes>`])
     ///     Where second value in the tuple is a vector with all matching indexes.
     ///
     /// # Safety
