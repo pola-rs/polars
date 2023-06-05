@@ -12,9 +12,9 @@ impl<
         T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Div<Output = T> + NumCast,
     > RollingAggWindowNoNulls<'a, T> for MeanWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
         Self {
-            sum: SumWindow::new(slice, start, end),
+            sum: SumWindow::new(slice, start, end, params),
         }
     }
 
@@ -30,6 +30,7 @@ pub fn rolling_mean<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
+    _params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
@@ -40,12 +41,14 @@ where
             window_size,
             min_periods,
             det_offsets_center,
+            None,
         ),
         (false, None) => rolling_apply_agg_window::<MeanWindow<_>, _, _>(
             values,
             window_size,
             min_periods,
             det_offsets,
+            None,
         ),
         (true, Some(weights)) => {
             let weights = no_nulls::coerce_weights(weights);

@@ -1,3 +1,5 @@
+use polars_arrow::prelude::DynArgs;
+
 #[derive(Clone)]
 pub struct RollingOptionsFixedWindow {
     /// The length of the window.
@@ -9,6 +11,7 @@ pub struct RollingOptionsFixedWindow {
     pub weights: Option<Vec<f64>>,
     /// Set the labels at the center of the window.
     pub center: bool,
+    pub fn_params: DynArgs,
 }
 
 impl Default for RollingOptionsFixedWindow {
@@ -18,6 +21,7 @@ impl Default for RollingOptionsFixedWindow {
             min_periods: 1,
             weights: None,
             center: false,
+            fn_params: None,
         }
     }
 }

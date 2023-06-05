@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
@@ -555,6 +557,7 @@ impl PyExpr {
             weights,
             min_periods,
             center,
+            ..Default::default()
         };
         // get the pypolars module
         // do the import outside of the function.
@@ -752,6 +755,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
         self.inner.clone().rolling_sum(options).into()
     }
@@ -773,6 +777,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
         self.inner.clone().rolling_min(options).into()
     }
@@ -794,6 +799,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
         self.inner.clone().rolling_max(options).into()
     }
@@ -815,12 +821,14 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
 
         self.inner.clone().rolling_mean(options).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof))]
+    #[allow(clippy::too_many_arguments)]
     fn rolling_std(
         &self,
         window_size: &str,
@@ -829,6 +837,7 @@ impl PyExpr {
         center: bool,
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
+        ddof: u8,
     ) -> Self {
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
@@ -837,12 +846,14 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
         };
 
         self.inner.clone().rolling_std(options).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof))]
+    #[allow(clippy::too_many_arguments)]
     fn rolling_var(
         &self,
         window_size: &str,
@@ -851,6 +862,7 @@ impl PyExpr {
         center: bool,
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
+        ddof: u8,
     ) -> Self {
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
@@ -859,6 +871,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
         };
 
         self.inner.clone().rolling_var(options).into()
@@ -881,6 +894,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
         self.inner.clone().rolling_median(options).into()
     }
@@ -905,6 +919,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
 
         self.inner
