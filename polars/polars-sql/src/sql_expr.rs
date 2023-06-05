@@ -1,3 +1,4 @@
+use polars_arrow::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
@@ -7,6 +8,8 @@ use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, TrimWhereField,
     UnaryOperator, Value as SqlValue,
 };
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::functions::SqlFunctionVisitor;
 use crate::SQLContext;
@@ -464,4 +467,36 @@ pub(super) fn process_join_constraint(
         }
     }
     polars_bail!(InvalidOperation: "SQL join constraint {:?} is not yet supported", constraint);
+}
+
+/// parse a SQL expression to a polars expression
+/// # Example
+/// ```rust
+/// # use polars_sql::{SQLContext, sql_expr};
+/// # use polars_core::prelude::*;
+/// # use polars_lazy::prelude::*;
+/// # fn main() {
+///
+/// let mut ctx = SQLContext::new();
+/// let df = df! {
+///    "a" =>  [1, 2, 3],
+/// }
+/// .unwrap();
+/// let expr = sql_expr("MAX(a)").unwrap();
+/// df.lazy().select(vec![expr]).collect().unwrap();
+/// # }
+/// ```
+pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
+    let mut ctx = SQLContext::new();
+
+    let mut parser = Parser::new(&GenericDialect);
+    parser = parser.with_options(ParserOptions {
+        trailing_commas: true,
+    });
+
+    let mut ast = parser.try_with_sql(s.as_ref()).map_err(to_compute_err)?;
+
+    let expr = ast.parse_expr().map_err(to_compute_err)?;
+
+    parse_sql_expr(&expr, &mut ctx)
 }
