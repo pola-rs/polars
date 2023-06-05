@@ -417,6 +417,7 @@ impl Debug for Expr {
             Columns(names) => write!(f, "COLUMNS({names:?})"),
             DtypeColumn(dt) => write!(f, "COLUMN OF DTYPE: {dt:?}"),
             Cache { input, .. } => write!(f, "CACHE {input:?}"),
+            Selector(s) => write!(f, "SET({:?}) - SET({:?})", s.add, s.subtract),
         }
     }
 }

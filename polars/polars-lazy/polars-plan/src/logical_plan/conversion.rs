@@ -157,6 +157,7 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::RenameAlias { .. } => panic!("no `rename_alias` expected at this point"),
         Expr::Columns { .. } => panic!("no `columns` expected at this point"),
         Expr::DtypeColumn { .. } => panic!("no `dtype-columns` expected at this point"),
+        Expr::Selector(_) => panic!("no `selector` expected at this point"),
     };
     arena.add(v)
 }
