@@ -168,7 +168,7 @@ where
     }
 }
 
-/// Conversion from Iterator<Item=Option<usize>> to Unchecked TakeIdx
+/// Conversion from [`Iterator<Item=Option<usize>>`] to Unchecked [`TakeIdx`]
 impl<'a, I> From<I> for TakeIdx<'a, Dummy<usize>, I>
 where
     I: TakeIteratorNulls,
