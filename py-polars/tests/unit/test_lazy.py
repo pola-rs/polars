@@ -1098,9 +1098,11 @@ def test_self_join() -> None:
     out = (
         ldf.join(other=ldf, left_on="manager_id", right_on="employee_id", how="left")
         .select(
-            pl.col("employee_id"),
-            pl.col("employee_name"),
-            pl.col("employee_name_right").alias("manager_name"),
+            [
+                pl.col("employee_id"),
+                pl.col("employee_name"),
+                pl.col("employee_name_right").alias("manager_name"),
+            ]
         )
         .fetch()
     )
