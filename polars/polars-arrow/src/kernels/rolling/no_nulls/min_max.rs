@@ -8,7 +8,7 @@ pub struct SortedMinMax<'a, T: NativeType> {
 }
 
 impl<'a, T: NativeType> RollingAggWindowNoNulls<'a, T> for SortedMinMax<'a, T> {
-    fn new(slice: &'a [T], _start: usize, _end: usize) -> Self {
+    fn new(slice: &'a [T], _start: usize, _end: usize, _params: DynArgs) -> Self {
         Self { slice }
     }
 
@@ -26,7 +26,7 @@ pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MinWindow<'a, T> {
-    fn new(slice: &'a [T], start: usize, end: usize) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
         let min = *slice[start..end]
             .iter()
             .min_by(|a, b| compare_fn_nan_min(*a, *b))
@@ -150,7 +150,7 @@ pub struct MaxWindow<'a, T: NativeType> {
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MaxWindow<'a, T> {
-    fn new(slice: &'a [T], start: usize, end: usize) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
         let max = *slice[start..end]
             .iter()
             .max_by(|a, b| compare_fn_nan_max(*a, *b))
@@ -313,6 +313,7 @@ pub fn rolling_max<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
+    _params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
@@ -326,6 +327,7 @@ where
                     window_size,
                     min_periods,
                     det_offsets_center,
+                    None,
                 )
             } else {
                 rolling_apply_agg_window::<MaxWindow<_>, _, _>(
@@ -333,6 +335,7 @@ where
                     window_size,
                     min_periods,
                     det_offsets_center,
+                    None,
                 )
             }
         }
@@ -343,6 +346,7 @@ where
                     window_size,
                     min_periods,
                     det_offsets,
+                    None,
                 )
             } else {
                 rolling_apply_agg_window::<MaxWindow<_>, _, _>(
@@ -350,6 +354,7 @@ where
                     window_size,
                     min_periods,
                     det_offsets,
+                    None,
                 )
             }
         }
@@ -408,6 +413,7 @@ pub fn rolling_min<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
+    _params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType + PartialOrd + NumCast + Mul<Output = T> + Bounded + IsFloat,
@@ -421,6 +427,7 @@ where
                     window_size,
                     min_periods,
                     det_offsets_center,
+                    None,
                 )
             } else {
                 rolling_apply_agg_window::<MinWindow<_>, _, _>(
@@ -428,6 +435,7 @@ where
                     window_size,
                     min_periods,
                     det_offsets_center,
+                    None,
                 )
             }
         }
@@ -439,6 +447,7 @@ where
                     window_size,
                     min_periods,
                     det_offsets,
+                    None,
                 )
             } else {
                 rolling_apply_agg_window::<MinWindow<_>, _, _>(
@@ -446,6 +455,7 @@ where
                     window_size,
                     min_periods,
                     det_offsets,
+                    None,
                 )
             }
         }
@@ -496,32 +506,32 @@ mod test {
     fn test_rolling_min_max() {
         let values = &[1.0f64, 5.0, 3.0, 4.0];
 
-        let out = rolling_min(values, 2, 2, false, None);
+        let out = rolling_min(values, 2, 2, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(1.0), Some(3.0), Some(3.0)]);
-        let out = rolling_max(values, 2, 2, false, None);
+        let out = rolling_max(values, 2, 2, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(5.0), Some(5.0), Some(4.0)]);
 
-        let out = rolling_min(values, 2, 1, false, None);
+        let out = rolling_min(values, 2, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(3.0), Some(3.0)]);
-        let out = rolling_max(values, 2, 1, false, None);
+        let out = rolling_max(values, 2, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(5.0), Some(5.0), Some(4.0)]);
 
-        let out = rolling_max(values, 3, 1, false, None);
+        let out = rolling_max(values, 3, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(5.0), Some(5.0), Some(5.0)]);
 
         // test nan handling.
         let values = &[1.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];
-        let out = rolling_min(values, 3, 3, false, None);
+        let out = rolling_min(values, 3, 3, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         // we cannot compare nans, so we compare the string values
@@ -541,7 +551,7 @@ mod test {
             )
         );
 
-        let out = rolling_max(values, 3, 3, false, None);
+        let out = rolling_max(values, 3, 3, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(

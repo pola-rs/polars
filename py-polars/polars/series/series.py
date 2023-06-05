@@ -4611,6 +4611,7 @@ class Series:
         min_periods: int | None = None,
         *,
         center: bool = False,
+        ddof: int = 1,
     ) -> Series:
         """
         Compute a rolling std dev.
@@ -4634,6 +4635,8 @@ class Series:
             a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Examples
         --------
@@ -4655,7 +4658,7 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_std(
-                    window_size, weights, min_periods, center=center
+                    window_size, weights, min_periods, center=center, ddof=ddof
                 )
             )
             .to_series()
@@ -4668,6 +4671,7 @@ class Series:
         min_periods: int | None = None,
         *,
         center: bool = False,
+        ddof: int = 1,
     ) -> Series:
         """
         Compute a rolling variance.
@@ -4691,6 +4695,8 @@ class Series:
             a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Examples
         --------
@@ -4712,7 +4718,7 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_var(
-                    window_size, weights, min_periods, center=center
+                    window_size, weights, min_periods, center=center, ddof=ddof
                 )
             )
             .to_series()

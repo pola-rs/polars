@@ -38,6 +38,8 @@ pub struct RollingOptions {
     pub by: Option<String>,
     /// The closed window of that time window if given
     pub closed_window: Option<ClosedWindow>,
+    /// Optional parameters for the rolling function
+    pub fn_params: DynArgs,
 }
 
 #[cfg(feature = "rolling_window")]
@@ -50,6 +52,7 @@ impl Default for RollingOptions {
             center: false,
             by: None,
             closed_window: None,
+            fn_params: None,
         }
     }
 }
@@ -70,6 +73,7 @@ pub struct RollingOptionsImpl<'a> {
     pub tu: Option<TimeUnit>,
     pub tz: Option<&'a TimeZone>,
     pub closed_window: Option<ClosedWindow>,
+    pub fn_params: DynArgs,
 }
 
 #[cfg(feature = "rolling_window")]
@@ -90,6 +94,7 @@ impl From<RollingOptions> for RollingOptionsImpl<'static> {
             tu: None,
             tz: None,
             closed_window: None,
+            fn_params: options.fn_params,
         }
     }
 }
@@ -108,6 +113,7 @@ impl From<RollingOptions> for RollingOptionsFixedWindow {
             min_periods: options.min_periods,
             weights: options.weights,
             center: options.center,
+            fn_params: options.fn_params,
         }
     }
 }
@@ -124,6 +130,7 @@ impl Default for RollingOptionsImpl<'static> {
             tu: None,
             tz: None,
             closed_window: None,
+            fn_params: None,
         }
     }
 }
@@ -142,6 +149,7 @@ impl<'a> From<RollingOptionsImpl<'a>> for RollingOptionsFixedWindow {
             min_periods: options.min_periods,
             weights: options.weights,
             center: options.center,
+            fn_params: options.fn_params,
         }
     }
 }
@@ -219,13 +227,14 @@ fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
 fn rolling_agg<T>(
     ca: &ChunkedArray<T>,
     options: RollingOptionsImpl,
-    rolling_agg_fn: &dyn Fn(&[T::Native], usize, usize, bool, Option<&[f64]>) -> ArrayRef,
+    rolling_agg_fn: &dyn Fn(&[T::Native], usize, usize, bool, Option<&[f64]>, DynArgs) -> ArrayRef,
     rolling_agg_fn_nulls: &dyn Fn(
         &PrimitiveArray<T::Native>,
         usize,
         usize,
         bool,
         Option<&[f64]>,
+        DynArgs,
     ) -> ArrayRef,
     rolling_agg_fn_dynamic: Option<
         &dyn Fn(
@@ -236,6 +245,7 @@ fn rolling_agg<T>(
             ClosedWindow,
             TimeUnit,
             Option<&TimeZone>,
+            DynArgs,
         ) -> PolarsResult<ArrayRef>,
     >,
 ) -> PolarsResult<Series>
@@ -260,6 +270,7 @@ where
                 options.min_periods,
                 options.center,
                 options.weights.as_deref(),
+                options.fn_params,
             ),
             _ => rolling_agg_fn_nulls(
                 arr,
@@ -267,6 +278,7 @@ where
                 options.min_periods,
                 options.center,
                 options.weights.as_deref(),
+                options.fn_params,
             ),
         })
     } else {
@@ -284,7 +296,16 @@ where
             "'rolling by' not yet supported for this expression, consider using 'groupby_rolling'",
         );
 
-        func(values, duration, offset, by, closed_window, tu, options.tz)
+        func(
+            values,
+            duration,
+            offset,
+            by,
+            closed_window,
+            tu,
+            options.tz,
+            options.fn_params,
+        )
     }?;
     Series::try_from((ca.name(), arr))
 }

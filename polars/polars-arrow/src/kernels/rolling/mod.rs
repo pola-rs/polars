@@ -2,8 +2,10 @@ pub mod no_nulls;
 pub mod nulls;
 mod window;
 
+use std::any::Any;
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+use std::sync::Arc;
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::{Bitmap, MutableBitmap};
@@ -20,6 +22,7 @@ type End = usize;
 type Idx = usize;
 type WindowSize = usize;
 type Len = usize;
+pub type DynArgs = Option<Arc<dyn Any + Sync + Send>>;
 
 #[inline]
 /// NaN will be smaller than every valid value
@@ -132,4 +135,10 @@ where
         // all integers are Ord
         unsafe { buf.sort_by(|a, b| a.partial_cmp(b).unwrap_unchecked()) };
     }
+}
+
+//Parameters allowed for rolling operations.
+#[derive(Clone, Copy, Debug)]
+pub struct RollingVarParams {
+    pub ddof: u8,
 }
