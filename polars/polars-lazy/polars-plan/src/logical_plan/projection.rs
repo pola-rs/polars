@@ -508,9 +508,11 @@ fn replace_selector(expr: &mut Expr, schema: &Schema, keys: &[Expr]) -> PolarsRe
                 .collect::<PlHashSet<_>>();
 
             let mut final_names = Vec::with_capacity(to_add.len());
+            // keep a set to ensure we don't create duplicates
+            let mut added = PlHashSet::with_capacity(to_add.len());
             for e in to_add {
                 let Expr::Column(name) = e else {unreachable!()};
-                if !to_subtract.contains(name.as_ref()) {
+                if !to_subtract.contains(name.as_ref()) && added.insert(name.clone()) {
                     final_names.push(name.to_string())
                 }
             }

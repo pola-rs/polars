@@ -80,3 +80,7 @@ def test_selector_expansion() -> None:
 
     s = s.meta._selector_sub(pl.col("d"))
     assert df.select(s).columns == ["a", "b", "e"]
+
+    # add a duplicate, this tests if they are pruned
+    s = s.meta._selector_add(pl.col("a"))
+    assert df.select(s).columns == ["a", "b", "e"]
