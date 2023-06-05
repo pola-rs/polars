@@ -22,8 +22,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          cache: pip
-          cache-dependency-path: py-polars/requirements-dev.txt
 
       - name: Create virtual environment
         working-directory: py-polars
@@ -33,9 +31,7 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.txt
 
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
