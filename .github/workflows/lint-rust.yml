@@ -37,6 +37,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo fmt
+        if: ${{ github.ref_name != 'main' }}
         run: cargo fmt --all -- --check
 
       - name: Run cargo clippy on all features
