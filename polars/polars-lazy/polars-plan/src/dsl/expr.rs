@@ -167,15 +167,80 @@ pub enum Expr {
     Selector(super::selector::Selector),
 }
 
-// TODO! derive. This is only a temporary fix
-// Because PartialEq will have a lot of `false`, e.g. on Function
-// Types, this may lead to many file reads, as we use predicate comparison
-// to check if we can cache a file
 #[allow(clippy::derived_hash_with_manual_eq)]
 impl Hash for Expr {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let s = format!("{self:?}");
-        s.hash(state)
+        let d = std::mem::discriminant(self);
+        d.hash(state);
+        match self {
+            Expr::Column(name) => name.hash(state),
+            Expr::Columns(names) => names.hash(state),
+            Expr::DtypeColumn(dtypes) => dtypes.hash(state),
+            Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
+            Expr::Selector(s) => s.hash(state),
+            Expr::Nth(v) => v.hash(state),
+            Expr::Filter { input, by } => {
+                input.hash(state);
+                by.hash(state);
+            }
+            Expr::BinaryExpr { left, op, right } => {
+                left.hash(state);
+                right.hash(state);
+                std::mem::discriminant(op).hash(state)
+            }
+            Expr::Cast {
+                expr,
+                data_type,
+                strict,
+            } => {
+                expr.hash(state);
+                data_type.hash(state);
+                strict.hash(state)
+            }
+            Expr::Sort { expr, options } => {
+                expr.hash(state);
+                options.hash(state);
+            }
+            Expr::Alias(input, name) => {
+                input.hash(state);
+                name.hash(state)
+            }
+            Expr::KeepName(input) => input.hash(state),
+            Expr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => {
+                predicate.hash(state);
+                truthy.hash(state);
+                falsy.hash(state);
+            }
+            Expr::Function {
+                input,
+                function,
+                options,
+            } => {
+                input.hash(state);
+                std::mem::discriminant(function).hash(state);
+                options.hash(state);
+            }
+            // already hashed by discriminant
+            Expr::Wildcard | Expr::Count => {}
+            #[allow(unreachable_code)]
+            _ => {
+                // the panic checks if we hit this
+                #[cfg(debug_assertions)]
+                {
+                    todo!("IMPLEMENT")
+                }
+                // TODO! derive. This is only a temporary fix
+                // Because PartialEq will have a lot of `false`, e.g. on Function
+                // Types, this may lead to many file reads, as we use predicate comparison
+                // to check if we can cache a file
+                let s = format!("{self:?}");
+                s.hash(state)
+            }
+        }
     }
 }
 
