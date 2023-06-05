@@ -487,7 +487,7 @@ pub(super) fn process_join_constraint(
 /// # }
 /// ```
 pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
-    let mut ctx = SQLContext::new();
+    let ctx = SQLContext::new();
 
     let mut parser = Parser::new(&GenericDialect);
     parser = parser.with_options(ParserOptions {
