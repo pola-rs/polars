@@ -2347,11 +2347,7 @@ def collect_all(
     return result
 
 
-def select(
-    exprs: IntoExpr | Iterable[IntoExpr] | None = None,
-    *more_exprs: IntoExpr,
-    **named_exprs: IntoExpr,
-) -> DataFrame:
+def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:
     """
     Run polars expressions without a context.
 
@@ -2359,13 +2355,13 @@ def select(
 
     Parameters
     ----------
-    exprs
-        Expression or expressions to run.
-    *more_exprs
-        Additional expressions to run, specified as positional arguments.
+    *exprs
+        Column(s) to select, specified as positional arguments.
+        Accepts expression input. Strings are parsed as column names,
+        other non-expression inputs are parsed as literals.
     **named_exprs
-        Additional expressions to run, specified as keyword arguments. The expressions
-        will be renamed to the keyword used.
+        Additional columns to select, specified as keyword arguments.
+        The columns will be renamed to the keyword used.
 
     Returns
     -------
@@ -2388,7 +2384,7 @@ def select(
     └─────┘
 
     """
-    return pl.DataFrame().select(exprs, *more_exprs, **named_exprs)
+    return pl.DataFrame().select(*exprs, **named_exprs)
 
 
 @overload
