@@ -22,6 +22,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+
 jobs:
   lint:
     runs-on: ubuntu-latest
