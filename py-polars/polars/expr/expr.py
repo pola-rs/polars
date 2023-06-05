@@ -42,6 +42,7 @@ from polars.expr.list import ExprListNameSpace
 from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
+from polars.polars import PyExpr
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -59,7 +60,6 @@ if TYPE_CHECKING:
     import sys
 
     from polars import DataFrame, LazyFrame, Series
-    from polars.polars import PyExpr
     from polars.type_aliases import (
         ApplyStrategy,
         ClosedInterval,
@@ -239,6 +239,21 @@ class Expr:
             return ufunc(*args, **kwargs)
 
         return self.map(function)
+
+    @classmethod
+    def read_json_string(cls, value: str) -> Self:
+        """
+        Read an expression from a JSON encoded string to construct an Expression.
+
+        Parameters
+        ----------
+        value
+            JSON encoded string value
+
+        """
+        expr = cls.__new__(cls)
+        expr._pyexpr = PyExpr.meta_read_json(value)
+        return expr
 
     def to_physical(self) -> Self:
         """
