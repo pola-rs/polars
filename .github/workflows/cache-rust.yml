@@ -5,9 +5,9 @@ on:
     branches:
       - main
     paths:
-    - py-polars/**
-    - polars/**
-    - .github/workflows/cache-rust.yml
+      - polars/**
+      - py-polars/**
+      - .github/workflows/cache-rust.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
