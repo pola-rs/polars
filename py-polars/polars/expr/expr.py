@@ -2958,12 +2958,12 @@ class Expr:
             Additional columns to group by, specified as positional arguments.
         mapping_strategy: {'group_to_rows', 'join', 'explode'}
             - group_to_rows
-                If the aggregation results in multiple values, assign them back to there
+                If the aggregation results in multiple values, assign them back to their
                 position in the DataFrame. This can only be done if the group yields
-                the same elements before aggregation as after
+                the same elements before aggregation as after.
             - join
                 Join the groups as 'List<group_dtype>' to the row positions.
-                warning: this can be memory intensive
+                warning: this can be memory intensive.
             - explode
                 Don't do any mapping, but simply flatten the group.
                 This only makes sense if the input data is sorted.
