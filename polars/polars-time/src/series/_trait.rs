@@ -15,8 +15,9 @@ macro_rules! invalid_operation {
 pub trait SeriesOpsTime {
     fn ops_time_dtype(&self) -> &DataType;
 
-    /// Apply a rolling mean to a Series. See:
-    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_mean).
+    /// Apply a rolling mean to a Series.
+    ///
+    /// See: [`RollingAgg::rolling_mean`]
     #[cfg(feature = "rolling_window")]
     fn rolling_mean(&self, _options: RollingOptionsImpl) -> PolarsResult<Series> {
         invalid_operation!(self)

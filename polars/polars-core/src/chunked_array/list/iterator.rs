@@ -95,7 +95,7 @@ unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedLi
 impl ListChunked {
     /// This is an iterator over a ListChunked that save allocations.
     /// A Series is:
-    ///     1. Arc<ChunkedArray>
+    ///     1. [`Arc<ChunkedArray>`]
     ///     ChunkedArray is:
     ///         2. Vec< 3. ArrayRef>
     ///

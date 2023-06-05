@@ -1,7 +1,10 @@
 use crate::dsl::function_expr::{ArrayFunction, FunctionExpr};
 use crate::prelude::*;
 
-/// Specialized expressions for [`Series`] of [`DataType::List`].
+/// Specialized expressions for [`Series`][Series] of [`DataType::List`][DataType::List].
+///
+/// [Series]: polars_core::prelude::Series
+/// [DataType::List]: polars_core::prelude::DataType::List
 pub struct ArrayNameSpace(pub Expr);
 
 impl ArrayNameSpace {

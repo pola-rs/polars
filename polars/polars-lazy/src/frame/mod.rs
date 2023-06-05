@@ -732,7 +732,7 @@ impl LazyFrame {
     ///
     /// Also works for index values of type Int32 or Int64.
     ///
-    /// Different from a [`groupby_dynamic`] the windows are now determined by the
+    /// Different from a [`groupby_dynamic`][`Self::groupby_dynamic`], the windows are now determined by the
     /// individual values and are not of constant intervals. For constant intervals use
     /// *groupby_dynamic*
     #[cfg(feature = "dynamic_groupby")]
@@ -802,7 +802,7 @@ impl LazyFrame {
         }
     }
 
-    /// Similar to [`groupby`], but order of the DataFrame is maintained.
+    /// Similar to [`groupby`][`Self::groupby`], but order of the DataFrame is maintained.
     pub fn groupby_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
         let keys = by
             .as_ref()
