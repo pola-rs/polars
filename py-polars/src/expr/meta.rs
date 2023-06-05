@@ -65,6 +65,16 @@ impl PyExpr {
         Ok(out.into())
     }
 
+    fn _meta_selector_and(&self, other: PyExpr) -> PyResult<PyExpr> {
+        let out = self
+            .inner
+            .clone()
+            .meta()
+            ._selector_and(other.inner)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
     fn _meta_as_selector(&self) -> PyResult<PyExpr> {
         let out = self
             .inner

@@ -93,14 +93,8 @@ macro_rules! push_expr {
             KeepName(e) => $push(e),
             Cache { input, .. } => $push(input),
             RenameAlias { expr, .. } => $push(expr),
-            Selector(s) => {
-                for e in s.add.$iter() {
-                    $push(e);
-                }
-                for e in s.subtract.$iter() {
-                    $push(e)
-                }
-            }
+            // pass
+            Selector(_) => {}
         }
     }};
 }
