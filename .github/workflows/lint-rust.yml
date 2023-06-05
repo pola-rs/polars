@@ -1,0 +1,53 @@
+name: Lint Rust
+
+on:
+  pull_request:
+    paths:
+      - polars/**
+      - polars-cli/**
+      - examples/**
+      - Cargo.toml
+      - .github/workflows/lint-rust.yml
+  push:
+    branches:
+      - main
+    paths:
+      - polars/**
+      - polars-cli/**
+      - examples/**
+      - Cargo.toml
+      - .github/workflows/lint-rust.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup component add rustfmt clippy miri
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Run cargo clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Run cargo clippy on all features
+        run: cargo clippy --all-features -- -D warnings
+
+      - name: Run miri
+        working-directory: polars
+        run: |
+          cargo miri setup
+          cargo clean
+          make miri
