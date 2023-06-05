@@ -270,7 +270,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
-    /// Series to ChunkedArray<T>
+    /// Series to [`ChunkedArray<T>`]
     pub fn unpack_series_matching_type(&self, series: &Series) -> PolarsResult<&ChunkedArray<T>> {
         polars_ensure!(
             self.dtype() == series.dtype(),

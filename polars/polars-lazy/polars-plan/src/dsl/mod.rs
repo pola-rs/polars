@@ -30,10 +30,14 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 pub use arity::*;
+#[cfg(feature = "dtype-array")]
+pub use array::*;
 pub use expr::*;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
+#[cfg(feature = "meta")]
+pub use meta::*;
 pub use options::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
@@ -43,6 +47,8 @@ use polars_core::series::IsSorted;
 use polars_core::utils::{try_get_supertype, NoNull};
 #[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
+#[cfg(feature = "dtype-struct")]
+pub use struct_::*;
 
 use crate::constants::MAP_LIST_NAME;
 pub use crate::logical_plan::lit;
@@ -1007,9 +1013,10 @@ impl Expr {
         binary_expr(self, Operator::Or, expr.into())
     }
 
-    /// Filter a single column
-    /// Should be used in aggregation context. If you want to filter on a DataFrame level, use
-    /// [LazyFrame::filter](LazyFrame::filter)
+    /// Filter a single column.
+    ///
+    /// Should be used in aggregation context. If you want to filter on a
+    /// DataFrame level, use `LazyFrame::filter`.
     pub fn filter<E: Into<Expr>>(self, predicate: E) -> Self {
         if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
             panic!("filter '*' not allowed, use LazyFrame::filter")
@@ -1264,8 +1271,9 @@ impl Expr {
         }
     }
 
-    /// Apply a rolling min See:
-    /// [ChunkedArray::rolling_min]
+    /// Apply a rolling minimum.
+    ///
+    /// See: [`RollingAgg::rolling_min`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_min(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1277,8 +1285,9 @@ impl Expr {
         )
     }
 
-    /// Apply a rolling max See:
-    /// [ChunkedArray::rolling_max]
+    /// Apply a rolling maximum.
+    ///
+    /// See: [`RollingAgg::rolling_max`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_max(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1290,8 +1299,9 @@ impl Expr {
         )
     }
 
-    /// Apply a rolling mean See:
-    /// [ChunkedArray::rolling_mean]
+    /// Apply a rolling mean.
+    ///
+    /// See: [`RollingAgg::rolling_mean`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_mean(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1303,8 +1313,9 @@ impl Expr {
         )
     }
 
-    /// Apply a rolling sum See:
-    /// [ChunkedArray::rolling_sum]
+    /// Apply a rolling sum.
+    ///
+    /// See: [`RollingAgg::rolling_sum`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_sum(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1316,8 +1327,9 @@ impl Expr {
         )
     }
 
-    /// Apply a rolling median See:
-    /// [`ChunkedArray::rolling_median`]
+    /// Apply a rolling median.
+    ///
+    /// See: [`RollingAgg::rolling_median`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1329,8 +1341,9 @@ impl Expr {
         )
     }
 
-    /// Apply a rolling quantile See:
-    /// [`ChunkedArray::rolling_quantile`]
+    /// Apply a rolling quantile.
+    ///
+    /// See: [`RollingAgg::rolling_quantile`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_quantile(
         self,
