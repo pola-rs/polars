@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from typing import TYPE_CHECKING, Iterable, overload
 
 from polars import functions as F
@@ -10,6 +11,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_expr
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -278,10 +280,9 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
 
 @overload
 def struct(
-    exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    *more_exprs: IntoExpr,
-    eager: Literal[False] = ...,
+    *exprs: IntoExpr | Iterable[IntoExpr],
     schema: SchemaDict | None = ...,
+    eager: Literal[False] = ...,
     **named_exprs: IntoExpr,
 ) -> Expr:
     ...
@@ -289,10 +290,9 @@ def struct(
 
 @overload
 def struct(
-    exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    *more_exprs: IntoExpr,
-    eager: Literal[True],
+    *exprs: IntoExpr | Iterable[IntoExpr],
     schema: SchemaDict | None = ...,
+    eager: Literal[True],
     **named_exprs: IntoExpr,
 ) -> Series:
     ...
@@ -300,20 +300,18 @@ def struct(
 
 @overload
 def struct(
-    exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    *more_exprs: IntoExpr,
-    eager: bool,
+    *exprs: IntoExpr | Iterable[IntoExpr],
     schema: SchemaDict | None = ...,
+    eager: bool,
     **named_exprs: IntoExpr,
 ) -> Expr | Series:
     ...
 
 
 def struct(
-    exprs: IntoExpr | Iterable[IntoExpr] = None,
-    *more_exprs: IntoExpr,
-    eager: bool = False,
+    *exprs: IntoExpr | Iterable[IntoExpr],
     schema: SchemaDict | None = None,
+    eager: bool = False,
     **named_exprs: IntoExpr,
 ) -> Expr | Series:
     """
@@ -321,18 +319,16 @@ def struct(
 
     Parameters
     ----------
-    exprs
-        Column(s) to collect into a struct column. Accepts expression input. Strings are
-        parsed as column names, other non-expression inputs are parsed as literals.
-    *more_exprs
-        Additional columns to collect into the struct column, specified as positional
-        arguments.
-    eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
+    *exprs
+        Column(s) to collect into a struct column, specified as positional arguments.
+        Accepts expression input. Strings are parsed as column names,
+        other non-expression inputs are parsed as literals.
     schema
         Optional schema that explicitly defines the struct field dtypes. If no columns
         or expressions are provided, schema keys are used to define columns.
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
     **named_exprs
         Additional columns to collect into the struct column, specified as keyword
         arguments. The columns will be renamed to the keyword used.
@@ -380,8 +376,19 @@ def struct(
     {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs, **named_exprs)
-    expr = wrap_expr(plr.as_struct(exprs))
+    if "exprs" in named_exprs:
+        warnings.warn(
+            "passing expressions to `struct` using the keyword argument `exprs` is"
+            " deprecated. Use positional syntax instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
+        first_input = named_exprs.pop("exprs")
+        pyexprs = parse_as_list_of_expressions(first_input, *exprs, **named_exprs)
+    else:
+        pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
+
+    expr = wrap_expr(plr.as_struct(pyexprs))
 
     if schema:
         if not exprs:

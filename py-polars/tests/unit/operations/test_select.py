@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -52,4 +54,12 @@ def test_select_empty_list() -> None:
 def test_select_named_inputs_reserved() -> None:
     result = pl.select(inputs=1.0, structify=pl.lit("x"))
     expected = pl.DataFrame({"inputs": [1.0], "structify": ["x"]})
+    assert_frame_equal(result, expected)
+
+
+def test_select_deprecation_exprs_keyword() -> None:
+    with pytest.deprecated_call():
+        result = pl.select(exprs=1.0)
+
+    expected = pl.DataFrame({"literal": [1.0]})
     assert_frame_equal(result, expected)
