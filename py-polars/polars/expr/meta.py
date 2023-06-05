@@ -68,3 +68,15 @@ class ExprMetaNameSpace:
     def undo_aliases(self) -> Expr:
         """Undo any renaming operation like ``alias`` or ``keep_name``."""
         return wrap_expr(self._pyexpr.meta_undo_aliases())
+
+    def _as_selector(self) -> Expr:
+        """Turn this expression in a selector."""
+        return wrap_expr(self._pyexpr._meta_as_selector())
+
+    def _selector_add(self, other: Expr) -> Expr:
+        """Add selectors."""
+        return wrap_expr(self._pyexpr._meta_selector_add(other._pyexpr))
+
+    def _selector_sub(self, other: Expr) -> Expr:
+        """Subtract selectors."""
+        return wrap_expr(self._pyexpr._meta_selector_sub(other._pyexpr))

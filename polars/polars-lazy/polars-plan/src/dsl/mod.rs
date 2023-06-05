@@ -12,6 +12,7 @@ pub mod binary;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
+mod expr_dyn_fn;
 mod from;
 pub(crate) mod function_expr;
 #[cfg(feature = "compile")]
@@ -21,6 +22,7 @@ mod list;
 mod meta;
 pub(crate) mod names;
 mod options;
+mod selector;
 #[cfg(feature = "strings")]
 pub mod string;
 #[cfg(feature = "dtype-struct")]
