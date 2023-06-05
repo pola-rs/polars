@@ -42,7 +42,6 @@ from polars.expr.list import ExprListNameSpace
 from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
-from polars.polars import PyExpr
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -55,6 +54,9 @@ from polars.utils.various import sphinx_accessor
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
     from polars.polars import reduce as pyreduce
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyExpr
 
 if TYPE_CHECKING:
     import sys
