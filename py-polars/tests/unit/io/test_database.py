@@ -9,9 +9,10 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
-from polars.testing._tempdir import TemporaryDirectory
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.type_aliases import (
         DbReadEngine,
         DbWriteEngine,
@@ -104,19 +105,21 @@ def test_read_database(
     engine: DbReadEngine,
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
+    tmp_path: Path,
 ) -> None:
-    with TemporaryDirectory(prefix=f"pl_{engine}_") as tmpdir_name:
-        test_db = os.path.join(tmpdir_name, "test.db")
-        create_temp_sqlite_db(test_db)
+    tmp_path.mkdir(exist_ok=True)
 
-        df = pl.read_database(
-            connection_uri=f"sqlite:///{test_db}",
-            query="SELECT * FROM test_data",
-            engine=engine,
-        )
-        assert df.schema == expected_dtypes
-        assert df.shape == (2, 4)
-        assert df["date"].to_list() == expected_dates
+    test_db = str(tmp_path / "test.db")
+    create_temp_sqlite_db(test_db)
+
+    df = pl.read_database(
+        connection_uri=f"sqlite:///{test_db}",
+        query="SELECT * FROM test_data",
+        engine=engine,
+    )
+    assert df.schema == expected_dtypes
+    assert df.shape == (2, 4)
+    assert df["date"].to_list() == expected_dates
 
 
 @pytest.mark.parametrize(
@@ -146,18 +149,14 @@ def test_read_database(
     ],
 )
 def test_read_database_exceptions(
-    engine: DbReadEngine, query: str, database: str, err: str
+    engine: DbReadEngine, query: str, database: str, err: str, tmp_path: Path
 ) -> None:
-    with TemporaryDirectory() as tmpdir_name:
-        test_db = os.path.join(tmpdir_name, "test.db")
-        create_temp_sqlite_db(test_db)
-
-        with pytest.raises(ValueError, match=err):
-            pl.read_database(
-                connection_uri=f"{database}:///{test_db}",
-                query=query,
-                engine=engine,
-            )
+    with pytest.raises(ValueError, match=err):
+        pl.read_database(
+            connection_uri=f"{database}://test",
+            query=query,
+            engine=engine,
+        )
 
 
 @pytest.mark.write_disk()
@@ -185,28 +184,29 @@ def test_read_database_exceptions(
     ],
 )
 def test_write_database(
-    engine: DbWriteEngine, mode: DbWriteMode, sample_df: pl.DataFrame
+    engine: DbWriteEngine, mode: DbWriteMode, sample_df: pl.DataFrame, tmp_path: Path
 ) -> None:
-    with TemporaryDirectory() as tmpdir_name:
-        test_db = os.path.join(tmpdir_name, "test.db")
+    tmp_path.mkdir(exist_ok=True)
 
+    test_db = str(tmp_path / "test.db")
+
+    sample_df.write_database(
+        table_name="test_data",
+        connection_uri=f"sqlite:///{test_db}",
+        if_exists="replace",
+        engine=engine,
+    )
+
+    if mode == "append":
         sample_df.write_database(
             table_name="test_data",
             connection_uri=f"sqlite:///{test_db}",
-            if_exists="replace",
+            if_exists="append",
             engine=engine,
         )
+        sample_df = pl.concat([sample_df, sample_df])
 
-        if mode == "append":
-            sample_df.write_database(
-                table_name="test_data",
-                connection_uri=f"sqlite:///{test_db}",
-                if_exists="append",
-                engine=engine,
-            )
-            sample_df = pl.concat([sample_df, sample_df])
-
-        result = pl.read_database("SELECT * FROM test_data", f"sqlite:///{test_db}")
+    result = pl.read_database("SELECT * FROM test_data", f"sqlite:///{test_db}")
 
     sample_df = sample_df.with_columns(pl.col("date").cast(pl.Utf8))
     assert_frame_equal(sample_df, result)

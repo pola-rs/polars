@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -8,7 +8,9 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsPanicError
 from polars.testing import assert_frame_equal
-from polars.testing._tempdir import TemporaryDirectory
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture()
@@ -33,17 +35,18 @@ def test_scan_empty_csv(io_files_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_invalid_utf8() -> None:
+def test_invalid_utf8(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     np.random.seed(1)
     bts = bytes(np.random.randint(0, 255, 200))
 
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "nonutf8.csv"
-        with open(file_path, "wb") as f:
-            f.write(bts)
+    file_path = tmp_path / "nonutf8.csv"
+    with open(file_path, "wb") as f:
+        f.write(bts)
 
-        a = pl.read_csv(file_path, has_header=False, encoding="utf8-lossy")
-        b = pl.scan_csv(file_path, has_header=False, encoding="utf8-lossy").collect()
+    a = pl.read_csv(file_path, has_header=False, encoding="utf8-lossy")
+    b = pl.scan_csv(file_path, has_header=False, encoding="utf8-lossy").collect()
 
     assert_frame_equal(a, b)
 
@@ -184,27 +187,28 @@ def test_scan_slice_streaming(foods_file_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_glob_skip_rows() -> None:
-    with TemporaryDirectory() as temp_dir:
-        for i in range(2):
-            file_path = Path(temp_dir) / f"test_{i}.csv"
-            with open(file_path, "w") as f:
-                f.write(
-                    f"""
+def test_glob_skip_rows(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    for i in range(2):
+        file_path = tmp_path / f"test_{i}.csv"
+        with open(file_path, "w") as f:
+            f.write(
+                f"""
 metadata goes here
 file number {i}
 foo,bar,baz
 1,2,3
 4,5,6
 7,8,9
-        """
-                )
-        file_path = Path(temp_dir) / "*.csv"
-        assert pl.read_csv(file_path, skip_rows=2).to_dict(False) == {
-            "foo": [1, 4, 7, 1, 4, 7],
-            "bar": [2, 5, 8, 2, 5, 8],
-            "baz": [3, 6, 9, 3, 6, 9],
-        }
+    """
+            )
+    file_path = tmp_path / "*.csv"
+    assert pl.read_csv(file_path, skip_rows=2).to_dict(False) == {
+        "foo": [1, 4, 7, 1, 4, 7],
+        "bar": [2, 5, 8, 2, 5, 8],
+        "baz": [3, 6, 9, 3, 6, 9],
+    }
 
 
 def test_glob_n_rows(io_files_path: Path) -> None:

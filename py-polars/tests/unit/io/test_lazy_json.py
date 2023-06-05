@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
-from polars.testing._tempdir import TemporaryDirectory
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture()
@@ -37,7 +39,9 @@ def test_scan_ndjson(foods_ndjson_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_scan_with_projection() -> None:
+def test_scan_with_projection(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     json = r"""
 {"text": "\"hello", "id": 1}
 {"text": "\n{\n\t\t\"inner\": \"json\n}\n", "id": 10}
@@ -52,11 +56,11 @@ def test_scan_with_projection() -> None:
 """
     json_bytes = bytes(json, "utf-8")
 
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "escape_chars.json"
-        with open(file_path, "wb") as f:
-            f.write(json_bytes)
-        actual = pl.scan_ndjson(file_path).select(["id", "text"]).collect()
+    file_path = tmp_path / "escape_chars.json"
+    with open(file_path, "wb") as f:
+        f.write(json_bytes)
+    actual = pl.scan_ndjson(file_path).select(["id", "text"]).collect()
+
     expected = pl.DataFrame(
         {
             "id": [1, 10, 0, 1, 2, 3, 4, 5, 6, 7],
