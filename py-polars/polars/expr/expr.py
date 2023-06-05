@@ -243,7 +243,7 @@ class Expr:
         return self.map(function)
 
     @classmethod
-    def read_json_string(cls, value: str) -> Self:
+    def from_json(cls, value: str) -> Self:
         """
         Read an expression from a JSON encoded string to construct an Expression.
 

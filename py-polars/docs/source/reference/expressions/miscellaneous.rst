@@ -7,5 +7,5 @@ Miscellaneous
    :toctree: api/
 
     Expr.cache
-    Expr.read_json_string
+    Expr.from_json
     Expr.set_sorted

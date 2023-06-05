@@ -96,5 +96,5 @@ def test_expression_json() -> None:
     e = pl.col("foo").sum().over("bar")
     json = e.meta.write_json()
 
-    round_tripped = pl.Expr.read_json_string(json)
+    round_tripped = pl.Expr.from_json(json)
     assert round_tripped.meta == e
