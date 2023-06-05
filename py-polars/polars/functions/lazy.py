@@ -2667,6 +2667,6 @@ def sql_expr(sql: str) -> Expr:
     --------
     >>> df = pl.DataFrame({"a": [2, 1]})
     >>> expr = pl.sql_expr("MAX(a)")
-    >>> df.select([expr])
+    >>> df.select(expr)
     """
     return wrap_expr(plr.sql_expr(sql))
