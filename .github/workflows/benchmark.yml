@@ -16,6 +16,7 @@ on:
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
 
+# Trigger
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
