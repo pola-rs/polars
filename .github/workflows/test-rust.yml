@@ -5,7 +5,8 @@ on:
     paths:
       - polars/**
       - examples/**
-      - .github/workflows/build-test-rust.yml
+      - Cargo.toml
+      - .github/workflows/test-rust.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
