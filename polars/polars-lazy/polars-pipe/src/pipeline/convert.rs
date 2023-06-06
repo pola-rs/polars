@@ -427,13 +427,11 @@ where
         }
         MapFunction {
             function: FunctionNode::FastProjection { columns },
-            ..
+            input,
         } => {
-            // TODO! pass schema to FastProjection so that
-            // projection can be based on already known schema.
-            let op = operators::FastProjectionOperator {
-                columns: columns.clone(),
-            };
+            let input_schema = lp_arena.get(*input).schema(lp_arena);
+            let op =
+                operators::FastProjectionOperator::new(columns.clone(), input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         }
         MapFunction { function, .. } => {
