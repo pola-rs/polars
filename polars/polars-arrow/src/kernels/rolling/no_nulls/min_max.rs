@@ -18,253 +18,158 @@ impl<'a, T: NativeType> RollingAggWindowNoNulls<'a, T> for SortedMinMax<'a, T> {
     }
 }
 
+#[inline]
+unsafe fn get_min_and_ix<T>(slice: &[T], start: usize, end:usize) -> Option<(usize, &T)> 
+where
+    T: NativeType + IsFloat + PartialOrd {
+    slice
+    .get_unchecked(start..end)
+    .iter()
+    .enumerate()
+    .rev()
+    .min_by(|&a, &b| compare_fn_nan_min(a.1, b.1))
+}
+
 pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     slice: &'a [T],
     min: T,
+    min_ix: usize,
     last_start: usize,
     last_end: usize,
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MinWindow<'a, T> {
     fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
-        let min = *slice[start..end]
+        let (ix, min) = slice[start..end]
             .iter()
-            .min_by(|a, b| compare_fn_nan_min(*a, *b))
-            .unwrap_or(&slice[start]);
+            .enumerate()
+            .rev()
+            .min_by(|&a, &b| compare_fn_nan_min(a.1, b.1))
+            .unwrap_or((0, &slice[start]));
         Self {
             slice,
-            min,
+            min: *min,
+            min_ix: start + ix,
             last_start: start,
             last_end: end,
         }
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        // recompute min
-        if start >= self.last_end
-            // the window only got smaller
-            || end == self.last_end
-        {
-            self.min = *self
-                .slice
-                .get_unchecked(start..end)
-                .iter()
-                .min_by(|a, b| compare_fn_nan_min(*a, *b))
-                .unwrap_or(self.slice.get_unchecked(start));
+        let entering_start = std::cmp::max(self.last_end, start);
+        let entering_min = get_min_and_ix(self.slice, entering_start, end);
 
-            self.last_start = start;
-            self.last_end = end;
-
-            return self.min;
-        }
-
-        let mut recompute_min = false;
-        // remove elements that should leave the window
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let leaving_value = self.slice.get_unchecked(idx);
-
-            // if the leaving value is the
-            // max value, we need to recompute the max.
-            if matches!(
-                compare_fn_nan_min(leaving_value, &self.min),
-                Ordering::Equal
-            ) {
-                recompute_min = true;
-                break;
+        // The min of values before the entering values is guaranteed to be the previous min if its latest occurrence
+        // didn't drop out of the window. Otherwise we need the min of the values between the current start and the previous end
+        // if the last min wasn't there.
+        let tmp_min = self.min.clone();
+        let prev_min = match self.min_ix < start {
+            false => Some((self.min_ix - self.last_start, &tmp_min)), 
+            // Get the min of the overlapping values if the previous min isn't in them
+            true => get_min_and_ix(self.slice, start, self.last_end)
+        };
+        match (prev_min, entering_min) {
+            // Nothing in the entering window
+            (Some(pm), None) => {
+                self.min = *pm.1;
+                self.min_ix = self.last_start + pm.0;
             }
-        }
-
-        let entering_min = self
-            .slice
-            .get_unchecked(self.last_end..end)
-            .iter()
-            .min_by(|a, b| compare_fn_nan_min(*a, *b))
-            .unwrap_or(self.slice.get_unchecked(std::cmp::min(
-                self.last_start,
-                self.last_end.saturating_sub(1),
-            )));
-
-        if recompute_min {
-            match compare_fn_nan_min(&self.min, entering_min) {
-                // do nothing
-                Ordering::Equal => {}
-                // leaving < entering
-                Ordering::Less => {
-                    // leaving value could be the smallest, we might need to recompute
-
-                    // check the values in between the window we did not yet
-                    // compute to find the max there. We compare that with the `entering_max`
-                    // if any value is equal to equal to `self.max` of previous window we can break
-                    // early
-                    let mut min_in_between = self.slice.get_unchecked(start);
-                    for idx in (start + 1)..self.last_end {
-                        // safety
-                        // we are in bounds
-                        let value = self.slice.get_unchecked(idx);
-
-                        if matches!(compare_fn_nan_min(value, min_in_between), Ordering::Less) {
-                            min_in_between = value;
-                        }
-
-                        // the min is also in the in between values
-                        if matches!(compare_fn_nan_min(value, &self.min), Ordering::Equal) {
-                            self.last_start = start;
-                            self.last_end = end;
-                            return self.min;
-                        }
-                    }
-
-                    if matches!(
-                        compare_fn_nan_min(min_in_between, entering_min),
-                        Ordering::Less
-                    ) {
-                        self.min = *min_in_between
-                    } else {
-                        self.min = *entering_min
-                    }
-                }
-                // leaving > entering
-                Ordering::Greater => {
-                    if matches!(compare_fn_nan_min(entering_min, &self.min), Ordering::Less) {
-                        self.min = *entering_min
-                    }
+            // Nothing in the previous window (moved past it entirely)
+            (None, Some(em)) => {
+                self.min = *em.1;
+                self.min_ix = entering_start + em.0;
+            }
+            (Some(pm), Some(em)) => {
+                // Take the entering min to update the index even if it's equal
+                if matches!(compare_fn_nan_min(pm.1, em.1), Ordering::Greater) {
+                    self.min = *em.1;
+                    self.min_ix = entering_start + em.0;
+                } else {
+                    self.min = *pm.1;
+                    self.min_ix = self.last_start + pm.0;
                 }
             }
-        } else if matches!(compare_fn_nan_min(entering_min, &self.min), Ordering::Less) {
-            self.min = *entering_min
+            // Reaching here implies a zero-length new window not overlapping with the previous
+            (_, _) => {}
         }
 
         self.last_start = start;
         self.last_end = end;
-        self.min
+        return self.min;
     }
+}
+
+#[inline]
+unsafe fn get_max_and_ix<T>(slice: &[T], start: usize, end:usize) -> Option<(usize, &T)> 
+where
+    T: NativeType + IsFloat + PartialOrd {
+    slice
+    .get_unchecked(start..end)
+    .iter()
+    .enumerate()
+    .max_by(|&a, &b| compare_fn_nan_max(a.1, b.1))
 }
 
 pub struct MaxWindow<'a, T: NativeType> {
     slice: &'a [T],
     max: T,
+    max_ix: usize,
     last_start: usize,
     last_end: usize,
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MaxWindow<'a, T> {
     fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
-        let max = *slice[start..end]
+        let (ix, max) = slice[start..end]
             .iter()
-            .max_by(|a, b| compare_fn_nan_max(*a, *b))
-            .unwrap_or(&slice[start]);
+            .enumerate()
+            .max_by(|&a, &b| compare_fn_nan_max(a.1, b.1))
+            .unwrap_or((0, &slice[start]));
         Self {
             slice,
-            max,
+            max: *max,
+            max_ix: start + ix,
             last_start: start,
             last_end: end,
         }
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        // recompute max
-        if start >= self.last_end
-            // the window only got smaller
-            || end == self.last_end
-        {
-            self.max = *self
-                .slice
-                .get_unchecked(start..end)
-                .iter()
-                .max_by(|a, b| compare_fn_nan_max(*a, *b))
-                .unwrap_or(self.slice.get_unchecked(start));
+        // See min for explanation of below. It's the same
+        let entering_start = std::cmp::max(self.last_end, start);
+        let entering_max = get_max_and_ix(self.slice, entering_start, end);
 
-            self.last_start = start;
-            self.last_end = end;
-
-            return self.max;
-        }
-
-        let mut recompute_max = false;
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let leaving_value = self.slice.get_unchecked(idx);
-            // if the leaving value is the max value, we need to recompute the max.
-            if matches!(
-                compare_fn_nan_max(leaving_value, &self.max),
-                Ordering::Equal
-            ) {
-                recompute_max = true;
-                break;
+        let tmp_max = self.max.clone();
+        let prev_max = match self.max_ix < start {
+            false => Some((self.max_ix - self.last_start, &tmp_max)), 
+            true => get_max_and_ix(self.slice, start, self.last_end)
+        };
+        match (prev_max, entering_max) {
+            (Some(pm), None) => {
+                self.max = *pm.1;
+                self.max_ix = self.last_start + pm.0;
             }
-        }
-
-        let entering_max = self
-            .slice
-            .get_unchecked(self.last_end..end)
-            .iter()
-            .max_by(|a, b| compare_fn_nan_max(*a, *b))
-            .unwrap_or(self.slice.get_unchecked(std::cmp::max(
-                self.last_start,
-                self.last_end.saturating_sub(1),
-            )));
-
-        if recompute_max {
-            match compare_fn_nan_max(&self.max, entering_max) {
-                // do nothing
-                Ordering::Equal => {}
-                // leaving < entering
-                Ordering::Less => {
-                    if matches!(
-                        compare_fn_nan_max(entering_max, &self.max),
-                        Ordering::Greater
-                    ) {
-                        self.max = *entering_max
-                    }
-                }
-                // leaving > entering
-                Ordering::Greater => {
-                    // leaving value could be the largest, we might need to recompute
-
-                    // check the values in between the window we did not yet
-                    // compute to find the max there. We compare that with the `entering_max`
-                    // if any value is equal to equal to `self.max` of previous window we can break
-                    // early
-                    let mut max_in_between = self.slice.get_unchecked(start);
-                    for idx in (start + 1)..self.last_end {
-                        // safety
-                        // we are in bounds
-                        let value = self.slice.get_unchecked(idx);
-
-                        if matches!(compare_fn_nan_max(value, max_in_between), Ordering::Greater) {
-                            max_in_between = value;
-                        }
-
-                        // the max is also in the in between values
-                        if matches!(compare_fn_nan_max(value, &self.max), Ordering::Equal) {
-                            self.last_start = start;
-                            self.last_end = end;
-                            return self.max;
-                        }
-                    }
-
-                    if matches!(
-                        compare_fn_nan_max(max_in_between, entering_max),
-                        Ordering::Greater
-                    ) {
-                        self.max = *max_in_between
-                    } else {
-                        self.max = *entering_max
-                    }
+            (None, Some(em)) => {
+                self.max = *em.1;
+                self.max_ix = entering_start + em.0;
+            }
+            (Some(pm), Some(em)) => {
+                // Take the entering max to update the index even if it's equal
+                if matches!(compare_fn_nan_max(pm.1, em.1), Ordering::Less) {
+                    self.max = *em.1;
+                    self.max_ix = entering_start + em.0;
+                } else {
+                    self.max = *pm.1;
+                    self.max_ix = self.last_start + pm.0;
                 }
             }
-        } else if matches!(
-            compare_fn_nan_max(entering_max, &self.max),
-            Ordering::Greater
-        ) {
-            self.max = *entering_max
+            // We shouldn't actually reach this
+            (_, _) => {}
         }
+
         self.last_start = start;
         self.last_end = end;
-        self.max
+        return self.max;
     }
 }
 
