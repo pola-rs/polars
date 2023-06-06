@@ -1,0 +1,62 @@
+name: Test Rust
+
+on:
+  pull_request:
+    paths:
+      - polars/**
+      - examples/**
+      - Cargo.toml
+      - .github/workflows/test-rust.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: polars
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: polars
+
+      - name: Run tests
+        run: make test
+
+      - name: Run integration tests
+        run: make integration-tests
+
+  check-features:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: cargo install cargo-hack
+
+      - name: Run cargo hack
+        working-directory: polars
+        run: cargo hack check --each-feature --no-dev-deps
