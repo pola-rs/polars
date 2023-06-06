@@ -26,19 +26,6 @@ env:
   RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
 
 jobs:
-
-  rustfmt:
-    if: github.ref_name != 'main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up Rust
-        run: rustup component add rustfmt
-
-      - name: Run cargo fmt
-        run: cargo fmt --all -- --check
-
   clippy-nightly:
     runs-on: ubuntu-latest
     steps:
@@ -75,7 +62,20 @@ jobs:
       - name: Run cargo clippy
         run: cargo clippy -- -D warnings
 
+  rustfmt:
+    if: github.ref_name != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup component add rustfmt
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
   miri:
+    if: github.ref_name != 'main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -83,17 +83,10 @@ jobs:
       - name: Set up Rust
         run: rustup component add miri
 
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref_name == 'main' }}
-
       - name: Set up miri
-        if: ${{ github.ref_name != 'main' }}
         run: cargo miri setup
 
       - name: Run miri
-        if: ${{ github.ref_name != 'main' }}
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows
           POLARS_ALLOW_EXTENSION: '1'
