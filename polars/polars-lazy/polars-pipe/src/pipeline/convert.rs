@@ -105,7 +105,7 @@ where
                 path,
                 options,
                 cloud_options,
-                &file_info.schema,
+                file_info.schema,
                 verbose,
             )?;
             Ok(Box::new(src) as Box<dyn Source>)
