@@ -60,6 +60,7 @@ These functions are available from the polars module root and can be used as exp
    time
    var
    when
+   sql_expr
 
 
 **Available in expression namespace:**
