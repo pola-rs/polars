@@ -11,25 +11,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+
 jobs:
-  check-features:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up Rust
-        run: rustup show
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install dependencies
-        run: cargo install cargo-hack
-
-      - name: Run cargo hack
-        working-directory: polars
-        run: cargo hack check --each-feature --no-dev-deps
-
   test:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -52,11 +37,48 @@ jobs:
           workspaces: polars
 
       - name: Run tests
-        env:
-          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: make test
 
       - name: Run integration tests
-        env:
-          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: make integration-tests
+
+  miri:
+    if: github.ref_name != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup component add miri
+
+      - name: Set up miri
+        run: cargo miri setup
+
+      - name: Run miri
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows
+          POLARS_ALLOW_EXTENSION: '1'
+        run: |
+          cargo miri test \
+          --no-default-features \
+          --features object \
+          -p polars-core \
+          -p polars-arrow
+
+  check-features:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: cargo install cargo-hack
+
+      - name: Run cargo hack
+        working-directory: polars
+        run: cargo hack check --each-feature --no-dev-deps
