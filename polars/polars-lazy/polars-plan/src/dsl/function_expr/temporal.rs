@@ -8,7 +8,7 @@ use super::*;
 
 #[cfg(feature = "date_offset")]
 pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
-    match s.dtype().clone() {
+    let out = match s.dtype().clone() {
         DataType::Date => {
             let s = s
                 .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
@@ -42,7 +42,11 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
         dt => polars_bail!(
             ComputeError: "cannot use 'date_offset' on Series of datatype {}", dt,
         ),
-    }
+    };
+    out.map(|mut out| {
+        out.set_sorted_flag(s.is_sorted_flag());
+        out
+    })
 }
 
 pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
