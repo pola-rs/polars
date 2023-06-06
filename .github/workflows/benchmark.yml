@@ -45,7 +45,7 @@ jobs:
         id: cache-data
         uses: actions/cache/restore@v3
         with:
-          path: G1_1e7_1e2_5_0.csv
+          path: py-polars/tests/benchmark/G1_1e7_1e2_5_0.csv
           key: benchmark-data
 
       - name: Set up R
@@ -64,7 +64,7 @@ jobs:
         if: github.ref_name == 'main'
         uses: actions/cache/save@v3
         with:
-          path: G1_1e7_1e2_5_0.csv
+          path: py-polars/tests/benchmark/G1_1e7_1e2_5_0.csv
           key: ${{ steps.cache-data.outputs.cache-primary-key }}
 
       - name: Set up Rust
