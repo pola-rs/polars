@@ -197,8 +197,12 @@ impl PhysicalExpr for SortByExpr {
                                     map_sorted_indices_to_group_slice(&sorted_idx, first)
                                 }
                             };
+                            let first = new_idx.first().unwrap_or_else(|| {
+                                invalid.store(true, Ordering::Relaxed);
+                                &0
+                            });
 
-                            (new_idx[0], new_idx)
+                            (*first, new_idx)
                         })
                         .collect()
                 });
@@ -276,8 +280,12 @@ impl PhysicalExpr for SortByExpr {
                                     map_sorted_indices_to_group_slice(&sorted_idx, first)
                                 }
                             };
+                            let first = new_idx.first().unwrap_or_else(|| {
+                                invalid.store(true, Ordering::Relaxed);
+                                &0
+                            });
 
-                            (new_idx[0], new_idx)
+                            (*first, new_idx)
                         })
                         .collect()
                 });

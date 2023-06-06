@@ -648,3 +648,14 @@ def test_overflow_msg() -> None:
         match=r"could not append value: 2147483648 of type: i64 to the builder",
     ):
         pl.DataFrame([[2**31]], [("a", pl.Int32)], orient="row")
+
+
+def test_sort_by_err_9259() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 1, 1], "b": [3, 2, 1], "c": [1, 1, 2]},
+        schema={"a": pl.Float32, "b": pl.Float32, "c": pl.Float32},
+    )
+    with pytest.raises(pl.ComputeError):
+        df.lazy().groupby("c").agg(
+            [pl.col("a").sort_by(pl.col("b").filter(pl.col("b") > 100)).sum()]
+        ).collect()
