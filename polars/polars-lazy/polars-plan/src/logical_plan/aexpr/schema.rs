@@ -64,6 +64,8 @@ impl AExpr {
                     | Operator::And
                     | Operator::LtEq
                     | Operator::GtEq
+                    | Operator::NotEqValidity
+                    | Operator::EqValidity
                     | Operator::Or => {
                         let out_field;
                         let out_name = {

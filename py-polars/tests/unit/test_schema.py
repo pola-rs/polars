@@ -453,3 +453,9 @@ def test_list_null_constructor_schema() -> None:
     assert pl.Series([[]], dtype=pl.List).dtype == expected
     assert pl.DataFrame({"a": [[]]}).dtypes[0] == expected
     assert pl.DataFrame(schema={"a": pl.List}).dtypes[0] == expected
+
+
+def test_schema_ne_missing_9256() -> None:
+    df = pl.DataFrame({"a": [0, 1, None], "b": [True, False, True]})
+
+    assert df.select(pl.col("a").ne_missing(0).or_(pl.col("b")))["a"].all()
