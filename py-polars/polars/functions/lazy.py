@@ -2668,5 +2668,13 @@ def sql_expr(sql: str) -> Expr:
     >>> df = pl.DataFrame({"a": [2, 1]})
     >>> expr = pl.sql_expr("MAX(a)")
     >>> df.select(expr)
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 2   │
+    └─────┘
     """
     return wrap_expr(plr.sql_expr(sql))
