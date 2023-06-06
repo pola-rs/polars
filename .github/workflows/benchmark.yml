@@ -55,6 +55,7 @@ jobs:
           r-version: '3.5.3'
 
       - name: Generate data
+        if: steps.cache-data.outputs.cache-hit != 'true'
         working-directory: py-polars/tests/benchmark
         run: |
           Rscript -e 'install.packages("data.table", repos="https://cloud.r-project.org")'
