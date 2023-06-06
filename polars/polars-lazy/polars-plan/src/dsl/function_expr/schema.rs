@@ -201,6 +201,7 @@ impl FunctionExpr {
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr(_) => mapper.map_to_supertype(),
+            Correlation { .. } => mapper.map_to_float_dtype(),
         }
     }
 }

@@ -2,151 +2,44 @@ use super::*;
 
 /// Compute the covariance between two columns.
 pub fn cov(a: Expr, b: Expr) -> Expr {
-    let name = "cov";
-    let function = move |a: Series, b: Series| {
-        let s = match a.dtype() {
-            DataType::Float32 => {
-                let ca_a = a.f32().unwrap();
-                let ca_b = b.f32().unwrap();
-                Series::new(name, &[polars_core::functions::cov_f(ca_a, ca_b)])
-            }
-            DataType::Float64 => {
-                let ca_a = a.f64().unwrap();
-                let ca_b = b.f64().unwrap();
-                Series::new(name, &[polars_core::functions::cov_f(ca_a, ca_b)])
-            }
-            DataType::Int32 => {
-                let ca_a = a.i32().unwrap();
-                let ca_b = b.i32().unwrap();
-                Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
-            }
-            DataType::Int64 => {
-                let ca_a = a.i64().unwrap();
-                let ca_b = b.i64().unwrap();
-                Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
-            }
-            DataType::UInt32 => {
-                let ca_a = a.u32().unwrap();
-                let ca_b = b.u32().unwrap();
-                Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
-            }
-            DataType::UInt64 => {
-                let ca_a = a.u64().unwrap();
-                let ca_b = b.u64().unwrap();
-                Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
-            }
-            _ => {
-                let a = a.cast(&DataType::Float64)?;
-                let b = b.cast(&DataType::Float64)?;
-                let ca_a = a.f64().unwrap();
-                let ca_b = b.f64().unwrap();
-                Series::new(name, &[polars_core::functions::cov_f(ca_a, ca_b)])
-            }
-        };
-        Ok(Some(s))
+    let input = vec![a, b];
+    let function = FunctionExpr::Correlation {
+        method: CorrelationMethod::Covariance,
+        ddof: 0,
     };
-    apply_binary(
-        a,
-        b,
+    Expr::Function {
+        input,
         function,
-        GetOutput::map_dtype(|dt| {
-            if matches!(dt, DataType::Float32) {
-                DataType::Float32
-            } else {
-                DataType::Float64
-            }
-        }),
-    )
-    .with_function_options(|mut options| {
-        options.auto_explode = true;
-        options.fmt_str = "cov";
-        options
-    })
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: true,
+            auto_explode: true,
+            ..Default::default()
+        },
+    }
 }
 
 /// Compute the pearson correlation between two columns.
+///
+/// # Arguments
+/// * ddof
+///     Delta degrees of freedom
 pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
-    let name = "pearson_corr";
-    let function = move |a: Series, b: Series| {
-        let s = match a.dtype() {
-            DataType::Float32 => {
-                let ca_a = a.f32().unwrap();
-                let ca_b = b.f32().unwrap();
-                Series::new(
-                    name,
-                    &[polars_core::functions::pearson_corr_f(ca_a, ca_b, ddof)],
-                )
-            }
-            DataType::Float64 => {
-                let ca_a = a.f64().unwrap();
-                let ca_b = b.f64().unwrap();
-                Series::new(
-                    name,
-                    &[polars_core::functions::pearson_corr_f(ca_a, ca_b, ddof)],
-                )
-            }
-            DataType::Int32 => {
-                let ca_a = a.i32().unwrap();
-                let ca_b = b.i32().unwrap();
-                Series::new(
-                    name,
-                    &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
-                )
-            }
-            DataType::Int64 => {
-                let ca_a = a.i64().unwrap();
-                let ca_b = b.i64().unwrap();
-                Series::new(
-                    name,
-                    &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
-                )
-            }
-            DataType::UInt32 => {
-                let ca_a = a.u32().unwrap();
-                let ca_b = b.u32().unwrap();
-                Series::new(
-                    name,
-                    &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
-                )
-            }
-            DataType::UInt64 => {
-                let ca_a = a.u64().unwrap();
-                let ca_b = b.u64().unwrap();
-                Series::new(
-                    name,
-                    &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
-                )
-            }
-            _ => {
-                let a = a.cast(&DataType::Float64)?;
-                let b = b.cast(&DataType::Float64)?;
-                let ca_a = a.f64().unwrap();
-                let ca_b = b.f64().unwrap();
-                Series::new(
-                    name,
-                    &[polars_core::functions::pearson_corr_f(ca_a, ca_b, ddof)],
-                )
-            }
-        };
-        Ok(Some(s))
+    let input = vec![a, b];
+    let function = FunctionExpr::Correlation {
+        method: CorrelationMethod::Pearson,
+        ddof,
     };
-    apply_binary(
-        a,
-        b,
+    Expr::Function {
+        input,
         function,
-        GetOutput::map_dtype(|dt| {
-            if matches!(dt, DataType::Float32) {
-                DataType::Float32
-            } else {
-                DataType::Float64
-            }
-        }),
-    )
-    .with_function_options(|mut options| {
-        options.auto_explode = true;
-        options.fmt_str = "pearson_corr";
-        options
-    })
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: true,
+            auto_explode: true,
+            ..Default::default()
+        },
+    }
 }
 
 /// Compute the spearman rank correlation between two columns.
@@ -160,61 +53,21 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
 ///     and thus lead to the highest rank.
 #[cfg(all(feature = "rank", feature = "propagate_nans"))]
 pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> Expr {
-    use polars_core::utils::coalesce_nulls_series;
-    use polars_ops::prelude::nan_propagating_aggregate::nan_max_s;
-
-    let function = move |a: Series, b: Series| {
-        let (a, b) = coalesce_nulls_series(&a, &b);
-
-        let name = "spearman_rank_correlation";
-        if propagate_nans && a.dtype().is_float() {
-            for s in [&a, &b] {
-                if nan_max_s(s, "")
-                    .get(0)
-                    .unwrap()
-                    .extract::<f64>()
-                    .unwrap()
-                    .is_nan()
-                {
-                    return Ok(Some(Series::new(name, &[f64::NAN])));
-                }
-            }
-        }
-
-        // drop nulls so that they are excluded
-        let a = a.drop_nulls();
-        let b = b.drop_nulls();
-
-        let a_idx = a.rank(
-            RankOptions {
-                method: RankMethod::Min,
-                ..Default::default()
-            },
-            None,
-        );
-        let b_idx = b.rank(
-            RankOptions {
-                method: RankMethod::Min,
-                ..Default::default()
-            },
-            None,
-        );
-        let a_idx = a_idx.idx().unwrap();
-        let b_idx = b_idx.idx().unwrap();
-
-        Ok(Some(Series::new(
-            name,
-            &[polars_core::functions::pearson_corr_i(a_idx, b_idx, ddof)],
-        )))
+    let input = vec![a, b];
+    let function = FunctionExpr::Correlation {
+        method: CorrelationMethod::SpearmanRank(propagate_nans),
+        ddof,
     };
-
-    apply_binary(a, b, function, GetOutput::from_type(DataType::Float64)).with_function_options(
-        |mut options| {
-            options.auto_explode = true;
-            options.fmt_str = "spearman_rank_correlation";
-            options
+    Expr::Function {
+        input,
+        function,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: true,
+            auto_explode: true,
+            ..Default::default()
         },
-    )
+    }
 }
 
 #[cfg(feature = "rolling_window")]

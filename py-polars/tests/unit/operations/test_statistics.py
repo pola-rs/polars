@@ -103,3 +103,9 @@ def test_median_quantile_duration() -> None:
     assert df.select(pl.col("A").quantile(0.5, interpolation="linear")).to_dict(
         False
     ) == {"A": [timedelta(seconds=43200)]}
+
+
+def test_correlation_cast_supertype() -> None:
+    df = pl.DataFrame({"a": [1, 8, 3], "b": [4.0, 5.0, 2.0]})
+    df = df.with_columns(pl.col("b"))
+    assert df.select(pl.corr("a", "b")).to_dict(False) == {"a": [0.5447047794019223]}
