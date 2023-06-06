@@ -1,4 +1,4 @@
-name: Build and test Rust
+name: Test Rust
 
 on:
   pull_request:
@@ -12,22 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  examples:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up Rust
-        run: rustup override set stable
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run cargo check
-        working-directory: examples
-        run: cargo check
-
-  features:
+  check-features:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3

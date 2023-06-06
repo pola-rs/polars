@@ -26,38 +26,74 @@ env:
   RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
 
 jobs:
-  lint:
+
+  rustfmt:
+    if: github.ref_name != 'main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
       - name: Set up Rust
-        run: rustup component add rustfmt clippy miri
+        run: rustup component add rustfmt
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+  clippy-nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup component add clippy
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref_name == 'main' }}
 
-      - name: Run cargo fmt
-        if: ${{ github.ref_name != 'main' }}
-        run: cargo fmt --all -- --check
-
       - name: Run cargo clippy on all features
         run: cargo clippy --all-features -- -D warnings
 
+  # Default feature set should compile on the stable toolchain
+  clippy-stable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup override set stable
+
+      - name: Install clippy
+        run: rustup component add clippy
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref_name == 'main' }}
+
       - name: Run cargo clippy
-        if: ${{ github.ref_name != 'main' }}
         run: cargo clippy -- -D warnings
+
+  miri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup component add miri
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref_name == 'main' }}
 
       - name: Set up miri
         if: ${{ github.ref_name != 'main' }}
-        working-directory: polars
         run: cargo miri setup
 
       - name: Run miri
         if: ${{ github.ref_name != 'main' }}
-        working-directory: polars
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows
           POLARS_ALLOW_EXTENSION: '1'
