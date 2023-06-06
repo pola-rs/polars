@@ -16,7 +16,7 @@ columns.
 
     .. code-block:: python
 
-        import polars.selectors as s
+        import polars.selectors as cs
 
         # select all columns ending with "_euro"
         s.ends_with("_euro")
@@ -29,11 +29,11 @@ Importing
 ---------
 
 * Selectors are available as functions imported from ``polars.selectors``
-* It is recommended to import the module as ``s`` and use from there.
+* Typical usage is to import the module as ``cs`` and employ selectors from there.
 
   .. code-block:: python
 
-      import polars.selectors as s
+      import polars.selectors as cs
       import polars as pl
 
       df = pl.DataFrame(
@@ -44,7 +44,7 @@ Importing
               "z": ["a", "b", "a", "b", "b"],
           },
       )
-      df.groupby(by=s.string()).agg(s.numeric().sum())
+      df.groupby(by=cs.string()).agg(s.numeric().sum())
 
 
 Functions
