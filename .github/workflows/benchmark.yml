@@ -20,6 +20,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
 jobs:
   main:
     runs-on: ubuntu-latest
@@ -76,6 +80,9 @@ jobs:
         with:
           workspaces: py-polars
           save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
 
       - name: Install Polars release build
         env:
