@@ -20,9 +20,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
-
 jobs:
   main:
     runs-on: ubuntu-latest
@@ -77,6 +74,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: py-polars
+          save-if: ${{ github.ref_name == 'main' }}
 
       - name: Install Polars release build
         env:
