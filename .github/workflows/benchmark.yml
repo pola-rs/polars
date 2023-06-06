@@ -7,10 +7,21 @@ on:
       - Cargo.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
+  push:
+    branches:
+      - main
+    paths:
+      - polars/**
+      - Cargo.toml
+      - py-polars/tests/benchmark/**
+      - .github/workflows/benchmark.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
 
 jobs:
   main:
@@ -33,7 +44,15 @@ jobs:
         working-directory: py-polars
         run: pip install -r requirements-dev.txt
 
+      - name: Load benchmark data from cache
+        id: cache-data
+        uses: actions/cache/restore@v3
+        with:
+          path: G1_1e7_1e2_5_0.csv
+          key: benchmark-data
+
       - name: Set up R
+        if: steps.cache-data.outputs.cache-hit != 'true'
         uses: r-lib/actions/setup-r@v2
         with:
           r-version: '3.5.3'
@@ -43,6 +62,13 @@ jobs:
         run: |
           Rscript -e 'install.packages("data.table", repos="https://cloud.r-project.org")'
           Rscript groupby-datagen.R 1e7 1e2 5 0
+
+      - name: Save benchmark data in cache
+        if: github.ref_name == 'main'
+        uses: actions/cache/save@v3
+        with:
+          path: G1_1e7_1e2_5_0.csv
+          key: ${{ steps.cache-data.outputs.cache-primary-key }}
 
       - name: Set up Rust
         run: rustup show
