@@ -2,8 +2,6 @@ name: Create Python release
 
 on:
   push:
-    tags:
-      - py-*
 
 env:
   RUST_TOOLCHAIN: nightly-2023-06-01
