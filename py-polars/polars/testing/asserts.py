@@ -317,7 +317,7 @@ def _assert_series_inner(
     """Compare Series dtype + values."""
     try:
         if left.dtype.is_nested and left.dtype == List:
-            inner_dtype = left.dtype.__getattribute__('inner')
+            inner_dtype = left.dtype.__getattribute__("inner")
             can_be_subtracted = hasattr(dtype_to_py_type(inner_dtype), "__sub__")
         else:
             can_be_subtracted = hasattr(dtype_to_py_type(left.dtype), "__sub__")
