@@ -384,12 +384,14 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
                     "Object" => DataType::Object(OBJECT_NAME),
+                    "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "List" => DataType::List(Box::new(DataType::Null)),
+                    "Struct" => DataType::Struct(vec![]),
                     "Null" => DataType::Null,
                     "Unknown" => DataType::Unknown,
                     dt => {
                         return Err(PyValueError::new_err(format!(
-                            "{dt} is not a correct polars DataType.",
+                            "{dt} is not a recognised polars DataType.",
                         )))
                     }
                 }
@@ -434,7 +436,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             }
             dt => {
                 return Err(PyTypeError::new_err(format!(
-                    "A {dt} object is not a correct polars DataType. \
+                    "A {dt} object is not a recognised polars DataType. \
                     Hint: use the class without instantiating it.",
                 )))
             }
