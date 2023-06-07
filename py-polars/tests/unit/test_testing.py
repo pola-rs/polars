@@ -392,7 +392,9 @@ def test_assert_frame_equal_ignore_row_order() -> None:
         ),
     ],
 )
-def test_assert_frame_equal_passes_assertion(data1, data2, kwargs) -> None:
+def test_assert_frame_equal_passes_assertion(
+        data1: dict[str, Any], data2: dict[str, Any], kwargs: Any,
+) -> None:
     df1 = pl.DataFrame(data=data1)
     df2 = pl.DataFrame(data=data2)
     assert_frame_equal(df1, df2, **kwargs)
@@ -409,7 +411,9 @@ def test_assert_frame_equal_passes_assertion(data1, data2, kwargs) -> None:
         ),
     ],
 )
-def test_assert_frame_equal_raises_assertion_error(data1, data2, kwargs) -> None:
+def test_assert_frame_equal_raises_assertion_error(
+        data1: dict[str, Any], data2: dict[str, Any], kwargs: Any,
+) -> None:
     df1 = pl.DataFrame(data=data1)
     df2 = pl.DataFrame(data=data2)
     with pytest.raises(AssertionError):
@@ -505,7 +509,9 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
         ),
     ],
 )
-def test_assert_series_equal_passes_assertion(data1, data2, kwargs) -> None:
+def test_assert_series_equal_passes_assertion(
+        data1: list[Any], data2: list[Any], kwargs: Any,
+) -> None:
     s2 = pl.Series(data2)
     s1 = pl.Series(data1)
     assert_series_equal(s1, s2, **kwargs)
@@ -540,7 +546,9 @@ def test_assert_series_equal_passes_assertion(data1, data2, kwargs) -> None:
         ),
     ],
 )
-def test_assert_series_equal_raises_assertion_error(data1, data2, kwargs) -> None:
+def test_assert_series_equal_raises_assertion_error(
+        data1: list[Any], data2: list[Any], kwargs: Any,
+) -> None:
     s2 = pl.Series(data2)
     s1 = pl.Series(data1)
     with pytest.raises(AssertionError):
