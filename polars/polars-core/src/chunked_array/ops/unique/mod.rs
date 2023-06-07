@@ -63,13 +63,6 @@ impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
     }
 }
 
-fn fill_set<A>(a: impl Iterator<Item = A>) -> PlHashSet<A>
-where
-    A: Hash + Eq,
-{
-    a.collect()
-}
-
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
 where
     T: Hash + Eq,
@@ -186,10 +179,18 @@ where
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
+        let mut set: PlHashSet<T::Native> = PlHashSet::new();
         if self.null_count() > 0 {
-            Ok(fill_set(self.into_iter().flatten()).len() + 1)
+            for arr in self.downcast_iter() {
+                set.extend(arr.into_iter().flatten())
+            }
+            Ok(set.len() + 1)
         } else {
-            Ok(fill_set(self.into_no_null_iter()).len())
+            for arr in self.downcast_iter() {
+                let slice = arr.values().as_slice();
+                set.extend(slice.iter().copied())
+            }
+            Ok(set.len())
         }
     }
 
@@ -253,10 +254,17 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
+        let mut set: PlHashSet<&[u8]> = PlHashSet::new();
         if self.null_count() > 0 {
-            Ok(fill_set(self.into_iter().flatten()).len() + 1)
+            for arr in self.downcast_iter() {
+                set.extend(arr.into_iter().flatten())
+            }
+            Ok(set.len() + 1)
         } else {
-            Ok(fill_set(self.into_no_null_iter()).len())
+            for arr in self.downcast_iter() {
+                set.extend(arr.values_iter())
+            }
+            Ok(set.len())
         }
     }
 
