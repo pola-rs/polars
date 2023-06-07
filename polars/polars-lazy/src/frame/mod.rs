@@ -1474,7 +1474,7 @@ impl JoinBuilder {
         let args = JoinArgs {
             how: self.how,
             validation: self.validation,
-            suffix: None,
+            suffix: self.suffix,
             slice: None,
         };
 

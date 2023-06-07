@@ -178,8 +178,9 @@ pub fn _sort_or_hash_inner(
     s_left: &Series,
     s_right: &Series,
     _verbose: bool,
+    validate: JoinValidation,
 ) -> PolarsResult<((Vec<IdxSize>, Vec<IdxSize>), bool)> {
-    s_left.hash_join_inner(s_right)
+    s_left.hash_join_inner(s_right, validate)
 }
 
 #[cfg(feature = "performant")]
