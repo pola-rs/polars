@@ -621,7 +621,7 @@ impl PredicatePushDown {
                         let lp_top = stack_opt.optimize_loop(&mut [Box::new(SimplifyExprRule{})], expr_arena, lp_arena, lp_top).unwrap();
                         let PythonScan {options: _, predicate: Some(predicate)} = lp_arena.take(lp_top) else {unreachable!()};
 
-                        match super::super::pyarrow::predicate_to_pa(predicate, expr_arena) {
+                        match super::super::pyarrow::predicate_to_pa(predicate, expr_arena, Default::default()) {
                             // we we able to create a pyarrow string, mutate the options
                             Some(eval_str) => {
                                 options.predicate = Some(eval_str)

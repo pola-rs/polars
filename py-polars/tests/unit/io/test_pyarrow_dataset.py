@@ -119,3 +119,10 @@ def test_dataset(df: pl.DataFrame, tmp_path: Path) -> None:
         .select(["bools", "floats", "date"])
         .collect(),
     )
+    # direct filter
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.Series([True, False, True]))
+        .select(["bools", "floats", "date"])
+        .collect(),
+    )
