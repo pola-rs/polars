@@ -1,1 +1,1 @@
-pub use polars_sql::{keywords, SQLContext};
+pub use polars_sql::{keywords, sql_expr, SQLContext};

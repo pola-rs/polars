@@ -166,6 +166,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
         .unwrap();
 
+    #[cfg(feature = "sql")]
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::sql_expr))
+        .unwrap();
+
     // Functions - I/O
     #[cfg(feature = "ipc")]
     m.add_wrapped(wrap_pyfunction!(functions::io::read_ipc_schema))
