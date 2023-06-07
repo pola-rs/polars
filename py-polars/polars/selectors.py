@@ -57,7 +57,7 @@ class _selector_proxy_(Expr):
     def __invert__(self) -> Self:
         """Invert the selector."""
         name = self._attrs["name"]
-        if name in ("first", "last"):
+        if name in ("first", "last", "sub", "and", "or"):
             raise ValueError(f"Cannot currently invert {name!r} selector")
 
         params = self._attrs["params"] or {}
@@ -86,25 +86,36 @@ class _selector_proxy_(Expr):
         str_params = ",".join(f"{k}={v!r}" for k, v in (params or {}).items())
         return f"{not_}s.{self._attrs['name']}({str_params})"
 
-    # --------------------------------------------------------------------------------
-    # Note: before offering operator support we need a new first-class expression
-    # construct on the Rust side that can represent combinatorial selections, eg:
-    # >>> (cs.starts_with("foo") | cs.ends_with("bar")) & ~cs.of_type(pl.Utf8)
-    # --------------------------------------------------------------------------------
-    # Consequently the following operators are reserved for this future usage.
-    # --------------------------------------------------------------------------------
+    def __add__(self, other: Any) -> Expr:  # type: ignore[override]
+        # similar to how python sets + == |
+        return self.__or__(other)
 
-    def __and__(self, other: Any) -> Self:
-        raise NotImplementedError("Combining selectors with '&' is not yet supported")
+    def __radd__(self, other: Any) -> Expr:  # type: ignore[override]
+        # similar to how python sets + == |
+        return self.__or__(other)
 
-    def __or__(self, other: Any) -> Self:
-        raise NotImplementedError("Combining selectors with '|' is not yet supported")
+    def __sub__(self, other: Any) -> Expr:  # type: ignore[override]
+        return _selector_proxy_(
+            self.meta._as_selector().meta._selector_sub(other), name="sub"
+        )
 
-    def __rand__(self, other: Any) -> Self:
-        raise NotImplementedError("Combining selectors with '&' is not yet supported")
+    def __and__(self, other: Any) -> Expr:  # type: ignore[override]
+        return _selector_proxy_(
+            self.meta._as_selector().meta._selector_and(other), name="and"
+        )
 
-    def __ror__(self, other: Any) -> Self:
-        raise NotImplementedError("Combining selectors with '|' is not yet supported")
+    def __or__(self, other: Any) -> Expr:  # type: ignore[override]
+        return _selector_proxy_(
+            self.meta._as_selector().meta._selector_add(other), name="or"
+        )
+
+    def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
+        # order operation doesn't matter
+        return self.__and__(other)
+
+    def __ror__(self, other: Any) -> Expr:  # type: ignore[override]
+        # order operation doesn't matter
+        return self.__or__(other)
 
 
 def _re_string(string: str | Collection[str]) -> str:
