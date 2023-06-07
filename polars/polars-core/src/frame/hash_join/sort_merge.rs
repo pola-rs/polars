@@ -178,7 +178,7 @@ pub fn _sort_or_hash_inner(
     s_left: &Series,
     s_right: &Series,
     _verbose: bool,
-) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
+) -> PolarsResult<((Vec<IdxSize>, Vec<IdxSize>), bool)> {
     s_left.hash_join_inner(s_right)
 }
 
@@ -187,7 +187,8 @@ pub fn _sort_or_hash_inner(
     s_left: &Series,
     s_right: &Series,
     verbose: bool,
-) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
+    validate: JoinValidation,
+) -> PolarsResult<((Vec<IdxSize>, Vec<IdxSize>), bool)> {
     // We check if keys are sorted.
     // - If they are we can do a sorted merge join
     // If one of the keys is not, it can still be faster to sort that key and use
@@ -199,13 +200,17 @@ pub fn _sort_or_hash_inner(
         .unwrap_or(1.0);
     let is_numeric = s_left.dtype().to_physical().is_numeric();
 
+    if validate.needs_checks() {
+        return s_left.hash_join_inner(s_right, validate);
+    }
+
     let no_nulls = s_left.null_count() == 0 && s_right.null_count() == 0;
     match (s_left.is_sorted_flag(), s_right.is_sorted_flag(), no_nulls) {
         (IsSorted::Ascending, IsSorted::Ascending, true) if is_numeric => {
             if verbose {
                 eprintln!("inner join: keys are sorted: use sorted merge join");
             }
-            (par_sorted_merge_inner_no_nulls(s_left, s_right), true)
+            Ok((par_sorted_merge_inner_no_nulls(s_left, s_right), true))
         }
         (IsSorted::Ascending, _, true)
             if is_numeric && size_factor_rhs < size_factor_acceptable =>
@@ -231,7 +236,7 @@ pub fn _sort_or_hash_inner(
                 });
             });
 
-            ((left, right), true)
+            Ok(((left, right), true))
         }
         (_, IsSorted::Ascending, true)
             if is_numeric && size_factor_lhs < size_factor_acceptable =>
@@ -258,9 +263,9 @@ pub fn _sort_or_hash_inner(
             });
 
             // set sorted to `false` as we descending sorted the left key.
-            ((left, right), false)
+            Ok(((left, right), false))
         }
-        _ => s_left.hash_join_inner(s_right),
+        _ => s_left.hash_join_inner(s_right, validate),
     }
 }
 

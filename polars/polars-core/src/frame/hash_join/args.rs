@@ -100,6 +100,41 @@ pub enum JoinValidation {
     OneToOne,
 }
 
+impl JoinValidation {
+    pub(super) fn needs_checks(&self) -> bool {
+        !matches!(self, JoinValidation::ManyToMany)
+    }
+
+    fn swap(self, swap: bool) -> Self {
+        use JoinValidation::*;
+        if swap {
+            match self {
+                ManyToMany => ManyToMany,
+                ManyToOne => OneToMany,
+                OneToMany => ManyToOne,
+                OneToOne => OneToOne,
+            }
+        } else {
+            self
+        }
+    }
+
+    pub(super) fn validate_build(
+        &self,
+        build_size: usize,
+        expected_size: usize,
+        swap: bool,
+    ) -> PolarsResult<()> {
+        use JoinValidation::*;
+        let valid = match self.swap(swap) {
+            ManyToMany | ManyToOne => true,
+            OneToMany | OneToOne => build_size == expected_size,
+        };
+        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {self} validation ");
+        Ok(())
+    }
+}
+
 impl Display for JoinValidation {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {

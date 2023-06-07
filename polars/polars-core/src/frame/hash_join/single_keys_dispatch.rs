@@ -73,33 +73,37 @@ impl Series {
     }
 
     // returns the join tuples and whether or not the lhs tuples are sorted
-    pub(super) fn hash_join_inner(&self, other: &Series) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
+    pub(super) fn hash_join_inner(
+        &self,
+        other: &Series,
+        validate: JoinValidation,
+    ) -> PolarsResult<((Vec<IdxSize>, Vec<IdxSize>), bool)> {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
 
         use DataType::*;
         match lhs.dtype() {
             Utf8 => {
-                let lhs = lhs.cast(&Binary).unwrap();
-                let rhs = rhs.cast(&Binary).unwrap();
+                let lhs = lhs.utf8().unwrap();
+                let rhs = rhs.utf8().unwrap();
 
-                let lhs = lhs.binary().unwrap();
-                let rhs = rhs.binary().unwrap();
-                lhs.hash_join_inner(rhs)
+                let lhs = lhs.as_binary();
+                let rhs = rhs.as_binary();
+                lhs.hash_join_inner(&rhs, validate)
             }
             Binary => {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
-                lhs.hash_join_inner(rhs)
+                lhs.hash_join_inner(rhs, validate)
             }
             _ => {
                 if self.bit_repr_is_large() {
                     let lhs = self.bit_repr_large();
                     let rhs = other.bit_repr_large();
-                    num_group_join_inner(&lhs, &rhs)
+                    num_group_join_inner(&lhs, &rhs, validate)
                 } else {
                     let lhs = self.bit_repr_small();
                     let rhs = other.bit_repr_small();
-                    num_group_join_inner(&lhs, &rhs)
+                    num_group_join_inner(&lhs, &rhs, validate)
                 }
             }
         }
@@ -174,7 +178,8 @@ where
 fn num_group_join_inner<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
-) -> ((Vec<IdxSize>, Vec<IdxSize>), bool)
+    validate: JoinValidation,
+) -> PolarsResult<((Vec<IdxSize>, Vec<IdxSize>), bool)>
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64 + Copy,
@@ -193,17 +198,26 @@ where
         (true, true, 1, 1) => {
             let keys_a = splitted_to_slice(&splitted_a);
             let keys_b = splitted_to_slice(&splitted_b);
-            (hash_join_tuples_inner(keys_a, keys_b, swap), !swap)
+            Ok((
+                hash_join_tuples_inner(keys_a, keys_b, swap, validate)?,
+                !swap,
+            ))
         }
         (true, true, _, _) => {
             let keys_a = splitted_by_chunks(&splitted_a);
             let keys_b = splitted_by_chunks(&splitted_b);
-            (hash_join_tuples_inner(keys_a, keys_b, swap), !swap)
+            Ok((
+                hash_join_tuples_inner(keys_a, keys_b, swap, validate)?,
+                !swap,
+            ))
         }
         _ => {
             let keys_a = splitted_to_opt_vec(&splitted_a);
             let keys_b = splitted_to_opt_vec(&splitted_b);
-            (hash_join_tuples_inner(keys_a, keys_b, swap), !swap)
+            Ok((
+                hash_join_tuples_inner(keys_a, keys_b, swap, validate)?,
+                !swap,
+            ))
         }
     }
 }
@@ -374,14 +388,18 @@ impl BinaryChunked {
     }
 
     // returns the join tuples and whether or not the lhs tuples are sorted
-    fn hash_join_inner(&self, other: &BinaryChunked) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
+    fn hash_join_inner(
+        &self,
+        other: &BinaryChunked,
+        validate: JoinValidation,
+    ) -> PolarsResult<((Vec<IdxSize>, Vec<IdxSize>), bool)> {
         let (splitted_a, splitted_b, swap, hb) = self.prepare(other, true);
         let str_hashes_a = prepare_bytes(&splitted_a, &hb);
         let str_hashes_b = prepare_bytes(&splitted_b, &hb);
-        (
-            hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap),
+        Ok((
+            hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap, validate)?,
             !swap,
-        )
+        ))
     }
 
     fn hash_join_left(&self, other: &BinaryChunked) -> LeftJoinIds {
