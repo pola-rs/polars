@@ -84,7 +84,7 @@ class _selector_proxy_(Expr):
         params = self._attrs["params"]
         not_ = "~" if self._inverted else ""
         str_params = ",".join(f"{k}={v!r}" for k, v in (params or {}).items())
-        return f"{not_}s.{self._attrs['name']}({str_params})"
+        return f"{not_}cs.{self._attrs['name']}({str_params})"
 
     def __sub__(self, other: Any) -> Expr:  # type: ignore[override]
         if isinstance(other, _selector_proxy_):
@@ -128,7 +128,7 @@ class _selector_proxy_(Expr):
         """
         Materialize the ``selector`` into a normal expression.
 
-        This ensures that the operators ``|``, ``&``, ``+`` and ``-``
+        This ensures that the operators ``|``, ``&``, ``~`` and ``-``
         are applied on the data and not no the selector sets.
         """
         return Expr._from_pyexpr(self._pyexpr)
