@@ -64,30 +64,3 @@ def test_meta_is_regex_projection() -> None:
     e = pl.col("^.*$").alias("bar")
     assert e.meta.is_regex_projection()
     assert e.meta.has_multiple_outputs()
-
-
-def test_selector_expansion() -> None:
-    df = pl.DataFrame({name: [] for name in "abcde"})
-
-    s1 = pl.all().meta._as_selector()
-    s2 = pl.col(["a", "b"])
-    s = s1.meta._selector_sub(s2)
-    assert df.select(s).columns == ["c", "d", "e"]
-
-    s1 = pl.col("^a|b$").meta._as_selector()
-    s = s1.meta._selector_add(pl.col(["d", "e"]))
-    assert df.select(s).columns == ["a", "b", "d", "e"]
-
-    s = s.meta._selector_sub(pl.col("d"))
-    assert df.select(s).columns == ["a", "b", "e"]
-
-    # add a duplicate, this tests if they are pruned
-    s = s.meta._selector_add(pl.col("a"))
-    assert df.select(s).columns == ["a", "b", "e"]
-
-    s1 = pl.col(["a", "b", "c"])
-    s2 = pl.col(["b", "c", "d"])
-
-    s = s1.meta._as_selector()
-    s = s.meta._selector_and(s2)
-    assert df.select(s).columns == ["b", "c"]

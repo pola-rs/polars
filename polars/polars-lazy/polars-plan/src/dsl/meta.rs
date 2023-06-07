@@ -110,8 +110,11 @@ impl MetaNameSpace {
         }
     }
 
-    pub fn _into_selector(self) -> PolarsResult<Expr> {
-        polars_ensure!(!matches!(self.0, Expr::Selector(_)), ComputeError: "nested selectors not allowed");
-        Ok(Expr::Selector(Selector::new(self.0)))
+    pub fn _into_selector(self) -> Expr {
+        if let Expr::Selector(_) = self.0 {
+            self.0
+        } else {
+            Expr::Selector(Selector::new(self.0))
+        }
     }
 }

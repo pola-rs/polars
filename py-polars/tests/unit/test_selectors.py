@@ -2,6 +2,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.testing import assert_frame_equal
 
 
 @pytest.fixture()
@@ -192,3 +193,79 @@ def test_selector_temporal(df: pl.DataFrame) -> None:
     assert set(df.select(~cs.temporal()).columns) == (
         all_columns - {"ghi", "JJK", "Lmn", "opp"}
     )
+
+
+def test_selector_expansion() -> None:
+    df = pl.DataFrame({name: [] for name in "abcde"})
+
+    s1 = pl.all().meta._as_selector()
+    s2 = pl.col(["a", "b"])
+    s = s1.meta._selector_sub(s2)
+    assert df.select(s).columns == ["c", "d", "e"]
+
+    s1 = pl.col("^a|b$").meta._as_selector()
+    s = s1.meta._selector_add(pl.col(["d", "e"]))
+    assert df.select(s).columns == ["a", "b", "d", "e"]
+
+    s = s.meta._selector_sub(pl.col("d"))
+    assert df.select(s).columns == ["a", "b", "e"]
+
+    # add a duplicate, this tests if they are pruned
+    s = s.meta._selector_add(pl.col("a"))
+    assert df.select(s).columns == ["a", "b", "e"]
+
+    s1 = pl.col(["a", "b", "c"])
+    s2 = pl.col(["b", "c", "d"])
+
+    s = s1.meta._as_selector()
+    s = s.meta._selector_and(s2)
+    assert df.select(s).columns == ["b", "c"]
+
+
+def test_selector_sets(df: pl.DataFrame) -> None:
+    # or
+    assert df.select(cs.temporal() | cs.string() | cs.starts_with("e")).schema == {
+        "eee": pl.Boolean,
+        "ghi": pl.Time,
+        "JJK": pl.Date,
+        "Lmn": pl.Duration,
+        "opp": pl.Datetime("ms"),
+        "qqR": pl.Utf8,
+    }
+
+    # and
+    assert df.select(cs.temporal() & cs.matches("opp|JJK")).schema == {
+        "JJK": pl.Date,
+        "opp": pl.Datetime("ms"),
+    }
+
+    # SET A - SET B
+    assert df.select(cs.temporal() - cs.matches("opp|JJK")).schema == {
+        "ghi": pl.Time,
+        "Lmn": pl.Duration,
+    }
+
+    # COMPLEMENT SET
+    assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
+        "abc": pl.UInt16,
+        "bbb": pl.UInt32,
+        "cde": pl.Float64,
+        "def": pl.Float32,
+        "eee": pl.Boolean,
+        "fgg": pl.Boolean,
+        "JJK": pl.Date,
+        "opp": pl.Datetime("ms"),
+        "qqR": pl.Utf8,
+    }
+
+
+def test_selector_dispatch_default_operator() -> None:
+    df = pl.DataFrame({"a": [1, 1], "b": [2, 2], "abc": [3, 3]})
+    out = df.select((cs.numeric() & ~cs.by_name("abc")) + 1)
+    expected = pl.DataFrame(
+        {
+            "a": [2, 2],
+            "b": [3, 3],
+        }
+    )
+    assert_frame_equal(out, expected)
