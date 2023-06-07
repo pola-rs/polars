@@ -16,7 +16,7 @@ pub type JoinIds = Vec<IdxSize>;
 /// [ChunkIdx, DfIdx]
 pub type ChunkId = [IdxSize; 2];
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinArgs {
     pub how: JoinType,
@@ -33,6 +33,10 @@ impl JoinArgs {
             suffix: None,
             slice: None,
         }
+    }
+
+    pub fn suffix(&self) -> &str {
+        self.suffix.as_deref().unwrap_or("_right")
     }
 }
 
