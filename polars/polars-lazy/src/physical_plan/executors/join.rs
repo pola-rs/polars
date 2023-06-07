@@ -1,3 +1,5 @@
+use polars_core::frame::hash_join::JoinArgs;
+
 use super::*;
 
 pub struct JoinExec {
@@ -152,9 +154,12 @@ impl Executor for JoinExec {
                 &df_right,
                 left_on_series,
                 right_on_series,
-                self.how.clone(),
-                Some(self.suffix.clone().into_owned()),
-                self.slice,
+                JoinArgs {
+                    how: self.how.clone(),
+                    slice: self.slice,
+                    suffix: Some(self.suffix.clone().into_owned()),
+                    validation: Default::default(),
+                },
                 true,
                 state.verbose(),
             );

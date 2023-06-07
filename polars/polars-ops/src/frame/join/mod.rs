@@ -69,8 +69,7 @@ pub trait DataFrameJoinOps: IntoDf {
         other: &DataFrame,
         left_on: I,
         right_on: I,
-        how: JoinType,
-        suffix: Option<String>,
+        args: JoinArgs,
     ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
@@ -78,21 +77,12 @@ pub trait DataFrameJoinOps: IntoDf {
     {
         let df_left = self.to_df();
         #[cfg(feature = "cross_join")]
-        if let JoinType::Cross = how {
-            return df_left.cross_join(other, suffix.as_deref(), None);
+        if let JoinType::Cross = args.how {
+            return df_left.cross_join(other, args.suffix.as_deref(), None);
         }
         let selected_left = df_left.select_series(left_on)?;
         let selected_right = other.select_series(right_on)?;
-        self._join_impl(
-            other,
-            selected_left,
-            selected_right,
-            how,
-            suffix,
-            None,
-            true,
-            false,
-        )
+        self._join_impl(other, selected_left, selected_right, args, true, false)
     }
 
     #[doc(hidden)]
@@ -102,17 +92,15 @@ pub trait DataFrameJoinOps: IntoDf {
         other: &DataFrame,
         selected_left: Vec<Series>,
         selected_right: Vec<Series>,
-        how: JoinType,
-        suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        args: JoinArgs,
         _check_rechunk: bool,
         _verbose: bool,
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
 
         #[cfg(feature = "cross_join")]
-        if let JoinType::Cross = how {
-            return left_df.cross_join(other, suffix.as_deref(), slice);
+        if let JoinType::Cross = args.how {
+            return left_df.cross_join(other, args.suffix.as_deref(), args.slice);
         }
 
         #[cfg(feature = "chunked_ids")]
@@ -121,14 +109,14 @@ pub trait DataFrameJoinOps: IntoDf {
             // the others not yet.
             // TODO! change this to other join types once they support chunked-id joins
             if _check_rechunk
-                && !(matches!(how, JoinType::Left)
+                && !(matches!(args.how, JoinType::Left)
                     || std::env::var("POLARS_NO_CHUNKED_JOIN").is_ok())
             {
                 let mut left = Cow::Borrowed(left_df);
                 let mut right = Cow::Borrowed(other);
                 if left_df.should_rechunk() {
                     if _verbose {
-                        eprintln!("{:?} join triggered a rechunk of the left dataframe: {} columns are affected", how, left_df.width());
+                        eprintln!("{:?} join triggered a rechunk of the left dataframe: {} columns are affected", args.how, left_df.width());
                     }
 
                     let mut tmp_left = left_df.clone();
@@ -137,7 +125,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 }
                 if other.should_rechunk() {
                     if _verbose {
-                        eprintln!("{:?} join triggered a rechunk of the right dataframe: {} columns are affected", how, other.width());
+                        eprintln!("{:?} join triggered a rechunk of the right dataframe: {} columns are affected", args.how, other.width());
                     }
                     let mut tmp_right = other.clone();
                     tmp_right.as_single_chunk_par();
@@ -147,9 +135,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     &right,
                     selected_left,
                     selected_right,
-                    how,
-                    suffix,
-                    slice,
+                    args,
                     false,
                     _verbose,
                 );
@@ -189,21 +175,21 @@ pub trait DataFrameJoinOps: IntoDf {
         if selected_left.len() == 1 {
             let s_left = left_df.column(selected_left[0].name())?;
             let s_right = other.column(selected_right[0].name())?;
-            return match how {
+            return match args.how {
                 JoinType::Inner => {
-                    left_df._inner_join_from_series(other, s_left, s_right, suffix, slice, _verbose)
+                    left_df._inner_join_from_series(other, s_left, s_right, args, _verbose)
                 }
                 JoinType::Left => {
-                    left_df._left_join_from_series(other, s_left, s_right, suffix, slice, _verbose)
+                    left_df._left_join_from_series(other, s_left, s_right, args, _verbose)
                 }
-                JoinType::Outer => {
-                    left_df._outer_join_from_series(other, s_left, s_right, suffix, slice)
-                }
+                JoinType::Outer => left_df._outer_join_from_series(other, s_left, s_right, args),
                 #[cfg(feature = "semi_anti_join")]
-                JoinType::Anti => left_df._semi_anti_join_from_series(s_left, s_right, slice, true),
+                JoinType::Anti => {
+                    left_df._semi_anti_join_from_series(s_left, s_right, args.slice, true)
+                }
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Semi => {
-                    left_df._semi_anti_join_from_series(s_left, s_right, slice, false)
+                    left_df._semi_anti_join_from_series(s_left, s_right, args.slice, false)
                 }
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(options) => {
@@ -219,8 +205,8 @@ pub trait DataFrameJoinOps: IntoDf {
                             right_by,
                             options.strategy,
                             options.tolerance,
-                            suffix.as_deref(),
-                            slice,
+                            args.suffix.as_deref(),
+                            args.slice,
                         ),
                         (None, None) => left_df._join_asof(
                             other,
@@ -228,8 +214,8 @@ pub trait DataFrameJoinOps: IntoDf {
                             right_on,
                             options.strategy,
                             options.tolerance,
-                            suffix,
-                            slice,
+                            args.suffix,
+                            args.slice,
                         ),
                         _ => {
                             panic!("expected by arguments on both sides")
@@ -258,7 +244,7 @@ pub trait DataFrameJoinOps: IntoDf {
         let selected_right_physical = _to_physical_and_bit_repr(&selected_right);
 
         // multiple keys
-        match how {
+        match args.how {
             JoinType::Inner => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
@@ -268,7 +254,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 let mut join_idx_left = &*join_idx_left;
                 let mut join_idx_right = &*join_idx_right;
 
-                if let Some((offset, len)) = slice {
+                if let Some((offset, len)) = args.slice {
                     join_idx_left = slice_slice(join_idx_left, offset, len);
                     join_idx_right = slice_slice(join_idx_right, offset, len);
                 }
@@ -282,19 +268,14 @@ pub trait DataFrameJoinOps: IntoDf {
                             ._take_unchecked_slice(join_idx_right, true)
                     },
                 );
-                _finish_join(df_left, df_right, suffix.as_deref())
+                _finish_join(df_left, df_right, args.suffix.as_deref())
             }
             JoinType::Left => {
                 let mut left = DataFrame::new_no_checks(selected_left_physical);
                 let mut right = DataFrame::new_no_checks(selected_right_physical);
                 let ids = _left_join_multiple_keys(&mut left, &mut right, None, None);
 
-                left_df._finish_left_join(
-                    ids,
-                    &remove_selected(other, &selected_right),
-                    suffix,
-                    slice,
-                )
+                left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
             }
             JoinType::Outer => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
@@ -305,7 +286,7 @@ pub trait DataFrameJoinOps: IntoDf {
 
                 let mut opt_join_tuples = &*opt_join_tuples;
 
-                if let Some((offset, len)) = slice {
+                if let Some((offset, len)) = args.slice {
                     opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
                 }
 
@@ -335,7 +316,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 }
                 keys.extend_from_slice(df_left.get_columns());
                 let df_left = DataFrame::new_no_checks(keys);
-                _finish_join(df_left, df_right, suffix.as_deref())
+                _finish_join(df_left, df_right, args.suffix.as_deref())
             }
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(_) => polars_bail!(
@@ -346,14 +327,14 @@ pub trait DataFrameJoinOps: IntoDf {
                 let mut left = DataFrame::new_no_checks(selected_left_physical);
                 let mut right = DataFrame::new_no_checks(selected_right_physical);
 
-                let idx = if matches!(how, JoinType::Anti) {
+                let idx = if matches!(args.how, JoinType::Anti) {
                     _left_anti_multiple_keys(&mut left, &mut right)
                 } else {
                     _left_semi_multiple_keys(&mut left, &mut right)
                 };
                 // Safety:
                 // indices are in bounds
-                Ok(unsafe { left_df._finish_anti_semi_join(&idx, slice) })
+                Ok(unsafe { left_df._finish_anti_semi_join(&idx, args.slice) })
             }
             JoinType::Cross => {
                 unreachable!()
@@ -381,7 +362,7 @@ pub trait DataFrameJoinOps: IntoDf {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.join(other, left_on, right_on, JoinType::Inner, None)
+        self.join(other, left_on, right_on, JoinArgs::new(JoinType::Inner))
     }
 
     /// Perform a left join on two DataFrames
@@ -423,7 +404,7 @@ pub trait DataFrameJoinOps: IntoDf {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.join(other, left_on, right_on, JoinType::Left, None)
+        self.join(other, left_on, right_on, JoinArgs::new(JoinType::Left))
     }
 
     /// Perform an outer join on two DataFrames
@@ -445,7 +426,7 @@ pub trait DataFrameJoinOps: IntoDf {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.join(other, left_on, right_on, JoinType::Outer, None)
+        self.join(other, left_on, right_on, JoinArgs::new(JoinType::Outer))
     }
 }
 
@@ -460,8 +441,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         other: &DataFrame,
         s_left: &Series,
         s_right: &Series,
-        suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        args: JoinArgs,
         verbose: bool,
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
@@ -473,7 +453,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;
 
-        if let Some((offset, len)) = slice {
+        if let Some((offset, len)) = args.slice {
             join_tuples_left = slice_slice(join_tuples_left, offset, len);
             join_tuples_right = slice_slice(join_tuples_right, offset, len);
         }
@@ -488,7 +468,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                     ._take_unchecked_slice(join_tuples_right, true)
             },
         );
-        _finish_join(df_left, df_right, suffix.as_deref())
+        _finish_join(df_left, df_right, args.suffix.as_deref())
     }
 }
 

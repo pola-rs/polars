@@ -1,3 +1,4 @@
+mod args;
 pub(crate) mod multiple_keys;
 pub(super) mod single_keys;
 mod single_keys_dispatch;
@@ -13,6 +14,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{BuildHasher, Hash, Hasher};
 
 use ahash::RandomState;
+pub use args::*;
 #[cfg(feature = "chunked_ids")]
 use arrow::Either;
 use hashbrown::hash_map::{Entry, RawEntryMut};
@@ -49,22 +51,6 @@ use crate::hashing::{
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, slice_slice, split_ca};
 use crate::POOL;
-
-pub type LeftJoinIds = (JoinIds, JoinOptIds);
-
-#[cfg(feature = "chunked_ids")]
-pub(super) type JoinIds = Either<Vec<IdxSize>, Vec<ChunkId>>;
-#[cfg(feature = "chunked_ids")]
-pub type JoinOptIds = Either<Vec<Option<IdxSize>>, Vec<Option<ChunkId>>>;
-
-#[cfg(not(feature = "chunked_ids"))]
-pub type JoinOptIds = Vec<Option<IdxSize>>;
-
-#[cfg(not(feature = "chunked_ids"))]
-pub type JoinIds = Vec<IdxSize>;
-
-/// [ChunkIdx, DfIdx]
-pub type ChunkId = [IdxSize; 2];
 
 pub fn default_join_ids() -> JoinOptIds {
     #[cfg(feature = "chunked_ids")]
@@ -114,46 +100,6 @@ pub fn _check_categorical_src(l: &DataType, r: &DataType) -> PolarsResult<()> {
         );
     }
     Ok(())
-}
-
-#[derive(Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum JoinType {
-    Left,
-    Inner,
-    Outer,
-    #[cfg(feature = "asof_join")]
-    AsOf(AsOfOptions),
-    Cross,
-    #[cfg(feature = "semi_anti_join")]
-    Semi,
-    #[cfg(feature = "semi_anti_join")]
-    Anti,
-}
-
-impl Display for JoinType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use JoinType::*;
-        let val = match self {
-            Left => "LEFT",
-            Inner => "INNER",
-            Outer => "OUTER",
-            #[cfg(feature = "asof_join")]
-            AsOf(_) => "ASOF",
-            Cross => "CROSS",
-            #[cfg(feature = "semi_anti_join")]
-            Semi => "SEMI",
-            #[cfg(feature = "semi_anti_join")]
-            Anti => "ANTI",
-        };
-        write!(f, "{val}")
-    }
-}
-
-impl Debug for JoinType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self}")
-    }
 }
 
 pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
@@ -255,13 +201,12 @@ impl DataFrame {
         &self,
         ids: LeftJoinIds,
         other: &DataFrame,
-        suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        args: JoinArgs,
     ) -> PolarsResult<DataFrame> {
         let (left_idx, right_idx) = ids;
         let materialize_left = || {
             let mut left_idx = &*left_idx;
-            if let Some((offset, len)) = slice {
+            if let Some((offset, len)) = args.slice {
                 left_idx = slice_slice(left_idx, offset, len);
             }
             unsafe { self._create_left_df_from_slice(left_idx, true, true) }
@@ -269,7 +214,7 @@ impl DataFrame {
 
         let materialize_right = || {
             let mut right_idx = &*right_idx;
-            if let Some((offset, len)) = slice {
+            if let Some((offset, len)) = args.slice {
                 right_idx = slice_slice(right_idx, offset, len);
             }
             unsafe {
@@ -280,7 +225,7 @@ impl DataFrame {
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
 
-        _finish_join(df_left, df_right, suffix.as_deref())
+        _finish_join(df_left, df_right, args.suffix.as_deref())
     }
 
     #[cfg(feature = "chunked_ids")]
@@ -288,9 +233,10 @@ impl DataFrame {
         &self,
         ids: LeftJoinIds,
         other: &DataFrame,
-        suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        args: JoinArgs,
     ) -> PolarsResult<DataFrame> {
+        let suffix = &args.suffix;
+        let slice = args.slice;
         let (left_idx, right_idx) = ids;
         let materialize_left = || match left_idx {
             JoinIds::Left(left_idx) => {
@@ -339,8 +285,7 @@ impl DataFrame {
         other: &DataFrame,
         s_left: &Series,
         s_right: &Series,
-        suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        args: JoinArgs,
         verbose: bool,
     ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
@@ -360,7 +305,7 @@ impl DataFrame {
             s_right = s_right.rechunk();
         }
         let ids = sort_or_hash_left(&s_left, &s_right, verbose);
-        left._finish_left_join(ids, &right.drop(s_right.name()).unwrap(), suffix, slice)
+        left._finish_left_join(ids, &right.drop(s_right.name()).unwrap(), args)
     }
 
     #[cfg(feature = "semi_anti_join")]
@@ -399,8 +344,7 @@ impl DataFrame {
         other: &DataFrame,
         s_left: &Series,
         s_right: &Series,
-        suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        args: JoinArgs,
     ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
@@ -412,7 +356,7 @@ impl DataFrame {
         let opt_join_tuples = s_left.hash_join_outer(s_right);
         let mut opt_join_tuples = &*opt_join_tuples;
 
-        if let Some((offset, len)) = slice {
+        if let Some((offset, len)) = args.slice {
             opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
         }
 
@@ -459,6 +403,6 @@ impl DataFrame {
         };
 
         unsafe { df_left.get_columns_mut().insert(join_column_index, s) };
-        _finish_join(df_left, df_right, suffix.as_deref())
+        _finish_join(df_left, df_right, args.suffix.as_deref())
     }
 }
