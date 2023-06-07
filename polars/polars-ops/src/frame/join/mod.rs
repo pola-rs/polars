@@ -97,6 +97,8 @@ pub trait DataFrameJoinOps: IntoDf {
         _verbose: bool,
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
+        args.validation
+            .is_valid_join(&args.how, selected_left.len())?;
 
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = args.how {

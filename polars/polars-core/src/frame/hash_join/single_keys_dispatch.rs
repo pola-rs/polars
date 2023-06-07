@@ -13,7 +13,7 @@ impl Series {
         validate: JoinValidation,
     ) -> PolarsResult<LeftJoinIds> {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(self, other, false)?;
+        validate.validate_probe(&lhs, &rhs, false)?;
 
         use DataType::*;
         match lhs.dtype() {
@@ -84,6 +84,7 @@ impl Series {
         validate: JoinValidation,
     ) -> PolarsResult<(InnerJoinIds, bool)> {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
+        validate.validate_probe(&lhs, &rhs, true)?;
 
         use DataType::*;
         match lhs.dtype() {
@@ -117,33 +118,35 @@ impl Series {
     pub(super) fn hash_join_outer(
         &self,
         other: &Series,
-    ) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
+        validate: JoinValidation,
+    ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
+        validate.validate_probe(&lhs, &rhs, true)?;
 
         use DataType::*;
         match lhs.dtype() {
             Utf8 => {
-                let lhs = lhs.cast(&Binary).unwrap();
-                let rhs = rhs.cast(&Binary).unwrap();
+                let lhs = lhs.utf8().unwrap();
+                let rhs = rhs.utf8().unwrap();
 
-                let lhs = lhs.binary().unwrap();
-                let rhs = rhs.binary().unwrap();
-                lhs.hash_join_outer(rhs)
+                let lhs = lhs.as_binary();
+                let rhs = rhs.as_binary();
+                lhs.hash_join_outer(&rhs, validate)
             }
             Binary => {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
-                lhs.hash_join_outer(rhs)
+                lhs.hash_join_outer(rhs, validate)
             }
             _ => {
                 if self.bit_repr_is_large() {
                     let lhs = self.bit_repr_large();
                     let rhs = other.bit_repr_large();
-                    lhs.hash_join_outer(&rhs)
+                    lhs.hash_join_outer(&rhs, validate)
                 } else {
                     let lhs = self.bit_repr_small();
                     let rhs = other.bit_repr_small();
-                    lhs.hash_join_outer(&rhs)
+                    lhs.hash_join_outer(&rhs, validate)
                 }
             }
         }
@@ -322,7 +325,11 @@ where
     T: PolarsIntegerType + Sync,
     T::Native: Eq + Hash + NumCast,
 {
-    fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
+    fn hash_join_outer(
+        &self,
+        other: &ChunkedArray<T>,
+        validate: JoinValidation,
+    ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
         let n_partitions = _set_partition_size();
@@ -339,7 +346,7 @@ where
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
                     .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap)
+                hash_join_tuples_outer(iters_a, iters_b, swap, validate)
             }
             _ => {
                 let iters_a = splitted_a
@@ -350,7 +357,7 @@ where
                     .iter()
                     .map(|ca| ca.into_iter())
                     .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap)
+                hash_join_tuples_outer(iters_a, iters_b, swap, validate)
             }
         }
     }
@@ -445,7 +452,11 @@ impl BinaryChunked {
         }
     }
 
-    fn hash_join_outer(&self, other: &BinaryChunked) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
+    fn hash_join_outer(
+        &self,
+        other: &BinaryChunked,
+        validate: JoinValidation,
+    ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
         let n_partitions = _set_partition_size();
@@ -462,7 +473,7 @@ impl BinaryChunked {
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
                     .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap)
+                hash_join_tuples_outer(iters_a, iters_b, swap, validate)
             }
             _ => {
                 let iters_a = splitted_a
@@ -473,7 +484,7 @@ impl BinaryChunked {
                     .iter()
                     .map(|ca| ca.into_iter())
                     .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap)
+                hash_join_tuples_outer(iters_a, iters_b, swap, validate)
             }
         }
     }

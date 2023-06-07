@@ -353,7 +353,7 @@ impl DataFrame {
         let join_column_index = self.iter().position(|s| s.name() == s_left.name()).unwrap();
 
         // Get the indexes of the joined relations
-        let opt_join_tuples = s_left.hash_join_outer(s_right);
+        let opt_join_tuples = s_left.hash_join_outer(s_right, args.validation)?;
         let mut opt_join_tuples = &*opt_join_tuples;
 
         if let Some((offset, len)) = args.slice {

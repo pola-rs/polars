@@ -202,7 +202,6 @@ pub fn _sort_or_hash_inner(
     let is_numeric = s_left.dtype().to_physical().is_numeric();
 
     if validate.needs_checks() {
-        validate.validate_probe(s_left, s_right, true)?;
         return s_left.hash_join_inner(s_right, validate);
     }
 
@@ -289,7 +288,6 @@ pub(super) fn sort_or_hash_left(
     validate: JoinValidation,
 ) -> PolarsResult<LeftJoinIds> {
     if validate.needs_checks() {
-        validate.validate_probe(s_left, s_right, true)?;
         return s_left.hash_join_left(s_right, validate);
     }
 
