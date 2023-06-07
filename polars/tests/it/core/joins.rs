@@ -267,7 +267,7 @@ fn test_join_categorical() {
         .unwrap();
 
     let out = df_a
-        .join(&df_b, ["b"], ["bar"], JoinType::Left, None)
+        .join(&df_b, ["b"], ["bar"], JoinType::Left.into())
         .unwrap();
     assert_eq!(out.shape(), (6, 5));
     let correct_ham = &[
@@ -285,7 +285,7 @@ fn test_join_categorical() {
 
     // test dispatch
     for jt in [JoinType::Left, JoinType::Inner, JoinType::Outer] {
-        let out = df_a.join(&df_b, ["b"], ["bar"], jt, None).unwrap();
+        let out = df_a.join(&df_b, ["b"], ["bar"], jt.into()).unwrap();
         let out = out.column("b").unwrap();
         assert_eq!(out.dtype(), &DataType::Categorical(None));
     }
@@ -302,7 +302,7 @@ fn test_join_categorical() {
 
     df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
         .unwrap();
-    let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left, None);
+    let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left.into());
     assert!(out.is_err());
 }
 
