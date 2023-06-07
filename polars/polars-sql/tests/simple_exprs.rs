@@ -524,3 +524,12 @@ fn test_case_expr() {
     let df_pl = df.lazy().select(&[case_expr]).collect().unwrap();
     assert!(df_sql.frame_equal(&df_pl));
 }
+
+#[test]
+fn test_sql_expr() {
+    let df = create_sample_df().unwrap();
+    let expr = sql_expr("MIN(a)").unwrap();
+    let actual = df.clone().lazy().select(&[expr]).collect().unwrap();
+    let expected = df.lazy().select(&[col("a").min()]).collect().unwrap();
+    assert!(actual.frame_equal(&expected));
+}

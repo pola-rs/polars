@@ -47,6 +47,7 @@ from polars.functions.lazy import (
     rolling_corr,
     rolling_cov,
     select,
+    sql_expr,
     std,
     sum,
     tail,
@@ -118,4 +119,5 @@ __all__ = [
     "var",
     # polars.functions.whenthen
     "when",
+    "sql_expr",
 ]

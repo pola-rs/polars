@@ -452,3 +452,10 @@ pub fn time_range_lazy(
     let every = Duration::parse(every);
     dsl::functions::time_range(start, end, every, closed.0).into()
 }
+
+#[pyfunction]
+#[cfg(feature = "sql")]
+pub fn sql_expr(sql: &str) -> PyResult<PyExpr> {
+    let expr = polars::sql::sql_expr(sql).map_err(PyPolarsErr::from)?;
+    Ok(expr.into())
+}

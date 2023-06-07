@@ -234,3 +234,10 @@ def test_register_context() -> None:
         assert ctx.tables() == ["_lf1", "_lf2"]
 
     assert ctx.tables() == []
+
+
+def test_sql_expr() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]})
+    sql_expr = pl.sql_expr("MIN(a)")
+    expected = pl.DataFrame({"a": [1]})
+    assert df.select(sql_expr).frame_equal(expected)
