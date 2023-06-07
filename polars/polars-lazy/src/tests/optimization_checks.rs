@@ -148,7 +148,12 @@ fn test_no_left_join_pass() -> PolarsResult<()> {
 
     let out = df1
         .lazy()
-        .join(df2.lazy(), [col("idx1")], [col("idx2")], JoinType::Left)
+        .join(
+            df2.lazy(),
+            [col("idx1")],
+            [col("idx2")],
+            JoinType::Left.into(),
+        )
         .filter(col("bar").eq(lit(5i32)))
         .collect()?;
 

@@ -55,6 +55,12 @@ pub enum JoinType {
     Anti,
 }
 
+impl From<JoinType> for JoinArgs {
+    fn from(value: JoinType) -> Self {
+        JoinArgs::new(value)
+    }
+}
+
 impl Display for JoinType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use JoinType::*;
