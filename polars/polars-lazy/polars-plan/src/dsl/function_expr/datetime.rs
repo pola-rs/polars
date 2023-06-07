@@ -181,7 +181,7 @@ pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
 pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Series> {
     let every = Duration::parse(every);
     let offset = Duration::parse(offset);
-    Ok(match s.dtype() {
+    let mut out = match s.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => s
@@ -201,7 +201,9 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
             .truncate(every, offset, None)?
             .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
-    })
+    };
+    out.set_sorted_flag(s.is_sorted_flag());
+    Ok(out)
 }
 
 #[cfg(feature = "date_offset")]
