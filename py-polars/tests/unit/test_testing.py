@@ -351,6 +351,20 @@ def test_assert_frame_equal_ignore_row_order() -> None:
         )
 
 
+def test_assert_frame_equal_list_of_float_tolerance() -> None:
+    df1 = pl.DataFrame({'a': [[0.2, 0.3]]}, schema={'a': pl.List(pl.Float64)}) 
+    df2 = pl.DataFrame({'a': [[0.2, 0.3000000000000001]]}, schema={'a': pl.List(pl.Float64)})
+
+    assert_frame_equal(df1, df2, atol=1e-5)
+    
+
+def test_assert_frame_equal_list_of_float_exact() -> None:
+    df1 = pl.DataFrame({'a': [[0.2, 0.3]]}), 
+    df2 = pl.DataFrame({'a': [[0.2, 0.3000000000000001]]}),
+
+    assert_frame_not_equal(df1, df2, check_exact=True)
+
+
 def test_assert_series_equal_int_overflow() -> None:
     # internally may call 'abs' if not check_exact, which can overflow on signed int
     s0 = pl.Series([-128], dtype=pl.Int8)
@@ -385,3 +399,17 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
     s1 = pl.Series(data1)
     s2 = pl.Series(data2)
     assert_series_not_equal(s1, s2)
+
+
+def test_assert_series_equal_list_of_float_tolerance() -> None:
+    s1 = pl.Series([[0.2, 0.3]])
+    s2 = pl.Series([[0.2, 0.3000000000000001]])
+
+    assert_series_equal(s1, s2, atol=1e-5)
+    
+
+def test_assert_series_equal_list_of_float_exact() -> None:
+    s1 = pl.Series([[0.2, 0.3]])
+    s2 = pl.Series([[0.2, 0.3000000000000001]])
+
+    assert_series_not_equal(s1, s2, check_exact=True)
