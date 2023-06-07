@@ -52,7 +52,7 @@ use crate::prelude::*;
 use crate::utils::{_set_partition_size, slice_slice, split_ca};
 use crate::POOL;
 
-pub fn default_join_ids() -> JoinOptIds {
+pub fn default_join_ids() -> ChunkJoinOptIds {
     #[cfg(feature = "chunked_ids")]
     {
         Either::Left(vec![])
@@ -239,14 +239,14 @@ impl DataFrame {
         let slice = args.slice;
         let (left_idx, right_idx) = ids;
         let materialize_left = || match left_idx {
-            JoinIds::Left(left_idx) => {
+            ChunkJoinIds::Left(left_idx) => {
                 let mut left_idx = &*left_idx;
                 if let Some((offset, len)) = slice {
                     left_idx = slice_slice(left_idx, offset, len);
                 }
                 unsafe { self._create_left_df_from_slice(left_idx, true, true) }
             }
-            JoinIds::Right(left_idx) => {
+            ChunkJoinIds::Right(left_idx) => {
                 let mut left_idx = &*left_idx;
                 if let Some((offset, len)) = slice {
                     left_idx = slice_slice(left_idx, offset, len);
@@ -256,7 +256,7 @@ impl DataFrame {
         };
 
         let materialize_right = || match right_idx {
-            JoinOptIds::Left(right_idx) => {
+            ChunkJoinOptIds::Left(right_idx) => {
                 let mut right_idx = &*right_idx;
                 if let Some((offset, len)) = slice {
                     right_idx = slice_slice(right_idx, offset, len);
@@ -267,7 +267,7 @@ impl DataFrame {
                     )
                 }
             }
-            JoinOptIds::Right(right_idx) => {
+            ChunkJoinOptIds::Right(right_idx) => {
                 let mut right_idx = &*right_idx;
                 if let Some((offset, len)) = slice {
                     right_idx = slice_slice(right_idx, offset, len);
@@ -304,7 +304,7 @@ impl DataFrame {
             right.as_single_chunk_par();
             s_right = s_right.rechunk();
         }
-        let ids = sort_or_hash_left(&s_left, &s_right, verbose);
+        let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation)?;
         left._finish_left_join(ids, &right.drop(s_right.name()).unwrap(), args)
     }
 

@@ -1,17 +1,19 @@
 use super::*;
 
-pub type LeftJoinIds = (JoinIds, JoinOptIds);
+pub(super) type JoinIds = Vec<IdxSize>;
+pub type LeftJoinIds = (ChunkJoinIds, ChunkJoinOptIds);
+pub type InnerJoinIds = (JoinIds, JoinIds);
 
 #[cfg(feature = "chunked_ids")]
-pub(super) type JoinIds = Either<Vec<IdxSize>, Vec<ChunkId>>;
+pub(super) type ChunkJoinIds = Either<Vec<IdxSize>, Vec<ChunkId>>;
 #[cfg(feature = "chunked_ids")]
-pub type JoinOptIds = Either<Vec<Option<IdxSize>>, Vec<Option<ChunkId>>>;
+pub type ChunkJoinOptIds = Either<Vec<Option<IdxSize>>, Vec<Option<ChunkId>>>;
 
 #[cfg(not(feature = "chunked_ids"))]
-pub type JoinOptIds = Vec<Option<IdxSize>>;
+pub type ChunkJoinOptIds = Vec<Option<IdxSize>>;
 
 #[cfg(not(feature = "chunked_ids"))]
-pub type JoinIds = Vec<IdxSize>;
+pub type ChunkJoinIds = Vec<IdxSize>;
 
 /// [ChunkIdx, DfIdx]
 pub type ChunkId = [IdxSize; 2];
@@ -119,6 +121,29 @@ impl JoinValidation {
         }
     }
 
+    pub(super) fn validate_probe(
+        &self,
+        s_left: &Series,
+        s_right: &Series,
+        build_shortest_table: bool,
+    ) -> PolarsResult<()> {
+        // the shortest relation is built
+        let swap = build_shortest_table && s_left.len() > s_right.len();
+
+        use JoinValidation::*;
+        // all rhs `Many`s are valid
+        // rhs `One`s need to be checked
+        let valid = match self.swap(swap) {
+            ManyToMany | OneToMany => true,
+            ManyToOne | OneToOne => {
+                let s = if swap { s_left } else { s_right };
+                s.n_unique()? == s.len()
+            }
+        };
+        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {self} validation ");
+        Ok(())
+    }
+
     pub(super) fn validate_build(
         &self,
         build_size: usize,
@@ -126,6 +151,9 @@ impl JoinValidation {
         swap: bool,
     ) -> PolarsResult<()> {
         use JoinValidation::*;
+
+        // all lhs `Many`s are valid
+        // lhs `One`s need to be checked
         let valid = match self.swap(swap) {
             ManyToMany | ManyToOne => true,
             OneToMany | OneToOne => build_size == expected_size,
