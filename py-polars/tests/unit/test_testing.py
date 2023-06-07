@@ -359,8 +359,8 @@ def test_assert_frame_equal_list_of_float_tolerance() -> None:
     
 
 def test_assert_frame_equal_list_of_float_exact() -> None:
-    df1 = pl.DataFrame({'a': [[0.2, 0.3]]}), 
-    df2 = pl.DataFrame({'a': [[0.2, 0.3000000000000001]]}),
+    df1 = pl.DataFrame({'a': [[0.2, 0.3]]}) 
+    df2 = pl.DataFrame({'a': [[0.2, 0.3000000000000001]]})
 
     assert_frame_not_equal(df1, df2, check_exact=True)
 
