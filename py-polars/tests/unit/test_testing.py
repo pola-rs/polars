@@ -393,7 +393,9 @@ def test_assert_frame_equal_ignore_row_order() -> None:
     ],
 )
 def test_assert_frame_equal_passes_assertion(
-        data1: dict[str, Any], data2: dict[str, Any], kwargs: Any,
+    data1: dict[str, Any],
+    data2: dict[str, Any],
+    kwargs: Any,
 ) -> None:
     df1 = pl.DataFrame(data=data1)
     df2 = pl.DataFrame(data=data2)
@@ -412,7 +414,9 @@ def test_assert_frame_equal_passes_assertion(
     ],
 )
 def test_assert_frame_equal_raises_assertion_error(
-        data1: dict[str, Any], data2: dict[str, Any], kwargs: Any,
+    data1: dict[str, Any],
+    data2: dict[str, Any],
+    kwargs: Any,
 ) -> None:
     df1 = pl.DataFrame(data=data1)
     df2 = pl.DataFrame(data=data2)
@@ -510,7 +514,9 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
     ],
 )
 def test_assert_series_equal_passes_assertion(
-        data1: list[Any], data2: list[Any], kwargs: Any,
+    data1: list[Any],
+    data2: list[Any],
+    kwargs: Any,
 ) -> None:
     s2 = pl.Series(data2)
     s1 = pl.Series(data1)
@@ -547,7 +553,9 @@ def test_assert_series_equal_passes_assertion(
     ],
 )
 def test_assert_series_equal_raises_assertion_error(
-        data1: list[Any], data2: list[Any], kwargs: Any,
+    data1: list[Any],
+    data2: list[Any],
+    kwargs: Any,
 ) -> None:
     s2 = pl.Series(data2)
     s1 = pl.Series(data1)

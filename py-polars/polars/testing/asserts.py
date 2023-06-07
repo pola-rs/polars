@@ -437,7 +437,9 @@ def _assert_series_nested_equal(
                     raise_assert_detail(
                         "Series",
                         f"Nested value mismatch (nans_compare_equal={nans_compare_equal})",
-                        s1, s2)
+                        s1,
+                        s2,
+                    )
             elif (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
                 raise_assert_detail("Series", "Nested value mismatch", s1, s2)
             elif len(s1) != len(s2):
