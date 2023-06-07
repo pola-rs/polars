@@ -316,7 +316,7 @@ def _assert_series_inner(
 ) -> None:
     """Compare Series dtype + values."""
     try:
-        if left.dtype.is_nested:
+        if left.dtype.is_nested and hasattr(left.dtype, "inner"):
             can_be_subtracted = hasattr(dtype_to_py_type(left.dtype.inner), "__sub__")
         else:
             can_be_subtracted = hasattr(dtype_to_py_type(left.dtype), "__sub__")
