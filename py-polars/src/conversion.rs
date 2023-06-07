@@ -11,6 +11,7 @@ use polars::io::avro::AvroCompression;
 use polars::io::ipc::IpcCompression;
 use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
+use polars_core::frame::hash_join::JoinValidation;
 use polars_core::frame::row::any_values_to_dtype;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::types::NativeType;
@@ -1260,6 +1261,23 @@ impl FromPyObject<'_> for Wrap<WindowMapping> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "side must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<JoinValidation> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "1:1" => JoinValidation::OneToOne,
+            "1:m" => JoinValidation::OneToMany,
+            "m:m" => JoinValidation::ManyToMany,
+            "m:1" => JoinValidation::ManyToOne,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "validate must be one of {{'m:m', 'm:1', '1:m', '1:1'}}, got {v}",
                 )))
             }
         };

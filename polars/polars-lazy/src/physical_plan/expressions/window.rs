@@ -5,7 +5,7 @@ use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::{
-    default_join_ids, private_left_join_multiple_keys, JoinOptIds,
+    default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
 };
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -555,7 +555,10 @@ impl PhysicalExpr for WindowExpr {
                             if groupby_columns.len() == 1 {
                                 // group key from right column
                                 let right = &keys[0];
-                                groupby_columns[0].hash_join_left(right).1
+                                groupby_columns[0]
+                                    .hash_join_left(right, JoinValidation::ManyToMany)
+                                    .unwrap()
+                                    .1
                             } else {
                                 let df_right = DataFrame::new_no_checks(keys);
                                 let df_left = DataFrame::new_no_checks(groupby_columns);
@@ -619,7 +622,7 @@ impl PhysicalExpr for WindowExpr {
     }
 }
 
-fn materialize_column(join_opt_ids: &JoinOptIds, out_column: &Series) -> Series {
+fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Series {
     #[cfg(feature = "chunked_ids")]
     {
         use polars_arrow::export::arrow::Either;

@@ -1,5 +1,6 @@
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use polars_core::frame::hash_join::JoinArgs;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
@@ -183,8 +184,7 @@ fn upsample_single_impl(
                         source,
                         &[index_col_name],
                         &[index_col_name],
-                        JoinType::Left,
-                        None,
+                        JoinArgs::new(JoinType::Left),
                     )
                 }
                 _ => polars_bail!(

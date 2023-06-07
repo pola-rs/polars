@@ -63,7 +63,11 @@ fn jit_insert_slice(
         Join {
             options:
                 JoinOptions {
-                    slice: Some((offset, len)),
+                    args:
+                        JoinArgs {
+                            slice: Some((offset, len)),
+                            ..
+                        },
                     ..
                 },
             ..

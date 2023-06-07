@@ -21,7 +21,12 @@ fn test_chunked_left_join() -> PolarsResult<()> {
     assert_eq!(band_instruments.n_chunks(), 2);
     assert_eq!(band_members.n_chunks(), 2);
 
-    let out = band_instruments.join(&band_members, ["name"], ["name"], JoinType::Left, None)?;
+    let out = band_instruments.join(
+        &band_members,
+        ["name"],
+        ["name"],
+        JoinArgs::new(JoinType::Left),
+    )?;
     let expected = df![
         "name" => ["john", "paul", "keith"],
         "plays" => ["guitar", "bass", "guitar"],
@@ -223,13 +228,13 @@ fn test_join_multiple_columns() {
 
     // now check the join with multiple columns
     let joined = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Left, None)
+        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Left.into())
         .unwrap();
     let ca = joined.column("ham").unwrap().utf8().unwrap();
     assert_eq!(Vec::from(ca), correct_ham);
     let joined_inner_hack = df_a.inner_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_inner = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Inner, None)
+        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Inner.into())
         .unwrap();
 
     assert!(joined_inner_hack
@@ -239,7 +244,7 @@ fn test_join_multiple_columns() {
 
     let joined_outer_hack = df_a.outer_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_outer = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Outer, None)
+        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Outer.into())
         .unwrap();
     assert!(joined_outer_hack
         .column("ham")
@@ -262,7 +267,7 @@ fn test_join_categorical() {
         .unwrap();
 
     let out = df_a
-        .join(&df_b, ["b"], ["bar"], JoinType::Left, None)
+        .join(&df_b, ["b"], ["bar"], JoinType::Left.into())
         .unwrap();
     assert_eq!(out.shape(), (6, 5));
     let correct_ham = &[
@@ -280,7 +285,7 @@ fn test_join_categorical() {
 
     // test dispatch
     for jt in [JoinType::Left, JoinType::Inner, JoinType::Outer] {
-        let out = df_a.join(&df_b, ["b"], ["bar"], jt, None).unwrap();
+        let out = df_a.join(&df_b, ["b"], ["bar"], jt.into()).unwrap();
         let out = out.column("b").unwrap();
         assert_eq!(out.dtype(), &DataType::Categorical(None));
     }
@@ -297,7 +302,7 @@ fn test_join_categorical() {
 
     df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
         .unwrap();
-    let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left, None);
+    let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left.into());
     assert!(out.is_err());
 }
 
@@ -391,11 +396,11 @@ fn test_join_err() -> PolarsResult<()> {
 
     // dtypes don't match, error
     assert!(df1
-        .join(&df2, vec!["a", "b"], vec!["a", "b"], JoinType::Left, None)
+        .join(&df2, vec!["a", "b"], vec!["a", "b"], JoinType::Left.into())
         .is_err());
     // length of join keys don't match error
     assert!(df1
-        .join(&df2, vec!["a"], vec!["a", "b"], JoinType::Left, None)
+        .join(&df2, vec!["a"], vec!["a", "b"], JoinType::Left.into())
         .is_err());
     Ok(())
 }
@@ -477,8 +482,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             &df_right,
             &["col1", "join_col2"],
             &["join_col1", "col2"],
-            JoinType::Inner,
-            None,
+            JoinType::Inner.into(),
         )
         .unwrap();
 
@@ -493,8 +497,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             &df_right,
             &["col1", "join_col2"],
             &["join_col1", "col2"],
-            JoinType::Left,
-            None,
+            JoinType::Left.into(),
         )
         .unwrap();
 
@@ -509,8 +512,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             &df_right,
             &["col1", "join_col2"],
             &["join_col1", "col2"],
-            JoinType::Outer,
-            None,
+            JoinType::Outer.into(),
         )
         .unwrap();
 
@@ -542,8 +544,7 @@ fn test_join_floats() -> PolarsResult<()> {
         &df_b,
         vec!["a", "c"],
         vec!["foo", "bar"],
-        JoinType::Left,
-        None,
+        JoinType::Left.into(),
     )?;
     assert_eq!(
         Vec::from(out.column("ham")?.utf8()?),
@@ -554,8 +555,7 @@ fn test_join_floats() -> PolarsResult<()> {
         &df_b,
         vec!["a", "c"],
         vec!["foo", "bar"],
-        JoinType::Outer,
-        None,
+        JoinType::Outer.into(),
     )?;
     assert_eq!(
         out.dtypes(),
@@ -610,7 +610,7 @@ fn test_4_threads_bit_offset() -> PolarsResult<()> {
     right_b.rename("b");
 
     let right_df = DataFrame::new(vec![right_a.into_series(), right_b.into_series()])?;
-    let out = left_df.join(&right_df, ["a", "b"], ["a", "b"], JoinType::Inner, None)?;
+    let out = left_df.join(&right_df, ["a", "b"], ["a", "b"], JoinType::Inner.into())?;
     assert_eq!(out.shape(), (1, 2));
     Ok(())
 }

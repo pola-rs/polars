@@ -178,8 +178,9 @@ pub fn _sort_or_hash_inner(
     s_left: &Series,
     s_right: &Series,
     _verbose: bool,
-) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
-    s_left.hash_join_inner(s_right)
+    validate: JoinValidation,
+) -> PolarsResult<(InnerJoinIds, bool)> {
+    s_left.hash_join_inner(s_right, validate)
 }
 
 #[cfg(feature = "performant")]
@@ -187,7 +188,8 @@ pub fn _sort_or_hash_inner(
     s_left: &Series,
     s_right: &Series,
     verbose: bool,
-) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
+    validate: JoinValidation,
+) -> PolarsResult<(InnerJoinIds, bool)> {
     // We check if keys are sorted.
     // - If they are we can do a sorted merge join
     // If one of the keys is not, it can still be faster to sort that key and use
@@ -199,13 +201,17 @@ pub fn _sort_or_hash_inner(
         .unwrap_or(1.0);
     let is_numeric = s_left.dtype().to_physical().is_numeric();
 
+    if validate.needs_checks() {
+        return s_left.hash_join_inner(s_right, validate);
+    }
+
     let no_nulls = s_left.null_count() == 0 && s_right.null_count() == 0;
     match (s_left.is_sorted_flag(), s_right.is_sorted_flag(), no_nulls) {
         (IsSorted::Ascending, IsSorted::Ascending, true) if is_numeric => {
             if verbose {
                 eprintln!("inner join: keys are sorted: use sorted merge join");
             }
-            (par_sorted_merge_inner_no_nulls(s_left, s_right), true)
+            Ok((par_sorted_merge_inner_no_nulls(s_left, s_right), true))
         }
         (IsSorted::Ascending, _, true)
             if is_numeric && size_factor_rhs < size_factor_acceptable =>
@@ -231,7 +237,7 @@ pub fn _sort_or_hash_inner(
                 });
             });
 
-            ((left, right), true)
+            Ok(((left, right), true))
         }
         (_, IsSorted::Ascending, true)
             if is_numeric && size_factor_lhs < size_factor_acceptable =>
@@ -258,19 +264,33 @@ pub fn _sort_or_hash_inner(
             });
 
             // set sorted to `false` as we descending sorted the left key.
-            ((left, right), false)
+            Ok(((left, right), false))
         }
-        _ => s_left.hash_join_inner(s_right),
+        _ => s_left.hash_join_inner(s_right, validate),
     }
 }
 
 #[cfg(not(feature = "performant"))]
-pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, _verbose: bool) -> LeftJoinIds {
-    s_left.hash_join_left(s_right)
+pub(super) fn sort_or_hash_left(
+    s_left: &Series,
+    s_right: &Series,
+    _verbose: bool,
+    validate: JoinValidation,
+) -> PolarsResult<LeftJoinIds> {
+    s_left.hash_join_left(s_right, validate)
 }
 
 #[cfg(feature = "performant")]
-pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool) -> LeftJoinIds {
+pub(super) fn sort_or_hash_left(
+    s_left: &Series,
+    s_right: &Series,
+    verbose: bool,
+    validate: JoinValidation,
+) -> PolarsResult<LeftJoinIds> {
+    if validate.needs_checks() {
+        return s_left.hash_join_left(s_right, validate);
+    }
+
     let size_factor_rhs = s_right.len() as f32 / s_left.len() as f32;
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
         .map(|s| s.parse::<f32>().unwrap())
@@ -285,7 +305,7 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
                 eprintln!("left join: keys are sorted: use sorted merge join");
             }
             let (left_idx, right_idx) = par_sorted_merge_left(s_left, s_right);
-            to_left_join_ids(left_idx, right_idx)
+            Ok(to_left_join_ids(left_idx, right_idx))
         }
         (IsSorted::Ascending, _, true)
             if is_numeric && size_factor_rhs < size_factor_acceptable =>
@@ -312,9 +332,9 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
                 });
             });
 
-            to_left_join_ids(left, right)
+            Ok(to_left_join_ids(left, right))
         }
         // don't reverse sort a left join key yet. Have to figure out how to set sorted flag
-        _ => s_left.hash_join_left(s_right),
+        _ => s_left.hash_join_left(s_right, validate),
     }
 }

@@ -5475,6 +5475,7 @@ class DataFrame:
         left_on: str | Expr | Sequence[str | Expr] | None = None,
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
+        validate: str = "m:m",
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -5493,6 +5494,22 @@ class DataFrame:
             Name(s) of the right join column(s).
         suffix
             Suffix to append to columns with a duplicate name.
+        validate: {'m:m', 'm:1', '1:m', 'm:m'}
+            Checks if join is of specified type.
+
+                * *many_to_many*
+                    “m:m”: default, does not result in checks
+                * *one_to_one*
+                    “1:1”: check if join keys are unique in both left and right datasets
+                * *one_to_many*
+                    “1:m”: check if join keys are unique in left dataset
+                * *many_to_one*
+                    “m:1”: check if join keys are unique in right dataset
+
+            .. note::
+
+                - This is currently not supported the streaming engine.
+                - This is only supported when joined by single columns.
 
         Returns
         -------
@@ -5593,6 +5610,7 @@ class DataFrame:
                 on=on,
                 how=how,
                 suffix=suffix,
+                validate=validate,
             )
             .collect(no_optimization=True)
         )

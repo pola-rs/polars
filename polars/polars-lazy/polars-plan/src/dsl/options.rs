@@ -1,6 +1,4 @@
-use std::borrow::Cow;
-
-use polars_core::prelude::JoinType;
+use polars_core::prelude::{JoinArgs, JoinType};
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -43,9 +41,7 @@ impl Default for StrptimeOptions {
 pub struct JoinOptions {
     pub allow_parallel: bool,
     pub force_parallel: bool,
-    pub how: JoinType,
-    pub suffix: Cow<'static, str>,
-    pub slice: Option<(i64, usize)>,
+    pub args: JoinArgs,
     /// Proxy of the number of rows in both sides of the joins
     /// Holds `(Option<known_size>, estimated_size)`
     pub rows_left: (Option<usize>, usize),
@@ -57,9 +53,7 @@ impl Default for JoinOptions {
         JoinOptions {
             allow_parallel: true,
             force_parallel: false,
-            how: JoinType::Left,
-            suffix: "_right".into(),
-            slice: None,
+            args: JoinArgs::new(JoinType::Left),
             rows_left: (None, usize::MAX),
             rows_right: (None, usize::MAX),
         }

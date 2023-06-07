@@ -409,7 +409,7 @@ impl LogicalPlan {
                     r#"JOIN {}
                     left {:?};
                     right: {:?}"#,
-                    options.how, left_on, right_on
+                    options.args.how, left_on, right_on
                 );
                 let current_node = DotNode {
                     branch,

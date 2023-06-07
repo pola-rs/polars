@@ -1,14 +1,14 @@
+use polars_core::frame::hash_join::JoinArgs;
+
 use super::*;
 
 pub struct JoinExec {
     input_left: Option<Box<dyn Executor>>,
     input_right: Option<Box<dyn Executor>>,
-    how: JoinType,
     left_on: Vec<Arc<dyn PhysicalExpr>>,
     right_on: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
-    suffix: Cow<'static, str>,
-    slice: Option<(i64, usize)>,
+    args: JoinArgs,
 }
 
 impl JoinExec {
@@ -16,22 +16,18 @@ impl JoinExec {
     pub(crate) fn new(
         input_left: Box<dyn Executor>,
         input_right: Box<dyn Executor>,
-        how: JoinType,
         left_on: Vec<Arc<dyn PhysicalExpr>>,
         right_on: Vec<Arc<dyn PhysicalExpr>>,
         parallel: bool,
-        suffix: Cow<'static, str>,
-        slice: Option<(i64, usize)>,
+        args: JoinArgs,
     ) -> Self {
         JoinExec {
             input_left: Some(input_left),
             input_right: Some(input_right),
-            how,
             left_on,
             right_on,
             parallel,
-            suffix,
-            slice,
+            args,
         }
     }
 }
@@ -112,7 +108,7 @@ impl Executor for JoinExec {
             // we must ensure that we use the right units
             #[cfg(feature = "asof_join")]
             {
-                if let JoinType::AsOf(options) = &mut self.how {
+                if let JoinType::AsOf(options) = &mut self.args.how {
                     use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
                     if let Some(tol) = &options.tolerance_str {
                         let duration = polars_time::Duration::parse(tol);
@@ -152,15 +148,13 @@ impl Executor for JoinExec {
                 &df_right,
                 left_on_series,
                 right_on_series,
-                self.how.clone(),
-                Some(self.suffix.clone().into_owned()),
-                self.slice,
+                self.args.clone(),
                 true,
                 state.verbose(),
             );
 
             if state.verbose() {
-                eprintln!("{:?} join dataframes finished", self.how);
+                eprintln!("{:?} join dataframes finished", self.args.how);
             };
             df
 

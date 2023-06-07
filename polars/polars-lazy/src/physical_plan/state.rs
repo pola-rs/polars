@@ -6,7 +6,7 @@ use bitflags::bitflags;
 use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::frame::groupby::GroupsProxy;
-use polars_core::frame::hash_join::JoinOptIds;
+use polars_core::frame::hash_join::ChunkJoinOptIds;
 use polars_core::prelude::*;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
 use polars_plan::logical_plan::FileFingerPrint;
@@ -15,7 +15,7 @@ use polars_plan::logical_plan::FileFingerPrint;
 use super::file_cache::FileCache;
 use crate::physical_plan::node_timer::NodeTimer;
 
-pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, JoinOptIds>>>;
+pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
 pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
 
 bitflags! {

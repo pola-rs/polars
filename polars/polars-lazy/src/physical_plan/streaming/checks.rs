@@ -1,4 +1,4 @@
-use polars_core::prelude::JoinType;
+use polars_core::prelude::{JoinArgs, JoinType};
 use polars_plan::prelude::*;
 
 pub(super) fn is_streamable_sort(args: &SortArguments) -> bool {
@@ -61,11 +61,12 @@ pub(super) fn all_column(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
         .all(|node| matches!(expr_arena.get(*node), AExpr::Column(_)))
 }
 
-pub(super) fn streamable_join(join_type: &JoinType) -> bool {
-    match join_type {
+pub(super) fn streamable_join(args: &JoinArgs) -> bool {
+    let supported = match args.how {
         #[cfg(feature = "cross_join")]
         JoinType::Cross => true,
         JoinType::Inner | JoinType::Left => true,
         _ => false,
-    }
+    };
+    supported && !args.validation.needs_checks()
 }

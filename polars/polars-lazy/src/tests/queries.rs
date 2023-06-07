@@ -268,7 +268,7 @@ fn test_lazy_query_4() {
             base_df,
             [col("uid"), col("day")],
             [col("uid"), col("day")],
-            JoinType::Inner,
+            JoinType::Inner.into(),
         )
         .collect()
         .unwrap();
@@ -368,7 +368,7 @@ fn test_lazy_query_9() -> PolarsResult<()> {
             cities.lazy(),
             [col("Sales.City")],
             [col("Cities.City")],
-            JoinType::Inner,
+            JoinType::Inner.into(),
         )
         .groupby([col("Cities.Country")])
         .agg([col("Sales.Amount").sum().alias("sum")])

@@ -569,3 +569,23 @@ def test_outer_join_list_() -> None:
         "vals": [None, None, []],
         "vals_right": [[], [4.0], None],
     }
+
+
+def test_join_validation() -> None:
+    a = pl.DataFrame({"a": [1, 1, 1, 2]})
+
+    b = pl.DataFrame({"a": [2]})
+
+    assert a.join(b, on="a", validate="m:m")["a"].to_list() == [2]
+    assert a.join(b, on="a", validate="m:1")["a"].to_list() == [2]
+    # swap the tables
+    assert b.join(a, on="a", validate="1:m")["a"].to_list() == [2]
+
+    with pytest.raises(pl.ComputeError):
+        a.join(b, on="a", validate="1:m")
+    with pytest.raises(pl.ComputeError):
+        a.join(b, on="a", validate="1:1")
+    with pytest.raises(pl.ComputeError):
+        b.join(a, on="a", validate="m:1")
+    with pytest.raises(pl.ComputeError):
+        b.join(a, on="a", validate="1:1")
