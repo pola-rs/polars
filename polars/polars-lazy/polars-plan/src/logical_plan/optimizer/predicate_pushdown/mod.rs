@@ -433,7 +433,7 @@ impl PredicatePushDown {
                         // join might create null values.
                         || has_aexpr(predicate, expr_arena, checks_nulls)
                         // only these join types produce null values
-                        && join_produces_null(&options.how) {
+                        && join_produces_null(&options.args.how) {
                         local_predicates.push(predicate);
                         continue;
                     }
@@ -466,7 +466,7 @@ impl PredicatePushDown {
                             filter_right = true;
                         }
                     }
-                    match (filter_left, filter_right, &options.how) {
+                    match (filter_left, filter_right, &options.args.how) {
                         // if not pushed down on one of the tables we have to do it locally.
                         (false, false, _) |
                         // if left join and predicate only available in right table,

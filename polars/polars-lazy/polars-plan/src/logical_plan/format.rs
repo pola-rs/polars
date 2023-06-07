@@ -237,7 +237,7 @@ impl LogicalPlan {
                 options,
                 ..
             } => {
-                let how = &options.how;
+                let how = &options.args.how;
                 write!(f, "{:indent$}{how} JOIN:", "")?;
                 write!(f, "\n{:indent$}LEFT PLAN ON: {left_on:?}", "")?;
                 input_left._format(f, sub_indent)?;
