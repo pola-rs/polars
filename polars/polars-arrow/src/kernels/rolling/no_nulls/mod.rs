@@ -127,13 +127,6 @@ where
     ((sum_of_squares / count) - mean * mean) / (count - T::one()) * count
 }
 
-pub(crate) fn compute_mean_weights<T>(values: &[T], weights: &[T]) -> T
-where
-    T: Float + std::iter::Sum<T>,
-{
-    values.iter().zip(weights).map(|(v, w)| *v * *w).sum::<T>() / T::from(values.len()).unwrap()
-}
-
 pub(crate) fn compute_sum_weights<T>(values: &[T], weights: &[T]) -> T
 where
     T: std::iter::Sum<T> + Copy + std::ops::Mul<Output = T>,
