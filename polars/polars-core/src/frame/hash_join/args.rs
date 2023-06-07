@@ -103,7 +103,7 @@ pub enum JoinValidation {
 }
 
 impl JoinValidation {
-    pub(super) fn needs_checks(&self) -> bool {
+    pub fn needs_checks(&self) -> bool {
         !matches!(self, JoinValidation::ManyToMany)
     }
 
@@ -150,7 +150,7 @@ impl JoinValidation {
                 s.n_unique()? == s.len()
             }
         };
-        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {self} validation ");
+        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
         Ok(())
     }
 
@@ -168,7 +168,7 @@ impl JoinValidation {
             ManyToMany | ManyToOne => true,
             OneToMany | OneToOne => build_size == expected_size,
         };
-        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {self} validation ");
+        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
         Ok(())
     }
 }

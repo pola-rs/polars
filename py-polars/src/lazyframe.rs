@@ -14,6 +14,7 @@ use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Sch
 use polars::time::*;
 use polars_core::cloud;
 use polars_core::frame::explode::MeltArgs;
+use polars_core::frame::hash_join::JoinValidation;
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
@@ -627,6 +628,7 @@ impl PyLazyFrame {
         force_parallel: bool,
         how: Wrap<JoinType>,
         suffix: String,
+        validate: Wrap<JoinValidation>,
     ) -> PyResult<Self> {
         let ldf = self.ldf.clone();
         let other = other.ldf;
@@ -647,6 +649,7 @@ impl PyLazyFrame {
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
             .how(how.0)
+            .validate(validate.0)
             .suffix(suffix)
             .finish()
             .into())
