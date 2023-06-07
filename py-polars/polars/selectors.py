@@ -88,34 +88,64 @@ class _selector_proxy_(Expr):
 
     def __add__(self, other: Any) -> Expr:  # type: ignore[override]
         # similar to how python sets + == |
-        return self.__or__(other)
+        if isinstance(other, _selector_proxy_):
+            return self.__or__(other)
+        else:
+            return self.as_expr().__add__(other)
 
     def __radd__(self, other: Any) -> Expr:  # type: ignore[override]
         # similar to how python sets + == |
-        return self.__or__(other)
+        if isinstance(other, _selector_proxy_):
+            return self.__or__(other)
+        else:
+            return self.as_expr().__radd__(other)
 
     def __sub__(self, other: Any) -> Expr:  # type: ignore[override]
-        return _selector_proxy_(
-            self.meta._as_selector().meta._selector_sub(other), name="sub"
-        )
+        if isinstance(other, _selector_proxy_):
+            return _selector_proxy_(
+                self.meta._as_selector().meta._selector_sub(other), name="sub"
+            )
+        else:
+            return self.as_expr().__sub__(other)
 
     def __and__(self, other: Any) -> Expr:  # type: ignore[override]
-        return _selector_proxy_(
-            self.meta._as_selector().meta._selector_and(other), name="and"
-        )
+        if isinstance(other, _selector_proxy_):
+            return _selector_proxy_(
+                self.meta._as_selector().meta._selector_and(other), name="and"
+            )
+        else:
+            return self.as_expr().__and__(other)
 
     def __or__(self, other: Any) -> Expr:  # type: ignore[override]
-        return _selector_proxy_(
-            self.meta._as_selector().meta._selector_add(other), name="or"
-        )
+        if isinstance(other, _selector_proxy_):
+            return _selector_proxy_(
+                self.meta._as_selector().meta._selector_add(other), name="or"
+            )
+        else:
+            return self.as_expr().__or__(other)
 
     def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
-        # order operation doesn't matter
-        return self.__and__(other)
+        # order of operation doesn't matter
+        if isinstance(other, _selector_proxy_):
+            return self.__and__(other)
+        else:
+            return self.as_expr().__rand__(other)
 
     def __ror__(self, other: Any) -> Expr:  # type: ignore[override]
-        # order operation doesn't matter
-        return self.__or__(other)
+        # order of operation doesn't matter
+        if isinstance(other, _selector_proxy_):
+            return self.__or__(other)
+        else:
+            return self.as_expr().__ror__(other)
+
+    def as_expr(self) -> Expr:
+        """
+        Materialize the ``selector`` into a normal expression.
+
+        This ensures that the operators ``|``, ``&``, ``+`` and ``-``
+        are applied on the data and not no the selector sets.
+        """
+        return Expr._from_pyexpr(self._pyexpr)
 
 
 def _re_string(string: str | Collection[str]) -> str:

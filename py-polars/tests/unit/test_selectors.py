@@ -2,6 +2,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.testing import assert_frame_equal
 
 
 @pytest.fixture()
@@ -253,3 +254,15 @@ def test_selector_sets(df: pl.DataFrame) -> None:
         "opp": pl.Datetime("ms"),
         "qqR": pl.Utf8,
     }
+
+
+def test_selector_dispatch_default_operator() -> None:
+    df = pl.DataFrame({"a": [1, 1], "b": [2, 2], "abc": [3, 3]})
+    out = df.select((cs.numeric() & ~cs.by_name("abc")) + 1)
+    expected = pl.DataFrame(
+        {
+            "a": [2, 2],
+            "b": [3, 3],
+        }
+    )
+    assert_frame_equal(out, expected)
