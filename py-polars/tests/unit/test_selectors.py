@@ -245,12 +245,15 @@ def test_selector_sets(df: pl.DataFrame) -> None:
         "Lmn": pl.Duration,
     }
 
-    # SET A + SET B (is OR)
-    assert df.select(cs.temporal() + cs.string() + cs.starts_with("e")).schema == {
+    # COMPLEMENT SET
+    assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
+        "abc": pl.UInt16,
+        "bbb": pl.UInt32,
+        "cde": pl.Float64,
+        "def": pl.Float32,
         "eee": pl.Boolean,
-        "ghi": pl.Time,
+        "fgg": pl.Boolean,
         "JJK": pl.Date,
-        "Lmn": pl.Duration,
         "opp": pl.Datetime("ms"),
         "qqR": pl.Utf8,
     }

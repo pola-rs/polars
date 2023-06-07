@@ -86,20 +86,6 @@ class _selector_proxy_(Expr):
         str_params = ",".join(f"{k}={v!r}" for k, v in (params or {}).items())
         return f"{not_}s.{self._attrs['name']}({str_params})"
 
-    def __add__(self, other: Any) -> Expr:  # type: ignore[override]
-        # similar to how python sets + == |
-        if isinstance(other, _selector_proxy_):
-            return self.__or__(other)
-        else:
-            return self.as_expr().__add__(other)
-
-    def __radd__(self, other: Any) -> Expr:  # type: ignore[override]
-        # similar to how python sets + == |
-        if isinstance(other, _selector_proxy_):
-            return self.__or__(other)
-        else:
-            return self.as_expr().__radd__(other)
-
     def __sub__(self, other: Any) -> Expr:  # type: ignore[override]
         if isinstance(other, _selector_proxy_):
             return _selector_proxy_(
