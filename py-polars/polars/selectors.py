@@ -89,7 +89,7 @@ class _selector_proxy_(Expr):
     # --------------------------------------------------------------------------------
     # Note: before offering operator support we need a new first-class expression
     # construct on the Rust side that can represent combinatorial selections, eg:
-    # >>> (cs.starts_with("foo") | s.ends_with("bar")) & ~cs.of_type(pl.Utf8)
+    # >>> (cs.starts_with("foo") | cs.ends_with("bar")) & ~cs.of_type(pl.Utf8)
     # --------------------------------------------------------------------------------
     # Consequently the following operators are reserved for this future usage.
     # --------------------------------------------------------------------------------
