@@ -390,6 +390,12 @@ def test_assert_frame_equal_ignore_row_order() -> None:
             {"rtol": 1},
             id="list_of_float_integer_rtol",
         ),
+        pytest.param(
+            {"a": [[None, 1.3]]},
+            {"a": [[None, 0.9]]},
+            {"rtol": 1},
+            id="list_of_none_and_float_integer_rtol",
+        ),
     ],
 )
 def test_assert_frame_equal_passes_assertion(
@@ -410,6 +416,24 @@ def test_assert_frame_equal_passes_assertion(
             {"a": [[0.2, 0.3000000000000001]]},
             {"check_exact": True},
             id="list_of_float_check_exact",
+        ),
+        pytest.param(
+            {"a": [[0.2, 0.3]]},
+            {"a": [[0.2, 0.300001]]},
+            {"atol": 1e-15, "rtol": 0},
+            id="list_of_float_too_low_atol",
+        ),
+        pytest.param(
+            {"a": [[0.2, 0.3]]},
+            {"a": [[0.2, 0.30000001]]},
+            {"atol": -1, "rtol": 0},
+            id="list_of_float_negative_atol",
+        ),
+        pytest.param(
+            {"a": [[None, 1.3]]},
+            {"a": [[None, 0.9]]},
+            {"rtol": 1, "nans_compare_equal": False},
+            id="list_of_none_and_float_integer_rtol",
         ),
     ],
 )
@@ -492,12 +516,6 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
             [[0.2, 0.301]],
             {"rtol": 0.1},
             id="list_of_float_high_rtol",
-        ),
-        pytest.param(
-            [[0.2, 1.3]],
-            [[0.2, 0.9]],
-            {"rtol": 1},
-            id="list_of_float_integer_rtol",
         ),
         pytest.param(
             [[0.2, 1.3]],
