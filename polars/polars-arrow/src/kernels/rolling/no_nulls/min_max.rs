@@ -96,7 +96,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
             (None, None) => {}
         }
 
-        return self.min;
+        self.min;
     }
 }
 
@@ -176,7 +176,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
             (None, None) => {}
         }
 
-        return self.max;
+        self.max;
     }
 }
 
