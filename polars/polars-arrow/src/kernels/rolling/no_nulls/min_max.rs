@@ -19,15 +19,16 @@ impl<'a, T: NativeType> RollingAggWindowNoNulls<'a, T> for SortedMinMax<'a, T> {
 }
 
 #[inline]
-unsafe fn get_min_and_ix<T>(slice: &[T], start: usize, end:usize) -> Option<(usize, &T)> 
+unsafe fn get_min_and_ix<T>(slice: &[T], start: usize, end: usize) -> Option<(usize, &T)>
 where
-    T: NativeType + IsFloat + PartialOrd {
+    T: NativeType + IsFloat + PartialOrd,
+{
     slice
-    .get_unchecked(start..end)
-    .iter()
-    .enumerate()
-    .rev()
-    .min_by(|&a, &b| compare_fn_nan_min(a.1, b.1))
+        .get_unchecked(start..end)
+        .iter()
+        .enumerate()
+        .rev()
+        .min_by(|&a, &b| compare_fn_nan_min(a.1, b.1))
 }
 
 pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
@@ -56,58 +57,59 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        let entering_start = std::cmp::max(self.last_end, start);
-        let entering_min = get_min_and_ix(self.slice, entering_start, end);
+        self.last_start = start; // Don't care where the last one started
+        let old_last_end = self.last_end; // But we need this
+        self.last_end = end;
 
-        // The min of values before the entering values is guaranteed to be the previous min if its latest occurrence
-        // didn't drop out of the window. Otherwise we need the min of the values between the current start and the previous end
-        // if the last min wasn't there.
-        let tmp_min = self.min.clone();
-        let prev_min = match self.min_ix < start {
-            false => Some((self.min_ix - self.last_start, &tmp_min)), 
-            // Get the min of the overlapping values if the previous min isn't in them
-            true => get_min_and_ix(self.slice, start, self.last_end)
-        };
-        match (prev_min, entering_min) {
-            // Nothing in the entering window
-            (Some(pm), None) => {
-                self.min = *pm.1;
-                self.min_ix = self.last_start + pm.0;
-            }
-            // Nothing in the previous window (moved past it entirely)
-            (None, Some(em)) => {
-                self.min = *em.1;
-                self.min_ix = entering_start + em.0;
-            }
+        let entering_start = std::cmp::max(old_last_end, start);
+        let entering = get_min_and_ix(self.slice, entering_start, end);
+
+        if entering.is_some_and(|em| compare_fn_nan_min(&self.min, em.1).is_ge()) {
+            // If the entering min <= the current min return early, since no value in the overlap can be smaller than either.
+            self.min = *entering.unwrap().1;
+            self.min_ix = entering_start + entering.unwrap().0;
+            return self.min;
+        } else if self.min_ix >= start {
+            // If the entering min isn't the smallest but the current min is between start and end we can still ignore the overlap
+            return self.min;
+        }
+        // Otherwise get the min of the overlapping window and the entering min
+        match (get_min_and_ix(self.slice, start, old_last_end), entering) {
             (Some(pm), Some(em)) => {
-                // Take the entering min to update the index even if it's equal
-                if matches!(compare_fn_nan_min(pm.1, em.1), Ordering::Greater) {
+                if compare_fn_nan_min(pm.1, em.1).is_ge() {
                     self.min = *em.1;
                     self.min_ix = entering_start + em.0;
                 } else {
                     self.min = *pm.1;
-                    self.min_ix = self.last_start + pm.0;
+                    self.min_ix = start + pm.0;
                 }
             }
-            // Reaching here implies a zero-length new window not overlapping with the previous
-            (_, _) => {}
+            (Some(pm), None) => {
+                self.min = *pm.1;
+                self.min_ix = start + pm.0;
+            }
+            (None, Some(em)) => {
+                self.min = *em.1;
+                self.min_ix = entering_start + em.0;
+            }
+            // We shouldn't reach this, but it means
+            (None, None) => {}
         }
 
-        self.last_start = start;
-        self.last_end = end;
         return self.min;
     }
 }
 
 #[inline]
-unsafe fn get_max_and_ix<T>(slice: &[T], start: usize, end:usize) -> Option<(usize, &T)> 
+unsafe fn get_max_and_ix<T>(slice: &[T], start: usize, end: usize) -> Option<(usize, &T)>
 where
-    T: NativeType + IsFloat + PartialOrd {
+    T: NativeType + IsFloat + PartialOrd,
+{
     slice
-    .get_unchecked(start..end)
-    .iter()
-    .enumerate()
-    .max_by(|&a, &b| compare_fn_nan_max(a.1, b.1))
+        .get_unchecked(start..end)
+        .iter()
+        .enumerate()
+        .max_by(|&a, &b| compare_fn_nan_max(a.1, b.1))
 }
 
 pub struct MaxWindow<'a, T: NativeType> {
@@ -135,40 +137,45 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        // See min for explanation of below. It's the same
-        let entering_start = std::cmp::max(self.last_end, start);
-        let entering_max = get_max_and_ix(self.slice, entering_start, end);
+        self.last_start = start; // Don't care where the last one started
+        let old_last_end = self.last_end; // But we need this
+        self.last_end = end;
 
-        let tmp_max = self.max.clone();
-        let prev_max = match self.max_ix < start {
-            false => Some((self.max_ix - self.last_start, &tmp_max)), 
-            true => get_max_and_ix(self.slice, start, self.last_end)
-        };
-        match (prev_max, entering_max) {
+        let entering_start = std::cmp::max(old_last_end, start);
+        let entering = get_max_and_ix(self.slice, entering_start, end);
+
+        if entering.is_some_and(|em| compare_fn_nan_max(&self.max, em.1).is_le()) {
+            // If the entering max >= the current max return early, since no value in the overlap can be larger than either.
+            self.max = *entering.unwrap().1;
+            self.max_ix = entering_start + entering.unwrap().0;
+            return self.max;
+        } else if self.max_ix >= start {
+            // If the entering max isn't the largest but the current max is between start and end we can still ignore the overlap
+            return self.max;
+        }
+        // Otherwise get the max of the overlapping window and the entering max
+        match (get_max_and_ix(self.slice, start, old_last_end), entering) {
+            (Some(pm), Some(em)) => {
+                if compare_fn_nan_max(pm.1, em.1).is_le() {
+                    self.max = *em.1;
+                    self.max_ix = entering_start + em.0;
+                } else {
+                    self.max = *pm.1;
+                    self.max_ix = start + pm.0;
+                }
+            }
             (Some(pm), None) => {
                 self.max = *pm.1;
-                self.max_ix = self.last_start + pm.0;
+                self.max_ix = start + pm.0;
             }
             (None, Some(em)) => {
                 self.max = *em.1;
                 self.max_ix = entering_start + em.0;
             }
-            (Some(pm), Some(em)) => {
-                // Take the entering max to update the index even if it's equal
-                if matches!(compare_fn_nan_max(pm.1, em.1), Ordering::Less) {
-                    self.max = *em.1;
-                    self.max_ix = entering_start + em.0;
-                } else {
-                    self.max = *pm.1;
-                    self.max_ix = self.last_start + pm.0;
-                }
-            }
-            // We shouldn't actually reach this
-            (_, _) => {}
+            // We shouldn't reach this, but it means
+            (None, None) => {}
         }
 
-        self.last_start = start;
-        self.last_end = end;
         return self.max;
     }
 }
