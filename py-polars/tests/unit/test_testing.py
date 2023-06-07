@@ -351,20 +351,69 @@ def test_assert_frame_equal_ignore_row_order() -> None:
         )
 
 
-def test_assert_frame_equal_list_of_float_tolerance() -> None:
-    df1 = pl.DataFrame({"a": [[0.2, 0.3]]}, schema={"a": pl.List(pl.Float64)})
-    df2 = pl.DataFrame(
-        {"a": [[0.2, 0.3000000000000001]]}, schema={"a": pl.List(pl.Float64)}
-    )
+@pytest.mark.parametrize(
+    ("data1", "data2", "kwargs"),
+    [
+        pytest.param(
+            {"a": [[0.2, 0.3]]},
+            {"a": [[0.2, 0.300001]]},
+            {"atol": 1e-5},
+            id="list_of_float_low_atol",
+        ),
+        pytest.param(
+            {"a": [[0.2, 0.3]]},
+            {"a": [[0.2, 0.31]]},
+            {"atol": 0.1},
+            id="list_of_float_high_atol",
+        ),
+        pytest.param(
+            {"a": [[0.2, 1.3]]},
+            {"a": [[0.2, 0.9]]},
+            {"atol": 1},
+            id="list_of_float_integer_atol",
+        ),
+        pytest.param(
+            {"a": [[0.2, 0.3]]},
+            {"a": [[0.2, 0.300000001]]},
+            {"rtol": 1e-5},
+            id="list_of_float_low_rtol",
+        ),
+        pytest.param(
+            {"a": [[0.2, 0.3]]},
+            {"a": [[0.2, 0.301]]},
+            {"rtol": 0.1},
+            id="list_of_float_high_rtol",
+        ),
+        pytest.param(
+            {"a": [[0.2, 1.3]]},
+            {"a": [[0.2, 0.9]]},
+            {"rtol": 1},
+            id="list_of_float_integer_rtol",
+        ),
+    ],
+)
+def test_assert_frame_equal_passes_assertion(data1, data2, kwargs) -> None:
+    df1 = pl.DataFrame(data=data1)
+    df2 = pl.DataFrame(data=data2)
+    assert_frame_equal(df1, df2, **kwargs)
 
-    assert_frame_equal(df1, df2, atol=1e-5)
 
-
-def test_assert_frame_equal_list_of_float_exact() -> None:
-    df1 = pl.DataFrame({"a": [[0.2, 0.3]]})
-    df2 = pl.DataFrame({"a": [[0.2, 0.3000000000000001]]})
-
-    assert_frame_not_equal(df1, df2, check_exact=True)
+@pytest.mark.parametrize(
+    ("data1", "data2", "kwargs"),
+    [
+        pytest.param(
+            {"a": [[0.2, 0.3]]},
+            {"a": [[0.2, 0.3000000000000001]]},
+            {"check_exact": True},
+            id="list_of_float_check_exact",
+        ),
+    ],
+)
+def test_assert_frame_equal_raises_assertion_error(data1, data2, kwargs) -> None:
+    df1 = pl.DataFrame(data=data1)
+    df2 = pl.DataFrame(data=data2)
+    with pytest.raises(AssertionError):
+        assert_frame_equal(df1, df2, **kwargs)
 
 
 def test_assert_series_equal_int_overflow() -> None:
@@ -403,15 +452,96 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
     assert_series_not_equal(s1, s2)
 
 
-def test_assert_series_equal_list_of_float_tolerance() -> None:
-    s1 = pl.Series([[0.2, 0.3]])
-    s2 = pl.Series([[0.2, 0.3000000000000001]])
+@pytest.mark.parametrize(
+    ("data1", "data2", "kwargs"),
+    [
+        pytest.param(
+            [[0.2, 0.3]],
+            [[0.2, 0.3000000000000001]],
+            {"atol": 1e-15},
+            id="list_of_float_low_atol",
+        ),
+        pytest.param(
+            [[0.2, 0.3]],
+            [[0.2, 0.31]],
+            {"atol": 0.1},
+            id="list_of_float_high_atol",
+        ),
+        pytest.param(
+            [[0.2, 1.3]],
+            [[0.2, 0.9]],
+            {"atol": 1},
+            id="list_of_float_integer_atol",
+        ),
+        pytest.param(
+            [[0.2, 0.3]],
+            [[0.2, 0.300000001]],
+            {"rtol": 1e-15},
+            id="list_of_float_low_rtol",
+        ),
+        pytest.param(
+            [[0.2, 0.3]],
+            [[0.2, 0.301]],
+            {"rtol": 0.1},
+            id="list_of_float_high_rtol",
+        ),
+        pytest.param(
+            [[0.2, 1.3]],
+            [[0.2, 0.9]],
+            {"rtol": 1},
+            id="list_of_float_integer_rtol",
+        ),
+        pytest.param(
+            [[0.2, 1.3]],
+            [[0.2, 0.9]],
+            {"rtol": 1},
+            id="list_of_float_integer_rtol",
+        ),
+        pytest.param(
+            [[None, 1.3]],
+            [[None, 0.9]],
+            {"rtol": 1},
+            id="list_of_none_and_float_integer_rtol",
+        ),
+    ],
+)
+def test_assert_series_equal_passes_assertion(data1, data2, kwargs) -> None:
+    s2 = pl.Series(data2)
+    s1 = pl.Series(data1)
+    assert_series_equal(s1, s2, **kwargs)
 
-    assert_series_equal(s1, s2, atol=1e-5)
 
-
-def test_assert_series_equal_list_of_float_exact() -> None:
-    s1 = pl.Series([[0.2, 0.3]])
-    s2 = pl.Series([[0.2, 0.3000000000000001]])
-
-    assert_series_not_equal(s1, s2, check_exact=True)
+@pytest.mark.parametrize(
+    ("data1", "data2", "kwargs"),
+    [
+        pytest.param(
+            [[0.2, 0.3]],
+            [[0.2, 0.3000000000000001]],
+            {"check_exact": True},
+            id="list_of_float_check_exact",
+        ),
+        pytest.param(
+            [[0.2, 0.3]],
+            [[0.2, 0.300001]],
+            {"atol": 1e-15, "rtol": 0},
+            id="list_of_float_too_low_atol",
+        ),
+        pytest.param(
+            [[0.2, 0.3]],
+            [[0.2, 0.30000001]],
+            {"atol": -1, "rtol": 0},
+            id="list_of_float_negative_atol",
+        ),
+        pytest.param(
+            [[None, 1.3]],
+            [[None, 0.9]],
+            {"rtol": 1, "nans_compare_equal": False},
+            id="list_of_none_and_float_integer_rtol",
+        ),
+    ],
+)
+def test_assert_series_equal_raises_assertion_error(data1, data2, kwargs) -> None:
+    s2 = pl.Series(data2)
+    s1 = pl.Series(data1)
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, **kwargs)
