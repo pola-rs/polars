@@ -45,8 +45,13 @@ Parallelization
 
 StringCache
 ~~~~~~~~~~~
+
+Note that the `StringCache` can be used as both a context manager
+and a decorator, in order to explicitly scope cache lifetime.
+
 .. autosummary::
    :toctree: api/
 
-    enable_string_cache
     StringCache
+    enable_string_cache
+    using_string_cache
