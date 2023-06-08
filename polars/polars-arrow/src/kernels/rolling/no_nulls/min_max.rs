@@ -19,10 +19,11 @@ impl<'a, T: NativeType> RollingAggWindowNoNulls<'a, T> for SortedMinMax<'a, T> {
 }
 
 #[inline]
-unsafe fn get_min_and_ix<T>(slice: &[T], start: usize, end: usize) -> Option<(usize, &T)>
+unsafe fn get_min_and_idx<T>(slice: &[T], start: usize, end: usize) -> Option<(usize, &T)>
 where
     T: NativeType + IsFloat + PartialOrd,
 {
+    // Reversed because min_by returns the first min if there's a tie but we want the last
     slice
         .get_unchecked(start..end)
         .iter()
@@ -34,14 +35,14 @@ where
 pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     slice: &'a [T],
     min: T,
-    min_ix: usize,
+    min_idx: usize,
     last_start: usize,
     last_end: usize,
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MinWindow<'a, T> {
     fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
-        let (ix, min) = slice[start..end]
+        let (idx, min) = slice[start..end]
             .iter()
             .enumerate()
             .rev()
@@ -50,47 +51,48 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
         Self {
             slice,
             min: *min,
-            min_ix: start + ix,
+            min_idx: start + idx,
             last_start: start,
             last_end: end,
         }
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
+        //For details see: https://github.com/pola-rs/polars/pull/9277#issuecomment-1581401692
         self.last_start = start; // Don't care where the last one started
         let old_last_end = self.last_end; // But we need this
         self.last_end = end;
 
         let entering_start = std::cmp::max(old_last_end, start);
-        let entering = get_min_and_ix(self.slice, entering_start, end);
+        let entering = get_min_and_idx(self.slice, entering_start, end);
 
         if entering.is_some_and(|em| compare_fn_nan_min(&self.min, em.1).is_ge()) {
             // If the entering min <= the current min return early, since no value in the overlap can be smaller than either.
             self.min = *entering.unwrap().1;
-            self.min_ix = entering_start + entering.unwrap().0;
+            self.min_idx = entering_start + entering.unwrap().0;
             return self.min;
-        } else if self.min_ix >= start {
+        } else if self.min_idx >= start {
             // If the entering min isn't the smallest but the current min is between start and end we can still ignore the overlap
             return self.min;
         }
         // Otherwise get the min of the overlapping window and the entering min
-        match (get_min_and_ix(self.slice, start, old_last_end), entering) {
+        match (get_min_and_idx(self.slice, start, old_last_end), entering) {
             (Some(pm), Some(em)) => {
                 if compare_fn_nan_min(pm.1, em.1).is_ge() {
                     self.min = *em.1;
-                    self.min_ix = entering_start + em.0;
+                    self.min_idx = entering_start + em.0;
                 } else {
                     self.min = *pm.1;
-                    self.min_ix = start + pm.0;
+                    self.min_idx = start + pm.0;
                 }
             }
             (Some(pm), None) => {
                 self.min = *pm.1;
-                self.min_ix = start + pm.0;
+                self.min_idx = start + pm.0;
             }
             (None, Some(em)) => {
                 self.min = *em.1;
-                self.min_ix = entering_start + em.0;
+                self.min_idx = entering_start + em.0;
             }
             // We shouldn't reach this, but it means
             (None, None) => {}
@@ -101,7 +103,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
 }
 
 #[inline]
-unsafe fn get_max_and_ix<T>(slice: &[T], start: usize, end: usize) -> Option<(usize, &T)>
+unsafe fn get_max_and_idx<T>(slice: &[T], start: usize, end: usize) -> Option<(usize, &T)>
 where
     T: NativeType + IsFloat + PartialOrd,
 {
@@ -115,14 +117,14 @@ where
 pub struct MaxWindow<'a, T: NativeType> {
     slice: &'a [T],
     max: T,
-    max_ix: usize,
+    max_idx: usize,
     last_start: usize,
     last_end: usize,
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MaxWindow<'a, T> {
     fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
-        let (ix, max) = slice[start..end]
+        let (idx, max) = slice[start..end]
             .iter()
             .enumerate()
             .max_by(|&a, &b| compare_fn_nan_max(a.1, b.1))
@@ -130,7 +132,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
         Self {
             slice,
             max: *max,
-            max_ix: start + ix,
+            max_idx: start + idx,
             last_start: start,
             last_end: end,
         }
@@ -142,35 +144,35 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
         self.last_end = end;
 
         let entering_start = std::cmp::max(old_last_end, start);
-        let entering = get_max_and_ix(self.slice, entering_start, end);
+        let entering = get_max_and_idx(self.slice, entering_start, end);
 
         if entering.is_some_and(|em| compare_fn_nan_max(&self.max, em.1).is_le()) {
             // If the entering max >= the current max return early, since no value in the overlap can be larger than either.
             self.max = *entering.unwrap().1;
-            self.max_ix = entering_start + entering.unwrap().0;
+            self.max_idx = entering_start + entering.unwrap().0;
             return self.max;
-        } else if self.max_ix >= start {
+        } else if self.max_idx >= start {
             // If the entering max isn't the largest but the current max is between start and end we can still ignore the overlap
             return self.max;
         }
         // Otherwise get the max of the overlapping window and the entering max
-        match (get_max_and_ix(self.slice, start, old_last_end), entering) {
+        match (get_max_and_idx(self.slice, start, old_last_end), entering) {
             (Some(pm), Some(em)) => {
                 if compare_fn_nan_max(pm.1, em.1).is_le() {
                     self.max = *em.1;
-                    self.max_ix = entering_start + em.0;
+                    self.max_idx = entering_start + em.0;
                 } else {
                     self.max = *pm.1;
-                    self.max_ix = start + pm.0;
+                    self.max_idx = start + pm.0;
                 }
             }
             (Some(pm), None) => {
                 self.max = *pm.1;
-                self.max_ix = start + pm.0;
+                self.max_idx = start + pm.0;
             }
             (None, Some(em)) => {
                 self.max = *em.1;
-                self.max_ix = entering_start + em.0;
+                self.max_idx = entering_start + em.0;
             }
             // We shouldn't reach this, but it means
             (None, None) => {}
