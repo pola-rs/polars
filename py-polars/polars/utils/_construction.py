@@ -1126,7 +1126,7 @@ def _dataclasses_or_models_to_pydf(
         schema_override = {
             col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
             for col, tp in type_hints(first_element.__class__).items()
-            if col != "__slots__"
+            if col not in ("__slots__", "__pydantic_root_model__")
         }
         if schema_overrides:
             schema_override.update(schema_overrides)

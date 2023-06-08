@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import sys
-import typing
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, no_type_check
 
 import numpy as np
 import pandas as pd
@@ -20,6 +19,11 @@ from polars.utils._construction import type_hints
 
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
+
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -253,6 +257,43 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
 
         # cover a miscellaneous edge-case when detecting the annotations
         assert type_hints(obj=type(None)) == {}
+
+
+@pytest.mark.skipif(pydantic.__version__ < "2.0", reason="requires pydantic 2.x")
+@no_type_check
+def test_init_pydantic_2x() -> None:
+    from pydantic import BaseModel, Field
+
+    class PageView(BaseModel):
+        user_id: str
+        ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required]
+        path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required]
+        referer: str = Field("?", alias="referer")
+        event: Literal["leave", "enter"] = Field("enter")
+        time_on_page: int = Field(0, serialization_alias="top")
+
+    if sys.version_info > (3, 7):
+        data_json = """
+        [{
+            "user_id": "x",
+            "ts": {"$date": "2021-01-01T00:00:00.000Z"},
+            "url": "/latest/foobar",
+            "referer": "https://google.com",
+            "event": "enter",
+            "top": 123
+        }]
+        """
+        at = pydantic.TypeAdapter(list[PageView])
+        models = at.validate_json(data_json)
+
+        assert pl.DataFrame(models).to_dict(False) == {
+            "user_id": ["x"],
+            "ts": [datetime(2021, 1, 1, 0, 0)],
+            "path": ["?"],
+            "referer": ["https://google.com"],
+            "event": ["enter"],
+            "time_on_page": [0],
+        }
 
 
 def test_init_structured_objects_unhashable() -> None:
@@ -903,7 +944,7 @@ def test_from_dicts_missing_columns() -> None:
     assert pl.from_dicts(data).to_dict(False) == {"a": [1, None], "b": [None, 2]}
 
 
-@typing.no_type_check
+@no_type_check
 def test_from_rows_dtype() -> None:
     # 50 is the default inference length
     # 5182
@@ -1033,7 +1074,7 @@ def test_nested_read_dict_4143() -> None:
     }
 
 
-@typing.no_type_check
+@no_type_check
 def test_from_records_nullable_structs() -> None:
     records = [
         {"id": 1, "items": [{"item_id": 100, "description": None}]},
