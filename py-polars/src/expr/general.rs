@@ -966,11 +966,7 @@ impl PyExpr {
     fn to_physical(&self) -> Self {
         self.inner
             .clone()
-            .map(
-                |s| Ok(Some(s.to_physical_repr().into_owned())),
-                GetOutput::map_dtype(|dt| dt.to_physical()),
-            )
-            .with_fmt("to_physical")
+            .to_physical()
             .into()
     }
 
