@@ -93,7 +93,11 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.3
 
+      - name: Compile integration tests
+        run: cargo test --all-features -p polars --test it --no-run
+
       - name: Run integration tests
+        if: github.ref_name != 'main'
         run: cargo test --all-features -p polars --test it
 
   check-features:
