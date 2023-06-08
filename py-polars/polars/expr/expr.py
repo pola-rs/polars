@@ -2326,6 +2326,7 @@ class Expr:
         Fill null values using the specified value or strategy.
 
         To interpolate over null values see interpolate.
+        See the examples below to fill nulls with an expression.
 
         Parameters
         ----------
@@ -2345,38 +2346,60 @@ class Expr:
         ...         "b": [4, None, 6],
         ...     }
         ... )
-        >>> df.fill_null(strategy="zero")
+        >>> df.with_columns(pl.col("b").fill_null(strategy="zero"))
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ i64  ┆ i64 │
+        ╞══════╪═════╡
+        │ 1    ┆ 4   │
+        │ 2    ┆ 0   │
+        │ null ┆ 6   │
+        └──────┴─────┘
+        >>> df.with_columns(pl.col("b").fill_null(99))
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ i64  ┆ i64 │
+        ╞══════╪═════╡
+        │ 1    ┆ 4   │
+        │ 2    ┆ 99  │
+        │ null ┆ 6   │
+        └──────┴─────┘
+        >>> df.with_columns(pl.col("b").fill_null(strategy="forward"))
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ i64  ┆ i64 │
+        ╞══════╪═════╡
+        │ 1    ┆ 4   │
+        │ 2    ┆ 4   │
+        │ null ┆ 6   │
+        └──────┴─────┘
+        >>> df.with_columns(pl.col("b").fill_null(pl.col("b").median()))
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ i64  ┆ f64 │
+        ╞══════╪═════╡
+        │ 1    ┆ 4.0 │
+        │ 2    ┆ 5.0 │
+        │ null ┆ 6.0 │
+        └──────┴─────┘
+        >>> df.with_columns(pl.all().fill_null(pl.all().median()))
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
-        │ i64 ┆ i64 │
+        │ f64 ┆ f64 │
         ╞═════╪═════╡
-        │ 1   ┆ 4   │
-        │ 2   ┆ 0   │
-        │ 0   ┆ 6   │
-        └─────┴─────┘
-        >>> df.fill_null(99)
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 4   │
-        │ 2   ┆ 99  │
-        │ 99  ┆ 6   │
-        └─────┴─────┘
-        >>> df.fill_null(strategy="forward")
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 4   │
-        │ 2   ┆ 4   │
-        │ 2   ┆ 6   │
+        │ 1.0 ┆ 4.0 │
+        │ 2.0 ┆ 5.0 │
+        │ 1.5 ┆ 6.0 │
         └─────┴─────┘
 
         """
@@ -2410,17 +2433,17 @@ class Expr:
         ...         "b": [4.0, float("nan"), 6],
         ...     }
         ... )
-        >>> df.fill_nan("zero")
+        >>> df.with_columns(pl.col("b").fill_nan(0))
         shape: (3, 2)
-        ┌──────┬──────┐
-        │ a    ┆ b    │
-        │ ---  ┆ ---  │
-        │ str  ┆ str  │
-        ╞══════╪══════╡
-        │ 1.0  ┆ 4.0  │
-        │ null ┆ zero │
-        │ zero ┆ 6.0  │
-        └──────┴──────┘
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ f64  ┆ f64 │
+        ╞══════╪═════╡
+        │ 1.0  ┆ 4.0 │
+        │ null ┆ 0.0 │
+        │ NaN  ┆ 6.0 │
+        └──────┴─────┘
 
         """
         fill_value = parse_as_expression(value, str_as_lit=True)
@@ -2473,19 +2496,31 @@ class Expr:
         ...     {
         ...         "a": [1, 2, None],
         ...         "b": [4, None, 6],
+        ...         "c": [None, None, 2],
         ...     }
         ... )
         >>> df.select(pl.all().backward_fill())
-        shape: (3, 2)
-        ┌──────┬─────┐
-        │ a    ┆ b   │
-        │ ---  ┆ --- │
-        │ i64  ┆ i64 │
-        ╞══════╪═════╡
-        │ 1    ┆ 4   │
-        │ 2    ┆ 6   │
-        │ null ┆ 6   │
-        └──────┴─────┘
+        shape: (3, 3)
+        ┌──────┬─────┬─────┐
+        │ a    ┆ b   ┆ c   │
+        │ ---  ┆ --- ┆ --- │
+        │ i64  ┆ i64 ┆ i64 │
+        ╞══════╪═════╪═════╡
+        │ 1    ┆ 4   ┆ 2   │
+        │ 2    ┆ 6   ┆ 2   │
+        │ null ┆ 6   ┆ 2   │
+        └──────┴─────┴─────┘
+        >>> df.select(pl.all().backward_fill(limit=1))
+        shape: (3, 3)
+        ┌──────┬─────┬──────┐
+        │ a    ┆ b   ┆ c    │
+        │ ---  ┆ --- ┆ ---  │
+        │ i64  ┆ i64 ┆ i64  │
+        ╞══════╪═════╪══════╡
+        │ 1    ┆ 4   ┆ null │
+        │ 2    ┆ 6   ┆ 2    │
+        │ null ┆ 6   ┆ 2    │
+        └──────┴─────┴──────┘
 
         """
         return self._from_pyexpr(self._pyexpr.backward_fill(limit))
@@ -3530,6 +3565,27 @@ class Expr:
         ExprListNameSpace.explode : Explode a list column.
         ExprStringNameSpace.explode : Explode a string column.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group": ["a", "b"],
+        ...         "values": [[1, 2], [3, 4],],
+        ...     }
+        ... )
+        >>> df.select(pl.col("values").explode())
+        shape: (4, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        │ 2      │
+        │ 3      │
+        │ 4      │
+        └────────┘
+
         """
         return self._from_pyexpr(self._pyexpr.explode())
 
@@ -3795,6 +3851,31 @@ class Expr:
         other
             A literal or expression value to compare with.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 4.0,None,None],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0,5.0,None],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").eq_missing(pl.col("y")).alias("x == y"),
+        ... )
+        shape: (6, 3)
+        ┌──────┬──────┬────────┐
+        │ x    ┆ y    ┆ x == y │
+        │ ---  ┆ ---  ┆ ---    │
+        │ f64  ┆ f64  ┆ bool   │
+        ╞══════╪══════╪════════╡
+        │ 1.0  ┆ 2.0  ┆ false  │
+        │ 2.0  ┆ 2.0  ┆ true   │
+        │ NaN  ┆ NaN  ┆ false  │
+        │ 4.0  ┆ 4.0  ┆ true   │
+        │ null ┆ 5.0  ┆ false  │
+        │ null ┆ null ┆ true   │
+        └──────┴──────┴────────┘
+
         """
         return self._from_pyexpr(self._pyexpr.eq_missing(self._to_expr(other)._pyexpr))
 
@@ -3983,6 +4064,31 @@ class Expr:
         ----------
         other
             A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 4.0,None,None],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0,5.0,None],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").ne_missing(pl.col("y")).alias("x != y"),
+        ... )
+        shape: (6, 3)
+        ┌──────┬──────┬────────┐
+        │ x    ┆ y    ┆ x != y │
+        │ ---  ┆ ---  ┆ ---    │
+        │ f64  ┆ f64  ┆ bool   │
+        ╞══════╪══════╪════════╡
+        │ 1.0  ┆ 2.0  ┆ true   │
+        │ 2.0  ┆ 2.0  ┆ false  │
+        │ NaN  ┆ NaN  ┆ true   │
+        │ 4.0  ┆ 4.0  ┆ false  │
+        │ null ┆ 5.0  ┆ true   │
+        │ null ┆ null ┆ false  │
+        └──────┴──────┴────────┘
 
         """
         return self._from_pyexpr(self._pyexpr.neq_missing(self._to_expr(other)._pyexpr))
