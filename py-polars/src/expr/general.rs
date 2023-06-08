@@ -964,10 +964,7 @@ impl PyExpr {
     }
 
     fn to_physical(&self) -> Self {
-        self.inner
-            .clone()
-            .to_physical()
-            .into()
+        self.inner.clone().to_physical().into()
     }
 
     fn shuffle(&self, seed: Option<u64>) -> Self {
