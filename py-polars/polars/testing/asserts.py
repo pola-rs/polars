@@ -383,7 +383,7 @@ def _assert_series_inner(
                 mismatch = True
             elif comparing_float_dtypes:
                 # note: take special care with NaN values.
-                # if NaNs don't compare as equal, a single NaN is sufficient for a mismatch
+                # if NaNs don't compare as equal, any NaN is sufficient for a mismatch
                 if not nans_compare_equal and (left.is_nan() | right.is_nan()).any():
                     nan_info = " (nans_compare_equal=False)"
                     mismatch = True
