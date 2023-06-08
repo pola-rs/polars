@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime, time, timedelta
 from typing import Any
 
@@ -396,6 +397,24 @@ def test_assert_frame_equal_ignore_row_order() -> None:
             {"rtol": 1},
             id="list_of_none_and_float_integer_rtol",
         ),
+        pytest.param(
+            {"a": [[None, 1.3]]},
+            {"a": [[None, 0.9]]},
+            {"rtol": 1, "nans_compare_equal": False},
+            id="list_of_none_and_float_integer_rtol",
+        ),
+       pytest.param(
+           {"a": [[[0.2, 3.]]]},
+           {"a": [[[0.2, 3.00000001]]]},
+           {"atol": 0.1, 'nans_compare_equal': True},
+           id="nested_list_of_float_atol_high_nans_compare_equal_true",
+       ),
+       pytest.param(
+           {"a": [[[0.2, 3.]]]},
+           {"a": [[[0.2, 3.00000001]]]},
+           {"atol": 0.1, 'nans_compare_equal': False},
+           id="nested_list_of_float_atol_high_nans_compare_equal_false",
+       ),
     ],
 )
 def test_assert_frame_equal_passes_assertion(
@@ -411,6 +430,12 @@ def test_assert_frame_equal_passes_assertion(
 @pytest.mark.parametrize(
     ("data1", "data2", "kwargs"),
     [
+        pytest.param(
+            {"a": [[0.2, 0.3]]},
+            {"a": [[0.2, 0.3, 0.4]]},
+            {},
+            id="list_of_float_different_lengths",
+        ),
         pytest.param(
             {"a": [[0.2, 0.3]]},
             {"a": [[0.2, 0.3000000000000001]]},
@@ -430,10 +455,16 @@ def test_assert_frame_equal_passes_assertion(
             id="list_of_float_negative_atol",
         ),
         pytest.param(
-            {"a": [[None, 1.3]]},
-            {"a": [[None, 0.9]]},
+            {"a": [[math.nan, 1.3]]},
+            {"a": [[math.nan, 0.9]]},
             {"rtol": 1, "nans_compare_equal": False},
-            id="list_of_none_and_float_integer_rtol",
+            id="list_of_nan_and_float_integer_rtol",
+        ),
+        pytest.param(
+            {"a": [[2.0, 3.0]]},
+            {"a": [[2, 3]]},
+            {'check_exact': False, 'check_dtype': True},
+            id="list_of_float_list_of_int_check_dtype_true",
         ),
     ],
 )
@@ -485,97 +516,144 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
 
 
 @pytest.mark.parametrize(
-    ("data1", "data2", "kwargs"),
+    ("s1", "s2", "kwargs"),
     [
         pytest.param(
-            [[0.2, 0.3]],
-            [[0.2, 0.3000000000000001]],
+            pl.Series([[0.2, 0.3]]),
+            pl.Series([[0.2, 0.3000000000000001]]),
             {"atol": 1e-15},
             id="list_of_float_low_atol",
         ),
         pytest.param(
-            [[0.2, 0.3]],
-            [[0.2, 0.31]],
+            pl.Series([[0.2, 0.3]]),
+            pl.Series([[0.2, 0.31]]),
             {"atol": 0.1},
             id="list_of_float_high_atol",
         ),
         pytest.param(
-            [[0.2, 1.3]],
-            [[0.2, 0.9]],
+            pl.Series([[0.2, 1.3]]),
+            pl.Series([[0.2, 0.9]]),
             {"atol": 1},
             id="list_of_float_integer_atol",
         ),
         pytest.param(
-            [[0.2, 0.3]],
-            [[0.2, 0.300000001]],
+            pl.Series([[0.2, 0.3]]),
+            pl.Series([[0.2, 0.300000001]]),
             {"rtol": 1e-15},
             id="list_of_float_low_rtol",
         ),
         pytest.param(
-            [[0.2, 0.3]],
-            [[0.2, 0.301]],
+            pl.Series([[0.2, 0.3]]),
+            pl.Series([[0.2, 0.301]]),
             {"rtol": 0.1},
             id="list_of_float_high_rtol",
         ),
         pytest.param(
-            [[0.2, 1.3]],
-            [[0.2, 0.9]],
+            pl.Series([[0.2, 1.3]]),
+            pl.Series([[0.2, 0.9]]),
             {"rtol": 1},
             id="list_of_float_integer_rtol",
         ),
         pytest.param(
-            [[None, 1.3]],
-            [[None, 0.9]],
+            pl.Series([[None, 1.3]]),
+            pl.Series([[None, 0.9]]),
             {"rtol": 1},
             id="list_of_none_and_float_integer_rtol",
         ),
+        pytest.param(
+            pl.Series([[None, 1.3]]),
+            pl.Series([[None, 0.9]]),
+            {"rtol": 1, "nans_compare_equal": False},
+            id="list_of_none_and_float_integer_rtol",
+        ),
+        pytest.param(
+            pl.Series([[None, 1]], dtype=pl.List(pl.Int64)),
+            pl.Series([[None, 1]], dtype=pl.List(pl.Int64)),
+            {"rtol": 1},
+            id="list_of_none_and_int_integer_rtol",
+        ),
+        pytest.param(
+            pl.Series([[math.nan, 1.3]]),
+            pl.Series([[math.nan, 0.9]]),
+            {"rtol": 1, "nans_compare_equal": True},
+            id="list_of_none_and_float_integer_rtol",
+        ),
+        pytest.param(
+            pl.Series([[2.0, 3.0]]),
+            pl.Series([[2, 3]]),
+            {'check_exact': False, 'check_dtype': False},
+            id="list_of_float_list_of_int_check_dtype_false",
+        ),
+       pytest.param(
+           pl.Series([[[0.2, 3.]]]),
+           pl.Series([[[0.2, 3.00000001]]]),
+           {"atol": 0.1, 'nans_compare_equal': True},
+           id="nested_list_of_float_atol_high_nans_compare_equal_true",
+       ),
+       pytest.param(
+           pl.Series([[[0.2, 3.]]]),
+           pl.Series([[[0.2, 3.00000001]]]),
+           {"atol": 0.1, 'nans_compare_equal': False},
+           id="nested_list_of_float_atol_high_nans_compare_equal_false",
+       ),
     ],
 )
 def test_assert_series_equal_passes_assertion(
-    data1: list[Any],
-    data2: list[Any],
+    s1: pl.Series,
+    s2: pl.Series,
     kwargs: Any,
 ) -> None:
-    s2 = pl.Series(data2)
-    s1 = pl.Series(data1)
     assert_series_equal(s1, s2, **kwargs)
+    with pytest.raises(AssertionError):
+        assert_series_not_equal(s1, s2, **kwargs)
 
 
 @pytest.mark.parametrize(
-    ("data1", "data2", "kwargs"),
+    ("s1", "s2", "kwargs"),
     [
         pytest.param(
-            [[0.2, 0.3]],
-            [[0.2, 0.3000000000000001]],
+            pl.Series([[0.2, 0.3]]),
+            pl.Series([[0.2, 0.3, 0.4]]),
+            {},
+            id="list_of_float_different_lengths",
+        ),
+        pytest.param(
+            pl.Series([[0.2, 0.3]]),
+            pl.Series([[0.2, 0.3000000000000001]]),
             {"check_exact": True},
             id="list_of_float_check_exact",
         ),
         pytest.param(
-            [[0.2, 0.3]],
-            [[0.2, 0.300001]],
+            pl.Series([[0.2, 0.3]]),
+            pl.Series([[0.2, 0.300001]]),
             {"atol": 1e-15, "rtol": 0},
             id="list_of_float_too_low_atol",
         ),
         pytest.param(
-            [[0.2, 0.3]],
-            [[0.2, 0.30000001]],
+            pl.Series([[0.2, 0.3]]),
+            pl.Series([[0.2, 0.30000001]]),
             {"atol": -1, "rtol": 0},
             id="list_of_float_negative_atol",
         ),
         pytest.param(
-            [[None, 1.3]],
-            [[None, 0.9]],
+            pl.Series([[math.nan, 1.3]]),
+            pl.Series([[math.nan, 0.9]]),
             {"rtol": 1, "nans_compare_equal": False},
-            id="list_of_none_and_float_integer_rtol",
+            id="list_of_nan_and_float_integer_rtol",
+        ),
+        pytest.param(
+            pl.Series([[2.0, 3.0]]),
+            pl.Series([[2, 3]]),
+            {'check_exact': False, 'check_dtype': True},
+            id="list_of_float_list_of_int_check_dtype_true",
         ),
     ],
 )
 def test_assert_series_equal_raises_assertion_error(
-    data1: list[Any],
-    data2: list[Any],
+    s1: pl.Series,
+    s2: pl.Series,
     kwargs: Any,
 ) -> None:
-    s2 = pl.Series(data2)
-    s1 = pl.Series(data1)
     with pytest.raises(AssertionError):
         assert_series_equal(s1, s2, **kwargs)
+    assert_series_not_equal(s1, s2, **kwargs)

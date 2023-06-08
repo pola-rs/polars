@@ -315,18 +315,6 @@ def _assert_series_inner(
     rtol: float,
 ) -> None:
     """Compare Series dtype + values."""
-    try:
-        if left.dtype.is_nested and left.dtype == List:
-            inner_dtype = left.dtype.__getattribute__("inner")
-            can_be_subtracted = hasattr(dtype_to_py_type(inner_dtype), "__sub__")
-        else:
-            can_be_subtracted = hasattr(dtype_to_py_type(left.dtype), "__sub__")
-    except (AttributeError, NotImplementedError):
-        can_be_subtracted = False
-
-    check_exact = (
-        check_exact or not can_be_subtracted or left.is_boolean() or left.is_temporal()
-    )
     if check_dtype and left.dtype != right.dtype:
         raise_assert_detail("Series", "Dtype mismatch", left.dtype, right.dtype)
 
@@ -347,9 +335,9 @@ def _assert_series_inner(
                 (left.is_nan() & right.is_nan()).fill_null(F.lit(False))
             )
 
-        # account for float values in nested dtypes
-        elif left.dtype.is_nested or right.dtype.is_nested:
-            if _assert_series_nested_equal(
+    # check nested dtypes in separate function
+    if left.dtype.is_nested or right.dtype.is_nested:
+        if _assert_series_nested(
                 left=left.filter(unequal),
                 right=right.filter(unequal),
                 check_dtype=check_dtype,
@@ -357,8 +345,17 @@ def _assert_series_inner(
                 nans_compare_equal=nans_compare_equal,
                 atol=atol,
                 rtol=rtol,
-            ):
-                return
+        ):
+            return
+
+    try:
+        can_be_subtracted = hasattr(dtype_to_py_type(left.dtype), "__sub__")
+    except NotImplementedError:
+        can_be_subtracted = False
+
+    check_exact = (
+        check_exact or not can_be_subtracted or left.is_boolean() or left.is_temporal()
+    )
 
     # assert exact, or with tolerance
     if unequal.any():
@@ -369,18 +366,6 @@ def _assert_series_inner(
                 left=list(left),
                 right=list(right),
             )
-        # account for float values in nested dtypes
-        elif left.dtype.is_nested or right.dtype.is_nested:
-            if _assert_series_nested_equal(
-                left=left.filter(unequal),
-                right=right.filter(unequal),
-                check_dtype=check_dtype,
-                check_exact=check_exact,
-                nans_compare_equal=nans_compare_equal,
-                atol=atol,
-                rtol=rtol,
-            ):
-                return
         else:
             # apply check with tolerance (to the known-unequal matches).
             left, right = left.filter(unequal), right.filter(unequal)
@@ -398,7 +383,7 @@ def _assert_series_inner(
                 mismatch = True
             elif comparing_float_dtypes:
                 # note: take special care with NaN values.
-                if not nans_compare_equal and (left.is_nan() == right.is_nan()).any():
+                if not nans_compare_equal and (left.is_nan() & (left.is_nan() == right.is_nan())).any():
                     nan_info = " (nans_compare_equal=False)"
                     mismatch = True
                 elif (left.is_nan() != right.is_nan()).any():
@@ -414,7 +399,7 @@ def _assert_series_inner(
                 )
 
 
-def _assert_series_nested_equal(
+def _assert_series_nested(
     left: Series,
     right: Series,
     check_dtype: bool,
@@ -437,15 +422,14 @@ def _assert_series_nested_equal(
                     raise_assert_detail(
                         "Series",
                         f"Nested value mismatch (nans_compare_equal={nans_compare_equal})",
-                        s1,
-                        s2,
-                    )
+                        s1, s2)
             elif (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
                 raise_assert_detail("Series", "Nested value mismatch", s1, s2)
             elif len(s1) != len(s2):
                 raise_assert_detail(
                     "Series", "Nested list length mismatch", len(s1), len(s2)
                 )
+
             _assert_series_inner(
                 s1,
                 s2,
