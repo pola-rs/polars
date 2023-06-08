@@ -403,18 +403,18 @@ def test_assert_frame_equal_ignore_row_order() -> None:
             {"rtol": 1, "nans_compare_equal": False},
             id="list_of_none_and_float_integer_rtol",
         ),
-       pytest.param(
-           {"a": [[[0.2, 3.]]]},
-           {"a": [[[0.2, 3.00000001]]]},
-           {"atol": 0.1, 'nans_compare_equal': True},
-           id="nested_list_of_float_atol_high_nans_compare_equal_true",
-       ),
-       pytest.param(
-           {"a": [[[0.2, 3.]]]},
-           {"a": [[[0.2, 3.00000001]]]},
-           {"atol": 0.1, 'nans_compare_equal': False},
-           id="nested_list_of_float_atol_high_nans_compare_equal_false",
-       ),
+        pytest.param(
+            {"a": [[[0.2, 3.0]]]},
+            {"a": [[[0.2, 3.00000001]]]},
+            {"atol": 0.1, "nans_compare_equal": True},
+            id="nested_list_of_float_atol_high_nans_compare_equal_true",
+        ),
+        pytest.param(
+            {"a": [[[0.2, 3.0]]]},
+            {"a": [[[0.2, 3.00000001]]]},
+            {"atol": 0.1, "nans_compare_equal": False},
+            id="nested_list_of_float_atol_high_nans_compare_equal_false",
+        ),
     ],
 )
 def test_assert_frame_equal_passes_assertion(
@@ -463,7 +463,7 @@ def test_assert_frame_equal_passes_assertion(
         pytest.param(
             {"a": [[2.0, 3.0]]},
             {"a": [[2, 3]]},
-            {'check_exact': False, 'check_dtype': True},
+            {"check_exact": False, "check_dtype": True},
             id="list_of_float_list_of_int_check_dtype_true",
         ),
     ],
@@ -581,21 +581,21 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
         pytest.param(
             pl.Series([[2.0, 3.0]]),
             pl.Series([[2, 3]]),
-            {'check_exact': False, 'check_dtype': False},
+            {"check_exact": False, "check_dtype": False},
             id="list_of_float_list_of_int_check_dtype_false",
         ),
-       pytest.param(
-           pl.Series([[[0.2, 3.]]]),
-           pl.Series([[[0.2, 3.00000001]]]),
-           {"atol": 0.1, 'nans_compare_equal': True},
-           id="nested_list_of_float_atol_high_nans_compare_equal_true",
-       ),
-       pytest.param(
-           pl.Series([[[0.2, 3.]]]),
-           pl.Series([[[0.2, 3.00000001]]]),
-           {"atol": 0.1, 'nans_compare_equal': False},
-           id="nested_list_of_float_atol_high_nans_compare_equal_false",
-       ),
+        pytest.param(
+            pl.Series([[[0.2, 3.0]]]),
+            pl.Series([[[0.2, 3.00000001]]]),
+            {"atol": 0.1, "nans_compare_equal": True},
+            id="nested_list_of_float_atol_high_nans_compare_equal_true",
+        ),
+        pytest.param(
+            pl.Series([[[0.2, 3.0]]]),
+            pl.Series([[[0.2, 3.00000001]]]),
+            {"atol": 0.1, "nans_compare_equal": False},
+            id="nested_list_of_float_atol_high_nans_compare_equal_false",
+        ),
     ],
 )
 def test_assert_series_equal_passes_assertion(
@@ -644,7 +644,7 @@ def test_assert_series_equal_passes_assertion(
         pytest.param(
             pl.Series([[2.0, 3.0]]),
             pl.Series([[2, 3]]),
-            {'check_exact': False, 'check_dtype': True},
+            {"check_exact": False, "check_dtype": True},
             id="list_of_float_list_of_int_check_dtype_true",
         ),
     ],

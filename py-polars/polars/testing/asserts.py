@@ -338,13 +338,13 @@ def _assert_series_inner(
     # check nested dtypes in separate function
     if left.dtype.is_nested or right.dtype.is_nested:
         if _assert_series_nested(
-                left=left.filter(unequal),
-                right=right.filter(unequal),
-                check_dtype=check_dtype,
-                check_exact=check_exact,
-                nans_compare_equal=nans_compare_equal,
-                atol=atol,
-                rtol=rtol,
+            left=left.filter(unequal),
+            right=right.filter(unequal),
+            check_dtype=check_dtype,
+            check_exact=check_exact,
+            nans_compare_equal=nans_compare_equal,
+            atol=atol,
+            rtol=rtol,
         ):
             return
 
@@ -383,7 +383,10 @@ def _assert_series_inner(
                 mismatch = True
             elif comparing_float_dtypes:
                 # note: take special care with NaN values.
-                if not nans_compare_equal and (left.is_nan() & (left.is_nan() == right.is_nan())).any():
+                if (
+                    not nans_compare_equal
+                    and (left.is_nan() & (left.is_nan() == right.is_nan())).any()
+                ):
                     nan_info = " (nans_compare_equal=False)"
                     mismatch = True
                 elif (left.is_nan() != right.is_nan()).any():
@@ -422,7 +425,9 @@ def _assert_series_nested(
                     raise_assert_detail(
                         "Series",
                         f"Nested value mismatch (nans_compare_equal={nans_compare_equal})",
-                        s1, s2)
+                        s1,
+                        s2,
+                    )
             elif (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
                 raise_assert_detail("Series", "Nested value mismatch", s1, s2)
             elif len(s1) != len(s2):
