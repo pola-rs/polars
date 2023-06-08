@@ -47,7 +47,20 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.3
 
+      - name: Compile tests
+        run: >
+          cargo test --all-features --no-run
+          -p polars-lazy
+          -p polars-io
+          -p polars-core
+          -p polars-arrow
+          -p polars-time
+          -p polars-utils
+          -p polars-row
+          -p polars-sql
+
       - name: Run tests
+        if: github.ref_name != 'main'
         run: >
           cargo test --all-features
           -p polars-lazy
@@ -84,7 +97,6 @@ jobs:
         run: cargo test --all-features -p polars --test it
 
   check-features:
-    if: github.ref_name != 'main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -94,10 +106,21 @@ jobs:
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref_name == 'main' }}
 
-      - name: Install dependencies
-        run: cargo install cargo-hack
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
+      - name: Install cargo hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+
+      - name: Run cargo check for caching
+        if: github.ref_name == 'main'
+        run: cargo check -p polars --all-features
 
       - name: Run cargo hack
-        working-directory: polars
-        run: cargo hack check --each-feature --no-dev-deps
+        if: github.ref_name != 'main'
+        run: cargo hack check -p polars --each-feature --no-dev-deps
