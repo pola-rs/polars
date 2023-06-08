@@ -22,3 +22,7 @@ pub(super) fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsRes
 pub(super) fn interpolate(s: &Series, method: InterpolationMethod) -> PolarsResult<Series> {
     Ok(polars_ops::prelude::interpolate(s, method))
 }
+
+pub(super) fn to_physical(s: &Series) -> PolarsResult<Series> {
+    Ok(s.to_physical_repr().into_owned())
+}

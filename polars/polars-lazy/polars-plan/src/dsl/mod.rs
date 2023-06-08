@@ -1767,6 +1767,10 @@ impl Expr {
         self.map_private(FunctionExpr::Hash(k0, k1, k2, k3))
     }
 
+    pub fn to_physical(self) -> Expr {
+        self.map_private(FunctionExpr::ToPhysical)
+    }
+
     #[cfg(feature = "strings")]
     pub fn str(self) -> string::StringNameSpace {
         string::StringNameSpace(self)
