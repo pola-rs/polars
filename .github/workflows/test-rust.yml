@@ -22,6 +22,8 @@ concurrency:
 
 env:
   RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
 
 jobs:
   test:
@@ -41,6 +43,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
 
       - name: Run tests
         run: >
@@ -71,6 +76,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
 
       - name: Run integration tests
         run: cargo test --all-features -p polars --test it
