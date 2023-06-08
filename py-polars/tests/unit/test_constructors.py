@@ -4,7 +4,7 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, no_type_check
+from typing import TYPE_CHECKING, Any, NamedTuple, no_type_check
 
 import numpy as np
 import pandas as pd
@@ -19,6 +19,11 @@ from polars.utils._construction import type_hints
 
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
+
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -267,27 +272,28 @@ def test_init_pydantic_2x() -> None:
         event: Literal["leave", "enter"] = Field("enter")
         time_on_page: int = Field(0, serialization_alias="top")
 
-    data_json = """
-    [{
-        "user_id": "x",
-        "ts": {"$date": "2021-01-01T00:00:00.000Z"},
-        "url": "/latest/foobar",
-        "referer": "https://google.com",
-        "event": "enter",
-        "top": 123
-    }]
-    """
-    at = pydantic.TypeAdapter(list[PageView])
-    models = at.validate_json(data_json)
+    if sys.version_info > (3, 7):
+        data_json = """
+        [{
+            "user_id": "x",
+            "ts": {"$date": "2021-01-01T00:00:00.000Z"},
+            "url": "/latest/foobar",
+            "referer": "https://google.com",
+            "event": "enter",
+            "top": 123
+        }]
+        """
+        at = pydantic.TypeAdapter(list[PageView])
+        models = at.validate_json(data_json)
 
-    assert pl.DataFrame(models).to_dict(False) == {
-        "user_id": ["x"],
-        "ts": [datetime(2021, 1, 1, 0, 0)],
-        "path": ["?"],
-        "referer": ["https://google.com"],
-        "event": ["enter"],
-        "time_on_page": [0],
-    }
+        assert pl.DataFrame(models).to_dict(False) == {
+            "user_id": ["x"],
+            "ts": [datetime(2021, 1, 1, 0, 0)],
+            "path": ["?"],
+            "referer": ["https://google.com"],
+            "event": ["enter"],
+            "time_on_page": [0],
+        }
 
 
 def test_init_structured_objects_unhashable() -> None:
