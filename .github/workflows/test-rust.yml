@@ -7,6 +7,14 @@ on:
       - examples/**
       - Cargo.toml
       - .github/workflows/test-rust.yml
+  push:
+    branches:
+      - main
+    paths:
+      - polars/**
+      - examples/**
+      - Cargo.toml
+      - .github/workflows/test-rust.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,9 +30,6 @@ jobs:
       fail-fast: true
       matrix:
         os: [ubuntu-latest, windows-latest]
-    defaults:
-      run:
-        working-directory: polars
 
     steps:
       - uses: actions/checkout@v3
@@ -35,15 +40,16 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: polars
+          save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run tests
-        run: make test
+        run: cargo test --all-features -p polars
 
       - name: Run integration tests
-        run: make integration-tests
+        run: cargo test --all-features -p polars --test it
 
   check-features:
+    if: github.ref_name != 'main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
