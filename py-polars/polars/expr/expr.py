@@ -43,8 +43,8 @@ from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import (
-    parse_single_expression_input,
-    selection_to_pyexpr_list,
+    parse_as_expression,
+    parse_as_list_of_expressions,
 )
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
@@ -55,11 +55,13 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import arg_where as py_arg_where
     from polars.polars import reduce as pyreduce
 
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyExpr
+
 if TYPE_CHECKING:
     import sys
 
     from polars import DataFrame, LazyFrame, Series
-    from polars.polars import PyExpr
     from polars.type_aliases import (
         ApplyStrategy,
         ClosedInterval,
@@ -191,7 +193,7 @@ class Expr:
         return self.pow(power)
 
     def __rpow__(self, base: int | float | Expr) -> Expr:
-        return parse_single_expression_input(base) ** self
+        return self._from_pyexpr(parse_as_expression(base)) ** self
 
     def __sub__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr - self._to_pyexpr(other))
@@ -231,7 +233,7 @@ class Expr:
                     "Numpy ufunc with more than one expression can only be used if all non-expression inputs are provided as keyword arguments only"
                 )
 
-            exprs = selection_to_pyexpr_list(inputs)
+            exprs = parse_as_list_of_expressions(inputs)
             return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
 
         def function(s: Series) -> Series:  # pragma: no cover
@@ -239,6 +241,21 @@ class Expr:
             return ufunc(*args, **kwargs)
 
         return self.map(function)
+
+    @classmethod
+    def from_json(cls, value: str) -> Self:
+        """
+        Read an expression from a JSON encoded string to construct an Expression.
+
+        Parameters
+        ----------
+        value
+            JSON encoded string value
+
+        """
+        expr = cls.__new__(cls)
+        expr._pyexpr = PyExpr.meta_read_json(value)
+        return expr
 
     def to_physical(self) -> Self:
         """
@@ -1244,8 +1261,8 @@ class Expr:
         └─────┴──────┘
 
         """
-        other = parse_single_expression_input(other)
-        return self._from_pyexpr(self._pyexpr.append(other._pyexpr, upcast))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr.append(other, upcast))
 
     def rechunk(self) -> Self:
         """
@@ -1678,8 +1695,8 @@ class Expr:
         └─────┘
 
         """
-        other = parse_single_expression_input(other)
-        return self._from_pyexpr(self._pyexpr.dot(other._pyexpr))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr.dot(other))
 
     def mode(self) -> Self:
         """
@@ -2049,8 +2066,8 @@ class Expr:
         └──────┴───────┴─────┘
 
         """
-        element = parse_single_expression_input(element)
-        return self._from_pyexpr(self._pyexpr.search_sorted(element._pyexpr, side))
+        element = parse_as_expression(element)
+        return self._from_pyexpr(self._pyexpr.search_sorted(element, side))
 
     def sort_by(
         self,
@@ -2176,9 +2193,7 @@ class Expr:
         └───────┴────────┴────────┘
 
         """
-        by = selection_to_pyexpr_list(by)
-        if more_by:
-            by.extend(selection_to_pyexpr_list(more_by))
+        by = parse_as_list_of_expressions(by, *more_by)
         if isinstance(descending, bool):
             descending = [descending]
         elif len(by) != len(descending):
@@ -2232,10 +2247,10 @@ class Expr:
         if isinstance(indices, list) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
-            indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))
+            indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))._pyexpr
         else:
-            indices_lit = parse_single_expression_input(indices)  # type: ignore[arg-type]
-        return self._from_pyexpr(self._pyexpr.take(indices_lit._pyexpr))
+            indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
+        return self._from_pyexpr(self._pyexpr.take(indices_lit))
 
     def shift(self, periods: int = 1) -> Self:
         """
@@ -2298,10 +2313,8 @@ class Expr:
         └─────┘
 
         """
-        fill_value = parse_single_expression_input(fill_value, str_as_lit=True)
-        return self._from_pyexpr(
-            self._pyexpr.shift_and_fill(periods, fill_value._pyexpr)
-        )
+        fill_value = parse_as_expression(fill_value, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.shift_and_fill(periods, fill_value))
 
     def fill_null(
         self,
@@ -2378,8 +2391,8 @@ class Expr:
             )
 
         if value is not None:
-            value = parse_single_expression_input(value, str_as_lit=True)
-            return self._from_pyexpr(self._pyexpr.fill_null(value._pyexpr))
+            value = parse_as_expression(value, str_as_lit=True)
+            return self._from_pyexpr(self._pyexpr.fill_null(value))
         else:
             return self._from_pyexpr(
                 self._pyexpr.fill_null_with_strategy(strategy, limit)
@@ -2410,8 +2423,8 @@ class Expr:
         └──────┴──────┘
 
         """
-        fill_value = parse_single_expression_input(value, str_as_lit=True)
-        return self._from_pyexpr(self._pyexpr.fill_nan(fill_value._pyexpr))
+        fill_value = parse_as_expression(value, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.fill_nan(fill_value))
 
     def forward_fill(self, limit: int | None = None) -> Self:
         """
@@ -2945,12 +2958,12 @@ class Expr:
             Additional columns to group by, specified as positional arguments.
         mapping_strategy: {'group_to_rows', 'join', 'explode'}
             - group_to_rows
-                If the aggregation results in multiple values, assign them back to there
+                If the aggregation results in multiple values, assign them back to their
                 position in the DataFrame. This can only be done if the group yields
-                the same elements before aggregation as after
+                the same elements before aggregation as after.
             - join
                 Join the groups as 'List<group_dtype>' to the row positions.
-                warning: this can be memory intensive
+                warning: this can be memory intensive.
             - explode
                 Don't do any mapping, but simply flatten the group.
                 This only makes sense if the input data is sorted.
@@ -3029,9 +3042,7 @@ class Expr:
         └─────┴─────┴─────┴───────┘
 
         """
-        exprs = selection_to_pyexpr_list(expr)
-        if more_exprs:
-            exprs.extend(selection_to_pyexpr_list(more_exprs))
+        exprs = parse_as_list_of_expressions(expr, *more_exprs)
         return self._from_pyexpr(self._pyexpr.over(exprs, mapping_strategy))
 
     def is_unique(self) -> Self:
@@ -3175,8 +3186,8 @@ class Expr:
         └─────┘
 
         """
-        quantile = parse_single_expression_input(quantile)
-        return self._from_pyexpr(self._pyexpr.quantile(quantile._pyexpr, interpolation))
+        quantile = parse_as_expression(quantile)
+        return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
     def filter(self, predicate: Expr) -> Self:
         """
@@ -3621,7 +3632,7 @@ class Expr:
         └─────┘
 
         """
-        offset = -parse_single_expression_input(n)
+        offset = -self._from_pyexpr(parse_as_expression(n))
         return self.slice(offset, n)
 
     def limit(self, n: int | Expr = 10) -> Self:
@@ -4226,8 +4237,8 @@ class Expr:
         └─────┴───────┴────────────┘
 
         """
-        exponent = parse_single_expression_input(exponent)
-        return self._from_pyexpr(self._pyexpr.pow(exponent._pyexpr))
+        exponent = parse_as_expression(exponent)
+        return self._from_pyexpr(self._pyexpr.pow(exponent))
 
     def xor(self, other: Any) -> Self:
         """
@@ -4319,9 +4330,10 @@ class Expr:
             if isinstance(other, (Set, FrozenSet)):
                 other = sorted(other)
             other = F.lit(None) if len(other) == 0 else F.lit(pl.Series(other))
+            other = other._pyexpr
         else:
-            other = parse_single_expression_input(other)
-        return self._from_pyexpr(self._pyexpr.is_in(other._pyexpr))
+            other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr.is_in(other))
 
     def repeat_by(self, by: pl.Series | Expr | str | int) -> Self:
         """
@@ -4361,8 +4373,8 @@ class Expr:
         └─────────────────┘
 
         """
-        by = parse_single_expression_input(by)
-        return self._from_pyexpr(self._pyexpr.repeat_by(by._pyexpr))
+        by = parse_as_expression(by)
+        return self._from_pyexpr(self._pyexpr.repeat_by(by))
 
     def is_between(
         self,
@@ -4447,8 +4459,8 @@ class Expr:
         └─────┴────────────┘
 
         """
-        lower_bound = parse_single_expression_input(lower_bound)
-        upper_bound = parse_single_expression_input(upper_bound)
+        lower_bound = self._from_pyexpr(parse_as_expression(lower_bound))
+        upper_bound = self._from_pyexpr(parse_as_expression(upper_bound))
 
         if closed == "none":
             return (self > lower_bound) & (self < upper_bound)
@@ -4662,6 +4674,17 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -4677,6 +4700,7 @@ class Expr:
             - 1d    (1 day)
             - 1w    (1 week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
@@ -4697,7 +4721,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -4761,6 +4785,17 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -4776,6 +4811,7 @@ class Expr:
             - 1d    (1 day)
             - 1w    (1 week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
@@ -4796,7 +4832,7 @@ class Expr:
         by
             If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -4860,6 +4896,17 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -4875,6 +4922,7 @@ class Expr:
             - 1d    (1 day)
             - 1w    (1 week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
@@ -4895,7 +4943,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -4959,6 +5007,17 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -4974,6 +5033,7 @@ class Expr:
             - 1d    (1 day)
             - 1w    (1 week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
@@ -5050,6 +5110,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        ddof: int = 1,
     ) -> Self:
         """
         Compute a rolling standard deviation.
@@ -5057,6 +5118,17 @@ class Expr:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
@@ -5073,6 +5145,7 @@ class Expr:
             - 1d    (1 day)
             - 1w    (1 week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
@@ -5093,9 +5166,11 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Warnings
         --------
@@ -5136,7 +5211,7 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_std(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, ddof
             )
         )
 
@@ -5149,6 +5224,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        ddof: int = 1,
     ) -> Self:
         """
         Compute a rolling variance.
@@ -5156,6 +5232,17 @@ class Expr:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
@@ -5172,6 +5259,7 @@ class Expr:
             - 1d    (1 day)
             - 1w    (1 week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
@@ -5192,9 +5280,11 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Warnings
         --------
@@ -5235,7 +5325,13 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_var(
-                window_size, weights, min_periods, center, by, closed
+                window_size,
+                weights,
+                min_periods,
+                center,
+                by,
+                closed,
+                ddof,
             )
         )
 
@@ -5252,6 +5348,17 @@ class Expr:
         """
         Compute a rolling median.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -5267,6 +5374,7 @@ class Expr:
             - 1d    (1 day)
             - 1w    (1 week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
@@ -5287,7 +5395,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -5349,6 +5457,17 @@ class Expr:
         """
         Compute a rolling quantile.
 
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then by default the
+        windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        Otherwise, the window at a given row will include the row itself, and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         quantile
@@ -5368,6 +5487,7 @@ class Expr:
             - 1d    (1 day)
             - 1w    (1 week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
@@ -5388,7 +5508,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
 
@@ -5463,6 +5583,9 @@ class Expr:
             * rolling_mean
             * rolling_sum
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Parameters
         ----------
         function
@@ -5516,12 +5639,36 @@ class Expr:
         """
         Compute a rolling skew.
 
+        The window at a given row includes the row itself and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
             Integer size of the rolling window.
         bias
             If False, the calculations are corrected for statistical bias.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 4, 2, 9]})
+        >>> df.select(pl.col("a").rolling_skew(3))
+        shape: (4, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        │ null     │
+        │ 0.381802 │
+        │ 0.47033  │
+        └──────────┘
+
+        Note how the values match the following:
+
+        >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
+        (0.38180177416060584, 0.47033046033698594)
 
         """
         return self._from_pyexpr(self._pyexpr.rolling_skew(window_size, bias))

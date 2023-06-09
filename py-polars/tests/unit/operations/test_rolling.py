@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
+from numpy import nan
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -390,19 +391,19 @@ def test_rolling_skew_lagging_null_5179() -> None:
 
 def test_rolling_var_numerical_stability_5197() -> None:
     s = pl.Series([*[1.2] * 4, *[3.3] * 7])
-    assert s.to_frame("a").with_columns(pl.col("a").rolling_var(5))[:, 0].to_list() == [
-        None,
-        None,
-        None,
-        None,
-        0.882,
-        1.3229999999999997,
-        1.3229999999999997,
-        0.8819999999999983,
-        0.0,
-        0.0,
-        0.0,
-    ]
+    res = s.to_frame("a").with_columns(pl.col("a").rolling_var(5))[:, 0].to_list()
+    assert res[4:] == pytest.approx(
+        [
+            0.882,
+            1.3229999999999997,
+            1.3229999999999997,
+            0.8819999999999983,
+            0.0,
+            0.0,
+            0.0,
+        ]
+    )
+    assert res[:4] == [None] * 4
 
 
 @typing.no_type_check
@@ -638,14 +639,22 @@ def test_rolling_kernels_groupby_dynamic_7548() -> None:
 def test_rolling_cov_corr() -> None:
     df = pl.DataFrame({"x": [3, 3, 3, 5, 8], "y": [3, 4, 4, 4, 8]})
 
-    assert (
-        str(
-            df.select(
-                [
-                    pl.rolling_cov("x", "y", window_size=3).alias("cov"),
-                    pl.rolling_corr("x", "y", window_size=3).alias("corr"),
-                ]
-            ).to_dict(False)
-        )
-        == "{'cov': [None, None, 0.0, 0.0, 5.333333333333336], 'corr': [None, None, nan, nan, 0.9176629354822473]}"
-    )
+    res = df.select(
+        [
+            pl.rolling_cov("x", "y", window_size=3).alias("cov"),
+            pl.rolling_corr("x", "y", window_size=3).alias("corr"),
+        ]
+    ).to_dict(False)
+    assert res["cov"][2:] == pytest.approx([0.0, 0.0, 5.333333333333336])
+    assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok=True)
+    assert res["cov"][:2] == [None] * 2
+    assert res["corr"][:2] == [None] * 2
+
+
+def test_rolling_window_size_9160() -> None:
+    assert pl.Series([1, 5]).rolling_apply(
+        lambda x: sum(x), window_size=2, min_periods=1
+    ).to_list() == [1, 6]
+    assert pl.Series([1]).rolling_apply(
+        lambda x: sum(x), window_size=2, min_periods=1
+    ).to_list() == [1]

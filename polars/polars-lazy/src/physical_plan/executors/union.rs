@@ -105,5 +105,11 @@ impl Executor for UnionExec {
 
             concat_df(out?.iter().flat_map(|dfs| dfs.iter()))
         }
+        .map(|mut df| {
+            if self.options.rechunk {
+                df.as_single_chunk_par();
+            }
+            df
+        })
     }
 }

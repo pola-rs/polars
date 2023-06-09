@@ -237,7 +237,7 @@ impl LogicalPlan {
                 options,
                 ..
             } => {
-                let how = &options.how;
+                let how = &options.args.how;
                 write!(f, "{:indent$}{how} JOIN:", "")?;
                 write!(f, "\n{:indent$}LEFT PLAN ON: {left_on:?}", "")?;
                 input_left._format(f, sub_indent)?;
@@ -417,6 +417,7 @@ impl Debug for Expr {
             Columns(names) => write!(f, "COLUMNS({names:?})"),
             DtypeColumn(dt) => write!(f, "COLUMN OF DTYPE: {dt:?}"),
             Cache { input, .. } => write!(f, "CACHE {input:?}"),
+            Selector(_) => write!(f, "SELECTOR"),
         }
     }
 }

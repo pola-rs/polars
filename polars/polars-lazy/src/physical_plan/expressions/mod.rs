@@ -326,6 +326,18 @@ impl<'a> AggregationContext<'a> {
         aggregated: bool,
         expr: Option<&Expr>,
     ) -> PolarsResult<&mut Self> {
+        self.with_series_and_args(series, aggregated, expr, false)
+    }
+
+    pub(crate) fn with_series_and_args(
+        &mut self,
+        series: Series,
+        aggregated: bool,
+        expr: Option<&Expr>,
+        // if the applied function was a `map` instead of an `apply`
+        // this will keep functions applied over literals as literals: F(lit) = lit
+        mapped: bool,
+    ) -> PolarsResult<&mut Self> {
         self.state = match (aggregated, series.dtype()) {
             (true, &DataType::List(_)) => {
                 if series.len() != self.groups.len() {
@@ -350,7 +362,7 @@ impl<'a> AggregationContext<'a> {
                     // retrieve the length before grouping, so it stays  in this state.
                     AggState::AggregatedFlat(_) => AggState::AggregatedFlat(series),
                     // applying a function on a literal, keeps the literal state
-                    AggState::Literal(_) if series.len() == 1 && self.groups.len() > 1 => {
+                    AggState::Literal(_) if series.len() == 1 && mapped => {
                         AggState::Literal(series)
                     }
                     _ => AggState::NotAggregated(series),

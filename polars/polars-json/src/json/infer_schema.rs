@@ -10,7 +10,9 @@ use super::*;
 
 const ITEM_NAME: &str = "item";
 
-/// Infers [`DataType`] from [`Value`].
+/// Infers [`DataType`] from [`Value`][Value].
+///
+/// [Value]: simd_json::value::Value
 pub fn infer(json: &BorrowedValue) -> PolarsResult<DataType> {
     Ok(match json {
         BorrowedValue::Static(StaticNode::Bool(_)) => DataType::Boolean,
@@ -23,7 +25,9 @@ pub fn infer(json: &BorrowedValue) -> PolarsResult<DataType> {
     })
 }
 
-/// Infers [`Schema`] from JSON [`Value`] in (pandas-compatible) records format.
+/// Infers [`Schema`] from JSON [`Value`][Value] in (pandas-compatible) records format.
+///
+/// [Value]: simd_json::value::Value
 pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<Schema> {
     let outer_array = match json {
         BorrowedValue::Array(array) => Ok(array),

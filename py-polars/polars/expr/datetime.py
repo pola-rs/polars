@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
-from polars.utils._parse_expr_input import parse_single_expression_input
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
@@ -66,6 +66,7 @@ class ExprDateTimeNameSpace:
         - 1mo # 1 calendar month
         - 1mo_saturating # same as above, but saturates to the last day of the month
           if the target date does not exist
+        - 1q  # 1 calendar quarter
         - 1y  # 1 calendar year
 
         These strings can be combined:
@@ -187,6 +188,7 @@ class ExprDateTimeNameSpace:
         1d   # 1 day
         1w   # 1 calendar week
         1mo  # 1 calendar month
+        1q   # 1 calendar quarter
         1y   # 1 calendar year
 
         eg: 3d12h4m25s  # 3 days, 12 hours, 4 minutes, and 25 seconds
@@ -335,8 +337,8 @@ class ExprDateTimeNameSpace:
             raise TypeError(
                 f"expected 'time' to be a python time or polars expression, found {time!r}"
             )
-        time = parse_single_expression_input(time)
-        return wrap_expr(self._pyexpr.dt_combine(time._pyexpr, time_unit))
+        time = parse_as_expression(time)
+        return wrap_expr(self._pyexpr.dt_combine(time, time_unit))
 
     def to_string(self, format: str) -> Expr:
         """
@@ -1802,6 +1804,7 @@ class ExprDateTimeNameSpace:
             - 1d    (1 day)
             - 1w    (1 week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 

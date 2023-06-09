@@ -375,7 +375,6 @@ impl<'a> AnyValue<'a> {
     }
     /// Extract a numerical value from the AnyValue
     #[doc(hidden)]
-    #[cfg(feature = "private")]
     #[inline]
     pub fn extract<T: NumCast>(&self) -> Option<T> {
         use AnyValue::*;

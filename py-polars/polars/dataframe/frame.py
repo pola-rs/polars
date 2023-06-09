@@ -90,8 +90,8 @@ from polars.utils._construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
-from polars.utils._parse_expr_input import parse_single_expression_input
-from polars.utils._wrap import wrap_ldf, wrap_s
+from polars.utils._parse_expr_input import parse_as_expression
+from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import get_index_type
@@ -138,6 +138,7 @@ if TYPE_CHECKING:
         IntoExpr,
         IpcCompression,
         JoinStrategy,
+        JoinValidation,
         NullStrategy,
         OneOrMoreDataTypes,
         Orientation,
@@ -1180,6 +1181,12 @@ class DataFrame:
         return dict(zip(self.columns, self.dtypes))
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
+        """
+        Numpy __array__ interface protocol.
+
+        Ensures that `np.asarray(pl.DataFrame(..))` works as expected, see
+        https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
+        """
         if dtype:
             return self.to_numpy().__array__(dtype)
         else:
@@ -1845,8 +1852,11 @@ class DataFrame:
         bar: [["a","b","c","d","e","f"]]
 
         """
-        record_batches = self._df.to_arrow()
-        return pa.Table.from_batches(record_batches)
+        if self.shape[1]:  # all except 0x0 dataframe
+            record_batches = self._df.to_arrow()
+            return pa.Table.from_batches(record_batches)
+        else:  # 0x0 dataframe, cannot infer schema from batches
+            return pa.table({})
 
     @overload
     def to_dict(self, as_series: Literal[True] = ...) -> dict[str, Series]:
@@ -4766,13 +4776,19 @@ class DataFrame:
         check_sorted: bool = True,
     ) -> RollingGroupBy:
         """
-        Create rolling groups based on a time column.
-
-        Also works for index values of type Int32 or Int64.
+        Create rolling groups based on a time, Int32, or Int64 column.
 
         Different from a ``dynamic_groupby`` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
-        *groupby_dynamic*
+        *groupby_dynamic*.
+
+        If you have a time series ``<t_0, t_1, ..., t_n>``, then by default the
+        windows created will be
+
+            * (t_0 - period, t_0]
+            * (t_1 - period, t_1]
+            * ...
+            * (t_n - period, t_n]
 
         The `period` and `offset` arguments are created either from a timedelta, or
         by using the following string language:
@@ -4786,6 +4802,7 @@ class DataFrame:
         - 1d    (1 day)
         - 1w    (1 week)
         - 1mo   (1 calendar month)
+        - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
         - 1i    (1 index count)
 
@@ -4921,6 +4938,7 @@ class DataFrame:
         - 1d    (1 day)
         - 1w    (1 week)
         - 1mo   (1 calendar month)
+        - 1q    (1 quarter)
         - 1y    (1 calendar year)
         - 1i    (1 index count)
 
@@ -5228,6 +5246,7 @@ class DataFrame:
         - 1d    (1 day)
         - 1w    (1 week)
         - 1mo   (1 calendar month)
+        - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
         - 1i    (1 index count)
 
@@ -5367,6 +5386,7 @@ class DataFrame:
                 - 1d    (1 day)
                 - 1w    (1 week)
                 - 1mo   (1 calendar month)
+                - 1q    (1 calendar quarter)
                 - 1y    (1 calendar year)
                 - 1i    (1 index count)
 
@@ -5456,6 +5476,7 @@ class DataFrame:
         left_on: str | Expr | Sequence[str | Expr] | None = None,
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
+        validate: JoinValidation = "m:m",
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -5474,6 +5495,22 @@ class DataFrame:
             Name(s) of the right join column(s).
         suffix
             Suffix to append to columns with a duplicate name.
+        validate: {'m:m', 'm:1', '1:m', '1:1'}
+            Checks if join is of specified type.
+
+                * *many_to_many*
+                    “m:m”: default, does not result in checks
+                * *one_to_one*
+                    “1:1”: check if join keys are unique in both left and right datasets
+                * *one_to_many*
+                    “1:m”: check if join keys are unique in left dataset
+                * *many_to_one*
+                    “m:1”: check if join keys are unique in right dataset
+
+            .. note::
+
+                - This is currently not supported the streaming engine.
+                - This is only supported when joined by single columns.
 
         Returns
         -------
@@ -5574,6 +5611,7 @@ class DataFrame:
                 on=on,
                 how=how,
                 suffix=suffix,
+                validate=validate,
             )
             .collect(no_optimization=True)
         )
@@ -5912,14 +5950,15 @@ class DataFrame:
 
     def clear(self, n: int = 0) -> Self:
         """
-        Create an empty copy of the current DataFrame, with zero to 'n' rows.
+        Create an empty (n=0) or `n`-row null-filled (n>0) copy of the DataFrame.
 
-        Returns a DataFrame with identical schema but no data.
+        Returns a `n`-row null-filled DataFrame with an identical schema.
+        `n` can be greater than the current number of rows in the DataFrame.
 
         Parameters
         ----------
         n
-            Number of (empty) rows to return in the cleared frame.
+            Number of (null-filled) rows to return in the cleared frame.
 
         See Also
         --------
@@ -6994,24 +7033,20 @@ class DataFrame:
         return wrap_ldf(self._df.lazy())
 
     def select(
-        self,
-        exprs: IntoExpr | Iterable[IntoExpr] | None = None,
-        *more_exprs: IntoExpr,
-        **named_exprs: IntoExpr,
+        self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
     ) -> DataFrame:
         """
         Select columns from this DataFrame.
 
         Parameters
         ----------
-        exprs
-            Column(s) to select. Accepts expression input. Strings are parsed as column
-            names, other non-expression inputs are parsed as literals.
-        *more_exprs
-            Additional columns to select, specified as positional arguments.
+        *exprs
+            Column(s) to select, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names,
+            other non-expression inputs are parsed as literals.
         **named_exprs
-            Additional columns to select, specified as keyword arguments. The columns
-            will be renamed to the keyword used.
+            Additional columns to select, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
 
         Examples
         --------
@@ -7099,16 +7134,11 @@ class DataFrame:
         └───────────┘
 
         """
-        return (
-            self.lazy()
-            .select(exprs, *more_exprs, **named_exprs)
-            .collect(no_optimization=True)
-        )
+        return self.lazy().select(*exprs, **named_exprs).collect(no_optimization=True)
 
     def with_columns(
         self,
-        exprs: IntoExpr | Iterable[IntoExpr] | None = None,
-        *more_exprs: IntoExpr,
+        *exprs: IntoExpr | Iterable[IntoExpr],
         **named_exprs: IntoExpr,
     ) -> DataFrame:
         """
@@ -7118,14 +7148,13 @@ class DataFrame:
 
         Parameters
         ----------
-        exprs
-            Column or columns to add. Accepts expression input. Strings are parsed
-            as column names, other non-expression inputs are parsed as literals.
-        *more_exprs
-            Additional columns to add, specified as positional arguments.
+        *exprs
+            Column(s) to add, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
         **named_exprs
-            Additional columns to add, specified as keyword arguments. The columns
-            will be renamed to the keyword used.
+            Additional columns to add, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
 
         Returns
         -------
@@ -7256,7 +7285,7 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .with_columns(exprs, *more_exprs, **named_exprs)
+            .with_columns(*exprs, **named_exprs)
             .collect(no_optimization=True)
         )
 
@@ -7902,7 +7931,7 @@ class DataFrame:
             subset = [subset]
 
         if isinstance(subset, Sequence) and len(subset) == 1:
-            expr = parse_single_expression_input(subset[0])
+            expr = wrap_expr(parse_as_expression(subset[0]))
         else:
             struct_fields = F.all() if (subset is None) else subset
             expr = F.struct(struct_fields)  # type: ignore[call-overload]

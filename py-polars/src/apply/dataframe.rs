@@ -40,7 +40,7 @@ pub fn apply_lambda_unknown<'a>(
         if out.is_none() {
             null_count += 1;
             continue;
-        } else if out.is_instance_of::<PyBool>().unwrap() {
+        } else if out.is_instance_of::<PyBool>() {
             let first_value = out.extract::<bool>().ok();
             return Ok((
                 PySeries::new(
@@ -50,7 +50,7 @@ pub fn apply_lambda_unknown<'a>(
                 .into_py(py),
                 false,
             ));
-        } else if out.is_instance_of::<PyFloat>().unwrap() {
+        } else if out.is_instance_of::<PyFloat>() {
             let first_value = out.extract::<f64>().ok();
 
             return Ok((
@@ -67,7 +67,7 @@ pub fn apply_lambda_unknown<'a>(
                 .into_py(py),
                 false,
             ));
-        } else if out.is_instance_of::<PyInt>().unwrap() {
+        } else if out.is_instance_of::<PyInt>() {
             let first_value = out.extract::<i64>().ok();
             return Ok((
                 PySeries::new(
@@ -83,7 +83,7 @@ pub fn apply_lambda_unknown<'a>(
                 .into_py(py),
                 false,
             ));
-        } else if out.is_instance_of::<PyString>().unwrap() {
+        } else if out.is_instance_of::<PyString>() {
             let first_value = out.extract::<&str>().ok();
             return Ok((
                 PySeries::new(
@@ -122,9 +122,7 @@ pub fn apply_lambda_unknown<'a>(
                 .into_py(py),
                 true,
             ));
-        } else if out.is_instance_of::<PyList>().unwrap()
-            || out.is_instance_of::<PyTuple>().unwrap()
-        {
+        } else if out.is_instance_of::<PyList>() || out.is_instance_of::<PyTuple>() {
             return Err(PyPolarsErr::Other(
                 "A list output type is invalid. Do you mean to create polars List Series?\
 Then return a Series object."
@@ -267,49 +265,54 @@ pub fn apply_lambda_with_rows_output<'a>(
     let mut row_iter = ((init_null_count + skip)..df.height()).map(|_| {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
         let tpl = (PyTuple::new(py, iter),);
-        match lambda.call1(tpl) {
-            Ok(val) => {
-                match val.downcast::<PyTuple>().ok() {
-                    Some(tuple) => {
-                        row_buf.0.clear();
-                        for v in tuple {
-                            let v = v.extract::<Wrap<AnyValue>>().unwrap().0;
-                            row_buf.0.push(v);
-                        }
-                        let ptr = &row_buf as *const Row;
-                        // Safety:
-                        // we know that row constructor of polars dataframe does not keep a reference
-                        // to the row. Before we mutate the row buf again, the reference is dropped.
-                        // we only cannot prove it to the compiler.
-                        // we still to this because it save a Vec allocation in a hot loop.
-                        unsafe { &*ptr }
-                    }
-                    None => &null_row,
-                }
+
+        let return_val = lambda.call1(tpl).map_err(|e| polars_err!(ComputeError: format!("{e}")))?;
+        if return_val.is_none() {
+            Ok(&null_row)
+        } else {
+            let tuple = return_val.downcast::<PyTuple>().map_err(|_| polars_err!(ComputeError: format!("expected tuple, got {}", return_val.get_type().name().unwrap())))?;
+            row_buf.0.clear();
+            for v in tuple {
+                let v = v.extract::<Wrap<AnyValue>>().unwrap().0;
+                row_buf.0.push(v);
             }
-            Err(e) => panic!("python function failed {e}"),
+            let ptr = &row_buf as *const Row;
+            // Safety:
+            // we know that row constructor of polars dataframe does not keep a reference
+            // to the row. Before we mutate the row buf again, the reference is dropped.
+            // we only cannot prove it to the compiler.
+            // we still to this because it save a Vec allocation in a hot loop.
+            Ok(unsafe { &*ptr })
         }
     });
 
     // first rows for schema inference
     let mut buf = Vec::with_capacity(inference_size);
     buf.push(first_value);
-    buf.extend((&mut row_iter).take(inference_size).cloned());
+    for v in (&mut row_iter).take(inference_size) {
+        buf.push(v?.clone());
+    }
+
     let schema = rows_to_schema_first_non_null(&buf, Some(50));
 
     if init_null_count > 0 {
         // Safety: we know the iterators size
         let iter = unsafe {
             (0..init_null_count)
-                .map(|_| &null_row)
-                .chain(buf.iter())
+                .map(|_| Ok(&null_row))
+                .chain(buf.iter().map(Ok))
                 .chain(row_iter)
                 .trust_my_length(df.height())
         };
-        DataFrame::from_rows_iter_and_schema(iter, &schema)
+        DataFrame::try_from_rows_iter_and_schema(iter, &schema)
     } else {
         // Safety: we know the iterators size
-        let iter = unsafe { buf.iter().chain(row_iter).trust_my_length(df.height()) };
-        DataFrame::from_rows_iter_and_schema(iter, &schema)
+        let iter = unsafe {
+            buf.iter()
+                .map(Ok)
+                .chain(row_iter)
+                .trust_my_length(df.height())
+        };
+        DataFrame::try_from_rows_iter_and_schema(iter, &schema)
     }
 }

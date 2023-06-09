@@ -836,9 +836,10 @@ def test_struct_unique_df() -> None:
 
 
 def test_struct_is_in() -> None:
+    # The dtype casts below test that struct is_in upcasts dtypes.
     s1 = (
         pl.DataFrame({"x": [4, 3, 4, 9], "y": [0, 4, 6, 2]})
-        .select(pl.struct(["x", "y"]))
+        .select(pl.struct(schema={"x": pl.Int8, "y": pl.Float32}))
         .to_series()
     )
     s2 = (
@@ -903,3 +904,9 @@ def test_struct_name_passed_in_agg_apply() -> None:
             ]
         ],
     }
+
+
+def test_struct_null_count_strict_cast() -> None:
+    s = pl.Series([{"a": None}]).cast(pl.Struct({"a": pl.Categorical}))
+    assert s.dtype == pl.Struct([pl.Field("a", pl.Categorical)])
+    assert s.to_list() == [{"a": None}]

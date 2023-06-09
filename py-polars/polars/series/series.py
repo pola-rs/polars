@@ -28,6 +28,7 @@ from polars.datatypes import (
     SIGNED_INTEGER_DTYPES,
     TEMPORAL_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
+    Array,
     Boolean,
     Categorical,
     Date,
@@ -1071,6 +1072,12 @@ class Series:
             raise ValueError(f'cannot use "{key}" for indexing')
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
+        """
+        Numpy __array__ interface protocol.
+
+        Ensures that `np.asarray(pl.Series(..))` works as expected, see
+        https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
+        """
         if not dtype and self.dtype == Utf8 and not self.has_validity():
             dtype = np.dtype("U")
         if dtype:
@@ -3394,6 +3401,15 @@ class Series:
             if zero_copy_only:
                 raise ValueError("Cannot return a zero-copy array")
 
+        if self.dtype == Array:
+            np_array = self.explode().to_numpy(
+                zero_copy_only=zero_copy_only,
+                writable=writable,
+                use_pyarrow=use_pyarrow,
+            )
+            np_array.shape = (self.len(), self.dtype.width)  # type: ignore[union-attr]
+            return np_array
+
         if (
             use_pyarrow
             and _PYARROW_AVAILABLE
@@ -3403,6 +3419,7 @@ class Series:
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
+
         elif self.dtype == Time:
             raise_no_zero_copy()
             # note: there is no native numpy "time" dtype
@@ -4378,6 +4395,9 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Parameters
         ----------
         window_size
@@ -4430,6 +4450,9 @@ class Series:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -4484,6 +4507,9 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Parameters
         ----------
         window_size
@@ -4537,6 +4563,9 @@ class Series:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Parameters
         ----------
         window_size
@@ -4582,6 +4611,7 @@ class Series:
         min_periods: int | None = None,
         *,
         center: bool = False,
+        ddof: int = 1,
     ) -> Series:
         """
         Compute a rolling std dev.
@@ -4589,6 +4619,9 @@ class Series:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -4602,6 +4635,8 @@ class Series:
             a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Examples
         --------
@@ -4623,7 +4658,7 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_std(
-                    window_size, weights, min_periods, center=center
+                    window_size, weights, min_periods, center=center, ddof=ddof
                 )
             )
             .to_series()
@@ -4636,6 +4671,7 @@ class Series:
         min_periods: int | None = None,
         *,
         center: bool = False,
+        ddof: int = 1,
     ) -> Series:
         """
         Compute a rolling variance.
@@ -4643,6 +4679,9 @@ class Series:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -4656,6 +4695,8 @@ class Series:
             a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Examples
         --------
@@ -4677,7 +4718,7 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_var(
-                    window_size, weights, min_periods, center=center
+                    window_size, weights, min_periods, center=center, ddof=ddof
                 )
             )
             .to_series()
@@ -4701,6 +4742,9 @@ class Series:
             * rolling_max
             * rolling_mean
             * rolling_sum
+
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -4758,6 +4802,9 @@ class Series:
         center
             Set the labels at the center of the window
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Examples
         --------
         >>> s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
@@ -4799,6 +4846,9 @@ class Series:
     ) -> Series:
         """
         Compute a rolling quantile.
+
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -4866,6 +4916,9 @@ class Series:
         """
         Compute a rolling skew.
 
+        The window at a given row includes the row itself and the
+        `window_size - 1` elements before it.
+
         Parameters
         ----------
         window_size
@@ -4875,18 +4928,20 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
-        >>> s.rolling_skew(window_size=3)
-        shape: (6,)
-        Series: 'a' [f64]
+        >>> pl.Series([1, 4, 2, 9]).rolling_skew(3)
+        shape: (4,)
+        Series: '' [f64]
         [
-                null
-                null
-                0.0
-                0.0
-                0.381802
-                0.0
+            null
+            null
+            0.381802
+            0.47033
         ]
+
+        Note how the values match
+
+        >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
+        (0.38180177416060584, 0.47033046033698594)
 
         """
 

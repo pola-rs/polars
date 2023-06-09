@@ -132,6 +132,13 @@ def test_groupby_args() -> None:
     assert df.groupby("a").agg(q="b", r="c").columns == ["a", "q", "r"]
 
 
+def test_groupby_empty() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2]})
+    result = df.groupby("a").agg()
+    expected = pl.DataFrame({"a": [1, 2]})
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
 def test_groupby_iteration() -> None:
     df = pl.DataFrame(
         {
@@ -363,23 +370,30 @@ def test_groupby_dynamic_flat_agg_4814() -> None:
 def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
     every: str | timedelta, period: str | timedelta, time_zone: str | None
 ) -> None:
-    assert (
-        pl.DataFrame(
-            {
-                "a": [
-                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(10)
-                ],
-                "b": [float(i) for i in range(10)],
-            }
+    res = (
+        (
+            pl.DataFrame(
+                {
+                    "a": [
+                        datetime(2021, 1, 1) + timedelta(seconds=2**i)
+                        for i in range(10)
+                    ],
+                    "b": [float(i) for i in range(10)],
+                }
+            )
+            .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
+            .lazy()
+            .set_sorted("a")
+            .groupby_dynamic("a", every=every, period=period)
+            .agg([pl.col("b").var().sqrt().alias("corr")])
         )
-        .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
-        .lazy()
-        .set_sorted("a")
-        .groupby_dynamic("a", every=every, period=period)
-        .agg([pl.col("b").var().sqrt().alias("corr")])
-    ).collect().sum().to_dict(False) == pytest.approx(
-        {"a": [None], "corr": [6.988674024215477]}
+        .collect()
+        .sum()
+        .to_dict(False)
     )
+
+    assert res["corr"] == pytest.approx([6.988674024215477])
+    assert res["a"] == [None]
 
 
 def test_take_in_groupby() -> None:
@@ -836,3 +850,13 @@ def test_perfect_hash_table_null_values_8663() -> None:
             [None, None, None],
         ],
     }
+
+
+def test_groupby_agg_deprecation_aggs_keyword() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [3, 4, 5]})
+
+    with pytest.deprecated_call():
+        result = df.groupby("a", maintain_order=True).agg(aggs="b")
+
+    expected = pl.DataFrame({"a": [1, 2], "b": [[3, 4], [5]]})
+    assert_frame_equal(result, expected)

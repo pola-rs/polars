@@ -1,4 +1,7 @@
+use std::ops::BitAnd;
+
 use super::*;
+use crate::dsl::selector::Selector;
 use crate::logical_plan::projection::is_regex_projection;
 
 /// Specialized expressions for Categorical dtypes.
@@ -55,7 +58,7 @@ impl MetaNameSpace {
 
     pub fn has_multiple_outputs(&self) -> bool {
         self.0.into_iter().any(|e| match e {
-            Expr::Wildcard | Expr::Columns(_) | Expr::DtypeColumn(_) => true,
+            Expr::Selector(_) | Expr::Wildcard | Expr::Columns(_) | Expr::DtypeColumn(_) => true,
             Expr::Column(name) => is_regex_projection(name),
             _ => false,
         })
@@ -66,5 +69,52 @@ impl MetaNameSpace {
             Expr::Column(name) => is_regex_projection(name),
             _ => false,
         })
+    }
+
+    pub fn _selector_add(self, other: Expr) -> PolarsResult<Expr> {
+        if let Expr::Selector(mut s) = self.0 {
+            if let Expr::Selector(s_other) = other {
+                s = s + s_other;
+            } else {
+                s = s + Selector::Root(Box::new(other))
+            }
+            Ok(Expr::Selector(s))
+        } else {
+            polars_bail!(ComputeError: "expected selector, got {}", self.0)
+        }
+    }
+
+    pub fn _selector_sub(self, other: Expr) -> PolarsResult<Expr> {
+        if let Expr::Selector(mut s) = self.0 {
+            if let Expr::Selector(s_other) = other {
+                s = s - s_other;
+            } else {
+                s = s - Selector::Root(Box::new(other))
+            }
+            Ok(Expr::Selector(s))
+        } else {
+            polars_bail!(ComputeError: "expected selector, got {}", self.0)
+        }
+    }
+
+    pub fn _selector_and(self, other: Expr) -> PolarsResult<Expr> {
+        if let Expr::Selector(mut s) = self.0 {
+            if let Expr::Selector(s_other) = other {
+                s = s.bitand(s_other);
+            } else {
+                s = s.bitand(Selector::Root(Box::new(other)))
+            }
+            Ok(Expr::Selector(s))
+        } else {
+            polars_bail!(ComputeError: "expected selector, got {}", self.0)
+        }
+    }
+
+    pub fn _into_selector(self) -> Expr {
+        if let Expr::Selector(_) = self.0 {
+            self.0
+        } else {
+            Expr::Selector(Selector::new(self.0))
+        }
     }
 }

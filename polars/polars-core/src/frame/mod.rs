@@ -525,7 +525,6 @@ impl DataFrame {
         &self.columns
     }
 
-    #[cfg(feature = "private")]
     #[inline]
     /// Get mutable access to the underlying columns.
     /// # Safety
@@ -1429,6 +1428,63 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(selected))
     }
 
+    /// Select with a known schema.
+    pub fn select_with_schema<I, S>(&self, selection: I, schema: &SchemaRef) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let cols = selection
+            .into_iter()
+            .map(|s| SmartString::from(s.as_ref()))
+            .collect::<Vec<_>>();
+        self.select_with_schema_impl(&cols, schema, true)
+    }
+
+    /// Select with a known schema. This doesn't check for duplicates.
+    pub fn select_with_schema_unchecked<I, S>(
+        &self,
+        selection: I,
+        schema: &Schema,
+    ) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let cols = selection
+            .into_iter()
+            .map(|s| SmartString::from(s.as_ref()))
+            .collect::<Vec<_>>();
+        self.select_with_schema_impl(&cols, schema, false)
+    }
+
+    fn select_with_schema_impl(
+        &self,
+        cols: &[SmartString],
+        schema: &Schema,
+        check_duplicates: bool,
+    ) -> PolarsResult<Self> {
+        if check_duplicates {
+            self.select_check_duplicates(cols)?;
+        }
+        let selected = self.select_series_impl_with_schema(cols, schema)?;
+        Ok(DataFrame::new_no_checks(selected))
+    }
+
+    /// A non generic implementation to reduce compiler bloat.
+    fn select_series_impl_with_schema(
+        &self,
+        cols: &[SmartString],
+        schema: &Schema,
+    ) -> PolarsResult<Vec<Series>> {
+        cols.iter()
+            .map(|name| {
+                let index = schema.try_get_full(name)?.0;
+                Ok(self.columns[index].clone())
+            })
+            .collect()
+    }
+
     pub fn select_physical<I, S>(&self, selection: I) -> PolarsResult<Self>
     where
         I: IntoIterator<Item = S>,
@@ -1786,7 +1842,6 @@ impl DataFrame {
     }
 
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
-    #[cfg(feature = "private")]
     pub fn sort_impl(
         &self,
         by_column: Vec<Series>,

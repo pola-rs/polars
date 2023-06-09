@@ -97,8 +97,8 @@ fn expand_regex(
     schema: &Schema,
     pattern: &str,
 ) -> PolarsResult<()> {
-    let re = regex::Regex::new(pattern)
-        .unwrap_or_else(|_| panic!("invalid regular expression in column: {pattern}"));
+    let re =
+        regex::Regex::new(pattern).map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
     for name in schema.iter_names() {
         if re.is_match(name) {
             let mut new_expr = expr.clone();
@@ -334,6 +334,46 @@ fn early_supertype(inputs: &[Expr], schema: &Schema) -> Option<DataType> {
     st
 }
 
+#[derive(Copy, Clone)]
+struct ExpansionFlags {
+    multiple_columns: bool,
+    has_nth: bool,
+    has_wildcard: bool,
+    replace_fill_null_type: bool,
+    has_selector: bool,
+}
+
+fn find_flags(expr: &Expr) -> ExpansionFlags {
+    let mut multiple_columns = false;
+    let mut has_nth = false;
+    let mut has_wildcard = false;
+    let mut replace_fill_null_type = false;
+    let mut has_selector = false;
+
+    // do a single pass and collect all flags at once.
+    // supertypes/modification that can be done in place are also don e in that pass
+    for expr in expr {
+        match expr {
+            Expr::Columns(_) | Expr::DtypeColumn(_) => multiple_columns = true,
+            Expr::Nth(_) => has_nth = true,
+            Expr::Wildcard => has_wildcard = true,
+            Expr::Selector(_) => has_selector = true,
+            Expr::Function {
+                function: FunctionExpr::FillNull { .. },
+                ..
+            } => replace_fill_null_type = true,
+            _ => {}
+        }
+    }
+    ExpansionFlags {
+        multiple_columns,
+        has_nth,
+        has_wildcard,
+        replace_fill_null_type,
+        has_selector,
+    }
+}
+
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
 pub(crate) fn rewrite_projections(
@@ -349,68 +389,14 @@ pub(crate) fn rewrite_projections(
         // functions can have col(["a", "b"]) or col(Utf8) as inputs
         expr = expand_function_inputs(expr, schema);
 
-        let mut multiple_columns = false;
-        let mut has_nth = false;
-        let mut has_wildcard = false;
-        let mut replace_fill_null_type = false;
-
-        // do a single pass and collect all flags at once.
-        // supertypes/modification that can be done in place are also don e in that pass
-        for expr in &expr {
-            match expr {
-                Expr::Columns(_) | Expr::DtypeColumn(_) => multiple_columns = true,
-                Expr::Nth(_) => has_nth = true,
-                Expr::Wildcard => has_wildcard = true,
-                Expr::Function {
-                    function: FunctionExpr::FillNull { .. },
-                    ..
-                } => replace_fill_null_type = true,
-                _ => {}
-            }
+        let mut flags = find_flags(&expr);
+        if flags.has_selector {
+            replace_selector(&mut expr, schema, keys)?;
+            // the selector is replaced with Expr::Columns
+            flags.multiple_columns = true;
         }
 
-        if has_nth {
-            replace_nth(&mut expr, schema);
-        }
-
-        // has multiple column names
-        // the expanded columns are added to the result
-        if multiple_columns {
-            if let Some(e) = expr
-                .into_iter()
-                .find(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
-            {
-                match &e {
-                    Expr::Columns(names) => expand_columns(&expr, &mut result, names)?,
-                    Expr::DtypeColumn(dtypes) => {
-                        // keep track of column excluded from the dtypes
-                        let exclude = prepare_excluded(&expr, schema, keys)?;
-                        expand_dtypes(&expr, &mut result, schema, dtypes, &exclude)?
-                    }
-                    _ => {}
-                }
-            }
-        }
-        // has multiple column names due to wildcards
-        else if has_wildcard {
-            // keep track of column excluded from the wildcard
-            let exclude = prepare_excluded(&expr, schema, keys)?;
-            // this path prepares the wildcard as input for the Function Expr
-            replace_wildcard(&expr, &mut result, &exclude, schema)?;
-        }
-        // can have multiple column names due to a regex
-        else {
-            #[allow(clippy::collapsible_else_if)]
-            #[cfg(feature = "regex")]
-            {
-                replace_regex(&expr, &mut result, schema)?
-            }
-            #[cfg(not(feature = "regex"))]
-            {
-                let expr = rewrite_special_aliases(expr)?;
-                result.push(expr)
-            }
-        }
+        replace_and_add_to_results(expr, flags, &mut result, schema, keys)?;
 
         // this is done after all expansion (wildcard, column, dtypes)
         // have been done. This will ensure the conversion to aexpr does
@@ -418,7 +404,7 @@ pub(crate) fn rewrite_projections(
 
         // the expanded expressions are written to result, so we pick
         // them up there.
-        if replace_fill_null_type {
+        if flags.replace_fill_null_type {
             for e in &mut result[result_offset..] {
                 e.mutate().apply(|e| {
                     if let Expr::Function {
@@ -439,4 +425,134 @@ pub(crate) fn rewrite_projections(
         }
     }
     Ok(result)
+}
+
+fn replace_and_add_to_results(
+    mut expr: Expr,
+    flags: ExpansionFlags,
+    result: &mut Vec<Expr>,
+    schema: &Schema,
+    keys: &[Expr],
+) -> PolarsResult<()> {
+    if flags.has_nth {
+        replace_nth(&mut expr, schema);
+    }
+
+    // has multiple column names
+    // the expanded columns are added to the result
+    if flags.multiple_columns {
+        if let Some(e) = expr
+            .into_iter()
+            .find(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
+        {
+            match &e {
+                Expr::Columns(names) => expand_columns(&expr, result, names)?,
+                Expr::DtypeColumn(dtypes) => {
+                    // keep track of column excluded from the dtypes
+                    let exclude = prepare_excluded(&expr, schema, keys)?;
+                    expand_dtypes(&expr, result, schema, dtypes, &exclude)?
+                }
+                _ => {}
+            }
+        }
+    }
+    // has multiple column names due to wildcards
+    else if flags.has_wildcard {
+        // keep track of column excluded from the wildcard
+        let exclude = prepare_excluded(&expr, schema, keys)?;
+        // this path prepares the wildcard as input for the Function Expr
+        replace_wildcard(&expr, result, &exclude, schema)?;
+    }
+    // can have multiple column names due to a regex
+    else {
+        #[allow(clippy::collapsible_else_if)]
+        #[cfg(feature = "regex")]
+        {
+            replace_regex(&expr, result, schema)?
+        }
+        #[cfg(not(feature = "regex"))]
+        {
+            let expr = rewrite_special_aliases(expr)?;
+            result.push(expr)
+        }
+    }
+    Ok(())
+}
+
+fn replace_selector_inner(
+    s: Selector,
+    members: &mut PlIndexSet<Expr>,
+    scratch: &mut Vec<Expr>,
+    schema: &Schema,
+    keys: &[Expr],
+) -> PolarsResult<()> {
+    match s {
+        Selector::Root(expr) => {
+            let local_flags = find_flags(&expr);
+            replace_and_add_to_results(*expr, local_flags, scratch, schema, keys)?;
+            members.extend(scratch.drain(..))
+        }
+        Selector::Add(lhs, rhs) => {
+            replace_selector_inner(*lhs, members, scratch, schema, keys)?;
+            replace_selector_inner(*rhs, members, scratch, schema, keys)?;
+        }
+        Selector::Sub(lhs, rhs) => {
+            // fill lhs
+            replace_selector_inner(*lhs, members, scratch, schema, keys)?;
+
+            // subtract rhs
+            let mut rhs_members = Default::default();
+            replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
+
+            let mut new_members = PlIndexSet::with_capacity(members.len());
+            for e in members.drain(..) {
+                if !rhs_members.contains(&e) {
+                    new_members.insert(e);
+                }
+            }
+
+            *members = new_members;
+        }
+        Selector::InterSect(lhs, rhs) => {
+            // fill lhs
+            replace_selector_inner(*lhs, members, scratch, schema, keys)?;
+
+            // fill rhs
+            let mut rhs_members = Default::default();
+            replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
+
+            *members = members.intersection(&rhs_members).cloned().collect()
+        }
+    }
+    Ok(())
+}
+
+fn replace_selector(expr: &mut Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<()> {
+    // first pass we replace the selectors
+    // with Expr::Columns
+    // we expand the `to_add` columns
+    // and then subtract the `to_subtract` columns
+    expr.mutate().try_apply(|e| match e {
+        Expr::Selector(s) => {
+            let mut swapped = Selector::Root(Box::new(Expr::Wildcard));
+            std::mem::swap(s, &mut swapped);
+
+            let mut members = PlIndexSet::new();
+            replace_selector_inner(swapped, &mut members, &mut vec![], schema, keys)?;
+
+            *e = Expr::Columns(
+                members
+                    .into_iter()
+                    .map(|e| {
+                        let Expr::Column(name) = e else {unreachable!()};
+                        name.to_string()
+                    })
+                    .collect(),
+            );
+
+            Ok(true)
+        }
+        _ => Ok(true),
+    })?;
+    Ok(())
 }

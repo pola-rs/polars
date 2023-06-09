@@ -6,7 +6,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ahash::RandomState;
 use hashbrown::hash_map::RawEntryMut;
 use once_cell::sync::Lazy;
-use polars_utils::HashSingle;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::datatypes::PlIdHashMap;
@@ -147,7 +146,7 @@ impl SCacheInner {
 
     #[inline]
     pub(crate) fn get_cat(&self, s: &str) -> Option<u32> {
-        let h = StringCache::get_hash_builder().hash_single(s);
+        let h = StringCache::get_hash_builder().hash_one(s);
         // as StrHashGlobal may allocate a string
         self.map
             .raw_entry()
@@ -163,7 +162,7 @@ impl SCacheInner {
 
     #[inline]
     pub(crate) fn insert(&mut self, s: &str) -> u32 {
-        let h = StringCache::get_hash_builder().hash_single(s);
+        let h = StringCache::get_hash_builder().hash_one(s);
         self.insert_from_hash(h, s)
     }
 }

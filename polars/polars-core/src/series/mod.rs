@@ -11,7 +11,6 @@ mod into;
 pub(crate) mod iterator;
 pub mod ops;
 mod series_trait;
-#[cfg(feature = "private")]
 pub mod unstable;
 
 use std::borrow::Cow;
@@ -175,7 +174,6 @@ impl Series {
     }
 
     #[doc(hidden)]
-    #[cfg(feature = "private")]
     pub fn _get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
         if Arc::weak_count(&self.0) + Arc::strong_count(&self.0) != 1 {
             self.0 = self.0.clone_inner();
@@ -350,6 +348,8 @@ impl Series {
     pub fn explode(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::List(_) => self.list().unwrap().explode(),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => self.array().unwrap().explode(),
             _ => Ok(self.clone()),
         }
     }
@@ -359,6 +359,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), false, self.len())),
             _ => polars_bail!(opq = is_nan, self.dtype()),
         }
     }
@@ -368,15 +369,17 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), true, self.len())),
             _ => polars_bail!(opq = is_not_nan, self.dtype()),
         }
     }
 
-    /// Check if float value is finite
+    /// Check if numeric value is finite
     pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), true, self.len())),
             _ => polars_bail!(opq = is_finite, self.dtype()),
         }
     }
@@ -386,6 +389,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), false, self.len())),
             _ => polars_bail!(opq = is_infinite, self.dtype()),
         }
     }
@@ -867,7 +871,6 @@ impl Series {
         out.cast(self.dtype())
     }
 
-    #[cfg(feature = "private")]
     // used for formatting
     pub fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
         let out = match self.0.get(index)? {

@@ -15,7 +15,7 @@ enum_dispatch = "0.3"
 hashbrown.workspace = true
 num-traits.workspace = true
 polars-arrow = { version = "0.30.0", path = "../../polars-arrow", default-features = false }
-polars-core = { version = "0.30.0", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-core = { version = "0.30.0", path = "../../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
 polars-io = { version = "0.30.0", path = "../../polars-io", default-features = false, features = ["ipc", "async"] }
 polars-ops = { version = "0.30.0", path = "../../polars-ops", features = ["search_sorted"] }
 polars-plan = { version = "0.30.0", path = "../polars-plan", default-features = false, features = ["compile"] }
@@ -40,3 +40,4 @@ dtype-decimal = ["polars-core/dtype-decimal"]
 dtype-array = ["polars-core/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 trigger_ooc = []
+test = ["compile", "polars-core/chunked_ids"]

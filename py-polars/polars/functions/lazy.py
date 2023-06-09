@@ -18,8 +18,8 @@ from polars.datatypes import (
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.utils._parse_expr_input import (
-    parse_single_expression_input,
-    selection_to_pyexpr_list,
+    parse_as_expression,
+    parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import (
@@ -525,9 +525,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
         elif isinstance(exprs, str):
             return col(exprs).max()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.max_exprs(exprs))
 
 
@@ -625,9 +623,7 @@ def min(
         elif isinstance(exprs, str):
             return col(exprs).min()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.min_exprs(exprs))
 
 
@@ -741,9 +737,7 @@ def sum(
         elif isinstance(exprs, str):
             return col(exprs).sum()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.sum_exprs(exprs))
 
 
@@ -1364,12 +1358,10 @@ def cumsum(
         elif isinstance(exprs, str):
             return col(exprs).cumsum()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    pyexprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
 
     # (Expr): use u32 as that will not cast to float as eagerly
-    exprs_wrapped = [wrap_expr(e) for e in exprs]
     return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, exprs_wrapped).alias(
         "cumsum"
     )
@@ -1534,7 +1526,7 @@ def map(
     │ 4   ┆ 7   ┆ 12    │
     └─────┴─────┴───────┘
     """
-    exprs = selection_to_pyexpr_list(exprs)
+    exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(
         plr.map_mul(
             exprs, function, return_dtype, apply_groups=False, returns_scalar=False
@@ -1611,7 +1603,7 @@ def apply(
     │ 4   ┆ 7   ┆ 16        │
     └─────┴─────┴───────────┘
     """
-    exprs = selection_to_pyexpr_list(exprs)
+    exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(
         plr.map_mul(
             exprs,
@@ -1723,12 +1715,12 @@ def fold(
     └─────┴─────┘
     """
     # in case of pl.col("*")
-    acc = parse_single_expression_input(acc, str_as_lit=True)
+    acc = parse_as_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = selection_to_pyexpr_list(exprs)
-    return wrap_expr(plr.fold(acc._pyexpr, function, exprs))
+    exprs = parse_as_list_of_expressions(exprs)
+    return wrap_expr(plr.fold(acc, function, exprs))
 
 
 def reduce(
@@ -1791,7 +1783,7 @@ def reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = selection_to_pyexpr_list(exprs)
+    exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(plr.reduce(function, exprs))
 
 
@@ -1864,12 +1856,12 @@ def cumfold(
 
     """  # noqa: W505
     # in case of pl.col("*")
-    acc = parse_single_expression_input(acc, str_as_lit=True)
+    acc = parse_as_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = selection_to_pyexpr_list(exprs)
-    return wrap_expr(plr.cumfold(acc._pyexpr, function, exprs, include_init))
+    exprs = parse_as_list_of_expressions(exprs)
+    return wrap_expr(plr.cumfold(acc, function, exprs, include_init))
 
 
 def cumreduce(
@@ -1930,7 +1922,7 @@ def cumreduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = selection_to_pyexpr_list(exprs)
+    exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(plr.cumreduce(function, exprs))
 
 
@@ -2018,11 +2010,9 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
         elif isinstance(exprs, str):
             return col(exprs).any()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    pyexprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
 
-    exprs_wrapped = [wrap_expr(e) for e in exprs]
     return fold(
         lit(False), lambda a, b: a.cast(bool) | b.cast(bool), exprs_wrapped
     ).alias("any")
@@ -2109,11 +2099,9 @@ def all(
         elif isinstance(exprs, str):
             return col(exprs).all()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    pyexprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
 
-    exprs_wrapped = [wrap_expr(e) for e in exprs]
     return fold(
         lit(True), lambda a, b: a.cast(bool) & b.cast(bool), exprs_wrapped
     ).alias("all")
@@ -2277,9 +2265,7 @@ def arg_sort_by(
     └─────┘
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
 
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
@@ -2361,11 +2347,7 @@ def collect_all(
     return result
 
 
-def select(
-    exprs: IntoExpr | Iterable[IntoExpr] | None = None,
-    *more_exprs: IntoExpr,
-    **named_exprs: IntoExpr,
-) -> DataFrame:
+def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:
     """
     Run polars expressions without a context.
 
@@ -2373,13 +2355,13 @@ def select(
 
     Parameters
     ----------
-    exprs
-        Expression or expressions to run.
-    *more_exprs
-        Additional expressions to run, specified as positional arguments.
+    *exprs
+        Column(s) to select, specified as positional arguments.
+        Accepts expression input. Strings are parsed as column names,
+        other non-expression inputs are parsed as literals.
     **named_exprs
-        Additional expressions to run, specified as keyword arguments. The expressions
-        will be renamed to the keyword used.
+        Additional columns to select, specified as keyword arguments.
+        The columns will be renamed to the keyword used.
 
     Returns
     -------
@@ -2402,7 +2384,7 @@ def select(
     └─────┘
 
     """
-    return pl.DataFrame().select(exprs, *more_exprs, **named_exprs)
+    return pl.DataFrame().select(*exprs, **named_exprs)
 
 
 @overload
@@ -2460,8 +2442,8 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
             )
         return condition.to_frame().select(arg_where(col(condition.name))).to_series()
     else:
-        condition = parse_single_expression_input(condition)
-        return wrap_expr(plr.arg_where(condition._pyexpr))
+        condition = parse_as_expression(condition)
+        return wrap_expr(plr.arg_where(condition))
 
 
 def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
@@ -2511,9 +2493,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     └──────┴──────┴──────┴──────┘
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.coalesce(exprs))
 
 
@@ -2603,6 +2583,9 @@ def rolling_cov(
     """
     Compute the rolling covariance between two columns/ expressions.
 
+    The window at a given row includes the row itself and the
+    `window_size - 1` elements before it.
+
     Parameters
     ----------
     a
@@ -2641,6 +2624,9 @@ def rolling_corr(
     """
     Compute the rolling correlation between two columns/ expressions.
 
+    The window at a given row includes the row itself and the
+    `window_size - 1` elements before it.
+
     Parameters
     ----------
     a
@@ -2666,3 +2652,29 @@ def rolling_corr(
     return wrap_expr(
         plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
     )
+
+
+def sql_expr(sql: str) -> Expr:
+    """
+    Parse a SQL expression to a polars expression.
+
+    Parameters
+    ----------
+    sql
+        SQL expression
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [2, 1]})
+    >>> expr = pl.sql_expr("MAX(a)")
+    >>> df.select(expr)
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 2   │
+    └─────┘
+    """
+    return wrap_expr(plr.sql_expr(sql))

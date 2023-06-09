@@ -6,10 +6,10 @@ on:
       - py-*
 
 env:
-  RUST_TOOLCHAIN: nightly-2023-05-07
+  RUST_TOOLCHAIN: nightly-2023-06-01
   PYTHON_VERSION: '3.7'
-  MATURIN_VERSION: '0.14.10'
-  MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+  MATURIN_VERSION: '1.0.1'
+  MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
 
 defaults:
   run:
@@ -47,7 +47,8 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      # needed because we got OOM
+
+      # Needed to avoid out-of-memory error
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:

@@ -540,6 +540,18 @@ def test_negative_offset_by_err_msg_8464() -> None:
         pl.Series([datetime(2022, 3, 30)]).dt.offset_by("-1mo")
 
 
+def test_offset_by_truncate_sorted_flag() -> None:
+    s = pl.Series([datetime(2001, 1, 1), datetime(2001, 1, 2)])
+    s = s.set_sorted()
+
+    assert s.flags["SORTED_ASC"]
+    s1 = s.dt.offset_by("1d")
+    assert s1.to_list() == [datetime(2001, 1, 2), datetime(2001, 1, 3)]
+    assert s1.flags["SORTED_ASC"]
+    s2 = s1.dt.truncate("1mo")
+    assert s2.flags["SORTED_ASC"]
+
+
 @pytest.mark.parametrize(
     ("duration", "input_date", "expected"),
     [

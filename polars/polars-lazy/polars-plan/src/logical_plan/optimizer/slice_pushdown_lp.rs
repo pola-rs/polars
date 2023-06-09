@@ -227,7 +227,7 @@ impl SlicePushDown {
 
                 // then assign the slice state to the join operation
 
-                options.slice = Some((state.offset, state.len as usize));
+                options.args.slice = Some((state.offset, state.len as usize));
 
                 Ok(Join {
                     input_left,

@@ -52,6 +52,10 @@ class StringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the conversion.
 
@@ -102,6 +106,10 @@ class StringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
         utc
@@ -190,6 +198,10 @@ class StringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string. Conversion to the Time type is always exact.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         utc
@@ -273,6 +285,40 @@ class StringNameSpace:
             )
             .to_series()
         )
+
+    def to_decimal(
+        self,
+        inference_length: int = 100,
+    ) -> Series:
+        """
+        Convert a Utf8 column into a Decimal column.
+
+        This method infers the needed parameters ``precision`` and ``scale``.
+
+        Parameters
+        ----------
+        inference_length
+            Number of elements to parse to determine the `precision` and `scale`
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     ["40.12", "3420.13", "120134.19", "3212.98", "12.90", "143.09", "143.9"]
+        ... )
+        >>> s.str.to_decimal()
+        shape: (7,)
+        Series: '' [decimal[2]]
+        [
+            40.12
+            3420.13
+            120134.19
+            3212.98
+            12.9
+            143.09
+            143.9
+        ]
+
+        """
 
     def lengths(self) -> Series:
         """
@@ -992,14 +1038,15 @@ class StringNameSpace:
         ]
 
         Characters can be stripped by passing a string as argument. Note that whitespace
-        will not be stripped automatically when doing so.
+        will not be stripped automatically when doing so, unless that whitespace is
+        also included in the string.
 
-        >>> s.str.strip("od\t")
+        >>> s.str.strip("o ")
         shape: (2,)
         Series: '' [str]
         [
-                " hello "
-                "worl"
+            "hell"
+            "	world"
         ]
 
         """
@@ -1064,12 +1111,12 @@ class StringNameSpace:
         Characters can be stripped by passing a string as argument. Note that whitespace
         will not be stripped automatically when doing so.
 
-        >>> s.str.rstrip("wod\t")
+        >>> s.str.rstrip("orld\t")
         shape: (2,)
         Series: '' [str]
         [
-                " hello "
-                "worl"
+            " hello "
+            "w"
         ]
 
         """

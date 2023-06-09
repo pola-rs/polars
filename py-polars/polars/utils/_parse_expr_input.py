@@ -13,32 +13,72 @@ if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr
 
 
-def selection_to_pyexpr_list(
-    exprs: IntoExpr | Iterable[IntoExpr],
+def parse_as_list_of_expressions(
+    *inputs: IntoExpr | Iterable[IntoExpr],
+    __structify: bool = False,
+    **named_inputs: IntoExpr,
+) -> list[PyExpr]:
+    """
+    Parse multiple inputs into a list of expressions.
+
+    Parameters
+    ----------
+    *inputs
+        Inputs to be parsed as expressions, specified as positional arguments.
+    **named_inputs
+        Additional inputs to be parsed as expressions, specified as keyword arguments.
+        The expressions will be renamed to the keyword used.
+    __structify
+        Convert multi-column expressions to a single struct expression.
+
+    """
+    exprs = _parse_regular_inputs(inputs, structify=__structify)
+    if named_inputs:
+        named_exprs = _parse_named_inputs(named_inputs, structify=__structify)
+        exprs.extend(named_exprs)
+
+    return exprs
+
+
+def _parse_regular_inputs(
+    inputs: tuple[IntoExpr | Iterable[IntoExpr], ...],
+    *,
     structify: bool = False,
 ) -> list[PyExpr]:
-    if exprs is None:
+    if not inputs:
         return []
 
-    if isinstance(
-        exprs, (str, pl.Expr, pl.Series, F.whenthen.WhenThen, F.whenthen.WhenThenThen)
-    ) or not isinstance(exprs, Iterable):
-        return [
-            parse_single_expression_input(exprs, structify=structify)._pyexpr,
-        ]
-
-    return [
-        parse_single_expression_input(e, structify=structify)._pyexpr
-        for e in exprs  # type: ignore[union-attr]
-    ]
+    input_list = _first_input_to_list(inputs[0])
+    input_list.extend(inputs[1:])  # type: ignore[arg-type]
+    return [parse_as_expression(e, structify=structify) for e in input_list]
 
 
-def parse_single_expression_input(
+def _first_input_to_list(
+    inputs: IntoExpr | Iterable[IntoExpr] | None,
+) -> list[IntoExpr]:
+    if inputs is None:
+        return []
+    elif not isinstance(inputs, Iterable) or isinstance(inputs, (str, pl.Series)):
+        return [inputs]
+    else:
+        return list(inputs)
+
+
+def _parse_named_inputs(
+    named_inputs: dict[str, IntoExpr], *, structify: bool = False
+) -> Iterable[PyExpr]:
+    return (
+        parse_as_expression(input, structify=structify).alias(name)
+        for name, input in named_inputs.items()
+    )
+
+
+def parse_as_expression(
     input: IntoExpr,
     *,
     str_as_lit: bool = False,
     structify: bool = False,
-) -> Expr:
+) -> PyExpr | Expr:
     """
     Parse a single input into an expression.
 
@@ -51,6 +91,8 @@ def parse_single_expression_input(
         strings are parsed as column names.
     structify
         Convert multi-column expressions to a single struct expression.
+    wrap
+        Return an ``Expr`` object rather than a ``PyExpr`` object.
 
     """
     if isinstance(input, pl.Expr):
@@ -78,7 +120,7 @@ def parse_single_expression_input(
     if structify:
         expr = _structify_expression(expr)
 
-    return expr
+    return expr._pyexpr
 
 
 def _structify_expression(expr: Expr) -> Expr:

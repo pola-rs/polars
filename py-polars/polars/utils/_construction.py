@@ -555,7 +555,7 @@ def _pandas_series_to_arrow(
         # contains duplicated columns and a duplicated column is requested with df["a"].
         raise ValueError(
             "Duplicate column names found: "
-            + f"{str(values.columns.tolist())}"  # type: ignore[union-attr]
+            + f"{values.columns.tolist()!s}"  # type: ignore[union-attr]
         )
 
 
@@ -1126,7 +1126,7 @@ def _dataclasses_or_models_to_pydf(
         schema_override = {
             col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
             for col, tp in type_hints(first_element.__class__).items()
-            if col != "__slots__"
+            if col not in ("__slots__", "__pydantic_root_model__")
         }
         if schema_overrides:
             schema_override.update(schema_overrides)

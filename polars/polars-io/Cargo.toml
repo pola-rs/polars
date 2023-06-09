@@ -36,6 +36,7 @@ timezones = [
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-struct = ["polars-core/dtype-struct"]
+dtype-decimal = ["polars-core/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
@@ -46,8 +47,6 @@ azure = ["object_store/azure", "cloud", "polars-core/azure"]
 gcp = ["object_store/gcp", "cloud", "polars-core/gcp"]
 partition = ["polars-core/partition_by"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
-# don't use this
-private = ["polars-time/private"]
 simd = []
 
 [dependencies]
@@ -66,13 +65,13 @@ lexical-core = { version = "0.8", optional = true }
 memchr.workspace = true
 memmap = { package = "memmap2", version = "0.5.2", optional = true }
 num-traits.workspace = true
-object_store = { version = "0.5.3", default-features = false, optional = true }
+object_store = { version = "0.6.0", default-features = false, optional = true }
 once_cell = "1"
 polars-arrow = { version = "0.30.0", path = "../polars-arrow" }
-polars-core = { version = "0.30.0", path = "../polars-core", features = ["private"], default-features = false }
+polars-core = { version = "0.30.0", path = "../polars-core", features = [], default-features = false }
 polars-error = { version = "0.30.0", path = "../polars-error", default-features = false }
 polars-json = { version = "0.30.0", optional = true, path = "../polars-json" }
-polars-time = { version = "0.30.0", path = "../polars-time", features = ["private"], default-features = false, optional = true }
+polars-time = { version = "0.30.0", path = "../polars-time", features = [], default-features = false, optional = true }
 polars-utils = { version = "0.30.0", path = "../polars-utils" }
 rayon.workspace = true
 regex = "1.6"

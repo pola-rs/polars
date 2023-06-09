@@ -12,6 +12,7 @@ def test_streaming_out_of_core_unique(
 ) -> None:
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
+    monkeypatch.setenv("POLARS_STREAMING_GROUPBY_SPILL_SIZE", "256")
     df = pl.read_csv(io_files_path / "foods*.csv")
     # this creates 10M rows
     q = df.lazy()

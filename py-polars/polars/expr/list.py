@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.utils._parse_expr_input import parse_single_expression_input
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.decorators import deprecated_alias
 
@@ -295,7 +295,7 @@ class ExprListNameSpace:
         └──────┘
 
         """
-        index = parse_single_expression_input(index)._pyexpr
+        index = parse_as_expression(index)
         return wrap_expr(self._pyexpr.list_get(index))
 
     def take(
@@ -323,7 +323,7 @@ class ExprListNameSpace:
         """
         if isinstance(index, list):
             index = pl.Series(index)
-        index = parse_single_expression_input(index)._pyexpr
+        index = parse_as_expression(index)
         return wrap_expr(self._pyexpr.list_take(index, null_on_oob))
 
     def first(self) -> Expr:
@@ -401,11 +401,8 @@ class ExprListNameSpace:
         └───────┘
 
         """
-        return wrap_expr(
-            self._pyexpr.list_contains(
-                parse_single_expression_input(item, str_as_lit=True)._pyexpr
-            )
-        )
+        item = parse_as_expression(item, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_contains(item))
 
     def join(self, separator: str) -> Expr:
         """
@@ -596,8 +593,8 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = parse_single_expression_input(offset)._pyexpr
-        length = parse_single_expression_input(length)._pyexpr
+        offset = parse_as_expression(offset)
+        length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.list_slice(offset, length))
 
     def head(self, n: int | str | Expr = 5) -> Expr:
@@ -644,8 +641,8 @@ class ExprListNameSpace:
         ]
 
         """
-        n = parse_single_expression_input(n)
-        return wrap_expr(self._pyexpr.list_tail(n._pyexpr))
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.list_tail(n))
 
     def explode(self) -> Expr:
         """
@@ -707,11 +704,8 @@ class ExprListNameSpace:
         └────────────────┘
 
         """
-        return wrap_expr(
-            self._pyexpr.list_count_match(
-                parse_single_expression_input(element, str_as_lit=True)._pyexpr
-            )
-        )
+        element = parse_as_expression(element, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_count_match(element))
 
     @deprecated_alias(name_generator="fields")
     def to_struct(

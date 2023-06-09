@@ -171,13 +171,14 @@ impl Duration {
                     "mo" => {
                         months += n
                     }
+                    "q" => months += n * 3,
                     "y" => months += n * 12,
                     // we will read indexes as nanoseconds
                     "i" => {
                         nsecs += n;
                         parsed_int = true;
                     }
-                    unit => panic!("unit: '{unit}' not supported. Available units are: 'ns', 'us', 'ms', 's', 'm', 'h', 'd', 'w', 'mo', 'y', 'i'"),
+                    unit => panic!("unit: '{unit}' not supported. Available units are: 'ns', 'us', 'ms', 's', 'm', 'h', 'd', 'w', 'q', 'mo', 'y', 'i'"),
                 }
                 unit.clear();
             }
@@ -337,7 +338,6 @@ impl Duration {
     }
 
     /// Estimated duration of the window duration. Not a very good one if months != 0.
-    #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_ns(&self) -> i64 {
         self.months * 28 * 24 * 3600 * NANOSECONDS
@@ -346,21 +346,18 @@ impl Duration {
             + self.nsecs
     }
 
-    #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_us(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MICROSECONDS
             + (self.weeks * NS_WEEK + self.nsecs + self.days * NS_DAY) / 1000
     }
 
-    #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_ms(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MILLISECONDS
             + (self.weeks * NS_WEEK + self.nsecs + self.days * NS_DAY) / 1_000_000
     }
 
-    #[cfg(feature = "private")]
     #[doc(hidden)]
     fn add_month(
         ts: NaiveDateTime,

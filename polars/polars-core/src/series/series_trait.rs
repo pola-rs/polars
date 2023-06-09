@@ -356,7 +356,6 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     /// Does not do any bounds checking
-    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
         invalid_operation_panic!(get_unchecked, self)
     }

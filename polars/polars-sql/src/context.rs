@@ -605,16 +605,13 @@ impl SQLContext {
     }
 }
 
-#[cfg(feature = "private")]
 impl SQLContext {
     /// Get internal table map. For internal use only.
-    #[cfg(feature = "private")]
     pub fn get_table_map(&self) -> PlHashMap<String, LazyFrame> {
         self.table_map.clone()
     }
 
     /// Create a new SQLContext from a table map. For internal use only
-    #[cfg(feature = "private")]
     pub fn new_from_table_map(table_map: PlHashMap<String, LazyFrame>) -> Self {
         Self {
             table_map,

@@ -15,7 +15,13 @@ use super::*;
 pub trait RollingAggWindowNulls<'a, T: NativeType> {
     /// # Safety
     /// `start` and `end` must be in bounds for `slice` and `validity`
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self;
+    unsafe fn new(
+        slice: &'a [T],
+        validity: &'a Bitmap,
+        start: usize,
+        end: usize,
+        params: DynArgs,
+    ) -> Self;
 
     /// # Safety
     /// `start` and `end` must be in bounds of `slice` and `bitmap`
@@ -31,6 +37,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
+    params: DynArgs,
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End) + Copy,
@@ -40,7 +47,7 @@ where
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
     // Safety; we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, start, end) };
+    let mut agg_window = unsafe { Agg::new(values, validity, start, end, params) };
 
     let mut validity = match create_validity(min_periods, len, window_size, det_offsets_fn) {
         Some(v) => v,
@@ -111,27 +118,27 @@ mod test {
             Some(Bitmap::from(&[true, false, true, true])),
         );
 
-        let out = rolling_sum(arr, 2, 2, false, None);
+        let out = rolling_sum(arr, 2, 2, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, Some(7.0)]);
 
-        let out = rolling_sum(arr, 2, 1, false, None);
+        let out = rolling_sum(arr, 2, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(3.0), Some(7.0)]);
 
-        let out = rolling_sum(arr, 4, 1, false, None);
+        let out = rolling_sum(arr, 4, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(4.0), Some(8.0)]);
 
-        let out = rolling_sum(arr, 4, 1, true, None);
+        let out = rolling_sum(arr, 4, 1, true, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(4.0), Some(8.0), Some(7.0)]);
 
-        let out = rolling_sum(arr, 4, 4, true, None);
+        let out = rolling_sum(arr, 4, 4, true, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, None]);
@@ -142,17 +149,17 @@ mod test {
         let arr = get_null_arr();
         let arr = &arr;
 
-        let out = rolling_mean(arr, 2, 2, false, None);
+        let out = rolling_mean(arr, 2, 2, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, Some(1.5)]);
 
-        let out = rolling_mean(arr, 2, 1, false, None);
+        let out = rolling_mean(arr, 2, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(-1.0), Some(1.5)]);
 
-        let out = rolling_mean(arr, 4, 1, false, None);
+        let out = rolling_mean(arr, 4, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(0.0), Some(4.0 / 3.0)]);
@@ -163,7 +170,7 @@ mod test {
         let arr = get_null_arr();
         let arr = &arr;
 
-        let out = rolling_var(arr, 3, 1, false, None);
+        let out = rolling_var(arr, 3, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out
             .into_iter()
@@ -172,13 +179,31 @@ mod test {
 
         assert_eq!(out, &[0.0, 0.0, 2.0, 12.5]);
 
-        let out = rolling_var(arr, 4, 1, false, None);
+        let testpars = Some(Arc::new(RollingVarParams { ddof: 0 }) as Arc<dyn Any + Send + Sync>);
+        let out = rolling_var(arr, 3, 1, false, None, testpars.clone());
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out
+            .into_iter()
+            .map(|v| v.copied().unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(out, &[0.0, 0.0, 1.0, 6.25]);
+
+        let out = rolling_var(arr, 4, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out
             .into_iter()
             .map(|v| v.copied().unwrap())
             .collect::<Vec<_>>();
         assert_eq!(out, &[0.0, 0.0, 2.0, 6.333333333333334]);
+
+        let out = rolling_var(arr, 4, 1, false, None, testpars.clone());
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out
+            .into_iter()
+            .map(|v| v.copied().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(out, &[0.0, 0.0, 1.0, 4.222222222222222]);
     }
 
     #[test]
@@ -189,17 +214,17 @@ mod test {
             buf,
             Some(Bitmap::from(&[true, true, true, true])),
         );
-        let out = rolling_max(arr, 4, 1, false, None);
+        let out = rolling_max(arr, 4, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(2.0), Some(3.0), Some(4.0)]);
 
-        let out = rolling_max(arr, 2, 2, false, None);
+        let out = rolling_max(arr, 2, 2, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(2.0), Some(3.0), Some(4.0)]);
 
-        let out = rolling_max(arr, 4, 4, false, None);
+        let out = rolling_max(arr, 4, 4, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, Some(4.0)]);
@@ -210,12 +235,13 @@ mod test {
             buf,
             Some(Bitmap::from(&[true, true, true, true])),
         );
-        let out = rolling_max(arr, 2, 1, false, None);
+        let out = rolling_max(arr, 2, 1, false, None, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
 
-        let out = super::no_nulls::rolling_max(arr.values().as_slice(), 2, 1, false, None);
+        let out =
+            super::no_nulls::rolling_max(arr.values().as_slice(), 2, 1, false, None, None).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
@@ -238,6 +264,7 @@ mod test {
             window_size,
             min_periods,
             det_offsets,
+            None,
         );
         let arr = out.as_any().downcast_ref::<Int32Array>().unwrap();
         assert_eq!(arr.null_count(), 2);

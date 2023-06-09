@@ -664,41 +664,6 @@ def test_backward_fill() -> None:
     assert_series_equal(col_a_backward_fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
 
-def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:
-    ldf = fruits_cars.lazy()
-    result = ldf.select(pl.col(["A", "B"]).sum())
-    expected = pl.LazyFrame({"A": 15, "B": 15})
-    assert_frame_equal(result, expected)
-
-
-def test_select_args_kwargs() -> None:
-    ldf = pl.LazyFrame({"foo": [1, 2], "bar": [3, 4], "ham": ["a", "b"]})
-
-    # Single column name
-    result = ldf.select("foo")
-    expected = pl.LazyFrame({"foo": [1, 2]})
-    assert_frame_equal(result, expected)
-
-    # Column names as list
-    result = ldf.select(["foo", "bar"])
-    expected = pl.LazyFrame({"foo": [1, 2], "bar": [3, 4]})
-    assert_frame_equal(result, expected)
-
-    # Column names as positional arguments
-    result, expected = ldf.select("foo", "bar", "ham"), ldf
-    assert_frame_equal(result, expected)
-
-    # Keyword arguments
-    result = ldf.select(oof="foo")
-    expected = pl.LazyFrame({"oof": [1, 2]})
-    assert_frame_equal(result, expected)
-
-    # Mixed
-    result = ldf.select(["bar"], "foo", oof="foo")
-    expected = pl.LazyFrame({"bar": [3, 4], "foo": [1, 2], "oof": [1, 2]})
-    assert_frame_equal(result, expected)
-
-
 def test_rolling(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     out = ldf.select(
@@ -927,14 +892,6 @@ def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
     assert res.columns[0] == "C"
 
 
-def test_with_columns_single_series() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2]})
-    result = ldf.with_columns(pl.Series("b", [3, 4]))
-
-    expected = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    assert_frame_equal(result.collect(), expected)
-
-
 def test_reverse() -> None:
     out = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).reverse()
     expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
@@ -1141,7 +1098,7 @@ def test_self_join() -> None:
     out = (
         ldf.join(other=ldf, left_on="manager_id", right_on="employee_id", how="left")
         .select(
-            exprs=[
+            [
                 pl.col("employee_id"),
                 pl.col("employee_name"),
                 pl.col("employee_name_right").alias("manager_name"),

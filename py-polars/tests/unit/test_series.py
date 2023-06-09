@@ -494,7 +494,7 @@ def test_series_dtype_is() -> None:
     s = pl.Series("s", ["testing..."])
     assert s.is_utf8()
 
-    s = pl.Series("s", [], dtype=pl.Decimal(20, 15))
+    s = pl.Series("s", [], dtype=pl.Decimal(scale=15, precision=20))
     assert not s.is_float()
     assert s.is_numeric()
     assert s.is_empty()
@@ -1029,6 +1029,9 @@ def test_rolling() -> None:
 
     assert a.rolling_std(2).to_list()[1] == pytest.approx(0.7071067811865476)
     assert a.rolling_var(2).to_list()[1] == pytest.approx(0.5)
+    assert a.rolling_std(2, ddof=0).to_list()[1] == pytest.approx(0.5)
+    assert a.rolling_var(2, ddof=0).to_list()[1] == pytest.approx(0.25)
+
     assert_series_equal(
         a.rolling_median(4), pl.Series("a", [None, None, None, 2, 2], dtype=Float64)
     )
@@ -1823,7 +1826,7 @@ def test_sample() -> None:
     assert len(s.sample(n=2, with_replacement=True, seed=0)) == 2
 
     # on a series of length 5, you cannot sample more than 5 items
-    with pytest.raises(Exception):
+    with pytest.raises(pl.ShapeError):
         s.sample(n=10, with_replacement=False, seed=0)
     # unless you use with_replacement=True
     assert len(s.sample(n=10, with_replacement=True, seed=0)) == 10

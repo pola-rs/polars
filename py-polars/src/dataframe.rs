@@ -499,7 +499,7 @@ impl PyDataFrame {
             .map(|(key, val)| {
                 let name = key.extract::<&str>()?;
 
-                let s = if val.is_instance_of::<PyDict>()? {
+                let s = if val.is_instance_of::<PyDict>() {
                     let df = Self::read_dict(py, val.extract::<&PyDict>()?)?;
                     df.df.into_struct(name).into_series()
                 } else {
@@ -1257,12 +1257,14 @@ impl PyDataFrame {
 
     #[pyo3(signature = (lambda, output_type, inference_size))]
     pub fn apply(
-        &self,
+        &mut self,
         lambda: &PyAny,
         output_type: Option<Wrap<DataType>>,
         inference_size: usize,
     ) -> PyResult<(PyObject, bool)> {
         Python::with_gil(|py| {
+            // needed for series iter
+            self.df.as_single_chunk_par();
             let df = &self.df;
 
             let output_type = output_type.map(|dt| dt.0);

@@ -2,7 +2,10 @@ use simd_json::BorrowedValue;
 
 use super::*;
 
-/// Deserializes an iterator of rows into an [`Array`] of [`DataType`].
+/// Deserializes an iterator of rows into an [`Array`][Array] of [`DataType`].
+///
+/// [Array]: arrow::array::Array
+///
 /// # Implementation
 /// This function is CPU-bounded.
 /// This function is guaranteed to return an array of length equal to the length
@@ -20,7 +23,9 @@ pub fn deserialize_iter<'a>(
         buf.push_str(row);
         buf.push(',')
     }
-    let _ = buf.pop();
+    if buf.len() > 1 {
+        let _ = buf.pop();
+    }
     buf.push(']');
     let slice = unsafe { buf.as_bytes_mut() };
     let out = simd_json::to_borrowed_value(slice)

@@ -11,6 +11,8 @@ mod bounds;
 mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
+mod concat;
+mod correlation;
 mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
@@ -50,6 +52,7 @@ use std::fmt::{Display, Formatter};
 
 #[cfg(feature = "dtype-array")]
 pub(super) use array::ArrayFunction;
+pub(crate) use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
@@ -178,6 +181,12 @@ pub enum FunctionExpr {
     LowerBound,
     #[cfg(feature = "fused")]
     Fused(fused::FusedOperator),
+    ConcatExpr(bool),
+    Correlation {
+        method: correlation::CorrelationMethod,
+        ddof: u8,
+    },
+    ToPhysical,
 }
 
 impl Display for FunctionExpr {
@@ -268,6 +277,9 @@ impl Display for FunctionExpr {
             Fused(fused) => return Display::fmt(fused, f),
             #[cfg(feature = "dtype-array")]
             ArrayExpr(af) => return Display::fmt(af, f),
+            ConcatExpr(_) => "concat_expr",
+            Correlation { method, .. } => return Display::fmt(method, f),
+            ToPhysical => "to_physical",
         };
         write!(f, "{s}")
     }
@@ -430,6 +442,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Min => map!(array::min),
                     Max => map!(array::max),
                     Sum => map!(array::sum),
+                    Unique(stable) => map!(array::unique, stable),
                 }
             }
             #[cfg(feature = "dtype-struct")]
@@ -483,6 +496,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             LowerBound => map!(bounds::lower_bound),
             #[cfg(feature = "fused")]
             Fused(op) => map_as_slice!(fused::fused, op),
+            ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
+            Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            ToPhysical => map!(dispatch::to_physical),
         }
     }
 }
@@ -536,6 +552,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
             Slice(start, length) => map!(strings::str_slice, start, length),
             Explode => map!(strings::explode),
+            #[cfg(feature = "dtype-decimal")]
+            ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
         }
     }
 }

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from typing import TYPE_CHECKING, Iterable, overload
 
 from polars import functions as F
 from polars.datatypes import Date, Struct, Time
 from polars.utils._parse_expr_input import (
-    parse_single_expression_input,
-    selection_to_pyexpr_list,
+    parse_as_expression,
+    parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_expr
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -61,24 +63,24 @@ def datetime_(
     Expr of type `pl.Datetime`
 
     """
-    year_expr = parse_single_expression_input(year)
-    month_expr = parse_single_expression_input(month)
-    day_expr = parse_single_expression_input(day)
+    year_expr = parse_as_expression(year)
+    month_expr = parse_as_expression(month)
+    day_expr = parse_as_expression(day)
 
     if hour is not None:
-        hour = parse_single_expression_input(hour)._pyexpr
+        hour = parse_as_expression(hour)
     if minute is not None:
-        minute = parse_single_expression_input(minute)._pyexpr
+        minute = parse_as_expression(minute)
     if second is not None:
-        second = parse_single_expression_input(second)._pyexpr
+        second = parse_as_expression(second)
     if microsecond is not None:
-        microsecond = parse_single_expression_input(microsecond)._pyexpr
+        microsecond = parse_as_expression(microsecond)
 
     return wrap_expr(
         plr.datetime(
-            year_expr._pyexpr,
-            month_expr._pyexpr,
-            day_expr._pyexpr,
+            year_expr,
+            month_expr,
+            day_expr,
             hour,
             minute,
             second,
@@ -203,21 +205,21 @@ def duration(
 
     """  # noqa: W505
     if hours is not None:
-        hours = parse_single_expression_input(hours)._pyexpr
+        hours = parse_as_expression(hours)
     if minutes is not None:
-        minutes = parse_single_expression_input(minutes)._pyexpr
+        minutes = parse_as_expression(minutes)
     if seconds is not None:
-        seconds = parse_single_expression_input(seconds)._pyexpr
+        seconds = parse_as_expression(seconds)
     if milliseconds is not None:
-        milliseconds = parse_single_expression_input(milliseconds)._pyexpr
+        milliseconds = parse_as_expression(milliseconds)
     if microseconds is not None:
-        microseconds = parse_single_expression_input(microseconds)._pyexpr
+        microseconds = parse_as_expression(microseconds)
     if nanoseconds is not None:
-        nanoseconds = parse_single_expression_input(nanoseconds)._pyexpr
+        nanoseconds = parse_as_expression(nanoseconds)
     if days is not None:
-        days = parse_single_expression_input(days)._pyexpr
+        days = parse_as_expression(days)
     if weeks is not None:
-        weeks = parse_single_expression_input(weeks)._pyexpr
+        weeks = parse_as_expression(weeks)
 
     return wrap_expr(
         plr.duration(
@@ -272,18 +274,15 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     └───────────────────┘
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_list(exprs))
 
 
 @overload
 def struct(
-    exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    *more_exprs: IntoExpr,
-    eager: Literal[False] = ...,
+    *exprs: IntoExpr | Iterable[IntoExpr],
     schema: SchemaDict | None = ...,
+    eager: Literal[False] = ...,
     **named_exprs: IntoExpr,
 ) -> Expr:
     ...
@@ -291,10 +290,9 @@ def struct(
 
 @overload
 def struct(
-    exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    *more_exprs: IntoExpr,
-    eager: Literal[True],
+    *exprs: IntoExpr | Iterable[IntoExpr],
     schema: SchemaDict | None = ...,
+    eager: Literal[True],
     **named_exprs: IntoExpr,
 ) -> Series:
     ...
@@ -302,20 +300,18 @@ def struct(
 
 @overload
 def struct(
-    exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    *more_exprs: IntoExpr,
-    eager: bool,
+    *exprs: IntoExpr | Iterable[IntoExpr],
     schema: SchemaDict | None = ...,
+    eager: bool,
     **named_exprs: IntoExpr,
 ) -> Expr | Series:
     ...
 
 
 def struct(
-    exprs: IntoExpr | Iterable[IntoExpr] = None,
-    *more_exprs: IntoExpr,
-    eager: bool = False,
+    *exprs: IntoExpr | Iterable[IntoExpr],
     schema: SchemaDict | None = None,
+    eager: bool = False,
     **named_exprs: IntoExpr,
 ) -> Expr | Series:
     """
@@ -323,18 +319,16 @@ def struct(
 
     Parameters
     ----------
-    exprs
-        Column(s) to collect into a struct column. Accepts expression input. Strings are
-        parsed as column names, other non-expression inputs are parsed as literals.
-    *more_exprs
-        Additional columns to collect into the struct column, specified as positional
-        arguments.
-    eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
+    *exprs
+        Column(s) to collect into a struct column, specified as positional arguments.
+        Accepts expression input. Strings are parsed as column names,
+        other non-expression inputs are parsed as literals.
     schema
         Optional schema that explicitly defines the struct field dtypes. If no columns
         or expressions are provided, schema keys are used to define columns.
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
     **named_exprs
         Additional columns to collect into the struct column, specified as keyword
         arguments. The columns will be renamed to the keyword used.
@@ -382,22 +376,25 @@ def struct(
     {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
-    if named_exprs:
-        exprs.extend(
-            parse_single_expression_input(expr).alias(name)._pyexpr
-            for name, expr in named_exprs.items()
+    if "exprs" in named_exprs:
+        warnings.warn(
+            "passing expressions to `struct` using the keyword argument `exprs` is"
+            " deprecated. Use positional syntax instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
         )
+        first_input = named_exprs.pop("exprs")
+        pyexprs = parse_as_list_of_expressions(first_input, *exprs, **named_exprs)
+    else:
+        pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
 
-    expr = wrap_expr(plr.as_struct(exprs))
+    expr = wrap_expr(plr.as_struct(pyexprs))
 
     if schema:
         if not exprs:
             # no columns or expressions provided; create one from schema keys
             expr = wrap_expr(
-                plr.as_struct(selection_to_pyexpr_list(list(schema.keys())))
+                plr.as_struct(parse_as_list_of_expressions(list(schema.keys())))
             )
         expr = expr.cast(Struct(schema), strict=False)
 
@@ -460,9 +457,7 @@ def concat_str(
     └─────┴──────┴──────┴───────────────┘
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_str(exprs, separator))
 
 
@@ -511,7 +506,7 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     arguments = iter(args)
     for i, s in enumerate(f_string.split("{}")):
         if i > 0:
-            e = parse_single_expression_input(next(arguments))
+            e = wrap_expr(parse_as_expression(next(arguments)))
             exprs.append(e)
 
         if len(s) > 0:

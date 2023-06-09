@@ -262,8 +262,6 @@ def test_err_asof_join_null_values() -> None:
 
 def test_is_nan_on_non_boolean() -> None:
     with pytest.raises(pl.InvalidOperationError):
-        pl.Series([1, 2, 3]).fill_nan(0)
-    with pytest.raises(pl.InvalidOperationError):
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
 
 
@@ -585,8 +583,7 @@ def test_invalid_getitem_key_err() -> None:
 def test_invalid_groupby_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(
-        ValueError,
-        match=r"'aggs' argument should be one or multiple expressions, got: '{'a': 'sum'}'",
+        ValueError, match="specifying aggregations as a dictionary is not supported"
     ):
         df.groupby(1).agg({"a": "sum"})
 
@@ -651,3 +648,14 @@ def test_overflow_msg() -> None:
         match=r"could not append value: 2147483648 of type: i64 to the builder",
     ):
         pl.DataFrame([[2**31]], [("a", pl.Int32)], orient="row")
+
+
+def test_sort_by_err_9259() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 1, 1], "b": [3, 2, 1], "c": [1, 1, 2]},
+        schema={"a": pl.Float32, "b": pl.Float32, "c": pl.Float32},
+    )
+    with pytest.raises(pl.ComputeError):
+        df.lazy().groupby("c").agg(
+            [pl.col("a").sort_by(pl.col("b").filter(pl.col("b") > 100)).sum()]
+        ).collect()

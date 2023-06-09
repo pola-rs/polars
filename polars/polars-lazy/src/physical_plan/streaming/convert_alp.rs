@@ -219,7 +219,7 @@ pub(crate) fn insert_streaming_nodes(
                 input_right,
                 options,
                 ..
-            } if streamable_join(&options.how) => {
+            } if streamable_join(&options.args) => {
                 let input_left = *input_left;
                 let input_right = *input_right;
                 state.streamable = true;

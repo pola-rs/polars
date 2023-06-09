@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::borrow::Cow;
 use std::iter::StepBy;
 use std::ops::Range;
 use std::sync::Arc;
@@ -17,11 +16,11 @@ use crate::operators::{
 #[derive(Default)]
 pub struct CrossJoin {
     chunks: Vec<DataChunk>,
-    suffix: Cow<'static, str>,
+    suffix: SmartString,
 }
 
 impl CrossJoin {
-    pub(crate) fn new(suffix: Cow<'static, str>) -> Self {
+    pub(crate) fn new(suffix: SmartString) -> Self {
         CrossJoin {
             chunks: vec![],
             suffix,

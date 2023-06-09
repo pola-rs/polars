@@ -160,7 +160,7 @@ impl DataType {
         self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
     }
 
-    /// Check if this [`DataType`] is a numeric type
+    /// Check if this [`DataType`] is a numeric type.
     pub fn is_numeric(&self) -> bool {
         // allow because it cannot be replaced when object feature is activated
         #[allow(clippy::match_like_matches_macro)]
@@ -181,6 +181,8 @@ impl DataType {
             DataType::Categorical(_) => false,
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => false,
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => false,
             _ => true,
         }
     }
@@ -305,7 +307,7 @@ impl Display for DataType {
                     (_, None) => f.write_str("decimal[?]"), // shouldn't happen
                     (None, Some(scale)) => f.write_str(&format!("decimal[{scale}]")),
                     (Some(precision), Some(scale)) => {
-                        f.write_str(&format!("decimal[.{precision},{scale}]"))
+                        f.write_str(&format!("decimal[{precision},{scale}]"))
                     }
                 };
             }

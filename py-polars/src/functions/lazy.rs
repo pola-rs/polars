@@ -229,6 +229,13 @@ pub fn diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<Py
 }
 
 #[pyfunction]
+pub fn concat_expr(e: Vec<PyExpr>, rechunk: bool) -> PyResult<PyExpr> {
+    let e = e.to_exprs();
+    let e = dsl::functions::concat_expr(e, rechunk).map_err(PyPolarsErr::from)?;
+    Ok(e.into())
+}
+
+#[pyfunction]
 pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
     let dtypes = vec_extract_wrapped(dtypes);
     Ok(dsl::dtype_cols(dtypes).into())
@@ -289,7 +296,7 @@ pub fn last() -> PyExpr {
 
 #[pyfunction]
 pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
-    if let Ok(true) = value.is_instance_of::<PyBool>() {
+    if value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::lit(val).into())
     } else if let Ok(int) = value.downcast::<PyInt>() {
@@ -444,4 +451,11 @@ pub fn time_range_lazy(
     let end = end.inner;
     let every = Duration::parse(every);
     dsl::functions::time_range(start, end, every, closed.0).into()
+}
+
+#[pyfunction]
+#[cfg(feature = "sql")]
+pub fn sql_expr(sql: &str) -> PyResult<PyExpr> {
+    let expr = polars::sql::sql_expr(sql).map_err(PyPolarsErr::from)?;
+    Ok(expr.into())
 }

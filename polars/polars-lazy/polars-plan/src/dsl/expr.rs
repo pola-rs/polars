@@ -1,254 +1,13 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::ops::Deref;
 
 use polars_core::prelude::*;
-use polars_core::utils::get_supertype;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
-use serde::{Deserializer, Serializer};
 
+pub use super::expr_dyn_fn::*;
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
-
-/// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
-pub trait SeriesUdf: Send + Sync {
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>>;
-}
-
-impl<F> SeriesUdf for F
-where
-    F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + Send + Sync,
-{
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
-        self(s)
-    }
-}
-
-impl Debug for dyn SeriesUdf {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SeriesUdf")
-    }
-}
-
-/// A wrapper trait for any binary closure `Fn(Series, Series) -> PolarsResult<Series>`
-pub trait SeriesBinaryUdf: Send + Sync {
-    fn call_udf(&self, a: Series, b: Series) -> PolarsResult<Series>;
-}
-
-impl<F> SeriesBinaryUdf for F
-where
-    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
-{
-    fn call_udf(&self, a: Series, b: Series) -> PolarsResult<Series> {
-        self(a, b)
-    }
-}
-
-impl Debug for dyn SeriesBinaryUdf {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SeriesBinaryUdf")
-    }
-}
-
-impl Default for SpecialEq<Arc<dyn SeriesBinaryUdf>> {
-    fn default() -> Self {
-        panic!("implementation error");
-    }
-}
-
-impl Default for SpecialEq<Arc<dyn BinaryUdfOutputField>> {
-    fn default() -> Self {
-        let output_field = move |_: &Schema, _: Context, _: &Field, _: &Field| None;
-        SpecialEq::new(Arc::new(output_field))
-    }
-}
-
-pub trait RenameAliasFn: Send + Sync {
-    fn call(&self, name: &str) -> PolarsResult<String>;
-}
-
-impl<F: Fn(&str) -> PolarsResult<String> + Send + Sync> RenameAliasFn for F {
-    fn call(&self, name: &str) -> PolarsResult<String> {
-        self(name)
-    }
-}
-
-impl Debug for dyn RenameAliasFn {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RenameAliasFn")
-    }
-}
-
-#[derive(Clone)]
-/// Wrapper type that has special equality properties
-/// depending on the inner type specialization
-pub struct SpecialEq<T>(T);
-
-#[cfg(feature = "serde")]
-impl<T: Serialize> Serialize for SpecialEq<T> {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.0.serialize(serializer)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'a, T: Deserialize<'a>> Deserialize<'a> for SpecialEq<T> {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        let t = T::deserialize(deserializer)?;
-        Ok(SpecialEq(t))
-    }
-}
-
-impl<T> SpecialEq<T> {
-    pub fn new(val: T) -> Self {
-        SpecialEq(val)
-    }
-}
-
-impl<T: ?Sized> PartialEq for SpecialEq<Arc<T>> {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-}
-
-impl PartialEq for SpecialEq<Series> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<T> Debug for SpecialEq<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "no_eq")
-    }
-}
-
-impl<T> Deref for SpecialEq<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-pub trait BinaryUdfOutputField: Send + Sync {
-    fn get_field(
-        &self,
-        input_schema: &Schema,
-        cntxt: Context,
-        field_a: &Field,
-        field_b: &Field,
-    ) -> Option<Field>;
-}
-
-impl<F> BinaryUdfOutputField for F
-where
-    F: Fn(&Schema, Context, &Field, &Field) -> Option<Field> + Send + Sync,
-{
-    fn get_field(
-        &self,
-        input_schema: &Schema,
-        cntxt: Context,
-        field_a: &Field,
-        field_b: &Field,
-    ) -> Option<Field> {
-        self(input_schema, cntxt, field_a, field_b)
-    }
-}
-
-pub trait FunctionOutputField: Send + Sync {
-    fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field;
-}
-
-pub type GetOutput = SpecialEq<Arc<dyn FunctionOutputField>>;
-
-impl Default for GetOutput {
-    fn default() -> Self {
-        SpecialEq::new(Arc::new(
-            |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| fields[0].clone(),
-        ))
-    }
-}
-
-impl GetOutput {
-    pub fn same_type() -> Self {
-        Default::default()
-    }
-
-    pub fn from_type(dt: DataType) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            Field::new(flds[0].name(), dt.clone())
-        }))
-    }
-
-    pub fn map_field<F: 'static + Fn(&Field) -> Field + Send + Sync>(f: F) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            f(&flds[0])
-        }))
-    }
-
-    pub fn map_fields<F: 'static + Fn(&[Field]) -> Field + Send + Sync>(f: F) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            f(flds)
-        }))
-    }
-
-    pub fn map_dtype<F: 'static + Fn(&DataType) -> DataType + Send + Sync>(f: F) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            let mut fld = flds[0].clone();
-            let new_type = f(fld.data_type());
-            fld.coerce(new_type);
-            fld
-        }))
-    }
-
-    pub fn float_type() -> Self {
-        Self::map_dtype(|dt| match dt {
-            DataType::Float32 => DataType::Float32,
-            _ => DataType::Float64,
-        })
-    }
-
-    pub fn super_type() -> Self {
-        Self::map_dtypes(|dtypes| {
-            let mut st = dtypes[0].clone();
-            for dt in &dtypes[1..] {
-                st = get_supertype(&st, dt).unwrap();
-            }
-            st
-        })
-    }
-
-    pub fn map_dtypes<F>(f: F) -> Self
-    where
-        F: 'static + Fn(&[&DataType]) -> DataType + Send + Sync,
-    {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            let mut fld = flds[0].clone();
-            let dtypes = flds.iter().map(|fld| fld.data_type()).collect::<Vec<_>>();
-            let new_type = f(&dtypes);
-            fld.coerce(new_type);
-            fld
-        }))
-    }
-}
-
-impl<F> FunctionOutputField for F
-where
-    F: Fn(&Schema, Context, &[Field]) -> Field + Send + Sync,
-{
-    fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field {
-        self(input_schema, cntxt, fields)
-    }
-}
 
 #[derive(PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -399,17 +158,89 @@ pub enum Expr {
         input: Box<Expr>,
         id: usize,
     },
+    /// Expressions in this node should only be expanding
+    /// e.g.
+    /// `Expr::Columns`
+    /// `Expr::Dtypes`
+    /// `Expr::Wildcard`
+    /// `Expr::Exclude`
+    Selector(super::selector::Selector),
 }
 
-// TODO! derive. This is only a temporary fix
-// Because PartialEq will have a lot of `false`, e.g. on Function
-// Types, this may lead to many file reads, as we use predicate comparison
-// to check if we can cache a file
 #[allow(clippy::derived_hash_with_manual_eq)]
 impl Hash for Expr {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let s = format!("{self:?}");
-        s.hash(state)
+        let d = std::mem::discriminant(self);
+        d.hash(state);
+        match self {
+            Expr::Column(name) => name.hash(state),
+            Expr::Columns(names) => names.hash(state),
+            Expr::DtypeColumn(dtypes) => dtypes.hash(state),
+            Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
+            Expr::Selector(s) => s.hash(state),
+            Expr::Nth(v) => v.hash(state),
+            Expr::Filter { input, by } => {
+                input.hash(state);
+                by.hash(state);
+            }
+            Expr::BinaryExpr { left, op, right } => {
+                left.hash(state);
+                right.hash(state);
+                std::mem::discriminant(op).hash(state)
+            }
+            Expr::Cast {
+                expr,
+                data_type,
+                strict,
+            } => {
+                expr.hash(state);
+                data_type.hash(state);
+                strict.hash(state)
+            }
+            Expr::Sort { expr, options } => {
+                expr.hash(state);
+                options.hash(state);
+            }
+            Expr::Alias(input, name) => {
+                input.hash(state);
+                name.hash(state)
+            }
+            Expr::KeepName(input) => input.hash(state),
+            Expr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => {
+                predicate.hash(state);
+                truthy.hash(state);
+                falsy.hash(state);
+            }
+            Expr::Function {
+                input,
+                function,
+                options,
+            } => {
+                input.hash(state);
+                std::mem::discriminant(function).hash(state);
+                options.hash(state);
+            }
+            // already hashed by discriminant
+            Expr::Wildcard | Expr::Count => {}
+            #[allow(unreachable_code)]
+            _ => {
+                // the panic checks if we hit this
+                #[cfg(debug_assertions)]
+                {
+                    todo!("IMPLEMENT")
+                }
+                // TODO! derive. This is only a temporary fix
+                // Because PartialEq will have a lot of `false`, e.g. on Function
+                // Types, this may lead to many file reads, as we use predicate comparison
+                // to check if we can cache a file
+                let s = format!("{self:?}");
+                s.hash(state)
+            }
+        }
     }
 }
 

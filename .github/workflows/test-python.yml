@@ -30,8 +30,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-          cache-dependency-path: 'py-polars/requirements-dev.txt'
 
       - name: Create virtual environment
         run: |
@@ -39,9 +37,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.txt
 
       - name: Set up Rust
         run: rustup show
@@ -49,7 +45,9 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          shared-key: shared-ubuntu-latest
           workspaces: py-polars
+          save-if: false
 
       - name: Install Polars
         env:
@@ -96,13 +94,9 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: py-polars/requirements-dev.txt
 
       - name: Install Python dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.txt
 
       - name: Set up Rust
         run: rustup show
@@ -110,7 +104,9 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          shared-key: shared-windows-latest
           workspaces: py-polars
+          save-if: false
 
       - name: Install Polars
         shell: bash
@@ -121,7 +117,7 @@ jobs:
           pip install target/wheels/polars-*.whl
 
       - name: Run tests
-        run: pytest -m "not benchmark"
+        run: pytest -n auto --dist worksteal -m "not benchmark"
 
       - name: Check import without optional dependencies
         run: |

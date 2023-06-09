@@ -25,6 +25,7 @@ pub struct ApplyExpr {
     pub pass_name_to_apply: bool,
     pub input_schema: Option<SchemaRef>,
     pub allow_threading: bool,
+    pub check_lengths: bool,
 }
 
 impl ApplyExpr {
@@ -44,6 +45,7 @@ impl ApplyExpr {
             pass_name_to_apply: false,
             input_schema: None,
             allow_threading: true,
+            check_lengths: true,
         }
     }
 
@@ -173,7 +175,7 @@ impl ApplyExpr {
             }
         };
 
-        ac.with_series(s, aggregated, Some(&self.expr))?;
+        ac.with_series_and_args(s, aggregated, Some(&self.expr), true)?;
         Ok(ac)
     }
     fn apply_multiple_group_aware<'a>(
@@ -311,7 +313,12 @@ impl PhysicalExpr for ApplyExpr {
                     {
                         self.apply_multiple_group_aware(acs, df)
                     } else {
-                        apply_multiple_elementwise(acs, self.function.as_ref(), &self.expr)
+                        apply_multiple_elementwise(
+                            acs,
+                            self.function.as_ref(),
+                            &self.expr,
+                            self.check_lengths,
+                        )
                     }
                 }
             }
@@ -350,6 +357,7 @@ fn apply_multiple_elementwise<'a>(
     mut acs: Vec<AggregationContext<'a>>,
     function: &dyn SeriesUdf,
     expr: &Expr,
+    check_lengths: bool,
 ) -> PolarsResult<AggregationContext<'a>> {
     match acs.first().unwrap().agg_state() {
         // a fast path that doesn't drop groups of the first arg
@@ -388,13 +396,15 @@ fn apply_multiple_elementwise<'a>(
                 })
                 .collect::<Vec<_>>();
 
-            let input_len = s.iter().map(|s| s.len()).max().unwrap();
+            let input_len = s[0].len();
             let s = function.call_udf(&mut s)?.unwrap();
-            check_map_output_len(input_len, s.len(), expr)?;
+            if check_lengths {
+                check_map_output_len(input_len, s.len(), expr)?;
+            }
 
             // take the first aggregation context that as that is the input series
             let mut ac = acs.swap_remove(0);
-            ac.with_series(s, false, None)?;
+            ac.with_series_and_args(s, false, None, true)?;
             Ok(ac)
         }
     }
