@@ -258,7 +258,7 @@ impl ThreadLocalTable {
                 agg_constructors,
                 key_dtypes.as_ref(),
                 output_schema,
-                Some(256),
+                Some(10_000),
             ),
             spill_partitions,
         }
