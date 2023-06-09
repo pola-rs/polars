@@ -135,16 +135,18 @@ class _selector_proxy_(Expr):
 
 
 def _re_string(string: str | Collection[str]) -> str:
+    """Return escaped regex, potentially representing multiple string fragments."""
     if isinstance(string, str):
-        return re.escape(string)
+        rx = f"{re.escape(string)}"
     else:
         strings: list[str] = []
         for st in string:
-            if isinstance(st, Collection):
+            if isinstance(st, Collection) and not isinstance(st, str):  # type: ignore[redundant-expr]
                 strings.extend(st)
             else:
                 strings.append(st)
-        return "|".join(re.escape(x) for x in strings)
+        rx = "|".join(re.escape(x) for x in strings)
+    return f"({rx})"
 
 
 def all() -> Expr:
@@ -569,7 +571,7 @@ def ends_with(*suffix: str) -> Expr:
 
     """
     escaped_suffix = _re_string(suffix)
-    raw_params = f"^.*({escaped_suffix})$"
+    raw_params = f"^.*{escaped_suffix}$"
 
     return _selector_proxy_(
         F.col(raw_params),
@@ -967,7 +969,7 @@ def starts_with(*prefix: str) -> Expr:
 
     """
     escaped_prefix = _re_string(prefix)
-    raw_params = f"^({escaped_prefix}).*$"
+    raw_params = f"^{escaped_prefix}.*$"
 
     return _selector_proxy_(
         F.col(raw_params),
