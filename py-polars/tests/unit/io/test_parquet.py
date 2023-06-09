@@ -138,8 +138,8 @@ def test_parquet_datetime(compression: ParquetCompression, use_pyarrow: bool) ->
             1618354620000,
             1618354560000,
         ],
-        "laf_max": [73.1999969482, 71.0999984741, 74.5, 69.5999984741, 69.6999969482],
-        "laf_eq": [59.5999984741, 61.0, 62.2999992371, 56.9000015259, 60.0],
+        "value1": [73.1999969482, 71.0999984741, 74.5, 69.5999984741, 69.6999969482],
+        "value2": [59.5999984741, 61.0, 62.2999992371, 56.9000015259, 60.0],
     }
     df = pl.DataFrame(data)
     df = df.with_columns(df["datetime"].cast(pl.Datetime))

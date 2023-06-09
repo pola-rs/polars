@@ -293,7 +293,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
     }
 }
 
-/// An `AnyValyeBuffer` that should be used when we trust the builder
+/// An `AnyValueBuffer` that should be used when we trust the builder
 #[derive(Clone)]
 pub enum AnyValueBufferTrusted<'a> {
     Boolean(BooleanChunkedBuilder),

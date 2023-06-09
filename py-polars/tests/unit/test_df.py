@@ -1574,7 +1574,7 @@ def test_to_html() -> None:
 
 def test_rename(df: pl.DataFrame) -> None:
     out = df.rename({"strings": "bars", "int": "foos"})
-    # check if wel can select these new columns
+    # check if we can select these new columns
     _ = out[["foos", "bars"]]
 
 
