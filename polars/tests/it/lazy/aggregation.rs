@@ -99,7 +99,6 @@ fn test_apply_multiple_error() {
 #[test]
 /// Tests a complex aggregation, where groupby is called inside apply multiple
 fn test_apply_multiple_groupby() {
-        
     ///  apply_multiple which calls groupby inside
     fn inner() -> Expr {
         apply_multiple(
@@ -107,27 +106,25 @@ fn test_apply_multiple_groupby() {
                 let df = df![
                     "F" => &columns[0],
                     "B" => &columns[1],
-                ].unwrap();
-    
-                let df = df.lazy()
-                    .groupby([col("F")])
-                    .agg([
-                        (col("B")*col("F").cast(DataType::Float64)).sum().alias("res")
-                    ])
-                    .collect().unwrap();
+                ]
+                .unwrap();
 
-                let res = df.column("res").unwrap()
-                                .sum()
-                                .unwrap_or(0.);
-                            
+                let df = df
+                    .lazy()
+                    .groupby([col("F")])
+                    .agg([(col("B") * col("F").cast(DataType::Float64))
+                        .sum()
+                        .alias("res")])
+                    .collect()
+                    .unwrap();
+
+                let res = df.column("res").unwrap().sum().unwrap_or(0.);
+
                 return Ok(Some(Series::new("res", [res])));
             },
-            &[
-                col("F"),
-                col("B")
-            ],
+            &[col("F"), col("B")],
             GetOutput::from_type(DataType::Float64),
-            true
+            true,
         )
     }
 
@@ -136,12 +133,12 @@ fn test_apply_multiple_groupby() {
     let s2 = Series::new("F", ["1", "2", "1", "1"]);
     let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
 
-    let res = df.lazy()
+    let res = df
+        .lazy()
         .groupby_stable([col("C")])
-        .agg([
-            inner()
-        ])
-        .collect().unwrap();
+        .agg([inner()])
+        .collect()
+        .unwrap();
 
     // expected
     let e0 = Series::new("F", [4., 0., 0.]);
