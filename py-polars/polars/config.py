@@ -57,14 +57,14 @@ _POLARS_CFG_ENV_VARS = {
 _POLARS_CFG_DIRECT_VARS = {"set_fmt_float": _get_float_fmt}
 
 
-class Config:
+class Config(contextlib.ContextDecorator):
     """
     Configure polars; offers options for table formatting and more.
 
     Notes
     -----
-    Can also be used as a context manager in order to temporarily scope
-    the lifetime of specific options. For example:
+    Can also be used as a context manager OR a function decorator in order to
+    temporarily scope the lifetime of specific options. For example:
 
     >>> with pl.Config() as cfg:
     ...     # set verbose for more detailed output within the scope
@@ -79,6 +79,14 @@ class Config:
     ...
 
     (The compact format is available for all `Config` methods that take a single value).
+
+    Alternatively, you can use as a decorator in order to scope the duration of the
+    selected options to a specific function:
+
+    >>> @pl.Config(verbose=True)
+    ... def test():
+    ...     pass
+    ...
 
     """
 
