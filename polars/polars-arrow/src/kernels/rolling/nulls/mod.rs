@@ -240,7 +240,8 @@ mod test {
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
 
-        let out = super::no_nulls::rolling_max(arr.values().as_slice(), 2, 1, false, None, None);
+        let out =
+            super::no_nulls::rolling_max(arr.values().as_slice(), 2, 1, false, None, None).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
