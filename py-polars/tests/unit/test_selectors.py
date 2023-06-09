@@ -76,6 +76,7 @@ def test_selector_contains(df: pl.DataFrame) -> None:
         "opp",
         "qqR",
     ]
+    assert df.select(cs.contains(("ee", "x"))).columns == ["eee"]
 
 
 def test_selector_datetime(df: pl.DataFrame) -> None:
@@ -88,6 +89,7 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
 
 def test_selector_ends_with(df: pl.DataFrame) -> None:
     assert df.select(cs.ends_with("e")).columns == ["cde", "eee"]
+    assert df.select(cs.ends_with("ee")).columns == ["eee"]
     assert df.select(cs.ends_with("e", "g", "i", "n", "p")).columns == [
         "cde",
         "eee",
@@ -165,6 +167,7 @@ def test_selector_numeric(df: pl.DataFrame) -> None:
 
 def test_selector_startswith(df: pl.DataFrame) -> None:
     assert df.select(cs.starts_with("a")).columns == ["abc"]
+    assert df.select(cs.starts_with("ee")).columns == ["eee"]
     assert df.select(cs.starts_with("d", "e", "f", "g", "h", "i", "j")).columns == [
         "def",
         "eee",
