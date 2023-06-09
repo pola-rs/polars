@@ -19,6 +19,7 @@ pub use sum::*;
 pub use variance::*;
 
 use super::*;
+use crate::error::{polars_bail, PolarsResult};
 use crate::utils::CustomIterTools;
 
 pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
@@ -37,7 +38,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
     min_periods: usize,
     det_offsets_fn: Fo,
     params: DynArgs,
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     Agg: RollingAggWindowNoNulls<'a, T>,
@@ -57,11 +58,11 @@ where
         .collect_trusted::<Vec<_>>();
 
     let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
-    Box::new(PrimitiveArray::new(
+    Ok(Box::new(PrimitiveArray::new(
         T::PRIMITIVE.into(),
         out.into(),
         validity.map(|b| b.into()),
-    ))
+    )))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -82,7 +83,7 @@ pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     det_offsets_fn: Fo,
     aggregator: Fa,
     weights: &[T],
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     T: NativeType,
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
@@ -100,11 +101,11 @@ where
         .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
-    Box::new(PrimitiveArray::new(
+    Ok(Box::new(PrimitiveArray::new(
         DataType::from(T::PRIMITIVE),
         out.into(),
         validity.map(|b| b.into()),
-    ))
+    )))
 }
 
 fn compute_var_weights<T>(vals: &[T], weights: &[T]) -> T

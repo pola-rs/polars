@@ -125,7 +125,7 @@ pub fn rolling_median<T>(
     center: bool,
     weights: Option<&[f64]>,
     _params: DynArgs,
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     T: NativeType
         + std::iter::Sum<T>
@@ -139,7 +139,7 @@ where
         + Zero
         + IsFloat,
 {
-    rolling_quantile(
+    Ok(rolling_quantile(
         values,
         0.5,
         QuantileInterpolOptions::Linear,
@@ -147,7 +147,7 @@ where
         min_periods,
         center,
         weights,
-    )
+    ))
 }
 
 pub fn rolling_quantile<T>(
@@ -379,7 +379,7 @@ mod test {
         ];
 
         for interpol in interpol_options {
-            let out1 = rolling_min(values, 2, 2, false, None, None);
+            let out1 = rolling_min(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             let out2 = rolling_quantile(values, 0.0, interpol, 2, 2, false, None);
@@ -387,7 +387,7 @@ mod test {
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);
 
-            let out1 = rolling_max(values, 2, 2, false, None, None);
+            let out1 = rolling_max(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             let out2 = rolling_quantile(values, 1.0, interpol, 2, 2, false, None);
