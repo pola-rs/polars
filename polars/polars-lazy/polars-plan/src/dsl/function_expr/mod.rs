@@ -12,6 +12,7 @@ mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
 mod concat;
+mod correlation;
 mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
@@ -51,6 +52,7 @@ use std::fmt::{Display, Formatter};
 
 #[cfg(feature = "dtype-array")]
 pub(super) use array::ArrayFunction;
+pub(crate) use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
@@ -180,6 +182,11 @@ pub enum FunctionExpr {
     #[cfg(feature = "fused")]
     Fused(fused::FusedOperator),
     ConcatExpr(bool),
+    Correlation {
+        method: correlation::CorrelationMethod,
+        ddof: u8,
+    },
+    ToPhysical,
 }
 
 impl Display for FunctionExpr {
@@ -271,6 +278,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "dtype-array")]
             ArrayExpr(af) => return Display::fmt(af, f),
             ConcatExpr(_) => "concat_expr",
+            Correlation { method, .. } => return Display::fmt(method, f),
+            ToPhysical => "to_physical",
         };
         write!(f, "{s}")
     }
@@ -488,6 +497,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "fused")]
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
+            Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            ToPhysical => map!(dispatch::to_physical),
         }
     }
 }

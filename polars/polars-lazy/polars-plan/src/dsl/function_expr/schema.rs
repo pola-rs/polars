@@ -201,6 +201,8 @@ impl FunctionExpr {
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr(_) => mapper.map_to_supertype(),
+            Correlation { .. } => mapper.map_to_float_dtype(),
+            ToPhysical => mapper.to_physical_type(),
         }
     }
 }
@@ -232,6 +234,11 @@ impl<'a> FieldsMapper<'a> {
             DataType::Float32 => DataType::Float32,
             _ => DataType::Float64,
         })
+    }
+
+    /// Map to a physical type.
+    pub(super) fn to_physical_type(&self) -> PolarsResult<Field> {
+        self.map_dtype(|dtype| dtype.to_physical())
     }
 
     /// Map a single dtype with a potentially failing mapper function.

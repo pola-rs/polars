@@ -300,7 +300,7 @@ impl DataFrame {
             len * values_len + 1,
         );
         // prepare ids
-        let ids_ = self.select(id_vars)?;
+        let ids_ = self.select_with_schema_unchecked(id_vars, &schema)?;
         let mut ids = ids_.clone();
         if ids.width() > 0 {
             for _ in 0..value_vars.len() - 1 {

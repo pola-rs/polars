@@ -964,14 +964,7 @@ impl PyExpr {
     }
 
     fn to_physical(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.to_physical_repr().into_owned())),
-                GetOutput::map_dtype(|dt| dt.to_physical()),
-            )
-            .with_fmt("to_physical")
-            .into()
+        self.inner.clone().to_physical().into()
     }
 
     fn shuffle(&self, seed: Option<u64>) -> Self {

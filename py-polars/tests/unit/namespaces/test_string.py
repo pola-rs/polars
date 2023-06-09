@@ -189,8 +189,8 @@ def test_str_strip() -> None:
     expected = pl.Series(["hello", "world"])
     assert_series_equal(s.str.strip(), expected)
 
-    expected = pl.Series(["hello", "worl"])
-    assert_series_equal(s.str.strip().str.strip("d"), expected)
+    expected = pl.Series(["hell", "world"])
+    assert_series_equal(s.str.strip().str.strip("o"), expected)
 
     expected = pl.Series(["ell", "rld\t"])
     assert_series_equal(s.str.strip(" hwo"), expected)
