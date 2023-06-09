@@ -138,6 +138,7 @@ if TYPE_CHECKING:
         IntoExpr,
         IpcCompression,
         JoinStrategy,
+        JoinValidation,
         NullStrategy,
         OneOrMoreDataTypes,
         Orientation,
@@ -5475,7 +5476,7 @@ class DataFrame:
         left_on: str | Expr | Sequence[str | Expr] | None = None,
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
-        validate: str = "m:m",
+        validate: JoinValidation = "m:m",
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -5494,7 +5495,7 @@ class DataFrame:
             Name(s) of the right join column(s).
         suffix
             Suffix to append to columns with a duplicate name.
-        validate: {'m:m', 'm:1', '1:m', 'm:m'}
+        validate: {'m:m', 'm:1', '1:m', '1:1'}
             Checks if join is of specified type.
 
                 * *many_to_many*
