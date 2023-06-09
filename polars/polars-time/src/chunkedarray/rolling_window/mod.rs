@@ -227,7 +227,14 @@ fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
 fn rolling_agg<T>(
     ca: &ChunkedArray<T>,
     options: RollingOptionsImpl,
-    rolling_agg_fn: &dyn Fn(&[T::Native], usize, usize, bool, Option<&[f64]>, DynArgs) -> ArrayRef,
+    rolling_agg_fn: &dyn Fn(
+        &[T::Native],
+        usize,
+        usize,
+        bool,
+        Option<&[f64]>,
+        DynArgs,
+    ) -> PolarsResult<ArrayRef>,
     rolling_agg_fn_nulls: &dyn Fn(
         &PrimitiveArray<T::Native>,
         usize,
@@ -271,7 +278,7 @@ where
                 options.center,
                 options.weights.as_deref(),
                 options.fn_params,
-            ),
+            )?,
             _ => rolling_agg_fn_nulls(
                 arr,
                 options.window_size,
