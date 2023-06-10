@@ -158,6 +158,7 @@ impl SqlExprVisitor<'_> {
         Ok(match op {
             SQLBinaryOperator::And => left.and(right),
             SQLBinaryOperator::Divide => left / right,
+            SQLBinaryOperator::DuckIntegerDivide => left.floor_div(right).cast(DataType::Int64),
             SQLBinaryOperator::Eq => left.eq(right),
             SQLBinaryOperator::Gt => left.gt(right),
             SQLBinaryOperator::GtEq => left.gt_eq(right),
