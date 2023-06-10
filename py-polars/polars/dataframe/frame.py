@@ -3327,7 +3327,7 @@ class DataFrame:
 
         check_if_delta_available()
 
-        from deltalake.writer import (  # type: ignore[import]
+        from deltalake.writer import (
             try_get_deltatable,
             write_deltalake,
         )
@@ -3362,7 +3362,7 @@ class DataFrame:
         data_schema = data.schema
 
         # Workaround to prevent manual casting of large types
-        table = try_get_deltatable(target, storage_options)
+        table = try_get_deltatable(target, storage_options)  # type: ignore[arg-type]
 
         if table is not None:
             table_schema = table.schema()
