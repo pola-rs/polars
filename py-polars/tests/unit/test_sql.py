@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import warnings
 from pathlib import Path
@@ -227,6 +229,42 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         """
     )
     assert not any((22 <= cal <= 30) for cal in out["calories"])
+
+
+@pytest.mark.parametrize(
+    ("op", "pattern", "expected"),
+    [
+        ("~", "^veg", "vegetables"),
+        ("~", "^VEG", None),
+        ("~*", "^VEG", "vegetables"),
+        ("!~", "(t|s)$", "seafood"),
+        ("!~*", "(T|S)$", "seafood"),
+        ("!~*", "^.E", "fruit"),
+        ("!~*", "[aeiOU]", None),
+    ],
+)
+def test_sql_regex(
+    foods_ipc_path: Path, op: str, pattern: str, expected: str | None
+) -> None:
+    lf = pl.scan_ipc(foods_ipc_path)
+
+    with pl.SQLContext(foods=lf, eager_execution=True) as ctx:
+        out = ctx.execute(
+            f"""
+            SELECT DISTINCT category FROM foods
+            WHERE category {op} '{pattern}'
+            """
+        )
+        assert out.rows() == ([(expected,)] if expected else [])
+
+
+def test_sql_regex_error() -> None:
+    df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        with pytest.raises(
+            pl.ComputeError, match="Invalid pattern for '~' operator: 12345"
+        ):
+            ctx.execute("SELECT * FROM df WHERE sval ~ 12345")
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
