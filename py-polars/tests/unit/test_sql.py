@@ -48,6 +48,35 @@ def test_sql_distinct() -> None:
         c.execute("SELECT * FROM df")
 
 
+def test_sql_div() -> None:
+    df = pl.LazyFrame(
+        {
+            "a": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "b": [-100.5, 7.0, 2.5, None, -3.14],
+        }
+    )
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              a / b AS a_div_b,
+              a // b AS a_floordiv_b
+            FROM df
+            """
+        )
+
+    assert_frame_equal(
+        pl.DataFrame(
+            [
+                [-0.0995024875621891, 2.85714285714286, 12.0, None, -15.92356687898089],
+                [-1, 2, 12, None, -16],
+            ],
+            schema=["a_div_b", "a_floordiv_b"],
+        ),
+        res,
+    )
+
+
 def test_sql_groupby(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
