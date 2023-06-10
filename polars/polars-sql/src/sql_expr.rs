@@ -2,7 +2,7 @@ use polars_arrow::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
-use polars_plan::prelude::{col, when};
+use polars_plan::prelude::{col, lit, when};
 use sqlparser::ast::{
     ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
     Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, TrimWhereField,
@@ -133,6 +133,7 @@ impl SqlExprVisitor<'_> {
             UnaryOperator::Plus => lit(0) + expr,
             UnaryOperator::Minus => lit(0) - expr,
             UnaryOperator::Not => expr.not(),
+            UnaryOperator::PGSquareRoot => expr.pow(0.5),
             other => polars_bail!(InvalidOperation: "Unary operator {:?} is not supported", other),
         })
     }
@@ -174,6 +175,29 @@ impl SqlExprVisitor<'_> {
                 left.cast(DataType::Utf8) + right.cast(DataType::Utf8)
             }
             SQLBinaryOperator::Xor => left.xor(right),
+            // ----
+            // Regular expression operators
+            // ----
+            SQLBinaryOperator::PGRegexMatch => match right {
+                Expr::Literal(LiteralValue::Utf8(_)) => left.str().contains(right, true),
+                _ => polars_bail!(ComputeError: "Invalid pattern for '~' operator: {:?}", right),
+            },
+            SQLBinaryOperator::PGRegexNotMatch => match right {
+                Expr::Literal(LiteralValue::Utf8(_)) => left.str().contains(right, true).not(),
+                _ => polars_bail!(ComputeError: "Invalid pattern for '!~' operator: {:?}", right),
+            },
+            SQLBinaryOperator::PGRegexIMatch => match right {
+                Expr::Literal(LiteralValue::Utf8(pat)) => {
+                    left.str().contains(lit(format!("(?i){}", pat)), true)
+                }
+                _ => polars_bail!(ComputeError: "Invalid pattern for '~*' operator: {:?}", right),
+            },
+            SQLBinaryOperator::PGRegexNotIMatch => match right {
+                Expr::Literal(LiteralValue::Utf8(pat)) => {
+                    left.str().contains(lit(format!("(?i){}", pat)), true).not()
+                }
+                _ => polars_bail!(ComputeError: "Invalid pattern for '!~*' operator: {:?}", right),
+            },
             other => polars_bail!(ComputeError: "SQL operator {:?} is not yet supported", other),
         })
     }
@@ -220,7 +244,7 @@ impl SqlExprVisitor<'_> {
                 } else {
                     s.parse::<i64>().map(lit).map_err(|_| ())
                 }
-                .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}"))?
+                .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}", s))?
             }
             SqlValue::SingleQuotedString(s) => lit(s.clone()),
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
