@@ -332,7 +332,7 @@ def test_sql_round_ndigits(decimals: int, expected: list[float]) -> None:
 def test_sql_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx, pytest.raises(
-        pl.PolarsPanicError, match="Invalid 'decimals' for round: -1"
+        pl.PolarsPanicError, match="Invalid 'decimals' for Round: -1"
     ):
         ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 
