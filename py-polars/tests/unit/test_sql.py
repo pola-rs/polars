@@ -265,6 +265,11 @@ def test_sql_regex_error() -> None:
             pl.ComputeError, match="Invalid pattern for '~' operator: 12345"
         ):
             ctx.execute("SELECT * FROM df WHERE sval ~ 12345")
+        with pytest.raises(
+            pl.ComputeError,
+            match=r"""Invalid pattern for '!~\*' operator: col\("abcde"\)""",
+        ):
+            ctx.execute("SELECT * FROM df WHERE sval !~* abcde")
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
