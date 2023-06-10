@@ -1,6 +1,7 @@
 use polars_core::prelude::{polars_bail, polars_err, PolarsError, PolarsResult};
 use polars_lazy::dsl::Expr;
 use polars_plan::dsl::count;
+use polars_plan::logical_plan::LiteralValue;
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
     WindowSpec, WindowType,
@@ -84,6 +85,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT POW(column_1, 2) from df;
     /// ```
     Pow,
+    /// SQL 'round' function
+    /// ```sql
+    /// SELECT ROUND(column_1, 3) from df;
+    /// ```
+    Round,
     // ----
     // String functions
     // ----
@@ -271,6 +277,7 @@ impl PolarsSqlFunctions {
             "max",
             "min",
             "pow",
+            "round",
             "rtrim",
             "starts_with",
             "stddev",
@@ -303,6 +310,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "log1p" => Self::Log1p,
             "log2" => Self::Log2,
             "pow" => Self::Pow,
+            "round" => Self::Round,
             // ----
             // String functions
             // ----
@@ -366,6 +374,21 @@ impl SqlFunctionVisitor<'_> {
             Log1p => self.visit_unary(Expr::log1p),
             Log2 => self.visit_unary(|e| e.log(2.0)),
             Pow => self.visit_binary::<Expr>(Expr::pow),
+            Round => match function.args.len() {
+                1 => self.visit_unary(|e| e.round(0)),
+                2 => self.visit_binary(|e, decimals| {
+                    e.round(match decimals {
+                        Expr::Literal(LiteralValue::Int64(n)) => n as u32,
+                        _ => {
+                            panic!("Invalid 'decimals' for Round: {}", function.args[1]);
+                        }
+                    })
+                }),
+                _ => panic!(
+                    "Invalid number of arguments for Round: {}",
+                    function.args.len()
+                ),
+            },
             // ----
             // String functions
             // ----

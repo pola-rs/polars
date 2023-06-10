@@ -8,7 +8,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 # TODO: Do not rely on I/O for these tests
@@ -304,6 +304,37 @@ def test_sql_regex_error() -> None:
             match=r"""Invalid pattern for '!~\*' operator: col\("abcde"\)""",
         ):
             ctx.execute("SELECT * FROM df WHERE sval !~* abcde")
+
+
+@pytest.mark.parametrize(
+    ("decimals", "expected"),
+    [
+        (0, [-8192.0, -4.0, -2.0, 2.0, 4.0, 8193.0]),
+        (1, [-8192.5, -4.0, -1.5, 2.5, 3.6, 8192.5]),
+        (2, [-8192.5, -3.96, -1.54, 2.46, 3.6, 8192.5]),
+        (3, [-8192.499, -3.955, -1.543, 2.457, 3.599, 8192.5]),
+        (4, [-8192.499, -3.955, -1.5432, 2.4568, 3.599, 8192.5001]),
+    ],
+)
+def test_sql_round_ndigits(decimals: int, expected: list[float]) -> None:
+    df = pl.DataFrame(
+        {"n": [-8192.499, -3.9550, -1.54321, 2.45678, 3.59901, 8192.5001]},
+    )
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        if decimals == 0:
+            out = ctx.execute("SELECT ROUND(n) AS n FROM df")
+            assert_series_equal(out["n"], pl.Series("n", values=expected))
+
+        out = ctx.execute(f"""SELECT ROUND("n",{decimals}) AS n FROM df""")
+        assert_series_equal(out["n"], pl.Series("n", values=expected))
+
+
+def test_sql_round_ndigits_errors() -> None:
+    df = pl.DataFrame({"n": [99.999]})
+    with pl.SQLContext(df=df, eager_execution=True) as ctx, pytest.raises(
+        pl.PolarsPanicError, match="Invalid 'decimals' for round: -1"
+    ):
+        ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
