@@ -73,7 +73,7 @@ module = [
   "IPython.*",
   "backports",
   "connectorx",
-  "deltalake",
+  "deltalake.*",
   "fsspec.*",
   "matplotlib.*",
   "polars.polars",
