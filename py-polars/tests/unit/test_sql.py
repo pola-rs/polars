@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal
 
 
@@ -77,6 +78,39 @@ def test_sql_div() -> None:
         ),
         res,
     )
+
+
+def test_sql_equal_not_equal() -> None:
+    # validate null-aware/unaware equality comparisons
+    df = pl.DataFrame({"a": [1, None, 3, 6, 5], "b": [1, None, 3, 4, None]})
+
+    with pl.SQLContext(frame_data=df) as ctx:
+        out = ctx.execute(
+            """
+            SELECT
+              -- not null-aware
+              (a = b)  as "1_eq_unaware",
+              (a <> b) as "2_neq_unaware",
+              (a != b) as "3_neq_unaware",
+              -- null-aware
+              (a <=> b) as "4_eq_aware",
+              (a IS NOT DISTINCT FROM b) as "5_eq_aware",
+              (a IS DISTINCT FROM b) as "6_neq_aware",
+            FROM frame_data
+            """
+        ).collect()
+
+    assert out.select(cs.contains("_aware").null_count().sum()).row(0) == (0, 0, 0)
+    assert out.select(cs.contains("_unaware").null_count().sum()).row(0) == (2, 2, 2)
+
+    assert out.to_dict(False) == {
+        "1_eq_unaware": [True, None, True, False, None],
+        "2_neq_unaware": [False, None, False, True, None],
+        "3_neq_unaware": [False, None, False, True, None],
+        "4_eq_aware": [True, True, True, False, False],
+        "5_eq_aware": [True, True, True, False, False],
+        "6_neq_aware": [False, False, False, True, True],
+    }
 
 
 def test_sql_groupby(foods_ipc_path: Path) -> None:

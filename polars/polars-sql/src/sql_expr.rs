@@ -75,6 +75,12 @@ impl SqlExprVisitor<'_> {
                 list,
                 negated,
             } => self.visit_is_in(expr, list, *negated),
+            SqlExpr::IsDistinctFrom(e1, e2) => {
+                Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
+            }
+            SqlExpr::IsNotDistinctFrom(e1, e2) => {
+                Ok(self.visit_expr(e1)?.eq_missing(self.visit_expr(e2)?))
+            }
             SqlExpr::IsFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false))),
             SqlExpr::IsNotFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false)).not()),
             SqlExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
@@ -171,6 +177,7 @@ impl SqlExprVisitor<'_> {
             SQLBinaryOperator::NotEq => left.eq(right).not(),
             SQLBinaryOperator::Or => left.or(right),
             SQLBinaryOperator::Plus => left + right,
+            SQLBinaryOperator::Spaceship => left.eq_missing(right),
             SQLBinaryOperator::StringConcat => {
                 left.cast(DataType::Utf8) + right.cast(DataType::Utf8)
             }
