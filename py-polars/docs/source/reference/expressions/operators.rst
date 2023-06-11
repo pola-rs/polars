@@ -23,11 +23,13 @@ Comparison
    :toctree: api/
 
     Expr.eq
+    Expr.eq_missing
     Expr.ge
     Expr.gt
     Expr.le
     Expr.lt
     Expr.ne
+    Expr.ne_missing
 
 Numeric
 ~~~~~~~
