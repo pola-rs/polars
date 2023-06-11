@@ -25,7 +25,7 @@ pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
     f: F,
     init: TOut,
 ) -> TOut {
-    assert!(arr.null_count() == 0);
+    debug_assert!(arr.null_count() == 0);
     let array_values = arr.values().as_slice();
 
     indices.into_iter().fold(init, |acc, idx| {
