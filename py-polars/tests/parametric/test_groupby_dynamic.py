@@ -34,7 +34,7 @@ def _compare_polars_and_pandas(
     pl_startby: StartBy,
     closed: Literal["left", "right"],
     number: int,
-):
+) -> None:
     nrows = len(datetimes)
     values = data.draw(
         st.lists(st.floats(10, 20), min_size=nrows, max_size=nrows), label="values"
