@@ -82,6 +82,7 @@ if TYPE_CHECKING:
         FrameInitTypes,
         IntoExpr,
         JoinStrategy,
+        JoinValidation,
         Orientation,
         ParallelStrategy,
         PolarsDataType,
@@ -2811,6 +2812,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         left_on: str | Expr | Sequence[str | Expr] | None = None,
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
+        validate: JoinValidation = "m:m",
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> Self:
@@ -2832,6 +2834,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Join column of the right DataFrame.
         suffix
             Suffix to append to columns with a duplicate name.
+        validate: {'m:m', 'm:1', '1:m', '1:1'}
+            Checks if join is of specified type.
+
+                * *many_to_many*
+                    “m:m”: default, does not result in checks
+                * *one_to_one*
+                    “1:1”: check if join keys are unique in both left and right datasets
+                * *one_to_many*
+                    “1:m”: check if join keys are unique in left dataset
+                * *many_to_one*
+                    “m:1”: check if join keys are unique in right dataset
+
+            .. note::
+
+                - This is currently not supported the streaming engine.
+                - This is only supported when joined by single columns.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -2920,7 +2938,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if how == "cross":
             return self._from_pyldf(
                 self._ldf.join(
-                    other._ldf, [], [], allow_parallel, force_parallel, how, suffix
+                    other._ldf,
+                    [],
+                    [],
+                    allow_parallel,
+                    force_parallel,
+                    how,
+                    suffix,
+                    validate,
                 )
             )
 
@@ -2943,6 +2968,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 force_parallel,
                 how,
                 suffix,
+                validate,
             )
         )
 

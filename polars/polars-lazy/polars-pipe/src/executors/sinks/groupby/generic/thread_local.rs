@@ -1,7 +1,16 @@
+use once_cell::sync::Lazy;
+use polars_core::export::once_cell;
+
 use super::*;
 use crate::pipeline::PARTITION_SIZE;
 
 const OB_SIZE: usize = 2048;
+
+static SPILL_SIZE: Lazy<usize> = Lazy::new(|| {
+    std::env::var("POLARS_STREAMING_GROUPBY_SPILL_SIZE")
+        .map(|v| v.parse::<usize>().unwrap())
+        .unwrap_or(10_000)
+});
 
 #[derive(Clone)]
 struct SpillPartitions {
@@ -258,7 +267,7 @@ impl ThreadLocalTable {
                 agg_constructors,
                 key_dtypes.as_ref(),
                 output_schema,
-                Some(256),
+                Some(*SPILL_SIZE),
             ),
             spill_partitions,
         }

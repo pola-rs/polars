@@ -100,7 +100,7 @@ fn scan_join_same_file() -> PolarsResult<()> {
                 partial,
                 [col("category")],
                 [col("category")],
-                JoinType::Inner,
+                JoinType::Inner.into(),
             )
             .with_common_subplan_elimination(cse);
         let out = q.collect()?;

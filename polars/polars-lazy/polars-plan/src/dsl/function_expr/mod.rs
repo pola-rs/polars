@@ -186,6 +186,7 @@ pub enum FunctionExpr {
         method: correlation::CorrelationMethod,
         ddof: u8,
     },
+    ToPhysical,
 }
 
 impl Display for FunctionExpr {
@@ -278,6 +279,7 @@ impl Display for FunctionExpr {
             ArrayExpr(af) => return Display::fmt(af, f),
             ConcatExpr(_) => "concat_expr",
             Correlation { method, .. } => return Display::fmt(method, f),
+            ToPhysical => "to_physical",
         };
         write!(f, "{s}")
     }
@@ -496,6 +498,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
             Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            ToPhysical => map!(dispatch::to_physical),
         }
     }
 }

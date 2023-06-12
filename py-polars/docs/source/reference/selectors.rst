@@ -14,7 +14,7 @@ Importing
 ---------
 
 * Selectors are available as functions imported from ``polars.selectors``
-* Typical usage is to import the module as ``cs`` and employ selectors from there.
+* Typical/recommended usage is to import the module as ``cs`` and employ selectors from there.
 
   .. code-block:: python
 
@@ -29,7 +29,7 @@ Importing
               "z": ["a", "b", "a", "b", "b"],
           },
       )
-      df.groupby(by=cs.string()).agg(s.numeric().sum())
+      df.groupby(by=cs.string()).agg(cs.numeric().sum())
 
 Set operations
 --------------
@@ -45,71 +45,74 @@ Selectors support ``set`` operations such as:
 Examples
 ========
 
-  .. code-block:: python
+.. code-block:: python
 
-      import polars.selectors as cs
-      import polars as pl
+    import polars.selectors as cs
+    import polars as pl
 
-      # set up an empty dataframe with plenty of columns of various dtypes
-      df = pl.DataFrame(
-          schema={
-              "abc": pl.UInt16,
-              "bbb": pl.UInt32,
-              "cde": pl.Float64,
-              "def": pl.Float32,
-              "eee": pl.Boolean,
-              "fgg": pl.Boolean,
-              "ghi": pl.Time,
-              "JJK": pl.Date,
-              "Lmn": pl.Duration,
-              "opp": pl.Datetime("ms"),
-              "qqR": pl.Utf8,
-          },
-      )
+    # set up an empty dataframe with plenty of columns of various dtypes
+    df = pl.DataFrame(
+        schema={
+            "abc": pl.UInt16,
+            "bbb": pl.UInt32,
+            "cde": pl.Float64,
+            "def": pl.Float32,
+            "eee": pl.Boolean,
+            "fgg": pl.Boolean,
+            "ghi": pl.Time,
+            "JJK": pl.Date,
+            "Lmn": pl.Duration,
+            "opp": pl.Datetime("ms"),
+            "qqR": pl.Utf8,
+        },
+    )
 
-      # Select the UNION of temporal, strings and columns that start with "e"
-      assert df.select(cs.temporal() | cs.string() | cs.starts_with("e")).schema == {
-          "eee": pl.Boolean,
-          "ghi": pl.Time,
-          "JJK": pl.Date,
-          "Lmn": pl.Duration,
-          "opp": pl.Datetime("ms"),
-          "qqR": pl.Utf8,
-      }
+    # Select the UNION of temporal, strings and columns that start with "e"
+    assert df.select(cs.temporal() | cs.string() | cs.starts_with("e")).schema == {
+        "eee": pl.Boolean,
+        "ghi": pl.Time,
+        "JJK": pl.Date,
+        "Lmn": pl.Duration,
+        "opp": pl.Datetime("ms"),
+        "qqR": pl.Utf8,
+    }
 
-      # Select the INTERSECTION of temporal and column names that match "opp" OR "JJK"
-      assert df.select(cs.temporal() & cs.matches("opp|JJK")).schema == {
-          "JJK": pl.Date,
-          "opp": pl.Datetime("ms"),
-      }
+    # Select the INTERSECTION of temporal and column names that match "opp" OR "JJK"
+    assert df.select(cs.temporal() & cs.matches("opp|JJK")).schema == {
+        "JJK": pl.Date,
+        "opp": pl.Datetime("ms"),
+    }
 
-      # Select the DIFFERENCE of temporal columns and columns that contain the name "opp" OR "JJK"
-      assert df.select(cs.temporal() - cs.matches("opp|JJK")).schema == {
-          "ghi": pl.Time,
-          "Lmn": pl.Duration,
-      }
+    # Select the DIFFERENCE of temporal columns and columns that contain the name "opp" OR "JJK"
+    assert df.select(cs.temporal() - cs.matches("opp|JJK")).schema == {
+        "ghi": pl.Time,
+        "Lmn": pl.Duration,
+    }
 
-      # Select the COMPLEMENT of all columns of dtypes Duration and Time
-      assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
-          "abc": pl.UInt16,
-          "bbb": pl.UInt32,
-          "cde": pl.Float64,
-          "def": pl.Float32,
-          "eee": pl.Boolean,
-          "fgg": pl.Boolean,
-          "JJK": pl.Date,
-          "opp": pl.Datetime("ms"),
-          "qqR": pl.Utf8,
-      }
+    # Select the COMPLEMENT of all columns of dtypes Duration and Time
+    assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
+        "abc": pl.UInt16,
+        "bbb": pl.UInt32,
+        "cde": pl.Float64,
+        "def": pl.Float32,
+        "eee": pl.Boolean,
+        "fgg": pl.Boolean,
+        "JJK": pl.Date,
+        "opp": pl.Datetime("ms"),
+        "qqR": pl.Utf8,
+    }
 
 
 .. note::
 
-    If you don't want to use the set operations on the ``selector``s, you can materialize them as ``expressions``
-    by calling ``as_expr``. This ensures the operations ``OR, AND, etc`` are dispatched to the expressions.
+    If you don't want to use the set operations on the selectors, you can materialize them as ``expressions``
+    by calling ``as_expr``. This ensures the operations ``OR, AND, etc`` are dispatched to the underlying
+    expressions instead.
 
 Functions
 ---------
+
+Available selector functions:
 
 .. automodule:: polars.selectors
     :members:

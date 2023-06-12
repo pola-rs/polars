@@ -141,7 +141,7 @@ pub fn rolling_var<T>(
     center: bool,
     weights: Option<&[f64]>,
     params: DynArgs,
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     T: NativeType
         + Float
@@ -238,7 +238,7 @@ pub fn rolling_std<T>(
     center: bool,
     weights: Option<&[f64]>,
     params: DynArgs,
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     T: NativeType
         + Float
@@ -282,18 +282,18 @@ mod test {
     fn test_rolling_var() {
         let values = &[1.0f64, 5.0, 3.0, 4.0];
 
-        let out = rolling_var(values, 2, 2, false, None, None);
+        let out = rolling_var(values, 2, 2, false, None, None).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(8.0), Some(2.0), Some(0.5)]);
 
         let testpars = Some(Arc::new(RollingVarParams { ddof: 0 }) as Arc<dyn Any + Send + Sync>);
-        let out = rolling_var(values, 2, 2, false, None, testpars);
+        let out = rolling_var(values, 2, 2, false, None, testpars).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(4.0), Some(1.0), Some(0.25)]);
 
-        let out = rolling_var(values, 2, 1, false, None, None);
+        let out = rolling_var(values, 2, 1, false, None, None).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out
             .into_iter()
@@ -306,7 +306,7 @@ mod test {
         );
         // test nan handling.
         let values = &[-10.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];
-        let out = rolling_var(values, 3, 3, false, None, None);
+        let out = rolling_var(values, 3, 3, false, None, None).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         // we cannot compare nans, so we compare the string values

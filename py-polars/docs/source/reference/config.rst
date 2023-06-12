@@ -55,10 +55,24 @@ explicitly calling one or more of the available "set\_" methods on it...
 
     # on scope exit any modified settings are restored to their previous state
 
-...or by setting the options in the ``Config`` init directly (optionally
-omitting the "set\_" prefix for brevity):
+...or, often cleaner, by setting the options in the ``Config`` init directly
+(optionally omitting the "set\_" prefix for brevity):
 
 .. code-block:: python
 
     with pl.Config(verbose=True):
         do_various_things()
+
+Use as a function decorator
+---------------------------
+
+In the same vein, you can also use ``Config`` as a function decorator to
+temporarily set options for the duration of the function call:
+
+.. code-block:: python
+
+    @pl.Config(set_ascii_tables=True)
+    def write_ascii_frame_to_stdout(df: pl.DataFrame) -> None:
+        sys.stdout.write(str(df))
+
+"""

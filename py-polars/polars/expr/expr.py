@@ -4434,7 +4434,7 @@ class Expr:
         """
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
-                other = sorted(other)
+                other = list(other)
             other = F.lit(None) if len(other) == 0 else F.lit(pl.Series(other))
             other = other._pyexpr
         else:

@@ -138,6 +138,7 @@ if TYPE_CHECKING:
         IntoExpr,
         IpcCompression,
         JoinStrategy,
+        JoinValidation,
         NullStrategy,
         OneOrMoreDataTypes,
         Orientation,
@@ -3326,7 +3327,7 @@ class DataFrame:
 
         check_if_delta_available()
 
-        from deltalake.writer import (  # type: ignore[import]
+        from deltalake.writer import (
             try_get_deltatable,
             write_deltalake,
         )
@@ -3361,7 +3362,7 @@ class DataFrame:
         data_schema = data.schema
 
         # Workaround to prevent manual casting of large types
-        table = try_get_deltatable(target, storage_options)
+        table = try_get_deltatable(target, storage_options)  # type: ignore[arg-type]
 
         if table is not None:
             table_schema = table.schema()
@@ -5219,20 +5220,6 @@ class DataFrame:
         """
         Upsample a DataFrame at a regular frequency.
 
-        Parameters
-        ----------
-        time_column
-            time column will be used to determine a date_range.
-            Note that this column has to be sorted for the output to make sense.
-        every
-            interval will start 'every' duration
-        offset
-            change the start of the date_range by this offset.
-        by
-            First group by these columns and then upsample for every group
-        maintain_order
-            Keep the ordering predictable. This is slower.
-
         The `every` and `offset` arguments are created with
         the following string language:
 
@@ -5250,11 +5237,26 @@ class DataFrame:
         - 1i    (1 index count)
 
         Or combine them:
-        "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        - "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         Suffix with `"_saturating"` to indicate that dates too large for
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
+
+        Parameters
+        ----------
+        time_column
+            time column will be used to determine a date_range.
+            Note that this column has to be sorted for the output to make sense.
+        every
+            interval will start 'every' duration
+        offset
+            change the start of the date_range by this offset.
+        by
+            First group by these columns and then upsample for every group
+        maintain_order
+            Keep the ordering predictable. This is slower.
 
         Returns
         -------
@@ -5475,6 +5477,7 @@ class DataFrame:
         left_on: str | Expr | Sequence[str | Expr] | None = None,
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
+        validate: JoinValidation = "m:m",
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -5493,6 +5496,22 @@ class DataFrame:
             Name(s) of the right join column(s).
         suffix
             Suffix to append to columns with a duplicate name.
+        validate: {'m:m', 'm:1', '1:m', '1:1'}
+            Checks if join is of specified type.
+
+                * *many_to_many*
+                    “m:m”: default, does not result in checks
+                * *one_to_one*
+                    “1:1”: check if join keys are unique in both left and right datasets
+                * *one_to_many*
+                    “1:m”: check if join keys are unique in left dataset
+                * *many_to_one*
+                    “m:1”: check if join keys are unique in right dataset
+
+            .. note::
+
+                - This is currently not supported the streaming engine.
+                - This is only supported when joined by single columns.
 
         Returns
         -------
@@ -5593,6 +5612,7 @@ class DataFrame:
                 on=on,
                 how=how,
                 suffix=suffix,
+                validate=validate,
             )
             .collect(no_optimization=True)
         )
