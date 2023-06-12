@@ -2408,6 +2408,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         groupby_rolling
 
+        Notes
+        -----
+        If you're coming from pandas, then
+
+        .. code-block:: python
+
+            # polars
+            df.groupby_dynamic("ts", every="1d").agg(pl.col("value").sum())
+
+        is roughly equivalent to
+
+        .. code-block:: python
+
+            # pandas
+            df.set_index("ts").resample("D")["value"].sum()
+
         Examples
         --------
         >>> from datetime import datetime
