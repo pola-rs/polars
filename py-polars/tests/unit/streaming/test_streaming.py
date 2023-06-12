@@ -331,6 +331,18 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     assert "df -> projection -> ordered_sink" in err
 
 
+def test_streaming_ternary() -> None:
+    q = pl.LazyFrame({"a": [1, 2, 3]})
+
+    assert (
+        q.with_columns(
+            pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
+        )
+        .explain(streaming=True)
+        .startswith("--- PIPELINE")
+    )
+
+
 def test_streaming_unique(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.DataFrame({"a": [1, 2, 2, 2], "b": [3, 4, 4, 4], "c": [5, 6, 7, 7]})
