@@ -1,5 +1,17 @@
+from __future__ import annotations
+
 import datetime as dt
-from typing import Literal
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import sys
+
+    from polars.type_aliases import StartBy
+
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
 
 import pandas as pd
 import pytz
@@ -8,7 +20,6 @@ from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.type_aliases import StartBy
 
 
 @given(
@@ -81,8 +92,9 @@ def test_against_pandas(
     try:
         result_pd = (
             df.to_pandas()
-            .set_index("ts")["values"]
-            .resample(f"{number}{pd_alias}", closed=closed, label="left")
+            .resample(f"{number}{pd_alias}", closed=closed, label="left", on="ts")[
+                "values"
+            ]
             .sum()
             .reset_index()
         )
@@ -180,8 +192,9 @@ def test_against_pandas_weekly(
     try:
         result_pd = (
             df.to_pandas()
-            .set_index("ts")["values"]
-            .resample(f"{number}{pd_alias}", closed=closed, label="left")
+            .resample(f"{number}{pd_alias}", on="ts", closed=closed, label="left")[
+                "values"
+            ]
             .sum()
             .reset_index()
         )
