@@ -2424,6 +2424,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # pandas
             df.set_index("ts").resample("D")["value"].sum().reset_index()
 
+        though note that, unlike pandas, polars doesn't add extra rows for empty
+        windows. If you need `index_column` to be evenly spaced, then please combine
+        ``groupby_dynamic`` with ``upsample``.
+
         Examples
         --------
         >>> from datetime import datetime
