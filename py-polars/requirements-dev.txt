@@ -26,3 +26,4 @@ pytest-xdist==3.3.1
 
 # Stub files
 pandas-stubs==1.2.0.62
+types-pytz==2023.3.0.0
