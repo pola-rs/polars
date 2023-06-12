@@ -2386,10 +2386,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             * 'window': Truncate the start of the window with the 'every' argument.
             * 'datapoint': Start from the first encountered data point.
-            * 'monday': Start the window on the monday before the first data point.
-            * 'tuesday': Start the window on the tuesday before the first data point.
-            * ...
-            * 'sunday': Start the window on the sunday before the first data point.
+            * a day of the week (only takes effect if `every` contains ``'w'``):
+
+              * 'monday': Start the window on the monday before the first data point.
+              * 'tuesday': Start the window on the tuesday before the first data point.
+              * ...
+              * 'sunday': Start the window on the sunday before the first data point.
         check_sorted
             When the ``by`` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
