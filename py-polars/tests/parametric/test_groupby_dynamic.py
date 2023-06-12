@@ -1,21 +1,20 @@
 from __future__ import annotations
 
 import datetime as dt
+import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import sys
-
     from polars.type_aliases import StartBy
 
     if sys.version_info >= (3, 8):
         from typing import Literal
     else:
         from typing_extensions import Literal
-    if sys.version_info >= (3, 9):
-        import zoneinfo
-    else:
-        from backports import zoneinfo
+if sys.version_info >= (3, 9):
+    import zoneinfo
+else:
+    from backports import zoneinfo
 
 import pandas as pd
 import pytz
