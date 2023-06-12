@@ -12,10 +12,13 @@ if TYPE_CHECKING:
         from typing import Literal
     else:
         from typing_extensions import Literal
+    if sys.version_info >= (3, 9):
+        import zoneinfo
+    else:
+        from backports import zoneinfo
 
 import pandas as pd
 import pytz
-import zoneinfo
 from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 
