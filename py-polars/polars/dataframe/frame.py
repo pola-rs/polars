@@ -5017,12 +5017,12 @@ class DataFrame:
             # polars
             df.groupby_dynamic("ts", every="1d").agg(pl.col("value").sum())
 
-        is roughly equivalent to
+        is equivalent to
 
         .. code-block:: python
 
             # pandas
-            df.set_index("ts").resample("D")["value"].sum()
+            df.set_index("ts").resample("D")["value"].sum().reset_index()
 
         Examples
         --------
