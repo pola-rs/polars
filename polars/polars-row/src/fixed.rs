@@ -208,8 +208,9 @@ where
         .iter()
         .map(|row| {
             has_nulls |= *row.get_unchecked(0) == null_sentinel;
+            // skip null sentinel
             let start = 1;
-            let end = start + T::ENCODED_LEN;
+            let end = start + T::ENCODED_LEN - 1;
             let slice = row.get_unchecked(start..end);
             let bytes = T::Encoded::from_slice(slice);
             T::decode(bytes)
@@ -224,7 +225,7 @@ where
     };
 
     // validity byte and data length
-    let increment_len = 1 + T::ENCODED_LEN;
+    let increment_len = T::ENCODED_LEN;
 
     increment_row_counter(rows, increment_len);
     PrimitiveArray::new(data_type, values.into(), validity)
@@ -238,8 +239,9 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> Boole
         .iter()
         .map(|row| {
             has_nulls |= *row.get_unchecked(0) == null_sentinel;
+            // skip null sentinel
             let start = 1;
-            let end = start + bool::ENCODED_LEN;
+            let end = start + bool::ENCODED_LEN - 1;
             let slice = row.get_unchecked(start..end);
             let bytes = <bool as FixedLengthEncoding>::Encoded::from_slice(slice);
             bool::decode(bytes)
@@ -253,7 +255,7 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> Boole
     };
 
     // validity byte and data length
-    let increment_len = 1 + bool::ENCODED_LEN;
+    let increment_len = bool::ENCODED_LEN;
 
     increment_row_counter(rows, increment_len);
     BooleanArray::new(DataType::Boolean, values, validity)

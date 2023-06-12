@@ -236,7 +236,7 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &SortField) -> Bin
     }
 
     BinaryArray::new(
-        DataType::Binary,
+        DataType::LargeBinary,
         Offsets::new_unchecked(offsets).into(),
         values.into(),
         validity,

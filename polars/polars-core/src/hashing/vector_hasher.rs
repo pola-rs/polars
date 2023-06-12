@@ -175,16 +175,14 @@ pub fn _hash_binary_array(arr: &BinaryArray<i64>, random_state: RandomState, buf
             None => null_h,
         }))
     }
-
 }
 
 impl VecHash for BinaryChunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
         buf.clear();
         buf.reserve(self.len());
-        self.downcast_iter().for_each(|arr| {
-            _hash_binary_array(arr, random_state.clone(), buf)
-        });
+        self.downcast_iter()
+            .for_each(|arr| _hash_binary_array(arr, random_state.clone(), buf));
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {

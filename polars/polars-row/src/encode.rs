@@ -80,6 +80,7 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
         Int64 => i64::ENCODED_LEN,
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
+        Boolean => bool::ENCODED_LEN,
         _ => unimplemented!(),
     }
 }

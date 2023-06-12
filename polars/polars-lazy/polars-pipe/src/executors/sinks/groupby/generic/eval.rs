@@ -1,11 +1,11 @@
 use std::cell::UnsafeCell;
-use polars_arrow::export::arrow::array::BinaryArray;
 
+use polars_arrow::export::arrow::array::BinaryArray;
 use polars_core::export::ahash::RandomState;
 use polars_row::SortField;
 
 use super::*;
-use crate::executors::sinks::utils::{hash_rows};
+use crate::executors::sinks::utils::hash_rows;
 use crate::expressions::PhysicalPipedExpr;
 
 pub(super) struct Eval {
@@ -19,7 +19,7 @@ pub(super) struct Eval {
     keys_columns: UnsafeCell<Vec<ArrayRef>>,
     hashes: Vec<u64>,
     key_fields: Vec<SortField>,
-    keys_array: Option<BinaryArray<i64>>
+    keys_array: Option<BinaryArray<i64>>,
 }
 
 impl Eval {
@@ -36,7 +36,7 @@ impl Eval {
             keys_columns: Default::default(),
             hashes: Default::default(),
             key_fields: Default::default(),
-            keys_array: None
+            keys_array: None,
         }
     }
     pub(super) fn split(&self) -> Self {
@@ -48,7 +48,7 @@ impl Eval {
             keys_columns: Default::default(),
             hashes: Default::default(),
             key_fields: vec![Default::default(); self.key_columns_expr.len()],
-            keys_array: None
+            keys_array: None,
         }
     }
 
@@ -76,11 +76,15 @@ impl Eval {
         }
         for phys_e in self.key_columns_expr.iter() {
             let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
-            let s = s.to_physical_repr().rechunk();
+            let s = match s.dtype() {
+                // todo! add binary to phyical repr?
+                DataType::Utf8 => unsafe { s.cast_unchecked(&DataType::Binary).unwrap() },
+                _ => s.to_physical_repr().rechunk(),
+            };
             keys_columns.push(s.to_arrow(0));
         }
 
-        let key_rows = polars_row::convert_columns(&keys_columns, &self.key_fields);
+        let key_rows = polars_row::convert_columns(keys_columns, &self.key_fields);
         let keys_array = key_rows.into_array();
         // drop the series, all data is in the rows encoding now
         keys_columns.clear();

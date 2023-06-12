@@ -60,11 +60,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         self.inner_map.is_empty()
     }
 
-    fn get_entry(
-        &mut self,
-        hash: u64,
-        row: &[u8],
-    ) -> RawEntryMut<Key, IdxSize, IdBuildHasher> {
+    fn get_entry(&mut self, hash: u64, row: &[u8]) -> RawEntryMut<Key, IdxSize, IdBuildHasher> {
         let keys = self.keys.as_ptr();
 
         self.inner_map
@@ -74,9 +70,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                     let offset = hash_map_key.offset as usize;
                     let len = hash_map_key.len as usize;
 
-                    unsafe {
-                        std::slice::from_raw_parts(keys.add(offset), len) == row
-                    }
+                    unsafe { std::slice::from_raw_parts(keys.add(offset), len) == row }
                 }
             })
     }
@@ -87,7 +81,6 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         match entry {
             RawEntryMut::Occupied(entry) => Some(*entry.get()),
             RawEntryMut::Vacant(entry) => {
-
                 // bchk shenanigans:
                 // it does not allow us to hold a `raw entry` and in the meantime
                 // have &self access to get the length of keys
@@ -135,8 +128,8 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
     /// # Safety
     /// Caller must ensure that `keys` and `agg_iters` are not depleted.
     /// # Returns &keys
-    pub(super) unsafe fn insert<'a>(
-        &'a mut self,
+    pub(super) unsafe fn insert(
+        &mut self,
         hash: u64,
         row: &[u8],
         agg_iters: &mut [SeriesPhysIter],
@@ -145,7 +138,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         let agg_idx = match self.insert_key(hash, row) {
             // overflow
             None => return true,
-            Some(agg_idx) => agg_idx
+            Some(agg_idx) => agg_idx,
         };
 
         // apply the aggregation
@@ -191,7 +184,10 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
 
             if on_condition(key_other.hash) {
                 // safety: will not overflow as we set it to usize::MAX;
-                let agg_idx_self = unsafe { self.insert_key(key_other.hash, row).unwrap_unchecked_release() };
+                let agg_idx_self = unsafe {
+                    self.insert_key(key_other.hash, row)
+                        .unwrap_unchecked_release()
+                };
                 let start = *agg_idx_other as usize;
                 let end = start + self.agg_constructors.len();
                 let aggs_other =
@@ -247,7 +243,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             .take(take_len)
             .for_each(|(k, agg_offset)| {
                 unsafe {
-                    key_rows.push_unchecked(unsafe { self.get_keys_row(&k) }) ;
+                    key_rows.push_unchecked(self.get_keys_row(&k));
                 }
 
                 let start = agg_offset as usize;
@@ -266,14 +262,18 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             .output_schema
             .iter_dtypes()
             .take(self.num_keys)
-            .map(|dtype| dtype.to_physical().to_arrow()).collect::<Vec<_>>();
+            .map(|dtype| dtype.to_physical().to_arrow())
+            .collect::<Vec<_>>();
         let fields = vec![Default::default(); self.num_keys];
-        let key_columns = unsafe {
-            polars_row::decode::decode_rows(&mut key_rows, &fields, &key_dtypes)
-        };
+        let key_columns =
+            unsafe { polars_row::decode::decode_rows(&mut key_rows, &fields, &key_dtypes) };
 
         let mut cols = Vec::with_capacity(self.num_keys + self.agg_constructors.len());
-        cols.extend(key_columns.into_iter().map(|arr| Series::try_from(("", arr)).unwrap()));
+        cols.extend(
+            key_columns
+                .into_iter()
+                .map(|arr| Series::try_from(("", arr)).unwrap()),
+        );
         cols.extend(agg_builders.into_iter().map(|buf| buf.into_series()));
         physical_agg_to_logical(&mut cols, &self.output_schema);
         DataFrame::new_no_checks(cols)
