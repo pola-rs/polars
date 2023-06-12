@@ -292,13 +292,14 @@ impl ThreadLocalTable {
     pub(super) unsafe fn insert(
         &mut self,
         hash: u64,
-        keys: &mut [SeriesPhysIter],
+        keys_row: &[u8],
         agg_iters: &mut [SeriesPhysIter],
         chunk_index: IdxSize,
     ) -> Option<(usize, SpillPayload)> {
-        if let Some(keys) = self.inner_map.insert(hash, keys, agg_iters, chunk_index) {
-            self.spill_partitions
-                .insert(hash, chunk_index, keys, agg_iters)
+        if self.inner_map.insert(hash, keys_row, agg_iters, chunk_index) {
+            // self.spill_partitions
+            //     .insert(hash, chunk_index, keys, agg_iters)
+            todo!()
         } else {
             None
         }

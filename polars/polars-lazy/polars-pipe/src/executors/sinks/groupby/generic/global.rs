@@ -137,21 +137,22 @@ impl GlobalTable {
         debug_assert_eq!(hashes.len(), chunk_indexes.len());
         debug_assert_eq!(hashes.len(), keys[0].len());
 
-        let mut keys_iters = keys.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
-        let mut agg_cols_iters = agg_cols.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
-
-        // amortize loop counter
-        for i in 0..hashes.len() {
-            unsafe {
-                let hash = *hashes.get_unchecked(i);
-                let chunk_index = *chunk_indexes.get_unchecked(i);
-
-                // safety: keys_iters and cols_iters are not depleted
-                let out = hash_map.insert(hash, &mut keys_iters, &mut agg_cols_iters, chunk_index);
-                // should never overflow
-                debug_assert!(out.is_none());
-            }
-        }
+        todo!()
+        // let mut keys_iters = keys.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
+        // let mut agg_cols_iters = agg_cols.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
+        //
+        // // amortize loop counter
+        // for i in 0..hashes.len() {
+        //     unsafe {
+        //         let hash = *hashes.get_unchecked(i);
+        //         let chunk_index = *chunk_indexes.get_unchecked(i);
+        //
+        //         // safety: keys_iters and cols_iters are not depleted
+        //         let out = hash_map.insert(hash, &mut keys_iters, &mut agg_cols_iters, chunk_index);
+        //         // should never overflow
+        //         debug_assert!(out.is_none());
+        //     }
+        // }
     }
 
     pub(super) fn process_partition_from_dumped(&self, partition: usize, spilled: &DataFrame) {

@@ -96,13 +96,14 @@ impl SpillPayload {
 #[derive(Copy, Clone)]
 pub(super) struct Key {
     pub(super) hash: u64,
-    pub(super) idx: IdxSize,
+    pub(super) offset: u32,
+    pub(super) len: u32
 }
 
 impl Key {
     #[inline]
-    pub(super) fn new(hash: u64, idx: IdxSize) -> Self {
-        Self { hash, idx }
+    pub(super) fn new(hash: u64, offset: u32, len: u32) -> Self {
+        Self { hash, offset, len }
     }
 }
 

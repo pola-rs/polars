@@ -163,22 +163,27 @@ impl VecHash for Utf8Chunked {
     }
 }
 
+// used in polars-pipe
+pub fn _hash_binary_array(arr: &BinaryArray<i64>, random_state: RandomState, buf: &mut Vec<u64>) {
+    let null_h = get_null_hash_value(random_state);
+    if arr.null_count() == 0 {
+        // use the null_hash as seed to get a hash determined by `random_state` that is passed
+        buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
+    } else {
+        buf.extend(arr.into_iter().map(|opt_v| match opt_v {
+            Some(v) => xxh3_64_with_seed(v, null_h),
+            None => null_h,
+        }))
+    }
+
+}
+
 impl VecHash for BinaryChunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
         buf.clear();
         buf.reserve(self.len());
-        let null_h = get_null_hash_value(random_state);
-
         self.downcast_iter().for_each(|arr| {
-            if arr.null_count() == 0 {
-                // simply use the null_hash as seed to get a hash determined by `random_state` that is passed
-                buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
-            } else {
-                buf.extend(arr.into_iter().map(|opt_v| match opt_v {
-                    Some(v) => xxh3_64_with_seed(v, null_h),
-                    None => null_h,
-                }))
-            }
+            _hash_binary_array(arr, random_state.clone(), buf)
         });
     }
 

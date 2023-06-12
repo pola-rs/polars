@@ -2,7 +2,7 @@ use arrow::array::BinaryArray;
 use arrow::datatypes::DataType;
 use arrow::offset::Offsets;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SortField {
     /// Whether to sort in descending order
     pub descending: bool,
