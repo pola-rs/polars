@@ -5026,7 +5026,7 @@ class DataFrame:
 
         though note that, unlike pandas, polars doesn't add extra rows for empty
         windows. If you need `index_column` to be evenly spaced, then please combine
-        with :func:`LazyDataFrame.upsample`.
+        with :func:`DataFrame.upsample`.
 
         Examples
         --------
