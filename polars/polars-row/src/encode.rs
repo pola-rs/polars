@@ -2,7 +2,7 @@ use arrow::array::{Array, BinaryArray, BooleanArray, DictionaryArray, PrimitiveA
 use arrow::datatypes::{DataType as ArrowDataType, DataType};
 use arrow::types::NativeType;
 
-use crate::encodings::fixed::FixedLengthEncoding;
+use crate::fixed::FixedLengthEncoding;
 use crate::row::{RowsEncoded, SortField};
 use crate::{with_match_arrow_primitive_type, ArrayRef};
 
@@ -24,9 +24,9 @@ fn encode_primitive<T: NativeType + FixedLengthEncoding>(
     out: &mut RowsEncoded,
 ) {
     if arr.null_count() == 0 {
-        crate::encodings::fixed::encode_slice(arr.values().as_slice(), out, field);
+        crate::fixed::encode_slice(arr.values().as_slice(), out, field);
     } else {
-        crate::encodings::fixed::encode_iter(arr.into_iter().map(|v| v.copied()), out, field);
+        crate::fixed::encode_iter(arr.into_iter().map(|v| v.copied()), out, field);
     }
 }
 
@@ -38,11 +38,11 @@ unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncod
     match array.data_type() {
         DataType::Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
-            crate::encodings::fixed::encode_iter(array.into_iter(), out, field);
+            crate::fixed::encode_iter(array.into_iter(), out, field);
         }
         DataType::LargeBinary => {
             let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-            crate::encodings::variable::encode_iter(array.into_iter(), out, field)
+            crate::variable::encode_iter(array.into_iter(), out, field)
         }
         DataType::LargeUtf8 => {
             panic!("should be cast to binary")
@@ -56,7 +56,7 @@ unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncod
                 .iter_typed::<Utf8Array<i64>>()
                 .unwrap()
                 .map(|opt_s| opt_s.map(|s| s.as_bytes()));
-            crate::encodings::variable::encode_iter(iter, out, field)
+            crate::variable::encode_iter(iter, out, field)
         }
         dt => {
             with_match_arrow_primitive_type!(dt, |$T| {
@@ -118,7 +118,7 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
                 ArrowDataType::LargeBinary => {
                     let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
                     for (opt_val, row_length) in array.into_iter().zip(lengths.iter_mut()) {
-                        *row_length += crate::encodings::variable::encoded_len(opt_val)
+                        *row_length += crate::variable::encoded_len(opt_val)
                     }
                 }
                 ArrowDataType::Dictionary(_, _, _) => {
@@ -131,7 +131,7 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
                         .unwrap()
                         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
                     for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                        *row_length += crate::encodings::variable::encoded_len(opt_val)
+                        *row_length += crate::variable::encoded_len(opt_val)
                     }
                 }
                 _ => {
@@ -196,7 +196,7 @@ mod test {
     use arrow::array::Utf8Array;
 
     use super::*;
-    use crate::encodings::variable::{BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
+    use crate::variable::{BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
 
     #[test]
     fn test_str_encode() {
