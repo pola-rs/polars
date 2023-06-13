@@ -3570,7 +3570,10 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {
         ...         "group": ["a", "b"],
-        ...         "values": [[1, 2], [3, 4],],
+        ...         "values": [
+        ...             [1, 2],
+        ...             [3, 4],
+        ...         ],
         ...     }
         ... )
         >>> df.select(pl.col("values").explode())
@@ -3855,8 +3858,8 @@ class Expr:
         --------
         >>> df = pl.DataFrame(
         ...     data={
-        ...         "x": [1.0, 2.0, float("nan"), 4.0,None,None],
-        ...         "y": [2.0, 2.0, float("nan"), 4.0,5.0,None],
+        ...         "x": [1.0, 2.0, float("nan"), 4.0, None, None],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0, 5.0, None],
         ...     }
         ... )
         >>> df.with_columns(
@@ -4069,8 +4072,8 @@ class Expr:
         --------
         >>> df = pl.DataFrame(
         ...     data={
-        ...         "x": [1.0, 2.0, float("nan"), 4.0,None,None],
-        ...         "y": [2.0, 2.0, float("nan"), 4.0,5.0,None],
+        ...         "x": [1.0, 2.0, float("nan"), 4.0, None, None],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0, 5.0, None],
         ...     }
         ... )
         >>> df.with_columns(
