@@ -24,5 +24,6 @@ pub mod aliases;
 pub mod fmt;
 pub mod iter;
 pub mod macros;
+pub mod vec;
 #[cfg(target_family = "wasm")]
 pub mod wasm;
