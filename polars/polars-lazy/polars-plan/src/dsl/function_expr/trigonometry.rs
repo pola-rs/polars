@@ -72,8 +72,8 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     match trig_function {
-        TrigonometricFunction::Sin => sin(ca),
         TrigonometricFunction::Cos => cos(ca),
+        TrigonometricFunction::Sin => sin(ca),
         TrigonometricFunction::Tan => tan(ca),
         TrigonometricFunction::ArcCos => arccos(ca),
         TrigonometricFunction::ArcSin => arcsin(ca),
