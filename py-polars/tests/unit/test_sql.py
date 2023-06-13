@@ -112,6 +112,48 @@ def test_sql_equal_not_equal() -> None:
         "6_neq_aware": [False, False, False, True, True],
     }
 
+def test_sql_trig() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [-4, -3, -2, -1.00001, 0, 1.00001, 2, 3, 4],
+        }
+    )
+
+    c = pl.SQLContext(register_globals=True)
+    res1 = c.execute(
+        """
+        SELECT
+        asin(1.0)/a as "pi values",
+        cos(asin(1.0)/a) AS "cos",
+        sin(asin(1.0)/a) AS "sin",
+        tan(asin(1.0)/a) AS "tan",
+        1.0/a as "inverse pi values",
+        acos(1.0/a) AS "acos",
+        asin(1.0/a) AS "asin",
+        atan(1.0/a) AS "atan"
+        FROM df
+        """, eager=True)
+    print(res1)
+    
+    df_result = pl.DataFrame(
+        {
+            "pi values" : [-0.392699, -0.523599, -0.785398, -1.570781, float('inf'), 1.570781, 0.785398, 0.523599, 0.392699],
+            "cos" : [0.92388, 0.866025, 0.707107, 0.000016, float('NaN'), 0.000016, 0.707107, 0.866025, 0.92388],
+            "sin" : [-0.382683, -0.5, -0.707107, -1.0, float('NaN'), 1, 0.707107, 0.5, 0.382683],
+            "tan" : [-0.414214,	-0.57735, -1, -63662.613851, float('NaN'), 63662.613851, 1, 0.57735, 0.414214],
+            "inverse pi values" : [-0.25,	-0.333333, -0.5, -0.99999, float('inf'), 0.99999, 0.5, 0.333333, 0.25],
+            "acos" : [1.823477, 1.910633, 2.094395, 3.137121, float('NaN'), 0.004472, 1.047198, 1.230959, 1.318116],
+            "asin" : [-0.25268, -0.339837, -0.523599, -1.566324, float('NaN'), 1.566324, 0.523599, 0.339837, 0.25268],
+            "atan" : [-0.244979,	-0.321751, -0.463648, -0.785393, 1.570796, 0.785393, 0.463648, 0.321751, .244979]
+        }
+    )
+    print(df_result)
+
+    assert_frame_equal(
+        left=df_result,
+        right=res1,
+        atol = 1e-5
+    )
 
 def test_sql_groupby(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)

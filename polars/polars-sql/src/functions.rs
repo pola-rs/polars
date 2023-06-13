@@ -25,6 +25,21 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ABS(column_1) from df;
     /// ```
     Abs,
+    /// SQL 'cos' function
+    /// ```sql
+    /// SELECT COS(column_1) from df;
+    /// ```
+    Cos,
+    /// SQL 'sin' function
+    /// ```sql
+    /// SELECT SIN(column_1) from df;
+    /// ```
+    Sin,
+    /// SQL 'tan' function
+    /// ```sql
+    /// SELECT TAN(column_1) from df;
+    /// ```
+    Tan,
     /// SQL 'acos' function
     /// ```sql
     /// SELECT ACOS(column_1) from df;
@@ -259,6 +274,7 @@ impl PolarsSqlFunctions {
             "avg",
             "ceil",
             "ceiling",
+            "cos",
             "count",
             "ends_with",
             "exp",
@@ -279,9 +295,11 @@ impl PolarsSqlFunctions {
             "pow",
             "round",
             "rtrim",
+            "sin",
             "starts_with",
             "stddev",
             "sum",
+            "tan",
             "unnest",
             "upper",
             "variance",
@@ -298,6 +316,9 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             // Math functions
             // ----
             "abs" => Self::Abs,
+            "cos" => Self::Cos,
+            "sin" => Self::Sin,
+            "tan" => Self::Tan,
             "acos" => Self::Acos,
             "asin" => Self::Asin,
             "atan" => Self::Atan,
@@ -362,6 +383,9 @@ impl SqlFunctionVisitor<'_> {
             // Math functions
             // ----
             Abs => self.visit_unary(Expr::abs),
+            Cos => self.visit_unary(Expr::cos),
+            Sin => self.visit_unary(Expr::sin),
+            Tan => self.visit_unary(Expr::tan),
             Acos => self.visit_unary(Expr::arccos),
             Asin => self.visit_unary(Expr::arcsin),
             Atan => self.visit_unary(Expr::arctan),
