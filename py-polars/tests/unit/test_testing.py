@@ -355,51 +355,51 @@ def test_assert_frame_equal_ignore_row_order() -> None:
 @pytest.mark.parametrize(
     ("df1", "df2", "kwargs"),
     [
-         pytest.param(
-            pl.DataFrame({'a': [0.2, 0.3]}),
-            pl.DataFrame({'a': [0.2, 0.3]}),
+        pytest.param(
+            pl.DataFrame({"a": [0.2, 0.3]}),
+            pl.DataFrame({"a": [0.2, 0.3]}),
             {"atol": 1e-15},
             id="equal_floats_low_atol",
         ),
-       pytest.param(
-            pl.DataFrame({'a': [0.2, 0.3]}),
-            pl.DataFrame({'a': [0.2, 0.3000000000000001]}),
+        pytest.param(
+            pl.DataFrame({"a": [0.2, 0.3]}),
+            pl.DataFrame({"a": [0.2, 0.3000000000000001]}),
             {"atol": 1e-15},
             id="approx_equal_float_low_atol",
         ),
-       pytest.param(
-            pl.DataFrame({'a': [0.2, 0.3]}),
-            pl.DataFrame({'a': [0.2, 0.31]}),
+        pytest.param(
+            pl.DataFrame({"a": [0.2, 0.3]}),
+            pl.DataFrame({"a": [0.2, 0.31]}),
             {"atol": 0.1},
             id="approx_equal_float_high_atol",
         ),
         pytest.param(
-            pl.DataFrame({'a': [0.2, 1.3]}),
-            pl.DataFrame({'a': [0.2, 0.9]}),
+            pl.DataFrame({"a": [0.2, 1.3]}),
+            pl.DataFrame({"a": [0.2, 0.9]}),
             {"atol": 1},
             id="approx_equal_float_integer_atol",
         ),
         pytest.param(
-            pl.DataFrame({'a': [0.0, 1.0, 2.0]}, schema={'a': pl.Float64}),
-            pl.DataFrame({'a': [0, 1, 2]}, schema={'a': pl.Int64}),
+            pl.DataFrame({"a": [0.0, 1.0, 2.0]}, schema={"a": pl.Float64}),
+            pl.DataFrame({"a": [0, 1, 2]}, schema={"a": pl.Int64}),
             {"check_dtype": False},
             id="equal_int_float_integer_no_check_dtype",
         ),
         pytest.param(
-            pl.DataFrame({'a': [0, 1, 2]}, schema={'a': pl.Float64}),
-            pl.DataFrame({'a': [0, 1, 2]}, schema={'a': pl.Float32}),
+            pl.DataFrame({"a": [0, 1, 2]}, schema={"a": pl.Float64}),
+            pl.DataFrame({"a": [0, 1, 2]}, schema={"a": pl.Float32}),
             {"check_dtype": False},
             id="equal_int_float_integer_no_check_dtype",
         ),
         pytest.param(
-            pl.DataFrame({'a': [0, 1, 2]}, schema={'a': pl.Int64}),
-            pl.DataFrame({'a': [0, 1, 2]}, schema={'a': pl.Int64}),
+            pl.DataFrame({"a": [0, 1, 2]}, schema={"a": pl.Int64}),
+            pl.DataFrame({"a": [0, 1, 2]}, schema={"a": pl.Int64}),
             {},
             id="equal_int",
         ),
         pytest.param(
-            pl.DataFrame({'a': ["a", "b", "c"]}, schema={'a': pl.Utf8}),
-            pl.DataFrame({'a': ["a", "b", "c"]}, schema={'a': pl.Utf8}),
+            pl.DataFrame({"a": ["a", "b", "c"]}, schema={"a": pl.Utf8}),
+            pl.DataFrame({"a": ["a", "b", "c"]}, schema={"a": pl.Utf8}),
             {},
             id="equal_str",
         ),
@@ -515,50 +515,50 @@ def test_assert_frame_equal_passes_assertion(
             id="list_of_float_list_of_int_check_dtype_true",
         ),
         pytest.param(
-            pl.DataFrame({'a': [[[0.2, math.nan, 3.0]]]}),
-            pl.DataFrame({'a': [[[0.2, math.nan, 3.11]]]}),
+            pl.DataFrame({"a": [[[0.2, math.nan, 3.0]]]}),
+            pl.DataFrame({"a": [[[0.2, math.nan, 3.11]]]}),
             {"atol": 0.1, "rtol": 0, "nans_compare_equal": True},
             id="nested_list_of_float_and_nan_atol_high_nans_compare_equal_true",
         ),
         pytest.param(
-            pl.DataFrame({'a': [[[0.2, math.nan, 3.0]]]}),
-            pl.DataFrame({'a': [[[0.2, math.nan, 3.0]]]}),
+            pl.DataFrame({"a": [[[0.2, math.nan, 3.0]]]}),
+            pl.DataFrame({"a": [[[0.2, math.nan, 3.0]]]}),
             {"nans_compare_equal": False},
             id="nested_list_of_float_and_nan_atol_high_nans_compare_equal_false",
         ),
         pytest.param(
-            pl.DataFrame({'a': [[[0.2, 3.0]]]}),
-            pl.DataFrame({'a': [[[0.2, 3.11]]]}),
+            pl.DataFrame({"a": [[[0.2, 3.0]]]}),
+            pl.DataFrame({"a": [[[0.2, 3.11]]]}),
             {"atol": 0.1, "nans_compare_equal": False},
             id="nested_list_of_float_atol_high_nans_compare_equal_false",
         ),
         pytest.param(
-            pl.DataFrame({'a': [[[[0.2, 3.0]]]]}),
-            pl.DataFrame({'a': [[[[0.2, 3.11]]]]}),
+            pl.DataFrame({"a": [[[[0.2, 3.0]]]]}),
+            pl.DataFrame({"a": [[[[0.2, 3.11]]]]}),
             {"atol": 0.1, "rtol": 0, "nans_compare_equal": True},
             id="double_nested_list_of_float_atol_high_nans_compare_equal_true",
         ),
         pytest.param(
-            pl.DataFrame({'a': [[[[0.2, math.nan, 3.0]]]]}),
-            pl.DataFrame({'a': [[[[0.2, math.nan, 3.0]]]]}),
+            pl.DataFrame({"a": [[[[0.2, math.nan, 3.0]]]]}),
+            pl.DataFrame({"a": [[[[0.2, math.nan, 3.0]]]]}),
             {"atol": 0.1, "nans_compare_equal": False},
             id="double_nested_list_of_float_and_nan_atol_high_nans_compare_equal_false",
         ),
         pytest.param(
-            pl.DataFrame({'a': [[[[0.2, 3.0]]]]}),
-            pl.DataFrame({'a': [[[[0.2, 3.11]]]]}),
+            pl.DataFrame({"a": [[[[0.2, 3.0]]]]}),
+            pl.DataFrame({"a": [[[[0.2, 3.11]]]]}),
             {"atol": 0.1, "rtol": 0, "nans_compare_equal": False},
             id="double_nested_list_of_float_atol_high_nans_compare_equal_false",
         ),
         pytest.param(
-            pl.DataFrame({'a': [[[[[0.2, 3.0]]]]]}),
-            pl.DataFrame({'a': [[[[[0.2, 3.11]]]]]}),
+            pl.DataFrame({"a": [[[[[0.2, 3.0]]]]]}),
+            pl.DataFrame({"a": [[[[[0.2, 3.11]]]]]}),
             {"atol": 0.1, "rtol": 0, "nans_compare_equal": True},
             id="triple_nested_list_of_float_atol_high_nans_compare_equal_true",
         ),
         pytest.param(
-            pl.DataFrame({'a': [[[[[0.2, math.nan, 3.0]]]]]}),
-            pl.DataFrame({'a': [[[[[0.2, math.nan, 3.0]]]]]}),
+            pl.DataFrame({"a": [[[[[0.2, math.nan, 3.0]]]]]}),
+            pl.DataFrame({"a": [[[[[0.2, math.nan, 3.0]]]]]}),
             {"atol": 0.1, "nans_compare_equal": False},
             id="triple_nested_list_of_float_and_nan_atol_high_nans_compare_equal_true",
         ),
@@ -613,19 +613,19 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
 @pytest.mark.parametrize(
     ("s1", "s2", "kwargs"),
     [
-         pytest.param(
+        pytest.param(
             pl.Series([0.2, 0.3]),
             pl.Series([0.2, 0.3]),
             {"atol": 1e-15},
             id="equal_floats_low_atol",
         ),
-       pytest.param(
+        pytest.param(
             pl.Series([0.2, 0.3]),
             pl.Series([0.2, 0.3000000000000001]),
             {"atol": 1e-15},
             id="approx_equal_float_low_atol",
         ),
-       pytest.param(
+        pytest.param(
             pl.Series([0.2, 0.3]),
             pl.Series([0.2, 0.31]),
             {"atol": 0.1},
@@ -820,7 +820,7 @@ def test_assert_series_equal_passes_assertion(
 @pytest.mark.parametrize(
     ("s1", "s2", "kwargs"),
     [
-       pytest.param(
+        pytest.param(
             pl.Series([0.2, 0.3]),
             pl.Series([0.2, 0.39]),
             {"atol": 0.09, "rtol": 0},
