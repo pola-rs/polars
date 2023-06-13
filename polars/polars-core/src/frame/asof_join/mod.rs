@@ -31,6 +31,11 @@ fn check_asof_columns(a: &Series, b: &Series, check_sorted: bool) -> PolarsResul
     let dtype_a = a.dtype();
     let dtype_b = b.dtype();
     polars_ensure!(
+        dtype_a.to_physical().is_numeric() && dtype_b.to_physical().is_numeric(),
+        InvalidOperation:
+        "asof join only supported on numeric (backed) keys"
+    );
+    polars_ensure!(
         dtype_a == dtype_b,
         ComputeError: "mismatching key dtypes in asof-join: `{}` and `{}`",
         a.dtype(), b.dtype()
