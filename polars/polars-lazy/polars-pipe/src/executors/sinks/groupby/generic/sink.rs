@@ -64,7 +64,8 @@ impl Sink for GenericGroupby2 {
             // safety: we don't hold mutable refs
             self.eval.evaluate_keys_aggs_and_hashes(context, &chunk)?;
         }
-        let keys = self.eval.get_keys_iter();
+        // safety: eval is alive for the duration of keys
+        let keys = unsafe { self.eval.get_keys_iter() };
         // safety: we don't hold mutable refs
         let mut aggs = unsafe { self.eval.get_aggs_iters() };
 

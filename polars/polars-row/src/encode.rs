@@ -7,15 +7,24 @@ use crate::row::{RowsEncoded, SortField};
 use crate::{with_match_arrow_primitive_type, ArrayRef};
 
 pub fn convert_columns(columns: &[ArrayRef], fields: &[SortField]) -> RowsEncoded {
+    let mut rows = RowsEncoded::new(vec![], vec![]);
+    convert_columns_amortized(columns, fields, &mut rows);
+    rows
+}
+
+pub fn convert_columns_amortized(
+    columns: &[ArrayRef],
+    fields: &[SortField],
+    rows: &mut RowsEncoded,
+) {
     assert_eq!(fields.len(), columns.len());
 
-    let mut rows = allocate_rows_buf(columns);
+    allocate_rows_buf(columns, &mut rows.values, &mut rows.offsets);
     for (arr, field) in columns.iter().zip(fields.iter()) {
         // Safety:
         // we allocated rows with enough bytes.
-        unsafe { encode_array(&**arr, field, &mut rows) }
+        unsafe { encode_array(&**arr, field, rows) }
     }
-    rows
 }
 
 fn encode_primitive<T: NativeType + FixedLengthEncoding>(
@@ -85,7 +94,7 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
     }
 }
 
-pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
+pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &mut Vec<usize>) {
     let has_variable = columns.iter().any(|arr| {
         matches!(
             arr.data_type(),
@@ -140,7 +149,8 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
                 }
             }
         }
-        let mut offsets = Vec::with_capacity(num_rows + 1);
+        offsets.clear();
+        offsets.reserve(num_rows + 1);
         let mut current_offset = 0_usize;
         offsets.push(current_offset);
 
@@ -157,9 +167,9 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
             }
         }
 
+        values.clear();
         // todo! allocate uninit
-        let buf = vec![0u8; current_offset];
-        RowsEncoded::new(buf, offsets)
+        values.resize(current_offset, 0u8);
     } else {
         let row_size: usize = columns
             .iter()
@@ -167,7 +177,13 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
             .sum();
         let n_bytes = num_rows * row_size;
         // todo! allocate uninit
-        let buf = vec![0u8; n_bytes];
+        if values.capacity() == 0 {
+            // it is faster to allocate zeroed
+            // so if the capacity is 0, we alloc
+            *values = vec![0u8; n_bytes]
+        } else {
+            values.resize(n_bytes, 0u8);
+        }
 
         // note that offsets are shifted to the left
         // assume 2 fields with a len of 1
@@ -181,14 +197,14 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
         // and when the final field, field 2 is written
         // the offsets are correct:
         // 0, 2, 4, 6
-        let mut offsets = Vec::with_capacity(num_rows + 1);
+        offsets.clear();
+        offsets.reserve(num_rows + 1);
         let mut current_offset = 0;
         offsets.push(current_offset);
         for _ in 0..num_rows {
             offsets.push(current_offset);
             current_offset += row_size;
         }
-        RowsEncoded::new(buf, offsets)
     }
 }
 

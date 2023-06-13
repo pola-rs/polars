@@ -133,7 +133,7 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
     field: &SortField,
 ) {
     for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
-        let dst = out.buf.get_unchecked_release_mut(*offset..);
+        let dst = out.values.get_unchecked_release_mut(*offset..);
         let written_len = encode_one(dst, opt_value, field);
         *offset += written_len;
     }

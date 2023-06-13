@@ -164,7 +164,7 @@ pub(crate) fn encode_slice<T: FixedLengthEncoding>(
     field: &SortField,
 ) {
     for (offset, value) in out.offsets.iter_mut().skip(1).zip(input) {
-        encode_value(value, offset, field.descending, &mut out.buf);
+        encode_value(value, offset, field.descending, &mut out.values);
     }
 }
 
@@ -184,9 +184,9 @@ pub(crate) fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>
 ) {
     for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
         if let Some(value) = opt_value {
-            encode_value(&value, offset, field.descending, &mut out.buf);
+            encode_value(&value, offset, field.descending, &mut out.values);
         } else {
-            unsafe { *out.buf.get_unchecked_release_mut(*offset) = get_null_sentinel(field) };
+            unsafe { *out.values.get_unchecked_release_mut(*offset) = get_null_sentinel(field) };
             let end_offset = *offset + T::ENCODED_LEN;
             *offset = end_offset;
         }

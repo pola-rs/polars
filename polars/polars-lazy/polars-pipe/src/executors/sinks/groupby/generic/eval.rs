@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 
 use polars_arrow::export::arrow::array::BinaryArray;
 use polars_core::export::ahash::RandomState;
-use polars_row::SortField;
+use polars_row::{RowsEncoded, SortField};
 
 use super::*;
 use crate::executors::sinks::utils::hash_rows;
@@ -19,7 +19,8 @@ pub(super) struct Eval {
     keys_columns: UnsafeCell<Vec<ArrayRef>>,
     hashes: Vec<u64>,
     key_fields: Vec<SortField>,
-    keys_array: Option<BinaryArray<i64>>,
+    // amortizes the encoding buffers
+    rows_encoded: RowsEncoded,
 }
 
 impl Eval {
@@ -36,7 +37,7 @@ impl Eval {
             keys_columns: Default::default(),
             hashes: Default::default(),
             key_fields: Default::default(),
-            keys_array: None,
+            rows_encoded: Default::default(),
         }
     }
     pub(super) fn split(&self) -> Self {
@@ -48,7 +49,7 @@ impl Eval {
             keys_columns: Default::default(),
             hashes: Default::default(),
             key_fields: vec![Default::default(); self.key_columns_expr.len()],
-            keys_array: None,
+            rows_encoded: Default::default(),
         }
     }
 
@@ -58,7 +59,6 @@ impl Eval {
         keys_series.clear();
         aggregation_series.clear();
         self.hashes.clear();
-        self.keys_array = None;
     }
 
     pub(super) unsafe fn evaluate_keys_aggs_and_hashes(
@@ -84,19 +84,25 @@ impl Eval {
             keys_columns.push(s.to_arrow(0));
         }
 
-        let key_rows = polars_row::convert_columns(keys_columns, &self.key_fields);
-        let keys_array = key_rows.into_array();
+        polars_row::convert_columns_amortized(
+            keys_columns,
+            &self.key_fields,
+            &mut self.rows_encoded,
+        );
         // drop the series, all data is in the rows encoding now
         keys_columns.clear();
 
         // write the hashes to self.hashes buffer
+        let keys_array = self.rows_encoded.borrow_array();
         hash_rows(&keys_array, &mut self.hashes, &self.hb);
-        self.keys_array = Some(keys_array);
         Ok(())
     }
 
-    pub(super) fn get_keys_iter(&self) -> &BinaryArray<i64> {
-        self.keys_array.as_ref().unwrap()
+    /// # Safety
+    /// Caller must ensure `self.rows_encoded` stays alive as the lifetime
+    /// is bound to the returned array.
+    pub(super) unsafe fn get_keys_iter(&self) -> BinaryArray<i64> {
+        self.rows_encoded.borrow_array()
     }
     pub(super) unsafe fn get_aggs_iters(&self) -> Vec<SeriesPhysIter> {
         let aggregation_series = &*self.aggregation_series.get();
