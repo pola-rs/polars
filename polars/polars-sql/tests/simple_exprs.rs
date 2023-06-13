@@ -533,3 +533,39 @@ fn test_sql_expr() {
     let expected = df.lazy().select(&[col("a").min()]).collect().unwrap();
     assert!(actual.frame_equal(&expected));
 }
+
+#[test]
+fn test_sql_like() {
+    let df = df! {
+        "a" => ["foo", "bar", "ham"],
+    }
+    .unwrap()
+    .lazy();
+    let mut context = SQLContext::new();
+    context.register("df", df);
+    let sql = r#"SELECT * FROM df WHERE a LIKE 'b.*'"#;
+    let expected = df! {
+        "a" => ["bar"],
+    }
+    .unwrap();
+    let actual = context.execute(sql).unwrap().collect().unwrap();
+    assert!(actual.frame_equal(&expected));
+}
+
+#[test]
+fn test_sql_ilike() {
+    let df = df! {
+        "a" => ["foo", "bar", "ham"],
+    }
+    .unwrap()
+    .lazy();
+    let mut context = SQLContext::new();
+    context.register("df", df);
+    let sql = r#"SELECT * FROM df WHERE a ILIKE 'B.*'"#;
+    let expected = df! {
+        "a" => ["bar"],
+    }
+    .unwrap();
+    let actual = context.execute(sql).unwrap().collect().unwrap();
+    assert!(actual.frame_equal(&expected));
+}

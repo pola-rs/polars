@@ -96,10 +96,58 @@ impl SqlExprVisitor<'_> {
             SqlExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SqlExpr::Value(value) => self.visit_literal(value),
             e @ SqlExpr::Case { .. } => self.visit_when_then(e),
+            SqlExpr::Like {
+                negated,
+                expr,
+                pattern,
+                escape_char,
+            } => self.visit_like(*negated, expr, pattern, escape_char),
+            SqlExpr::ILike {
+                negated,
+                expr,
+                pattern,
+                escape_char,
+            } => self.visit_ilike(*negated, expr, pattern, escape_char),
             other => {
                 polars_bail!(InvalidOperation: "SQL expression {:?} is not yet supported", other)
             }
         }
+    }
+    fn visit_like(
+        &self,
+        negated: bool,
+        expr: &SqlExpr,
+        pattern: &SqlExpr,
+        escape_char: &Option<char>,
+    ) -> PolarsResult<Expr> {
+        if escape_char.is_some() {
+            polars_bail!(InvalidOperation: "Escape char in LIKE is not yet supported")
+        }
+        let expr = self.visit_expr(expr)?;
+        let pat = self.visit_expr(pattern)?;
+        let expr = expr.str().contains(pat, true);
+        Ok(if negated { expr.not() } else { expr })
+    }
+
+    fn visit_ilike(
+        &self,
+        negated: bool,
+        expr: &SqlExpr,
+        pattern: &SqlExpr,
+        escape_char: &Option<char>,
+    ) -> PolarsResult<Expr> {
+        if escape_char.is_some() {
+            polars_bail!(InvalidOperation: "Escape char in LIKE is not yet supported")
+        }
+        let expr = self.visit_expr(expr)?;
+        let pat = self.visit_expr(pattern)?;
+        let expr = match pat {
+            Expr::Literal(LiteralValue::Utf8(pat)) => {
+                expr.str().contains(lit(format!("(?i){}", pat)), true)
+            }
+            _ => polars_bail!(InvalidOperation: "ILIKE pattern must be a string literal"),
+        };
+        Ok(if negated { expr.not() } else { expr })
     }
 
     /// Visit a compound identifier
