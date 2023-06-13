@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
 use hashbrown::hash_map::RawEntryMut;
@@ -14,7 +15,6 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
-use super::generic::Key;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::executors::sinks::groupby::ooc_state::OocState;
 use crate::executors::sinks::groupby::physical_agg_to_logical;
@@ -25,6 +25,27 @@ use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
+
+// This is the hash and the Index offset in the linear buffer
+#[derive(Copy, Clone)]
+struct Key {
+    pub(super) hash: u64,
+    pub(super) idx: IdxSize,
+}
+
+impl Key {
+    #[inline]
+    pub(super) fn new(hash: u64, idx: IdxSize) -> Self {
+        Self { hash, idx }
+    }
+}
+
+impl Hash for Key {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash)
+    }
+}
 
 // we store a hashmap per partition (partitioned by hash)
 // the hashmap contains indexes as keys and as values

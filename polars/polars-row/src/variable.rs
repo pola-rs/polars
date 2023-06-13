@@ -10,9 +10,12 @@
 //! - `0xFF_u8` if this is not the last block for this string
 //! - otherwise the length of the block as a `u8`
 
+use arrow::array::BinaryArray;
+use arrow::datatypes::DataType;
+use arrow::offset::Offsets;
 use polars_utils::slice::GetSaferUnchecked;
 
-use crate::encodings::fixed::null_sentinel;
+use crate::fixed::{decode_nulls, get_null_sentinel};
 use crate::row::RowsEncoded;
 use crate::SortField;
 
@@ -119,7 +122,7 @@ unsafe fn encode_one(out: &mut [u8], val: Option<&[u8]>, field: &SortField) -> u
             end_offset
         }
         None => {
-            *out.get_unchecked_release_mut(0) = null_sentinel(field);
+            *out.get_unchecked_release_mut(0) = get_null_sentinel(field);
             1
         }
     }
@@ -130,8 +133,112 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
     field: &SortField,
 ) {
     for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
-        let dst = out.buf.get_unchecked_release_mut(*offset..);
+        let dst = out.values.get_unchecked_release_mut(*offset..);
         let written_len = encode_one(dst, opt_value, field);
         *offset += written_len;
     }
+}
+
+unsafe fn has_nulls(rows: &[&[u8]], null_sentinel: u8) -> bool {
+    rows.iter()
+        .any(|row| *row.get_unchecked(0) == null_sentinel)
+}
+
+unsafe fn decoded_len(
+    row: &[u8],
+    non_empty_sentinel: u8,
+    continuation_token: u8,
+    descending: bool,
+) -> usize {
+    // empty or null
+    if *row.get_unchecked(0) != non_empty_sentinel {
+        return 0;
+    }
+
+    let mut str_len = 0;
+    let mut idx = 1;
+    loop {
+        let sentinel = *row.get_unchecked(idx + BLOCK_SIZE);
+        if sentinel == continuation_token {
+            idx += BLOCK_SIZE + 1;
+            str_len += BLOCK_SIZE;
+            continue;
+        }
+        // the sentinel of the last block has the length
+        // of that block. The rest is padding.
+        let block_length = if descending {
+            // all bits were inverted on encoding
+            !sentinel
+        } else {
+            sentinel
+        };
+        return str_len + block_length as usize;
+    }
+}
+
+pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &SortField) -> BinaryArray<i64> {
+    let (non_empty_sentinel, continuation_token) = if field.descending {
+        (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
+    } else {
+        (NON_EMPTY_SENTINEL, BLOCK_CONTINUATION_TOKEN)
+    };
+
+    let null_sentinel = get_null_sentinel(field);
+    let validity = if has_nulls(rows, null_sentinel) {
+        Some(decode_nulls(rows, null_sentinel))
+    } else {
+        None
+    };
+    let values_cap = rows
+        .iter()
+        .map(|row| {
+            decoded_len(
+                row,
+                non_empty_sentinel,
+                continuation_token,
+                field.descending,
+            )
+        })
+        .sum();
+    let mut values = Vec::with_capacity(values_cap);
+    let mut offsets = Vec::with_capacity(rows.len() + 1);
+    offsets.push(0);
+
+    for row in rows {
+        // TODO: cache the string lengths in a scratch? We just computed them above.
+        let str_len = decoded_len(
+            row,
+            non_empty_sentinel,
+            continuation_token,
+            field.descending,
+        );
+
+        let mut to_read = str_len;
+        // we start at one, as we skip the validity byte
+        let mut offset = 1;
+
+        while to_read >= BLOCK_SIZE {
+            to_read -= BLOCK_SIZE;
+            values.extend_from_slice(row.get_unchecked_release(offset..offset + BLOCK_SIZE));
+            offset += BLOCK_SIZE + 1;
+        }
+
+        if to_read != 0 {
+            values.extend_from_slice(row.get_unchecked_release(offset..offset + to_read));
+            offset += BLOCK_SIZE + 1;
+        }
+        *row = row.get_unchecked(offset..);
+        offsets.push(values.len() as i64);
+
+        if field.descending {
+            values.iter_mut().for_each(|o| *o = !*o)
+        }
+    }
+
+    BinaryArray::new(
+        DataType::LargeBinary,
+        Offsets::new_unchecked(offsets).into(),
+        values.into(),
+        validity,
+    )
 }

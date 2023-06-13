@@ -266,13 +266,17 @@
 //! [COBS]: https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing
 //! [byte stuffing]: https://en.wikipedia.org/wiki/High-Level_Data_Link_Control#Asynchronous_framing
 
+extern crate core;
+
+pub mod decode;
 pub mod encode;
-mod encodings;
+pub(crate) mod fixed;
 mod row;
 mod utils;
+pub(crate) mod variable;
 
 use arrow::array::*;
 pub type ArrayRef = Box<dyn Array>;
 
-pub use encode::convert_columns;
+pub use encode::{convert_columns, convert_columns_amortized};
 pub use row::{RowsEncoded, SortField};

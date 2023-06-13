@@ -2652,3 +2652,29 @@ def rolling_corr(
     return wrap_expr(
         plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
     )
+
+
+def sql_expr(sql: str) -> Expr:
+    """
+    Parse a SQL expression to a polars expression.
+
+    Parameters
+    ----------
+    sql
+        SQL expression
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [2, 1]})
+    >>> expr = pl.sql_expr("MAX(a)")
+    >>> df.select(expr)
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 2   │
+    └─────┘
+    """
+    return wrap_expr(plr.sql_expr(sql))

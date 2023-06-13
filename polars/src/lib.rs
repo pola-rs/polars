@@ -9,7 +9,7 @@
 //! expression into powerful aggregations and column selections. All expressions are evaluated
 //! in parallel and your queries are optimized just in time.
 //!
-//! ```rust no_run
+//! ```no_run
 //! use polars::prelude::*;
 //! # fn example() -> PolarsResult<()> {
 //!
@@ -305,6 +305,7 @@
 //! #[global_allocator]
 //! static GLOBAL: MiMalloc = MiMalloc;
 //! ```
+//!
 //! ```ignore
 //! use jemallocator::Jemalloc;
 //!
@@ -317,10 +318,11 @@
 //! outperforms Mimalloc on all tasks and is therefor the default Linux allocator used for the Python bindings.
 //!
 //! #### Cargo.toml
-//! ```ignore
+//! ```toml
 //! [dependencies]
 //! mimalloc = { version = "*", default-features = false }
 //! ```
+//!
 //! ## Config with ENV vars
 //!
 //! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL_CONDENSED):

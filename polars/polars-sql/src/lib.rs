@@ -8,3 +8,4 @@ mod sql_expr;
 mod table_functions;
 
 pub use context::SQLContext;
+pub use sql_expr::sql_expr;

@@ -121,6 +121,7 @@ from polars.functions import (
     rolling_corr,
     rolling_cov,
     select,
+    sql_expr,
     std,
     struct,
     sum,
@@ -342,6 +343,7 @@ __all__ = [
     "threadpool_size",
     # selectors
     "selectors",
+    "sql_expr",
 ]
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"

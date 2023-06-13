@@ -1,12 +1,15 @@
+use polars_arrow::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
-use polars_plan::prelude::{col, when};
+use polars_plan::prelude::{col, lit, when};
 use sqlparser::ast::{
     ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
     Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, TrimWhereField,
     UnaryOperator, Value as SqlValue,
 };
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::functions::SqlFunctionVisitor;
 use crate::SQLContext;
@@ -72,6 +75,12 @@ impl SqlExprVisitor<'_> {
                 list,
                 negated,
             } => self.visit_is_in(expr, list, *negated),
+            SqlExpr::IsDistinctFrom(e1, e2) => {
+                Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
+            }
+            SqlExpr::IsNotDistinctFrom(e1, e2) => {
+                Ok(self.visit_expr(e1)?.eq_missing(self.visit_expr(e2)?))
+            }
             SqlExpr::IsFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false))),
             SqlExpr::IsNotFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false)).not()),
             SqlExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
@@ -130,6 +139,7 @@ impl SqlExprVisitor<'_> {
             UnaryOperator::Plus => lit(0) + expr,
             UnaryOperator::Minus => lit(0) - expr,
             UnaryOperator::Not => expr.not(),
+            UnaryOperator::PGSquareRoot => expr.pow(0.5),
             other => polars_bail!(InvalidOperation: "Unary operator {:?} is not supported", other),
         })
     }
@@ -155,6 +165,7 @@ impl SqlExprVisitor<'_> {
         Ok(match op {
             SQLBinaryOperator::And => left.and(right),
             SQLBinaryOperator::Divide => left / right,
+            SQLBinaryOperator::DuckIntegerDivide => left.floor_div(right).cast(DataType::Int64),
             SQLBinaryOperator::Eq => left.eq(right),
             SQLBinaryOperator::Gt => left.gt(right),
             SQLBinaryOperator::GtEq => left.gt_eq(right),
@@ -166,10 +177,34 @@ impl SqlExprVisitor<'_> {
             SQLBinaryOperator::NotEq => left.eq(right).not(),
             SQLBinaryOperator::Or => left.or(right),
             SQLBinaryOperator::Plus => left + right,
+            SQLBinaryOperator::Spaceship => left.eq_missing(right),
             SQLBinaryOperator::StringConcat => {
                 left.cast(DataType::Utf8) + right.cast(DataType::Utf8)
             }
             SQLBinaryOperator::Xor => left.xor(right),
+            // ----
+            // Regular expression operators
+            // ----
+            SQLBinaryOperator::PGRegexMatch => match right {
+                Expr::Literal(LiteralValue::Utf8(_)) => left.str().contains(right, true),
+                _ => polars_bail!(ComputeError: "Invalid pattern for '~' operator: {:?}", right),
+            },
+            SQLBinaryOperator::PGRegexNotMatch => match right {
+                Expr::Literal(LiteralValue::Utf8(_)) => left.str().contains(right, true).not(),
+                _ => polars_bail!(ComputeError: "Invalid pattern for '!~' operator: {:?}", right),
+            },
+            SQLBinaryOperator::PGRegexIMatch => match right {
+                Expr::Literal(LiteralValue::Utf8(pat)) => {
+                    left.str().contains(lit(format!("(?i){}", pat)), true)
+                }
+                _ => polars_bail!(ComputeError: "Invalid pattern for '~*' operator: {:?}", right),
+            },
+            SQLBinaryOperator::PGRegexNotIMatch => match right {
+                Expr::Literal(LiteralValue::Utf8(pat)) => {
+                    left.str().contains(lit(format!("(?i){}", pat)), true).not()
+                }
+                _ => polars_bail!(ComputeError: "Invalid pattern for '!~*' operator: {:?}", right),
+            },
             other => polars_bail!(ComputeError: "SQL operator {:?} is not yet supported", other),
         })
     }
@@ -216,7 +251,7 @@ impl SqlExprVisitor<'_> {
                 } else {
                     s.parse::<i64>().map(lit).map_err(|_| ())
                 }
-                .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}"))?
+                .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}", s))?
             }
             SqlValue::SingleQuotedString(s) => lit(s.clone()),
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
@@ -464,4 +499,36 @@ pub(super) fn process_join_constraint(
         }
     }
     polars_bail!(InvalidOperation: "SQL join constraint {:?} is not yet supported", constraint);
+}
+
+/// parse a SQL expression to a polars expression
+/// # Example
+/// ```rust
+/// # use polars_sql::{SQLContext, sql_expr};
+/// # use polars_core::prelude::*;
+/// # use polars_lazy::prelude::*;
+/// # fn main() {
+///
+/// let mut ctx = SQLContext::new();
+/// let df = df! {
+///    "a" =>  [1, 2, 3],
+/// }
+/// .unwrap();
+/// let expr = sql_expr("MAX(a)").unwrap();
+/// df.lazy().select(vec![expr]).collect().unwrap();
+/// # }
+/// ```
+pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
+    let ctx = SQLContext::new();
+
+    let mut parser = Parser::new(&GenericDialect);
+    parser = parser.with_options(ParserOptions {
+        trailing_commas: true,
+    });
+
+    let mut ast = parser.try_with_sql(s.as_ref()).map_err(to_compute_err)?;
+
+    let expr = ast.parse_expr().map_err(to_compute_err)?;
+
+    parse_sql_expr(&expr, &ctx)
 }

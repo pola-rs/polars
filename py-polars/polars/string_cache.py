@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from types import TracebackType
 
 
-class StringCache:
+class StringCache(contextlib.ContextDecorator):
     """
     Context manager that allows data sources to share the same categorical features.
 

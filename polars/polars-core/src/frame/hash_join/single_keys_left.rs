@@ -28,13 +28,15 @@ pub(super) fn finish_left_join_mappings(
     chunk_mapping_right: Option<&[ChunkId]>,
 ) -> LeftJoinIds {
     let left = match chunk_mapping_left {
-        None => JoinIds::Left(result_idx_left),
-        Some(mapping) => JoinIds::Right(unsafe { apply_mapping(result_idx_left, mapping) }),
+        None => ChunkJoinIds::Left(result_idx_left),
+        Some(mapping) => ChunkJoinIds::Right(unsafe { apply_mapping(result_idx_left, mapping) }),
     };
 
     let right = match chunk_mapping_right {
-        None => JoinOptIds::Left(result_idx_right),
-        Some(mapping) => JoinOptIds::Right(unsafe { apply_opt_mapping(result_idx_right, mapping) }),
+        None => ChunkJoinOptIds::Left(result_idx_right),
+        Some(mapping) => {
+            ChunkJoinOptIds::Right(unsafe { apply_opt_mapping(result_idx_right, mapping) })
+        }
     };
     (left, right)
 }
@@ -58,14 +60,14 @@ pub(super) fn flatten_left_join_ids(result: Vec<LeftJoinIds>) -> LeftJoinIds {
                 .map(|join_id| join_id.0.as_ref().left().unwrap())
                 .collect::<Vec<_>>();
             let lefts = flatten_par(&lefts);
-            JoinIds::Left(lefts)
+            ChunkJoinIds::Left(lefts)
         } else {
             let lefts = result
                 .iter()
                 .map(|join_id| join_id.0.as_ref().right().unwrap())
                 .collect::<Vec<_>>();
             let lefts = flatten_par(&lefts);
-            JoinIds::Right(lefts)
+            ChunkJoinIds::Right(lefts)
         };
 
         let right = if result[0].1.is_left() {
@@ -74,14 +76,14 @@ pub(super) fn flatten_left_join_ids(result: Vec<LeftJoinIds>) -> LeftJoinIds {
                 .map(|join_id| join_id.1.as_ref().left().unwrap())
                 .collect::<Vec<_>>();
             let rights = flatten_par(&rights);
-            JoinOptIds::Left(rights)
+            ChunkJoinOptIds::Left(rights)
         } else {
             let rights = result
                 .iter()
                 .map(|join_id| join_id.1.as_ref().right().unwrap())
                 .collect::<Vec<_>>();
             let rights = flatten_par(&rights);
-            JoinOptIds::Right(rights)
+            ChunkJoinOptIds::Right(rights)
         };
 
         (left, right)
@@ -103,13 +105,19 @@ pub(super) fn hash_join_tuples_left<T, IntoSlice>(
     // only needed if we have non contiguous memory
     chunk_mapping_left: Option<&[ChunkId]>,
     chunk_mapping_right: Option<&[ChunkId]>,
-) -> LeftJoinIds
+    validate: JoinValidation,
+) -> PolarsResult<LeftJoinIds>
 where
     IntoSlice: AsRef<[T]> + Send + Sync,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     // first we hash one relation
     let hash_tbls = create_probe_table(build);
+    if validate.needs_checks() {
+        let build_size = hash_tbls.iter().map(|m| m.len()).sum();
+        let expected_size = probe.iter().map(|v| v.as_ref().len()).sum();
+        validate.validate_build(build_size, expected_size, false)?;
+    }
 
     // we determine the offset so that we later know which index to store in the join tuples
     let offsets = probe_to_offsets(&probe);
@@ -166,5 +174,5 @@ where
             .collect()
     });
 
-    flatten_left_join_ids(result)
+    Ok(flatten_left_join_ids(result))
 }

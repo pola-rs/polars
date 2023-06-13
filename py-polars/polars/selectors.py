@@ -57,7 +57,7 @@ class _selector_proxy_(Expr):
     def __invert__(self) -> Self:
         """Invert the selector."""
         name = self._attrs["name"]
-        if name in ("first", "last"):
+        if name in ("first", "last", "sub", "and", "or"):
             raise ValueError(f"Cannot currently invert {name!r} selector")
 
         params = self._attrs["params"] or {}
@@ -84,40 +84,69 @@ class _selector_proxy_(Expr):
         params = self._attrs["params"]
         not_ = "~" if self._inverted else ""
         str_params = ",".join(f"{k}={v!r}" for k, v in (params or {}).items())
-        return f"{not_}s.{self._attrs['name']}({str_params})"
+        return f"{not_}cs.{self._attrs['name']}({str_params})"
 
-    # --------------------------------------------------------------------------------
-    # Note: before offering operator support we need a new first-class expression
-    # construct on the Rust side that can represent combinatorial selections, eg:
-    # >>> (s.starts_with("foo") | s.ends_with("bar")) & ~s.of_type(pl.Utf8)
-    # --------------------------------------------------------------------------------
-    # Consequently the following operators are reserved for this future usage.
-    # --------------------------------------------------------------------------------
+    def __sub__(self, other: Any) -> Expr:  # type: ignore[override]
+        if isinstance(other, _selector_proxy_):
+            return _selector_proxy_(
+                self.meta._as_selector().meta._selector_sub(other), name="sub"
+            )
+        else:
+            return self.as_expr().__sub__(other)
 
-    def __and__(self, other: Any) -> Self:
-        raise NotImplementedError("Combining selectors with '&' is not yet supported")
+    def __and__(self, other: Any) -> Expr:  # type: ignore[override]
+        if isinstance(other, _selector_proxy_):
+            return _selector_proxy_(
+                self.meta._as_selector().meta._selector_and(other), name="and"
+            )
+        else:
+            return self.as_expr().__and__(other)
 
-    def __or__(self, other: Any) -> Self:
-        raise NotImplementedError("Combining selectors with '|' is not yet supported")
+    def __or__(self, other: Any) -> Expr:  # type: ignore[override]
+        if isinstance(other, _selector_proxy_):
+            return _selector_proxy_(
+                self.meta._as_selector().meta._selector_add(other), name="or"
+            )
+        else:
+            return self.as_expr().__or__(other)
 
-    def __rand__(self, other: Any) -> Self:
-        raise NotImplementedError("Combining selectors with '&' is not yet supported")
+    def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
+        # order of operation doesn't matter
+        if isinstance(other, _selector_proxy_):
+            return self.__and__(other)
+        else:
+            return self.as_expr().__rand__(other)
 
-    def __ror__(self, other: Any) -> Self:
-        raise NotImplementedError("Combining selectors with '|' is not yet supported")
+    def __ror__(self, other: Any) -> Expr:  # type: ignore[override]
+        # order of operation doesn't matter
+        if isinstance(other, _selector_proxy_):
+            return self.__or__(other)
+        else:
+            return self.as_expr().__ror__(other)
+
+    def as_expr(self) -> Expr:
+        """
+        Materialize the ``selector`` into a normal expression.
+
+        This ensures that the operators ``|``, ``&``, ``~`` and ``-``
+        are applied on the data and not no the selector sets.
+        """
+        return Expr._from_pyexpr(self._pyexpr)
 
 
 def _re_string(string: str | Collection[str]) -> str:
+    """Return escaped regex, potentially representing multiple string fragments."""
     if isinstance(string, str):
-        return re.escape(string)
+        rx = f"{re.escape(string)}"
     else:
         strings: list[str] = []
         for st in string:
-            if isinstance(st, Collection):
+            if isinstance(st, Collection) and not isinstance(st, str):  # type: ignore[redundant-expr]
                 strings.extend(st)
             else:
                 strings.append(st)
-        return "|".join(re.escape(x) for x in strings)
+        rx = "|".join(re.escape(x) for x in strings)
+    return f"({rx})"
 
 
 def all() -> Expr:
@@ -127,7 +156,7 @@ def all() -> Expr:
     Examples
     --------
     >>> from datetime import date
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "dt": [date(1999, 12, 31), date(2024, 1, 1)],
@@ -138,7 +167,7 @@ def all() -> Expr:
 
     Select all columns, casting them to string:
 
-    >>> df.select(s.all().cast(pl.Utf8))
+    >>> df.select(cs.all().cast(pl.Utf8))
     shape: (2, 2)
     ┌────────────┬─────────┐
     │ dt         ┆ value   │
@@ -151,7 +180,7 @@ def all() -> Expr:
 
     Select all columns *except* for those matching the given dtypes:
 
-    >>> df.select(s.all().exclude(pl.NUMERIC_DTYPES))
+    >>> df.select(cs.all().exclude(pl.NUMERIC_DTYPES))
     shape: (2, 1)
     ┌────────────┐
     │ dt         │
@@ -180,7 +209,7 @@ def by_dtype(
     Examples
     --------
     >>> from datetime import date
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "dt": [date(1999, 12, 31), date(2024, 1, 1), date(2010, 7, 5)],
@@ -191,7 +220,7 @@ def by_dtype(
 
     Select all columns with date or integer dtypes:
 
-    >>> df.select(s.by_dtype(pl.Date, pl.INTEGER_DTYPES))
+    >>> df.select(cs.by_dtype(pl.Date, pl.INTEGER_DTYPES))
     shape: (3, 2)
     ┌────────────┬──────────┐
     │ dt         ┆ value    │
@@ -205,7 +234,7 @@ def by_dtype(
 
     Select all columns that are not of date or integer dtype:
 
-    >>> df.select(~s.by_dtype(pl.Date, pl.INTEGER_DTYPES))
+    >>> df.select(~cs.by_dtype(pl.Date, pl.INTEGER_DTYPES))
     shape: (3, 1)
     ┌───────┐
     │ other │
@@ -219,7 +248,7 @@ def by_dtype(
 
     Group by string columns and sum the numeric columns:
 
-    >>> df.groupby(s.string()).agg(s.numeric().sum()).sort(by="other")
+    >>> df.groupby(cs.string()).agg(cs.numeric().sum()).sort(by="other")
     shape: (2, 2)
     ┌───────┬──────────┐
     │ other ┆ value    │
@@ -266,7 +295,7 @@ def by_name(*names: str | Collection[str]) -> Expr:
 
     Examples
     --------
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "foo": ["x", "y"],
@@ -278,7 +307,7 @@ def by_name(*names: str | Collection[str]) -> Expr:
 
     Select columns by name:
 
-    >>> df.select(s.by_name("foo", "bar"))
+    >>> df.select(cs.by_name("foo", "bar"))
     shape: (2, 2)
     ┌─────┬─────┐
     │ foo ┆ bar │
@@ -291,7 +320,7 @@ def by_name(*names: str | Collection[str]) -> Expr:
 
     Match all columns *except* for those given:
 
-    >>> df.select(~s.by_name("foo", "bar"))
+    >>> df.select(~cs.by_name("foo", "bar"))
     shape: (2, 2)
     ┌─────┬───────┐
     │ baz ┆ zap   │
@@ -335,7 +364,7 @@ def contains(substring: str | Collection[str]) -> Expr:
 
     Examples
     --------
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "foo": ["x", "y"],
@@ -347,7 +376,7 @@ def contains(substring: str | Collection[str]) -> Expr:
 
     Select columns that contain the substring 'ba':
 
-    >>> df.select(s.contains("ba"))
+    >>> df.select(cs.contains("ba"))
     shape: (2, 2)
     ┌─────┬─────┐
     │ bar ┆ baz │
@@ -360,7 +389,7 @@ def contains(substring: str | Collection[str]) -> Expr:
 
     Select columns that contain the substring 'ba' or the letter 'z':
 
-    >>> df.select(s.contains(("ba", "z")))
+    >>> df.select(cs.contains(("ba", "z")))
     shape: (2, 3)
     ┌─────┬─────┬───────┐
     │ bar ┆ baz ┆ zap   │
@@ -373,7 +402,7 @@ def contains(substring: str | Collection[str]) -> Expr:
 
     Select all columns *except* for those that contain the substring 'ba':
 
-    >>> df.select(~s.contains("ba"))
+    >>> df.select(~cs.contains("ba"))
     shape: (2, 2)
     ┌─────┬───────┐
     │ foo ┆ zap   │
@@ -409,7 +438,7 @@ def datetime(time_unit: TimeUnit | None = None) -> Expr:
     Examples
     --------
     >>> from datetime import datetime, date
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "tstamp": [
@@ -427,7 +456,7 @@ def datetime(time_unit: TimeUnit | None = None) -> Expr:
 
     Select all datetime columns:
 
-    >>> df.select(s.datetime())
+    >>> df.select(cs.datetime())
     shape: (2, 2)
     ┌─────────────────────────┬─────────────────────────┐
     │ tstamp                  ┆ dtime                   │
@@ -440,7 +469,7 @@ def datetime(time_unit: TimeUnit | None = None) -> Expr:
 
     Select all datetime columns that have 'ns' precision:
 
-    >>> df.select(s.datetime("ns"))
+    >>> df.select(cs.datetime("ns"))
     shape: (2, 1)
     ┌─────────────────────────┐
     │ tstamp                  │
@@ -453,7 +482,7 @@ def datetime(time_unit: TimeUnit | None = None) -> Expr:
 
     Select all columns *except* for datetime columns:
 
-    >>> df.select(~s.datetime())
+    >>> df.select(~cs.datetime())
     shape: (2, 1)
     ┌────────────┐
     │ dt         │
@@ -485,7 +514,7 @@ def ends_with(*suffix: str) -> Expr:
 
     Examples
     --------
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "foo": ["x", "y"],
@@ -497,7 +526,7 @@ def ends_with(*suffix: str) -> Expr:
 
     Select columns that end with the substring 'z':
 
-    >>> df.select(s.ends_with("z"))
+    >>> df.select(cs.ends_with("z"))
     shape: (2, 1)
     ┌─────┐
     │ baz │
@@ -510,7 +539,7 @@ def ends_with(*suffix: str) -> Expr:
 
     Select columns that end with *either* the letter 'z' or 'r':
 
-    >>> df.select(s.ends_with("z", "r"))
+    >>> df.select(cs.ends_with("z", "r"))
     shape: (2, 2)
     ┌─────┬─────┐
     │ bar ┆ baz │
@@ -523,7 +552,7 @@ def ends_with(*suffix: str) -> Expr:
 
     Select all columns *except* for those that end with the substring 'z':
 
-    >>> df.select(~s.ends_with("z"))
+    >>> df.select(~cs.ends_with("z"))
     shape: (2, 3)
     ┌─────┬─────┬───────┐
     │ foo ┆ bar ┆ zap   │
@@ -542,7 +571,7 @@ def ends_with(*suffix: str) -> Expr:
 
     """
     escaped_suffix = _re_string(suffix)
-    raw_params = f"^.*({escaped_suffix})$"
+    raw_params = f"^.*{escaped_suffix}$"
 
     return _selector_proxy_(
         F.col(raw_params),
@@ -558,7 +587,7 @@ def first() -> Expr:
 
     Examples
     --------
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "foo": ["x", "y"],
@@ -570,7 +599,7 @@ def first() -> Expr:
 
     Select the first column:
 
-    >>> df.select(s.first())
+    >>> df.select(cs.first())
     shape: (2, 1)
     ┌─────┐
     │ foo │
@@ -596,7 +625,7 @@ def float() -> Expr:
 
     Examples
     --------
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "foo": ["x", "y"],
@@ -609,7 +638,7 @@ def float() -> Expr:
 
     Select all float columns:
 
-    >>> df.select(s.float())
+    >>> df.select(cs.float())
     shape: (2, 2)
     ┌─────┬─────┐
     │ baz ┆ zap │
@@ -622,7 +651,7 @@ def float() -> Expr:
 
     Select all columns *except* for those that are float:
 
-    >>> df.select(~s.float())
+    >>> df.select(~cs.float())
     shape: (2, 2)
     ┌─────┬─────┐
     │ foo ┆ bar │
@@ -652,7 +681,7 @@ def integer() -> Expr:
 
     Examples
     --------
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "foo": ["x", "y"],
@@ -664,7 +693,7 @@ def integer() -> Expr:
 
     Select all integer columns:
 
-    >>> df.select(s.integer())
+    >>> df.select(cs.integer())
     shape: (2, 2)
     ┌─────┬─────┐
     │ bar ┆ zap │
@@ -677,7 +706,7 @@ def integer() -> Expr:
 
     Select all columns *except* for those that are integer:
 
-    >>> df.select(~s.integer())
+    >>> df.select(~cs.integer())
     shape: (2, 2)
     ┌─────┬─────┐
     │ foo ┆ baz │
@@ -708,7 +737,7 @@ def last() -> Expr:
 
     Examples
     --------
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "foo": ["x", "y"],
@@ -720,7 +749,7 @@ def last() -> Expr:
 
     Select the last column:
 
-    >>> df.select(s.last())
+    >>> df.select(cs.last())
     shape: (2, 1)
     ┌─────┐
     │ zap │
@@ -752,7 +781,7 @@ def matches(pattern: str) -> Expr:
 
     Examples
     --------
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "foo": ["x", "y"],
@@ -764,7 +793,7 @@ def matches(pattern: str) -> Expr:
 
     Match column names containing an 'a', preceded by a character that is not 'z':
 
-    >>> df.select(s.matches("[^z]a"))
+    >>> df.select(cs.matches("[^z]a"))
     shape: (2, 2)
     ┌─────┬─────┐
     │ bar ┆ baz │
@@ -777,7 +806,7 @@ def matches(pattern: str) -> Expr:
 
     Do not match column names ending in 'R' or 'z' (case-insensitively):
 
-    >>> df.select(~s.matches(r"(?i)R|z$"))
+    >>> df.select(~cs.matches(r"(?i)R|z$"))
     shape: (2, 2)
     ┌─────┬─────┐
     │ foo ┆ zap │
@@ -821,7 +850,7 @@ def numeric() -> Expr:
 
     Examples
     --------
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "foo": ["x", "y"],
@@ -834,7 +863,7 @@ def numeric() -> Expr:
 
     Match all numeric columns:
 
-    >>> df.select(s.numeric())
+    >>> df.select(cs.numeric())
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ bar ┆ baz ┆ zap │
@@ -847,7 +876,7 @@ def numeric() -> Expr:
 
     Match all columns *except* for those that are numeric:
 
-    >>> df.select(~s.numeric())
+    >>> df.select(~cs.numeric())
     shape: (2, 1)
     ┌─────┐
     │ foo │
@@ -883,7 +912,7 @@ def starts_with(*prefix: str) -> Expr:
 
     Examples
     --------
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "foo": [1.0, 2.0],
@@ -895,7 +924,7 @@ def starts_with(*prefix: str) -> Expr:
 
     Match columns starting with a 'b':
 
-    >>> df.select(s.starts_with("b"))
+    >>> df.select(cs.starts_with("b"))
     shape: (2, 2)
     ┌─────┬─────┐
     │ bar ┆ baz │
@@ -908,7 +937,7 @@ def starts_with(*prefix: str) -> Expr:
 
     Match columns starting with *either* the letter 'b' or 'z':
 
-    >>> df.select(s.starts_with("b", "z"))
+    >>> df.select(cs.starts_with("b", "z"))
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ bar ┆ baz ┆ zap │
@@ -921,7 +950,7 @@ def starts_with(*prefix: str) -> Expr:
 
     Match all columns *except* for those starting with 'b':
 
-    >>> df.select(~s.starts_with("b"))
+    >>> df.select(~cs.starts_with("b"))
     shape: (2, 2)
     ┌─────┬─────┐
     │ foo ┆ zap │
@@ -940,7 +969,7 @@ def starts_with(*prefix: str) -> Expr:
 
     """
     escaped_prefix = _re_string(prefix)
-    raw_params = f"^({escaped_prefix}).*$"
+    raw_params = f"^{escaped_prefix}.*$"
 
     return _selector_proxy_(
         F.col(raw_params),
@@ -956,7 +985,7 @@ def string(include_categorical: bool = False) -> Expr:
 
     Examples
     --------
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "w": ["xx", "yy", "xx", "yy", "xx"],
@@ -970,7 +999,7 @@ def string(include_categorical: bool = False) -> Expr:
 
     Group by all string columns, sum the numeric columns, then sort by the string cols:
 
-    >>> df.groupby(s.string()).agg(s.numeric().sum()).sort(by=s.string())
+    >>> df.groupby(cs.string()).agg(cs.numeric().sum()).sort(by=cs.string())
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ w   ┆ x   ┆ y   │
@@ -983,7 +1012,7 @@ def string(include_categorical: bool = False) -> Expr:
 
     Group by all string *and* categorical columns:
 
-    >>> df.groupby(s.string(True)).agg(s.numeric().sum()).sort(by=s.string(True))
+    >>> df.groupby(cs.string(True)).agg(cs.numeric().sum()).sort(by=cs.string(True))
     shape: (3, 4)
     ┌─────┬─────┬─────┬──────┐
     │ w   ┆ z   ┆ x   ┆ y    │
@@ -1020,7 +1049,7 @@ def temporal() -> Expr:
     Examples
     --------
     >>> from datetime import date, time
-    >>> import polars.selectors as s
+    >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
     ...         "dt": [date(2021, 1, 1), date(2021, 1, 2)],
@@ -1031,7 +1060,7 @@ def temporal() -> Expr:
 
     Match all temporal columns:
 
-    >>> df.select(s.temporal())
+    >>> df.select(cs.temporal())
     shape: (2, 2)
     ┌────────────┬──────────┐
     │ dt         ┆ tm       │
@@ -1044,7 +1073,7 @@ def temporal() -> Expr:
 
     Match all temporal columns *except* for `Time` columns:
 
-    >>> df.select(s.temporal().exclude(pl.Time))
+    >>> df.select(cs.temporal().exclude(pl.Time))
     shape: (2, 1)
     ┌────────────┐
     │ dt         │
@@ -1057,7 +1086,7 @@ def temporal() -> Expr:
 
     Match all columns *except* for temporal columns:
 
-    >>> df.select(~s.temporal())
+    >>> df.select(~cs.temporal())
     shape: (2, 1)
     ┌────────┐
     │ value  │
