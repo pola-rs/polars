@@ -137,7 +137,7 @@ impl SqlExprVisitor<'_> {
         escape_char: &Option<char>,
     ) -> PolarsResult<Expr> {
         if escape_char.is_some() {
-            polars_bail!(InvalidOperation: "Escape char in LIKE is not yet supported")
+            polars_bail!(InvalidOperation: "Escape char in ILIKE is not yet supported")
         }
         let expr = self.visit_expr(expr)?;
         let pat = self.visit_expr(pattern)?;
