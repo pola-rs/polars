@@ -13,6 +13,7 @@ use std::sync::Mutex;
 use eval::Eval;
 use hash_table::AggHashTable;
 use hashbrown::hash_map::{RawEntryMut, RawVacantEntryMut};
+use polars_arrow::export::arrow::array::BinaryArray;
 use polars_core::frame::row::AnyValueBufferTrusted;
 use polars_core::series::SeriesPhysIter;
 use polars_core::IdBuildHasher;
@@ -34,24 +35,25 @@ type IOThreadRef = Arc<Mutex<Option<IOThread>>>;
 struct SpillPayload {
     hashes: Vec<u64>,
     chunk_idx: Vec<IdxSize>,
-    keys_and_aggs: Vec<Series>,
-    num_keys: usize,
+    keys: BinaryArray<i64>,
+    aggs: Vec<Series>,
 }
 
 static HASH_COL: &str = "__POLARS_h";
 static INDEX_COL: &str = "__POLARS_idx";
+static KEYS_COL: &str = "__POLARS_keys";
 
 impl SpillPayload {
     fn hashes(&self) -> &[u64] {
         &self.hashes
     }
 
-    fn keys(&self) -> &[Series] {
-        &self.keys_and_aggs[..self.num_keys]
+    fn keys(&self) -> &BinaryArray<i64> {
+        &self.keys
     }
 
     fn cols(&self) -> &[Series] {
-        &self.keys_and_aggs[self.num_keys..]
+        &self.aggs
     }
 
     fn chunk_index(&self) -> &[IdxSize] {
@@ -59,10 +61,11 @@ impl SpillPayload {
     }
 
     fn get_schema(&self) -> Schema {
-        let mut schema = Schema::with_capacity(self.keys_and_aggs.len() + 2);
+        let mut schema = Schema::with_capacity(self.aggs.len() + 2);
         schema.with_column(HASH_COL.into(), DataType::UInt64);
         schema.with_column(INDEX_COL.into(), IDX_DTYPE);
-        for s in &self.keys_and_aggs {
+        schema.with_column(KEYS_COL.into(), DataType::Binary);
+        for s in &self.aggs {
             schema.with_column(s.name().into(), s.dtype().clone());
         }
         schema
@@ -70,25 +73,32 @@ impl SpillPayload {
 
     fn into_df(self) -> DataFrame {
         debug_assert_eq!(self.hashes.len(), self.chunk_idx.len());
-        debug_assert_eq!(self.hashes.len(), self.keys_and_aggs[0].len());
+        debug_assert_eq!(self.hashes.len(), self.keys.len());
 
         let hashes = UInt64Chunked::from_vec(HASH_COL, self.hashes).into_series();
         let chunk_idx = IdxCa::from_vec(INDEX_COL, self.chunk_idx).into_series();
-        let mut cols = Vec::with_capacity(self.keys_and_aggs.len() + 2);
+        let keys = Series::try_from((KEYS_COL, Box::new(self.keys) as ArrayRef)).unwrap();
+
+        let mut cols = Vec::with_capacity(self.aggs.len() + 3);
         cols.push(hashes);
         cols.push(chunk_idx);
-        cols.extend(self.keys_and_aggs);
+        cols.push(keys);
+        cols.extend(self.aggs);
         DataFrame::new_no_checks(cols)
     }
 
-    fn spilled_to_columns(spilled: &DataFrame) -> (&[u64], &[IdxSize], &[Series]) {
+    fn spilled_to_columns(
+        spilled: &DataFrame,
+    ) -> (&[u64], &[IdxSize], &BinaryArray<i64>, &[Series]) {
         let cols = spilled.get_columns();
         let hashes = cols[0].u64().unwrap();
         let hashes = hashes.cont_slice().unwrap();
         let chunk_indexes = cols[1].idx().unwrap();
         let chunk_indexes = chunk_indexes.cont_slice().unwrap();
-        let keys_and_aggs = &cols[2..];
-        (hashes, chunk_indexes, keys_and_aggs)
+        let keys = cols[2].binary().unwrap();
+        let keys = keys.downcast_iter().next().unwrap();
+        let aggs = &cols[3..];
+        (hashes, chunk_indexes, keys, aggs)
     }
 }
 
@@ -96,13 +106,14 @@ impl SpillPayload {
 #[derive(Copy, Clone)]
 pub(super) struct Key {
     pub(super) hash: u64,
-    pub(super) idx: IdxSize,
+    pub(super) offset: u32,
+    pub(super) len: u32,
 }
 
 impl Key {
     #[inline]
-    pub(super) fn new(hash: u64, idx: IdxSize) -> Self {
-        Self { hash, idx }
+    pub(super) fn new(hash: u64, offset: u32, len: u32) -> Self {
+        Self { hash, offset, len }
     }
 }
 

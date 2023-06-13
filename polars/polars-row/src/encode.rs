@@ -1,4 +1,7 @@
-use arrow::array::{Array, BinaryArray, BooleanArray, DictionaryArray, PrimitiveArray, Utf8Array};
+use arrow::array::{
+    Array, BinaryArray, BooleanArray, DictionaryArray, PrimitiveArray, StructArray, Utf8Array,
+};
+use arrow::compute::cast::cast;
 use arrow::datatypes::{DataType as ArrowDataType, DataType};
 use arrow::types::NativeType;
 
@@ -7,15 +10,59 @@ use crate::row::{RowsEncoded, SortField};
 use crate::{with_match_arrow_primitive_type, ArrayRef};
 
 pub fn convert_columns(columns: &[ArrayRef], fields: &[SortField]) -> RowsEncoded {
-    assert_eq!(fields.len(), columns.len());
-
-    let mut rows = allocate_rows_buf(columns);
-    for (arr, field) in columns.iter().zip(fields.iter()) {
-        // Safety:
-        // we allocated rows with enough bytes.
-        unsafe { encode_array(&**arr, field, &mut rows) }
-    }
+    let mut rows = RowsEncoded::new(vec![], vec![]);
+    convert_columns_amortized(columns, fields, &mut rows);
     rows
+}
+
+pub fn convert_columns_amortized(
+    columns: &[ArrayRef],
+    fields: &[SortField],
+    rows: &mut RowsEncoded,
+) {
+    assert_eq!(fields.len(), columns.len());
+    if columns
+        .iter()
+        .any(|arr| matches!(arr.data_type(), DataType::Struct(_)))
+    {
+        let mut flattened_columns = Vec::with_capacity(columns.len() * 5);
+        let mut flattened_fields = Vec::with_capacity(columns.len() * 5);
+
+        for (arr, field) in columns.iter().zip(fields) {
+            match arr.data_type() {
+                DataType::Struct(_) => {
+                    let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                    for arr in arr.values() {
+                        flattened_columns.push(arr.clone() as ArrayRef);
+                        flattened_fields.push(field.clone())
+                    }
+                }
+                DataType::LargeUtf8 => {
+                    flattened_columns.push(
+                        cast(arr.as_ref(), &DataType::LargeBinary, Default::default()).unwrap(),
+                    );
+                    flattened_fields.push(field.clone());
+                }
+                _ => {
+                    flattened_columns.push(arr.clone());
+                    flattened_fields.push(field.clone());
+                }
+            }
+        }
+        allocate_rows_buf(&flattened_columns, &mut rows.values, &mut rows.offsets);
+        for (arr, field) in flattened_columns.iter().zip(flattened_fields.iter()) {
+            // Safety:
+            // we allocated rows with enough bytes.
+            unsafe { encode_array(&**arr, field, rows) }
+        }
+    } else {
+        allocate_rows_buf(columns, &mut rows.values, &mut rows.offsets);
+        for (arr, field) in columns.iter().zip(fields.iter()) {
+            // Safety:
+            // we allocated rows with enough bytes.
+            unsafe { encode_array(&**arr, field, rows) }
+        }
+    }
 }
 
 fn encode_primitive<T: NativeType + FixedLengthEncoding>(
@@ -80,11 +127,12 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
         Int64 => i64::ENCODED_LEN,
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
-        _ => unimplemented!(),
+        Boolean => bool::ENCODED_LEN,
+        dt => unimplemented!("{dt:?}"),
     }
 }
 
-pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
+pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &mut Vec<usize>) {
     let has_variable = columns.iter().any(|arr| {
         matches!(
             arr.data_type(),
@@ -139,7 +187,8 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
                 }
             }
         }
-        let mut offsets = Vec::with_capacity(num_rows + 1);
+        offsets.clear();
+        offsets.reserve(num_rows + 1);
         let mut current_offset = 0_usize;
         offsets.push(current_offset);
 
@@ -156,9 +205,9 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
             }
         }
 
+        values.clear();
         // todo! allocate uninit
-        let buf = vec![0u8; current_offset];
-        RowsEncoded::new(buf, offsets)
+        values.resize(current_offset, 0u8);
     } else {
         let row_size: usize = columns
             .iter()
@@ -166,7 +215,13 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
             .sum();
         let n_bytes = num_rows * row_size;
         // todo! allocate uninit
-        let buf = vec![0u8; n_bytes];
+        if values.capacity() == 0 {
+            // it is faster to allocate zeroed
+            // so if the capacity is 0, we alloc
+            *values = vec![0u8; n_bytes]
+        } else {
+            values.resize(n_bytes, 0u8);
+        }
 
         // note that offsets are shifted to the left
         // assume 2 fields with a len of 1
@@ -180,14 +235,14 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
         // and when the final field, field 2 is written
         // the offsets are correct:
         // 0, 2, 4, 6
-        let mut offsets = Vec::with_capacity(num_rows + 1);
+        offsets.clear();
+        offsets.reserve(num_rows + 1);
         let mut current_offset = 0;
         offsets.push(current_offset);
         for _ in 0..num_rows {
             offsets.push(current_offset);
             current_offset += row_size;
         }
-        RowsEncoded::new(buf, offsets)
     }
 }
 
