@@ -1,4 +1,7 @@
-use arrow::array::{Array, BinaryArray, BooleanArray, DictionaryArray, PrimitiveArray, Utf8Array};
+use arrow::array::{
+    Array, BinaryArray, BooleanArray, DictionaryArray, PrimitiveArray, StructArray, Utf8Array,
+};
+use arrow::compute::cast::cast;
 use arrow::datatypes::{DataType as ArrowDataType, DataType};
 use arrow::types::NativeType;
 
@@ -18,12 +21,47 @@ pub fn convert_columns_amortized(
     rows: &mut RowsEncoded,
 ) {
     assert_eq!(fields.len(), columns.len());
+    if columns
+        .iter()
+        .any(|arr| matches!(arr.data_type(), DataType::Struct(_)))
+    {
+        let mut flattened_columns = Vec::with_capacity(columns.len() * 5);
+        let mut flattened_fields = Vec::with_capacity(columns.len() * 5);
 
-    allocate_rows_buf(columns, &mut rows.values, &mut rows.offsets);
-    for (arr, field) in columns.iter().zip(fields.iter()) {
-        // Safety:
-        // we allocated rows with enough bytes.
-        unsafe { encode_array(&**arr, field, rows) }
+        for (arr, field) in columns.iter().zip(fields) {
+            match arr.data_type() {
+                DataType::Struct(_) => {
+                    let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                    for arr in arr.values() {
+                        flattened_columns.push(arr.clone() as ArrayRef);
+                        flattened_fields.push(field.clone())
+                    }
+                }
+                DataType::LargeUtf8 => {
+                    flattened_columns.push(
+                        cast(arr.as_ref(), &DataType::LargeBinary, Default::default()).unwrap(),
+                    );
+                    flattened_fields.push(field.clone());
+                }
+                _ => {
+                    flattened_columns.push(arr.clone());
+                    flattened_fields.push(field.clone());
+                }
+            }
+        }
+        allocate_rows_buf(&flattened_columns, &mut rows.values, &mut rows.offsets);
+        for (arr, field) in flattened_columns.iter().zip(flattened_fields.iter()) {
+            // Safety:
+            // we allocated rows with enough bytes.
+            unsafe { encode_array(&**arr, field, rows) }
+        }
+    } else {
+        allocate_rows_buf(columns, &mut rows.values, &mut rows.offsets);
+        for (arr, field) in columns.iter().zip(fields.iter()) {
+            // Safety:
+            // we allocated rows with enough bytes.
+            unsafe { encode_array(&**arr, field, rows) }
+        }
     }
 }
 
@@ -90,7 +128,7 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
         Boolean => bool::ENCODED_LEN,
-        _ => unimplemented!(),
+        dt => unimplemented!("{dt:?}"),
     }
 }
 
