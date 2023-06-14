@@ -1566,7 +1566,8 @@ class DateTimeNameSpace:
         """
         Divide the date/ datetime range into buckets.
 
-        Each date/datetime is mapped to the start of its bucket.
+        Each date/datetime is mapped to the start of its bucket. Note that weekly
+        buckets start on Monday.
 
         Parameters
         ----------
