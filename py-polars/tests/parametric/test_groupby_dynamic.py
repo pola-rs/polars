@@ -9,10 +9,11 @@
 # once upstream is fixed, these tests should be merged into one.
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import sys
+
     from polars.type_aliases import StartBy
 
     if sys.version_info >= (3, 8):
