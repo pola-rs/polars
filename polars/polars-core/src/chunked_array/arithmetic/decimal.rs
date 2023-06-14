@@ -58,7 +58,7 @@ impl DecimalChunked {
                     .zip(rhs.downcast_iter())
                     .map(|(lhs, rhs)| kernel(lhs, rhs).map(|a| Box::new(a) as ArrayRef))
                     .collect::<PolarsResult<_>>()?;
-                lhs.copy_with_chunks(chunks, false, false)
+                unsafe { lhs.copy_with_chunks(chunks, false, false) }
             }
             // broadcast right path
             (_, 1) => {
@@ -70,7 +70,7 @@ impl DecimalChunked {
                             .downcast_iter()
                             .map(|lhs| operation_lhs(lhs, rhs_val).map(|a| Box::new(a) as ArrayRef))
                             .collect::<PolarsResult<_>>()?;
-                        lhs.copy_with_chunks(chunks, false, false)
+                        unsafe { lhs.copy_with_chunks(chunks, false, false) }
                     }
                 }
             }
@@ -83,7 +83,7 @@ impl DecimalChunked {
                             .downcast_iter()
                             .map(|rhs| operation_rhs(lhs_val, rhs).map(|a| Box::new(a) as ArrayRef))
                             .collect::<PolarsResult<_>>()?;
-                        lhs.copy_with_chunks(chunks, false, false)
+                        unsafe { lhs.copy_with_chunks(chunks, false, false) }
                     }
                 }
             }

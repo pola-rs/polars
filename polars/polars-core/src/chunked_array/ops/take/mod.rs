@@ -64,7 +64,7 @@ where
 {
     fn finish_from_array(&self, array: Box<dyn Array>) -> Self {
         let keep_fast_explode = array.null_count() == 0;
-        self.copy_with_chunks(vec![array], false, keep_fast_explode)
+        unsafe { self.copy_with_chunks(vec![array], false, keep_fast_explode) }
     }
 }
 
