@@ -774,6 +774,7 @@ impl<'df> GroupBy<'df> {
     }
 
     fn prepare_apply(&self) -> PolarsResult<DataFrame> {
+        polars_ensure!(self.df.height() > 0, ComputeError: "cannot groupby + apply on empty 'DataFrame'");
         if let Some(agg) = &self.selected_agg {
             if agg.is_empty() {
                 Ok(self.df.clone())
