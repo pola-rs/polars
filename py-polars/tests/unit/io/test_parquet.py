@@ -12,7 +12,11 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
+from polars.testing import (
+    assert_frame_equal,
+    assert_frame_equal_local_categoricals,
+    assert_series_equal,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -481,3 +485,18 @@ def test_parquet_nested_list_pandas() -> None:
     df = pl.read_parquet(f)
     assert df.dtypes == [pl.List(pl.Null)]
     assert df.to_dict(False) == {"listcol": [[]]}
+
+
+def test_parquet_string_cache() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": ["a", "b", "c", "d"]}).with_columns(
+        pl.col("a").cast(pl.Categorical)
+    )
+
+    df.write_parquet(f, row_group_size=2)
+
+    # this file has 2 row groups and a categorical column
+    # so polars should automatically set string cache
+    f.seek(0)
+    assert_series_equal(pl.read_parquet(f)["a"].cast(str), df["a"].cast(str))
