@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import sys
 from datetime import datetime, timedelta
 from itertools import chain
 from random import choice, shuffle
@@ -18,7 +19,11 @@ from typing import (
 
 import hypothesis
 import hypothesis.strategies as st
-import zoneinfo
+
+if sys.version_info >= (3, 9):
+    import zoneinfo
+else:
+    from backports import zoneinfo
 from hypothesis.strategies import (
     SearchStrategy,
     booleans,
@@ -63,7 +68,6 @@ from polars.datatypes import (
 from polars.type_aliases import PolarsDataType
 
 if TYPE_CHECKING:
-    import sys
     from decimal import Decimal as PyDecimal
 
     from hypothesis.strategies import DrawFn
