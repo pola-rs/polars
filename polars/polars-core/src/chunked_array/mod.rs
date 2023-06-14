@@ -315,7 +315,10 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Create a new ChunkedArray from self, where the chunks are replaced.
-    fn copy_with_chunks(
+    ///
+    /// # Safety
+    /// The caller must ensure the dtypes of the chunks are correct
+    unsafe fn copy_with_chunks(
         &self,
         chunks: Vec<ArrayRef>,
         keep_sorted: bool,

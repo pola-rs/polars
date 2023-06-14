@@ -23,7 +23,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     pub(crate) fn coalesce_nulls(&self, other: &[ArrayRef]) -> Self {
         let chunks = coalesce_nulls(&self.chunks, other);
-        self.copy_with_chunks(chunks, true, false)
+        unsafe { self.copy_with_chunks(chunks, true, false) }
     }
 }
 pub fn is_not_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {

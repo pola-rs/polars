@@ -266,8 +266,7 @@ impl ExplodeByOffsets for ListChunked {
         }
         process_range(start, last, &mut builder);
         let arr = builder.finish(Some(&inner_type.to_arrow())).unwrap();
-        self.copy_with_chunks(vec![Box::new(arr)], true, true)
-            .into_series()
+        unsafe { self.copy_with_chunks(vec![Box::new(arr)], true, true) }.into_series()
     }
 }
 
