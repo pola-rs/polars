@@ -7,9 +7,10 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, Offset,
-    OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator, SetQuantifier, Statement,
-    TableAlias, TableFactor, TableWithJoins, Value as SQLValue, WildcardAdditionalOptions,
+    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName,
+    ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
+    SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
+    WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -126,6 +127,10 @@ impl SQLContext {
             Statement::Query(query) => self.execute_query(query)?,
             stmt @ Statement::ShowTables { .. } => self.execute_show_tables(stmt)?,
             stmt @ Statement::CreateTable { .. } => self.execute_create_table(stmt)?,
+            stmt @ Statement::Drop {
+                object_type: ObjectType::Table,
+                ..
+            } => self.execute_drop_table(stmt)?,
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             _ => polars_bail!(
                 ComputeError: "SQL statement type {:?} is not supported", ast,
@@ -202,6 +207,18 @@ impl SQLContext {
         let tables = Series::new("name", self.get_tables());
         let df = DataFrame::new(vec![tables])?;
         Ok(df.lazy())
+    }
+
+    fn execute_drop_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
+        match stmt {
+            Statement::Drop { names, .. } => {
+                for name in names {
+                    self.table_map.remove(&name.to_string());
+                }
+                Ok(DataFrame::empty().lazy())
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn register_ctes(&mut self, query: &Query) -> PolarsResult<()> {

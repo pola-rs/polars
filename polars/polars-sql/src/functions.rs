@@ -233,6 +233,7 @@ pub(crate) enum PolarsSqlFunctions {
     /// ```
     ArrayContains,
 }
+
 impl PolarsSqlFunctions {
     pub(crate) fn keywords() -> &'static [&'static str] {
         &[
