@@ -3328,6 +3328,11 @@ class Expr:
         agg_list
             Aggregate list
 
+        Warnings
+        --------
+        If ``return_dtype`` is not provided, this may lead to unexpected results.
+        We allow this, but it is considered a bug in the user's query.
+
         See Also
         --------
         map_dict
@@ -3376,16 +3381,6 @@ class Expr:
             Expects `f` to be of type Callable[[Series], Series].
             Applies a python function over each group.
 
-        Notes
-        -----
-        * Using ``apply`` is strongly discouraged as you will be effectively running
-          python "for" loops. This will be very slow. Wherever possible you should
-          strongly prefer the native expression API to achieve the best performance.
-
-        * If your function is expensive and you don't want it to be called more than
-          once for a given input, consider applying an ``@lru_cache`` decorator to it.
-          With suitable data you may achieve order-of-magnitude speedups (or more).
-
         Parameters
         ----------
         function
@@ -3410,6 +3405,21 @@ class Expr:
                         your code if the amount of work per element is significant
                         and the python function releases the GIL (e.g. via calling
                         a c function)
+
+        Notes
+        -----
+        * Using ``apply`` is strongly discouraged as you will be effectively running
+          python "for" loops. This will be very slow. Wherever possible you should
+          strongly prefer the native expression API to achieve the best performance.
+
+        * If your function is expensive and you don't want it to be called more than
+          once for a given input, consider applying an ``@lru_cache`` decorator to it.
+          With suitable data you may achieve order-of-magnitude speedups (or more).
+
+        Warnings
+        --------
+        If ``return_dtype`` is not provided, this may lead to unexpected results.
+        We allow this, but it is considered a bug in the user's query.
 
         Examples
         --------

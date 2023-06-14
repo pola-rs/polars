@@ -164,7 +164,7 @@ pub(crate) fn encode_slice<T: FixedLengthEncoding>(
     field: &SortField,
 ) {
     for (offset, value) in out.offsets.iter_mut().skip(1).zip(input) {
-        encode_value(value, offset, field.descending, &mut out.buf);
+        encode_value(value, offset, field.descending, &mut out.values);
     }
 }
 
@@ -184,9 +184,9 @@ pub(crate) fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>
 ) {
     for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
         if let Some(value) = opt_value {
-            encode_value(&value, offset, field.descending, &mut out.buf);
+            encode_value(&value, offset, field.descending, &mut out.values);
         } else {
-            unsafe { *out.buf.get_unchecked_release_mut(*offset) = get_null_sentinel(field) };
+            unsafe { *out.values.get_unchecked_release_mut(*offset) = get_null_sentinel(field) };
             let end_offset = *offset + T::ENCODED_LEN;
             *offset = end_offset;
         }
@@ -208,8 +208,9 @@ where
         .iter()
         .map(|row| {
             has_nulls |= *row.get_unchecked(0) == null_sentinel;
+            // skip null sentinel
             let start = 1;
-            let end = start + T::ENCODED_LEN;
+            let end = start + T::ENCODED_LEN - 1;
             let slice = row.get_unchecked(start..end);
             let bytes = T::Encoded::from_slice(slice);
             T::decode(bytes)
@@ -224,7 +225,7 @@ where
     };
 
     // validity byte and data length
-    let increment_len = 1 + T::ENCODED_LEN;
+    let increment_len = T::ENCODED_LEN;
 
     increment_row_counter(rows, increment_len);
     PrimitiveArray::new(data_type, values.into(), validity)
@@ -238,8 +239,9 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> Boole
         .iter()
         .map(|row| {
             has_nulls |= *row.get_unchecked(0) == null_sentinel;
+            // skip null sentinel
             let start = 1;
-            let end = start + bool::ENCODED_LEN;
+            let end = start + bool::ENCODED_LEN - 1;
             let slice = row.get_unchecked(start..end);
             let bytes = <bool as FixedLengthEncoding>::Encoded::from_slice(slice);
             bool::decode(bytes)
@@ -253,7 +255,7 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> Boole
     };
 
     // validity byte and data length
-    let increment_len = 1 + bool::ENCODED_LEN;
+    let increment_len = bool::ENCODED_LEN;
 
     increment_row_counter(rows, increment_len);
     BooleanArray::new(DataType::Boolean, values, validity)

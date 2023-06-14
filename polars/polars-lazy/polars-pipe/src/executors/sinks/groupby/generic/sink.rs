@@ -64,8 +64,8 @@ impl Sink for GenericGroupby2 {
             // safety: we don't hold mutable refs
             self.eval.evaluate_keys_aggs_and_hashes(context, &chunk)?;
         }
-        // safety: we don't hold mutable refs
-        let mut keys = unsafe { self.eval.get_keys_iters() };
+        // safety: eval is alive for the duration of keys
+        let keys = unsafe { self.eval.get_keys_iter() };
         // safety: we don't hold mutable refs
         let mut aggs = unsafe { self.eval.get_aggs_iters() };
 
@@ -74,9 +74,9 @@ impl Sink for GenericGroupby2 {
             // safety: the mutable borrows are not aliasing
             let table = &mut *self.thread_local_table.get();
 
-            for hash in self.eval.hashes() {
+            for (hash, row) in self.eval.hashes().iter().zip(keys.values_iter()) {
                 if let Some((partition, spill_payload)) =
-                    table.insert(*hash, &mut keys, &mut aggs, chunk_idx)
+                    table.insert(*hash, row, &mut aggs, chunk_idx)
                 {
                     self.global_table.spill(partition, spill_payload)
                 }
@@ -85,7 +85,6 @@ impl Sink for GenericGroupby2 {
 
         // clear memory
         unsafe {
-            drop(keys);
             drop(aggs);
             // safety: we don't hold mutable refs, we just dropped them
             self.eval.clear()
