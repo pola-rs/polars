@@ -390,3 +390,37 @@ nested_strategies[List] = create_list_strategy
 # nested_strategies[Struct] = create_struct_strategy(inner_dtype=None)
 
 all_strategies = scalar_strategies | nested_strategies
+
+import hypothesis.strategies as st
+import polars as pl
+import datetime as dt
+import zoneinfo
+import hypothesis
+
+@st.composite
+def strategy_time_zone_aware_series(draw: st.DrawFn) -> pl.DataFrame:
+    from polars.testing.parametric.primitives import series, column
+    ser = draw(
+        series(
+            name="ts",
+            dtype=pl.Datetime(),
+            strategy=st.datetimes(
+                min_value=dt.datetime(1980, 1, 1),
+                # Can't currently go beyond 2038, see
+                # https://github.com/pola-rs/polars/issues/9315
+                max_value=dt.datetime(2038, 1, 1),
+            ),
+        )
+    )
+    timezone = draw(st.sampled_from(list(zoneinfo.available_timezones())))
+
+    try:
+        ser = (
+            ser
+            .dt.replace_time_zone("UTC").dt.convert_time_zone(timezone)
+        )
+    except pl.exceptions.ComputeError as exp:
+        assert "unable to parse time zone" in str(exp)
+        hypothesis.reject()
+
+    return ser

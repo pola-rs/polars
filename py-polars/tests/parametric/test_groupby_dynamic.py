@@ -21,31 +21,28 @@ import pytz
 from hypothesis import given, reject
 from hypothesis import strategies as st
 
+from polars.testing.parametric.strategies import strategy_time_zone_aware_series
+
 import polars as pl
 
 
 def _compare_polars_and_pandas(
     *,
     data: st.DataObject,
-    datetimes: list[dt.datetime],
-    timezone: str,
+    time_series: pl.Series,
     pl_every: str,
     pd_alias: str,
     pl_startby: StartBy,
     closed: Literal["left", "right"],
     number: int,
 ) -> None:
-    nrows = len(datetimes)
-    values = data.draw(
-        st.lists(st.floats(10, 20), min_size=nrows, max_size=nrows), label="values"
-    )
-    df = (
-        pl.DataFrame({"ts": datetimes, "values": values})
-        .sort("ts")
-        .with_columns(
-            pl.col("ts").dt.replace_time_zone("UTC").dt.convert_time_zone(timezone)
+    nrows = len(time_series)
+    values = pl.Series(
+        data.draw(
+            st.lists(st.floats(10, 20), min_size=nrows, max_size=nrows), label="values"
         )
     )
+    df = pl.DataFrame({'ts': time_series, 'values': values}).sort('ts')
 
     result = df.groupby_dynamic(
         "ts",
@@ -61,6 +58,10 @@ def _compare_polars_and_pandas(
         .reset_index()
     )
 
+    # Work around bug in pandas: https://github.com/pandas-dev/pandas/issues/53664
+    if len(result_pd) == 0:
+        result_pd['ts'] = result_pd['ts'].dt.tz_localize(df['ts'].dtype.time_zone)
+
     # pandas fills in "holes", but polars doesn't
     # https://github.com/pola-rs/polars/issues/8831
     result_pd = result_pd[result_pd["values"] != 0.0].reset_index(drop=True)
@@ -70,16 +71,7 @@ def _compare_polars_and_pandas(
 
 
 @given(
-    datetimes=st.lists(
-        st.datetimes(
-            min_value=dt.datetime(1980, 1, 1),
-            # Can't currently go beyond 2038, see
-            # https://github.com/pola-rs/polars/issues/9315
-            max_value=dt.datetime(2038, 1, 1),
-        ),
-        min_size=1,
-    ),
-    timezone=st.sampled_from(list(zoneinfo.available_timezones())),
+    time_series=strategy_time_zone_aware_series(),
     closed=st.sampled_from(("left", "right")),
     every_alias=st.sampled_from(
         (
@@ -97,9 +89,8 @@ def _compare_polars_and_pandas(
     data=st.data(),
 )
 def test_non_weekly(
-    datetimes: list[dt.datetime],
+    time_series: pl.Series,
     closed: Literal["left", "right"],
-    timezone: str,
     every_alias: tuple[str, str],
     number: int,
     data: st.DataObject,
@@ -108,17 +99,13 @@ def test_non_weekly(
     try:
         _compare_polars_and_pandas(
             data=data,
-            datetimes=datetimes,
+            time_series=time_series,
             pl_every=pl_every,
             pd_alias=pd_alias,
             pl_startby="window",
             closed=closed,
             number=number,
-            timezone=timezone,
         )
-    except pl.exceptions.ComputeError as exp:
-        assert "unable to parse time zone" in str(exp)  # noqa: PT017
-        reject()
     except pl.exceptions.PolarsPanicError as exp:
         # This computation may fail in the rare case that the beginning of a month
         # lands on a DST transition.
@@ -131,16 +118,7 @@ def test_non_weekly(
 
 
 @given(
-    datetimes=st.lists(
-        st.datetimes(
-            min_value=dt.datetime(1980, 1, 1),
-            # Can't currently go beyond 2038, see
-            # https://github.com/pola-rs/polars/issues/9315
-            max_value=dt.datetime(2038, 1, 1),
-        ),
-        min_size=1,
-    ),
-    timezone=st.sampled_from(list(zoneinfo.available_timezones())),
+    time_series=strategy_time_zone_aware_series(),
     closed=st.sampled_from(
         (
             "left",
@@ -168,9 +146,8 @@ def test_non_weekly(
     data=st.data(),
 )
 def test_weekly(
-    datetimes: list[dt.datetime],
+    time_series: pl.Series,
     closed: Literal["left", "right"],
-    timezone: str,
     every_alias_startby: tuple[str, str, StartBy],
     number: int,
     data: st.DataObject,
@@ -184,17 +161,13 @@ def test_weekly(
     try:
         _compare_polars_and_pandas(
             data=data,
-            datetimes=datetimes,
+            time_series=time_series,
             pl_every=pl_every,
             pd_alias=pd_alias,
             pl_startby=pl_startby,
             closed=closed,
             number=number,
-            timezone=timezone,
         )
-    except pl.exceptions.ComputeError as exp:
-        assert "unable to parse time zone" in str(exp)  # noqa: PT017
-        reject()
     except pl.exceptions.PolarsPanicError as exp:
         # This computation may fail in the rare case that the beginning of a month
         # lands on a DST transition.
