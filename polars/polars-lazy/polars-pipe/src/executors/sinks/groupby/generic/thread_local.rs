@@ -260,6 +260,7 @@ impl ThreadLocalTable {
 
     /// # Safety
     /// Caller must ensure that `keys` and `agg_iters` are not depleted.
+    #[inline]
     pub(super) unsafe fn insert(
         &mut self,
         hash: u64,
