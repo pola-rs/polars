@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime as dt
 import sys
 from typing import TYPE_CHECKING
 
@@ -12,18 +11,17 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Literal
 if sys.version_info >= (3, 9):
-    import zoneinfo
+    pass
 else:
-    from backports import zoneinfo
+    pass
 
 import pandas as pd
 import pytz
 from hypothesis import given, reject
 from hypothesis import strategies as st
 
-from polars.testing.parametric.strategies import strategy_time_zone_aware_series
-
 import polars as pl
+from polars.testing.parametric.strategies import strategy_time_zone_aware_series
 
 
 def _compare_polars_and_pandas(
@@ -42,7 +40,7 @@ def _compare_polars_and_pandas(
             st.lists(st.floats(10, 20), min_size=nrows, max_size=nrows), label="values"
         )
     )
-    df = pl.DataFrame({'ts': time_series, 'values': values}).sort('ts')
+    df = pl.DataFrame({"ts": time_series, "values": values}).sort("ts")
 
     result = df.groupby_dynamic(
         "ts",
@@ -60,7 +58,8 @@ def _compare_polars_and_pandas(
 
     # Work around bug in pandas: https://github.com/pandas-dev/pandas/issues/53664
     if len(result_pd) == 0:
-        result_pd['ts'] = result_pd['ts'].dt.tz_localize(df['ts'].dtype.time_zone)
+        time_zone = df["ts"].dtype.time_zone  # type: ignore[union-attr]
+        result_pd["ts"] = result_pd["ts"].dt.tz_localize(time_zone)
 
     # pandas fills in "holes", but polars doesn't
     # https://github.com/pola-rs/polars/issues/8831

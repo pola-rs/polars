@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import os
 from datetime import datetime, timedelta
 from itertools import chain
@@ -15,6 +16,9 @@ from typing import (
     Sequence,
 )
 
+import hypothesis
+import hypothesis.strategies as st
+import zoneinfo
 from hypothesis.strategies import (
     SearchStrategy,
     booleans,
@@ -33,6 +37,7 @@ from hypothesis.strategies import (
     times,
 )
 
+import polars as pl
 from polars.datatypes import (
     Boolean,
     Categorical,
@@ -391,15 +396,11 @@ nested_strategies[List] = create_list_strategy
 
 all_strategies = scalar_strategies | nested_strategies
 
-import hypothesis.strategies as st
-import polars as pl
-import datetime as dt
-import zoneinfo
-import hypothesis
 
 @st.composite
-def strategy_time_zone_aware_series(draw: st.DrawFn) -> pl.DataFrame:
-    from polars.testing.parametric.primitives import series, column
+def strategy_time_zone_aware_series(draw: st.DrawFn) -> pl.Series:
+    from polars.testing.parametric.primitives import series
+
     ser = draw(
         series(
             name="ts",
@@ -415,12 +416,9 @@ def strategy_time_zone_aware_series(draw: st.DrawFn) -> pl.DataFrame:
     timezone = draw(st.sampled_from(list(zoneinfo.available_timezones())))
 
     try:
-        ser = (
-            ser
-            .dt.replace_time_zone("UTC").dt.convert_time_zone(timezone)
-        )
+        ser = ser.dt.replace_time_zone("UTC").dt.convert_time_zone(timezone)
     except pl.exceptions.ComputeError as exp:
-        assert "unable to parse time zone" in str(exp)
+        assert "unable to parse time zone" in str(exp)  # noqa: PT017
         hypothesis.reject()
 
     return ser
