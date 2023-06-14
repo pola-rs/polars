@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import warnings
 from pathlib import Path
@@ -5,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal
 
 
@@ -75,6 +78,39 @@ def test_sql_div() -> None:
         ),
         res,
     )
+
+
+def test_sql_equal_not_equal() -> None:
+    # validate null-aware/unaware equality comparisons
+    df = pl.DataFrame({"a": [1, None, 3, 6, 5], "b": [1, None, 3, 4, None]})
+
+    with pl.SQLContext(frame_data=df) as ctx:
+        out = ctx.execute(
+            """
+            SELECT
+              -- not null-aware
+              (a = b)  as "1_eq_unaware",
+              (a <> b) as "2_neq_unaware",
+              (a != b) as "3_neq_unaware",
+              -- null-aware
+              (a <=> b) as "4_eq_aware",
+              (a IS NOT DISTINCT FROM b) as "5_eq_aware",
+              (a IS DISTINCT FROM b) as "6_neq_aware",
+            FROM frame_data
+            """
+        ).collect()
+
+    assert out.select(cs.contains("_aware").null_count().sum()).row(0) == (0, 0, 0)
+    assert out.select(cs.contains("_unaware").null_count().sum()).row(0) == (2, 2, 2)
+
+    assert out.to_dict(False) == {
+        "1_eq_unaware": [True, None, True, False, None],
+        "2_neq_unaware": [False, None, False, True, None],
+        "3_neq_unaware": [False, None, False, True, None],
+        "4_eq_aware": [True, True, True, False, False],
+        "5_eq_aware": [True, True, True, False, False],
+        "6_neq_aware": [False, False, False, True, True],
+    }
 
 
 def test_sql_groupby(foods_ipc_path: Path) -> None:
@@ -227,6 +263,47 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         """
     )
     assert not any((22 <= cal <= 30) for cal in out["calories"])
+
+
+@pytest.mark.parametrize(
+    ("op", "pattern", "expected"),
+    [
+        ("~", "^veg", "vegetables"),
+        ("~", "^VEG", None),
+        ("~*", "^VEG", "vegetables"),
+        ("!~", "(t|s)$", "seafood"),
+        ("!~*", "(T|S)$", "seafood"),
+        ("!~*", "^.E", "fruit"),
+        ("!~*", "[aeiOU]", None),
+    ],
+)
+def test_sql_regex(
+    foods_ipc_path: Path, op: str, pattern: str, expected: str | None
+) -> None:
+    lf = pl.scan_ipc(foods_ipc_path)
+
+    with pl.SQLContext(foods=lf, eager_execution=True) as ctx:
+        out = ctx.execute(
+            f"""
+            SELECT DISTINCT category FROM foods
+            WHERE category {op} '{pattern}'
+            """
+        )
+        assert out.rows() == ([(expected,)] if expected else [])
+
+
+def test_sql_regex_error() -> None:
+    df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        with pytest.raises(
+            pl.ComputeError, match="Invalid pattern for '~' operator: 12345"
+        ):
+            ctx.execute("SELECT * FROM df WHERE sval ~ 12345")
+        with pytest.raises(
+            pl.ComputeError,
+            match=r"""Invalid pattern for '!~\*' operator: col\("abcde"\)""",
+        ):
+            ctx.execute("SELECT * FROM df WHERE sval !~* abcde")
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:

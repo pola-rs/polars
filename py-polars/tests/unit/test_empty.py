@@ -70,3 +70,11 @@ def test_empty_9137() -> None:
     )
     assert out.shape == (0, 2)
     assert out.dtypes == [pl.Float32, pl.Float32]
+
+
+def test_empty_groupby_apply_err() -> None:
+    df = pl.DataFrame(schema={"x": pl.Int64})
+    with pytest.raises(
+        pl.ComputeError, match=r"cannot groupby \+ apply on empty 'DataFrame'"
+    ):
+        df.groupby("x").apply(lambda x: x)

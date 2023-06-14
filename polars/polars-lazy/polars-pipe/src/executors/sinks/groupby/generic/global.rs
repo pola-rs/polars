@@ -131,34 +131,32 @@ impl GlobalTable {
         hash_map: &mut AggHashTable<false>,
         hashes: &[u64],
         chunk_indexes: &[IdxSize],
-        keys: &[Series],
+        keys: &BinaryArray<i64>,
         agg_cols: &[Series],
     ) {
         debug_assert_eq!(hashes.len(), chunk_indexes.len());
-        debug_assert_eq!(hashes.len(), keys[0].len());
+        debug_assert_eq!(hashes.len(), keys.len());
 
-        let mut keys_iters = keys.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
+        // let mut keys_iters = keys.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
         let mut agg_cols_iters = agg_cols.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
 
         // amortize loop counter
-        for i in 0..hashes.len() {
+        for (i, row) in keys.values_iter().enumerate() {
             unsafe {
                 let hash = *hashes.get_unchecked(i);
                 let chunk_index = *chunk_indexes.get_unchecked(i);
 
                 // safety: keys_iters and cols_iters are not depleted
-                let out = hash_map.insert(hash, &mut keys_iters, &mut agg_cols_iters, chunk_index);
+                let overflow = hash_map.insert(hash, row, &mut agg_cols_iters, chunk_index);
                 // should never overflow
-                debug_assert!(out.is_none());
+                debug_assert!(!overflow);
             }
         }
     }
 
     pub(super) fn process_partition_from_dumped(&self, partition: usize, spilled: &DataFrame) {
         let mut hash_map = self.inner_maps[partition].lock().unwrap();
-        let (hashes, chunk_indexes, keys_and_aggs) = SpillPayload::spilled_to_columns(spilled);
-        let keys = &keys_and_aggs[..hash_map.num_keys];
-        let aggs = &keys_and_aggs[hash_map.num_keys..];
+        let (hashes, chunk_indexes, keys, aggs) = SpillPayload::spilled_to_columns(spilled);
         self.process_partition_impl(&mut hash_map, hashes, chunk_indexes, keys, aggs);
     }
 

@@ -1,4 +1,5 @@
 use once_cell::sync::Lazy;
+use polars_arrow::export::arrow::array::MutableBinaryArray;
 use polars_core::export::once_cell;
 
 use super::*;
@@ -16,10 +17,10 @@ static SPILL_SIZE: Lazy<usize> = Lazy::new(|| {
 struct SpillPartitions {
     // outer vec: partitions (factor of 2)
     // inner vec: number of keys + number of aggregated columns
-    keys_aggs_partitioned: PartitionVec<Vec<AnyValueBufferTrusted<'static>>>,
+    keys_partitioned: PartitionVec<MutableBinaryArray<i64>>,
+    aggs_partitioned: PartitionVec<Vec<AnyValueBufferTrusted<'static>>>,
     hash_partitioned: PartitionVec<Vec<u64>>,
     chunk_index_partitioned: PartitionVec<Vec<IdxSize>>,
-    num_keys: usize,
     spilled: bool,
     // this only fills during the reduce phase IFF
     // there are spilled tuples
@@ -36,10 +37,10 @@ impl SpillPartitions {
 
         // construct via split so that pre-allocation succeeds
         Self {
-            keys_aggs_partitioned: vec![],
+            keys_partitioned: vec![],
+            aggs_partitioned: vec![],
             hash_partitioned,
             chunk_index_partitioned,
-            num_keys: keys.as_ref().len(),
             spilled: false,
             finished_payloads: vec![],
             keys_dtypes: keys,
@@ -50,15 +51,11 @@ impl SpillPartitions {
     }
 
     fn split(&self) -> Self {
-        let n_columns = self.keys_dtypes.as_ref().len() + self.agg_dtypes.as_ref().len();
+        let n_columns = self.agg_dtypes.as_ref().len();
 
-        let keys_aggs_partitioned = (0..PARTITION_SIZE)
+        let aggs_partitioned = (0..PARTITION_SIZE)
             .map(|_| {
                 let mut buf = Vec::with_capacity(n_columns);
-                for dtype in self.keys_dtypes.as_ref() {
-                    let builder = AnyValueBufferTrusted::new(&dtype.to_physical(), OB_SIZE);
-                    buf.push(builder);
-                }
                 for dtype in self.agg_dtypes.as_ref() {
                     let builder = AnyValueBufferTrusted::new(&dtype.to_physical(), OB_SIZE);
                     buf.push(builder);
@@ -67,14 +64,18 @@ impl SpillPartitions {
             })
             .collect();
 
+        let keys_partitioned = (0..PARTITION_SIZE)
+            .map(|_| MutableBinaryArray::with_capacity(OB_SIZE))
+            .collect();
+
         let hash_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
         let chunk_index_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
 
         Self {
-            keys_aggs_partitioned,
+            keys_partitioned,
+            aggs_partitioned,
             hash_partitioned,
             chunk_index_partitioned,
-            num_keys: self.num_keys,
             spilled: false,
             finished_payloads: vec![],
             keys_dtypes: self.keys_dtypes.clone(),
@@ -85,79 +86,50 @@ impl SpillPartitions {
 }
 
 impl SpillPartitions {
-    fn pre_alloc(&mut self) {
-        if !self.spilled {
-            let n_columns = self.keys_dtypes.as_ref().len() + self.agg_dtypes.as_ref().len();
-
-            self.keys_aggs_partitioned = (0..PARTITION_SIZE)
-                .map(|_| {
-                    let mut buf = Vec::with_capacity(n_columns);
-                    for dtype in self.keys_dtypes.as_ref() {
-                        let builder = AnyValueBufferTrusted::new(&dtype.to_physical(), OB_SIZE);
-                        buf.push(builder);
-                    }
-                    for dtype in self.agg_dtypes.as_ref() {
-                        let builder = AnyValueBufferTrusted::new(&dtype.to_physical(), OB_SIZE);
-                        buf.push(builder);
-                    }
-                    buf
-                })
-                .collect();
-
-            self.hash_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
-            self.chunk_index_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
-        }
-    }
     /// Returns (partition, overflowing hashes, chunk_indexes, keys and aggs)
     fn insert(
         &mut self,
         hash: u64,
         chunk_idx: IdxSize,
-        keys: &[AnyValue<'_>],
-        aggs: &mut [SeriesPhysIter],
+        row: &[u8],
+        agg_iters: &mut [SeriesPhysIter],
     ) -> Option<(usize, SpillPayload)> {
-        self.pre_alloc();
-        let partition = hash_to_partition(hash, self.keys_aggs_partitioned.len());
+        let partition = hash_to_partition(hash, self.aggs_partitioned.len());
         self.spilled = true;
         unsafe {
-            let keys_aggs = self
-                .keys_aggs_partitioned
-                .get_unchecked_release_mut(partition);
+            let agg_values = self.aggs_partitioned.get_unchecked_release_mut(partition);
             let hashes = self.hash_partitioned.get_unchecked_release_mut(partition);
             let chunk_indexes = self
                 .chunk_index_partitioned
                 .get_unchecked_release_mut(partition);
+            let key_builder = self.keys_partitioned.get_unchecked_mut(partition);
 
             hashes.push(hash);
             chunk_indexes.push(chunk_idx);
 
             // amortize the loop counter
-            for i in 0..keys.len() {
-                let av = keys.get_unchecked(i);
-                let buf = keys_aggs.get_unchecked_mut(i);
-                // safety: we can trust the input types to be of consistent dtype
-                buf.add_unchecked_borrowed_physical(av);
-            }
-            let mut i = keys.len();
-            for agg in aggs {
+            key_builder.push(Some(row));
+            for (i, agg) in agg_iters.iter_mut().enumerate() {
                 let av = agg.next().unwrap_unchecked_release();
-                let buf = keys_aggs.get_unchecked_mut(i);
+                let buf = agg_values.get_unchecked_mut(i);
                 buf.add_unchecked_borrowed_physical(&av);
-                i += 1;
             }
 
             if hashes.len() >= OB_SIZE {
                 let mut new_hashes = Vec::with_capacity(OB_SIZE);
                 let mut new_chunk_indexes = Vec::with_capacity(OB_SIZE);
+                let mut new_keys_builder = MutableBinaryArray::with_capacity(OB_SIZE);
                 std::mem::swap(&mut new_hashes, hashes);
                 std::mem::swap(&mut new_chunk_indexes, chunk_indexes);
+                std::mem::swap(&mut new_keys_builder, key_builder);
 
                 Some((
                     partition,
                     SpillPayload {
                         hashes: new_hashes,
                         chunk_idx: new_chunk_indexes,
-                        keys_and_aggs: keys_aggs
+                        keys: new_keys_builder.into(),
+                        aggs: agg_values
                             .iter_mut()
                             .zip(self.output_schema.iter_names())
                             .map(|(b, name)| {
@@ -166,7 +138,6 @@ impl SpillPartitions {
                                 s
                             })
                             .collect(),
-                        num_keys: self.num_keys,
                     },
                 ))
             } else {
@@ -223,13 +194,13 @@ impl SpillPartitions {
 
         (0..PARTITION_SIZE)
             .map(|partition| unsafe {
-                let keys_aggs = self
-                    .keys_aggs_partitioned
-                    .get_unchecked_release_mut(partition);
+                let spilled_aggs = self.aggs_partitioned.get_unchecked_release_mut(partition);
                 let hashes = self.hash_partitioned.get_unchecked_release_mut(partition);
                 let chunk_indexes = self
                     .chunk_index_partitioned
                     .get_unchecked_release_mut(partition);
+                let keys_builder =
+                    std::mem::take(self.keys_partitioned.get_unchecked_mut(partition));
                 let hashes = std::mem::take(hashes);
                 let chunk_idx = std::mem::take(chunk_indexes);
 
@@ -238,8 +209,8 @@ impl SpillPartitions {
                     SpillPayload {
                         hashes,
                         chunk_idx,
-                        keys_and_aggs: keys_aggs.iter_mut().map(|b| b.reset(0)).collect(),
-                        num_keys: self.num_keys,
+                        keys: keys_builder.into(),
+                        aggs: spilled_aggs.iter_mut().map(|b| b.reset(0)).collect(),
                     },
                 )
             })
@@ -292,13 +263,16 @@ impl ThreadLocalTable {
     pub(super) unsafe fn insert(
         &mut self,
         hash: u64,
-        keys: &mut [SeriesPhysIter],
+        keys_row: &[u8],
         agg_iters: &mut [SeriesPhysIter],
         chunk_index: IdxSize,
     ) -> Option<(usize, SpillPayload)> {
-        if let Some(keys) = self.inner_map.insert(hash, keys, agg_iters, chunk_index) {
+        if self
+            .inner_map
+            .insert(hash, keys_row, agg_iters, chunk_index)
+        {
             self.spill_partitions
-                .insert(hash, chunk_index, keys, agg_iters)
+                .insert(hash, chunk_index, keys_row, agg_iters)
         } else {
             None
         }
