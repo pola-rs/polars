@@ -19,10 +19,6 @@ if TYPE_CHECKING:
         from typing import Literal
     else:
         from typing_extensions import Literal
-if sys.version_info >= (3, 9):
-    pass
-else:
-    pass
 
 import pandas as pd
 import pytz
