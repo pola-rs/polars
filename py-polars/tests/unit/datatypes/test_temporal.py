@@ -887,21 +887,25 @@ def test_default_negative_every_offset_dynamic_groupby(time_zone: str | None) ->
 
 
 @pytest.mark.parametrize(
-    ("rule", "offset"),
+    ("rule", "offset", "start_by"),
     [
-        ("1h", timedelta(hours=2)),
-        ("1d", timedelta(days=2)),
-        ("1w", timedelta(weeks=2)),
+        ("1h", timedelta(hours=2), "window"),
+        ("1d", timedelta(days=2), "window"),
+        ("1w", timedelta(weeks=2), "sunday"),
     ],
 )
-def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
+def test_groupby_dynamic_crossing_dst(
+    rule: str, offset: timedelta, start_by: StartBy
+) -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = start_dt + offset
     date_range = pl.date_range(
         start_dt, end_dt, rule, time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
-    result = df.groupby_dynamic("time", every=rule).agg(pl.col("value").mean())
+    result = df.groupby_dynamic("time", every=rule, start_by=start_by).agg(
+        pl.col("value").mean()
+    )
     expected = pl.DataFrame(
         {"time": date_range, "value": range(len(date_range))},
         schema_overrides={"value": pl.Float64},
@@ -1023,6 +1027,14 @@ def test_groupby_dynamic_monthly_crossing_dst() -> None:
         {"time": date_range, "value": range(len(date_range))},
         schema_overrides={"value": pl.Float64},
     )
+    assert_frame_equal(result, expected)
+
+
+def test_groupby_dynamic_2d_9333() -> None:
+    df = pl.DataFrame({"ts": [datetime(2000, 1, 1, 3)], "values": [10.0]})
+    df = df.with_columns(pl.col("ts").set_sorted())
+    result = df.groupby_dynamic("ts", every="2d").agg(pl.col("values"))
+    expected = pl.DataFrame({"ts": [datetime(1999, 12, 31, 0)], "values": [[10.0]]})
     assert_frame_equal(result, expected)
 
 
