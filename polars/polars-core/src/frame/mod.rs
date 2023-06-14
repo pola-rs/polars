@@ -919,7 +919,7 @@ impl DataFrame {
             .zip(other.columns.iter())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(left, right)?;
-                left.append(right).expect("should not fail");
+                left.append(right)?;
                 Ok(())
             })?;
         Ok(self)
