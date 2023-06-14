@@ -374,6 +374,156 @@ def test_assert_series_equal_uint_overflow() -> None:
 
 
 @pytest.mark.parametrize(
+    ("series", "atol"),
+    [
+        (pl.Series([1.5, 2.5, 3.5]), 1.0),
+        (pl.Series([1.05, 2.05, 3.05]), 1e-1),
+        (pl.Series([1.005, 2.005, 3.005]), 1e-2),
+    ],
+)
+def test_assert_series_equal_atol(series: pl.Series, atol: float) -> None:
+    assert_series_equal(
+        pl.Series([1.0, 2.0, 3.0]),
+        series,
+        atol=atol,
+        rtol=0.0,
+        nans_compare_equal=True,
+    )
+    assert_series_equal(
+        pl.Series([1.0, 2.0, 3.0]),
+        series,
+        atol=atol,
+        rtol=0.0,
+        nans_compare_equal=False,
+    )
+
+
+def test_assert_series_equal_atol_with_nan() -> None:
+    # nans_compare_equal=True
+    assert_series_equal(
+        pl.Series([1.0, 2.0, float("nan")]),
+        pl.Series([1.005, 2.005, float("nan")]),
+        atol=1e-2,
+        rtol=0.0,
+    )
+    with pytest.raises(AssertionError):
+        assert_series_equal(
+            pl.Series([1.0, 2.0, float("nan")]),
+            pl.Series([1.005, 2.005, 3.005]),
+            atol=1e-2,
+            rtol=0.0,
+        )
+    with pytest.raises(AssertionError):
+        assert_series_equal(
+            pl.Series([1.0, 2.0, 3.0]),
+            pl.Series([1.005, 2.005, float("nan")]),
+            atol=1e-2,
+            rtol=0.0,
+        )
+
+    # nans_compare_equal=False
+    with pytest.raises(AssertionError):
+        assert_series_equal(
+            pl.Series([1.0, 2.0, float("nan")]),
+            pl.Series([1.005, 2.005, float("nan")]),
+            atol=1e-2,
+            rtol=0.0,
+            nans_compare_equal=False,
+        )
+    with pytest.raises(AssertionError):
+        assert_series_equal(
+            pl.Series([1.0, 2.0, float("nan")]),
+            pl.Series([1.005, 2.005, 3.005]),
+            atol=1e-2,
+            rtol=0.0,
+            nans_compare_equal=False,
+        )
+    with pytest.raises(AssertionError):
+        assert_series_equal(
+            pl.Series([1.0, 2.0, 3.0]),
+            pl.Series([1.005, 2.005, float("nan")]),
+            atol=1e-2,
+            rtol=0.0,
+            nans_compare_equal=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("series", "rtol"),
+    [
+        (pl.Series([1.5, 2.5, 3.5]), 1.0),
+        (pl.Series([1.05, 2.15, 3.25]), 1e-1),
+        (pl.Series([1.005, 2.015, 3.025]), 1e-2),
+    ],
+)
+def test_assert_series_equal_rtol(series: pl.Series, rtol: float) -> None:
+    assert_series_equal(
+        pl.Series([1.0, 2.0, 3.0]),
+        series,
+        atol=0.0,
+        rtol=rtol,
+        nans_compare_equal=True,
+    )
+    assert_series_equal(
+        pl.Series([1.0, 2.0, 3.0]),
+        series,
+        atol=0.0,
+        rtol=rtol,
+        nans_compare_equal=False,
+    )
+
+
+def test_assert_series_equal_rtol_with_nan() -> None:
+    # nans_compare_equal=True
+    assert_series_equal(
+        pl.Series([1.0, 2.0, float("nan")]),
+        pl.Series([1.005, 2.015, float("nan")]),
+        atol=0.0,
+        rtol=1e-2,
+    )
+    with pytest.raises(AssertionError):
+        assert_series_equal(
+            pl.Series([1.0, 2.0, float("nan")]),
+            pl.Series([1.005, 2.015, 3.025]),
+            atol=0.0,
+            rtol=1e-2,
+        )
+    with pytest.raises(AssertionError):
+        assert_series_equal(
+            pl.Series([1.0, 2.0, 3.0]),
+            pl.Series([1.005, 2.015, float("nan")]),
+            atol=0.0,
+            rtol=1e-2,
+        )
+
+    # nans_compare_equal=False
+    with pytest.raises(AssertionError):
+        assert_series_equal(
+            pl.Series([1.0, 2.0, float("nan")]),
+            pl.Series([1.005, 2.015, float("nan")]),
+            atol=0.0,
+            rtol=1e-2,
+            nans_compare_equal=False,
+        )
+    with pytest.raises(AssertionError):
+        assert_series_equal(
+            pl.Series([1.0, 2.0, float("nan")]),
+            pl.Series([1.005, 2.015, 3.025]),
+            atol=0.0,
+            rtol=1e-2,
+            nans_compare_equal=False,
+        )
+    with pytest.raises(AssertionError):
+        assert_series_equal(
+            pl.Series([1.0, 2.0, 3.0]),
+            pl.Series([1.005, 2.015, float("nan")]),
+            atol=0.0,
+            rtol=1e-2,
+            nans_compare_equal=False,
+        )
+
+
+@pytest.mark.parametrize(
     ("data1", "data2"),
     [
         ([datetime(2022, 10, 2, 12)], [datetime(2022, 10, 2, 13)]),
