@@ -4253,6 +4253,11 @@ class Series:
             This is faster because python can be skipped and because we call
             more specialized functions.
 
+        Warnings
+        --------
+        If ``return_dtype`` is not provided, this may lead to unexpected results.
+        We allow this, but it is considered a bug in the users query.
+
         Notes
         -----
         If your function is expensive and you don't want it to be called more than
