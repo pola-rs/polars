@@ -1,6 +1,12 @@
 # --------------------------------------------------------
 # Validate groupby_dynamic behaviour with parametric tests
 # --------------------------------------------------------
+#
+# Note: there are three tests here which look very similar.
+# The reason they are split into different tests is due to
+# some upstream bugs in pandas which would cause some tests
+# to fail if they were all in the same test function. Ideally,
+# once upstream is fixed, these tests should be merged into one.
 from __future__ import annotations
 
 import sys
