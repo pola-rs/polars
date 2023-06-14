@@ -163,6 +163,19 @@ impl<T: PolarsObject> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
         mask: &BooleanChunked,
         other: &ChunkedArray<ObjectType<T>>,
     ) -> PolarsResult<ChunkedArray<ObjectType<T>>> {
-        zip_with(self, other, mask)
+        let (left, right, mask) = align_chunks_ternary(self, other, mask);
+        let mut ca: Self = left
+            .as_ref()
+            .into_iter()
+            .zip(right.into_iter())
+            .zip(mask.into_iter())
+            .map(|((left_c, right_c), mask_c)| match mask_c {
+                Some(true) => left_c.cloned(),
+                Some(false) => right_c.cloned(),
+                None => None,
+            })
+            .collect();
+        ca.rename(self.name());
+        Ok(ca)
     }
 }
