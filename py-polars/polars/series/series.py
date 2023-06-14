@@ -4256,7 +4256,7 @@ class Series:
         Warnings
         --------
         If ``return_dtype`` is not provided, this may lead to unexpected results.
-        We allow this, but it is considered a bug in the users query.
+        We allow this, but it is considered a bug in the user's query.
 
         Notes
         -----
