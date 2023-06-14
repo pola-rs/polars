@@ -140,3 +140,15 @@ fn test_union_all() {
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     assert!(actual.frame_equal(&expected));
 }
+
+#[test]
+fn test_drop_table() {
+    let mut ctx = create_ctx();
+    let sql = r#"
+    DROP TABLE df
+    "#;
+    let actual = ctx.execute(sql);
+    assert!(actual.is_ok());
+    let res = ctx.execute("SELECT * FROM df");
+    assert!(res.is_err());
+}
