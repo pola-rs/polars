@@ -399,6 +399,7 @@ all_strategies = scalar_strategies | nested_strategies
 
 @st.composite
 def strategy_time_zone_aware_series(draw: st.DrawFn) -> pl.Series:
+    """Generate a timezone-aware Series."""
     from polars.testing.parametric.primitives import series
 
     ser = draw(

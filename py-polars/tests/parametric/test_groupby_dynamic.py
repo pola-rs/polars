@@ -1,3 +1,6 @@
+# --------------------------------------------------------
+# Validate groupby_dynamic behaviour with parametric tests
+# --------------------------------------------------------
 from __future__ import annotations
 
 import sys
@@ -36,9 +39,7 @@ def _compare_polars_and_pandas(
 ) -> None:
     nrows = len(time_series)
     values = pl.Series(
-        data.draw(
-            st.lists(st.floats(10, 20), min_size=nrows, max_size=nrows), label="values"
-        )
+        data.draw(st.lists(st.floats(10, 20), min_size=nrows, max_size=nrows))
     )
     df = pl.DataFrame({"ts": time_series, "values": values}).sort("ts")
 
@@ -49,9 +50,15 @@ def _compare_polars_and_pandas(
         closed=closed,
     ).agg(pl.col("values").sum())
 
+    if len(result) > 0:
+        origin = result["ts"].dt.offset_by(f"-{number}{pl_every}")[0]
+    else:
+        origin = "epoch"
     result_pd = (
         df.to_pandas()
-        .resample(f"{number}{pd_alias}", closed=closed, label="left", on="ts")["values"]
+        .resample(
+            f"{number}{pd_alias}", closed=closed, label="left", on="ts", origin=origin
+        )["values"]
         .sum()
         .reset_index()
     )
@@ -72,22 +79,16 @@ def _compare_polars_and_pandas(
 @given(
     time_series=strategy_time_zone_aware_series(),
     closed=st.sampled_from(("left", "right")),
-    every_alias=st.sampled_from(
-        (
-            ("d", "D"),
-            ("mo", "MS"),
-            ("y", "YS"),
-        )
-    ),
+    every_alias=st.sampled_from((("mo", "MS"), ("y", "YS"))),
     number=st.integers(
         min_value=1,
-        # Can't currently go above 1:
-        # https://github.com/pola-rs/polars/issues/9333
+        # Can't currently go above 1 due to bug in pandas:
+        # https://github.com/pandas-dev/pandas/issues/53662
         max_value=1,
     ),
     data=st.data(),
 )
-def test_non_weekly(
+def test_daily_and_yearly(
     time_series: pl.Series,
     closed: Literal["left", "right"],
     every_alias: tuple[str, str],
@@ -138,8 +139,8 @@ def test_non_weekly(
     ),
     number=st.integers(
         min_value=1,
-        # Can't currently go above 1:
-        # https://github.com/pola-rs/polars/issues/9333
+        # Can't currently go above 1 due to bug in pandas:
+        # https://github.com/pandas-dev/pandas/issues/53662
         max_value=1,
     ),
     data=st.data(),
@@ -151,11 +152,6 @@ def test_weekly(
     number: int,
     data: st.DataObject,
 ) -> None:
-    # If/when the pandas bug
-    # https://github.com/pandas-dev/pandas/issues/53612
-    # is fixed, this should be integrated into the previous test.
-    # Trying to do so at the moment results in hypothesis complaining
-    # about too many skipped tests.
     pl_every, pd_alias, pl_startby = every_alias_startby
     try:
         _compare_polars_and_pandas(
@@ -164,6 +160,46 @@ def test_weekly(
             pl_every=pl_every,
             pd_alias=pd_alias,
             pl_startby=pl_startby,
+            closed=closed,
+            number=number,
+        )
+    except pl.exceptions.PolarsPanicError as exp:
+        # This computation may fail in the rare case that the beginning of a month
+        # lands on a DST transition.
+        assert "is non-existent" in str(exp) or "is ambiguous" in str(  # noqa: PT017
+            exp
+        )
+        reject()
+    except (pytz.exceptions.NonExistentTimeError, pytz.exceptions.AmbiguousTimeError):
+        reject()
+
+
+@given(
+    time_series=strategy_time_zone_aware_series(),
+    closed=st.sampled_from(
+        (
+            "left",
+            # Can't test closed='right', bug in pandas:
+            # https://github.com/pandas-dev/pandas/issues/53612
+        )
+    ),
+    number=st.integers(min_value=1, max_value=3),
+    data=st.data(),
+)
+def test_daily(
+    time_series: pl.Series,
+    closed: Literal["left", "right"],
+    number: int,
+    data: st.DataObject,
+) -> None:
+    pl_every, pd_alias = "d", "D"
+    try:
+        _compare_polars_and_pandas(
+            data=data,
+            time_series=time_series,
+            pl_every=pl_every,
+            pd_alias=pd_alias,
+            pl_startby="window",
             closed=closed,
             number=number,
         )
