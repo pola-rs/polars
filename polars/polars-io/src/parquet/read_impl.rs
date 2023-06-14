@@ -9,7 +9,7 @@ use arrow::io::parquet::read;
 use arrow::io::parquet::read::{ArrayIter, FileMetaData, RowGroupMetaData};
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
-use polars_core::{IUseStringCache, POOL};
+use polars_core::POOL;
 use rayon::prelude::*;
 
 use super::mmap::ColumnStore;
@@ -253,7 +253,14 @@ pub fn read_parquet<R: MmapBytesReader>(
     // we need a string cache
     // we keep it alive until the end of the function
     let _string_cache = if n_row_groups > 1 {
-        Some(IUseStringCache::new())
+        #[cfg(feature = "dtype-categorical")]
+        {
+            Some(polars_core::IUseStringCache::new())
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        {
+            Some(0u8)
+        }
     } else {
         None
     };
