@@ -887,23 +887,21 @@ def test_default_negative_every_offset_dynamic_groupby(time_zone: str | None) ->
 
 
 @pytest.mark.parametrize(
-    ("rule", "offset", "start_by"),
+    ("rule", "offset"),
     [
-        ("1h", timedelta(hours=2), "window"),
-        ("1d", timedelta(days=2), "window"),
-        ("1w", timedelta(weeks=2), "sunday"),
+        ("1h", timedelta(hours=2)),
+        ("1d", timedelta(days=2)),
+        ("1w", timedelta(weeks=2)),
     ],
 )
-def test_groupby_dynamic_crossing_dst(
-    rule: str, offset: timedelta, start_by: StartBy
-) -> None:
+def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = start_dt + offset
     date_range = pl.date_range(
         start_dt, end_dt, rule, time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
-    result = df.groupby_dynamic("time", every=rule, start_by=start_by).agg(
+    result = df.groupby_dynamic("time", every=rule, start_by="datapoint").agg(
         pl.col("value").mean()
     )
     expected = pl.DataFrame(

@@ -50,6 +50,7 @@ fn test_groupby_dynamic_week_bounds() -> PolarsResult<()> {
                 closed_window: ClosedWindow::Left,
                 truncate: false,
                 include_boundaries: true,
+                start_by: StartBy::DataPoint,
                 ..Default::default()
             },
         )
