@@ -331,7 +331,7 @@ impl Series {
                 Ok(s)
             }
             ArrowDataType::Extension(_, parent_type, _) => {
-                try_from_arrow_unchecked(name, chunks, parent_type.as_ref())
+                Self::try_from_arrow_unchecked(name, chunks, parent_type.as_ref())
             }
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(logical_fields) => {
