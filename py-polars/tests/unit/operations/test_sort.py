@@ -698,3 +698,9 @@ def test_sorted_flag_groupby_dynamic() -> None:
         .to_series()
         .flags["SORTED_ASC"]
     )
+
+
+def test_top_k_9385() -> None:
+    assert pl.LazyFrame({"b": [True, False]}).sort(["b"]).slice(0, 1).collect()[
+        "b"
+    ].to_list() == [False]
