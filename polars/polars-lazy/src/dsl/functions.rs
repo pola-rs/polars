@@ -172,7 +172,7 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
     )
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct UnionArgs {
     pub parallel: bool,
     pub rechunk: bool,

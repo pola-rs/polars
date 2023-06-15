@@ -298,7 +298,7 @@ def test_lazy_concat_err() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="'LazyFrame' only allows {'vertical','diagonal','align'} concat strategies.",
+        match="'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies.",
     ):
         pl.concat([df1.lazy(), df2.lazy()], how="horizontal").collect()
 
