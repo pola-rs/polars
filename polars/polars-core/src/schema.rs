@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
+use crate::utils::try_get_supertype;
 
 /// A map from field/column name (`String`) to the type of that field/column (`DataType`)
 #[derive(Eq, Clone, Default)]
@@ -366,6 +367,21 @@ impl Schema {
     /// For an owned version, use [`iter_fields`][Self::iter_fields], which clones the data to iterate owned `Field`s
     pub fn iter(&self) -> impl Iterator<Item = (&SmartString, &DataType)> + '_ {
         self.inner.iter()
+    }
+
+    /// Take another [`Schema`] and try to find the supertypes between them.
+    pub fn to_supertype(&mut self, other: &Schema) -> PolarsResult<bool> {
+        polars_ensure!(self.len() == other.len(), ComputeError: "schema lengths differ");
+
+        let mut changed = false;
+        for ((k, dt), (other_k, other_dt)) in self.inner.iter_mut().zip(other.iter()) {
+            polars_ensure!(k == other_k, ComputeError: "schema names differ: got {}, expected {}", k, other_k);
+
+            let st = try_get_supertype(dt, other_dt)?;
+            changed |= &st != dt;
+            *dt = st
+        }
+        Ok(changed)
     }
 }
 
