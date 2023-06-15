@@ -77,9 +77,21 @@ pub(crate) fn insert_streaming_nodes(
 
     scratch.clear();
 
-    // The pipelines need a final sink, we insert that here.
+    // The pipelines always need to end in a SINK, we insert that here.
     // this allows us to split at joins/unions and share a sink
     let root = insert_file_sink(root, lp_arena);
+
+    // We use mutation to communicate when we need to insert a file sink.
+    // This happens for instance when we
+    //
+    //     ________*non-streamable part of query
+    //   /\
+    //     ________*streamable below this line so we must insert
+    //    /\        a file sink here so the pipeline can be built
+    //     /\
+    //
+    // when this is positive we should insert a file sink
+    let mut insert_file_sink_ptr: u32 = 0;
 
     let mut stack = Vec::with_capacity(16);
 
@@ -112,9 +124,6 @@ pub(crate) fn insert_streaming_nodes(
     let mut pipeline_trees: Vec<Tree> = vec![vec![]];
     // keep the counter global so that the order will match traversal order
     let mut execution_id = 0;
-
-    // when this is positive we should insert a file sink
-    let mut insert_file_sink_ptr: u32 = 0;
 
     use ALogicalPlan::*;
     while let Some((mut root, mut state, mut current_idx)) = stack.pop() {
@@ -332,7 +341,7 @@ pub(crate) fn insert_streaming_nodes(
                 stack.push((*input, state, current_idx))
             }
             #[allow(unused_variables)]
-            Aggregate {
+            lp @ Aggregate {
                 input,
                 aggs,
                 maintain_order: false,
@@ -383,7 +392,15 @@ pub(crate) fn insert_streaming_nodes(
                     state.operators_sinks.push(PipelineNode::Sink(root));
                     stack.push((*input, state, current_idx))
                 } else {
-                    stack.push((*input, Branch::default(), current_idx))
+                    process_non_streamable_node(
+                        &mut current_idx,
+                        &mut state,
+                        &mut stack,
+                        scratch,
+                        &mut pipeline_trees,
+                        lp,
+                        &mut insert_file_sink_ptr,
+                    )
                 }
             }
             lp => process_non_streamable_node(
