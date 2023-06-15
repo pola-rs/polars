@@ -11,7 +11,7 @@ pub struct SortField {
     pub nulls_last: bool,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RowsEncoded {
     pub(crate) values: Vec<u8>,
     pub(crate) offsets: Vec<usize>,
