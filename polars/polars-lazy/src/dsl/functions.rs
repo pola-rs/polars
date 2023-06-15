@@ -172,11 +172,21 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
     )
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct UnionArgs {
     pub parallel: bool,
     pub rechunk: bool,
     pub to_supertypes: bool,
+}
+
+impl Default for UnionArgs {
+    fn default() -> Self {
+        Self {
+            parallel: true,
+            rechunk: true,
+            to_supertypes: false,
+        }
+    }
 }
 
 /// Concat multiple
