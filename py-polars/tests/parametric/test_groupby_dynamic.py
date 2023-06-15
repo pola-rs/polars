@@ -91,7 +91,7 @@ def _compare_polars_and_pandas(
     ),
     data=st.data(),
 )
-def test_daily_and_yearly(
+def test_monthly_and_yearly(
     time_series: pl.Series,
     closed: Literal["left", "right"],
     every_alias: tuple[str, str],
