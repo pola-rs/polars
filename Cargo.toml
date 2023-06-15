@@ -43,9 +43,10 @@ either = "1.8"
 
 [workspace.dependencies.arrow]
 package = "arrow2"
-git = "https://github.com/jorgecarleitao/arrow2"
+# git = "https://github.com/jorgecarleitao/arrow2"
 # git = "https://github.com/ritchie46/arrow2"
-rev = "2d2e7053f9a50810bfe9cecff25ab39089aef98e"
+git = "https://github.com/GPSnoopy/arrow2"
+rev = "2078857f4350df7c8b72d3f62c671e291976a2c2"
 # path = "../arrow2"
 # branch = "polars_2023-05-25"
 version = "0.17"
