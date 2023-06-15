@@ -459,3 +459,28 @@ def test_schema_ne_missing_9256() -> None:
     df = pl.DataFrame({"a": [0, 1, None], "b": [True, False, True]})
 
     assert df.select(pl.col("a").ne_missing(0).or_(pl.col("b")))["a"].all()
+
+
+def test_concat_vertically_relaxed() -> None:
+    a = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [True, False, None],
+        },
+        schema={"a": pl.Int8, "b": pl.Boolean},
+    )
+
+    b = pl.DataFrame(
+        {
+            "a": [43, 2, 3],
+            "b": [32, 1, None],
+        },
+        schema={"a": pl.Int16, "b": pl.Int64},
+    )
+
+    out = pl.concat([a, b], how="vertical_relaxed")
+    assert out.schema == {"a": pl.Int16, "b": pl.Int64}
+    assert out.to_dict(False) == {
+        "a": [1, 2, 3, 43, 2, 3],
+        "b": [1, 0, None, 32, 1, None],
+    }

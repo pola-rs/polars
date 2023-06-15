@@ -170,20 +170,20 @@ impl SQLContext {
         quantifier: &SetQuantifier,
         query: &Query,
     ) -> PolarsResult<LazyFrame> {
+        let left = self.process_set_expr(left, query)?;
+        let right = self.process_set_expr(right, query)?;
+        let concatenated = polars_lazy::dsl::concat(
+            vec![left, right],
+            UnionArgs {
+                parallel: true,
+                ..Default::default()
+            },
+        );
         match quantifier {
             // UNION ALL
-            SetQuantifier::All => {
-                let left = self.process_set_expr(left, query)?;
-                let right = self.process_set_expr(right, query)?;
-                polars_lazy::dsl::concat(vec![left, right], false, true)
-            }
+            SetQuantifier::All => concatenated,
             // UNION DISTINCT | UNION
-            _ => {
-                let left = self.process_set_expr(left, query)?;
-                let right = self.process_set_expr(right, query)?;
-                Ok(polars_lazy::dsl::concat(vec![left, right], true, true)?
-                    .unique(None, UniqueKeepStrategy::Any))
-            }
+            _ => concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any)),
         }
     }
     // EXPLAIN SELECT * FROM DF

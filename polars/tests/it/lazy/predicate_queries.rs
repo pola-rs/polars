@@ -196,9 +196,16 @@ fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
     ]?;
 
     for rechunk in [true, false] {
-        let out = concat([lf1.clone(), lf2.clone()], rechunk, true)?
-            .filter(count().over([col("k")]).gt(lit(1)))
-            .collect()?;
+        let out = concat(
+            [lf1.clone(), lf2.clone()],
+            UnionArgs {
+                rechunk,
+                parallel: true,
+                ..Default::default()
+            },
+        )?
+        .filter(count().over([col("k")]).gt(lit(1)))
+        .collect()?;
 
         assert!(out.frame_equal(&expected));
     }

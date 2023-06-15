@@ -118,7 +118,12 @@ pub fn cols(names: Vec<String>) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn concat_lf(seq: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
+pub fn concat_lf(
+    seq: &PyAny,
+    rechunk: bool,
+    parallel: bool,
+    to_supertypes: bool,
+) -> PyResult<PyLazyFrame> {
     let len = seq.len()?;
     let mut lfs = Vec::with_capacity(len);
 
@@ -128,7 +133,15 @@ pub fn concat_lf(seq: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyF
         lfs.push(lf);
     }
 
-    let lf = dsl::concat(lfs, rechunk, parallel).map_err(PyPolarsErr::from)?;
+    let lf = dsl::concat(
+        lfs,
+        UnionArgs {
+            rechunk,
+            parallel,
+            to_supertypes,
+        },
+    )
+    .map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 

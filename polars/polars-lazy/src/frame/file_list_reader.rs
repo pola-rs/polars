@@ -75,7 +75,7 @@ pub trait LazyFileListReader: Clone {
     /// This method should not take into consideration [LazyFileListReader::n_rows]
     /// nor [LazyFileListReader::row_count].
     fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {
-        concat_impl(&lfs, self.rechunk(), true, true)
+        concat_impl(&lfs, self.rechunk(), true, true, false)
     }
 
     /// Get the final [LazyFrame].
