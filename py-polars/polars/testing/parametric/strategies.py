@@ -413,7 +413,7 @@ def strategy_time_zone_aware_series(draw: st.DrawFn) -> pl.Series:
             strategy=st.datetimes(
                 min_value=dt.datetime(1980, 1, 1),
                 # Can't currently go beyond 2038, see
-                # https://github.com/pola-rs/polars/issues/9315
+                # https://github.com/apache/arrow/issues/15047
                 max_value=dt.datetime(2038, 1, 1),
             ),
         )
