@@ -66,10 +66,13 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         self.inner_map
             .raw_entry_mut()
             .from_hash(hash, |hash_map_key| {
-                let offset = hash_map_key.offset as usize;
-                let len = hash_map_key.len as usize;
+                // first check the hash as that has no indirection
+                hash_map_key.hash == hash && {
+                    let offset = hash_map_key.offset as usize;
+                    let len = hash_map_key.len as usize;
 
-                unsafe { std::slice::from_raw_parts(keys.add(offset), len) == row }
+                    unsafe { std::slice::from_raw_parts(keys.add(offset), len) == row }
+                }
             })
     }
 

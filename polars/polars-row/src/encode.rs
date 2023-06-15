@@ -15,15 +15,30 @@ pub fn convert_columns(columns: &[ArrayRef], fields: &[SortField]) -> RowsEncode
     rows
 }
 
-pub fn convert_columns_amortized(
-    columns: &[ArrayRef],
-    fields: &[SortField],
+pub fn convert_columns_no_order(columns: &[ArrayRef]) -> RowsEncoded {
+    let mut rows = RowsEncoded::new(vec![], vec![]);
+    convert_columns_amortized_no_order(columns, &mut rows);
+    rows
+}
+
+pub fn convert_columns_amortized_no_order(columns: &[ArrayRef], rows: &mut RowsEncoded) {
+    convert_columns_amortized(
+        columns,
+        std::iter::repeat(&SortField::default()).take(columns.len()),
+        rows,
+    );
+}
+
+pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
+    columns: &'a [ArrayRef],
+    fields: I,
     rows: &mut RowsEncoded,
 ) {
-    assert_eq!(fields.len(), columns.len());
+    let fields = fields.into_iter();
+    assert_eq!(fields.size_hint().0, columns.len());
     if columns
         .iter()
-        .any(|arr| matches!(arr.data_type(), DataType::Struct(_)))
+        .any(|arr| matches!(arr.data_type(), DataType::Struct(_) | DataType::LargeUtf8))
     {
         let mut flattened_columns = Vec::with_capacity(columns.len() * 5);
         let mut flattened_fields = Vec::with_capacity(columns.len() * 5);
@@ -57,7 +72,7 @@ pub fn convert_columns_amortized(
         }
     } else {
         allocate_rows_buf(columns, &mut rows.values, &mut rows.offsets);
-        for (arr, field) in columns.iter().zip(fields.iter()) {
+        for (arr, field) in columns.iter().zip(fields) {
             // Safety:
             // we allocated rows with enough bytes.
             unsafe { encode_array(&**arr, field, rows) }
