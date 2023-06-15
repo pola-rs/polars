@@ -278,5 +278,8 @@ pub(crate) mod variable;
 use arrow::array::*;
 pub type ArrayRef = Box<dyn Array>;
 
-pub use encode::{convert_columns, convert_columns_amortized};
+pub use encode::{
+    convert_columns, convert_columns_amortized, convert_columns_amortized_no_order,
+    convert_columns_no_order,
+};
 pub use row::{RowsEncoded, SortField};
