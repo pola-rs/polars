@@ -27,6 +27,7 @@ from hypothesis import given, reject
 from hypothesis import strategies as st
 
 import polars as pl
+from polars.testing.parametric.primitives import series
 from polars.testing.parametric.strategies import strategy_time_zone_aware_series
 
 
@@ -41,8 +42,13 @@ def _compare_polars_and_pandas(
     number: int,
 ) -> None:
     nrows = len(time_series)
-    values = pl.Series(
-        data.draw(st.lists(st.floats(10, 20), min_size=nrows, max_size=nrows))
+    values = data.draw(
+        series(
+            name="values",
+            dtype=pl.Float64,
+            strategy=st.floats(min_value=10, max_value=20),
+            size=nrows,
+        )
     )
     df = pl.DataFrame({"ts": time_series, "values": values}).sort("ts")
 
