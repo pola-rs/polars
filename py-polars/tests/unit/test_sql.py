@@ -550,7 +550,7 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         ("!~*", "[aeiOU]", None),
     ],
 )
-def test_sql_regex(
+def test_sql_regex_operators(
     foods_ipc_path: Path, op: str, pattern: str, expected: str | None
 ) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
@@ -565,7 +565,7 @@ def test_sql_regex(
         assert out.rows() == ([(expected,)] if expected else [])
 
 
-def test_sql_regex_error() -> None:
+def test_sql_regex_operators_error() -> None:
     df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
         with pytest.raises(
@@ -577,6 +577,58 @@ def test_sql_regex_error() -> None:
             match=r"""Invalid pattern for '!~\*' operator: col\("abcde"\)""",
         ):
             ctx.execute("SELECT * FROM df WHERE sval !~* abcde")
+
+
+@pytest.mark.parametrize(
+    ("not_", "pattern", "flags", "expected"),
+    [
+        ("", "^veg", None, "vegetables"),
+        ("", "^VEG", None, None),
+        ("", "(?i)^VEG", None, "vegetables"),
+        ("NOT", "(t|s)$", None, "seafood"),
+        ("NOT", "T|S$", "i", "seafood"),
+        ("NOT", "^.E", "i", "fruit"),
+        ("NOT", "[aeiOU]", "i", None),
+    ],
+)
+def test_sql_regexp_like(
+    foods_ipc_path: Path,
+    not_: str,
+    pattern: str,
+    flags: str | None,
+    expected: str | None,
+) -> None:
+    lf = pl.scan_ipc(foods_ipc_path)
+    flags = "" if flags is None else f",'{flags}'"
+    with pl.SQLContext(foods=lf, eager_execution=True) as ctx:
+        out = ctx.execute(
+            f"""
+            SELECT DISTINCT category FROM foods
+            WHERE {not_} REGEXP_LIKE(category,'{pattern}'{flags})
+            """
+        )
+        assert out.rows() == ([(expected,)] if expected else [])
+
+
+def test_sql_regexp_like_errors() -> None:
+    with pl.SQLContext(df=pl.DataFrame({"scol": ["xyz"]})) as ctx:
+        with pytest.raises(
+            pl.InvalidOperationError,
+            match="Invalid/empty 'flags' for RegexpLike",
+        ):
+            ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,'[x-z]+','')")
+
+        with pytest.raises(
+            pl.InvalidOperationError,
+            match="Invalid arguments for RegexpLike",
+        ):
+            ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,999,999)")
+
+        with pytest.raises(
+            pl.InvalidOperationError,
+            match="Invalid number of arguments for RegexpLike",
+        ):
+            ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol)")
 
 
 @pytest.mark.parametrize(

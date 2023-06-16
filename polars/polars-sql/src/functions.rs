@@ -2,6 +2,7 @@ use polars_core::prelude::{polars_bail, polars_err, PolarsError, PolarsResult};
 use polars_lazy::dsl::Expr;
 use polars_plan::dsl::count;
 use polars_plan::logical_plan::LiteralValue;
+use polars_plan::prelude::lit;
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
     WindowSpec, WindowType,
@@ -165,6 +166,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT LTRIM(column_1) from df;
     /// ```
     LTrim,
+    /// SQL 'regexp_like' function
+    /// ```sql
+    /// SELECT REGEXP_LIKE(column_1,'xyz', 'i') from df;
+    /// ```
+    RegexpLike,
     /// SQL 'rtrim' function
     /// ```sql
     /// SELECT RTRIM(column_1) from df;
@@ -419,6 +425,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "ends_with" => Self::EndsWith,
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
+            "regexp_like" => Self::RegexpLike,
             "rtrim" => Self::RTrim,
             "starts_with" => Self::StartsWith,
             "substr" => Self::Substring,
@@ -520,6 +527,23 @@ impl SqlFunctionVisitor<'_> {
                     function.args.len()
                 ),
             },
+            RegexpLike => match function.args.len() {
+                2 => self.visit_binary(|e, s| e.str().contains(s, true)),
+                3 => self.try_visit_ternary(|e, pat, flags| {
+                    Ok(e.str().contains(
+                        match (pat, flags) {
+                            (Expr::Literal(LiteralValue::Utf8(s)), Expr::Literal(LiteralValue::Utf8(f))) => {
+                                if f.is_empty() { polars_bail!(InvalidOperation: "Invalid/empty 'flags' for RegexpLike: {}", function.args[2]); };
+                                lit(format!("(?{}){}", f, s))
+                            },
+                            _ => {
+                                polars_bail!(InvalidOperation: "Invalid arguments for RegexpLike: {}, {}", function.args[1], function.args[2]);
+                            },
+                        },
+                        true))
+                }),
+                _ => polars_bail!(InvalidOperation:"Invalid number of arguments for RegexpLike: {}",function.args.len()),
+            },
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().rstrip(None)),
                 2 => self.visit_binary(|e, s| e.str().rstrip(Some(s))),
@@ -530,27 +554,27 @@ impl SqlFunctionVisitor<'_> {
             },
             StartsWith => self.visit_binary(|e, s| e.str().starts_with(s)),
             Substring => match function.args.len() {
-                2 => self.try_visit_binary(|e, offset| {
-                    Ok(e.str().str_slice(match offset {
+                2 => self.try_visit_binary(|e, start| {
+                    Ok(e.str().str_slice(match start {
                         Expr::Literal(LiteralValue::Int64(n)) => n,
                         _ => {
-                            polars_bail!(InvalidOperation: "Invalid 'offset' for Substring: {}", function.args[1]);
+                            polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
                         }
                     }, None))
                 }),
                 3 => self.try_visit_ternary(|e, start, length| {
                     Ok(e.str().str_slice(
                         match start {
-                        Expr::Literal(LiteralValue::Int64(n)) => n,
-                        _ => {
-                            polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
-                        }
-                    }, match length {
-                        Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
-                        _ => {
-                            polars_bail!(InvalidOperation: "Invalid 'length' for Substring: {}", function.args[2]);
-                        }
-                    }))
+                            Expr::Literal(LiteralValue::Int64(n)) => n,
+                            _ => {
+                                polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
+                            }
+                        }, match length {
+                            Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
+                            _ => {
+                                polars_bail!(InvalidOperation: "Invalid 'length' for Substring: {}", function.args[2]);
+                            }
+                        }))
                 }),
                 _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for Substring: {}",
