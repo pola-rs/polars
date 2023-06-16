@@ -325,7 +325,7 @@
 //!
 //! ## Config with ENV vars
 //!
-//! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL_CONDENSED). These options are defined by comfy-table which provides examples for each at https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs
+//! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL_CONDENSED). These options are defined by comfy-table which provides examples for each at <https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs>
 //!   * `ASCII_FULL`
 //!   * `ASCII_FULL_CONDENSED`
 //!   * `ASCII_NO_BORDERS`
