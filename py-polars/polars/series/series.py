@@ -1381,7 +1381,7 @@ class Series:
             raise ValueError("Series must contain at least one value")
 
         elif self.is_numeric():
-            s = self.cast(Float64)
+            s = self.cast(Float64).sort()
             stats = {
                 "count": s.len(),
                 "null_count": s.null_count(),
@@ -1409,6 +1409,7 @@ class Series:
         elif self.is_temporal():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
+            self = self.sort()
             stats = {
                 "count": str(self.len()),
                 "null_count": str(self.null_count()),

@@ -3865,16 +3865,21 @@ class DataFrame:
             metrics.append(f"{p:.0%}")
 
         # execute metrics in parallel
-        df_metrics = self.select(
-            F.all().count().prefix("count:"),
-            F.all().null_count().prefix("null_count:"),
-            F.all().mean().prefix("mean:"),
-            F.all().std().prefix("std:"),
-            F.all().min().prefix("min:"),
-            F.all().max().prefix("max:"),
-            F.all().median().prefix("median:"),
-            *percentile_exprs,
-        ).row(0)
+        df_metrics = (
+            # Sort all columns so we can use fast-path statistics
+            self.select(F.all().sort())
+            .select(
+                F.all().count().prefix("count:"),
+                F.all().null_count().prefix("null_count:"),
+                F.all().mean().prefix("mean:"),
+                F.all().std().prefix("std:"),
+                F.all().min().prefix("min:"),
+                F.all().max().prefix("max:"),
+                F.all().median().prefix("median:"),
+                *percentile_exprs,
+            )
+            .row(0)
+        )
 
         # reshape wide result
         n_cols = len(self.columns)
