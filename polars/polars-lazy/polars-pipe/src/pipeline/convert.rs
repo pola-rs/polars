@@ -138,7 +138,7 @@ where
                 FileType::Ipc(options) => {
                     Box::new(IpcSink::new(path, *options, input_schema.as_ref())?) as Box<dyn Sink>
                 }
-                FileType::Memory => Box::new(OrderedSink::new()),
+                FileType::Memory => Box::new(OrderedSink::new()) as Box<dyn Sink>,
             }
         }
         Join {
