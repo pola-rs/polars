@@ -631,9 +631,9 @@
 //!
 //! # fn example(df: &mut DataFrame) -> PolarsResult<u64> {
 //! // create a file
-//! let mut file = File::create("example.parquet").expect("could not create file");
+//! let file = File::create("example.parquet").expect("could not create file");
 //!
-//! ParquetWriter::new(&mut file)
+//! ParquetWriter::new(file)
 //!     .finish(df)
 //! # }
 //! ```
