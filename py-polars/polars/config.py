@@ -21,7 +21,6 @@ with contextlib.suppress(ImportError):
 
 if TYPE_CHECKING:
     import sys
-    from io import IOBase
     from types import TracebackType
 
     from polars.type_aliases import FloatFmt
@@ -162,7 +161,7 @@ class Config(contextlib.ContextDecorator):
         """
         options = json.loads(
             Path(normalise_filepath(cfg)).read_text()
-            if os.path.exists(cfg) or isinstance(cfg, Path)
+            if isinstance(cfg, Path) or os.path.exists(cfg)
             else cfg
         )
         os.environ.update(options.get("environment", {}))
@@ -195,7 +194,7 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def save(cls, file: IOBase | Path | str | None = None) -> str:
+    def save(cls, file: Path | str | None = None) -> str:
         """
         Save the current set of Config options as a json string or file.
 
