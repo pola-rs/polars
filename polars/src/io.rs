@@ -489,389 +489,389 @@ pub mod scan_csv {
     }
 }
 
-// #[cfg(feature = "parquet")]
-// pub mod read_parquet {
-//     use polars_core::utils::arrow::io::parquet::write::FileMetaData;
-//     use polars_io::mmap::MmapBytesReader;
-//     use polars_io::RowCount;
+#[cfg(feature = "parquet")]
+pub mod read_parquet {
+    use polars_core::utils::arrow::io::parquet::write::FileMetaData;
+    use polars_io::mmap::MmapBytesReader;
+    use polars_io::RowCount;
 
-//     use crate::prelude::*;
-//     #[macro_export]
-//     macro_rules! read_parquet {
-//         (&mut $path:expr) => {
-//             $crate::prelude::ParquetReader::new($path).finish()
-//         };
-//         ($path:expr) => {
-//             $crate::prelude::ParquetReader::from_path($path).and_then(|mut rdr| {
-//                 rdr.finish()
-//             })
-//         };
-//         (&mut $path:expr, $($field:ident = $value:expr),* $(,)?) => {{
-//             let rdr = $crate::prelude::ParquetReader::new($path);
-//             let mut options = $crate::io::read_parquet::ParquetReaderOptions::default();
-//             $(
-//                 options = options.$field($value);
-//             )*
-//             let rdr = $crate::io::read_parquet::set_options(rdr, options);
-//             rdr.finish()
-//         }};
-//         ($path:expr, $($field:ident = $value:expr),* $(,)?) => {
-//             $crate::prelude::ParquetReader::from_path($path).and_then(|rdr| {
-//                 let mut options = $crate::io::read_parquet::ParquetReaderOptions::default();
-//                 $(
-//                     options = options.$field($value);
-//                 )*
-//                 let rdr = $crate::io::read_parquet::set_options(rdr, options);
-//                 rdr.finish()
-//             })
-//         };
-//     }
+    use crate::prelude::*;
+    #[macro_export]
+    macro_rules! read_parquet {
+        (&mut $path:expr) => {
+            $crate::prelude::ParquetReader::new($path).finish()
+        };
+        ($path:expr) => {
+            $crate::prelude::ParquetReader::from_path($path).and_then(|mut rdr| {
+                rdr.finish()
+            })
+        };
+        (&mut $path:expr, $($field:ident = $value:expr),* $(,)?) => {{
+            let rdr = $crate::prelude::ParquetReader::new($path);
+            let mut options = $crate::io::read_parquet::ParquetReaderOptions::default();
+            $(
+                options = options.$field($value);
+            )*
+            let rdr = $crate::io::read_parquet::set_options(rdr, options);
+            rdr.finish()
+        }};
+        ($path:expr, $($field:ident = $value:expr),* $(,)?) => {
+            $crate::prelude::ParquetReader::from_path($path).and_then(|rdr| {
+                let mut options = $crate::io::read_parquet::ParquetReaderOptions::default();
+                $(
+                    options = options.$field($value);
+                )*
+                let rdr = $crate::io::read_parquet::set_options(rdr, options);
+                rdr.finish()
+            })
+        };
+    }
 
-//     pub fn set_options<R: MmapBytesReader>(
-//         rdr: ParquetReader<R>,
-//         options: ParquetReaderOptions,
-//     ) -> ParquetReader<R> {
-//         rdr.with_row_count(options.row_count)
-//             .with_n_rows(options.n_rows)
-//             .with_columns(options.columns)
-//             .with_projection(options.projection)
-//             .read_parallel(options.parallel)
-//             .set_low_memory(options.low_memory)
-//             .use_statistics(options.use_statistics)
-//     }
+    pub fn set_options<R: MmapBytesReader>(
+        rdr: ParquetReader<R>,
+        options: ParquetReaderOptions,
+    ) -> ParquetReader<R> {
+        rdr.with_row_count(options.row_count)
+            .with_n_rows(options.n_rows)
+            .with_columns(options.columns)
+            .with_projection(options.projection)
+            .read_parallel(options.parallel)
+            .set_low_memory(options.low_memory)
+            .use_statistics(options.use_statistics)
+    }
 
-//     pub struct ParquetReaderOptions {
-//         rechunk: bool,
-//         parallel: ParallelStrategy,
-//         low_memory: bool,
-//         use_statistics: bool,
-//         n_rows: Option<usize>,
-//         columns: Option<Vec<String>>,
-//         projection: Option<Vec<usize>>,
-//         row_count: Option<RowCount>,
-//         metadata: Option<FileMetaData>,
-//     }
+    pub struct ParquetReaderOptions {
+        rechunk: bool,
+        parallel: ParallelStrategy,
+        low_memory: bool,
+        use_statistics: bool,
+        n_rows: Option<usize>,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        row_count: Option<RowCount>,
+        metadata: Option<FileMetaData>,
+    }
 
-//     impl Default for ParquetReaderOptions {
-//         fn default() -> Self {
-//             Self {
-//                 rechunk: false,
-//                 n_rows: None,
-//                 columns: None,
-//                 projection: None,
-//                 parallel: Default::default(),
-//                 row_count: None,
-//                 low_memory: false,
-//                 metadata: None,
-//                 use_statistics: true,
-//             }
-//         }
-//     }
+    impl Default for ParquetReaderOptions {
+        fn default() -> Self {
+            Self {
+                rechunk: false,
+                n_rows: None,
+                columns: None,
+                projection: None,
+                parallel: Default::default(),
+                row_count: None,
+                low_memory: false,
+                metadata: None,
+                use_statistics: true,
+            }
+        }
+    }
 
-//     impl ParquetReaderOptions {
-//         impl_set! {
-//             rechunk: bool,
-//             parallel: ParallelStrategy,
-//             low_memory: bool,
-//             use_statistics: bool,
-//         }
+    impl ParquetReaderOptions {
+        impl_set! {
+            rechunk: bool,
+            parallel: ParallelStrategy,
+            low_memory: bool,
+            use_statistics: bool,
+        }
 
-//         impl_set_option! {
-//             n_rows: usize,
-//             row_count: RowCount,
-//             metadata: FileMetaData,
-//         }
-//         pub fn columns<S: Into<String>, T: IntoIterator<Item = S>>(mut self, columns: T) -> Self {
-//             self.columns = Some(columns.into_iter().map(|s| s.into()).collect());
-//             self
-//         }
-//         pub fn projection<T: Into<Vec<usize>>>(mut self, projection: T) -> Self {
-//             self.projection = Some(projection.into());
-//             self
-//         }
-//     }
-// }
+        impl_set_option! {
+            n_rows: usize,
+            row_count: RowCount,
+            metadata: FileMetaData,
+        }
+        pub fn columns<S: Into<String>, T: IntoIterator<Item = S>>(mut self, columns: T) -> Self {
+            self.columns = Some(columns.into_iter().map(|s| s.into()).collect());
+            self
+        }
+        pub fn projection<T: Into<Vec<usize>>>(mut self, projection: T) -> Self {
+            self.projection = Some(projection.into());
+            self
+        }
+    }
+}
 
-// #[cfg(all(feature = "lazy", feature = "parquet"))]
-// pub mod scan_parquet {
-//     use std::path::PathBuf;
+#[cfg(all(feature = "lazy", feature = "parquet"))]
+pub mod scan_parquet {
+    use std::path::PathBuf;
 
-//     use polars_core::cloud::CloudOptions;
-//     use polars_core::utils::arrow::io::parquet::write::FileMetaData;
-//     use polars_io::RowCount;
+    use polars_core::cloud::CloudOptions;
+    use polars_core::utils::arrow::io::parquet::write::FileMetaData;
+    use polars_io::RowCount;
 
-//     use crate::prelude::*;
-//     pub struct LazyParquetOptions {
-//         rechunk: bool,
-//         low_memory: bool,
-//         cache: bool,
-//         use_statistics: bool,
-//         parallel: ParallelStrategy,
-//         n_rows: Option<usize>,
-//         columns: Option<Vec<String>>,
-//         projection: Option<Vec<usize>>,
-//         row_count: Option<RowCount>,
-//         metadata: Option<FileMetaData>,
-//         cloud_options: Option<CloudOptions>,
-//     }
+    use crate::prelude::*;
+    pub struct LazyParquetOptions {
+        rechunk: bool,
+        low_memory: bool,
+        cache: bool,
+        use_statistics: bool,
+        parallel: ParallelStrategy,
+        n_rows: Option<usize>,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        row_count: Option<RowCount>,
+        metadata: Option<FileMetaData>,
+        cloud_options: Option<CloudOptions>,
+    }
 
-//     impl Default for LazyParquetOptions {
-//         fn default() -> Self {
-//             Self {
-//                 rechunk: false,
-//                 n_rows: None,
-//                 columns: None,
-//                 projection: None,
-//                 parallel: Default::default(),
-//                 row_count: None,
-//                 low_memory: false,
-//                 metadata: None,
-//                 use_statistics: true,
-//                 cloud_options: None,
-//                 cache: true,
-//             }
-//         }
-//     }
-//     #[macro_export]
-//     /// Lazily load a parquet file into a LazyFrame
-//     /// ```rust no_run
-//     /// # use polars::prelude::*;
-//     /// # fn main() {
-//     /// let df = polars::scan_parquet!("foo.parquet", parallel = true)?
-//     ///     .select(&[
-//     ///         col("A"),
-//     ///         col("B"),
-//     ///     ])
-//     ///     .filter(col("A").gt(lit(2)))
-//     ///     .collect();
-//     /// }
-//     macro_rules! scan_parquet {
-//       ($path:expr) => {
-//           $crate::prelude::LazyParquetReader::new($path, Default::default()).finish()
-//       };
-//       ($path:expr, $($field:ident = $value:expr),* $(,)?) => {{
+    impl Default for LazyParquetOptions {
+        fn default() -> Self {
+            Self {
+                rechunk: false,
+                n_rows: None,
+                columns: None,
+                projection: None,
+                parallel: Default::default(),
+                row_count: None,
+                low_memory: false,
+                metadata: None,
+                use_statistics: true,
+                cloud_options: None,
+                cache: true,
+            }
+        }
+    }
+    #[macro_export]
+    /// Lazily load a parquet file into a LazyFrame
+    /// ```rust no_run
+    /// # use polars::prelude::*;
+    /// # fn main() {
+    /// let df = polars::scan_parquet!("foo.parquet", parallel = true)?
+    ///     .select(&[
+    ///         col("A"),
+    ///         col("B"),
+    ///     ])
+    ///     .filter(col("A").gt(lit(2)))
+    ///     .collect();
+    /// }
+    macro_rules! scan_parquet {
+      ($path:expr) => {
+          $crate::prelude::LazyParquetReader::new($path, Default::default()).finish()
+      };
+      ($path:expr, $($field:ident = $value:expr),* $(,)?) => {{
 
-//           let mut options = $crate::io::scan_parquet::LazyParquetOptions::default();
-//           $(
-//               options = options.$field($value);
-//           )*
-//           let rdr = $crate::io::scan_parquet::new_reader($path, options);
+          let mut options = $crate::io::scan_parquet::LazyParquetOptions::default();
+          $(
+              options = options.$field($value);
+          )*
+          let rdr = $crate::io::scan_parquet::new_reader($path, options);
 
-//           rdr.finish()
-//         }}
-//     }
+          rdr.finish()
+        }}
+    }
 
-//     pub fn new_reader(path: PathBuf, options: LazyParquetOptions) -> LazyParquetReader {
-//         let args = ScanArgsParquet {
-//             n_rows: options.n_rows,
-//             cache: options.cache,
-//             parallel: options.parallel,
-//             rechunk: options.rechunk,
-//             row_count: options.row_count,
-//             low_memory: options.low_memory,
-//             cloud_options: options.cloud_options,
-//             use_statistics: options.use_statistics,
-//         };
+    pub fn new_reader(path: PathBuf, options: LazyParquetOptions) -> LazyParquetReader {
+        let args = ScanArgsParquet {
+            n_rows: options.n_rows,
+            cache: options.cache,
+            parallel: options.parallel,
+            rechunk: options.rechunk,
+            row_count: options.row_count,
+            low_memory: options.low_memory,
+            cloud_options: options.cloud_options,
+            use_statistics: options.use_statistics,
+        };
 
-//         LazyParquetReader::new(path, args)
-//     }
+        LazyParquetReader::new(path, args)
+    }
 
-//     impl LazyParquetOptions {
-//         impl_set! {
-//             rechunk: bool,
-//             low_memory: bool,
-//             cache: bool,
-//             use_statistics: bool,
-//             parallel: ParallelStrategy,
-//         }
+    impl LazyParquetOptions {
+        impl_set! {
+            rechunk: bool,
+            low_memory: bool,
+            cache: bool,
+            use_statistics: bool,
+            parallel: ParallelStrategy,
+        }
 
-//         impl_set_option! {
-//             n_rows: usize,
-//             row_count: RowCount,
-//             metadata: FileMetaData,
-//             cloud_options: CloudOptions
-//         }
-//         pub fn columns<S: Into<String>, T: IntoIterator<Item = S>>(mut self, columns: T) -> Self {
-//             self.columns = Some(columns.into_iter().map(|s| s.into()).collect());
-//             self
-//         }
-//         pub fn projection<T: Into<Vec<usize>>>(mut self, projection: T) -> Self {
-//             self.projection = Some(projection.into());
-//             self
-//         }
-//     }
-// }
+        impl_set_option! {
+            n_rows: usize,
+            row_count: RowCount,
+            metadata: FileMetaData,
+            cloud_options: CloudOptions
+        }
+        pub fn columns<S: Into<String>, T: IntoIterator<Item = S>>(mut self, columns: T) -> Self {
+            self.columns = Some(columns.into_iter().map(|s| s.into()).collect());
+            self
+        }
+        pub fn projection<T: Into<Vec<usize>>>(mut self, projection: T) -> Self {
+            self.projection = Some(projection.into());
+            self
+        }
+    }
+}
 
-// #[cfg(feature = "ipc")]
-// pub mod read_ipc {
-//     use polars_io::mmap::MmapBytesReader;
-//     use polars_io::RowCount;
+#[cfg(feature = "ipc")]
+pub mod read_ipc {
+    use polars_io::mmap::MmapBytesReader;
+    use polars_io::RowCount;
 
-//     use crate::prelude::*;
-//     #[macro_export]
-//     macro_rules! read_ipc {
-//         (&mut $path:expr) => {
-//             $crate::prelude::IpcReader::new($path).finish()
-//         };
-//         ($path:expr) => {
-//             $crate::prelude::IpcReader::from_path($path).and_then(|mut rdr| {
-//                 rdr.finish()
-//             })
-//         };
-//         (&mut $path:expr, $($field:ident = $value:expr),* $(,)?) => {{
-//             let rdr = $crate::prelude::IpcReader::new($path);
-//             let mut options = $crate::io::read_ipc::IpcReaderOptions::default();
-//             $(
-//                 options = options.$field($value);
-//             )*
-//             let rdr = $crate::io::read_ipc::set_options(rdr, options);
-//             rdr.finish()
-//         }};
-//         ($path:expr, $($field:ident = $value:expr),* $(,)?) => {
-//             $crate::prelude::IpcReader::from_path($path).and_then(|rdr| {
-//                 let mut options = $crate::io::read_ipc::IpcReaderOptions::default();
-//                 $(
-//                     options = options.$field($value);
-//                 )*
-//                 let rdr = $crate::io::read_ipc::set_options(rdr, options);
-//                 rdr.finish()
-//             })
-//         };
-//     }
+    use crate::prelude::*;
+    #[macro_export]
+    macro_rules! read_ipc {
+        (&mut $path:expr) => {
+            $crate::prelude::IpcReader::new($path).finish()
+        };
+        ($path:expr) => {
+            $crate::prelude::IpcReader::from_path($path).and_then(|mut rdr| {
+                rdr.finish()
+            })
+        };
+        (&mut $path:expr, $($field:ident = $value:expr),* $(,)?) => {{
+            let rdr = $crate::prelude::IpcReader::new($path);
+            let mut options = $crate::io::read_ipc::IpcReaderOptions::default();
+            $(
+                options = options.$field($value);
+            )*
+            let rdr = $crate::io::read_ipc::set_options(rdr, options);
+            rdr.finish()
+        }};
+        ($path:expr, $($field:ident = $value:expr),* $(,)?) => {
+            $crate::prelude::IpcReader::from_path($path).and_then(|rdr| {
+                let mut options = $crate::io::read_ipc::IpcReaderOptions::default();
+                $(
+                    options = options.$field($value);
+                )*
+                let rdr = $crate::io::read_ipc::set_options(rdr, options);
+                rdr.finish()
+            })
+        };
+    }
 
-//     pub fn set_options<R: MmapBytesReader>(
-//         rdr: IpcReader<R>,
-//         options: IpcReaderOptions,
-//     ) -> IpcReader<R> {
-//         rdr.with_row_count(options.row_count)
-//             .with_n_rows(options.n_rows)
-//             .with_columns(options.columns)
-//             .with_projection(options.projection)
-//             .memory_mapped(options.memmap)
-//     }
+    pub fn set_options<R: MmapBytesReader>(
+        rdr: IpcReader<R>,
+        options: IpcReaderOptions,
+    ) -> IpcReader<R> {
+        rdr.with_row_count(options.row_count)
+            .with_n_rows(options.n_rows)
+            .with_columns(options.columns)
+            .with_projection(options.projection)
+            .memory_mapped(options.memmap)
+    }
 
-//     pub struct IpcReaderOptions {
-//         rechunk: bool,
-//         cache: bool,
-//         memmap: bool,
-//         n_rows: Option<usize>,
-//         columns: Option<Vec<String>>,
-//         projection: Option<Vec<usize>>,
-//         row_count: Option<RowCount>,
-//     }
+    pub struct IpcReaderOptions {
+        rechunk: bool,
+        cache: bool,
+        memmap: bool,
+        n_rows: Option<usize>,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        row_count: Option<RowCount>,
+    }
 
-//     impl Default for IpcReaderOptions {
-//         fn default() -> Self {
-//             Self {
-//                 rechunk: false,
-//                 cache: true,
-//                 memmap: true,
-//                 ..Default::default()
-//             }
-//         }
-//     }
+    impl Default for IpcReaderOptions {
+        fn default() -> Self {
+            Self {
+                rechunk: false,
+                cache: true,
+                memmap: true,
+                ..Default::default()
+            }
+        }
+    }
 
-//     impl IpcReaderOptions {
-//         impl_set! {
-//             rechunk: bool,
-//             cache: bool,
-//             memmap: bool,
-//         }
+    impl IpcReaderOptions {
+        impl_set! {
+            rechunk: bool,
+            cache: bool,
+            memmap: bool,
+        }
 
-//         impl_set_option! {
-//             n_rows: usize,
-//             row_count: RowCount,
-//         }
+        impl_set_option! {
+            n_rows: usize,
+            row_count: RowCount,
+        }
 
-//         pub fn columns<S: Into<String>, T: IntoIterator<Item = S>>(mut self, columns: T) -> Self {
-//             self.columns = Some(columns.into_iter().map(|s| s.into()).collect());
-//             self
-//         }
+        pub fn columns<S: Into<String>, T: IntoIterator<Item = S>>(mut self, columns: T) -> Self {
+            self.columns = Some(columns.into_iter().map(|s| s.into()).collect());
+            self
+        }
 
-//         pub fn projection<T: Into<Vec<usize>>>(mut self, projection: T) -> Self {
-//             self.projection = Some(projection.into());
-//             self
-//         }
-//     }
-// }
+        pub fn projection<T: Into<Vec<usize>>>(mut self, projection: T) -> Self {
+            self.projection = Some(projection.into());
+            self
+        }
+    }
+}
 
-// #[cfg(all(feature = "lazy", feature = "ipc"))]
-// pub mod scan_ipc {
-//     use std::path::PathBuf;
+#[cfg(all(feature = "lazy", feature = "ipc"))]
+pub mod scan_ipc {
+    use std::path::PathBuf;
 
-//     use polars_io::RowCount;
+    use polars_io::RowCount;
 
-//     use crate::prelude::*;
-//     pub struct LazyIpcOptions {
-//         n_rows: Option<usize>,
-//         cache: bool,
-//         rechunk: bool,
-//         row_count: Option<RowCount>,
-//         memmap: bool,
-//     }
+    use crate::prelude::*;
+    pub struct LazyIpcOptions {
+        n_rows: Option<usize>,
+        cache: bool,
+        rechunk: bool,
+        row_count: Option<RowCount>,
+        memmap: bool,
+    }
 
-//     impl Default for LazyIpcOptions {
-//         fn default() -> Self {
-//             Self {
-//                 n_rows: None,
-//                 cache: true,
-//                 rechunk: true,
-//                 row_count: None,
-//                 memmap: true,
-//             }
-//         }
-//     }
+    impl Default for LazyIpcOptions {
+        fn default() -> Self {
+            Self {
+                n_rows: None,
+                cache: true,
+                rechunk: true,
+                row_count: None,
+                memmap: true,
+            }
+        }
+    }
 
-//     #[macro_export]
-//     /// Lazily load a ipc file into a LazyFrame
-//     /// ```rust no_run
-//     /// # use polars::prelude::*;
-//     /// # fn main() {
-//     /// let df = polars::scan_ipc!("foo.arrow", memmap = true)?
-//     ///     .select(&[
-//     ///         col("A"),
-//     ///         col("B"),
-//     ///     ])
-//     ///     .filter(col("A").gt(lit(2)))
-//     ///     .collect();
-//     /// }
-//     macro_rules! scan_ipc {
-//       ($path:expr) => {
-//           $crate::prelude::LazyIpcReader::new($path, Default::default()).finish()
-//       };
-//       ($path:expr, $($field:ident = $value:expr),* $(,)?) => {{
+    #[macro_export]
+    /// Lazily load a ipc file into a LazyFrame
+    /// ```rust no_run
+    /// # use polars::prelude::*;
+    /// # fn main() {
+    /// let df = polars::scan_ipc!("foo.arrow", memmap = true)?
+    ///     .select(&[
+    ///         col("A"),
+    ///         col("B"),
+    ///     ])
+    ///     .filter(col("A").gt(lit(2)))
+    ///     .collect();
+    /// }
+    macro_rules! scan_ipc {
+      ($path:expr) => {
+          $crate::prelude::LazyIpcReader::new($path, Default::default()).finish()
+      };
+      ($path:expr, $($field:ident = $value:expr),* $(,)?) => {{
 
-//           let mut options = $crate::io::scan_ipc::LazyIpcOptions::default();
-//           $(
-//               options = options.$field($value);
-//           )*
-//           let rdr = $crate::io::scan_ipc::new_reader($path, options);
+          let mut options = $crate::io::scan_ipc::LazyIpcOptions::default();
+          $(
+              options = options.$field($value);
+          )*
+          let rdr = $crate::io::scan_ipc::new_reader($path, options);
 
-//           rdr.finish()
-//         }}
-//     }
+          rdr.finish()
+        }}
+    }
 
-//     pub fn new_reader(path: PathBuf, options: LazyIpcOptions) -> LazyIpcReader {
-//         let args = ScanArgsIpc {
-//             n_rows: options.n_rows,
-//             cache: options.cache,
-//             rechunk: options.rechunk,
-//             row_count: options.row_count,
-//             memmap: options.memmap,
-//         };
+    pub fn new_reader(path: PathBuf, options: LazyIpcOptions) -> LazyIpcReader {
+        let args = ScanArgsIpc {
+            n_rows: options.n_rows,
+            cache: options.cache,
+            rechunk: options.rechunk,
+            row_count: options.row_count,
+            memmap: options.memmap,
+        };
 
-//         LazyIpcReader::new(path, args)
-//     }
+        LazyIpcReader::new(path, args)
+    }
 
-//     impl LazyIpcOptions {
-//         impl_set! {
-//             rechunk: bool,
-//             cache: bool,
-//         }
+    impl LazyIpcOptions {
+        impl_set! {
+            rechunk: bool,
+            cache: bool,
+        }
 
-//         impl_set_option! {
-//             n_rows: usize,
-//             row_count: RowCount,
-//         }
-//     }
-// }
+        impl_set_option! {
+            n_rows: usize,
+            row_count: RowCount,
+        }
+    }
+}
