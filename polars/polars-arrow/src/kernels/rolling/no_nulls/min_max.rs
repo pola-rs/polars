@@ -42,12 +42,8 @@ pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MinWindow<'a, T> {
     fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
-        let (idx, min) = slice[start..end]
-            .iter()
-            .enumerate()
-            .rev()
-            .min_by(|&a, &b| compare_fn_nan_min(a.1, b.1))
-            .unwrap_or((0, &slice[start]));
+        let (idx, min) =
+            unsafe { get_min_and_idx(slice, start, end).unwrap_or((0, &slice[start])) };
         Self {
             slice,
             min: *min,
@@ -71,7 +67,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
             self.min = *entering.unwrap().1;
             self.min_idx = entering_start + entering.unwrap().0;
             return self.min;
-        } else if self.min_idx >= start {
+        } else if self.min_idx >= start || old_last_end < start {
             // If the entering min isn't the smallest but the current min is between start and end we can still ignore the overlap
             return self.min;
         }
@@ -124,11 +120,8 @@ pub struct MaxWindow<'a, T: NativeType> {
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MaxWindow<'a, T> {
     fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
-        let (idx, max) = slice[start..end]
-            .iter()
-            .enumerate()
-            .max_by(|&a, &b| compare_fn_nan_max(a.1, b.1))
-            .unwrap_or((0, &slice[start]));
+        let (idx, max) =
+            unsafe { get_max_and_idx(slice, start, end).unwrap_or((0, &slice[start])) };
         Self {
             slice,
             max: *max,
@@ -151,7 +144,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
             self.max = *entering.unwrap().1;
             self.max_idx = entering_start + entering.unwrap().0;
             return self.max;
-        } else if self.max_idx >= start {
+        } else if self.max_idx >= start || old_last_end < start {
             // If the entering max isn't the largest but the current max is between start and end we can still ignore the overlap
             return self.max;
         }
