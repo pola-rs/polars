@@ -42,4 +42,4 @@ Care must also be taken not to exceed the maximum cache space of 10Gb allotted t
 
 # Releases
 
-The release jobs for Rust and Python get triggered when a new release is published. Release drafter is used to automatically draft these releases. Refer to the contributing guide for the full release process.
+The release jobs for Rust and Python get triggered when a new release is published. Release drafter is used to automatically draft these releases. Refer to the [contributing guide](/CONTRIBUTING.md#release-flow) for the full release process.
