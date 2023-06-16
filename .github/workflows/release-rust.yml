@@ -1,4 +1,4 @@
-name: Release Rust crate
+name: Release Rust
 
 on:
   push:
