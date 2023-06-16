@@ -70,6 +70,9 @@ pub(crate) fn insert_streaming_nodes(
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     fmt: bool,
+    // whether the full plan needs to be translated
+    // to streaming
+    allow_partial: bool,
 ) -> PolarsResult<bool> {
     // this is needed to determine which side of the joins should be
     // traversed first
@@ -391,7 +394,7 @@ pub(crate) fn insert_streaming_nodes(
                     state.streamable = true;
                     state.operators_sinks.push(PipelineNode::Sink(root));
                     stack.push((*input, state, current_idx))
-                } else {
+                } else if allow_partial {
                     process_non_streamable_node(
                         &mut current_idx,
                         &mut state,
@@ -401,17 +404,25 @@ pub(crate) fn insert_streaming_nodes(
                         lp,
                         &mut insert_file_sink_ptr,
                     )
+                } else {
+                    return Ok(false);
                 }
             }
-            lp => process_non_streamable_node(
-                &mut current_idx,
-                &mut state,
-                &mut stack,
-                scratch,
-                &mut pipeline_trees,
-                lp,
-                &mut insert_file_sink_ptr,
-            ),
+            lp => {
+                if allow_partial {
+                    process_non_streamable_node(
+                        &mut current_idx,
+                        &mut state,
+                        &mut stack,
+                        scratch,
+                        &mut pipeline_trees,
+                        lp,
+                        &mut insert_file_sink_ptr,
+                    )
+                } else {
+                    return Ok(false);
+                }
+            }
         }
     }
     let mut inserted = false;
