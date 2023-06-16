@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import contextlib
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from polars.dependencies import json
+from polars.utils.various import normalise_filepath
 
 
 # dummy func required (so docs build)
@@ -147,17 +149,21 @@ class Config(contextlib.ContextDecorator):
         self._original_state = ""
 
     @classmethod
-    def load(cls, cfg: str) -> type[Config]:
+    def load(cls, cfg: Path | str) -> type[Config]:
         """
-        Load and set previously saved (or shared) Config options.
+        Load and set previously saved (or shared) Config options from json/file.
 
         Parameters
         ----------
         cfg : str
-            json string produced by ``Config.save()``.
+            json string produced by ``Config.save()``, or a filepath to the same.
 
         """
-        options = json.loads(cfg)
+        options = json.loads(
+            Path(normalise_filepath(cfg)).read_text()
+            if isinstance(cfg, Path) or os.path.exists(cfg)
+            else cfg
+        )
         os.environ.update(options.get("environment", {}))
         for cfg_methodname, value in options.get("direct", {}).items():
             if hasattr(cls, cfg_methodname):
@@ -188,13 +194,22 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def save(cls) -> str:
+    def save(cls, file: Path | str | None = None) -> str:
         """
-        Save the current set of Config options as a json string.
+        Save the current set of Config options as a json string or file.
+
+        Parameters
+        ----------
+        file
+            optional path to a file into which the json string will be written.
 
         Examples
         --------
         >>> cfg = pl.Config.save()
+
+        Returns
+        -------
+        str : json string containing current Config options, or filepath where saved.
 
         """
         environment_vars = {
@@ -206,10 +221,16 @@ class Config(contextlib.ContextDecorator):
             cfg_methodname: get_value()
             for cfg_methodname, get_value in _POLARS_CFG_DIRECT_VARS.items()
         }
-        return json.dumps(
+        options = json.dumps(
             {"environment": environment_vars, "direct": direct_vars},
             separators=(",", ":"),
         )
+        if isinstance(file, (str, Path)):
+            file = os.path.abspath(normalise_filepath(file))
+            Path(file).write_text(options)
+            return file
+
+        return options
 
     @classmethod
     def state(

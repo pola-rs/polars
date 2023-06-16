@@ -479,7 +479,7 @@ impl LazyFrame {
         if streaming {
             #[cfg(feature = "streaming")]
             {
-                insert_streaming_nodes(lp_top, lp_arena, expr_arena, scratch, _fmt)?;
+                insert_streaming_nodes(lp_top, lp_arena, expr_arena, scratch, _fmt, true)?;
             }
             #[cfg(not(feature = "streaming"))]
             {
@@ -1265,7 +1265,14 @@ impl LazyFrame {
         // this trick allows us to reuse the `Union` architecture to get map over
         // two DataFrames
         let left = self.map_private(FunctionNode::Rechunk);
-        let q = concat(&[left, other], false, true)?;
+        let q = concat(
+            &[left, other],
+            UnionArgs {
+                rechunk: false,
+                parallel: true,
+                ..Default::default()
+            },
+        )?;
         Ok(q.map_private(FunctionNode::MergeSorted {
             column: Arc::from(key),
         }))

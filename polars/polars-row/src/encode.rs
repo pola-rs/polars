@@ -15,15 +15,30 @@ pub fn convert_columns(columns: &[ArrayRef], fields: &[SortField]) -> RowsEncode
     rows
 }
 
-pub fn convert_columns_amortized(
-    columns: &[ArrayRef],
-    fields: &[SortField],
+pub fn convert_columns_no_order(columns: &[ArrayRef]) -> RowsEncoded {
+    let mut rows = RowsEncoded::new(vec![], vec![]);
+    convert_columns_amortized_no_order(columns, &mut rows);
+    rows
+}
+
+pub fn convert_columns_amortized_no_order(columns: &[ArrayRef], rows: &mut RowsEncoded) {
+    convert_columns_amortized(
+        columns,
+        std::iter::repeat(&SortField::default()).take(columns.len()),
+        rows,
+    );
+}
+
+pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
+    columns: &'a [ArrayRef],
+    fields: I,
     rows: &mut RowsEncoded,
 ) {
-    assert_eq!(fields.len(), columns.len());
+    let fields = fields.into_iter();
+    assert_eq!(fields.size_hint().0, columns.len());
     if columns
         .iter()
-        .any(|arr| matches!(arr.data_type(), DataType::Struct(_)))
+        .any(|arr| matches!(arr.data_type(), DataType::Struct(_) | DataType::LargeUtf8))
     {
         let mut flattened_columns = Vec::with_capacity(columns.len() * 5);
         let mut flattened_fields = Vec::with_capacity(columns.len() * 5);
@@ -57,7 +72,7 @@ pub fn convert_columns_amortized(
         }
     } else {
         allocate_rows_buf(columns, &mut rows.values, &mut rows.offsets);
-        for (arr, field) in columns.iter().zip(fields.iter()) {
+        for (arr, field) in columns.iter().zip(fields) {
             // Safety:
             // we allocated rows with enough bytes.
             unsafe { encode_array(&**arr, field, rows) }
@@ -158,7 +173,12 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
             })
             .sum();
 
-        let mut lengths = vec![row_size_fixed; num_rows];
+        offsets.clear();
+        offsets.reserve(num_rows + 1);
+        offsets.resize(num_rows, row_size_fixed);
+
+        // first write lengths to this buffer
+        let lengths = offsets;
 
         // for the variable length columns we must iterate to determine the length per row location
         for array in columns.iter() {
@@ -187,23 +207,21 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
                 }
             }
         }
-        offsets.clear();
-        offsets.reserve(num_rows + 1);
+        // now we use the lengths and the same buffer to determine the offsets
+        let offsets = lengths;
+        // we write lagged because the offsets will be written by the encoding column
         let mut current_offset = 0_usize;
-        offsets.push(current_offset);
+        let mut lagged_offset = 0_usize;
 
-        for length in lengths {
-            offsets.push(current_offset);
-            #[cfg(target_pointer_width = "64")]
-            {
-                // don't do overflow check, counting exabytes here.
-                current_offset += length;
-            }
-            #[cfg(not(target_pointer_width = "64"))]
-            {
-                current_offset = current_offset.checked_add(length).expect("overflow");
-            }
+        for length in offsets.iter_mut() {
+            let to_write = lagged_offset;
+            lagged_offset = current_offset;
+            current_offset += *length;
+
+            *length = to_write;
         }
+        // ensure we have len + 1 offsets
+        offsets.push(lagged_offset);
 
         values.clear();
         // todo! allocate uninit

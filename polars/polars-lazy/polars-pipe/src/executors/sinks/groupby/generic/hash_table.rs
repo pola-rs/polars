@@ -5,7 +5,7 @@ use super::*;
 use crate::pipeline::PARTITION_SIZE;
 
 pub(super) struct AggHashTable<const FIXED: bool> {
-    inner_map: PlIdHashMap<Key, IdxSize>,
+    inner_map: PlIdHashMap<Key, u32>,
     // row data of the keys
     keys: Vec<u8>,
     // the aggregation that are in process
@@ -60,12 +60,13 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         self.inner_map.is_empty()
     }
 
-    fn get_entry(&mut self, hash: u64, row: &[u8]) -> RawEntryMut<Key, IdxSize, IdBuildHasher> {
+    fn get_entry(&mut self, hash: u64, row: &[u8]) -> RawEntryMut<Key, u32, IdBuildHasher> {
         let keys = self.keys.as_ptr();
 
         self.inner_map
             .raw_entry_mut()
             .from_hash(hash, |hash_map_key| {
+                // first check the hash as that has no indirection
                 hash_map_key.hash == hash && {
                     let offset = hash_map_key.offset as usize;
                     let len = hash_map_key.len as usize;
@@ -75,7 +76,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             })
     }
 
-    fn insert_key<'a>(&'a mut self, hash: u64, row: &[u8]) -> Option<IdxSize> {
+    fn insert_key<'a>(&'a mut self, hash: u64, row: &[u8]) -> Option<u32> {
         let entry = self.get_entry(hash, row);
 
         match entry {
@@ -96,21 +97,20 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                     unsafe {
                         // take a hold of the entry again and ensure it gets dropped
                         let borrow =
-                            borrow as *const RawVacantEntryMut<'a, Key, IdxSize, IdBuildHasher>;
+                            borrow as *const RawVacantEntryMut<'a, Key, u32, IdBuildHasher>;
                         let _entry = std::ptr::read(borrow);
                     }
                     return None;
                 }
 
-                let aggregation_idx = self.running_aggregations.len() as IdxSize;
+                let aggregation_idx = self.running_aggregations.len() as u32;
                 let key_offset = self.keys.len() as u32;
                 let key_len = row.len() as u32;
                 let key = Key::new(hash, key_offset, key_len);
 
                 unsafe {
                     // take a hold of the entry again and ensure it gets dropped
-                    let borrow =
-                        borrow as *const RawVacantEntryMut<'a, Key, IdxSize, IdBuildHasher>;
+                    let borrow = borrow as *const RawVacantEntryMut<'a, Key, u32, IdBuildHasher>;
                     let entry = std::ptr::read(borrow);
                     entry.insert(key, aggregation_idx);
                 }

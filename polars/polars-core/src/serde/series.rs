@@ -15,64 +15,58 @@ impl Serialize for Series {
     where
         S: Serializer,
     {
-        if let Ok(ca) = self.i32() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.u32() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.i64() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.u64() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.f32() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.f64() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.utf8() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.bool() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.list() {
-            ca.serialize(serializer)
-        } else {
-            match self.dtype() {
-                DataType::Binary => {
-                    let ca = self.binary().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-struct")]
-                DataType::Struct(_) => {
-                    let ca = self.struct_().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-date")]
-                DataType::Date => {
-                    let ca = self.date().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-datetime")]
-                DataType::Datetime(_, _) => {
-                    let ca = self.datetime().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(_) => {
-                    let ca = self.categorical().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-duration")]
-                DataType::Duration(_) => {
-                    let ca = self.duration().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-time")]
-                DataType::Time => {
-                    let ca = self.time().unwrap();
-                    ca.serialize(serializer)
-                }
-                _ => {
-                    // cast small integers to i32
-                    self.cast(&DataType::Int32).unwrap().serialize(serializer)
-                }
+        match self.dtype() {
+            DataType::Binary => {
+                let ca = self.binary().unwrap();
+                ca.serialize(serializer)
+            }
+            DataType::List(_) => {
+                let ca = self.list().unwrap();
+                ca.serialize(serializer)
+            }
+            DataType::Boolean => {
+                let ca = self.bool().unwrap();
+                ca.serialize(serializer)
+            }
+            DataType::Utf8 => {
+                let ca = self.utf8().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {
+                let ca = self.struct_().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => {
+                let ca = self.date().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => {
+                let ca = self.datetime().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => {
+                let ca = self.categorical().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(_) => {
+                let ca = self.duration().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => {
+                let ca = self.time().unwrap();
+                ca.serialize(serializer)
+            }
+            dt => {
+                with_match_physical_numeric_polars_type!(dt, |$T| {
+                let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
+                ca.serialize(serializer)
+                })
             }
         }
     }

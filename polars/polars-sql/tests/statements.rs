@@ -132,10 +132,17 @@ fn test_union_all() {
         SELECT * FROM test2
     )
     "#;
-    let expected = polars_lazy::dsl::concat(vec![df1.lazy(), df2.lazy()], false, true)
-        .unwrap()
-        .collect()
-        .unwrap();
+    let expected = polars_lazy::dsl::concat(
+        vec![df1.lazy(), df2.lazy()],
+        UnionArgs {
+            rechunk: false,
+            parallel: true,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
 
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     assert!(actual.frame_equal(&expected));
