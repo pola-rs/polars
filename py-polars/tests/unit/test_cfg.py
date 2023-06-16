@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import os
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
 import pytest
 
 import polars as pl
 from polars.config import _get_float_fmt
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
@@ -495,39 +498,43 @@ def test_string_cache() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_config_load_save() -> None:
-    # set some config options...
-    pl.Config.set_tbl_cols(12)
-    pl.Config.set_verbose(True)
-    pl.Config.set_fmt_float("full")
-    assert os.environ.get("POLARS_VERBOSE") == "1"
+@pytest.mark.write_disk()
+def test_config_load_save(tmp_path: Path) -> None:
+    for file in (None, tmp_path / "polars.config"):
+        # set some config options...
+        pl.Config.set_tbl_cols(12)
+        pl.Config.set_verbose(True)
+        pl.Config.set_fmt_float("full")
+        assert os.environ.get("POLARS_VERBOSE") == "1"
 
-    cfg = pl.Config.save()
-    assert isinstance(cfg, str)
-    assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
+        cfg = pl.Config.save(file)
+        assert isinstance(cfg, str)
+        assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
 
-    # ...modify the same options...
-    pl.Config.set_tbl_cols(10)
-    pl.Config.set_verbose(False)
-    assert os.environ.get("POLARS_VERBOSE") == "0"
+        # ...modify the same options...
+        pl.Config.set_tbl_cols(10)
+        pl.Config.set_verbose(False)
+        assert os.environ.get("POLARS_VERBOSE") == "0"
 
-    # ...load back from config...
-    pl.Config.load(cfg)
+        # ...load back from config...
+        if file is not None:
+            assert os.path.isfile(cfg)
+        pl.Config.load(cfg)
 
-    # ...and confirm the saved options were set.
-    assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
-    assert os.environ.get("POLARS_VERBOSE") == "1"
-    assert _get_float_fmt() == "full"
+        # ...and confirm the saved options were set.
+        assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
+        assert os.environ.get("POLARS_VERBOSE") == "1"
+        assert _get_float_fmt() == "full"
 
-    # restore all default options (unsets from env)
-    pl.Config.restore_defaults()
-    for e in ("POLARS_FMT_MAX_COLS", "POLARS_VERBOSE"):
-        assert e not in pl.Config.state(if_set=True)
-        assert e in pl.Config.state()
+        # restore all default options (unsets from env)
+        pl.Config.restore_defaults()
+        for e in ("POLARS_FMT_MAX_COLS", "POLARS_VERBOSE"):
+            assert e not in pl.Config.state(if_set=True)
+            assert e in pl.Config.state()
 
-    assert os.environ.get("POLARS_FMT_MAX_COLS") is None
-    assert os.environ.get("POLARS_VERBOSE") is None
-    assert _get_float_fmt() == "mixed"
+        assert os.environ.get("POLARS_FMT_MAX_COLS") is None
+        assert os.environ.get("POLARS_VERBOSE") is None
+        assert _get_float_fmt() == "mixed"
 
 
 def test_config_scope() -> None:
