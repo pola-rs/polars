@@ -161,7 +161,9 @@ class Config(contextlib.ContextDecorator):
 
         """
         options = json.loads(
-            Path(normalise_filepath(cfg)).read_text() if os.path.exists(cfg) else cfg
+            Path(normalise_filepath(cfg)).read_text()
+            if os.path.exists(cfg) or isinstance(cfg, Path)
+            else cfg
         )
         os.environ.update(options.get("environment", {}))
         for cfg_methodname, value in options.get("direct", {}).items():
