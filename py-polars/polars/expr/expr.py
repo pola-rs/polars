@@ -4874,6 +4874,7 @@ class Expr:
         │ 5.0 ┆ 4.0         │
         │ 6.0 ┆ 5.0         │
         └─────┴─────────────┘
+
         Specify weights to multiply the values in the window with:
         >>> df.with_columns(
         ...     rolling_min=pl.col("A").rolling_min(
@@ -4893,6 +4894,7 @@ class Expr:
         │ 5.0 ┆ 1.0         │
         │ 6.0 ┆ 1.25        │
         └─────┴─────────────┘
+
         Center the values in the window
         >>> df.with_columns(
         ...     rolling_min=pl.col("A").rolling_min(window_size=3, center=True),
@@ -4910,13 +4912,15 @@ class Expr:
         │ 5.0 ┆ 4.0         │
         │ 6.0 ┆ null        │
         └─────┴─────────────┘
+
         Create a DataFrame with a datetime column and a row number column
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = (
-        ...     pl.date_range(start, stop, "1h", eager=True).to_frame().with_row_count()
-        ... )
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
         shape: (25, 2)
         ┌────────┬─────────────────────┐
         │ row_nr ┆ date                │
@@ -5065,6 +5069,7 @@ class Expr:
         │ 5.0 ┆ 5.0         │
         │ 6.0 ┆ 6.0         │
         └─────┴─────────────┘
+
         Specify weights to multiply the values in the window with:
         >>> df.with_columns(
         ...     rolling_max=pl.col("A").rolling_max(
@@ -5084,6 +5089,7 @@ class Expr:
         │ 5.0 ┆ 3.75        │
         │ 6.0 ┆ 4.5         │
         └─────┴─────────────┘
+
         Center the values in the window
         >>> df.with_columns(
         ...     rolling_max=pl.col("A").rolling_max(window_size=3, center=True),
@@ -5101,13 +5107,15 @@ class Expr:
         │ 5.0 ┆ 6.0         │
         │ 6.0 ┆ null        │
         └─────┴─────────────┘
+
         Create a DataFrame with a datetime column and a row number column
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = (
-        ...     pl.date_range(start, stop, "1h", eager=True).to_frame().with_row_count()
-        ... )
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
         shape: (25, 2)
         ┌────────┬─────────────────────┐
         │ row_nr ┆ date                │
@@ -5124,6 +5132,7 @@ class Expr:
         │ 23     ┆ 2001-01-01 23:00:00 │
         │ 24     ┆ 2001-01-02 00:00:00 │
         └────────┴─────────────────────┘
+
         Compute the rolling max with the default left closure of temporal windows
         >>> (
         ...     df_temporal.with_columns(
@@ -5132,6 +5141,7 @@ class Expr:
         ...         )
         ...     )
         ... )
+        shape: (25, 3)
         ┌────────┬─────────────────────┬─────────────────┐
         │ row_nr ┆ date                ┆ rolling_row_max │
         │ ---    ┆ ---                 ┆ ---             │
@@ -5147,6 +5157,7 @@ class Expr:
         │ 23     ┆ 2001-01-01 23:00:00 ┆ 22              │
         │ 24     ┆ 2001-01-02 00:00:00 ┆ 23              │
         └────────┴─────────────────────┴─────────────────┘
+
         Compute the rolling max with the closure of windows on both sides
         >>> (
         ...     df_temporal.with_columns(
@@ -5263,7 +5274,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
         >>> df.with_columns(
         ...     rolling_mean=pl.col("A").rolling_mean(window_size=2),
         ... )
@@ -5280,6 +5291,7 @@ class Expr:
         │ 5.0 ┆ 4.5          │
         │ 6.0 ┆ 5.5          │
         └─────┴──────────────┘
+
         Specify weights to multiply the values in the window with:
         >>> df.with_columns(
         ...     rolling_mean=pl.col("A").rolling_mean(
@@ -5299,6 +5311,7 @@ class Expr:
         │ 5.0 ┆ 4.75         │
         │ 6.0 ┆ 5.75         │
         └─────┴──────────────┘
+
         Center the values in the window
         >>> df.with_columns(
         ...     rolling_mean=pl.col("A").rolling_mean(window_size=3, center=True),
@@ -5316,13 +5329,15 @@ class Expr:
         │ 5.0 ┆ 5.0          │
         │ 6.0 ┆ null         │
         └─────┴──────────────┘
+
         Create a DataFrame with a datetime column and a row number column
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = (
-        ...     pl.date_range(start, stop, "1h", eager=True).to_frame().with_row_count()
-        ... )
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
         shape: (25, 2)
         ┌────────┬─────────────────────┐
         │ row_nr ┆ date                │
@@ -5339,6 +5354,7 @@ class Expr:
         │ 23     ┆ 2001-01-01 23:00:00 │
         │ 24     ┆ 2001-01-02 00:00:00 │
         └────────┴─────────────────────┘
+
         Compute the rolling mean with the default left closure of temporal windows
         >>> (
         ...     df_temporal.with_columns(
@@ -5363,6 +5379,7 @@ class Expr:
         │ 23     ┆ 2001-01-01 23:00:00 ┆ 21.5             │
         │ 24     ┆ 2001-01-02 00:00:00 ┆ 22.5             │
         └────────┴─────────────────────┴──────────────────┘
+
         Compute the rolling mean with the closure of windows on both sides
         >>> (
         ...     df_temporal.with_columns(
@@ -5479,7 +5496,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
         >>> df.with_columns(
         ...     rolling_sum=pl.col("A").rolling_sum(window_size=2),
         ... )
@@ -5496,6 +5513,7 @@ class Expr:
         │ 5.0 ┆ 9.0         │
         │ 6.0 ┆ 11.0        │
         └─────┴─────────────┘
+
         Specify weights to multiply the values in the window with:
         >>> df.with_columns(
         ...     rolling_sum=pl.col("A").rolling_sum(
@@ -5515,30 +5533,33 @@ class Expr:
         │ 5.0 ┆ 4.75        │
         │ 6.0 ┆ 5.75        │
         └─────┴─────────────┘
+
         Center the values in the window
         >>> df.with_columns(
         ...     rolling_sum=pl.col("A").rolling_sum(window_size=3, center=True),
         ... )
         shape: (6, 2)
-        ┌─────┬──────────────┐
-        │ A   ┆ rolling_mean │
-        │ --- ┆ ---          │
-        │ f64 ┆ f64          │
-        ╞═════╪══════════════╡
-        │ 1.0 ┆ null         │
-        │ 2.0 ┆ 2.0          │
-        │ 3.0 ┆ 3.0          │
-        │ 4.0 ┆ 4.0          │
-        │ 5.0 ┆ 5.0          │
-        │ 6.0 ┆ null         │
-        └─────┴──────────────┘
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_sum │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 6.0         │
+        │ 3.0 ┆ 9.0         │
+        │ 4.0 ┆ 12.0        │
+        │ 5.0 ┆ 15.0        │
+        │ 6.0 ┆ null        │
+        └─────┴─────────────┘
+
         Create a DataFrame with a datetime column and a row number column
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = (
-        ...     pl.date_range(start, stop, "1h", eager=True).to_frame().with_row_count()
-        ... )
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
         shape: (25, 2)
         ┌────────┬─────────────────────┐
         │ row_nr ┆ date                │
@@ -5555,6 +5576,7 @@ class Expr:
         │ 23     ┆ 2001-01-01 23:00:00 │
         │ 24     ┆ 2001-01-02 00:00:00 │
         └────────┴─────────────────────┘
+
         Compute the rolling sum with the default left closure of temporal windows
         >>> (
         ...     df_temporal.with_columns(
@@ -5579,6 +5601,7 @@ class Expr:
         │ 23     ┆ 2001-01-01 23:00:00 ┆ 43              │
         │ 24     ┆ 2001-01-02 00:00:00 ┆ 45              │
         └────────┴─────────────────────┴─────────────────┘
+
         Compute the rolling sum with the closure of windows on both sides
         >>> (
         ...     df_temporal.with_columns(
@@ -5698,7 +5721,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
         >>> df.with_columns(
         ...     rolling_std=pl.col("A").rolling_std(window_size=2),
         ... )
@@ -5709,12 +5732,13 @@ class Expr:
         │ f64 ┆ f64         │
         ╞═════╪═════════════╡
         │ 1.0 ┆ null        │
-        │ 2.0 ┆ 3.0         │
-        │ 3.0 ┆ 5.0         │
-        │ 4.0 ┆ 7.0         │
-        │ 5.0 ┆ 9.0         │
-        │ 6.0 ┆ 11.0        │
+        │ 2.0 ┆ 0.707107    │
+        │ 3.0 ┆ 0.707107    │
+        │ 4.0 ┆ 0.707107    │
+        │ 5.0 ┆ 0.707107    │
+        │ 6.0 ┆ 0.707107    │
         └─────┴─────────────┘
+
         Specify weights to multiply the values in the window with:
         >>> df.with_columns(
         ...     rolling_std=pl.col("A").rolling_std(
@@ -5728,36 +5752,39 @@ class Expr:
         │ f64 ┆ f64         │
         ╞═════╪═════════════╡
         │ 1.0 ┆ null        │
-        │ 2.0 ┆ 1.75        │
-        │ 3.0 ┆ 2.75        │
-        │ 4.0 ┆ 3.75        │
-        │ 5.0 ┆ 4.75        │
-        │ 6.0 ┆ 5.75        │
+        │ 2.0 ┆ 0.883883    │
+        │ 3.0 ┆ 1.237437    │
+        │ 4.0 ┆ 1.59099     │
+        │ 5.0 ┆ 1.944544    │
+        │ 6.0 ┆ 2.298097    │
         └─────┴─────────────┘
+
         Center the values in the window
         >>> df.with_columns(
         ...     rolling_std=pl.col("A").rolling_std(window_size=3, center=True),
         ... )
         shape: (6, 2)
-        ┌─────┬──────────────┐
-        │ A   ┆ rolling_mean │
-        │ --- ┆ ---          │
-        │ f64 ┆ f64          │
-        ╞═════╪══════════════╡
-        │ 1.0 ┆ null         │
-        │ 2.0 ┆ 2.0          │
-        │ 3.0 ┆ 3.0          │
-        │ 4.0 ┆ 4.0          │
-        │ 5.0 ┆ 5.0          │
-        │ 6.0 ┆ null         │
-        └─────┴──────────────┘
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_std │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 1.0         │
+        │ 3.0 ┆ 1.0         │
+        │ 4.0 ┆ 1.0         │
+        │ 5.0 ┆ 1.0         │
+        │ 6.0 ┆ null        │
+        └─────┴─────────────┘
+
         Create a DataFrame with a datetime column and a row number column
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = (
-        ...     pl.date_range(start, stop, "1h", eager=True).to_frame().with_row_count()
-        ... )
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
         shape: (25, 2)
         ┌────────┬─────────────────────┐
         │ row_nr ┆ date                │
@@ -5774,6 +5801,7 @@ class Expr:
         │ 23     ┆ 2001-01-01 23:00:00 │
         │ 24     ┆ 2001-01-02 00:00:00 │
         └────────┴─────────────────────┘
+
         Compute the rolling std with the default left closure of temporal windows
         >>> (
         ...     df_temporal.with_columns(
@@ -5786,18 +5814,19 @@ class Expr:
         ┌────────┬─────────────────────┬─────────────────┐
         │ row_nr ┆ date                ┆ rolling_row_std │
         │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ u32             │
+        │ u32    ┆ datetime[μs]        ┆ f64             │
         ╞════════╪═════════════════════╪═════════════════╡
         │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1               │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 3               │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.0             │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 0.707107        │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 0.707107        │
         │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 39              │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 41              │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 43              │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 45              │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 0.707107        │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 0.707107        │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 0.707107        │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 0.707107        │
         └────────┴─────────────────────┴─────────────────┘
+
         Compute the rolling std with the closure of windows on both sides
         >>> (
         ...     df_temporal.with_columns(
@@ -5810,17 +5839,17 @@ class Expr:
         ┌────────┬─────────────────────┬─────────────────┐
         │ row_nr ┆ date                ┆ rolling_row_std │
         │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ u32             │
+        │ u32    ┆ datetime[μs]        ┆ f64             │
         ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0               │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 1               │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 3               │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 6               │
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0.0             │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1.0             │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 1.0             │
         │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 60              │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 63              │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 66              │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 69              │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 1.0             │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 1.0             │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 1.0             │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 1.0             │
         └────────┴─────────────────────┴─────────────────┘
 
         """
@@ -5917,7 +5946,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
         >>> df.with_columns(
         ...     rolling_var=pl.col("A").rolling_var(window_size=2),
         ... )
@@ -5934,6 +5963,7 @@ class Expr:
         │ 5.0 ┆ 0.5         │
         │ 6.0 ┆ 0.5         │
         └─────┴─────────────┘
+
         Specify weights to multiply the values in the window with:
         >>> df.with_columns(
         ...     rolling_var=pl.col("A").rolling_var(
@@ -5953,6 +5983,7 @@ class Expr:
         │ 5.0 ┆ 3.78125     │
         │ 6.0 ┆ 5.28125     │
         └─────┴─────────────┘
+
         Center the values in the window
         >>> df.with_columns(
         ...     rolling_var=pl.col("A").rolling_var(window_size=3, center=True),
@@ -5970,13 +6001,15 @@ class Expr:
         │ 5.0 ┆ 1.0         │
         │ 6.0 ┆ null        │
         └─────┴─────────────┘
+
         Create a DataFrame with a datetime column and a row number column
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = (
-        ...     pl.date_range(start, stop, "1h", eager=True).to_frame().with_row_count()
-        ... )
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
         shape: (25, 2)
         ┌────────┬─────────────────────┐
         │ row_nr ┆ date                │
@@ -5993,6 +6026,7 @@ class Expr:
         │ 23     ┆ 2001-01-01 23:00:00 │
         │ 24     ┆ 2001-01-02 00:00:00 │
         └────────┴─────────────────────┘
+
         Compute the rolling var with the default left closure of temporal windows
         >>> (
         ...     df_temporal.with_columns(
@@ -6017,6 +6051,7 @@ class Expr:
         │ 23     ┆ 2001-01-01 23:00:00 ┆ 0.5             │
         │ 24     ┆ 2001-01-02 00:00:00 ┆ 0.5             │
         └────────┴─────────────────────┴─────────────────┘
+
         Compute the rolling var with the closure of windows on both sides
         >>> (
         ...     df_temporal.with_columns(
@@ -6135,7 +6170,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
         >>> df.with_columns(
         ...     rolling_median=pl.col("A").rolling_median(window_size=2),
         ... )
@@ -6152,6 +6187,7 @@ class Expr:
         │ 5.0 ┆ 4.5            │
         │ 6.0 ┆ 5.5            │
         └─────┴────────────────┘
+
         Specify weights to multiply the values in the window with:
         >>> df.with_columns(
         ...     rolling_median=pl.col("A").rolling_median(
@@ -6171,6 +6207,7 @@ class Expr:
         │ 5.0 ┆ 2.375          │
         │ 6.0 ┆ 2.875          │
         └─────┴────────────────┘
+
         Center the values in the window
         >>> df.with_columns(
         ...     rolling_median=pl.col("A").rolling_median(window_size=3, center=True),
@@ -6282,130 +6319,65 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
-        >>> df.with_columns(
-        ...     rolling_quantile=pl.col("A").rolling_quantile(window_size=2),
-        ... )
-        shape: (6, 2)
-        ┌─────┬─────────────┐
-        │ A   ┆ rolling_quantile │
-        │ --- ┆ ---         │
-        │ f64 ┆ f64         │
-        ╞═════╪═════════════╡
-        │ 1.0 ┆ null        │
-        │ 2.0 ┆ 3.0         │
-        │ 3.0 ┆ 5.0         │
-        │ 4.0 ┆ 7.0         │
-        │ 5.0 ┆ 9.0         │
-        │ 6.0 ┆ 11.0        │
-        └─────┴─────────────┘
-        Specify weights to multiply the values in the window with:
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
         >>> df.with_columns(
         ...     rolling_quantile=pl.col("A").rolling_quantile(
-        ...         window_size=2, weights=[0.25, 0.75]
+        ...         quantile=0.25, window_size=4
         ...     ),
         ... )
         shape: (6, 2)
-        ┌─────┬─────────────┐
+        ┌─────┬──────────────────┐
         │ A   ┆ rolling_quantile │
-        │ --- ┆ ---         │
-        │ f64 ┆ f64         │
-        ╞═════╪═════════════╡
-        │ 1.0 ┆ null        │
-        │ 2.0 ┆ 1.75        │
-        │ 3.0 ┆ 2.75        │
-        │ 4.0 ┆ 3.75        │
-        │ 5.0 ┆ 4.75        │
-        │ 6.0 ┆ 5.75        │
-        └─────┴─────────────┘
-        Center the values in the window
+        │ --- ┆ ---              │
+        │ f64 ┆ f64              │
+        ╞═════╪══════════════════╡
+        │ 1.0 ┆ null             │
+        │ 2.0 ┆ null             │
+        │ 3.0 ┆ null             │
+        │ 4.0 ┆ 2.0              │
+        │ 5.0 ┆ 3.0              │
+        │ 6.0 ┆ 4.0              │
+        └─────┴──────────────────┘
+
+        Specify weights to multiply the values in the window with:
         >>> df.with_columns(
-        ...     rolling_quantile=pl.col("A").rolling_quantile(window_size=3, center=True),
+        ...     rolling_quantile=pl.col("A").rolling_quantile(
+        ...         quantile=0.25, window_size=4, weights=[0.2, 0.4, 0.4, 0.2]
+        ...     ),
         ... )
         shape: (6, 2)
-        ┌─────┬──────────────┐
-        │ A   ┆ rolling_mean │
-        │ --- ┆ ---          │
-        │ f64 ┆ f64          │
-        ╞═════╪══════════════╡
-        │ 1.0 ┆ null         │
-        │ 2.0 ┆ 2.0          │
-        │ 3.0 ┆ 3.0          │
-        │ 4.0 ┆ 4.0          │
-        │ 5.0 ┆ 5.0          │
-        │ 6.0 ┆ null         │
-        └─────┴──────────────┘
-        Create a DataFrame with a datetime column and a row number column
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = (
-        ...     pl.date_range(start, stop, "1h", eager=True).to_frame().with_row_count()
+        ┌─────┬──────────────────┐
+        │ A   ┆ rolling_quantile │
+        │ --- ┆ ---              │
+        │ f64 ┆ f64              │
+        ╞═════╪══════════════════╡
+        │ 1.0 ┆ null             │
+        │ 2.0 ┆ null             │
+        │ 3.0 ┆ null             │
+        │ 4.0 ┆ 0.8              │
+        │ 5.0 ┆ 1.0              │
+        │ 6.0 ┆ 1.2              │
+        └─────┴──────────────────┘
+
+        Center the values in the window
+        >>> df.with_columns(
+        ...     rolling_quantile=pl.col("A").rolling_quantile(
+        ...         quantile=0.2, window_size=5, center=True
+        ...     ),
         ... )
-        shape: (25, 2)
-        ┌────────┬─────────────────────┐
-        │ row_nr ┆ date                │
-        │ ---    ┆ ---                 │
-        │ u32    ┆ datetime[μs]        │
-        ╞════════╪═════════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 │
-        │ 1      ┆ 2001-01-01 01:00:00 │
-        │ 2      ┆ 2001-01-01 02:00:00 │
-        │ 3      ┆ 2001-01-01 03:00:00 │
-        │ …      ┆ …                   │
-        │ 21     ┆ 2001-01-01 21:00:00 │
-        │ 22     ┆ 2001-01-01 22:00:00 │
-        │ 23     ┆ 2001-01-01 23:00:00 │
-        │ 24     ┆ 2001-01-02 00:00:00 │
-        └────────┴─────────────────────┘
-        Compute the rolling quantile with the default left closure of temporal windows
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_quantile=pl.col("row_nr").rolling_quantile(
-        ...             window_size="2h", by="date"
-        ...         )
-        ...     )
-        ... )
-        shape: (25, 3)
-        ┌────────┬─────────────────────┬─────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_quantile │
-        │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ u32             │
-        ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1               │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 3               │
-        │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 39              │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 41              │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 43              │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 45              │
-        └────────┴─────────────────────┴─────────────────┘
-        Compute the rolling quantile with the closure of windows on both sides
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_quantile=pl.col("row_nr").rolling_quantile(
-        ...             window_size="2h", by="date", closed="both"
-        ...         )
-        ...     )
-        ... )
-        shape: (25, 3)
-        ┌────────┬─────────────────────┬─────────────────┐
-        │ row_nr ┆ date                ┆ rolling_row_quantile │
-        │ ---    ┆ ---                 ┆ ---             │
-        │ u32    ┆ datetime[μs]        ┆ u32             │
-        ╞════════╪═════════════════════╪═════════════════╡
-        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0               │
-        │ 1      ┆ 2001-01-01 01:00:00 ┆ 1               │
-        │ 2      ┆ 2001-01-01 02:00:00 ┆ 3               │
-        │ 3      ┆ 2001-01-01 03:00:00 ┆ 6               │
-        │ …      ┆ …                   ┆ …               │
-        │ 21     ┆ 2001-01-01 21:00:00 ┆ 60              │
-        │ 22     ┆ 2001-01-01 22:00:00 ┆ 63              │
-        │ 23     ┆ 2001-01-01 23:00:00 ┆ 66              │
-        │ 24     ┆ 2001-01-02 00:00:00 ┆ 69              │
-        └────────┴─────────────────────┴─────────────────┘
+        shape: (6, 2)
+        ┌─────┬──────────────────┐
+        │ A   ┆ rolling_quantile │
+        │ --- ┆ ---              │
+        │ f64 ┆ f64              │
+        ╞═════╪══════════════════╡
+        │ 1.0 ┆ null             │
+        │ 2.0 ┆ null             │
+        │ 3.0 ┆ 2.0              │
+        │ 4.0 ┆ 3.0              │
+        │ 5.0 ┆ null             │
+        │ 6.0 ┆ null             │
+        └─────┴──────────────────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
