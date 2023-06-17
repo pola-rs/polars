@@ -146,7 +146,7 @@ impl StrpTimeParser<i64> for DatetimeInfer<i64> {
         if self.fmt_len == 0 {
             self.fmt_len = strptime::fmt_len(self.latest_fmt.as_bytes())?;
         }
-        let transform_fn = match time_unit {
+        let transform = match time_unit {
             Some(TimeUnit::Nanoseconds) => datetime_to_timestamp_ns,
             Some(TimeUnit::Microseconds) => datetime_to_timestamp_us,
             Some(TimeUnit::Milliseconds) => datetime_to_timestamp_ms,
@@ -155,7 +155,7 @@ impl StrpTimeParser<i64> for DatetimeInfer<i64> {
         unsafe {
             self.transform_bytes
                 .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
-                .map(transform_fn)
+                .map(transform)
                 .or_else(|| {
                     // TODO! this will try all patterns.
                     // somehow we must early escape if value is invalid

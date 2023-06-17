@@ -60,10 +60,10 @@ trait ParsedBuffer {
     fn parse_bytes(
         &mut self,
         bytes: &[u8],
-        time_unit: Option<TimeUnit>,
         ignore_errors: bool,
         _needs_escaping: bool,
         _missing_is_null: bool,
+        _time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()>;
 }
 
@@ -75,10 +75,10 @@ where
     fn parse_bytes(
         &mut self,
         bytes: &[u8],
-        _time_unit: Option<TimeUnit>,
         ignore_errors: bool,
         needs_escaping: bool,
         _missing_is_null: bool,
+        _time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()> {
         if bytes.is_empty() {
             self.append_null()
@@ -101,10 +101,10 @@ where
                         let bytes = skip_whitespace(bytes);
                         return self.parse_bytes(
                             bytes,
-                            None,
                             ignore_errors,
                             false, // escaping was already done
                             _missing_is_null,
+                            None,
                         );
                     }
                     polars_ensure!(
@@ -171,10 +171,10 @@ impl ParsedBuffer for Utf8Field {
     fn parse_bytes(
         &mut self,
         bytes: &[u8],
-        _time_unit: Option<TimeUnit>,
         ignore_errors: bool,
         needs_escaping: bool,
         missing_is_null: bool,
+        _time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()> {
         if bytes.is_empty() {
             // append null
@@ -280,10 +280,10 @@ impl<'a> CategoricalField<'a> {
     fn parse_bytes(
         &mut self,
         bytes: &'a [u8],
-        _time_unit: Option<TimeUnit>,
         ignore_errors: bool,
         needs_escaping: bool,
         _missing_is_null: bool,
+        _time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()> {
         if bytes.is_empty() {
             self.builder.append_null();
@@ -364,10 +364,10 @@ impl ParsedBuffer for BooleanChunkedBuilder {
     fn parse_bytes(
         &mut self,
         bytes: &[u8],
-        _time_unit: Option<TimeUnit>,
         ignore_errors: bool,
         needs_escaping: bool,
         _missing_is_null: bool,
+        _time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()> {
         let bytes = if needs_escaping {
             &bytes[1..bytes.len() - 1]
@@ -466,10 +466,10 @@ where
     fn parse_bytes(
         &mut self,
         mut bytes: &[u8],
-        time_unit: Option<TimeUnit>,
         ignore_errors: bool,
         needs_escaping: bool,
         _missing_is_null: bool,
+        time_unit: Option<TimeUnit>,
     ) -> PolarsResult<()> {
         if needs_escaping && bytes.len() > 2 {
             bytes = &bytes[1..bytes.len() - 1]
@@ -734,92 +734,92 @@ impl<'a> Buffer<'a> {
             Boolean(buf) => <BooleanChunkedBuilder as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
-                None,
                 ignore_errors,
                 needs_escaping,
                 missing_is_null,
+                None,
             ),
             Int32(buf) => <PrimitiveChunkedBuilder<Int32Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
-                None,
                 ignore_errors,
                 needs_escaping,
                 missing_is_null,
+                None,
             ),
             Int64(buf) => <PrimitiveChunkedBuilder<Int64Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
-                None,
                 ignore_errors,
                 needs_escaping,
                 missing_is_null,
+                None,
             ),
             UInt64(buf) => <PrimitiveChunkedBuilder<UInt64Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
-                None,
                 ignore_errors,
                 needs_escaping,
                 missing_is_null,
+                None,
             ),
             UInt32(buf) => <PrimitiveChunkedBuilder<UInt32Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
-                None,
                 ignore_errors,
                 needs_escaping,
                 missing_is_null,
+                None,
             ),
             Float32(buf) => <PrimitiveChunkedBuilder<Float32Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
-                None,
                 ignore_errors,
                 needs_escaping,
                 missing_is_null,
+                None,
             ),
             Float64(buf) => <PrimitiveChunkedBuilder<Float64Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
-                None,
                 ignore_errors,
                 needs_escaping,
                 missing_is_null,
+                None,
             ),
             Utf8(buf) => <Utf8Field as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
-                None,
                 ignore_errors,
                 needs_escaping,
                 missing_is_null,
+                None,
             ),
             #[cfg(feature = "dtype-datetime")]
             Datetime { buf, time_unit, .. } => {
                 <DatetimeField<Int64Type> as ParsedBuffer>::parse_bytes(
                     buf,
                     bytes,
-                    Some(*time_unit),
                     ignore_errors,
                     needs_escaping,
                     missing_is_null,
+                    Some(*time_unit),
                 )
             }
             #[cfg(feature = "dtype-date")]
             Date(buf) => <DatetimeField<Int32Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
-                None,
                 ignore_errors,
                 needs_escaping,
                 missing_is_null,
+                None,
             ),
             #[allow(unused_variables)]
             Categorical(buf) => {
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    buf.parse_bytes(bytes, None, ignore_errors, needs_escaping, missing_is_null)
+                    buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null, None)
                 }
 
                 #[cfg(not(feature = "dtype-categorical"))]
