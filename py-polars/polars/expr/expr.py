@@ -4678,99 +4678,99 @@ class Expr:
         closed: ClosedInterval = "left",
     ) -> Self:
         """
-          Apply a rolling min (moving min) over the values in this array.
+        Apply a rolling min (moving min) over the values in this array.
 
-          A window of length `window_size` will traverse the array. The values that fill
-          this window will (optionally) be multiplied with the weights given by the
-          `weight` vector. The resulting values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
-          If ``by`` has not been specified (the default), the window at a given row will
-          include the row itself, and the `window_size - 1` elements before it.
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
 
-          If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
-          the windows will be:
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        means the windows will be:
 
-              - [t_0 - window_size, t_0)
-              - [t_1 - window_size, t_1)
-              - ...
-              - [t_n - window_size, t_n)
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
 
-        With `closed="right"`, the left endpoint is not included and the right entrypoint is
-          included.
+        With `closed="right"`, the left endpoint is not included and the right
+        entrypoint is included.
 
         Parameters
         ----------
-          window_size
-              The length of the window. Can be a fixed integer size, or a dynamic temporal
-              size indicated by a timedelta or the following string language:
+        window_size
+            The length of the window. Can be a fixed integer size, or a dynamic
+            temporal size indicated by a timedelta or the following string language:
 
-              - 1ns   (1 nanosecond)
-              - 1us   (1 microsecond)
-              - 1ms   (1 millisecond)
-              - 1s    (1 second)
-              - 1m    (1 minute)
-              - 1h    (1 hour)
-              - 1d    (1 day)
-              - 1w    (1 week)
-              - 1mo   (1 calendar month)
-              - 1q    (1 calendar quarter)
-              - 1y    (1 calendar year)
-              - 1i    (1 index count)
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
-              Suffix with `"_saturating"` to indicate that dates too large for
-              their month should saturate at the largest date
-              (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
-              If a timedelta or the dynamic string language is used, the `by`
-              and `closed` arguments must also be set.
-          weights
-              An optional slice with the same length as the window that will be multiplied
-              elementwise with the values in the window.
-          min_periods
-              The number of values in the window that should be non-null before computing
-              a result. If None, it will be set equal to window size.
-          center
-              Set the labels at the center of the window
-          by
-              If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-              set the column that will be used to determine the windows. This column must
-              be of dtype Datetime.
-          closed : {'left', 'right', 'both', 'none'}
-              Define which sides of the temporal interval are closed (inclusive); only
-              applicable if `by` has been set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
+            set the column that will be used to determine the windows. This column must
+            be of dtype Datetime.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
-          Warnings
-          --------
-          This functionality is experimental and may change without it being considered a
-          breaking change.
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
-          If you want to compute multiple aggregation statistics over the same dynamic
-          window, consider using `groupby_rolling` this method can cache the window size
-          computation.
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
-          >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-          >>> df.select(
-          ...     [
-          ...         pl.col("A").rolling_min(window_size=2),
-          ...     ]
-          ... )
-          shape: (6, 1)
-          ┌──────┐
-          │ A    │
-          │ ---  │
-          │ f64  │
-          ╞══════╡
-          │ null │
-          │ 1.0  │
-          │ 2.0  │
-          │ 3.0  │
-          │ 4.0  │
-          │ 5.0  │
-          └──────┘
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_min(window_size=2),
+        ...     ]
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        │ 1.0  │
+        │ 2.0  │
+        │ 3.0  │
+        │ 4.0  │
+        │ 5.0  │
+        └──────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -4793,99 +4793,99 @@ class Expr:
         closed: ClosedInterval = "left",
     ) -> Self:
         """
-          Apply a rolling max (moving max) over the values in this array.
+        Apply a rolling max (moving max) over the values in this array.
 
-          A window of length `window_size` will traverse the array. The values that fill
-          this window will (optionally) be multiplied with the weights given by the
-          `weight` vector. The resulting values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
-          If ``by`` has not been specified (the default), the window at a given row will
-          include the row itself, and the `window_size - 1` elements before it.
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
 
-          If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
-          the windows will be:
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        means the windows will be:
 
-              - [t_0 - window_size, t_0)
-              - [t_1 - window_size, t_1)
-              - ...
-              - [t_n - window_size, t_n)
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
 
-        With `closed="right"`, the left endpoint is not included and the right entrypoint is
-          included.
+        With `closed="right"`, the left endpoint is not included and the right
+        entrypoint is included.
 
         Parameters
         ----------
-          window_size
-              The length of the window. Can be a fixed integer size, or a dynamic temporal
-              size indicated by a timedelta or the following string language:
+        window_size
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by a timedelta or the following string language:
 
-              - 1ns   (1 nanosecond)
-              - 1us   (1 microsecond)
-              - 1ms   (1 millisecond)
-              - 1s    (1 second)
-              - 1m    (1 minute)
-              - 1h    (1 hour)
-              - 1d    (1 day)
-              - 1w    (1 week)
-              - 1mo   (1 calendar month)
-              - 1q    (1 calendar quarter)
-              - 1y    (1 calendar year)
-              - 1i    (1 index count)
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
-              Suffix with `"_saturating"` to indicate that dates too large for
-              their month should saturate at the largest date
-              (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
-              If a timedelta or the dynamic string language is used, the `by`
-              and `closed` arguments must also be set.
-          weights
-              An optional slice with the same length as the window that will be multiplied
-              elementwise with the values in the window.
-          min_periods
-              The number of values in the window that should be non-null before computing
-              a result. If None, it will be set equal to window size.
-          center
-              Set the labels at the center of the window
-          by
-              If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
-              set the column that will be used to determine the windows. This column must
-              be of dtype Datetime.
-          closed : {'left', 'right', 'both', 'none'}
-              Define which sides of the temporal interval are closed (inclusive); only
-              applicable if `by` has been set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+        by
+            If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
+            set the column that will be used to determine the windows. This column must
+            be of dtype Datetime.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
-          Warnings
-          --------
-          This functionality is experimental and may change without it being considered a
-          breaking change.
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
-          If you want to compute multiple aggregation statistics over the same dynamic
-          window, consider using `groupby_rolling` this method can cache the window size
-          computation.
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
-          >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-          >>> df.select(
-          ...     [
-          ...         pl.col("A").rolling_max(window_size=2),
-          ...     ]
-          ... )
-          shape: (6, 1)
-          ┌──────┐
-          │ A    │
-          │ ---  │
-          │ f64  │
-          ╞══════╡
-          │ null │
-          │ 2.0  │
-          │ 3.0  │
-          │ 4.0  │
-          │ 5.0  │
-          │ 6.0  │
-          └──────┘
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_max(window_size=2),
+        ...     ]
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        │ 2.0  │
+        │ 3.0  │
+        │ 4.0  │
+        │ 5.0  │
+        │ 6.0  │
+        └──────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -4908,99 +4908,99 @@ class Expr:
         closed: ClosedInterval = "left",
     ) -> Self:
         """
-          Apply a rolling mean (moving mean) over the values in this array.
+        Apply a rolling mean (moving mean) over the values in this array.
 
-          A window of length `window_size` will traverse the array. The values that fill
-          this window will (optionally) be multiplied with the weights given by the
-          `weight` vector. The resulting values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
-          If ``by`` has not been specified (the default), the window at a given row will
-          include the row itself, and the `window_size - 1` elements before it.
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
 
-          If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
-          the windows will be:
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        means the windows will be:
 
-              - [t_0 - window_size, t_0)
-              - [t_1 - window_size, t_1)
-              - ...
-              - [t_n - window_size, t_n)
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
 
-        With `closed="right"`, the left endpoint is not included and the right entrypoint is
-          included.
+        With `closed="right"`, the left endpoint is not included and the right
+        entrypoint is included.
 
         Parameters
         ----------
-          window_size
-              The length of the window. Can be a fixed integer size, or a dynamic temporal
-              size indicated by a timedelta or the following string language:
+        window_size
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by a timedelta or the following string language:
 
-              - 1ns   (1 nanosecond)
-              - 1us   (1 microsecond)
-              - 1ms   (1 millisecond)
-              - 1s    (1 second)
-              - 1m    (1 minute)
-              - 1h    (1 hour)
-              - 1d    (1 day)
-              - 1w    (1 week)
-              - 1mo   (1 calendar month)
-              - 1q    (1 calendar quarter)
-              - 1y    (1 calendar year)
-              - 1i    (1 index count)
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
-              Suffix with `"_saturating"` to indicate that dates too large for
-              their month should saturate at the largest date
-              (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
-              If a timedelta or the dynamic string language is used, the `by`
-              and `closed` arguments must also be set.
-          weights
-              An optional slice with the same length as the window that will be multiplied
-              elementwise with the values in the window.
-          min_periods
-              The number of values in the window that should be non-null before computing
-              a result. If None, it will be set equal to window size.
-          center
-              Set the labels at the center of the window
-          by
-              If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-              set the column that will be used to determine the windows. This column must
-              be of dtype Datetime.
-          closed : {'left', 'right', 'both', 'none'}
-              Define which sides of the temporal interval are closed (inclusive); only
-              applicable if `by` has been set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
+            set the column that will be used to determine the windows. This column must
+            be of dtype Datetime.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
-          Warnings
-          --------
-          This functionality is experimental and may change without it being considered a
-          breaking change.
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
-          If you want to compute multiple aggregation statistics over the same dynamic
-          window, consider using `groupby_rolling` this method can cache the window size
-          computation.
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
-          >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
-          >>> df.select(
-          ...     [
-          ...         pl.col("A").rolling_mean(window_size=2),
-          ...     ]
-          ... )
-          shape: (6, 1)
-          ┌──────┐
-          │ A    │
-          │ ---  │
-          │ f64  │
-          ╞══════╡
-          │ null │
-          │ 4.5  │
-          │ 7.0  │
-          │ 4.0  │
-          │ 9.0  │
-          │ 13.0 │
-          └──────┘
+        >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_mean(window_size=2),
+        ...     ]
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        │ 4.5  │
+        │ 7.0  │
+        │ 4.0  │
+        │ 9.0  │
+        │ 13.0 │
+        └──────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -5023,99 +5023,99 @@ class Expr:
         closed: ClosedInterval = "left",
     ) -> Self:
         """
-          Apply a rolling sum (moving sum) over the values in this array.
+        Apply a rolling sum (moving sum) over the values in this array.
 
-          A window of length `window_size` will traverse the array. The values that fill
-          this window will (optionally) be multiplied with the weights given by the
-          `weight` vector. The resulting values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
-          If ``by`` has not been specified (the default), the window at a given row will
-          include the row itself, and the `window_size - 1` elements before it.
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
 
-          If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
-          the windows will be:
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        means the windows will be:
 
-              - [t_0 - window_size, t_0)
-              - [t_1 - window_size, t_1)
-              - ...
-              - [t_n - window_size, t_n)
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
 
-        With `closed="right"`, the left endpoint is not included and the right entrypoint is
-          included.
+        With `closed="right"`, the left endpoint is not included and the right
+        entrypoint is included.
 
         Parameters
         ----------
-          window_size
-              The length of the window. Can be a fixed integer size, or a dynamic temporal
-              size indicated by a timedelta or the following string language:
+        window_size
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by a timedelta or the following string language:
 
-              - 1ns   (1 nanosecond)
-              - 1us   (1 microsecond)
-              - 1ms   (1 millisecond)
-              - 1s    (1 second)
-              - 1m    (1 minute)
-              - 1h    (1 hour)
-              - 1d    (1 day)
-              - 1w    (1 week)
-              - 1mo   (1 calendar month)
-              - 1q    (1 calendar quarter)
-              - 1y    (1 calendar year)
-              - 1i    (1 index count)
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
-              Suffix with `"_saturating"` to indicate that dates too large for
-              their month should saturate at the largest date
-              (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
-              If a timedelta or the dynamic string language is used, the `by`
-              and `closed` arguments must also be set.
-          weights
-              An optional slice with the same length of the window that will be multiplied
-              elementwise with the values in the window.
-          min_periods
-              The number of values in the window that should be non-null before computing
-              a result. If None, it will be set equal to window size.
-          center
-              Set the labels at the center of the window
-          by
-              If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-              set the column that will be used to determine the windows. This column must
-              of dtype `{Date, Datetime}`
-          closed : {'left', 'right', 'both', 'none'}
-              Define which sides of the temporal interval are closed (inclusive); only
-              applicable if `by` has been set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
+        weights
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
+            set the column that will be used to determine the windows. This column must
+            of dtype `{Date, Datetime}`
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
-          Warnings
-          --------
-          This functionality is experimental and may change without it being considered a
-          breaking change.
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
-          If you want to compute multiple aggregation statistics over the same dynamic
-          window, consider using `groupby_rolling` this method can cache the window size
-          computation.
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
-          >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-          >>> df.select(
-          ...     [
-          ...         pl.col("A").rolling_sum(window_size=2),
-          ...     ]
-          ... )
-          shape: (6, 1)
-          ┌──────┐
-          │ A    │
-          │ ---  │
-          │ f64  │
-          ╞══════╡
-          │ null │
-          │ 3.0  │
-          │ 5.0  │
-          │ 7.0  │
-          │ 9.0  │
-          │ 11.0 │
-          └──────┘
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_sum(window_size=2),
+        ...     ]
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        │ 3.0  │
+        │ 5.0  │
+        │ 7.0  │
+        │ 9.0  │
+        │ 11.0 │
+        └──────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -5139,103 +5139,103 @@ class Expr:
         ddof: int = 1,
     ) -> Self:
         """
-          Compute a rolling standard deviation.
+        Compute a rolling standard deviation.
 
-          A window of length `window_size` will traverse the array. The values that fill
-          this window will (optionally) be multiplied with the weights given by the
-          `weight` vector. The resulting values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
-          If ``by`` has not been specified (the default), the window at a given row will
-          include the row itself, and the `window_size - 1` elements before it.
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
 
-          If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
-          the windows will be:
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        the windows will be:
 
-              - [t_0 - window_size, t_0)
-              - [t_1 - window_size, t_1)
-              - ...
-              - [t_n - window_size, t_n)
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
 
-        With `closed="right"`, the left endpoint is not included and the right entrypoint is
-          included.
+        With `closed="right"`, the left endpoint is not included and the right
+        entrypoint is included.
 
         Parameters
         ----------
-          window_size
-              The length of the window. Can be a fixed integer size, or a dynamic temporal
-              size indicated by a timedelta or the following string language:
+        window_size
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by a timedelta or the following string language:
 
-              - 1ns   (1 nanosecond)
-              - 1us   (1 microsecond)
-              - 1ms   (1 millisecond)
-              - 1s    (1 second)
-              - 1m    (1 minute)
-              - 1h    (1 hour)
-              - 1d    (1 day)
-              - 1w    (1 week)
-              - 1mo   (1 calendar month)
-              - 1q    (1 calendar quarter)
-              - 1y    (1 calendar year)
-              - 1i    (1 index count)
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
-              Suffix with `"_saturating"` to indicate that dates too large for
-              their month should saturate at the largest date
-              (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
-              If a timedelta or the dynamic string language is used, the `by`
-              and `closed` arguments must also be set.
-          weights
-              An optional slice with the same length as the window that will be multiplied
-              elementwise with the values in the window.
-          min_periods
-              The number of values in the window that should be non-null before computing
-              a result. If None, it will be set equal to window size.
-          center
-              Set the labels at the center of the window
-          by
-              If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-              set the column that will be used to determine the windows. This column must
-              be of dtype Datetime.
-          closed : {'left', 'right', 'both', 'none'}
-              Define which sides of the temporal interval are closed (inclusive); only
-              applicable if `by` has been set.
-          ddof
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
+            set the column that will be used to determine the windows. This column must
+            be of dtype Datetime.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
+        ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
 
-          Warnings
-          --------
-          This functionality is experimental and may change without it being considered a
-          breaking change.
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
-          If you want to compute multiple aggregation statistics over the same dynamic
-          window, consider using `groupby_rolling` this method can cache the window size
-          computation.
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
-          >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-          >>> df.select(
-          ...     [
-          ...         pl.col("A").rolling_std(window_size=3),
-          ...     ]
-          ... )
-          shape: (6, 1)
-          ┌──────────┐
-          │ A        │
-          │ ---      │
-          │ f64      │
-          ╞══════════╡
-          │ null     │
-          │ null     │
-          │ 1.0      │
-          │ 1.0      │
-          │ 1.527525 │
-          │ 2.0      │
-          └──────────┘
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_std(window_size=3),
+        ...     ]
+        ... )
+        shape: (6, 1)
+        ┌──────────┐
+        │ A        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        │ null     │
+        │ 1.0      │
+        │ 1.0      │
+        │ 1.527525 │
+        │ 2.0      │
+        └──────────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -5259,103 +5259,103 @@ class Expr:
         ddof: int = 1,
     ) -> Self:
         """
-          Compute a rolling variance.
+        Compute a rolling variance.
 
-          A window of length `window_size` will traverse the array. The values that fill
-          this window will (optionally) be multiplied with the weights given by the
-          `weight` vector. The resulting values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
-          If ``by`` has not been specified (the default), the window at a given row will
-          include the row itself, and the `window_size - 1` elements before it.
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
 
-          If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
-          the windows will be:
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        means the windows will be:
 
-              - [t_0 - window_size, t_0)
-              - [t_1 - window_size, t_1)
-              - ...
-              - [t_n - window_size, t_n)
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
 
-        With `closed="right"`, the left endpoint is not included and the right entrypoint is
-          included.
+        With `closed="right"`, the left endpoint is not included and the right
+        entrypoint is included.
 
         Parameters
         ----------
-          window_size
-              The length of the window. Can be a fixed integer size, or a dynamic temporal
-              size indicated by a timedelta or the following string language:
+        window_size
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by a timedelta or the following string language:
 
-              - 1ns   (1 nanosecond)
-              - 1us   (1 microsecond)
-              - 1ms   (1 millisecond)
-              - 1s    (1 second)
-              - 1m    (1 minute)
-              - 1h    (1 hour)
-              - 1d    (1 day)
-              - 1w    (1 week)
-              - 1mo   (1 calendar month)
-              - 1q    (1 calendar quarter)
-              - 1y    (1 calendar year)
-              - 1i    (1 index count)
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
-              Suffix with `"_saturating"` to indicate that dates too large for
-              their month should saturate at the largest date
-              (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
-              If a timedelta or the dynamic string language is used, the `by`
-              and `closed` arguments must also be set.
-          weights
-              An optional slice with the same length as the window that will be multiplied
-              elementwise with the values in the window.
-          min_periods
-              The number of values in the window that should be non-null before computing
-              a result. If None, it will be set equal to window size.
-          center
-              Set the labels at the center of the window
-          by
-              If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-              set the column that will be used to determine the windows. This column must
-              be of dtype Datetime.
-          closed : {'left', 'right', 'both', 'none'}
-              Define which sides of the temporal interval are closed (inclusive); only
-              applicable if `by` has been set.
-          ddof
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
+            set the column that will be used to determine the windows. This column must
+            be of dtype Datetime.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
+        ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
 
-          Warnings
-          --------
-          This functionality is experimental and may change without it being considered a
-          breaking change.
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
-          If you want to compute multiple aggregation statistics over the same dynamic
-          window, consider using `groupby_rolling` this method can cache the window size
-          computation.
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
-          >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-          >>> df.select(
-          ...     [
-          ...         pl.col("A").rolling_var(window_size=3),
-          ...     ]
-          ... )
-          shape: (6, 1)
-          ┌──────────┐
-          │ A        │
-          │ ---      │
-          │ f64      │
-          ╞══════════╡
-          │ null     │
-          │ null     │
-          │ 1.0      │
-          │ 1.0      │
-          │ 2.333333 │
-          │ 4.0      │
-          └──────────┘
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_var(window_size=3),
+        ...     ]
+        ... )
+        shape: (6, 1)
+        ┌──────────┐
+        │ A        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        │ null     │
+        │ 1.0      │
+        │ 1.0      │
+        │ 2.333333 │
+        │ 4.0      │
+        └──────────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -5384,95 +5384,95 @@ class Expr:
         closed: ClosedInterval = "left",
     ) -> Self:
         """
-          Compute a rolling median.
+        Compute a rolling median.
 
-          If ``by`` has not been specified (the default), the window at a given row will
-          include the row itself, and the `window_size - 1` elements before it.
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
 
-          If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
-          the windows will be:
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        the windows will be:
 
-              - [t_0 - window_size, t_0)
-              - [t_1 - window_size, t_1)
-              - ...
-              - [t_n - window_size, t_n)
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
 
-        With `closed="right"`, the left endpoint is not included and the right entrypoint is
-          included.
+        With `closed="right"`, the left endpoint is not included and the right
+        entrypoint is included.
 
         Parameters
         ----------
-          window_size
-              The length of the window. Can be a fixed integer size, or a dynamic temporal
-              size indicated by a timedelta or the following string language:
+        window_size
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by a timedelta or the following string language:
 
-              - 1ns   (1 nanosecond)
-              - 1us   (1 microsecond)
-              - 1ms   (1 millisecond)
-              - 1s    (1 second)
-              - 1m    (1 minute)
-              - 1h    (1 hour)
-              - 1d    (1 day)
-              - 1w    (1 week)
-              - 1mo   (1 calendar month)
-              - 1q    (1 calendar quarter)
-              - 1y    (1 calendar year)
-              - 1i    (1 index count)
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
-              Suffix with `"_saturating"` to indicate that dates too large for
-              their month should saturate at the largest date
-              (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
-              If a timedelta or the dynamic string language is used, the `by`
-              and `closed` arguments must also be set.
-          weights
-              An optional slice with the same length as the window that will be multiplied
-              elementwise with the values in the window.
-          min_periods
-              The number of values in the window that should be non-null before computing
-              a result. If None, it will be set equal to window size.
-          center
-              Set the labels at the center of the window
-          by
-              If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-              set the column that will be used to determine the windows. This column must
-              be of dtype Datetime.
-          closed : {'left', 'right', 'both', 'none'}
-              Define which sides of the temporal interval are closed (inclusive); only
-              applicable if `by` has been set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
+            set the column that will be used to determine the windows. This column must
+            be of dtype Datetime.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
-          Warnings
-          --------
-          This functionality is experimental and may change without it being considered a
-          breaking change.
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
-          If you want to compute multiple aggregation statistics over the same dynamic
-          window, consider using `groupby_rolling` this method can cache the window size
-          computation.
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
-          >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-          >>> df.select(
-          ...     [
-          ...         pl.col("A").rolling_median(window_size=3),
-          ...     ]
-          ... )
-          shape: (6, 1)
-          ┌──────┐
-          │ A    │
-          │ ---  │
-          │ f64  │
-          ╞══════╡
-          │ null │
-          │ null │
-          │ 2.0  │
-          │ 3.0  │
-          │ 4.0  │
-          │ 6.0  │
-          └──────┘
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_median(window_size=3),
+        ...     ]
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        │ null │
+        │ 2.0  │
+        │ 3.0  │
+        │ 4.0  │
+        │ 6.0  │
+        └──────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -5497,99 +5497,99 @@ class Expr:
         closed: ClosedInterval = "left",
     ) -> Self:
         """
-          Compute a rolling quantile.
+        Compute a rolling quantile.
 
-          If ``by`` has not been specified (the default), the window at a given row will
-          include the row itself, and the `window_size - 1` elements before it.
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
 
-          If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
-          means the windows will be:
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        means the windows will be:
 
-              - [t_0 - window_size, t_0)
-              - [t_1 - window_size, t_1)
-              - ...
-              - [t_n - window_size, t_n)
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
 
         With `closed="right"`, the left endpoint is not included and the right
         entrypoint is included.
 
         Parameters
         ----------
-          quantile
-              Quantile between 0.0 and 1.0.
-          interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
-              Interpolation method.
-          window_size
-              The length of the window. Can be a fixed integer size, or a dynamic
-              temporal size indicated by a timedelta or the following string language:
+        quantile
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
+        window_size
+            The length of the window. Can be a fixed integer size, or a dynamic
+            temporal size indicated by a timedelta or the following string language:
 
-              - 1ns   (1 nanosecond)
-              - 1us   (1 microsecond)
-              - 1ms   (1 millisecond)
-              - 1s    (1 second)
-              - 1m    (1 minute)
-              - 1h    (1 hour)
-              - 1d    (1 day)
-              - 1w    (1 week)
-              - 1mo   (1 calendar month)
-              - 1q    (1 calendar quarter)
-              - 1y    (1 calendar year)
-              - 1i    (1 index count)
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
 
-              Suffix with `"_saturating"` to indicate that dates too large for
-              their month should saturate at the largest date
-              (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
-              If a timedelta or the dynamic string language is used, the `by`
-              and `closed` arguments must also be set.
-          weights
-              An optional slice with the same length as the window that will be
-              multiplied elementwise with the values in the window.
-          min_periods
-              The number of values in the window that should be non-null before computing
-              a result. If None, it will be set equal to window size.
-          center
-              Set the labels at the center of the window
-          by
-              If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-              set the column that will be used to determine the windows. This column must
-              be of dtype Datetime.
-          closed : {'left', 'right', 'both', 'none'}
-              Define which sides of the temporal interval are closed (inclusive); only
-              applicable if `by` has been set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
+        weights
+            An optional slice with the same length as the window that will be
+            multiplied elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
+            set the column that will be used to determine the windows. This column must
+            be of dtype Datetime.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
-          Warnings
-          --------
-          This functionality is experimental and may change without it being considered a
-          breaking change.
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
-          If you want to compute multiple aggregation statistics over the same dynamic
-          window, consider using `groupby_rolling` this method can cache the window size
-          computation.
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
-          >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-          >>> df.select(
-          ...     [
-          ...         pl.col("A").rolling_quantile(quantile=0.33, window_size=3),
-          ...     ]
-          ... )
-          shape: (6, 1)
-          ┌──────┐
-          │ A    │
-          │ ---  │
-          │ f64  │
-          ╞══════╡
-          │ null │
-          │ null │
-          │ 1.0  │
-          │ 2.0  │
-          │ 3.0  │
-          │ 4.0  │
-          └──────┘
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_quantile(quantile=0.33, window_size=3),
+        ...     ]
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        │ null │
+        │ 1.0  │
+        │ 2.0  │
+        │ 3.0  │
+        │ 4.0  │
+        └──────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
