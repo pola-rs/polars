@@ -5502,7 +5502,7 @@ class Expr:
           If ``by`` has not been specified (the default), the window at a given row will
           include the row itself, and the `window_size - 1` elements before it.
 
-          If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` 
+          If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
           means the windows will be:
 
               - [t_0 - window_size, t_0)
@@ -5520,7 +5520,7 @@ class Expr:
           interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
               Interpolation method.
           window_size
-              The length of the window. Can be a fixed integer size, or a dynamic 
+              The length of the window. Can be a fixed integer size, or a dynamic
               temporal size indicated by a timedelta or the following string language:
 
               - 1ns   (1 nanosecond)
