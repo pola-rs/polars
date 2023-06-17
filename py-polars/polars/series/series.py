@@ -1716,7 +1716,7 @@ class Series:
         Parameters
         ----------
         quantiles
-            Quaniles to create.
+            List of quantiles to create.
             We expect quantiles ``0.0 <= quantile <= 1``
         labels
             Labels to assign to the quantiles. If given the length of labels must be
