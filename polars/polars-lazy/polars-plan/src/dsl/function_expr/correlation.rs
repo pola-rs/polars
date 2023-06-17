@@ -193,7 +193,6 @@ fn spearman_rank_corr(s: &[Series], ddof: u8, propagate_nans: bool) -> PolarsRes
         },
         None,
     );
-    // let a_rank = a_rank.chunked_array()
-    // let b_rank = b_rank.chunked_array()
+
     pearson_corr(&[a_rank, b_rank], ddof)
 }
