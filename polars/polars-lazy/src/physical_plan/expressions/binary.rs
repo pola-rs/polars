@@ -155,12 +155,27 @@ impl PhysicalExpr for BinaryExpr {
         // window functions may set a global state that determine their output
         // state, so we don't let them run in parallel as they race
         // they also saturate the thread pool by themselves, so that's fine
-        let (lhs, rhs) = if state.has_window() {
+        let has_window = state.has_window();
+        // streaming takes care of parallelism, don't parallelize here, as it
+        // increases contention
+
+        #[cfg(feature = "streaming")]
+        let in_streaming = state.in_streaming_engine();
+
+        #[cfg(not(feature = "streaming"))]
+        let in_streaming = false;
+
+        let (lhs, rhs) = if has_window {
             let mut state = state.split();
             state.remove_cache_window_flag();
             (
                 self.left.evaluate(df, &state),
                 self.right.evaluate(df, &state),
+            )
+        } else if in_streaming {
+            (
+                self.left.evaluate(df, state),
+                self.right.evaluate(df, state),
             )
         } else {
             POOL.install(|| {

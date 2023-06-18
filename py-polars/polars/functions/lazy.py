@@ -1211,10 +1211,13 @@ def lit(
             if getattr(dtype, "time_zone", None) is None
             else getattr(dtype, "time_zone", None)
         )
-        if value.tzinfo is not None and getattr(dtype, "time_zone", None) is not None:
+        if (
+            value.tzinfo is not None
+            and getattr(dtype, "time_zone", None) is not None
+            and dtype.time_zone != str(value.tzinfo)  # type: ignore[union-attr]
+        ):
             raise TypeError(
-                "Cannot cast tz-aware value to tz-aware dtype. "
-                "Please drop the time zone from the dtype."
+                f"Time zone of dtype ({dtype.time_zone}) differs from time zone of value ({value.tzinfo})."  # type: ignore[union-attr]
             )
         e = lit(_datetime_to_pl_timestamp(value, time_unit)).cast(Datetime(time_unit))
         if time_zone is not None:
@@ -1418,7 +1421,7 @@ def corr(
     ┌─────┐
     │ a   │
     │ --- │
-    │ f64 │
+    │ f32 │
     ╞═════╡
     │ 0.5 │
     └─────┘

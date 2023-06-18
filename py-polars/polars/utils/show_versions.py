@@ -18,7 +18,7 @@ def show_versions() -> None:
     Index type:  UInt32
     Platform:    Linux-5.15.90.1-microsoft-standard-WSL2-x86_64-with-glibc2.35
     Python:      3.11.3 (main, Apr 15 2023, 14:44:51) [GCC 11.3.0]
-
+    \b
     ----Optional dependencies----
     numpy:       1.24.2
     pandas:      2.0.0

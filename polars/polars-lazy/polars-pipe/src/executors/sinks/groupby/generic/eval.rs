@@ -72,14 +72,14 @@ impl Eval {
         for phys_e in self.aggregation_columns_expr.iter() {
             let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = s.to_physical_repr();
-            aggregation_series.push(s.rechunk());
+            aggregation_series.push(s.into_owned());
         }
         for phys_e in self.key_columns_expr.iter() {
             let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = match s.dtype() {
-                // todo! add binary to phyical repr?
+                // todo! add binary to physical repr?
                 DataType::Utf8 => unsafe { s.cast_unchecked(&DataType::Binary).unwrap() },
-                _ => s.to_physical_repr().rechunk(),
+                _ => s.to_physical_repr().into_owned(),
             };
             keys_columns.push(s.to_arrow(0));
         }
