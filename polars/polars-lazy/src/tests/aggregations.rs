@@ -553,7 +553,7 @@ fn test_take_in_groups() -> PolarsResult<()> {
         .lazy()
         .sort("fruits", Default::default())
         .select([col("B")
-            .take(lit(Series::new("", &[0u32])))
+            .take(lit(0u32))
             .over([col("fruits")])
             .alias("taken")])
         .collect()?;
