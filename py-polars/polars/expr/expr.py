@@ -4696,7 +4696,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         With `closed="right"`, the left endpoint is not included and the right
-        entrypoint is included.
+        endpoint is included.
 
         Parameters
         ----------
@@ -4811,7 +4811,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         With `closed="right"`, the left endpoint is not included and the right
-        entrypoint is included.
+        endpoint is included.
 
         Parameters
         ----------
@@ -4926,7 +4926,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         With `closed="right"`, the left endpoint is not included and the right
-        entrypoint is included.
+        endpoint is included.
 
         Parameters
         ----------
@@ -5041,7 +5041,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         With `closed="right"`, the left endpoint is not included and the right
-        entrypoint is included.
+        endpoint is included.
 
         Parameters
         ----------
@@ -5157,7 +5157,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         With `closed="right"`, the left endpoint is not included and the right
-        entrypoint is included.
+        endpoint is included.
 
         Parameters
         ----------
@@ -5277,7 +5277,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         With `closed="right"`, the left endpoint is not included and the right
-        entrypoint is included.
+        endpoint is included.
 
         Parameters
         ----------
@@ -5398,7 +5398,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         With `closed="right"`, the left endpoint is not included and the right
-        entrypoint is included.
+        endpoint is included.
 
         Parameters
         ----------
@@ -5511,7 +5511,7 @@ class Expr:
             - [t_n - window_size, t_n)
 
         With `closed="right"`, the left endpoint is not included and the right
-        entrypoint is included.
+        endpoint is included.
 
         Parameters
         ----------
