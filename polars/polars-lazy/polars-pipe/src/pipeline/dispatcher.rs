@@ -228,7 +228,6 @@ impl PipeLine {
         let pipeline = &*self;
         POOL.scope(|s| {
             for ((chunk, sink), operator_pipe) in chunks
-                .clone()
                 .into_iter()
                 .zip(sink.iter_mut())
                 .zip(operators.iter_mut())
