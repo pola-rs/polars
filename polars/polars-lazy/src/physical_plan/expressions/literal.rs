@@ -104,12 +104,14 @@ impl PhysicalExpr for LiteralExpr {
         use LiteralValue::*;
 
         let s = self.evaluate(df, state)?;
-        let is_list_like = matches!(&self.0, Range {
+        let is_list_like = matches!(
+            &self.0,
+            Range {
                 low: _,
                 high: _,
                 data_type: _,
-            }
-            | Series(_));
+            } | Series(_)
+        );
         Ok(AggregationContext::from_literal(
             s,
             Cow::Borrowed(groups),
