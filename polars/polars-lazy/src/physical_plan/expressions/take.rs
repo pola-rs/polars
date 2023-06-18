@@ -128,7 +128,6 @@ impl PhysicalExpr for TakeExpr {
                     let idx = idx.idx().unwrap();
 
                     return if (idx.len() == 1) & !is_list_like {
-                        // eprintln!("idx.len == 1, idx: {:?} and series {:?} and series.name {:?}", idx, s, s.name()); // TOBI
                         match idx.get(0) {
                             None => polars_bail!(ComputeError: "cannot take by a null"),
                             Some(idx) => {
@@ -164,8 +163,6 @@ impl PhysicalExpr for TakeExpr {
                             }
                         }
                     } else {
-                        // eprintln!("idx.len != 1"); // TOBI
-                        //eprintln!("these are the idx: {:?}", idx);
                         let out = ac
                             .aggregated()
                             .list()

@@ -1516,6 +1516,15 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
 
 def test_take_after_groupby_schema():
     ldf = pl.LazyFrame({"A": [1, 2, 3, 4], "B": [1, 1, 2, 2]})
-    assert ldf.groupby("B").agg(pl.col("A").take(0)).collect().schema == {'B': pl.Int64, 'A': pl.Int64}
-    assert ldf.groupby("B").agg(pl.col("A").take([0])).collect().schema == {'B': pl.Int64, 'A': pl.List(pl.Int64)}
-    assert ldf.groupby("B").agg(pl.col("A").take([0, 1])).collect().schema == {'B': pl.Int64, 'A': pl.List(pl.Int64)}
+    assert ldf.groupby("B").agg(pl.col("A").take(0)).collect().schema == {
+        "B": pl.Int64,
+        "A": pl.Int64,
+    }
+    assert ldf.groupby("B").agg(pl.col("A").take([0])).collect().schema == {
+        "B": pl.Int64,
+        "A": pl.List(pl.Int64),
+    }
+    assert ldf.groupby("B").agg(pl.col("A").take([0, 1])).collect().schema == {
+        "B": pl.Int64,
+        "A": pl.List(pl.Int64),
+    }

@@ -66,7 +66,6 @@ pub(super) fn groupby_helper(
     let (mut columns, agg_columns) = POOL.install(|| {
         let get_columns = || gb.keys_sliced(slice);
 
-        eprintln!("groups {:?}", groups);
         let get_agg = || {
             aggs.par_iter()
                 .map(|expr| {

@@ -195,7 +195,6 @@ impl<'a> AggregationContext<'a> {
         groups: Cow<'a, GroupsProxy>,
         aggregated: bool,
     ) -> AggregationContext<'a> {
-        eprint!("\nIN AGG CONTEXT NEW {:?} {:?} {:?}\n", series, groups, aggregated);
         let series = match (aggregated, series.dtype()) {
             (true, &DataType::List(_)) => {
                 assert_eq!(series.len(), groups.len());
@@ -220,7 +219,6 @@ impl<'a> AggregationContext<'a> {
     }
 
     fn from_literal(lit: Series, groups: Cow<'a, GroupsProxy>, is_list_like: bool) -> AggregationContext<'a> {
-        eprint!("\nIN AGG CONTEXT FROM LITERAL lit {:?} groups {:?}\n", lit, groups);
         Self {
             state: AggState::Literal(lit),
             groups,

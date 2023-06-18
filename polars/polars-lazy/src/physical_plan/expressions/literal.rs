@@ -23,14 +23,13 @@ impl PhysicalExpr for LiteralExpr {
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
         const NAME: &str = "literal";
         use LiteralValue::*;
-        eprintln!("\nIN EVALUATE {:?}\n", &self.0);
         let s = match &self.0 {
             #[cfg(feature = "dtype-i8")]
             Int8(v) => Int8Chunked::full(NAME, *v, 1).into_series(),
             #[cfg(feature = "dtype-i16")]
-            Int16(v) => {eprintln!("INT16"); Int16Chunked::full(NAME, *v, 1).into_series()},
-            Int32(v) => {eprintln!("INT32"); Int32Chunked::full(NAME, *v, 1).into_series()},
-            Int64(v) => {eprintln!("NON-RANGE"); Int64Chunked::full(NAME, *v, 1).into_series()},
+            Int16(v) => Int16Chunked::full(NAME, *v, 1).into_series(),
+            Int32(v) => Int32Chunked::full(NAME, *v, 1).into_series(),
+            Int64(v) => Int64Chunked::full(NAME, *v, 1).into_series(),
             #[cfg(feature = "dtype-u8")]
             UInt8(v) => UInt8Chunked::full(NAME, *v, 1).into_series(),
             #[cfg(feature = "dtype-u16")]
@@ -45,7 +44,7 @@ impl PhysicalExpr for LiteralExpr {
                 low,
                 high,
                 data_type,
-            } => {eprintln!("IN RANGE"); match data_type {
+            } => match data_type {
                 DataType::Int32 => {
                     polars_ensure!(
                         *low >= i32::MIN as i64 && *high <= i32::MAX as i64,
@@ -57,7 +56,6 @@ impl PhysicalExpr for LiteralExpr {
                     ca.into_inner().into_series()
                 }
                 DataType::Int64 => {
-                    eprintln!("IN RANGE");
                     let low = *low;
                     let high = *high;
                     let ca: NoNull<Int64Chunked> = (low..high).collect();
@@ -76,7 +74,7 @@ impl PhysicalExpr for LiteralExpr {
                 dt => polars_bail!(
                     InvalidOperation: "datatype `{}` is not supported as range", dt
                 ),
-            }},
+            },
             Utf8(v) => Utf8Chunked::full(NAME, v, 1).into_series(),
             Binary(v) => BinaryChunked::full(NAME, v, 1).into_series(),
             #[cfg(feature = "dtype-datetime")]
@@ -91,7 +89,7 @@ impl PhysicalExpr for LiteralExpr {
             Date(v) => Int32Chunked::full(NAME, *v, 1).into_date().into_series(),
             #[cfg(feature = "dtype-datetime")]
             Time(v) => Int64Chunked::full(NAME, *v, 1).into_time().into_series(),
-            Series(series) => {eprintln!("This is a series {:?}", series); series.deref().clone()},
+            Series(series) => series.deref().clone(),
         };
         Ok(s)
     }
@@ -108,14 +106,13 @@ impl PhysicalExpr for LiteralExpr {
         let s = self.evaluate(df, state)?;
         let is_list_like = match &self.0 {
             Range {
-                low,
-                high,
-                data_type,
+                low: _,
+                high: _,
+                data_type: _,
             } => true,
             Series(_) => true,
             _ => false,
         };
-        eprintln!("is list like {:?}", is_list_like);
         Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups), is_list_like))
     }
 
