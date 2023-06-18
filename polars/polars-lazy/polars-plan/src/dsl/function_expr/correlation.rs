@@ -179,25 +179,20 @@ fn spearman_rank_corr(s: &[Series], ddof: u8, propagate_nans: bool) -> PolarsRes
     let a = a.drop_nulls();
     let b = b.drop_nulls();
 
-    let a_idx = a.rank(
+    let a_rank = a.rank(
         RankOptions {
-            method: RankMethod::Min,
+            method: RankMethod::Average,
             ..Default::default()
         },
         None,
     );
-    let b_idx = b.rank(
+    let b_rank = b.rank(
         RankOptions {
-            method: RankMethod::Min,
+            method: RankMethod::Average,
             ..Default::default()
         },
         None,
     );
-    let a_idx = a_idx.idx().unwrap();
-    let b_idx = b_idx.idx().unwrap();
 
-    Ok(Series::new(
-        name,
-        &[polars_core::functions::pearson_corr_i(a_idx, b_idx, ddof)],
-    ))
+    pearson_corr(&[a_rank, b_rank], ddof)
 }
