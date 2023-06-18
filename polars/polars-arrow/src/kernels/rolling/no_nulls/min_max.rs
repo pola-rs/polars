@@ -139,14 +139,14 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
 
         let entering_start = std::cmp::max(old_last_end, start);
         let entering = get_max_and_idx(self.slice, entering_start, end);
-        let emtpy_overlap = old_last_end < start;
+        let empty_overlap = old_last_end < start;
 
-        if entering.is_some_and(|em| compare_fn_nan_max(&self.max, em.1).is_le() || emtpy_overlap) {
+        if entering.is_some_and(|em| compare_fn_nan_max(&self.max, em.1).is_le() || empty_overlap) {
             // If the entering max >= the current max return early, since no value in the overlap can be larger than either.
             self.max = *entering.unwrap().1;
             self.max_idx = entering_start + entering.unwrap().0;
             return self.max;
-        } else if self.max_idx >= start || emtpy_overlap {
+        } else if self.max_idx >= start || empty_overlap {
             // If the entering max isn't the largest but the current max is between start and end we can still ignore the overlap
             return self.max;
         }
