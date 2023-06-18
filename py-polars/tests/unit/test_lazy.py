@@ -1514,7 +1514,7 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     assert result_eager.frame_equal(result_lazy)
 
 
-def test_take_after_groupby_schema():
+def test_take_after_groupby_schema() -> None:
     ldf = pl.LazyFrame({"A": [1, 2, 3, 4], "B": [1, 1, 2, 2]})
     assert ldf.groupby("B").agg(pl.col("A").take(0)).collect().schema == {
         "B": pl.Int64,
