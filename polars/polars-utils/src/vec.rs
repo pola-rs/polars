@@ -1,3 +1,5 @@
+use std::mem::MaybeUninit;
+
 use num_traits::Zero;
 
 pub trait IntoRawParts<T> {
@@ -18,23 +20,29 @@ impl<T> IntoRawParts<T> for Vec<T> {
     }
 }
 
-// A resize that may overwrite the stack ptr
-// and thus can realloc
+/// Fill current allocation if if > 0
+/// otherwise realloc
 pub trait ResizeFaster<T: Copy> {
-    fn resize_and_fill(&mut self, new_len: usize, value: T);
+    fn fill_or_alloc(&mut self, new_len: usize, value: T);
 }
 
 impl<T: Copy + Zero + PartialEq> ResizeFaster<T> for Vec<T> {
-    fn resize_and_fill(&mut self, new_len: usize, value: T) {
-        if self.capacity() == 0 || value == Zero::zero() || new_len > self.len() {
+    fn fill_or_alloc(&mut self, new_len: usize, value: T) {
+        if self.capacity() == 0 {
             // it is faster to allocate zeroed
             // so if the capacity is 0, we alloc (value might be 0)
             *self = vec![value; new_len]
         } else {
-            self.truncate(new_len);
-            for v in self {
-                *v = value
-            }
+            // first clear then reserve so that the reserve doesn't have
+            // to memcpy in case it needs to realloc.
+            self.clear();
+            self.reserve(new_len);
+
+            // // init the uninit values
+            let spare = &mut self.spare_capacity_mut()[..new_len];
+            let init_value = MaybeUninit::new(value);
+            spare.fill(init_value);
+            unsafe { self.set_len(new_len) }
         }
     }
 }

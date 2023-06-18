@@ -174,7 +174,7 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
             })
             .sum();
 
-        offsets.resize_and_fill(num_rows + 1, row_size_fixed);
+        offsets.fill_or_alloc(num_rows + 1, row_size_fixed);
         unsafe { offsets.set_len(num_rows) };
 
         // first write lengths to this buffer
@@ -224,7 +224,7 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
         offsets.push(lagged_offset);
 
         // todo! allocate uninit
-        values.resize_and_fill(current_offset, 0u8);
+        values.fill_or_alloc(current_offset, 0u8);
     } else {
         let row_size: usize = columns
             .iter()
@@ -232,7 +232,7 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
             .sum();
         let n_bytes = num_rows * row_size;
         // todo! allocate uninit
-        values.resize_and_fill(n_bytes, 0u8);
+        values.fill_or_alloc(n_bytes, 0u8);
 
         // note that offsets are shifted to the left
         // assume 2 fields with a len of 1
