@@ -1,6 +1,7 @@
 use polars_core::prelude::{polars_bail, polars_err, PolarsError, PolarsResult};
 use polars_lazy::dsl::Expr;
 use polars_plan::dsl::count;
+use polars_plan::logical_plan::LiteralValue;
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
     WindowSpec, WindowType,
@@ -84,6 +85,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT POW(column_1, 2) from df;
     /// ```
     Pow,
+    /// SQL 'round' function
+    /// ```sql
+    /// SELECT ROUND(column_1, 3) from df;
+    /// ```
+    Round,
     // ----
     // String functions
     // ----
@@ -271,6 +277,7 @@ impl PolarsSqlFunctions {
             "max",
             "min",
             "pow",
+            "round",
             "rtrim",
             "starts_with",
             "stddev",
@@ -303,6 +310,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "log1p" => Self::Log1p,
             "log2" => Self::Log2,
             "pow" => Self::Pow,
+            "round" => Self::Round,
             // ----
             // String functions
             // ----
@@ -366,6 +374,20 @@ impl SqlFunctionVisitor<'_> {
             Log1p => self.visit_unary(Expr::log1p),
             Log2 => self.visit_unary(|e| e.log(2.0)),
             Pow => self.visit_binary::<Expr>(Expr::pow),
+            Round => match function.args.len() {
+                1 => self.visit_unary(|e| e.round(0)),
+                2 => self.try_visit_binary(|e, decimals| {
+                    Ok(e.round(match decimals {
+                        Expr::Literal(LiteralValue::Int64(n)) => n as u32,
+                        _ => {
+                            polars_bail!(InvalidOperation: "Invalid 'decimals' for Round: {}", function.args[1]);
+                        }
+                    }))
+                }),
+                _ => {
+                    polars_bail!(InvalidOperation:"Invalid number of arguments for Round: {}",function.args.len());
+                },
+            },
             // ----
             // String functions
             // ----
@@ -374,7 +396,7 @@ impl SqlFunctionVisitor<'_> {
             LTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().lstrip(None)),
                 2 => self.visit_binary(|e, s| e.str().lstrip(Some(s))),
-                _ => panic!(
+                _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for LTrim: {}",
                     function.args.len()
                 ),
@@ -382,7 +404,7 @@ impl SqlFunctionVisitor<'_> {
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().rstrip(None)),
                 2 => self.visit_binary(|e, s| e.str().rstrip(Some(s))),
-                _ => panic!(
+                _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for RTrim: {}",
                     function.args.len()
                 ),
@@ -488,6 +510,13 @@ impl SqlFunctionVisitor<'_> {
     }
 
     fn visit_binary<Arg: FromSqlExpr>(&self, f: impl Fn(Expr, Arg) -> Expr) -> PolarsResult<Expr> {
+        self.try_visit_binary(|e, a| Ok(f(e, a)))
+    }
+
+    fn try_visit_binary<Arg: FromSqlExpr>(
+        &self,
+        f: impl Fn(Expr, Arg) -> PolarsResult<Expr>,
+    ) -> PolarsResult<Expr> {
         let function = self.func;
         let args = extract_args(function);
         if let FunctionArgExpr::Expr(sql_expr) = args[0] {
@@ -495,7 +524,7 @@ impl SqlFunctionVisitor<'_> {
                 self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &function.over)?;
             if let FunctionArgExpr::Expr(sql_expr) = args[1] {
                 let expr2 = Arg::from_sql_expr(sql_expr, self.ctx)?;
-                Ok(f(expr, expr2))
+                f(expr, expr2)
             } else {
                 not_supported_error(function.name.0[0].value.as_str(), &args)
             }

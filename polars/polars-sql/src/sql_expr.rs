@@ -139,7 +139,6 @@ impl SqlExprVisitor<'_> {
             UnaryOperator::Plus => lit(0) + expr,
             UnaryOperator::Minus => lit(0) - expr,
             UnaryOperator::Not => expr.not(),
-            UnaryOperator::PGSquareRoot => expr.pow(0.5),
             other => polars_bail!(InvalidOperation: "Unary operator {:?} is not supported", other),
         })
     }
