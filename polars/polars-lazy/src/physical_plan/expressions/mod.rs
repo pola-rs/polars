@@ -113,6 +113,9 @@ pub struct AggregationContext<'a> {
     // not really a final aggregation as left is still a list, but right only
     // contains null and thus propagates that.
     null_propagated: bool,
+    // special case state that is always true except if we hand over a scalar to an aggregation
+    // take_on_range: bool, // TOBI
+    is_list_like: bool,
 }
 
 impl<'a> AggregationContext<'a> {
@@ -192,6 +195,7 @@ impl<'a> AggregationContext<'a> {
         groups: Cow<'a, GroupsProxy>,
         aggregated: bool,
     ) -> AggregationContext<'a> {
+        eprint!("\nIN AGG CONTEXT NEW {:?} {:?} {:?}\n", series, groups, aggregated);
         let series = match (aggregated, series.dtype()) {
             (true, &DataType::List(_)) => {
                 assert_eq!(series.len(), groups.len());
@@ -211,10 +215,12 @@ impl<'a> AggregationContext<'a> {
             update_groups: UpdateGroups::No,
             original_len: true,
             null_propagated: false,
+            is_list_like: false,
         }
     }
 
-    fn from_literal(lit: Series, groups: Cow<'a, GroupsProxy>) -> AggregationContext<'a> {
+    fn from_literal(lit: Series, groups: Cow<'a, GroupsProxy>, is_list_like: bool) -> AggregationContext<'a> {
+        eprint!("\nIN AGG CONTEXT FROM LITERAL lit {:?} groups {:?}\n", lit, groups);
         Self {
             state: AggState::Literal(lit),
             groups,
@@ -222,6 +228,7 @@ impl<'a> AggregationContext<'a> {
             update_groups: UpdateGroups::No,
             original_len: true,
             null_propagated: false,
+            is_list_like: is_list_like,
         }
     }
 
