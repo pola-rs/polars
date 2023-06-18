@@ -979,6 +979,25 @@ def test_spearman_corr() -> None:
     assert np.isclose(out[1], -1.0)
 
 
+def test_spearman_corr_ties() -> None:
+    """In Spearman correlation, ranks are computed using the average method ."""
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 3, 7, 4], "b": [4, 3, 2, 2, 4, 3, 1]})
+
+    result = df.select(
+        pl.corr("a", "b", method="spearman").alias("a1"),
+        pl.corr(pl.col("a").rank("min"), pl.col("b").rank("min")).alias("a2"),
+        pl.corr(pl.col("a").rank(), pl.col("b").rank()).alias("a3"),
+    )
+    expected = pl.DataFrame(
+        [
+            pl.Series("a1", [-0.19048483669757843], dtype=pl.Float32),
+            pl.Series("a2", [-0.17223653586587362], dtype=pl.Float64),
+            pl.Series("a3", [-0.19048483669757843], dtype=pl.Float32),
+        ]
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_pearson_corr() -> None:
     ldf = pl.LazyFrame(
         {
