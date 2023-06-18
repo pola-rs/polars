@@ -458,8 +458,13 @@ pub(crate) fn to_datetime(
                 (TimeUnit::Microseconds, _) => infer.transform = transform_datetime_us,
                 (TimeUnit::Milliseconds, _) => infer.transform = transform_datetime_ms,
             }
-            if tz.is_some() && pattern == Pattern::DatetimeYMDZ {
-                polars_bail!(ComputeError: "cannot parse tz-aware values with tz-aware dtype - please drop the time zone from the dtype.")
+            if pattern == Pattern::DatetimeYMDZ
+                && tz.is_some()
+                && tz.map(|x| x.as_str()) != Some("UTC")
+            {
+                polars_bail!(ComputeError: "offset-aware datetimes are converted to UTC. \
+                    Please either drop the time zone from the function call, or set it to UTC. \
+                    To convert to a different time zone, please use `convert_time_zone`.")
             }
             match pattern {
                 #[cfg(feature = "timezones")]

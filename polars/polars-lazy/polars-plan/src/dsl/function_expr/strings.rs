@@ -406,12 +406,14 @@ fn to_datetime(
         Some(format) => TZ_AWARE_RE.is_match(format),
         _ => false,
     };
-    if let (Some(_), true) = (time_zone, tz_aware) {
-        polars_bail!(
-            ComputeError:
-            "cannot use strptime with both a tz-aware format and a tz-aware dtype, \
-            please drop time zone from the dtype"
-        )
+    if let (Some(tz), true) = (time_zone, tz_aware) {
+        if tz != "UTC" {
+            polars_bail!(
+                ComputeError:
+                "if using strftime/to_datetime with a time-zone-aware format, the output will be in UTC. Please either drop the time zone from the function call, or set it to UTC. \
+                If you are trying to convert the output to a different time zone, please use `convert_time_zone`."
+            )
+        }
     };
 
     let ca = s.utf8()?;
