@@ -11,6 +11,7 @@ description = "private utils for the polars dataframe library"
 [dependencies]
 ahash.workspace = true
 hashbrown.workspace = true
+num-traits.workspace = true
 once_cell.workspace = true
 rayon.workspace = true
 smartstring.workspace = true

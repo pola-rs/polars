@@ -4,6 +4,7 @@ use arrow::array::{
 use arrow::compute::cast::cast;
 use arrow::datatypes::{DataType as ArrowDataType, DataType};
 use arrow::types::NativeType;
+use polars_utils::vec::ResizeFaster;
 
 use crate::fixed::FixedLengthEncoding;
 use crate::row::{RowsEncoded, SortField};
@@ -173,9 +174,8 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
             })
             .sum();
 
-        offsets.clear();
-        offsets.reserve(num_rows + 1);
-        offsets.resize(num_rows, row_size_fixed);
+        offsets.resize_and_fill(num_rows + 1, row_size_fixed);
+        unsafe { values.set_len(num_rows) };
 
         // first write lengths to this buffer
         let lengths = offsets;
@@ -223,9 +223,8 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
         // ensure we have len + 1 offsets
         offsets.push(lagged_offset);
 
-        values.clear();
         // todo! allocate uninit
-        values.resize(current_offset, 0u8);
+        values.resize_and_fill(current_offset, 0u8);
     } else {
         let row_size: usize = columns
             .iter()
@@ -233,13 +232,7 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
             .sum();
         let n_bytes = num_rows * row_size;
         // todo! allocate uninit
-        if values.capacity() == 0 {
-            // it is faster to allocate zeroed
-            // so if the capacity is 0, we alloc
-            *values = vec![0u8; n_bytes]
-        } else {
-            values.resize(n_bytes, 0u8);
-        }
+        values.resize_and_fill(n_bytes, 0u8);
 
         // note that offsets are shifted to the left
         // assume 2 fields with a len of 1
