@@ -61,13 +61,14 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
 
         let entering_start = std::cmp::max(old_last_end, start);
         let entering = get_min_and_idx(self.slice, entering_start, end);
+        let empty_overlap = old_last_end <= start;
 
-        if entering.is_some_and(|em| compare_fn_nan_min(&self.min, em.1).is_ge()) {
+        if entering.is_some_and(|em| compare_fn_nan_min(&self.min, em.1).is_ge() || empty_overlap) {
             // If the entering min <= the current min return early, since no value in the overlap can be smaller than either.
             self.min = *entering.unwrap().1;
             self.min_idx = entering_start + entering.unwrap().0;
             return self.min;
-        } else if self.min_idx >= start || old_last_end < start {
+        } else if self.min_idx >= start || empty_overlap {
             // If the entering min isn't the smallest but the current min is between start and end we can still ignore the overlap
             return self.min;
         }
@@ -138,13 +139,14 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
 
         let entering_start = std::cmp::max(old_last_end, start);
         let entering = get_max_and_idx(self.slice, entering_start, end);
+        let emtpy_overlap = old_last_end < start;
 
-        if entering.is_some_and(|em| compare_fn_nan_max(&self.max, em.1).is_le()) {
+        if entering.is_some_and(|em| compare_fn_nan_max(&self.max, em.1).is_le() || emtpy_overlap) {
             // If the entering max >= the current max return early, since no value in the overlap can be larger than either.
             self.max = *entering.unwrap().1;
             self.max_idx = entering_start + entering.unwrap().0;
             return self.max;
-        } else if self.max_idx >= start || old_last_end < start {
+        } else if self.max_idx >= start || emtpy_overlap {
             // If the entering max isn't the largest but the current max is between start and end we can still ignore the overlap
             return self.max;
         }
