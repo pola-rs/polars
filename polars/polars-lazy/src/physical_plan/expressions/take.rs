@@ -57,7 +57,6 @@ impl PhysicalExpr for TakeExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
         let mut idx = self.idx.evaluate_on_groups(df, groups, state)?;
-        // eprintln!("\nTHIS IS THE idx: {:?}", idx); // TOBI
 
         let idx =
             match idx.state {

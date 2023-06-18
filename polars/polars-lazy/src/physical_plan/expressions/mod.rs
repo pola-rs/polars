@@ -114,7 +114,6 @@ pub struct AggregationContext<'a> {
     // contains null and thus propagates that.
     null_propagated: bool,
     // special case state that is always true except if we hand over a scalar to an aggregation
-    // take_on_range: bool, // TOBI
     is_list_like: bool,
 }
 
@@ -214,7 +213,7 @@ impl<'a> AggregationContext<'a> {
             update_groups: UpdateGroups::No,
             original_len: true,
             null_propagated: false,
-            is_list_like: false,
+            is_list_like: true,
         }
     }
 
