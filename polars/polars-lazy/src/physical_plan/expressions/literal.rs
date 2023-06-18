@@ -109,11 +109,15 @@ impl PhysicalExpr for LiteralExpr {
                 low: _,
                 high: _,
                 data_type: _,
-            } => true,
-            Series(_) => true,
+            }
+            | Series(_) => true,
             _ => false,
         };
-        Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups), is_list_like))
+        Ok(AggregationContext::from_literal(
+            s,
+            Cow::Borrowed(groups),
+            is_list_like,
+        ))
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {

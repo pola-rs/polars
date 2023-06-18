@@ -217,7 +217,11 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    fn from_literal(lit: Series, groups: Cow<'a, GroupsProxy>, is_list_like: bool) -> AggregationContext<'a> {
+    fn from_literal(
+        lit: Series,
+        groups: Cow<'a, GroupsProxy>,
+        is_list_like: bool,
+    ) -> AggregationContext<'a> {
         Self {
             state: AggState::Literal(lit),
             groups,
@@ -225,7 +229,7 @@ impl<'a> AggregationContext<'a> {
             update_groups: UpdateGroups::No,
             original_len: true,
             null_propagated: false,
-            is_list_like: is_list_like,
+            is_list_like,
         }
     }
 
