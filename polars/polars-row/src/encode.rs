@@ -175,7 +175,7 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
             .sum();
 
         offsets.resize_and_fill(num_rows + 1, row_size_fixed);
-        unsafe { values.set_len(num_rows) };
+        unsafe { offsets.set_len(num_rows) };
 
         // first write lengths to this buffer
         let lengths = offsets;
