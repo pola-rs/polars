@@ -122,7 +122,9 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     fn new(name: &str, s: T) -> Self {
         let series_slice = s.as_ref();
         let list_cap = series_slice.len();
-
+        if list_cap <= 0 {
+            panic!("series slice should have more than one item!");
+        }
         let dt = series_slice[0].dtype();
 
         // inner type is also list so we need the anonymous builder

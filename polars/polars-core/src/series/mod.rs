@@ -1159,4 +1159,10 @@ mod test {
         let ca = out.f64().unwrap();
         assert_eq!(ca.get(0), Some(1.0));
     }
+
+    #[test]
+    fn test_empty_series() {
+        let series = Series::new("test", Vec::<Series>::new());
+        assert_eq!(series.len(), 0);
+    }
 }
