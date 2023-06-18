@@ -658,3 +658,34 @@ def test_rolling_window_size_9160() -> None:
     assert pl.Series([1]).rolling_apply(
         lambda x: sum(x), window_size=2, min_periods=1
     ).to_list() == [1]
+
+
+def test_rolling_empty_window_9406() -> None:
+    datecol = pl.Series(
+        "d",
+        [datetime(2019, 1, x) for x in [16, 17, 18, 22, 23]],
+        dtype=pl.Datetime(time_unit="us", time_zone=None),
+    )
+    rawdata = pl.Series("x", [1.1, 1.2, 1.3, 1.15, 1.25], dtype=pl.Float64)
+    rmin = pl.Series("x", [None, 1.1, 1.1, None, 1.15], dtype=pl.Float64)
+    rmax = pl.Series("x", [None, 1.1, 1.2, None, 1.15], dtype=pl.Float64)
+    df = pl.DataFrame([datecol, rawdata])
+
+    assert_frame_equal(
+        pl.DataFrame([datecol, rmax]),
+        df.select(
+            [
+                pl.col("d"),
+                pl.col("x").rolling_max(by="d", window_size="3d", closed="left"),
+            ]
+        ),
+    )
+    assert_frame_equal(
+        pl.DataFrame([datecol, rmin]),
+        df.select(
+            [
+                pl.col("d"),
+                pl.col("x").rolling_min(by="d", window_size="3d", closed="left"),
+            ]
+        ),
+    )
