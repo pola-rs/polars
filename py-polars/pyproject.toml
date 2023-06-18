@@ -165,6 +165,7 @@ strict = true
 [tool.ruff.per-file-ignores]
 "polars/datatypes.py" = ["B019"]
 "tests/**/*.py" = ["D100", "D103", "B018"]
+"polars/utils/show_versions.py" = ["D301"]
 
 [tool.pytest.ini_options]
 addopts = [
