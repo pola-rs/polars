@@ -454,3 +454,14 @@ def test_list_count_match_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
 
     assert a.select(pl.col("a").list.count_match(True))["a"].to_list() == [1]
+
+
+def test_list_filter() -> None:
+    s = pl.Series(
+        [
+            [1, 2, 3, 4, 5],
+            [1, 3, 7, 8],
+            [6, 1, 4, 5],
+        ]
+    )
+    assert s.list.filter(pl.element() >= 5).to_list() == [[5], [7, 8], [6, 5]]

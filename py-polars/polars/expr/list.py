@@ -819,3 +819,34 @@ class ExprListNameSpace:
 
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
+
+    def filter(self, predicate: Expr) -> Expr:
+        """
+        Run filter expression against the list's elements.
+
+        Parameters
+        ----------
+        predicate
+            Boolean expression.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     [
+        ...         [1, 2, 3, 4, 5],
+        ...         [1, 3, 7, 8],
+        ...         [6, 1, 4, 5],
+        ...     ]
+        ... )
+        >>> s.list.filter(pl.element() < 5)
+        shape: (3,)
+        Series: '' [list[i64]]
+        [
+                [1, 2, 3, 4]
+                [1, 3]
+                [1, 4]
+        ]
+        """
+        from polars import element
+
+        return self.eval(element().filter(predicate))
