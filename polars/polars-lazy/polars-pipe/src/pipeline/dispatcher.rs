@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
@@ -182,35 +183,76 @@ impl PipeLine {
         ec: &PExecutionContext,
         operator_start: usize,
         operator_end: usize,
-    ) -> PolarsResult<Vec<SinkResult>> {
+    ) -> PolarsResult<Option<SinkResult>> {
         debug_assert!(chunks.len() <= sink.len());
-        let mut operators = std::mem::take(&mut self.operators);
-        let out = POOL.install(|| {
-            chunks
-                .into_par_iter()
-                .zip(sink.par_iter_mut())
-                .zip(operators.par_iter_mut())
-                .map(|((chunk, sink), operator_pipe)| {
-                    // truncate the operators that should run into the current sink.
-                    let operator_pipe = &mut operator_pipe[operator_start..operator_end];
 
-                    if operator_pipe.is_empty() {
-                        sink.sink(ec, chunk)
-                    } else {
-                        self.push_operators(chunk, ec, operator_pipe, sink)
+        fn run_operator_pipe(
+            pipe: &PipeLine,
+            operator_start: usize,
+            operator_end: usize,
+            chunk: DataChunk,
+            sink: &mut Box<dyn Sink>,
+            operator_pipe: &mut [Box<dyn Operator>],
+            ec: &PExecutionContext,
+        ) -> PolarsResult<SinkResult> {
+            // truncate the operators that should run into the current sink.
+            let operator_pipe = &mut operator_pipe[operator_start..operator_end];
+
+            if operator_pipe.is_empty() {
+                sink.sink(ec, chunk)
+            } else {
+                pipe.push_operators(chunk, ec, operator_pipe, sink)
+            }
+        }
+        let sink_results = Arc::new(Mutex::new(None));
+
+        // 1. We will iterate the chunks/sinks/operators
+        // where every iteration belongs to a single thread
+        // 2. Then we will truncate the pipeline by `start`/`end`
+        // so that the pipeline represents pipeline that belongs to this sink
+        // 3. Then we push the data
+        // # Threading
+        // Within a rayon scope
+        // we spawn the jobs. They don't have to finish in any specific order,
+        // this makes it more lightweight than `par_iter`
+
+        // temporarily take to please the borrow checker
+        let mut operators = std::mem::take(&mut self.operators);
+
+        // borrow as ref and move into the closure
+        let pipeline = &*self;
+        POOL.scope(|s| {
+            for ((chunk, sink), operator_pipe) in chunks
+                .clone()
+                .into_iter()
+                .zip(sink.iter_mut())
+                .zip(operators.iter_mut())
+            {
+                let sink_results = sink_results.clone();
+                s.spawn(move |_| {
+                    let out = run_operator_pipe(
+                        pipeline,
+                        operator_start,
+                        operator_end,
+                        chunk,
+                        sink,
+                        operator_pipe,
+                        ec,
+                    );
+                    match out {
+                        Ok(SinkResult::Finished) | Err(_) => {
+                            let mut lock = sink_results.lock().unwrap();
+                            *lock = Some(out)
+                        }
+                        _ => {}
                     }
                 })
-                // only collect failed and finished messages as there should be acted upon those
-                // the other ones (e.g. success and can have more input) can be ignored
-                // this saves a lot of allocations.
-                .filter(|result| match result {
-                    Ok(sink_result) => matches!(sink_result, SinkResult::Finished),
-                    Err(_) => true,
-                })
-                .collect()
+            }
         });
         self.operators = operators;
-        out
+
+        let mut lock = sink_results.lock().unwrap();
+        lock.take().transpose()
     }
 
     /// This thread local logic that pushed a data chunk into the operators + sink
@@ -300,10 +342,7 @@ impl PipeLine {
                         operator_end,
                     )?;
 
-                    if results
-                        .iter()
-                        .any(|sink_result| matches!(sink_result, SinkResult::Finished))
-                    {
+                    if let Some(SinkResult::Finished) = results {
                         sink_finished = true;
                         break;
                     }
