@@ -563,7 +563,7 @@ class LazyFrame:
     @property
     def columns(self) -> list[str]:
         """
-        Get or set column names.
+        Get column names.
 
         Examples
         --------
