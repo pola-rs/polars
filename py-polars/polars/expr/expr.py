@@ -5134,11 +5134,9 @@ class Expr:
         └────────┴─────────────────────┘
 
         Compute the rolling max with the default left closure of temporal windows
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_max=pl.col("row_nr").rolling_max(
-        ...             window_size="2h", by="date"
-        ...         )
+        >>> df_temporal.with_columns(
+        ...     rolling_row_max=pl.col("row_nr").rolling_max(
+        ...         window_size="2h", by="date"
         ...     )
         ... )
         shape: (25, 3)
