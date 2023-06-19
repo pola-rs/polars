@@ -4,7 +4,7 @@ use arrow::array::{
 use arrow::compute::cast::cast;
 use arrow::datatypes::{DataType as ArrowDataType, DataType};
 use arrow::types::NativeType;
-use polars_utils::vec::{PushUnchecked, ResizeFaster};
+use polars_utils::vec::PushUnchecked;
 
 use crate::fixed::FixedLengthEncoding;
 use crate::row::{RowsEncoded, SortField};
@@ -87,9 +87,11 @@ fn encode_primitive<T: NativeType + FixedLengthEncoding>(
     out: &mut RowsEncoded,
 ) {
     if arr.null_count() == 0 {
-        crate::fixed::encode_slice(arr.values().as_slice(), out, field);
+        unsafe { crate::fixed::encode_slice(arr.values().as_slice(), out, field) };
     } else {
-        crate::fixed::encode_iter(arr.into_iter().map(|v| v.copied()), out, field);
+        unsafe {
+            crate::fixed::encode_iter(arr.into_iter().map(|v| v.copied()), out, field);
+        }
     }
 }
 
@@ -243,17 +245,16 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
         // ensure we have len + 1 offsets
         offsets.push(lagged_offset);
 
-        // todo! allocate uninit
         values.clear();
-        values.fill_or_alloc(current_offset, 0u8);
+        values.reserve(current_offset);
     } else {
         let row_size: usize = columns
             .iter()
             .map(|arr| encoded_size(arr.data_type()))
             .sum();
         let n_bytes = num_rows * row_size;
-        // todo! allocate uninit
-        values.fill_or_alloc(n_bytes, 0u8);
+        values.clear();
+        values.reserve(n_bytes);
 
         // note that offsets are shifted to the left
         // assume 2 fields with a len of 1

@@ -1,3 +1,5 @@
+use std::mem::MaybeUninit;
+
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::DataType;
@@ -139,12 +141,12 @@ fn encode_value<T: FixedLengthEncoding>(
     value: &T,
     offset: &mut usize,
     descending: bool,
-    buf: &mut [u8],
+    buf: &mut [MaybeUninit<u8>],
 ) {
     let end_offset = *offset + T::ENCODED_LEN;
     let dst = unsafe { buf.get_unchecked_release_mut(*offset..end_offset) };
     // set valid
-    dst[0] = 1;
+    dst[0] = MaybeUninit::new(1);
     let mut encoded = value.encode();
 
     // invert bits to reverse order
@@ -154,18 +156,21 @@ fn encode_value<T: FixedLengthEncoding>(
         }
     }
 
-    dst[1..].copy_from_slice(encoded.as_ref());
+    dst[1..].copy_from_slice(encoded.as_ref().as_uninit());
     *offset = end_offset;
 }
 
-pub(crate) fn encode_slice<T: FixedLengthEncoding>(
+pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     input: &[T],
     out: &mut RowsEncoded,
     field: &SortField,
 ) {
+    out.values.set_len(0);
+    let values = out.values.spare_capacity_mut();
     for (offset, value) in out.offsets.iter_mut().skip(1).zip(input) {
-        encode_value(value, offset, field.descending, &mut out.values);
+        encode_value(value, offset, field.descending, values);
     }
+    out.values.set_len(out.values.capacity())
 }
 
 #[inline]
@@ -177,20 +182,26 @@ pub(crate) fn get_null_sentinel(field: &SortField) -> u8 {
     }
 }
 
-pub(crate) fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
+pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
     input: I,
     out: &mut RowsEncoded,
     field: &SortField,
 ) {
+    out.values.set_len(0);
+    let values = out.values.spare_capacity_mut();
     for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
         if let Some(value) = opt_value {
-            encode_value(&value, offset, field.descending, &mut out.values);
+            encode_value(&value, offset, field.descending, values);
         } else {
-            unsafe { *out.values.get_unchecked_release_mut(*offset) = get_null_sentinel(field) };
+            unsafe {
+                *values.get_unchecked_release_mut(*offset) =
+                    MaybeUninit::new(get_null_sentinel(field))
+            };
             let end_offset = *offset + T::ENCODED_LEN;
             *offset = end_offset;
         }
     }
+    out.values.set_len(out.values.capacity())
 }
 
 pub(super) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
