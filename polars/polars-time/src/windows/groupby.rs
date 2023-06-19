@@ -525,49 +525,44 @@ pub fn groupby_values(
 
     // we have a (partial) lookbehind window
     if offset.negative {
-        if offset.duration_ns() >= period.duration_ns() {
-            // lookbehind
-            // window is within 2 periods length of t
+        // lookbehind
+        if offset.duration_ns() == period.duration_ns() {
+            // t is right at the end of the window
             // ------t---
             // [------]
-            if offset.duration_ns() < period.duration_ns() * 2 {
-                POOL.install(|| {
-                    let vals = thread_offsets
-                        .par_iter()
-                        .copied()
-                        .map(|(base_offset, len)| {
-                            let upper_bound = base_offset + len;
-                            let iter = groupby_values_iter_full_lookbehind(
-                                period,
-                                offset,
-                                &time[..upper_bound],
-                                closed_window,
-                                tu,
-                                tz,
-                                base_offset,
-                            );
-                            iter.map(|result| result.map(|(offset, len)| [offset, len]))
-                                .collect::<PolarsResult<Vec<_>>>()
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()?;
-                    Ok(flatten_par(&vals))
-                })
-            }
+            POOL.install(|| {
+                let vals = thread_offsets
+                    .par_iter()
+                    .copied()
+                    .map(|(base_offset, len)| {
+                        let upper_bound = base_offset + len;
+                        let iter = groupby_values_iter_full_lookbehind(
+                            period,
+                            offset,
+                            &time[..upper_bound],
+                            closed_window,
+                            tu,
+                            tz,
+                            base_offset,
+                        );
+                        iter.map(|result| result.map(|(offset, len)| [offset, len]))
+                            .collect::<PolarsResult<Vec<_>>>()
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                Ok(flatten_par(&vals))
+            })
+        } else if ((offset.duration_ns() >= period.duration_ns())
+            && matches!(closed_window, ClosedWindow::Left | ClosedWindow::None))
+            || ((offset.duration_ns() > period.duration_ns())
+                && matches!(closed_window, ClosedWindow::Right | ClosedWindow::Both))
+        {
             // window is completely behind t and t itself is not a member
             // ---------------t---
             //  [---]
-            else {
-                let iter = groupby_values_iter_window_behind_t(
-                    period,
-                    offset,
-                    time,
-                    closed_window,
-                    tu,
-                    tz,
-                );
-                iter.map(|result| result.map(|(offset, len)| [offset, len]))
-                    .collect::<PolarsResult<_>>()
-            }
+            let iter =
+                groupby_values_iter_window_behind_t(period, offset, time, closed_window, tu, tz);
+            iter.map(|result| result.map(|(offset, len)| [offset, len]))
+                .collect::<PolarsResult<_>>()
         }
         // partial lookbehind
         // this one is still single threaded
