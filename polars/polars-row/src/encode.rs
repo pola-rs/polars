@@ -4,7 +4,7 @@ use arrow::array::{
 use arrow::compute::cast::cast;
 use arrow::datatypes::{DataType as ArrowDataType, DataType};
 use arrow::types::NativeType;
-use polars_utils::vec::{PushUnchecked, ResizeFaster};
+use polars_utils::vec::PushUnchecked;
 
 use crate::fixed::FixedLengthEncoding;
 use crate::row::{RowsEncoded, SortField};
@@ -155,6 +155,8 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
     }
 }
 
+// Returns the length that the caller must set on the `values` buf  once the bytes
+// are initialized.
 pub fn allocate_rows_buf(
     columns: &[ArrayRef],
     values: &mut Vec<u8>,
@@ -254,9 +256,8 @@ pub fn allocate_rows_buf(
         // ensure we have len + 1 offsets
         offsets.push(lagged_offset);
 
-        // the values need to be zero init
-        // because the string encoding only writes the parts it encodes
-        values.fill_or_alloc(current_offset, 0);
+        // Only reserve. The init will be done later
+        values.reserve(current_offset);
         current_offset
     } else {
         let row_size: usize = columns
