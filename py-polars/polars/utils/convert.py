@@ -215,9 +215,12 @@ def _localize(dt: datetime, time_zone: str) -> datetime:
 
 def _datetime_for_anyvalue(dt: datetime) -> tuple[float, int]:
     """Used in pyo3 anyvalue conversion."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
     # returns (s, ms)
+    if dt.tzinfo is None:
+        return (
+            dt.replace(tzinfo=timezone.utc, microsecond=0).timestamp(),
+            dt.microsecond,
+        )
     return (dt.replace(microsecond=0).timestamp(), dt.microsecond)
 
 
