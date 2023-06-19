@@ -170,7 +170,6 @@ pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     for (offset, value) in out.offsets.iter_mut().skip(1).zip(input) {
         encode_value(value, offset, field.descending, values);
     }
-    out.values.set_len(out.values.capacity())
 }
 
 #[inline]
@@ -201,7 +200,6 @@ pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEn
             *offset = end_offset;
         }
     }
-    out.values.set_len(out.values.capacity())
 }
 
 pub(super) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(

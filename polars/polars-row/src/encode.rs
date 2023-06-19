@@ -4,7 +4,7 @@ use arrow::array::{
 use arrow::compute::cast::cast;
 use arrow::datatypes::{DataType as ArrowDataType, DataType};
 use arrow::types::NativeType;
-use polars_utils::vec::PushUnchecked;
+use polars_utils::vec::{PushUnchecked, ResizeFaster};
 
 use crate::fixed::FixedLengthEncoding;
 use crate::row::{RowsEncoded, SortField};
@@ -65,19 +65,24 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
                 }
             }
         }
-        allocate_rows_buf(&flattened_columns, &mut rows.values, &mut rows.offsets);
+        let values_size =
+            allocate_rows_buf(&flattened_columns, &mut rows.values, &mut rows.offsets);
         for (arr, field) in flattened_columns.iter().zip(flattened_fields.iter()) {
             // Safety:
             // we allocated rows with enough bytes.
             unsafe { encode_array(&**arr, field, rows) }
         }
+        // safety: values are initialized
+        unsafe { rows.values.set_len(values_size) }
     } else {
-        allocate_rows_buf(columns, &mut rows.values, &mut rows.offsets);
+        let values_size = allocate_rows_buf(columns, &mut rows.values, &mut rows.offsets);
         for (arr, field) in columns.iter().zip(fields) {
             // Safety:
             // we allocated rows with enough bytes.
             unsafe { encode_array(&**arr, field, rows) }
         }
+        // safety: values are initialized
+        unsafe { rows.values.set_len(values_size) }
     }
 }
 
@@ -150,7 +155,11 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
     }
 }
 
-pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &mut Vec<usize>) {
+pub fn allocate_rows_buf(
+    columns: &[ArrayRef],
+    values: &mut Vec<u8>,
+    offsets: &mut Vec<usize>,
+) -> usize {
     let has_variable = columns.iter().any(|arr| {
         matches!(
             arr.data_type(),
@@ -245,8 +254,10 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
         // ensure we have len + 1 offsets
         offsets.push(lagged_offset);
 
-        values.clear();
-        values.reserve(current_offset);
+        // the values need to be zero init
+        // because the string encoding only writes the parts it encodes
+        values.fill_or_alloc(current_offset, 0);
+        current_offset
     } else {
         let row_size: usize = columns
             .iter()
@@ -276,6 +287,7 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
             offsets.push(current_offset);
             current_offset += row_size;
         }
+        n_bytes
     }
 }
 
