@@ -66,9 +66,9 @@ def test_groupby_rolling(
                 closed=closed,
             )
         )
-        data = window["value"].to_list()
+        value = window["value"].to_list()
         expected_dict["ts"].append(ts)
-        expected_dict["value"].append(data)
+        expected_dict["value"].append(value)
     expected = pl.DataFrame(expected_dict).select(
         pl.col("ts").cast(pl.Datetime(time_unit)),
         pl.col("value").cast(pl.List(pl.Int64)),

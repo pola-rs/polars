@@ -5,7 +5,7 @@ import warnings
 from dataclasses import dataclass
 from math import isfinite
 from textwrap import dedent
-from typing import TYPE_CHECKING, Any, Collection, Sequence
+from typing import TYPE_CHECKING, Any, Collection, Literal, Sequence, overload
 
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
 from hypothesis.strategies import (
@@ -444,11 +444,51 @@ def series(
 _failed_frame_init_msgs_: set[str] = set()
 
 
+@overload
+def dataframes(
+    cols: int | column | Sequence[column] | None = None,
+    *,
+    lazy: Literal[False] = ...,
+    min_cols: int | None = 0,
+    max_cols: int | None = MAX_COLS,
+    size: int | None = None,
+    min_size: int | None = 0,
+    max_size: int | None = MAX_DATA_SIZE,
+    chunked: bool | None = None,
+    include_cols: Sequence[column] | column | None = None,
+    null_probability: float | dict[str, float] = 0.0,
+    allow_infinities: bool = True,
+    allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+    excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+) -> SearchStrategy[DataFrame]:
+    ...
+
+
+@overload
+def dataframes(
+    cols: int | column | Sequence[column] | None = None,
+    *,
+    lazy: Literal[True],
+    min_cols: int | None = 0,
+    max_cols: int | None = MAX_COLS,
+    size: int | None = None,
+    min_size: int | None = 0,
+    max_size: int | None = MAX_DATA_SIZE,
+    chunked: bool | None = None,
+    include_cols: Sequence[column] | column | None = None,
+    null_probability: float | dict[str, float] = 0.0,
+    allow_infinities: bool = True,
+    allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+    excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+) -> SearchStrategy[LazyFrame]:
+    ...
+
+
 @defines_strategy()
 def dataframes(
     cols: int | column | Sequence[column] | None = None,
-    lazy: bool = False,
     *,
+    lazy: bool = False,
     min_cols: int | None = 0,
     max_cols: int | None = MAX_COLS,
     size: int | None = None,
