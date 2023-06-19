@@ -146,10 +146,10 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Week))
     }
 
-    /// Extract the week day from the underlying Date representation.
+    /// Extract the ISO week day from the underlying Date representation.
     /// Can be performed on Date and Datetime.
 
-    /// Returns the weekday number where monday = 0 and sunday = 6
+    /// Returns the weekday number where monday = 1 and sunday = 7
     pub fn weekday(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::WeekDay))
