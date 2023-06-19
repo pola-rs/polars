@@ -11,7 +11,7 @@ from ast import NodeVisitor
 # Files in which it's OK to set the stacklevel manually.
 # `git ls-files` lists files with forwards-slashes
 # even on Windows, so it's OK to list them like that.
-EXCLUDE = frozenset(["polars/utils/polars_version.py", "polars/testing/_tempdir.py"])
+EXCLUDE = frozenset(["polars/utils/polars_version.py"])
 
 
 class StackLevelChecker(NodeVisitor):
