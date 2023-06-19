@@ -1659,6 +1659,7 @@ version = "0.30.0"
 dependencies = [
  "ahash",
  "hashbrown 0.13.2",
+ "num-traits",
  "once_cell",
  "rayon",
  "smartstring",

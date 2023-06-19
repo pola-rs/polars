@@ -9,6 +9,7 @@ use polars_core::frame::DataFrame;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::POOL;
 use polars_utils::arena::Node;
+use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
 use crate::executors::sources::DataFrameSource;
@@ -183,7 +184,8 @@ impl PipeLine {
         ec: &PExecutionContext,
         operator_start: usize,
         operator_end: usize,
-    ) -> PolarsResult<Option<SinkResult>> {
+        src: &mut Box<dyn Source>,
+    ) -> PolarsResult<(Option<SinkResult>, SourceResult)> {
         debug_assert!(chunks.len() <= sink.len());
 
         fn run_operator_pipe(
@@ -205,6 +207,9 @@ impl PipeLine {
             }
         }
         let sink_results = Arc::new(Mutex::new(None));
+        let mut next_batches: Option<PolarsResult<SourceResult>> = None;
+        let next_batches_ptr = &mut next_batches as *mut Option<PolarsResult<SourceResult>>;
+        let next_batches_ptr = unsafe { SyncPtr::new(next_batches_ptr) };
 
         // 1. We will iterate the chunks/sinks/operators
         // where every iteration belongs to a single thread
@@ -223,7 +228,6 @@ impl PipeLine {
         let pipeline = &*self;
         POOL.scope(|s| {
             for ((chunk, sink), operator_pipe) in chunks
-                .clone()
                 .into_iter()
                 .zip(sink.iter_mut())
                 .zip(operators.iter_mut())
@@ -248,11 +252,23 @@ impl PipeLine {
                     }
                 })
             }
+            // already get batches on the thread pool
+            // if one job is finished earlier we can already start that work
+            s.spawn(|_| {
+                let out = src.get_batches(ec);
+                unsafe {
+                    let ptr = next_batches_ptr.get();
+                    *ptr = Some(out);
+                }
+            })
         });
         self.operators = operators;
 
+        let next_batches = next_batches.unwrap()?;
         let mut lock = sink_results.lock().unwrap();
-        lock.take().transpose()
+        lock.take()
+            .transpose()
+            .map(|sink_result| (sink_result, next_batches))
     }
 
     /// This thread local logic that pushed a data chunk into the operators + sink
@@ -333,16 +349,20 @@ impl PipeLine {
             std::mem::take(&mut self.sinks).into_iter().enumerate()
         {
             for src in &mut std::mem::take(&mut self.sources) {
-                while let SourceResult::GotMoreData(chunks) = src.get_batches(ec)? {
-                    let results = self.par_process_chunks(
+                let mut next_batches = src.get_batches(ec)?;
+
+                while let SourceResult::GotMoreData(chunks) = next_batches {
+                    let (sink_result, next_batches2) = self.par_process_chunks(
                         chunks,
                         &mut sink,
                         ec,
                         operator_start,
                         operator_end,
+                        src,
                     )?;
+                    next_batches = next_batches2;
 
-                    if let Some(SinkResult::Finished) = results {
+                    if let Some(SinkResult::Finished) = sink_result {
                         sink_finished = true;
                         break;
                     }
