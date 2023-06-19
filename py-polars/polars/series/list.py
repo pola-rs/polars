@@ -520,7 +520,7 @@ class ListNameSpace:
         shape: (3,)
         Series: '' [list[i64]]
         [
-                [1, 2, 3, 4]
+                [1, 2, … 4]
                 [1, 3]
                 [1, 4]
         ]
