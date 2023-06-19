@@ -5201,8 +5201,6 @@ class Expr:
             applicable if `by` has been set.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
-            Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
 
         Warnings
         --------
@@ -5321,8 +5319,6 @@ class Expr:
             applicable if `by` has been set.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
-            Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set.
 
         Warnings
         --------
