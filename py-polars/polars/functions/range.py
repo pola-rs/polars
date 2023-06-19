@@ -238,10 +238,10 @@ def date_range(
     strings "1mo" and "1y" are not well-defined units of time, and vary according to
     their starting point. For example, February 1st offset by one month returns a time
     28 days later (in a non-leap year), whereas May 1st offset by one month returns a
-    time 31 days later. An offset of one month is unambiguous when the following month
-    includes the current day, but when one begins Febrary 28th and offsets by 1 month,
-    does this mean March 28th (the next month but same day), or March 31st (the end of
-    the month)?
+    time 31 days later. In general, an offset of one month selects the same day in the
+    following month. However, this is not always intended: when one begins Febrary 28th
+    and offsets by 1 month, does the user intend to target March 28th (the next month
+    but same day), or March 31st (the end of the month)?
 
     Polars uses the first approach: February 28th offset by 1 month is March 28th. When
     a date-series is generated, each date is offset as of the prior date, meaning that
