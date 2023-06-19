@@ -10,12 +10,10 @@
 //! - `0xFF_u8` if this is not the last block for this string
 //! - otherwise the length of the block as a `u8`
 
-use std::mem::MaybeUninit;
-
 use arrow::array::BinaryArray;
 use arrow::datatypes::DataType;
 use arrow::offset::Offsets;
-use polars_utils::slice::{GetSaferUnchecked, Slice2Uninit};
+use polars_utils::slice::GetSaferUnchecked;
 
 use crate::fixed::{decode_nulls, get_null_sentinel};
 use crate::row::RowsEncoded;
@@ -64,11 +62,7 @@ pub fn encoded_len(a: Option<&[u8]>) -> usize {
 ///
 /// # Safety
 /// `out` must have allocated enough room
-unsafe fn encode_one(
-    out: &mut [MaybeUninit<u8>],
-    val: Option<&[MaybeUninit<u8>]>,
-    field: &SortField,
-) -> usize {
+unsafe fn encode_one(out: &mut [u8], val: Option<&[u8]>, field: &SortField) -> usize {
     match val {
         Some(val) if val.is_empty() => {
             let byte = if field.descending {
@@ -76,7 +70,7 @@ unsafe fn encode_one(
             } else {
                 EMPTY_SENTINEL
             };
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(byte);
+            *out.get_unchecked_release_mut(0) = byte;
             1
         }
         Some(val) => {
@@ -86,7 +80,7 @@ unsafe fn encode_one(
             let dst = out.get_unchecked_release_mut(..end_offset);
 
             // Write `2_u8` to demarcate as non-empty, non-null string
-            *dst.get_unchecked_release_mut(0) = MaybeUninit::new(NON_EMPTY_SENTINEL);
+            *dst.get_unchecked_release_mut(0) = NON_EMPTY_SENTINEL;
 
             let src_chunks = val.chunks_exact(BLOCK_SIZE);
             let src_remainder = src_chunks.remainder();
@@ -100,15 +94,14 @@ unsafe fn encode_one(
                 // we copy src.len() that leaves 1 bytes for the continuation tkn.
                 std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), src.len());
                 // Indicate that there are further blocks to follow
-                *dst.get_unchecked_release_mut(BLOCK_SIZE) =
-                    MaybeUninit::new(BLOCK_CONTINUATION_TOKEN);
+                *dst.get_unchecked_release_mut(BLOCK_SIZE) = BLOCK_CONTINUATION_TOKEN;
             }
 
             if src_remainder.is_empty() {
                 // overwrite the latest continuation marker.
                 // replace the "there is another block" with
                 // "we are finished this, this is the length of this block"
-                *dst.last_mut().unwrap_unchecked() = MaybeUninit::new(BLOCK_SIZE as u8);
+                *dst.last_mut().unwrap_unchecked() = BLOCK_SIZE as u8;
             } else {
                 // get the last block
                 let start_offset = 1 + (block_count - 1) * (BLOCK_SIZE + 1);
@@ -118,18 +111,18 @@ unsafe fn encode_one(
                     last_dst.as_mut_ptr(),
                     src_remainder.len(),
                 );
-                *dst.last_mut().unwrap_unchecked() = MaybeUninit::new(src_remainder.len() as u8);
+                *dst.last_mut().unwrap_unchecked() = src_remainder.len() as u8;
             }
 
             if field.descending {
                 for byte in dst {
-                    *byte = MaybeUninit::new(!byte.assume_init());
+                    *byte = !*byte;
                 }
             }
             end_offset
         }
         None => {
-            *out.get_unchecked_release_mut(0) = MaybeUninit::new(get_null_sentinel(field));
+            *out.get_unchecked_release_mut(0) = get_null_sentinel(field);
             1
         }
     }
@@ -139,14 +132,11 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
     out: &mut RowsEncoded,
     field: &SortField,
 ) {
-    out.values.set_len(0);
-    let values = out.values.spare_capacity_mut();
     for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
-        let dst = values.get_unchecked_release_mut(*offset..);
-        let written_len = encode_one(dst, opt_value.map(|v| v.as_uninit()), field);
+        let dst = out.values.get_unchecked_release_mut(*offset..);
+        let written_len = encode_one(dst, opt_value, field);
         *offset += written_len;
     }
-    out.values.set_len(out.values.capacity())
 }
 
 unsafe fn has_nulls(rows: &[&[u8]], null_sentinel: u8) -> bool {
