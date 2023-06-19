@@ -67,7 +67,10 @@ def _get_dependency_info() -> dict[str, str]:
         "matplotlib",
         "xlsx2csv",
         "xlsxwriter",
+        "sqlalchemy",
+        "pydantic",
     ]
+
     return {f"{name}:": _get_dependency_version(name) for name in opt_deps}
 
 

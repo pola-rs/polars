@@ -17,8 +17,7 @@ endif
 .PHONY: requirements
 requirements: .venv  ## Install/refresh all project requirements
 	$(VENV_BIN)/python -m pip install --upgrade pip
-	$(VENV_BIN)/pip install -r requirements-dev.txt
-	$(VENV_BIN)/pip install -r requirements-lint.txt
+	$(VENV_BIN)/python scripts/install_dev_dependencies.py
 	$(VENV_BIN)/pip install -r docs/requirements-docs.txt
 
 .PHONY: build

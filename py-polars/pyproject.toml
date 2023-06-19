@@ -45,15 +45,35 @@ pyarrow = ["pyarrow>=7.0.0"]
 pandas = ["pyarrow>=7.0.0", "pandas"]
 numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
-connectorx = ["connectorx"]
+connectorx = ["connectorx < 0.3.1"]  # Latest full release is broken - unpin when 0.3.2 released
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
-deltalake = ["deltalake >= 0.8.0"]
+deltalake = ["deltalake >= 0.10.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
+pydantic = ["pydantic"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,sqlalchemy,xlsxwriter]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,sqlalchemy,xlsxwriter,pydantic]",
+]
+
+dev = [
+  # Tooling
+  "hypothesis==6.75.1",
+  "maturin==1.0.1",
+  "pytest==7.3.0",
+  "pytest-cov==4.1.0",
+  "pytest-xdist==3.3.1",
+
+  # Stub files
+  "pandas-stubs==1.2.0.62",
+
+  # Linting
+  "black==23.3.0",
+  "blackdoc==0.3.8",
+  "mypy==1.3.0",
+  "ruff==0.0.270",
+  "typos==1.15",
 ]
 
 [tool.mypy]
