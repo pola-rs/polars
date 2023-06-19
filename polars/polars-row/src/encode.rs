@@ -4,7 +4,7 @@ use arrow::array::{
 use arrow::compute::cast::cast;
 use arrow::datatypes::{DataType as ArrowDataType, DataType};
 use arrow::types::NativeType;
-use polars_utils::vec::ResizeFaster;
+use polars_utils::vec::{PushUnchecked, ResizeFaster};
 
 use crate::fixed::FixedLengthEncoding;
 use crate::row::{RowsEncoded, SortField};
@@ -174,19 +174,29 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
             })
             .sum();
 
-        offsets.fill_or_alloc(num_rows + 1, row_size_fixed);
-        unsafe { offsets.set_len(num_rows) };
+        offsets.clear();
+        offsets.reserve(num_rows + 1);
 
         // first write lengths to this buffer
         let lengths = offsets;
 
         // for the variable length columns we must iterate to determine the length per row location
-        for array in columns.iter() {
+        for (arr_i, array) in columns.iter().enumerate() {
             match array.data_type() {
                 ArrowDataType::LargeBinary => {
                     let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-                    for (opt_val, row_length) in array.into_iter().zip(lengths.iter_mut()) {
-                        *row_length += crate::variable::encoded_len(opt_val)
+                    if arr_i == 0 {
+                        for opt_val in array.into_iter() {
+                            unsafe {
+                                lengths.push_unchecked(
+                                    row_size_fixed + crate::variable::encoded_len(opt_val),
+                                );
+                            }
+                        }
+                    } else {
+                        for (opt_val, row_length) in array.into_iter().zip(lengths.iter_mut()) {
+                            *row_length += crate::variable::encoded_len(opt_val)
+                        }
                     }
                 }
                 ArrowDataType::Dictionary(_, _, _) => {
@@ -198,8 +208,18 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
                         .iter_typed::<Utf8Array<i64>>()
                         .unwrap()
                         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
-                    for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                        *row_length += crate::variable::encoded_len(opt_val)
+                    if arr_i == 0 {
+                        for opt_val in iter {
+                            unsafe {
+                                lengths.push_unchecked(
+                                    row_size_fixed + crate::variable::encoded_len(opt_val),
+                                )
+                            }
+                        }
+                    } else {
+                        for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
+                            *row_length += crate::variable::encoded_len(opt_val)
+                        }
                     }
                 }
                 _ => {
@@ -224,6 +244,7 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], values: &mut Vec<u8>, offsets: &m
         offsets.push(lagged_offset);
 
         // todo! allocate uninit
+        values.clear();
         values.fill_or_alloc(current_offset, 0u8);
     } else {
         let row_size: usize = columns
