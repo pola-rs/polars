@@ -73,7 +73,7 @@ def test_rolling_kernels_and_groupby_rolling(
 
 
 @pytest.mark.parametrize(
-    ("expected", "closed"),
+    ("expected_value", "closed"),
     [
         (None, "left"),
         (None, "right"),
