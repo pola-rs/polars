@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 import pytest
 from numpy import nan
 
+from polars.exceptions import ComputeError
+
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
 else:
@@ -699,6 +701,18 @@ def test_groupby_rolling_iter() -> None:
         ((2, date(2020, 1, 5)), (1, 3)),
     ]
     assert result2 == expected2
+
+
+def test_groupby_rolling_negative_period() -> None:
+    df = pl.DataFrame({"ts": [datetime(2020, 1, 1)], "value": [1]}).with_columns(
+        pl.col("ts").set_sorted()
+    )
+    with pytest.raises(ComputeError, match="rolling window period should be positive"):
+        df.groupby_rolling("ts", period="-1d", offset="-1d").agg(pl.col("value"))
+    with pytest.raises(ComputeError, match="rolling window period should be positive"):
+        df.lazy().groupby_rolling("ts", period="-1d", offset="-1d").agg(
+            pl.col("value")
+        ).collect()
 
 
 def test_rolling_skew_window_offset() -> None:

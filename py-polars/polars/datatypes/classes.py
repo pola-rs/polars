@@ -408,12 +408,31 @@ class List(NestedType):
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
         """
-        Nested list/array type.
+        Nested list/array type with variable length of inner lists.
 
         Parameters
         ----------
         inner
             The `DataType` of values within the list
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "integer_lists": [[1, 2], [3, 4]],
+        ...         "float_lists": [[1.0, 2.0], [3.0, 4.0]],
+        ...     }
+        ... )
+        >>> df
+        shape: (2, 2)
+        ┌───────────────┬─────────────┐
+        │ integer_lists ┆ float_lists │
+        │ ---           ┆ ---         │
+        │ list[i64]     ┆ list[f64]   │
+        ╞═══════════════╪═════════════╡
+        │ [1, 2]        ┆ [1.0, 2.0]  │
+        │ [3, 4]        ┆ [3.0, 4.0]  │
+        └───────────────┴─────────────┘
 
         """
         self.inner = polars.datatypes.py_type_to_dtype(inner)
@@ -450,14 +469,27 @@ class Array(NestedType):
 
     def __init__(self, width: int, inner: PolarsDataType | PythonDataType = Null):
         """
-        Nested list/array type.
+        Nested list/array type with fixed length of inner arrays.
 
         Parameters
         ----------
         width
             The fixed size length of the inner arrays.
         inner
-            The `DataType` of values within the list
+            The `DataType` of values within the inner arrays
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     "a", [[1, 2], [4, 3]], dtype=pl.Array(width=2, inner=pl.Int64)
+        ... )
+        >>> s
+        shape: (2,)
+        Series: 'a' [array[i64, 2]]
+        [
+                [1, 2]
+                [4, 3]
+        ]
 
         """
         self.width = width
@@ -525,6 +557,20 @@ class Struct(NestedType):
         ----------
         fields
             The sequence of fields that make up the struct
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     "struct_series",
+        ...     [{"a": [1], "b": [2], "c": [3]}, {"a": [4], "b": [5], "c": [6]}],
+        ... )
+        >>> s
+        shape: (2,)
+        Series: 'struct_series' [struct[3]]
+        [
+                {[1],[2],[3]}
+                {[4],[5],[6]}
+        ]
 
         """
         if isinstance(fields, Mapping):

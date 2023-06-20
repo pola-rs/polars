@@ -3,7 +3,7 @@ use arrow::offset::{Offsets, OffsetsBuffer};
 
 use crate::compute::take::take_unchecked;
 use crate::prelude::*;
-use crate::trusted_len::PushUnchecked;
+use crate::trusted_len::TrustedLenPush;
 use crate::utils::CustomIterTools;
 
 /// Get the indices that would result in a get operation on the lists values.

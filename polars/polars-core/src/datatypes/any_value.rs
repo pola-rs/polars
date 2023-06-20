@@ -3,7 +3,7 @@ use arrow::temporal_conversions::{
 };
 use arrow::types::PrimitiveType;
 #[cfg(feature = "dtype-struct")]
-use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::trusted_len::TrustedLenPush;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "dtype-categorical")]
