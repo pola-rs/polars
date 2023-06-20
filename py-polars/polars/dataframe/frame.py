@@ -3866,8 +3866,8 @@ class DataFrame:
 
         # execute metrics in parallel
         df_metrics = (
-            # Sort all columns so we can use fast-path statistics
-            self.select(F.all().sort())
+            # Sort numeric columns so we can use fast-path statistics
+            self.with_columns(F.col(NUMERIC_DTYPES).sort())
             .select(
                 F.all().count().prefix("count:"),
                 F.all().null_count().prefix("null_count:"),
