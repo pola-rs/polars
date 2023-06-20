@@ -42,9 +42,8 @@ pub(crate) fn call_lambda_with_series(
     py: Python,
     s: Series,
     lambda: &PyObject,
-    polars_module: &PyObject,
 ) -> PyResult<PyObject> {
-    let pypolars = polars_module.downcast::<PyModule>(py).unwrap();
+    let pypolars = POLARS.downcast::<PyModule>(py).unwrap();
 
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(s);
@@ -131,7 +130,7 @@ pub fn map_single(
             let output_type = output_type2.clone().unwrap_or(DataType::Unknown);
 
             // this is a python Series
-            let out = call_lambda_with_series(py, s.clone(), &lambda, &POLARS)
+            let out = call_lambda_with_series(py, s.clone(), &lambda, )
                 .map_err(|e| polars_err!(ComputeError: "{}", e))?;
             let s = out.to_series(py, &POLARS, s.name());
             polars_ensure!(

@@ -12,6 +12,14 @@ use super::*;
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
 pub trait SeriesUdf: Send + Sync {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>>;
+
+    fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
+        polars_bail!(ComputeError: "serialize not supported for this 'opaque' function")
+    }
+
+    fn try_deserialize(&self, buf: &[u8]) -> PolarsResult<Arc<dyn SeriesUdf>> {
+        polars_bail!(ComputeError: "deserialize not supported for this 'opaque' function")
+    }
 }
 
 impl<F> SeriesUdf for F

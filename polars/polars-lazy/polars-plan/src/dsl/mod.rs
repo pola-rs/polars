@@ -27,6 +27,8 @@ mod selector;
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
+#[cfg(all(feature = "python", feature = "serde"))]
+mod python_udf;
 
 use std::fmt::Debug;
 use std::sync::Arc;

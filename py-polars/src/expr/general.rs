@@ -529,7 +529,6 @@ impl PyExpr {
     #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
     fn rolling_apply(
         &self,
-        py: Python,
         lambda: PyObject,
         window_size: usize,
         weights: Option<Vec<f64>>,
@@ -543,13 +542,9 @@ impl PyExpr {
             center,
             ..Default::default()
         };
-        // get the pypolars module
-        // do the import outside of the function.
-        let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
-
         let function = move |s: &Series| {
             Python::with_gil(|py| {
-                let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars)
+                let out = call_lambda_with_series(py, s.clone(), &lambda)
                     .expect("python function failed");
                 match out.getattr(py, "_s") {
                     Ok(pyseries) => {
