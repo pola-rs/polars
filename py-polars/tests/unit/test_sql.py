@@ -113,13 +113,13 @@ def test_sql_equal_not_equal() -> None:
     }
 
 def test_sql_trig() -> None:
-    pl.DataFrame(
+    df = pl.DataFrame(
         {
             "a": [-4, -3, -2, -1.00001, 0, 1.00001, 2, 3, 4],
         }
     )
 
-    c = pl.SQLContext(register_globals=True)
+    c = pl.SQLContext(df=df)
     res = c.execute(
         """
         SELECT
