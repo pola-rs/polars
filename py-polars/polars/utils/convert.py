@@ -209,15 +209,20 @@ def _localize(dt: datetime, time_zone: str) -> datetime:
     return dt.astimezone(_tzinfo)
 
 
-def _datetime_for_anyvalue(dt: datetime) -> tuple[float, int]:
+def _timestamp_in_seconds(dt: datetime) -> int:
+    du = dt - EPOCH_UTC
+    return du.days * 86400 + du.seconds
+
+
+def _datetime_for_anyvalue(dt: datetime) -> tuple[int, int]:
     """Used in pyo3 anyvalue conversion."""
     # returns (s, ms)
     if dt.tzinfo is None:
         return (
-            dt.replace(tzinfo=timezone.utc, microsecond=0).timestamp(),
+            _timestamp_in_seconds(dt.replace(tzinfo=timezone.utc)),
             dt.microsecond,
         )
-    return (dt.replace(microsecond=0).timestamp(), dt.microsecond)
+    return (_timestamp_in_seconds(dt), dt.microsecond)
 
 
 def _datetime_for_anyvalue_windows(dt: datetime) -> tuple[float, int]:
@@ -225,7 +230,7 @@ def _datetime_for_anyvalue_windows(dt: datetime) -> tuple[float, int]:
     if dt.tzinfo is None:
         dt = _localize(dt, "UTC")
     # returns (s, ms)
-    return (dt.replace(microsecond=0).timestamp(), dt.microsecond)
+    return (_timestamp_in_seconds(dt), dt.microsecond)
 
 
 # cache here as we have a single tz per column
