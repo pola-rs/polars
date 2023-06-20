@@ -25,7 +25,7 @@ from polars.functions.as_datatype import time_ as time
 from polars.functions.eager import align_frames, concat
 from polars.functions.lazy import (
     apply,
-    approx_unique,
+    approx_n_unique,
     arctan2,
     arctan2d,
     arg_sort_by,
@@ -91,7 +91,7 @@ __all__ = [
     "sum_horizontal",
     # polars.functions.eager
     "align_frames",
-    "approx_unique",
+    "approx_n_unique",
     "arg_where",
     "concat",
     "date_range",

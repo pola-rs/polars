@@ -165,7 +165,7 @@ pub enum FunctionExpr {
     Reverse,
     Boolean(BooleanFunction),
     #[cfg(feature = "approx_unique")]
-    ApproxUnique,
+    ApproxNUnique,
     #[cfg(feature = "dtype-categorical")]
     Categorical(CategoricalFunction),
     Coalesce,
@@ -292,7 +292,7 @@ impl Display for FunctionExpr {
             Reverse => "reverse",
             Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "approx_unique")]
-            ApproxUnique => "approx_unique",
+            ApproxNUnique => "approx_n_unique",
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => return write!(f, "{func}"),
             Coalesce => "coalesce",
@@ -544,7 +544,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Reverse => map!(dispatch::reverse),
             Boolean(func) => func.into(),
             #[cfg(feature = "approx_unique")]
-            ApproxUnique => map!(dispatch::approx_unique),
+            ApproxNUnique => map!(dispatch::approx_n_unique),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => func.into(),
             Coalesce => map_as_slice!(fill_null::coalesce),
