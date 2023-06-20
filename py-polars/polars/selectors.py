@@ -60,8 +60,10 @@ class _selector_proxy_(Expr):
             return ~self.as_expr()  # type: ignore[return-value]
 
         name = self._attrs["name"]
-        if name in ("first", "last", "sub", "and", "or"):
+        if name in ("sub", "and", "or"):
             raise ValueError(f"Cannot currently invert {name!r} selector")
+        elif name in ("first", "last"):
+            return all() - self  # type: ignore[return-value]
 
         params = self._attrs["params"] or {}
         raw_params = self._attrs["raw_params"] or []
@@ -96,7 +98,10 @@ class _selector_proxy_(Expr):
                 return f" {op} ".join(repr(p) for p in params.values())
             else:
                 not_ = "~" if self._inverted else ""
-                str_params = ",".join(f"{k}={v!r}" for k, v in (params or {}).items())
+                str_params = ",".join(
+                    (repr(v)[1:-1] if k.startswith("*") else f"{k}={v!r}")
+                    for k, v in (params or {}).items()
+                )
                 return f"{not_}cs.{selector_name}({str_params})"
 
     def __sub__(self, other: Any) -> Expr:  # type: ignore[override]
@@ -368,7 +373,7 @@ def by_name(*names: str | Collection[str]) -> Expr:
             TypeError(f"Invalid name: {nm!r}")
 
     return _selector_proxy_(
-        F.col(*all_names), name="by_name", parameters={"names": all_names}
+        F.col(*all_names), name="by_name", parameters={"*names": all_names}
     )
 
 
@@ -595,7 +600,7 @@ def ends_with(*suffix: str) -> Expr:
     return _selector_proxy_(
         F.col(raw_params),
         name="ends_with",
-        parameters={"suffix": escaped_suffix},
+        parameters={"*suffix": escaped_suffix},
         raw_parameters=[raw_params],
     )
 
@@ -993,7 +998,7 @@ def starts_with(*prefix: str) -> Expr:
     return _selector_proxy_(
         F.col(raw_params),
         name="starts_with",
-        parameters={"prefix": prefix},
+        parameters={"*prefix": prefix},
         raw_parameters=[raw_params],
     )
 
