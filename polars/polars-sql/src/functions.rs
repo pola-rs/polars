@@ -310,6 +310,7 @@ impl PolarsSqlFunctions {
         &[
             "abs",
             "acos",
+            "acosd",
             "array_contains",
             "array_get",
             "array_length",
@@ -320,12 +321,18 @@ impl PolarsSqlFunctions {
             "array_unique",
             "array_upper",
             "asin",
+            "asind",
             "atan",
+            "atand",
             "avg",
             "ceil",
             "ceiling",
             "cos",
+            "cosd",
+            "cot",
+            "cotd",
             "count",
+            "degrees",
             "ends_with",
             "exp",
             "first",
@@ -343,13 +350,18 @@ impl PolarsSqlFunctions {
             "max",
             "min",
             "pow",
+            "radians",
             "round",
             "rtrim",
             "sin",
+            "sind",
             "starts_with",
             "stddev",
             "sum",
             "tan",
+            "tan",
+            "tand",
+            "tand",
             "unnest",
             "upper",
             "variance",
@@ -432,11 +444,6 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
 }
 
 impl SqlFunctionVisitor<'_> {
-    // pub(crate) fn visit_subfunction(&self, function: SQLFunction) -> PolarsResult<Expr> {
-    //     self.func = &function;
-    //     self.visit_function()
-    // }
-
     pub(crate) fn visit_function(&self) -> PolarsResult<Expr> {
         let function = self.func;
 
