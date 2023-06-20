@@ -22,13 +22,13 @@ mod list;
 mod meta;
 pub(crate) mod names;
 mod options;
+#[cfg(all(feature = "python", feature = "serde"))]
+pub mod python_udf;
 mod selector;
 #[cfg(feature = "strings")]
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-#[cfg(all(feature = "python", feature = "serde"))]
-mod python_udf;
 
 use std::fmt::Debug;
 use std::sync::Arc;

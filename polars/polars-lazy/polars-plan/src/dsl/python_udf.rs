@@ -1,51 +1,48 @@
 use std::ptr::null;
-use pyo3::{PyObject, Python};
-use serde::{
-    Serialize, Deserialize
-};
-use polars_arrow::error::PolarsResult;
-use polars_core::datatypes::DataType;
-use polars_core::prelude::Series;
-use super::expr_dyn_fn::*;
-use once_cell::sync::Lazy;
-use polars_core::error::*;
+use std::sync::Arc;
 
-pub static mut CALL_LAMBDA: Option<fn(s: &Series, lambda: &PyObject) -> PolarsResult<Series>> = None;
+use once_cell::sync::Lazy;
+use polars_arrow::error::PolarsResult;
+use polars_core::datatypes::{DataType, Field};
+use polars_core::error::*;
+use polars_core::prelude::Series;
+use pyo3::{PyObject, Python};
+use serde::{Deserialize, Serialize};
+
+use super::expr_dyn_fn::*;
+use crate::constants::MAP_LIST_NAME;
+use crate::prelude::*;
+
+pub static mut CALL_LAMBDA: Option<fn(s: Series, lambda: &PyObject) -> PolarsResult<Series>> = None;
 
 pub struct PythonFunction {
     lambda: PyObject,
     output_type: Option<DataType>,
-    agg_list: bool
 }
 
 impl PythonFunction {
-    pub fn new(lambda: PyObject, output_type: Option<DataType>, agg_list: bool)  -> Self {
+    pub fn new(lambda: PyObject, output_type: Option<DataType>) -> Self {
         Self {
             lambda,
             output_type,
-            agg_list
         }
     }
 }
 
-
 impl SeriesUdf for PythonFunction {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
-        let func = unsafe {
-            CALL_LAMBDA.unwrap()
-        };
+        let func = unsafe { CALL_LAMBDA.unwrap() };
 
-        Python::with_gil(|py| {
-            let output_type = self.output_type.clone().unwrap_or(DataType::Unknown);
-            let out = func(&s[0], &self.lambda)?;
-            polars_ensure!(
-                matches!(output_type, DataType::Unknown) || out.dtype() == &output_type,
-                SchemaMismatch:
-                "expected output type '{:?}', got '{:?}'; set `return_dtype` to the proper datatype",
-                output_type, out.dtype(),
-            );
-            Ok(Some(out))
-        })
+        let output_type = self.output_type.clone().unwrap_or(DataType::Unknown);
+        let out = func(s[0].clone(), &self.lambda)?;
+
+        polars_ensure!(
+            matches!(output_type, DataType::Unknown) || out.dtype() == &output_type,
+            SchemaMismatch:
+            "expected output type '{:?}', got '{:?}'; set `return_dtype` to the proper datatype",
+            output_type, out.dtype(),
+        );
+        Ok(Some(out))
     }
 }
 
@@ -68,3 +65,34 @@ impl SeriesUdf for PythonFunction {
 //         Ok(SpecialEq(t))
 //     }
 // }
+
+impl Expr {
+    pub fn map_python(self, func: PythonFunction, agg_list: bool) -> Expr {
+        let (collect_groups, name) = if agg_list {
+            (ApplyOptions::ApplyList, MAP_LIST_NAME)
+        } else {
+            (ApplyOptions::ApplyFlat, "python_udf")
+        };
+
+        let return_dtype = func.output_type.clone();
+        let output_type = GetOutput::map_field(move |fld| match return_dtype {
+            Some(ref dt) => Field::new(fld.name(), dt.clone()),
+            None => {
+                let mut fld = fld.clone();
+                fld.coerce(DataType::Unknown);
+                fld
+            }
+        });
+
+        Expr::AnonymousFunction {
+            input: vec![self],
+            function: SpecialEq::new(Arc::new(func)),
+            output_type,
+            options: FunctionOptions {
+                collect_groups,
+                fmt_str: name,
+                ..Default::default()
+            },
+        }
+    }
+}
