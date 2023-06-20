@@ -112,6 +112,7 @@ def test_sql_equal_not_equal() -> None:
         "6_neq_aware": [False, False, False, True, True],
     }
 
+
 def test_sql_trig() -> None:
     df = pl.DataFrame(
         {
