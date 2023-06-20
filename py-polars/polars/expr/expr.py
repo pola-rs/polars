@@ -4687,7 +4687,7 @@ class Expr:
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -4802,7 +4802,7 @@ class Expr:
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -4917,7 +4917,7 @@ class Expr:
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -5032,7 +5032,7 @@ class Expr:
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -5148,7 +5148,7 @@ class Expr:
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"` means
         the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -5266,7 +5266,7 @@ class Expr:
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -5385,7 +5385,7 @@ class Expr:
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"` means
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"` means
         the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -5498,7 +5498,7 @@ class Expr:
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_2>``, then `closed="left"`
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
