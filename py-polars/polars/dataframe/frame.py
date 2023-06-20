@@ -7051,7 +7051,7 @@ class DataFrame:
         ...     }
         ... )
         >>> df.lazy()  # doctest: +ELLIPSIS
-        <polars.LazyFrame object at ...>
+        <LazyFrame [3 cols, {"a": Int64 … "c": Boolean}] at ...>
 
         """
         return wrap_ldf(self._df.lazy())
