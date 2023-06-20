@@ -492,7 +492,8 @@ def test_sort_args() -> None:
     assert_frame_equal(result, expected)
 
     # Mixed
-    result = df.sort(["a"], "b")
+    with pytest.deprecated_call():
+        result = df.sort(["a"], "b")
     assert_frame_equal(result, expected)
 
     # nulls_last
