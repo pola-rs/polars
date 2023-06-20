@@ -55,9 +55,18 @@ def test_lazy() -> None:
     assert profiling_info[1].columns == ["node", "start", "end"]
 
 
-def test_repr() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    assert repr(ldf).startswith("<LazyFrame [2 cols] at ")
+@pytest.mark.parametrize(
+        ("data", "repr_"),
+        [
+            ({}, "0 cols, {}"),
+            ({"a": [1]}, '1 col, {"a": Int64}'),
+            ({"a": [1], "b": ["B"]}, '2 cols, {"a": Int64, "b": Utf8}'),
+            ({"a": [1], "b": ["B"], "c": [0.]}, '3 cols, {"a": Int64 … "c": Float64}'),
+        ],
+)
+def test_repr(data: dict, repr_: str) -> None:
+    ldf = pl.LazyFrame(data)
+    assert repr(ldf).startswith(f"<LazyFrame [{repr_}] at ")
 
 
 def test_lazyframe_membership_operator() -> None:

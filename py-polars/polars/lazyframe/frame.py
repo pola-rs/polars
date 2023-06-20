@@ -675,7 +675,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def __repr__(self) -> str:
         # don't expose internal/private classpath
-        return f"<{self.__class__.__name__} [{self.width} cols] at 0x{id(self):X}>"
+        width = self.width
+        cols_str = "{} col{}".format(width, "" if width == 1 else "s")
+        schema_max_2 = (item for i, item in enumerate(self.schema.items()) if i in (0, width - 1))
+        schema_str = (", " if width == 2 else " … ").join((f'"{k}": {v}' for k, v in schema_max_2))
+        return f"<{self.__class__.__name__} [{cols_str}, {{{schema_str}}}] at 0x{id(self):X}>"
 
     def _repr_html_(self) -> str:
         try:
@@ -1010,7 +1014,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )  # doctest: +ELLIPSIS
-        <polars.LazyFrame object at ...>
+        <LazyFrame [1 col, {"bar": Int64}] at ...>
 
         """
 
@@ -1782,7 +1786,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.lazy()  # doctest: +ELLIPSIS
-        <polars.LazyFrame object at ...>
+        <LazyFrame [3 cols, {"a": Int64 … "c": Boolean}] at ...>
 
         """
         return self
@@ -1857,7 +1861,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.clone()  # doctest: +ELLIPSIS
-        <polars.LazyFrame object at ...>
+        <LazyFrame [3 cols, {"a": Int64 … "c": Boolean}] at ...>
 
         """
         return self._from_pyldf(self._ldf.clone())
