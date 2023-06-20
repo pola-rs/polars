@@ -1204,7 +1204,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series("foo", ["CAT", "DOG"])
-        >>> s.str.to_uppercase()
+        >>> s.str.to_lowercase()
         shape: (2,)
         Series: 'foo' [str]
         [
