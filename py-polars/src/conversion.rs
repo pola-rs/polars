@@ -641,7 +641,7 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
         let (seconds, microseconds) = {
             let convert = UTILS.getattr(py, "_datetime_for_anyvalue_windows").unwrap();
             let out = convert.call1(py, (ob,)).unwrap();
-            let out: (f64, i64) = out.extract(py).unwrap();
+            let out: (i64, i64) = out.extract(py).unwrap();
             out
         };
         // unix
@@ -649,12 +649,12 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
         let (seconds, microseconds) = {
             let convert = UTILS.getattr(py, "_datetime_for_anyvalue").unwrap();
             let out = convert.call1(py, (ob,)).unwrap();
-            let out: (f64, i64) = out.extract(py).unwrap();
+            let out: (i64, i64) = out.extract(py).unwrap();
             out
         };
 
         // s to us
-        let mut v = (seconds as i64) * 1_000_000;
+        let mut v = seconds * 1_000_000;
         v += microseconds;
 
         // choose "us" as that is python's default unit
