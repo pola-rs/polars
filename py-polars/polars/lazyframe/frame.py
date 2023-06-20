@@ -2213,7 +2213,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
             performance matters use an Int64 column.
         period
-            length of the window
+            length of the window - must be non-negative
         offset
             offset of the window. Default is -period
         closed : {'right', 'left', 'both', 'none'}
