@@ -9,7 +9,7 @@ use crate::array::default_arrays::FromData;
 use crate::error::PolarsResult;
 use crate::index::IdxSize;
 use crate::kernels::BinaryMaskedSliceIterator;
-use crate::trusted_len::PushUnchecked;
+use crate::trusted_len::TrustedLenPush;
 
 /// Set values in a primitive array where the primitive array has null values.
 /// this is faster because we don't have to invert and combine bitmaps

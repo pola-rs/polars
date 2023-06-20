@@ -8,7 +8,7 @@ use polars_arrow::bit_util::unset_bit_raw;
 #[cfg(feature = "dtype-array")]
 use polars_arrow::is_valid::IsValid;
 use polars_arrow::prelude::*;
-use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::trusted_len::TrustedLenPush;
 
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
