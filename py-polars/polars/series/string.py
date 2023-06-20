@@ -1198,10 +1198,55 @@ class StringNameSpace:
         """
 
     def to_lowercase(self) -> Series:
-        """Modify the strings to their lowercase equivalent."""
+        """
+        Modify the strings to their lowercase equivalent.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", ["CAT", "DOG"])
+        >>> s.str.to_uppercase()
+        shape: (2,)
+        Series: 'foo' [str]
+        [
+            "cat"
+            "dog"
+        ]
+
+        """
 
     def to_uppercase(self) -> Series:
-        """Modify the strings to their uppercase equivalent."""
+        """
+        Modify the strings to their uppercase equivalent.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", ["cat", "dog"])
+        >>> s.str.to_uppercase()
+        shape: (2,)
+        Series: 'foo' [str]
+        [
+            "CAT"
+            "DOG"
+        ]
+
+        """
+
+    def to_titlecase(self) -> Series:
+        """
+        Modify the strings to their titlecase equivalent.
+
+        Examples
+        --------
+        >>> s = pl.Series("sing", ["welcome to my world", "THERE'S NO TURNING BACK"])
+        >>> s.str.to_titlecase()
+        shape: (2,)
+        Series: 'sing' [str]
+        [
+            "Welcome To My …
+            "There's No Tur…
+        ]
+
+        """
 
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
