@@ -1,44 +1,64 @@
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::ops::Sub;
 
 use num_traits::Bounded;
 use polars_arrow::index::IdxSize;
 
+#[inline]
+fn find_next_le<T: PartialOrd + Copy + Debug>(slice: &[T], val: &T) -> usize {
+    if slice.is_empty() {
+        return 0;
+    }
+    let mut last_idx = 0;
+    let mut idx = 1;
+    while slice[idx - 1] <= *val && idx < slice.len() {
+        last_idx = idx;
+        idx = std::cmp::min(2 * idx, slice.len());
+    }
+    last_idx + slice[last_idx..idx].partition_point(|x| x <= val)
+}
+
+pub(super) fn join_asof_forward<T: PartialOrd + Copy + Debug>(
+    left: &[T],
+    right: &[T],
+) -> Vec<Option<IdxSize>> {
+    let mut out = Vec::with_capacity(left.len());
+    let mut offset = 0;
+
+    for (i, &val_r) in right.iter().enumerate() {
+        let j = find_next_le(&left[offset..], &val_r);
+        out.extend(std::iter::repeat(Some(i as IdxSize)).take(j));
+        offset += j;
+        if j == left.len() {
+            break;
+        }
+    }
+
+    out.extend(std::iter::repeat(None).take(left.len() - out.len()));
+    out
+}
+
 pub(super) fn join_asof_forward_with_tolerance<T: PartialOrd + Copy + Debug + Sub<Output = T>>(
     left: &[T],
     right: &[T],
     tolerance: T,
 ) -> Vec<Option<IdxSize>> {
-    if right.is_empty() {
-        return vec![None; left.len()];
-    }
-    if left.is_empty() {
-        return vec![];
-    }
 
     let mut out = Vec::with_capacity(left.len());
-    let mut offset = 0 as IdxSize;
+    let mut slice = left;
 
-    for &val_l in left {
-        loop {
-            match right.get(offset as usize) {
-                Some(&val_r) => {
-                    if val_r >= val_l {
-                        let dist = val_r - val_l;
-                        let value = if dist > tolerance { None } else { Some(offset) };
-
-                        out.push(value);
-                        break;
-                    }
-                    offset += 1;
-                }
-                None => {
-                    out.extend(std::iter::repeat(None).take(left.len() - out.len()));
-                    return out;
-                }
-            }
+    for (i, &val_r) in right.iter().enumerate() {
+        let j = find_next_le(slice, &val_r);
+        out.extend(slice[..j].iter().map(
+            |&x| if val_r - x > tolerance { None } else { Some(i as IdxSize)} ));
+        slice = &slice[j..];
+        if slice.len() == 0 {
+            break;
         }
     }
+
+    out.extend(std::iter::repeat(None).take(left.len() - out.len()));
     out
 }
 
@@ -128,58 +148,26 @@ pub(super) fn join_asof_backward<T: PartialOrd + Copy + Debug>(
     left: &[T],
     right: &[T],
 ) -> Vec<Option<IdxSize>> {
-    let mut out = Vec::with_capacity(left.len());
-
-    let mut offset = 0 as IdxSize;
-    // left array could start lower than right;
-    // left: [-1, 0, 1, 2],
-    // right: [1, 2, 3]
-    // first values should be None, until left has caught up
-    let mut left_caught_up = false;
-
-    for &val_l in left {
-        loop {
-            match right.get(offset as usize) {
-                Some(&val_r) => {
-                    // we fill nulls until left value is larger than right
-                    if !left_caught_up {
-                        if val_l < val_r {
-                            out.push(None);
-                            break;
-                        } else {
-                            left_caught_up = true;
-                        }
-                    }
-
-                    // right is larger than left.
-                    // we take the last value before that
-                    if val_r > val_l {
-                        out.push(Some(offset - 1));
-                        break;
-                    }
-                    // right still smaller or equal to left
-                    // continue looping the right side
-                    else {
-                        offset += 1;
-                    }
-                }
-                // we depleted the right array
-                None => {
-                    // if we have previous value, continue with that one
-                    let val = if left_caught_up {
-                        Some(offset - 1)
-                    }
-                    // else all null
-                    else {
-                        None
-                    };
-                    out.extend(std::iter::repeat(val).take(left.len() - out.len()));
-                    return out;
-                }
-            }
+    if left.is_empty() {
+        return vec![];
+    }
+    let mut out = VecDeque::with_capacity(left.len());
+    let mut slice = left;
+    let lmax = left.last().unwrap();
+    for (i, &val_r) in right.iter().enumerate().rev().skip_while(|&x| x.1 > lmax) {
+        let j = slice.partition_point(|&x| x < val_r);
+        for _ in j..slice.len() {
+            out.push_front(Some(i as IdxSize));
+        }
+        slice = &slice[..j];
+        if slice.is_empty() {
+            break;
         }
     }
-    out
+    for _ in out.len()..left.len() {
+        out.push_front(None);
+    }
+    return out.into();
 }
 
 pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> + Bounded>(
@@ -237,32 +225,6 @@ pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> +
     out
 }
 
-pub(super) fn join_asof_forward<T: PartialOrd + Copy + Debug>(
-    left: &[T],
-    right: &[T],
-) -> Vec<Option<IdxSize>> {
-    let mut out = Vec::with_capacity(left.len());
-    let mut offset = 0 as IdxSize;
-
-    for &val_l in left {
-        loop {
-            match right.get(offset as usize) {
-                Some(&val_r) => {
-                    if val_r >= val_l {
-                        out.push(Some(offset));
-                        break;
-                    }
-                    offset += 1;
-                }
-                None => {
-                    out.extend(std::iter::repeat(None).take(left.len() - out.len()));
-                    return out;
-                }
-            }
-        }
-    }
-    out
-}
 
 #[cfg(test)]
 mod test {
