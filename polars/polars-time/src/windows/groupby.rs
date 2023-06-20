@@ -462,24 +462,12 @@ pub(crate) fn groupby_values_iter<'a>(
     tz: Option<Tz>,
 ) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
     let mut offset = period;
-    if offset.duration_ns() > 0 {
+    if offset.duration_ns() > 0 || matches!(closed_window, ClosedWindow::None | ClosedWindow::Left)
+    {
         // t is at the right endpoint of the window
         offset.negative = true;
         let iter =
             groupby_values_iter_full_lookbehind(period, offset, time, closed_window, tu, tz, 0);
-        Box::new(iter)
-    } else if closed_window != ClosedWindow::Both {
-        // empty window (todo: fastpath opportunity here?)
-        let iter = groupby_values_iter_full_lookahead(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            tz,
-            0,
-            None,
-        );
         Box::new(iter)
     } else {
         // window only contains t (todo: fastpath opportunity here?)
