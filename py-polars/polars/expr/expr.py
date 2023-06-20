@@ -47,7 +47,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias
+from polars.utils.decorators import deprecated_alias, warn_closed_future_change
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
 
@@ -4776,6 +4776,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.interpolate(method))
 
+    @warn_closed_future_change()
     def rolling_min(
         self,
         window_size: int | timedelta | str,
@@ -4973,6 +4974,7 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_max(
         self,
         window_size: int | timedelta | str,
@@ -5195,6 +5197,7 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_mean(
         self,
         window_size: int | timedelta | str,
@@ -5417,6 +5420,7 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_sum(
         self,
         window_size: int | timedelta | str,
@@ -5639,6 +5643,7 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_std(
         self,
         window_size: int | timedelta | str,
@@ -5864,6 +5869,7 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_var(
         self,
         window_size: int | timedelta | str,
@@ -6095,6 +6101,7 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_median(
         self,
         window_size: int | timedelta | str,
@@ -6242,6 +6249,7 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_quantile(
         self,
         quantile: float,
