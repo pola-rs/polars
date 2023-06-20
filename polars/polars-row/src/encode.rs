@@ -194,11 +194,12 @@ pub fn allocate_rows_buf(
         let lengths = offsets;
 
         // for the variable length columns we must iterate to determine the length per row location
-        for (arr_i, array) in columns.iter().enumerate() {
+        let mut processed_count = 0;
+        for array in columns.iter() {
             match array.data_type() {
                 ArrowDataType::LargeBinary => {
                     let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-                    if arr_i == 0 {
+                    if processed_count == 0 {
                         for opt_val in array.into_iter() {
                             unsafe {
                                 lengths.push_unchecked(
@@ -211,6 +212,7 @@ pub fn allocate_rows_buf(
                             *row_length += crate::variable::encoded_len(opt_val)
                         }
                     }
+                    processed_count += 1;
                 }
                 ArrowDataType::Dictionary(_, _, _) => {
                     let array = array
@@ -221,7 +223,7 @@ pub fn allocate_rows_buf(
                         .iter_typed::<Utf8Array<i64>>()
                         .unwrap()
                         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
-                    if arr_i == 0 {
+                    if processed_count == 0 {
                         for opt_val in iter {
                             unsafe {
                                 lengths.push_unchecked(
@@ -234,6 +236,7 @@ pub fn allocate_rows_buf(
                             *row_length += crate::variable::encoded_len(opt_val)
                         }
                     }
+                    processed_count += 1;
                 }
                 _ => {
                     // the rest is fixed
@@ -294,10 +297,23 @@ pub fn allocate_rows_buf(
 
 #[cfg(test)]
 mod test {
-    use arrow::array::Utf8Array;
+    use arrow::array::{Int32Array, Utf8Array};
 
     use super::*;
     use crate::variable::{BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
+
+    #[test]
+    fn test_fixed_and_variable_encode() {
+        let a = Int32Array::from_vec(vec![1, 2, 3]);
+        let b = Int32Array::from_vec(vec![213, 12, 12]);
+        let c = Utf8Array::<i64>::from_iter([Some("a"), Some(""), Some("meep")]);
+
+        let encoded = convert_columns_no_order(&[Box::new(a), Box::new(b), Box::new(c)]);
+        assert_eq!(encoded.offsets, &[0, 44, 55, 99,]);
+        assert_eq!(encoded.values.len(), 99);
+        assert!(encoded.values.ends_with(&[0, 0, 0, 4]));
+        assert!(encoded.values.starts_with(&[1, 128, 0, 0, 1, 1, 128]));
+    }
 
     #[test]
     fn test_str_encode() {
