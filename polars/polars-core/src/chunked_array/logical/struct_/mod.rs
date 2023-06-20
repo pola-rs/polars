@@ -6,7 +6,7 @@ use std::ops::BitAnd;
 
 use arrow::bitmap::MutableBitmap;
 use arrow::offset::OffsetsBuffer;
-use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::trusted_len::TrustedLenPush;
 use smartstring::alias::String as SmartString;
 
 use super::*;

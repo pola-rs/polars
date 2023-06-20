@@ -27,6 +27,9 @@ bitflags! {
         const CACHE_WINDOW_EXPR = 0x02;
         /// Indicates the expression has a window function
         const HAS_WINDOW = 0x04;
+        /// If set, the expression is evaluated in the
+        /// streaming engine.
+        const IN_STREAMING = 0x08;
     }
 }
 
@@ -266,6 +269,20 @@ impl ExecutionState {
             flags.insert(StateFlags::HAS_WINDOW);
             flags
         });
+    }
+
+    #[cfg(feature = "streaming")]
+    pub(super) fn set_in_streaming_engine(&mut self) {
+        self.set_flags(&|mut flags| {
+            flags.insert(StateFlags::IN_STREAMING);
+            flags
+        });
+    }
+
+    #[cfg(feature = "streaming")]
+    pub(super) fn in_streaming_engine(&self) -> bool {
+        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        flags.contains(StateFlags::IN_STREAMING)
     }
 }
 

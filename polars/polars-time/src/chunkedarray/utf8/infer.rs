@@ -137,19 +137,25 @@ impl Pattern {
 }
 
 pub trait StrpTimeParser<T> {
-    fn parse_bytes(&mut self, val: &[u8]) -> Option<T>;
+    fn parse_bytes(&mut self, val: &[u8], time_unit: Option<TimeUnit>) -> Option<T>;
 }
 
 #[cfg(feature = "dtype-datetime")]
 impl StrpTimeParser<i64> for DatetimeInfer<i64> {
-    fn parse_bytes(&mut self, val: &[u8]) -> Option<i64> {
+    fn parse_bytes(&mut self, val: &[u8], time_unit: Option<TimeUnit>) -> Option<i64> {
         if self.fmt_len == 0 {
             self.fmt_len = strptime::fmt_len(self.latest_fmt.as_bytes())?;
         }
+        let transform = match time_unit {
+            Some(TimeUnit::Nanoseconds) => datetime_to_timestamp_ns,
+            Some(TimeUnit::Microseconds) => datetime_to_timestamp_us,
+            Some(TimeUnit::Milliseconds) => datetime_to_timestamp_ms,
+            _ => unreachable!(), // time_unit has to be provided for datetime
+        };
         unsafe {
             self.transform_bytes
                 .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
-                .map(datetime_to_timestamp_us)
+                .map(transform)
                 .or_else(|| {
                     // TODO! this will try all patterns.
                     // somehow we must early escape if value is invalid
@@ -174,7 +180,7 @@ impl StrpTimeParser<i64> for DatetimeInfer<i64> {
 
 #[cfg(feature = "dtype-date")]
 impl StrpTimeParser<i32> for DatetimeInfer<i32> {
-    fn parse_bytes(&mut self, val: &[u8]) -> Option<i32> {
+    fn parse_bytes(&mut self, val: &[u8], _time_unit: Option<TimeUnit>) -> Option<i32> {
         if self.fmt_len == 0 {
             self.fmt_len = strptime::fmt_len(self.latest_fmt.as_bytes())?;
         }
@@ -215,13 +221,28 @@ pub struct DatetimeInfer<T> {
     pub logical_type: DataType,
 }
 
+pub trait TryFromWithUnit<T>: Sized {
+    type Error;
+    fn try_from_with_unit(pattern: T, unit: Option<TimeUnit>) -> PolarsResult<Self>;
+}
+
 #[cfg(feature = "dtype-datetime")]
-impl TryFrom<Pattern> for DatetimeInfer<i64> {
+impl TryFromWithUnit<Pattern> for DatetimeInfer<i64> {
     type Error = PolarsError;
 
-    fn try_from(value: Pattern) -> PolarsResult<Self> {
-        match value {
-            Pattern::DatetimeDMY => Ok(DatetimeInfer {
+    fn try_from_with_unit(value: Pattern, time_unit: Option<TimeUnit>) -> PolarsResult<Self> {
+        let time_unit = time_unit.expect("time_unit must be provided for datetime");
+        match (value, time_unit) {
+            (Pattern::DatetimeDMY, TimeUnit::Milliseconds) => Ok(DatetimeInfer {
+                pattern: Pattern::DatetimeDMY,
+                patterns: patterns::DATETIME_D_M_Y,
+                latest_fmt: patterns::DATETIME_D_M_Y[0],
+                transform: transform_datetime_ms,
+                transform_bytes: StrpTimeState::default(),
+                fmt_len: 0,
+                logical_type: DataType::Datetime(TimeUnit::Milliseconds, None),
+            }),
+            (Pattern::DatetimeDMY, TimeUnit::Microseconds) => Ok(DatetimeInfer {
                 pattern: Pattern::DatetimeDMY,
                 patterns: patterns::DATETIME_D_M_Y,
                 latest_fmt: patterns::DATETIME_D_M_Y[0],
@@ -230,7 +251,25 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
             }),
-            Pattern::DatetimeYMD => Ok(DatetimeInfer {
+            (Pattern::DatetimeDMY, TimeUnit::Nanoseconds) => Ok(DatetimeInfer {
+                pattern: Pattern::DatetimeDMY,
+                patterns: patterns::DATETIME_D_M_Y,
+                latest_fmt: patterns::DATETIME_D_M_Y[0],
+                transform: transform_datetime_ns,
+                transform_bytes: StrpTimeState::default(),
+                fmt_len: 0,
+                logical_type: DataType::Datetime(TimeUnit::Nanoseconds, None),
+            }),
+            (Pattern::DatetimeYMD, TimeUnit::Milliseconds) => Ok(DatetimeInfer {
+                pattern: Pattern::DatetimeYMD,
+                patterns: patterns::DATETIME_Y_M_D,
+                latest_fmt: patterns::DATETIME_Y_M_D[0],
+                transform: transform_datetime_ms,
+                transform_bytes: StrpTimeState::default(),
+                fmt_len: 0,
+                logical_type: DataType::Datetime(TimeUnit::Milliseconds, None),
+            }),
+            (Pattern::DatetimeYMD, TimeUnit::Microseconds) => Ok(DatetimeInfer {
                 pattern: Pattern::DatetimeYMD,
                 patterns: patterns::DATETIME_Y_M_D,
                 latest_fmt: patterns::DATETIME_Y_M_D[0],
@@ -239,7 +278,25 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
             }),
-            Pattern::DatetimeYMDZ => Ok(DatetimeInfer {
+            (Pattern::DatetimeYMD, TimeUnit::Nanoseconds) => Ok(DatetimeInfer {
+                pattern: Pattern::DatetimeYMD,
+                patterns: patterns::DATETIME_Y_M_D,
+                latest_fmt: patterns::DATETIME_Y_M_D[0],
+                transform: transform_datetime_ns,
+                transform_bytes: StrpTimeState::default(),
+                fmt_len: 0,
+                logical_type: DataType::Datetime(TimeUnit::Nanoseconds, None),
+            }),
+            (Pattern::DatetimeYMDZ, TimeUnit::Milliseconds) => Ok(DatetimeInfer {
+                pattern: Pattern::DatetimeYMDZ,
+                patterns: patterns::DATETIME_Y_M_D_Z,
+                latest_fmt: patterns::DATETIME_Y_M_D_Z[0],
+                transform: transform_tzaware_datetime_ms,
+                transform_bytes: StrpTimeState::default(),
+                fmt_len: 0,
+                logical_type: DataType::Datetime(TimeUnit::Milliseconds, None),
+            }),
+            (Pattern::DatetimeYMDZ, TimeUnit::Microseconds) => Ok(DatetimeInfer {
                 pattern: Pattern::DatetimeYMDZ,
                 patterns: patterns::DATETIME_Y_M_D_Z,
                 latest_fmt: patterns::DATETIME_Y_M_D_Z[0],
@@ -248,16 +305,25 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
             }),
+            (Pattern::DatetimeYMDZ, TimeUnit::Nanoseconds) => Ok(DatetimeInfer {
+                pattern: Pattern::DatetimeYMDZ,
+                patterns: patterns::DATETIME_Y_M_D_Z,
+                latest_fmt: patterns::DATETIME_Y_M_D_Z[0],
+                transform: transform_tzaware_datetime_ns,
+                transform_bytes: StrpTimeState::default(),
+                fmt_len: 0,
+                logical_type: DataType::Datetime(TimeUnit::Nanoseconds, None),
+            }),
             _ => polars_bail!(ComputeError: "could not convert pattern"),
         }
     }
 }
 
 #[cfg(feature = "dtype-date")]
-impl TryFrom<Pattern> for DatetimeInfer<i32> {
+impl TryFromWithUnit<Pattern> for DatetimeInfer<i32> {
     type Error = PolarsError;
 
-    fn try_from(value: Pattern) -> PolarsResult<Self> {
+    fn try_from_with_unit(value: Pattern, _time_unit: Option<TimeUnit>) -> PolarsResult<Self> {
         match value {
             Pattern::DateDMY => Ok(DatetimeInfer {
                 pattern: Pattern::DateDMY,
@@ -443,23 +509,14 @@ pub(crate) fn to_datetime(
                 .into_iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_datetime_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<i64>::try_from(pattern)?;
-            match (tu, pattern) {
-                (TimeUnit::Nanoseconds, Pattern::DatetimeYMDZ) => {
-                    infer.transform = transform_tzaware_datetime_ns
-                }
-                (TimeUnit::Microseconds, Pattern::DatetimeYMDZ) => {
-                    infer.transform = transform_tzaware_datetime_us
-                }
-                (TimeUnit::Milliseconds, Pattern::DatetimeYMDZ) => {
-                    infer.transform = transform_tzaware_datetime_ms
-                }
-                (TimeUnit::Nanoseconds, _) => infer.transform = transform_datetime_ns,
-                (TimeUnit::Microseconds, _) => infer.transform = transform_datetime_us,
-                (TimeUnit::Milliseconds, _) => infer.transform = transform_datetime_ms,
-            }
-            if tz.is_some() && pattern == Pattern::DatetimeYMDZ {
-                polars_bail!(ComputeError: "cannot parse tz-aware values with tz-aware dtype - please drop the time zone from the dtype.")
+            let mut infer = DatetimeInfer::<i64>::try_from_with_unit(pattern, Some(tu))?;
+            if pattern == Pattern::DatetimeYMDZ
+                && tz.is_some()
+                && tz.map(|x| x.as_str()) != Some("UTC")
+            {
+                polars_bail!(ComputeError: "offset-aware datetimes are converted to UTC. \
+                    Please either drop the time zone from the function call, or set it to UTC. \
+                    To convert to a different time zone, please use `convert_time_zone`.")
             }
             match pattern {
                 #[cfg(feature = "timezones")]
@@ -491,7 +548,7 @@ pub(crate) fn to_date(ca: &Utf8Chunked) -> PolarsResult<DateChunked> {
                 .into_iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_date_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<i32>::try_from(pattern).unwrap();
+            let mut infer = DatetimeInfer::<i32>::try_from_with_unit(pattern, None).unwrap();
             infer.coerce_utf8(ca).date().cloned()
         }
     }

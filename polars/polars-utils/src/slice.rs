@@ -1,5 +1,6 @@
 use core::slice::SliceIndex;
 use std::cmp::Ordering;
+use std::mem::MaybeUninit;
 
 pub trait Extrema<T> {
     fn min_value(&self) -> Option<&T>;
@@ -88,5 +89,16 @@ impl<T> GetSaferUnchecked<T> for [T] {
         } else {
             self.get_unchecked_mut(index)
         }
+    }
+}
+
+pub trait Slice2Uninit<T> {
+    fn as_uninit(&self) -> &[MaybeUninit<T>];
+}
+
+impl<T> Slice2Uninit<T> for [T] {
+    #[inline]
+    fn as_uninit(&self) -> &[MaybeUninit<T>] {
+        unsafe { std::slice::from_raw_parts(self.as_ptr() as *const MaybeUninit<T>, self.len()) }
     }
 }

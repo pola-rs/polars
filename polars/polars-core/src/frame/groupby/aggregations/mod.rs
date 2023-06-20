@@ -18,7 +18,7 @@ use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
 use polars_arrow::kernels::rolling::{DynArgs, RollingVarParams};
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::trusted_len::TrustedLenPush;
 use rayon::prelude::*;
 
 #[cfg(feature = "object")]

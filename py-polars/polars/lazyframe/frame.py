@@ -563,7 +563,7 @@ class LazyFrame:
     @property
     def columns(self) -> list[str]:
         """
-        Get or set column names.
+        Get column names.
 
         Examples
         --------
@@ -2285,7 +2285,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(period)}"
 
-        pyexprs_by = parse_as_list_of_expressions(by)
+        pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
 
@@ -2628,7 +2628,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset = _timedelta_to_pl_duration(offset)
         every = _timedelta_to_pl_duration(every)
 
-        pyexprs_by = parse_as_list_of_expressions(by)
+        pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
         lgb = self._ldf.groupby_dynamic(
             index_column,
             every,
