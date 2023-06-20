@@ -109,6 +109,8 @@ strategy_duration = timedeltas(
     min_value=timedelta(microseconds=-(2**46)),
     max_value=timedelta(microseconds=(2**46) - 1),
 )
+strategy_closed = sampled_from(["left", "right", "both", "none"])
+strategy_time_unit = sampled_from(["ns", "us", "ms"])
 
 
 @composite

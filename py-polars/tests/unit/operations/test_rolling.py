@@ -72,6 +72,96 @@ def test_rolling_kernels_and_groupby_rolling(
     assert_frame_equal(out1, out2)
 
 
+@pytest.mark.parametrize(
+    ("offset", "closed", "expected_values"),
+    [
+        pytest.param(
+            "-1d",
+            "left",
+            [[1], [1, 2], [2, 3], [3, 4]],
+            id="partial lookbehind, left",
+        ),
+        pytest.param(
+            "-1d",
+            "right",
+            [[1, 2], [2, 3], [3, 4], [4]],
+            id="partial lookbehind, right",
+        ),
+        pytest.param(
+            "-1d",
+            "both",
+            [[1, 2], [1, 2, 3], [2, 3, 4], [3, 4]],
+            id="partial lookbehind, both",
+        ),
+        pytest.param(
+            "-1d",
+            "none",
+            [[1], [2], [3], [4]],
+            id="partial lookbehind, none",
+        ),
+        pytest.param(
+            "-2d",
+            "left",
+            [[], [1], [1, 2], [2, 3]],
+            id="full lookbehind, left",
+        ),
+        pytest.param(
+            "-3d",
+            "left",
+            [[], [], [1], [1, 2]],
+            id="full lookbehind, offset > period, left",
+        ),
+        pytest.param(
+            "-3d",
+            "right",
+            [[], [1], [1, 2], [2, 3]],
+            id="full lookbehind, right",
+        ),
+        pytest.param(
+            "-3d",
+            "both",
+            [[], [1], [1, 2], [1, 2, 3]],
+            id="full lookbehind, both",
+        ),
+        pytest.param(
+            "-2d",
+            "none",
+            [[], [1], [2], [3]],
+            id="full lookbehind, none",
+        ),
+        pytest.param(
+            "-3d",
+            "none",
+            [[], [], [1], [2]],
+            id="full lookbehind, offset > period, none",
+        ),
+    ],
+)
+def test_rolling_negative_offset(
+    offset: str, closed: ClosedInterval, expected_values: list[list[int]]
+) -> None:
+    df = pl.DataFrame(
+        {
+            "ts": pl.date_range(
+                datetime(2021, 1, 1), datetime(2021, 1, 4), "1d", eager=True
+            ),
+            "value": [1, 2, 3, 4],
+        }
+    )
+    result = df.groupby_rolling("ts", period="2d", offset=offset, closed=closed).agg(
+        pl.col("value")
+    )
+    expected = pl.DataFrame(
+        {
+            "ts": pl.date_range(
+                datetime(2021, 1, 1), datetime(2021, 1, 4), "1d", eager=True
+            ),
+            "value": expected_values,
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_rolling_skew() -> None:
     s = pl.Series([1, 2, 3, 3, 2, 10, 8])
     assert s.rolling_skew(window_size=4, bias=True).to_list() == pytest.approx(
