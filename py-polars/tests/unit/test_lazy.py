@@ -55,6 +55,11 @@ def test_lazy() -> None:
     assert profiling_info[1].columns == ["node", "start", "end"]
 
 
+def test_repr() -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    assert repr(ldf).startswith("<LazyFrame [2 cols] at ")
+
+
 def test_lazyframe_membership_operator() -> None:
     ldf = pl.LazyFrame({"name": ["Jane", "John"], "age": [20, 30]})
     assert "name" in ldf
