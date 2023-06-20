@@ -56,15 +56,15 @@ def test_lazy() -> None:
 
 
 @pytest.mark.parametrize(
-        ("data", "repr_"),
-        [
-            ({}, "0 cols, {}"),
-            ({"a": [1]}, '1 col, {"a": Int64}'),
-            ({"a": [1], "b": ["B"]}, '2 cols, {"a": Int64, "b": Utf8}'),
-            ({"a": [1], "b": ["B"], "c": [0.]}, '3 cols, {"a": Int64 … "c": Float64}'),
-        ],
+    ("data", "repr_"),
+    [
+        ({}, "0 cols, {}"),
+        ({"a": [1]}, '1 col, {"a": Int64}'),
+        ({"a": [1], "b": ["B"]}, '2 cols, {"a": Int64, "b": Utf8}'),
+        ({"a": [1], "b": ["B"], "c": [0.0]}, '3 cols, {"a": Int64 … "c": Float64}'),
+    ],
 )
-def test_repr(data: dict, repr_: str) -> None:
+def test_repr(data: dict[str, list[Any]], repr_: str) -> None:
     ldf = pl.LazyFrame(data)
     assert repr(ldf).startswith(f"<LazyFrame [{repr_}] at ")
 
