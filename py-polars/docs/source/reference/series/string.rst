@@ -40,6 +40,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.to_decimal
     Series.str.to_lowercase
     Series.str.to_time
+    Series.str.to_titlecase
     Series.str.to_uppercase
     Series.str.zfill
     Series.str.parse_int

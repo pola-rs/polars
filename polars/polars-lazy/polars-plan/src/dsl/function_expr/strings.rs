@@ -57,6 +57,8 @@ pub enum StringFunction {
     },
     Uppercase,
     Lowercase,
+    #[cfg(feature = "nightly")]
+    Titlecase,
     Strip(Option<String>),
     RStrip(Option<String>),
     LStrip(Option<String>),
@@ -83,12 +85,14 @@ impl StringFunction {
             #[cfg(feature = "temporal")]
             Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "concat_str")]
-            ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
+            ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_same_dtype(),
             #[cfg(feature = "regex")]
-            Replace { .. } => mapper.with_dtype(DataType::Utf8),
+            Replace { .. } => mapper.with_same_dtype(),
             Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) | Slice(_, _) => {
-                mapper.with_dtype(DataType::Utf8)
+                mapper.with_same_dtype()
             }
+            #[cfg(feature = "nightly")]
+            Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "string_from_radix")]
             FromRadix { .. } => mapper.with_dtype(DataType::Int32),
             Explode => mapper.with_same_dtype(),
@@ -124,6 +128,8 @@ impl Display for StringFunction {
             StringFunction::Replace { .. } => "replace",
             StringFunction::Uppercase => "uppercase",
             StringFunction::Lowercase => "lowercase",
+            #[cfg(feature = "nightly")]
+            StringFunction::Titlecase => "titlecase",
             StringFunction::Strip(_) => "strip",
             StringFunction::LStrip(_) => "lstrip",
             StringFunction::RStrip(_) => "rstrip",
@@ -147,6 +153,12 @@ pub(super) fn uppercase(s: &Series) -> PolarsResult<Series> {
 pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_lowercase().into_series())
+}
+
+#[cfg(feature = "nightly")]
+pub(super) fn titlecase(s: &Series) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.to_titlecase().into_series())
 }
 
 #[cfg(feature = "regex")]

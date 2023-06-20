@@ -67,6 +67,7 @@ sign = []
 timezones = ["chrono-tz", "polars-time/timezones", "polars-core/timezones", "regex"]
 binary_encoding = ["polars-ops/binary_encoding"]
 true_div = []
+nightly = ["polars-utils/nightly", "polars-ops/nightly"]
 
 # operations
 approx_unique = ["polars-ops/approx_unique"]
