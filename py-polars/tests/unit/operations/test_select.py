@@ -55,9 +55,20 @@ def test_select_empty() -> None:
 
 
 def test_select_none() -> None:
-    with pytest.deprecated_call():
-        result = pl.select(None)
-    expected = pl.DataFrame()
+    result = pl.select(None)
+    expected = pl.select(pl.lit(None))
+    assert_frame_equal(result, expected)
+
+
+def test_select_none_combined() -> None:
+    other = pl.lit(1).alias("one")
+
+    result = pl.select(None, other)
+    expected = pl.select(pl.lit(None), other)
+    assert_frame_equal(result, expected)
+
+    result = pl.select(other, None)
+    expected = pl.select(other, pl.lit(None))
     assert_frame_equal(result, expected)
 
 

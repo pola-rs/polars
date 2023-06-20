@@ -26,14 +26,9 @@ def test_first_input_to_list_empty() -> None:
     assert _first_input_to_list([]) == []
 
 
-def test_first_input_to_list_none() -> None:
-    with pytest.deprecated_call():
-        assert _first_input_to_list(None) == []
-
-
 @pytest.mark.parametrize(
     "input",
-    [5, 2.0, "a", pl.Series([1, 2, 3]), pl.lit(4)],
+    [5, 2.0, "a", pl.Series([1, 2, 3]), pl.lit(4), None],
 )
 def test_first_input_to_list_single(input: Any) -> None:
     assert _first_input_to_list(input) == [input]
