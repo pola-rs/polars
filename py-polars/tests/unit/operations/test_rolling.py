@@ -93,6 +93,7 @@ def test_rolling_empty_period_9464(
     )
     assert_frame_equal(result, expected)
 
+
 @pytest.mark.parametrize(
     ("offset", "closed", "expected_values"),
     [

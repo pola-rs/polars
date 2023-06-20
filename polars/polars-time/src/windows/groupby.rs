@@ -465,16 +465,19 @@ pub(crate) fn groupby_values_iter<'a>(
         // t is at the right endpoint of the window
         let mut offset = period;
         offset.negative = true;
-        let iter =
-            groupby_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
+        let iter = groupby_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
         Box::new(iter)
     } else if matches!(closed_window, ClosedWindow::Both) {
         // window only contains t
-        let iter = time.iter().enumerate().map(|(i, _)| Ok((i as IdxSize, 1)));
+        let iter = (0..time.len())
+            .enumerate()
+            .map(|(i, _)| Ok((i as IdxSize, 1)));
         Box::new(iter)
     } else {
         // empty window
-        let iter = time.iter().enumerate().map(|(i, _)| Ok((i as IdxSize, 0)));
+        let iter = (0..time.len())
+            .enumerate()
+            .map(|(i, _)| Ok((i as IdxSize, 0)));
         Box::new(iter)
     }
 }
