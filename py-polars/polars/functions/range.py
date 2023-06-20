@@ -205,7 +205,13 @@ def date_range(
     interval
         Interval of the range periods; can be a python timedelta object like
         ``timedelta(days=10)`` or a polars duration string, such as ``3d12h4m25s``
-        (representing 3 days, 12 hours, 4 minutes, and 25 seconds).
+        (representing 3 days, 12 hours, 4 minutes, and 25 seconds). Append
+        ``_saturating`` to the interval string to restrict resulting invalid dates to
+        valid ranges.
+
+        It is common to attempt to create a month-end date series by using the "1mo"
+        offset string with a start date at the end of the month. This will not produce
+        the desired results. See Note #2 below for further information.
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
     time_unit : {None, 'ns', 'us', 'ms'}
@@ -224,9 +230,43 @@ def date_range(
 
     Notes
     -----
-    If both ``start`` and ``end`` are passed as date types (not datetime), and the
+    1) If both ``start`` and ``end`` are passed as date types (not datetime), and the
     interval granularity is no finer than 1d, the returned range is also of
     type date. All other permutations return a datetime Series.
+
+    2) Because different months of the year have differing numbers of days, the offset
+    strings "1mo" and "1y" are not well-defined units of time, and vary according to
+    their starting point. For example, February 1st offset by one month returns a time
+    28 days later (in a non-leap year), whereas May 1st offset by one month returns a
+    time 31 days later. In general, an offset of one month selects the same day in the
+    following month. However, this is not always intended: when one begins Febrary 28th
+    and offsets by 1 month, does the user intend to target March 28th (the next month
+    but same day), or March 31st (the end of the month)?
+
+    Polars uses the first approach: February 28th offset by 1 month is March 28th. When
+    a date-series is generated, each date is offset as of the prior date, meaning that
+    if one began January 31st, 2023, and offset by ``1mo_saturating`` until May 31st,
+    the following dates would be generated:
+
+    ``2023-01-31``, ``2023-02-28``, ``2023-03-28``, ``2023-04-28``, ``2023-05-28``.
+
+    This is almost never the intended result. Instead, it is recommended to begin with
+    the first day of the month and use the ``.dt.month_end()`` conversion routine, as
+    in:
+
+    >>> from datetime import date
+    >>> pl.date_range(
+    ...     date(2023, 1, 1), date(2023, 5, 1), "1mo", eager=True
+    ... ).dt.month_end()
+    shape: (5,)
+    Series: 'date' [date]
+    [
+            2023-01-31
+            2023-02-28
+            2023-03-31
+            2023-04-30
+            2023-05-31
+    ]
 
     Returns
     -------
