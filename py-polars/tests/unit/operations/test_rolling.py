@@ -72,6 +72,28 @@ def test_rolling_kernels_and_groupby_rolling(
     assert_frame_equal(out1, out2)
 
 
+@pytest.mark.parametrize(
+    ("expected", "closed"),
+    [
+        (None, "left"),
+        (None, "right"),
+        (None, "none"),
+        (1.0, "both"),
+    ],
+)
+def test_rolling_empty_period_9464(
+    expected_value: int | None, closed: ClosedInterval
+) -> None:
+    df = pl.DataFrame({"ts": [datetime(2020, 1, 1)], "value": [1]}).sort("ts")
+    result = df.select(
+        pl.col("value").rolling_sum(by="ts", window_size="0d", closed=closed)
+    )
+    expected = pl.DataFrame({"value": [expected_value]}).select(
+        pl.col("value").cast(pl.Int64)
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_rolling_skew() -> None:
     s = pl.Series([1, 2, 3, 3, 2, 10, 8])
     assert s.rolling_skew(window_size=4, bias=True).to_list() == pytest.approx(
