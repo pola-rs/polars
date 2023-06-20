@@ -223,8 +223,8 @@ pub fn groupby_windows(
     (groups, lower_bound, upper_bound)
 }
 
-// this assumes that the starting point is alwa
-pub(crate) fn groupby_values_iter_full_lookbehind(
+// this assumes that the given time point is the right endpoint of the window
+pub(crate) fn groupby_values_iter_lookbehind(
     period: Duration,
     offset: Duration,
     time: &[i64],
@@ -233,7 +233,7 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
     tz: Option<Tz>,
     start_offset: usize,
 ) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
-    debug_assert!(offset.duration_ns() >= period.duration_ns());
+    debug_assert!(offset.duration_ns() == period.duration_ns());
     debug_assert!(offset.negative);
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
@@ -465,8 +465,7 @@ pub(crate) fn groupby_values_iter<'a>(
     offset.negative = !period.negative;
     if offset.duration_ns() > 0 {
         // t is at the right endpoint of the window
-        let iter =
-            groupby_values_iter_full_lookbehind(period, offset, time, closed_window, tu, tz, 0);
+        let iter = groupby_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
         Box::new(iter)
     } else if closed_window == ClosedWindow::Right || closed_window == ClosedWindow::None {
         // only lookahead
@@ -525,7 +524,7 @@ pub fn groupby_values(
                     .copied()
                     .map(|(base_offset, len)| {
                         let upper_bound = base_offset + len;
-                        let iter = groupby_values_iter_full_lookbehind(
+                        let iter = groupby_values_iter_lookbehind(
                             period,
                             offset,
                             &time[..upper_bound],
