@@ -56,6 +56,9 @@ class _selector_proxy_(Expr):
 
     def __invert__(self) -> Self:
         """Invert the selector."""
+        if not hasattr(self, "_attrs"):
+            return ~self.as_expr()  # type: ignore[return-value]
+
         name = self._attrs["name"]
         if name in ("first", "last", "sub", "and", "or"):
             raise ValueError(f"Cannot currently invert {name!r} selector")
@@ -81,45 +84,61 @@ class _selector_proxy_(Expr):
         )
 
     def __repr__(self) -> str:
-        params = self._attrs["params"]
-        not_ = "~" if self._inverted else ""
-        str_params = ",".join(f"{k}={v!r}" for k, v in (params or {}).items())
-        return f"{not_}cs.{self._attrs['name']}({str_params})"
+        if not hasattr(self, "_attrs"):
+            return re.sub(
+                r"<[\w.]+_selector_proxy_[\w ]+>", "<selector>", super().__repr__()
+            )
+        else:
+            selector_name, params = self._attrs["name"], self._attrs["params"]
+            set_ops = {"and": "&", "or": "|", "sub": "-"}
+            if selector_name in set_ops:
+                op = set_ops[selector_name]
+                return f" {op} ".join(repr(p) for p in params.values())
+            else:
+                not_ = "~" if self._inverted else ""
+                str_params = ",".join(f"{k}={v!r}" for k, v in (params or {}).items())
+                return f"{not_}cs.{selector_name}({str_params})"
 
     def __sub__(self, other: Any) -> Expr:  # type: ignore[override]
-        if isinstance(other, _selector_proxy_):
+        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
-                self.meta._as_selector().meta._selector_sub(other), name="sub"
+                self.meta._as_selector().meta._selector_sub(other),
+                parameters={"self": self, "other": other},
+                name="sub",
             )
         else:
             return self.as_expr().__sub__(other)
 
     def __and__(self, other: Any) -> Expr:  # type: ignore[override]
-        if isinstance(other, _selector_proxy_):
+        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
-                self.meta._as_selector().meta._selector_and(other), name="and"
+                self.meta._as_selector().meta._selector_and(other),
+                parameters={"self": self, "other": other},
+                name="and",
             )
         else:
             return self.as_expr().__and__(other)
 
     def __or__(self, other: Any) -> Expr:  # type: ignore[override]
-        if isinstance(other, _selector_proxy_):
+        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
-                self.meta._as_selector().meta._selector_add(other), name="or"
+                self.meta._as_selector().meta._selector_add(other),
+                parameters={"self": self, "other": other},
+                name="or",
             )
         else:
             return self.as_expr().__or__(other)
 
     def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
         # order of operation doesn't matter
-        if isinstance(other, _selector_proxy_):
+        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return self.__and__(other)
         else:
             return self.as_expr().__rand__(other)
 
     def __ror__(self, other: Any) -> Expr:  # type: ignore[override]
         # order of operation doesn't matter
-        if isinstance(other, _selector_proxy_):
+        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return self.__or__(other)
         else:
             return self.as_expr().__ror__(other)
@@ -129,7 +148,7 @@ class _selector_proxy_(Expr):
         Materialize the ``selector`` into a normal expression.
 
         This ensures that the operators ``|``, ``&``, ``~`` and ``-``
-        are applied on the data and not no the selector sets.
+        are applied on the data and not on the selector sets.
         """
         return Expr._from_pyexpr(self._pyexpr)
 
