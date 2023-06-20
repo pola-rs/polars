@@ -17,8 +17,10 @@ if TYPE_CHECKING:
 
 
 @given(
-    period=st.timedeltas(min_value=timedelta(microseconds=0)),
-    offset=st.timedeltas(),
+    period=st.timedeltas(min_value=timedelta(microseconds=0)).map(
+        _timedelta_to_pl_duration
+    ),
+    offset=st.timedeltas().map(_timedelta_to_pl_duration),
     closed=strategy_closed,
     data=st.data(),
     time_unit=strategy_time_unit,
@@ -38,8 +40,6 @@ def test_groupby_rolling(
             ],
         )
     )
-    offset = _timedelta_to_pl_duration(offset)
-    period = _timedelta_to_pl_duration(period)
     df = dataframe.sort("ts").unique("ts")
     try:
         result = df.groupby_rolling(
