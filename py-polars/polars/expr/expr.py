@@ -4937,11 +4937,9 @@ class Expr:
         │ 23     ┆ 2001-01-01 23:00:00 │
         │ 24     ┆ 2001-01-02 00:00:00 │
         └────────┴─────────────────────┘
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_min=pl.col("row_nr").rolling_min(
-        ...             window_size="2h", by="date"
-        ...         )
+        >>> df_temporal.with_columns(
+        ...     rolling_row_min=pl.col("row_nr").rolling_min(
+        ...         window_size="2h", by="date"
         ...     )
         ... )
         shape: (25, 3)
@@ -5157,11 +5155,9 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         Compute the rolling max with the closure of windows on both sides
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_max=pl.col("row_nr").rolling_max(
-        ...             window_size="2h", by="date", closed="both"
-        ...         )
+        >>> df_temporal.with_columns(
+        ...     rolling_row_max=pl.col("row_nr").rolling_max(
+        ...         window_size="2h", by="date", closed="both"
         ...     )
         ... )
         shape: (25, 3)
@@ -5354,11 +5350,9 @@ class Expr:
         └────────┴─────────────────────┘
 
         Compute the rolling mean with the default left closure of temporal windows
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_mean=pl.col("row_nr").rolling_mean(
-        ...             window_size="2h", by="date"
-        ...         )
+        >>> df_temporal.with_columns(
+        ...     rolling_row_mean=pl.col("row_nr").rolling_mean(
+        ...         window_size="2h", by="date"
         ...     )
         ... )
         shape: (25, 3)
@@ -5379,11 +5373,9 @@ class Expr:
         └────────┴─────────────────────┴──────────────────┘
 
         Compute the rolling mean with the closure of windows on both sides
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_mean=pl.col("row_nr").rolling_mean(
-        ...             window_size="2h", by="date", closed="both"
-        ...         )
+        >>> df_temporal.with_columns(
+        ...     rolling_row_mean=pl.col("row_nr").rolling_mean(
+        ...         window_size="2h", by="date", closed="both"
         ...     )
         ... )
         shape: (25, 3)
@@ -5576,11 +5568,9 @@ class Expr:
         └────────┴─────────────────────┘
 
         Compute the rolling sum with the default left closure of temporal windows
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_sum=pl.col("row_nr").rolling_sum(
-        ...             window_size="2h", by="date"
-        ...         )
+        >>> df_temporal.with_columns(
+        ...     rolling_row_sum=pl.col("row_nr").rolling_sum(
+        ...         window_size="2h", by="date"
         ...     )
         ... )
         shape: (25, 3)
@@ -5601,11 +5591,9 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         Compute the rolling sum with the closure of windows on both sides
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_sum=pl.col("row_nr").rolling_sum(
-        ...             window_size="2h", by="date", closed="both"
-        ...         )
+        >>> df_temporal.with_columns(
+        ...     rolling_row_sum=pl.col("row_nr").rolling_sum(
+        ...         window_size="2h", by="date", closed="both"
         ...     )
         ... )
         shape: (25, 3)
@@ -5801,11 +5789,9 @@ class Expr:
         └────────┴─────────────────────┘
 
         Compute the rolling std with the default left closure of temporal windows
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_std=pl.col("row_nr").rolling_std(
-        ...             window_size="2h", by="date"
-        ...         )
+        >>> df_temporal.with_columns(
+        ...     rolling_row_std=pl.col("row_nr").rolling_std(
+        ...         window_size="2h", by="date"
         ...     )
         ... )
         shape: (25, 3)
@@ -5826,11 +5812,9 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         Compute the rolling std with the closure of windows on both sides
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_std=pl.col("row_nr").rolling_std(
-        ...             window_size="2h", by="date", closed="both"
-        ...         )
+        >>> df_temporal.with_columns(
+        ...     rolling_row_std=pl.col("row_nr").rolling_std(
+        ...         window_size="2h", by="date", closed="both"
         ...     )
         ... )
         shape: (25, 3)
@@ -6026,11 +6010,9 @@ class Expr:
         └────────┴─────────────────────┘
 
         Compute the rolling var with the default left closure of temporal windows
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_var=pl.col("row_nr").rolling_var(
-        ...             window_size="2h", by="date"
-        ...         )
+        >>> df_temporal.with_columns(
+        ...     rolling_row_var=pl.col("row_nr").rolling_var(
+        ...         window_size="2h", by="date"
         ...     )
         ... )
         shape: (25, 3)
@@ -6051,11 +6033,9 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         Compute the rolling var with the closure of windows on both sides
-        >>> (
-        ...     df_temporal.with_columns(
-        ...         rolling_row_var=pl.col("row_nr").rolling_var(
-        ...             window_size="2h", by="date", closed="both"
-        ...         )
+        >>> df_temporal.with_columns(
+        ...     rolling_row_var=pl.col("row_nr").rolling_var(
+        ...         window_size="2h", by="date", closed="both"
         ...     )
         ... )
         shape: (25, 3)
