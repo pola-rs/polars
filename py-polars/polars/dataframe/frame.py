@@ -3867,6 +3867,7 @@ class DataFrame:
         # execute metrics in parallel
         df_metrics = (
             # Sort numeric columns so we can use fast-path statistics
+            # For min,max,median and percentiles
             self.with_columns(F.col(NUMERIC_DTYPES).sort())
             .select(
                 F.all().count().prefix("count:"),
