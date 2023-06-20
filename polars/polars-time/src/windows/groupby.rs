@@ -456,30 +456,19 @@ pub(crate) fn groupby_values_iter_full_lookahead(
 #[cfg(feature = "rolling_window")]
 pub(crate) fn groupby_values_iter<'a>(
     period: Duration,
-    offset: Duration,
     time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
-    // we have a (partial) lookbehind window
-    if offset.negative {
-        // only lookbehind
-        if offset.nanoseconds() == period.nanoseconds() {
-            let iter =
-                groupby_values_iter_full_lookbehind(period, offset, time, closed_window, tu, tz, 0);
-            Box::new(iter)
-        }
-        // partial lookbehind
-        else {
-            let iter =
-                groupby_values_iter_partial_lookbehind(period, offset, time, closed_window, tu, tz);
-            Box::new(iter)
-        }
-    } else if offset != Duration::parse("0ns")
-        || closed_window == ClosedWindow::Right
-        || closed_window == ClosedWindow::None
-    {
+    let mut offset = period;
+    offset.negative = !period.negative;
+    if offset.duration_ns() > 0 {
+        // t is at the right endpoint of the window
+        let iter =
+            groupby_values_iter_full_lookbehind(period, offset, time, closed_window, tu, tz, 0);
+        Box::new(iter)
+    } else if closed_window == ClosedWindow::Right || closed_window == ClosedWindow::None {
         // only lookahead
         let iter = groupby_values_iter_full_lookahead(
             period,
