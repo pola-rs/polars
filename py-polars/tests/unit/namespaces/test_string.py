@@ -701,3 +701,25 @@ def test_splitn() -> None:
 
     assert_frame_equal(out, expected)
     assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
+
+
+def test_titlecase() -> None:
+    df = pl.DataFrame(
+        {
+            "sing": [
+                "welcome to my world",
+                "THERE'S NO TURNING BACK",
+                "double  space",
+                "and\ta\t tab",
+            ]
+        }
+    )
+
+    assert df.select(pl.col("sing").str.to_titlecase()).to_dict(False) == {
+        "sing": [
+            "Welcome To My World",
+            "There's No Turning Back",
+            "Double  Space",
+            "And\tA\t Tab",
+        ]
+    }
