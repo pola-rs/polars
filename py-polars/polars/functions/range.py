@@ -230,6 +230,7 @@ def date_range(
 
     Notes
     -----
+    
     1) If both ``start`` and ``end`` are passed as date types (not datetime), and the
     interval granularity is no finer than 1d, the returned range is also of
     type date. All other permutations return a datetime Series.
@@ -254,6 +255,7 @@ def date_range(
     the first day of the month and use the ``.dt.month_end()`` conversion routine, as
     in:
 
+    >>> from datetime import date
     >>> pl.date_range(
     ...     date(2023, 1, 1), date(2023, 5, 1), "1mo", eager=True
     ... ).dt.month_end()
