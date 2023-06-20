@@ -5,7 +5,7 @@ use num_traits::NumCast;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer};
+use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer, TryFromWithUnit};
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::utf8::Pattern;
 use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
@@ -148,14 +148,15 @@ fn deserialize_number<T: NativeType + NumCast>(value: &Value) -> Option<T> {
 fn deserialize_datetime<T>(value: &Value) -> Option<T::Native>
 where
     T: PolarsNumericType,
-    DatetimeInfer<T::Native>: TryFrom<Pattern>,
+    DatetimeInfer<T::Native>: TryFromWithUnit<Pattern>,
 {
     let val = match value {
         Value::String(s) => s,
         _ => return None,
     };
     infer_pattern_single(val).and_then(|pattern| {
-        match DatetimeInfer::<T::Native>::try_from(pattern) {
+        match DatetimeInfer::<T::Native>::try_from_with_unit(pattern, Some(TimeUnit::Microseconds))
+        {
             Ok(mut infer) => infer.parse(val),
             Err(_) => None,
         }

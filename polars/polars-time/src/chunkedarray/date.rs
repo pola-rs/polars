@@ -49,8 +49,8 @@ pub trait DateMethods: AsDate {
         ca.apply_kernel_cast::<UInt32Type>(&date_to_month)
     }
 
-    /// Extract weekday from underlying NaiveDate representation.
-    /// Returns the weekday number where monday = 0 and sunday = 6
+    /// Extract ISO weekday from underlying NaiveDate representation.
+    /// Returns the weekday number where monday = 1 and sunday = 7
     fn weekday(&self) -> UInt32Chunked {
         let ca = self.as_date();
         ca.apply_kernel_cast::<UInt32Type>(&date_to_iso_weekday)

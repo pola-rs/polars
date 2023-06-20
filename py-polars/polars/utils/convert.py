@@ -84,18 +84,14 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in nanoseconds."""
     dt = dt.replace(tzinfo=timezone.utc)
     if time_unit == "ns":
-        nanos = dt.microsecond * 1000
-        return int(dt.timestamp()) * 1_000_000_000 + nanos
-    elif time_unit == "us":
         micros = dt.microsecond
-        return int(dt.timestamp()) * 1_000_000 + micros
+        return 1_000 * (int(dt.replace(microsecond=0).timestamp() * 1_000_000) + micros)
+    elif time_unit == "us" or time_unit is None:
+        micros = dt.microsecond
+        return int(dt.replace(microsecond=0).timestamp() * 1_000_000) + micros
     elif time_unit == "ms":
         millis = dt.microsecond // 1000
-        return int(dt.timestamp()) * 1_000 + millis
-    elif time_unit is None:
-        # python has us precision
-        micros = dt.microsecond
-        return int(dt.timestamp()) * 1_000_000 + micros
+        return int(dt.replace(microsecond=0).timestamp() * 1_000) + millis
     else:
         raise ValueError(
             f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
@@ -213,12 +209,20 @@ def _localize(dt: datetime, time_zone: str) -> datetime:
     return dt.astimezone(_tzinfo)
 
 
-def _datetime_for_anyvalue(dt: datetime) -> tuple[float, int]:
+def _timestamp_in_seconds(dt: datetime) -> int:
+    du = dt - EPOCH_UTC
+    return du.days * 86400 + du.seconds
+
+
+def _datetime_for_anyvalue(dt: datetime) -> tuple[int, int]:
     """Used in pyo3 anyvalue conversion."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
     # returns (s, ms)
-    return (dt.replace(microsecond=0).timestamp(), dt.microsecond)
+    if dt.tzinfo is None:
+        return (
+            _timestamp_in_seconds(dt.replace(tzinfo=timezone.utc)),
+            dt.microsecond,
+        )
+    return (_timestamp_in_seconds(dt), dt.microsecond)
 
 
 def _datetime_for_anyvalue_windows(dt: datetime) -> tuple[float, int]:
@@ -226,7 +230,7 @@ def _datetime_for_anyvalue_windows(dt: datetime) -> tuple[float, int]:
     if dt.tzinfo is None:
         dt = _localize(dt, "UTC")
     # returns (s, ms)
-    return (dt.replace(microsecond=0).timestamp(), dt.microsecond)
+    return (_timestamp_in_seconds(dt), dt.microsecond)
 
 
 # cache here as we have a single tz per column

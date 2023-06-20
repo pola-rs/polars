@@ -923,11 +923,27 @@ def test_lit_dtypes() -> None:
 
 
 def test_incompatible_lit_dtype() -> None:
-    with pytest.raises(TypeError, match="Cannot cast tz-aware value to tz-aware dtype"):
+    with pytest.raises(
+        TypeError,
+        match=r"Time zone of dtype \(Asia/Kathmandu\) differs from time zone of value \(UTC\).",
+    ):
         pl.lit(
             datetime(2020, 1, 1, tzinfo=timezone.utc),
             dtype=pl.Datetime("us", "Asia/Kathmandu"),
         )
+
+
+def test_lit_dtype_utc() -> None:
+    result = pl.select(
+        pl.lit(
+            datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu")),
+            dtype=pl.Datetime("us", "Asia/Kathmandu"),
+        )
+    )
+    expected = pl.DataFrame(
+        {"literal": [datetime(2019, 12, 31, 18, 15, tzinfo=timezone.utc)]}
+    ).select(pl.col("literal").dt.convert_time_zone("Asia/Kathmandu"))
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(

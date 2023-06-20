@@ -776,6 +776,36 @@ def test_tz_aware_try_parse_dates() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("try_parse_dates", [True, False])
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_csv_overwrite_datetime_dtype(
+    try_parse_dates: bool, time_unit: TimeUnit
+) -> None:
+    data = """\
+    a
+    2020-1-1T00:00:00.123456789
+    2020-1-2T00:00:00.987654321
+    2020-1-3T00:00:00.132547698
+    """
+    result = pl.read_csv(
+        io.StringIO(data),
+        try_parse_dates=try_parse_dates,
+        dtypes={"a": pl.Datetime(time_unit)},
+    )
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [
+                    "2020-01-01T00:00:00.123456789",
+                    "2020-01-02T00:00:00.987654321",
+                    "2020-01-03T00:00:00.132547698",
+                ]
+            ).str.to_datetime(time_unit=time_unit)
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_csv_string_escaping() -> None:
     df = pl.DataFrame({"a": ["Free trip to A,B", '''Special rate "1.79"''']})
     f = io.BytesIO()
