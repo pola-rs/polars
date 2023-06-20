@@ -110,6 +110,10 @@ def test_selector_first_last(df: pl.DataFrame) -> None:
     assert df.select(cs.first()).columns == ["abc"]
     assert df.select(cs.last()).columns == ["qqR"]
 
+    all_columns = set(df.columns)
+    assert set(df.select(~cs.first()).columns) == (all_columns - {"abc"})
+    assert set(df.select(~cs.last()).columns) == (all_columns - {"qqR"})
+
 
 def test_selector_float(df: pl.DataFrame) -> None:
     assert df.select(cs.float()).schema == {
@@ -227,8 +231,11 @@ def test_selector_expansion() -> None:
 
 def test_selector_repr() -> None:
     assert repr(cs.all() - cs.first()) == "cs.all() - cs.first()"
-    assert repr(cs.float() | cs.by_name("x")) == "cs.float() | cs.by_name(names=['x'])"
-    assert repr(cs.float() & cs.matches("z")) == "cs.float() & cs.matches(pattern='z')"
+    assert repr(~cs.starts_with("a", "b")) == "~cs.starts_with('a', 'b')"
+    assert repr(cs.float() | cs.by_name("x")) == "cs.float() | cs.by_name('x')"
+    assert (
+        repr(cs.integer() & cs.matches("z")) == "cs.integer() & cs.matches(pattern='z')"
+    )
 
 
 def test_selector_sets(df: pl.DataFrame) -> None:
