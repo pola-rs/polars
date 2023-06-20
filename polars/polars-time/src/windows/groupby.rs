@@ -461,10 +461,9 @@ pub(crate) fn groupby_values_iter<'a>(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
-    let mut offset = period;
-    if offset.duration_ns() > 0
-    {
+    if period.duration_ns() > 0 {
         // t is at the right endpoint of the window
+        let mut offset = period;
         offset.negative = true;
         let iter =
             groupby_values_iter_full_lookbehind(period, offset, time, closed_window, tu, tz, 0);
