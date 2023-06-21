@@ -5,14 +5,19 @@ use std::ops::Sub;
 use num_traits::Bounded;
 use polars_arrow::index::IdxSize;
 
+// We 
+//It turns out to be clearer to iterate over elements of R and find their preimage. The direction of
+//iteration depends on whether we are rolling forward or backward.
+
+
 #[inline]
-fn find_next_le<T: PartialOrd + Copy + Debug>(slice: &[T], val: &T) -> usize {
-    if slice.is_empty() {
-        return 0;
-    }
+unsafe fn find_next_le<T: PartialOrd + Copy + Debug>(slice: &[T], val: &T) -> usize {
+    // This is a tradeoff between a linear and a binary search. Linear is wasteful if we have long
+    // runs of values in the left index mapping to a single value in the right, but binary search is
+    // slower if a right value only maps to a few on the left.
     let mut last_idx = 0;
     let mut idx = 1;
-    while slice[idx - 1] <= *val && idx < slice.len() {
+    while slice.get_unchecked(idx - 1) <= val && idx < slice.len() {
         last_idx = idx;
         idx = std::cmp::min(2 * idx, slice.len());
     }
@@ -23,20 +28,23 @@ pub(super) fn join_asof_forward<T: PartialOrd + Copy + Debug>(
     left: &[T],
     right: &[T],
 ) -> Vec<Option<IdxSize>> {
-    let mut out = Vec::with_capacity(left.len());
-    let mut offset = 0;
-
-    for (i, &val_r) in right.iter().enumerate() {
-        let j = find_next_le(&left[offset..], &val_r);
-        out.extend(std::iter::repeat(Some(i as IdxSize)).take(j));
-        offset += j;
-        if j == left.len() {
-            break;
+        let mut out = Vec::with_capacity(left.len());
+        let mut slice = left;
+    
+        for (i, &val_r) in right.iter().enumerate() {
+            if slice.is_empty() {
+                break;
+            } else if val_r < slice[0] {
+                // Skip repeated values or values in right too small to match
+                continue;
+            }
+            let j = unsafe { find_next_le(slice, &val_r) };
+            out.extend(std::iter::repeat(Some(i as IdxSize)).take(j));
+            slice = &slice[j..];
         }
-    }
-
-    out.extend(std::iter::repeat(None).take(left.len() - out.len()));
-    out
+    
+        out.extend(std::iter::repeat(None).take(left.len() - out.len()));
+        out
 }
 
 pub(super) fn join_asof_forward_with_tolerance<T: PartialOrd + Copy + Debug + Sub<Output = T>>(
@@ -44,104 +52,39 @@ pub(super) fn join_asof_forward_with_tolerance<T: PartialOrd + Copy + Debug + Su
     right: &[T],
     tolerance: T,
 ) -> Vec<Option<IdxSize>> {
-
     let mut out = Vec::with_capacity(left.len());
     let mut slice = left;
 
     for (i, &val_r) in right.iter().enumerate() {
-        let j = find_next_le(slice, &val_r);
-        out.extend(slice[..j].iter().map(
-            |&x| if val_r - x > tolerance { None } else { Some(i as IdxSize)} ));
-        slice = &slice[j..];
-        if slice.len() == 0 {
+        if slice.is_empty() {
             break;
+        } else if val_r < slice[0] {
+            continue;
         }
+        let j = unsafe { find_next_le(slice, &val_r) };
+        // How many preceding values are NOT within the tolerance.
+        let k = slice[..j].partition_point(|&x| x < val_r - tolerance);
+        out.extend(std::iter::repeat(None).take(k));
+        out.extend(std::iter::repeat(Some(i as IdxSize)).take(j - k));
+        slice = &slice[j..];
     }
 
     out.extend(std::iter::repeat(None).take(left.len() - out.len()));
     out
 }
 
-pub(super) fn join_asof_backward_with_tolerance<T>(
-    left: &[T],
-    right: &[T],
-    tolerance: T,
-) -> Vec<Option<IdxSize>>
-where
-    T: PartialOrd + Copy + Debug + Sub<Output = T>,
-{
-    if right.is_empty() {
-        return vec![None; left.len()];
+#[inline]
+unsafe fn find_prev_gt<T: PartialOrd + Copy + Debug>(slice: &[T], val: &T) -> usize {
+    // See `find_next_le` This is basically the same but in reverse for rolling backward
+    let mut last_idx = slice.len();
+    let mut nback = 1;
+    let mut idx = last_idx - nback;
+    while slice.get_unchecked(idx) >= val && idx > 0 {
+        last_idx = idx;
+        idx = idx.saturating_sub(nback);
+        nback *= 2;
     }
-    if left.is_empty() {
-        return vec![];
-    }
-    let mut out = Vec::with_capacity(left.len());
-
-    let mut offset = 0 as IdxSize;
-    // left array could start lower than right;
-    // left: [-1, 0, 1, 2],
-    // right: [1, 2, 3]
-    // first values should be None, until left has caught up
-    let mut left_caught_up = false;
-
-    // init with left so that the distance starts at 0
-    let mut previous_right = left[0];
-    let mut dist;
-
-    for &val_l in left {
-        loop {
-            dist = val_l - previous_right;
-
-            match right.get(offset as usize) {
-                Some(&val_r) => {
-                    // we fill nulls until left value is larger than right
-                    if !left_caught_up {
-                        if val_l < val_r {
-                            out.push(None);
-                            break;
-                        } else {
-                            left_caught_up = true;
-                        }
-                    }
-
-                    // right is larger than left.
-                    // we take the last value before that
-                    if val_r > val_l {
-                        let value = if dist > tolerance {
-                            None
-                        } else {
-                            Some(offset - 1)
-                        };
-
-                        out.push(value);
-                        break;
-                    }
-                    // right still smaller or equal to left
-                    // continue looping the right side
-                    else {
-                        previous_right = val_r;
-                        offset += 1;
-                    }
-                }
-                // we depleted the right array
-                // we cannot fill the remainder of the value, because we need to check tolerances
-                None => {
-                    // if we have previous value, continue with that one
-                    let val = if left_caught_up && dist <= tolerance {
-                        Some(offset - 1)
-                    }
-                    // else null
-                    else {
-                        None
-                    };
-                    out.push(val);
-                    break;
-                }
-            }
-        }
-    }
-    out
+    idx + slice[idx..last_idx].partition_point(|x| x < val)
 }
 
 pub(super) fn join_asof_backward<T: PartialOrd + Copy + Debug>(
@@ -153,22 +96,65 @@ pub(super) fn join_asof_backward<T: PartialOrd + Copy + Debug>(
     }
     let mut out = VecDeque::with_capacity(left.len());
     let mut slice = left;
-    let lmax = left.last().unwrap();
-    for (i, &val_r) in right.iter().enumerate().rev().skip_while(|&x| x.1 > lmax) {
-        let j = slice.partition_point(|&x| x < val_r);
+
+    // We go in reverse because we are looking for values in left >= val_r, they're both sorted
+    // ascending, and when we have duplicate values in right, we match to the LAST one.
+    for (i, &val_r) in right.iter().enumerate().rev() {
+        if slice.is_empty() {
+            break;
+        } else if &val_r > slice.last().unwrap() {
+            // Skip repeated values or values in right too large to match
+            continue;
+        }
+        let j = unsafe { find_prev_gt(slice, &val_r) };
         for _ in j..slice.len() {
             out.push_front(Some(i as IdxSize));
         }
         slice = &slice[..j];
-        if slice.is_empty() {
-            break;
-        }
     }
+    
     for _ in out.len()..left.len() {
         out.push_front(None);
     }
-    return out.into();
+    out.into()
 }
+
+pub(super) fn join_asof_backward_with_tolerance<T: PartialOrd + Copy + Debug + Sub<Output = T>>(
+    left: &[T],
+    right: &[T],
+    tolerance: T,
+) -> Vec<Option<IdxSize>> {
+    if left.is_empty() {
+        return vec![];
+    }
+    let mut out = VecDeque::with_capacity(left.len());
+    let mut slice = left;
+    
+    for (i, &val_r) in right.iter().enumerate().rev() {
+        if slice.is_empty() {
+            break;
+        } else if &val_r > slice.last().unwrap() {
+            continue;
+        }
+        let j = unsafe { find_prev_gt(slice, &val_r) };
+        // How many following value ARE within the tolerance
+        let k = slice[j..].partition_point(|&x| tolerance >= x - val_r);
+        // Since left is sorted, farther out values are the ones outisde of the tolerance.
+        for _ in (j + k)..slice.len() {
+            out.push_front(None);
+        }
+        for _ in 0..k {
+            out.push_front(Some(i as IdxSize));
+        }
+        slice = &slice[..j];
+    }
+    
+    for _ in out.len()..left.len() {
+        out.push_front(None);
+    }
+    out.into()
+}
+
 
 pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> + Bounded>(
     left: &[T],
