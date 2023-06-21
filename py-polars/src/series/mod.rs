@@ -538,6 +538,7 @@ impl PySeries {
         Ok(s.into())
     }
 
+    #[pyo3(signature = (separator, drop_first=false))]
     fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PyResult<PyDataFrame> {
         let df = self
             .series

@@ -20,17 +20,11 @@ impl ToDummies for Series {
     fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
-        let groups = self.group_tuples(true, false)?;
+        let groups = self.group_tuples(true, drop_first)?;
 
         // safety: groups are in bounds
         let columns = unsafe { self.agg_first(&groups) };
-
-        let columns = if drop_first {
-            columns.iter().zip(groups.iter()).skip(1)
-        } else {
-            columns.iter().zip(groups.iter()).skip(0)
-        };
-
+        let columns = columns.iter().zip(groups.iter()).skip(drop_first as usize);
         let columns = columns
             .map(|(av, group)| {
                 // strings are formatted with extra \" \" in polars, so we
