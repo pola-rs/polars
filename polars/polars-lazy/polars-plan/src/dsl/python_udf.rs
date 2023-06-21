@@ -40,24 +40,16 @@ impl PythonFunction {
         let remainder = &buf[reader.position() as usize..];
 
         Python::with_gil(|py| {
-            let func: PyObject = PyModule::from_code(
-                py,
-                r#"
-def pickle_python_udf(arg):
-    import pickle
-    return pickle.loads(arg)
-"#,
-                "",
-                "",
-            )
-            .unwrap()
-            .getattr("pickle_python_udf")
-            .unwrap()
-            .into();
-
+            let pickle = PyModule::import(py, "pickle")
+                .expect("Unable to import 'pickle'")
+                .getattr("loads")
+                .unwrap();
             let arg = (PyBytes::new(py, remainder),);
-            let python_function = func.call1(py, arg).map_err(from_pyerr)?;
-            Ok(Arc::new(PythonFunction::new(python_function, output_type)) as Arc<dyn SeriesUdf>)
+            let python_function = pickle.call1(arg).map_err(from_pyerr)?;
+            Ok(
+                Arc::new(PythonFunction::new(python_function.into(), output_type))
+                    as Arc<dyn SeriesUdf>,
+            )
         })
     }
 }
@@ -87,25 +79,14 @@ impl SeriesUdf for PythonFunction {
         ciborium::ser::into_writer(&self.output_type, &mut *buf).unwrap();
 
         Python::with_gil(|py| {
-            let func: PyObject = PyModule::from_code(
-                py,
-                r#"
-def pickle_python_udf(arg):
-    import pickle
-    return pickle.dumps(arg)
-    "#,
-                "",
-                "",
-            )
-            .unwrap()
-            .getattr("pickle_python_udf")
-            .unwrap()
-            .into();
-
-            let dumped = func
-                .call1(py, (self.python_function.clone(),))
+            let pickle = PyModule::import(py, "pickle")
+                .expect("Unable to import 'pickle'")
+                .getattr("dumps")
+                .unwrap();
+            let dumped = pickle
+                .call1((self.python_function.clone(),))
                 .map_err(from_pyerr)?;
-            let dumped = dumped.extract::<&PyBytes>(py).unwrap();
+            let dumped = dumped.extract::<&PyBytes>().unwrap();
             buf.extend_from_slice(dumped.as_bytes());
             Ok(())
         })
