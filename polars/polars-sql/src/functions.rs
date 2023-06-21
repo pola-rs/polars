@@ -25,6 +25,46 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ABS(column_1) from df;
     /// ```
     Abs,
+    /// SQL 'cos' function
+    /// ```sql
+    /// SELECT COS(column_1) from df;
+    /// ```
+    Cos,
+    /// SQL 'cot' function
+    /// ```sql
+    /// SELECT COT(column_1) from df;
+    /// ```
+    Cot,
+    /// SQL 'sin' function
+    /// ```sql
+    /// SELECT SIN(column_1) from df;
+    /// ```
+    Sin,
+    /// SQL 'tan' function
+    /// ```sql
+    /// SELECT TAN(column_1) from df;
+    /// ```
+    Tan,
+    /// SQL 'cosd' function
+    /// ```sql
+    /// SELECT COSD(column_1) from df;
+    /// ```
+    CosD,
+    /// SQL 'cotd' function
+    /// ```sql
+    /// SELECT COTD(column_1) from df;
+    /// ```
+    CotD,
+    /// SQL 'sind' function
+    /// ```sql
+    /// SELECT SIND(column_1) from df;
+    /// ```
+    SinD,
+    /// SQL 'tand' function
+    /// ```sql
+    /// SELECT TAND(column_1) from df;
+    /// ```
+    TanD,
     /// SQL 'acos' function
     /// ```sql
     /// SELECT ACOS(column_1) from df;
@@ -40,6 +80,21 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ATAN(column_1) from df;
     /// ```
     Atan,
+    /// SQL 'acosd' function
+    /// ```sql
+    /// SELECT ACOSD(column_1) from df;
+    /// ```
+    AcosD,
+    /// SQL 'asind' function
+    /// ```sql
+    /// SELECT ASIND(column_1) from df;
+    /// ```
+    AsinD,
+    /// SQL 'atand' function
+    /// ```sql
+    /// SELECT ATAND(column_1) from df;
+    /// ```
+    AtanD,
     /// SQL 'ceil' function
     /// ```sql
     /// SELECT CEIL(column_1) from df;
@@ -184,6 +239,16 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ARRAY_LENGTH(column_1) from df;
     /// ```
     ArrayLength,
+    /// SQL 'degrees' function
+    /// ```sql
+    /// SELECT DEGREES(column_1) from df;
+    /// ```
+    Degrees,
+    /// SQL 'RADIANS' function
+    /// ```sql
+    /// SELECT radians(column_1) from df;
+    /// ```
+    Radians,
     /// SQL 'array_lower' function
     /// Returns the minimum value in an array; equivalent to `array_min`
     /// ```sql
@@ -245,6 +310,7 @@ impl PolarsSqlFunctions {
         &[
             "abs",
             "acos",
+            "acosd",
             "array_contains",
             "array_get",
             "array_length",
@@ -255,11 +321,18 @@ impl PolarsSqlFunctions {
             "array_unique",
             "array_upper",
             "asin",
+            "asind",
             "atan",
+            "atand",
             "avg",
             "ceil",
             "ceiling",
+            "cos",
+            "cosd",
+            "cot",
+            "cotd",
             "count",
+            "degrees",
             "ends_with",
             "exp",
             "first",
@@ -277,11 +350,18 @@ impl PolarsSqlFunctions {
             "max",
             "min",
             "pow",
+            "radians",
             "round",
             "rtrim",
+            "sin",
+            "sind",
             "starts_with",
             "stddev",
             "sum",
+            "tan",
+            "tan",
+            "tand",
+            "tand",
             "unnest",
             "upper",
             "variance",
@@ -298,9 +378,22 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             // Math functions
             // ----
             "abs" => Self::Abs,
+            "cos" => Self::Cos,
+            "cot" => Self::Cot,
+            "sin" => Self::Sin,
+            "tan" => Self::Tan,
+            "cosd" => Self::CosD,
+            "cotd" => Self::CotD,
+            "sind" => Self::SinD,
+            "tand" => Self::TanD,
             "acos" => Self::Acos,
             "asin" => Self::Asin,
             "atan" => Self::Atan,
+            "acosd" => Self::AcosD,
+            "asind" => Self::AsinD,
+            "atand" => Self::AtanD,
+            "degrees" => Self::Degrees,
+            "radians" => Self::Radians,
             "ceil" | "ceiling" => Self::Ceil,
             "exp" => Self::Exp,
             "floor" => Self::Floor,
@@ -362,9 +455,22 @@ impl SqlFunctionVisitor<'_> {
             // Math functions
             // ----
             Abs => self.visit_unary(Expr::abs),
+            Cos => self.visit_unary(Expr::cos),
+            Cot => self.visit_unary(Expr::cot),
+            Sin => self.visit_unary(Expr::sin),
+            Tan => self.visit_unary(Expr::tan),
+            CosD => self.visit_unary(|e| e.radians().cos()),
+            CotD => self.visit_unary(|e| e.radians().cot()),
+            SinD => self.visit_unary(|e| e.radians().sin()),
+            TanD => self.visit_unary(|e| e.radians().tan()),
             Acos => self.visit_unary(Expr::arccos),
             Asin => self.visit_unary(Expr::arcsin),
             Atan => self.visit_unary(Expr::arctan),
+            AcosD => self.visit_unary(|e| e.arccos().degrees()),
+            AsinD => self.visit_unary(|e| e.arcsin().degrees()),
+            AtanD => self.visit_unary(|e| e.arctan().degrees()),
+            Degrees => self.visit_unary(Expr::degrees),
+            Radians => self.visit_unary(Expr::radians),
             Ceil => self.visit_unary(Expr::ceil),
             Exp => self.visit_unary(Expr::exp),
             Floor => self.visit_unary(Expr::floor),
