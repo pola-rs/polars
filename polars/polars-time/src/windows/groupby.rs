@@ -469,15 +469,11 @@ pub(crate) fn groupby_values_iter<'a>(
         Box::new(iter)
     } else if matches!(closed_window, ClosedWindow::Both) {
         // window only contains t
-        let iter = (0..time.len())
-            .enumerate()
-            .map(|(i, _)| Ok((i as IdxSize, 1)));
+        let iter = (0..time.len()).map(|i| Ok((i as IdxSize, 1)));
         Box::new(iter)
     } else {
         // empty window
-        let iter = (0..time.len())
-            .enumerate()
-            .map(|(i, _)| Ok((i as IdxSize, 0)));
+        let iter = (0..time.len()).map(|i| Ok((i as IdxSize, 0)));
         Box::new(iter)
     }
 }
