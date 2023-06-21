@@ -43,7 +43,7 @@ impl Serialize for SpecialEq<Arc<dyn SeriesUdf>> {
 
 #[cfg(feature = "serde")]
 impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn SeriesUdf>> {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(_deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'a>,
     {
@@ -51,7 +51,7 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn SeriesUdf>> {
         #[cfg(feature = "python")]
         {
             use crate::dsl::python_udf::MAGIC_BYTE_MARK;
-            let buf = Vec::<u8>::deserialize(deserializer)?;
+            let buf = Vec::<u8>::deserialize(_deserializer)?;
 
             if buf.starts_with(MAGIC_BYTE_MARK) {
                 let udf = python_udf::PythonFunction::try_deserialize(&buf)
