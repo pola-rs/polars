@@ -47,10 +47,9 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn SeriesUdf>> {
     where
         D: Deserializer<'a>,
     {
+        use serde::de::Error;
         #[cfg(feature = "python")]
         {
-            use serde::de::Error;
-
             use crate::dsl::python_udf::MAGIC_BYTE_MARK;
             let buf = Vec::<u8>::deserialize(deserializer)?;
 
