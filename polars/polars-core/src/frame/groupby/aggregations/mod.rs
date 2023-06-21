@@ -8,7 +8,7 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
-use num_traits::{Bounded, Num, NumCast, ToPrimitive, Zero, Float};
+use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::data_types::IsFloat;
 use polars_arrow::kernels::rolling;
 use polars_arrow::kernels::rolling::no_nulls::{
@@ -797,7 +797,7 @@ where
                             )
                         }
                     };
-                    
+
                     let mut ca = ChunkedArray::<T>::from_chunks("", vec![arr]);
                     ca.apply_mut(|v| v.powf(NumCast::from(0.5).unwrap()));
                     ca.into_series()

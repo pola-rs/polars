@@ -154,7 +154,8 @@ where
             &rolling::no_nulls::rolling_var,
             &rolling::nulls::rolling_var,
             Some(&super::rolling_kernels::no_nulls::rolling_var),
-        ).map(|mut s| {
+        )
+        .map(|mut s| {
             match s.dtype().clone() {
                 DataType::Float32 => {
                     let ca: &mut ChunkedArray<Float32Type> = s._get_inner_mut().as_mut();
@@ -168,6 +169,5 @@ where
             }
             s
         })
-    
     }
 }

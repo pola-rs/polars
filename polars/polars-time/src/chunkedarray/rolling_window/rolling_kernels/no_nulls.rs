@@ -150,4 +150,3 @@ where
     };
     rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter, params)
 }
-
