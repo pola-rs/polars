@@ -339,4 +339,10 @@ impl<'a> FieldsMapper<'a> {
         }
         Ok(first)
     }
+
+    #[cfg(feature = "extract_jsonpath")]
+    pub(super) fn with_opt_dtype(&self, dtype: Option<DataType>) -> PolarsResult<Field> {
+        let dtype = dtype.unwrap_or(DataType::Unknown);
+        self.with_dtype(dtype)
+    }
 }

@@ -556,6 +556,11 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Explode => map!(strings::explode),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonExtract {
+                dtype,
+                infer_schema_len,
+            } => map!(strings::json_extract, dtype.clone(), infer_schema_len),
         }
     }
 }

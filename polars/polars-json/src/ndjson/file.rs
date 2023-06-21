@@ -144,5 +144,6 @@ pub fn infer_iter<A: AsRef<str>>(rows: impl Iterator<Item = A>) -> PolarsResult<
     }
 
     let v: Vec<&DataType> = data_types.iter().collect();
-    Ok(crate::json::infer_schema::coerce_data_type(&v))
+    dbg!(&v);
+    dbg!(Ok(crate::json::infer_schema::coerce_data_type(&v)))
 }

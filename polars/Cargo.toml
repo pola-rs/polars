@@ -100,7 +100,12 @@ decompress = ["polars-io/decompress"]
 decompress-fast = ["polars-io/decompress-fast"]
 mode = ["polars-core/mode", "polars-lazy/mode"]
 take_opt_iter = ["polars-core/take_opt_iter"]
-extract_jsonpath = ["polars-core/strings", "polars-ops/extract_jsonpath", "polars-ops/strings"]
+extract_jsonpath = [
+  "polars-core/strings",
+  "polars-ops/extract_jsonpath",
+  "polars-ops/strings",
+  "polars-lazy/extract_jsonpath",
+]
 string_encoding = ["polars-ops/string_encoding", "polars-core/strings"]
 binary_encoding = ["polars-ops/binary_encoding"]
 groupby_list = ["polars-core/groupby_list"]

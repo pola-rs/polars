@@ -219,26 +219,16 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    fn str_json_extract(&self, dtype: Option<Wrap<DataType>>) -> Self {
+    fn str_json_extract(
+        &self,
+        dtype: Option<Wrap<DataType>>,
+        infer_schema_len: Option<usize>,
+    ) -> Self {
         let dtype = dtype.map(|wrap| wrap.0);
-
-        let output_type = match dtype.clone() {
-            Some(dtype) => GetOutput::from_type(dtype),
-            None => GetOutput::from_type(DataType::Unknown),
-        };
-
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            match ca.json_extract(dtype.clone()) {
-                Ok(ca) => Ok(Some(ca.into_series())),
-                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
-            }
-        };
-
-        self.clone()
-            .inner
-            .map(function, output_type)
-            .with_fmt("str.json_extract")
+        self.inner
+            .clone()
+            .str()
+            .json_extract(dtype, infer_schema_len)
             .into()
     }
 
