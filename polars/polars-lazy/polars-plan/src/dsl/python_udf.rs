@@ -1,32 +1,69 @@
-use std::ptr::null;
+use std::io::Cursor;
 use std::sync::Arc;
 
-use once_cell::sync::Lazy;
 use polars_arrow::error::PolarsResult;
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::prelude::Series;
-use pyo3::{PyObject, Python};
-use serde::{Deserialize, Serialize};
+use pyo3::types::{PyBytes, PyModule};
+use pyo3::{PyErr, PyObject, Python};
 
 use super::expr_dyn_fn::*;
 use crate::constants::MAP_LIST_NAME;
 use crate::prelude::*;
 
+// Will be overwritten on python polar start up.
 pub static mut CALL_LAMBDA: Option<fn(s: Series, lambda: &PyObject) -> PolarsResult<Series>> = None;
+pub(super) const MAGIC_BYTE_MARK: &[u8] = "POLARS_PYTHON_UDF".as_bytes();
 
 pub struct PythonFunction {
-    lambda: PyObject,
+    python_function: PyObject,
     output_type: Option<DataType>,
 }
 
 impl PythonFunction {
     pub fn new(lambda: PyObject, output_type: Option<DataType>) -> Self {
         Self {
-            lambda,
+            python_function: lambda,
             output_type,
         }
     }
+
+    pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn SeriesUdf>> {
+        debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
+        // skip header
+        let buf = &buf[MAGIC_BYTE_MARK.len()..];
+        let mut reader = Cursor::new(buf);
+        let output_type: Option<DataType> =
+            ciborium::de::from_reader(&mut reader).map_err(map_err)?;
+
+        let remainder = &buf[reader.position() as usize..];
+
+        Python::with_gil(|py| {
+            let func: PyObject = PyModule::from_code(
+                py,
+                r#"
+def pickle_python_udf(arg):
+    import pickle
+    return pickle.loads(arg)
+"#,
+                "",
+                "",
+            )
+            .unwrap()
+            .getattr("pickle_python_udf")
+            .unwrap()
+            .into();
+
+            let arg = (PyBytes::new(py, remainder),);
+            let python_function = func.call1(py, arg).map_err(from_pyerr)?;
+            Ok(Arc::new(PythonFunction::new(python_function, output_type)) as Arc<dyn SeriesUdf>)
+        })
+    }
+}
+
+fn from_pyerr(e: PyErr) -> PolarsError {
+    PolarsError::ComputeError(format!("error raised in python: {e}").into())
 }
 
 impl SeriesUdf for PythonFunction {
@@ -34,7 +71,7 @@ impl SeriesUdf for PythonFunction {
         let func = unsafe { CALL_LAMBDA.unwrap() };
 
         let output_type = self.output_type.clone().unwrap_or(DataType::Unknown);
-        let out = func(s[0].clone(), &self.lambda)?;
+        let out = func(s[0].clone(), &self.python_function)?;
 
         polars_ensure!(
             matches!(output_type, DataType::Unknown) || out.dtype() == &output_type,
@@ -44,27 +81,48 @@ impl SeriesUdf for PythonFunction {
         );
         Ok(Some(out))
     }
+
+    fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
+        buf.extend_from_slice(MAGIC_BYTE_MARK);
+        ciborium::ser::into_writer(&self.output_type, &mut *buf).unwrap();
+
+        Python::with_gil(|py| {
+            let func: PyObject = PyModule::from_code(
+                py,
+                r#"
+def pickle_python_udf(arg):
+    import pickle
+    return pickle.dumps(arg)
+    "#,
+                "",
+                "",
+            )
+            .unwrap()
+            .getattr("pickle_python_udf")
+            .unwrap()
+            .into();
+
+            let dumped = func
+                .call1(py, (self.python_function.clone(),))
+                .map_err(from_pyerr)?;
+            let dumped = dumped.extract::<&PyBytes>(py).unwrap();
+            buf.extend_from_slice(dumped.as_bytes());
+            Ok(())
+        })
+    }
+
+    fn get_output(&self) -> Option<GetOutput> {
+        let output_type = self.output_type.clone();
+        Some(GetOutput::map_field(move |fld| match output_type {
+            Some(ref dt) => Field::new(fld.name(), dt.clone()),
+            None => {
+                let mut fld = fld.clone();
+                fld.coerce(DataType::Unknown);
+                fld
+            }
+        }))
+    }
 }
-
-// impl<T: Serialize> Serialize for SeriesUdf {
-//     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-//         where
-//             S: Serializer,
-//     {
-//         self.0.serialize(serializer)
-//     }
-// }
-
-// #[cfg(feature = "serde")]
-// impl<'a, T: Deserialize<'a>> Deserialize<'a> for SpecialEq<T> {
-//     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-//         where
-//             D: Deserializer<'a>,
-//     {
-//         let t = T::deserialize(deserializer)?;
-//         Ok(SpecialEq(t))
-//     }
-// }
 
 impl Expr {
     pub fn map_python(self, func: PythonFunction, agg_list: bool) -> Expr {

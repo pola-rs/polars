@@ -144,13 +144,13 @@ pub enum Expr {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Box<Expr>,
     },
-    #[cfg_attr(feature = "serde", serde(skip))]
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
         function: SpecialEq<Arc<dyn SeriesUdf>>,
         /// output dtype of the function
+        #[cfg_attr(feature = "serde", serde(skip))]
         output_type: GetOutput,
         options: FunctionOptions,
     },

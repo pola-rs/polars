@@ -13,12 +13,63 @@ use super::*;
 pub trait SeriesUdf: Send + Sync {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>>;
 
-    fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
+    fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
         polars_bail!(ComputeError: "serialize not supported for this 'opaque' function")
     }
 
-    fn try_deserialize(&self, buf: &[u8]) -> PolarsResult<Arc<dyn SeriesUdf>> {
-        polars_bail!(ComputeError: "deserialize not supported for this 'opaque' function")
+    // Needed for python functions. After they are deserialized we first check if they
+    // have a function that generates an output
+    // This will be slower during optimization, so it is up to us to move
+    // all expression to the known function architecture.
+    fn get_output(&self) -> Option<GetOutput> {
+        None
+    }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::Error;
+        let mut buf = vec![];
+        self.0
+            .try_serialize(&mut buf)
+            .map_err(|e| S::Error::custom(format!("{e}")))?;
+        serializer.serialize_bytes(&buf)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        use serde::de::Error;
+        let buf = Vec::<u8>::deserialize(deserializer)?;
+
+        #[cfg(feature = "python")]
+        {
+            use crate::dsl::python_udf::MAGIC_BYTE_MARK;
+
+            if buf.starts_with(MAGIC_BYTE_MARK) {
+                let udf = python_udf::PythonFunction::try_deserialize(&buf)
+                    .map_err(|e| D::Error::custom(format!("{e}")))?;
+                Ok(SpecialEq::new(udf))
+            } else {
+                Err(D::Error::custom(
+                    "deserialize not supported for this 'opaque' function",
+                ))
+            }
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            Err(D::Error::custom(
+                "deserialize not supported for this 'opaque' function",
+            ))
+        }
     }
 }
 
@@ -92,7 +143,7 @@ impl Debug for dyn RenameAliasFn {
 pub struct SpecialEq<T>(T);
 
 #[cfg(feature = "serde")]
-impl<T: Serialize> Serialize for SpecialEq<T> {
+impl Serialize for SpecialEq<Series> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -102,12 +153,12 @@ impl<T: Serialize> Serialize for SpecialEq<T> {
 }
 
 #[cfg(feature = "serde")]
-impl<'a, T: Deserialize<'a>> Deserialize<'a> for SpecialEq<T> {
+impl<'a> Deserialize<'a> for SpecialEq<Series> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'a>,
     {
-        let t = T::deserialize(deserializer)?;
+        let t = Series::deserialize(deserializer)?;
         Ok(SpecialEq(t))
     }
 }

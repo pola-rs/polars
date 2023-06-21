@@ -10,9 +10,8 @@ use polars_core::prelude::{AnyValue, Series};
 use pyo3::prelude::*;
 
 use crate::apply::lazy::{call_lambda_with_series, ToSeries};
-use crate::prelude::{polars_bail, python_udf, ObjectValue};
+use crate::prelude::{python_udf, ObjectValue};
 use crate::py_modules::POLARS;
-use crate::series::PySeries;
 use crate::Wrap;
 
 pub(crate) const OBJECT_NAME: &str = "object";
