@@ -4,7 +4,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
-from hypothesis import given, reject, assume
+from hypothesis import assume, given, reject
 
 import polars as pl
 from polars.testing import assert_frame_equal
