@@ -68,6 +68,11 @@ pub enum StringFunction {
     Explode,
     #[cfg(feature = "dtype-decimal")]
     ToDecimal(usize),
+    #[cfg(feature = "extract_jsonpath")]
+    JsonExtract {
+        dtype: Option<DataType>,
+        infer_schema_len: Option<usize>,
+    },
 }
 
 impl StringFunction {
@@ -98,6 +103,8 @@ impl StringFunction {
             Explode => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonExtract { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
         }
     }
 }
@@ -139,6 +146,8 @@ impl Display for StringFunction {
             StringFunction::Explode => "explode",
             #[cfg(feature = "dtype-decimal")]
             StringFunction::ToDecimal(_) => "to_decimal",
+            #[cfg(feature = "extract_jsonpath")]
+            StringFunction::JsonExtract { .. } => "json_extract",
         };
 
         write!(f, "str.{s}")
@@ -674,4 +683,14 @@ pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
 pub(super) fn to_decimal(s: &Series, infer_len: usize) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     ca.to_decimal(infer_len)
+}
+
+#[cfg(feature = "extract_jsonpath")]
+pub(super) fn json_extract(
+    s: &Series,
+    dtype: Option<DataType>,
+    infer_schema_len: Option<usize>,
+) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.json_extract(dtype, infer_schema_len)
 }

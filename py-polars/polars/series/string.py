@@ -559,7 +559,9 @@ class StringNameSpace:
 
         """
 
-    def json_extract(self, dtype: PolarsDataType | None = None) -> Series:
+    def json_extract(
+        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+    ) -> Series:
         """
         Parse string values as JSON.
 
@@ -570,6 +572,9 @@ class StringNameSpace:
         dtype
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
+        infer_schema_length
+            How many rows to parse to determine the schema.
+            If ``None`` all rows are used.
 
         Examples
         --------

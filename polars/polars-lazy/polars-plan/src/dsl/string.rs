@@ -476,4 +476,13 @@ impl StringNameSpace {
         self.0
             .apply_private(FunctionExpr::StringExpr(StringFunction::Explode))
     }
+
+    #[cfg(feature = "extract_jsonpath")]
+    pub fn json_extract(self, dtype: Option<DataType>, infer_schema_len: Option<usize>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::JsonExtract {
+                dtype,
+                infer_schema_len,
+            }))
+    }
 }
