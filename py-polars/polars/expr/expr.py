@@ -4881,6 +4881,7 @@ class Expr:
         └─────┴─────────────┘
 
         Specify weights to multiply the values in the window with:
+
         >>> df.with_columns(
         ...     rolling_min=pl.col("A").rolling_min(
         ...         window_size=2, weights=[0.25, 0.75]
@@ -4901,6 +4902,7 @@ class Expr:
         └─────┴─────────────┘
 
         Center the values in the window
+
         >>> df.with_columns(
         ...     rolling_min=pl.col("A").rolling_min(window_size=3, center=True),
         ... )
@@ -4919,6 +4921,7 @@ class Expr:
         └─────┴─────────────┘
 
         Create a DataFrame with a datetime column and a row number column
+
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
@@ -5079,6 +5082,7 @@ class Expr:
         └─────┴─────────────┘
 
         Specify weights to multiply the values in the window with:
+
         >>> df.with_columns(
         ...     rolling_max=pl.col("A").rolling_max(
         ...         window_size=2, weights=[0.25, 0.75]
@@ -5099,6 +5103,7 @@ class Expr:
         └─────┴─────────────┘
 
         Center the values in the window
+
         >>> df.with_columns(
         ...     rolling_max=pl.col("A").rolling_max(window_size=3, center=True),
         ... )
@@ -5117,6 +5122,7 @@ class Expr:
         └─────┴─────────────┘
 
         Create a DataFrame with a datetime column and a row number column
+
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
@@ -5142,6 +5148,7 @@ class Expr:
         └────────┴─────────────────────┘
 
         Compute the rolling max with the default left closure of temporal windows
+
         >>> df_temporal.with_columns(
         ...     rolling_row_max=pl.col("row_nr").rolling_max(
         ...         window_size="2h", by="date"
@@ -5165,6 +5172,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         Compute the rolling max with the closure of windows on both sides
+
         >>> df_temporal.with_columns(
         ...     rolling_row_max=pl.col("row_nr").rolling_max(
         ...         window_size="2h", by="date", closed="both"
@@ -5302,6 +5310,7 @@ class Expr:
         └─────┴──────────────┘
 
         Specify weights to multiply the values in the window with:
+
         >>> df.with_columns(
         ...     rolling_mean=pl.col("A").rolling_mean(
         ...         window_size=2, weights=[0.25, 0.75]
@@ -5322,6 +5331,7 @@ class Expr:
         └─────┴──────────────┘
 
         Center the values in the window
+
         >>> df.with_columns(
         ...     rolling_mean=pl.col("A").rolling_mean(window_size=3, center=True),
         ... )
@@ -5340,6 +5350,7 @@ class Expr:
         └─────┴──────────────┘
 
         Create a DataFrame with a datetime column and a row number column
+
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
@@ -5365,6 +5376,7 @@ class Expr:
         └────────┴─────────────────────┘
 
         Compute the rolling mean with the default left closure of temporal windows
+
         >>> df_temporal.with_columns(
         ...     rolling_row_mean=pl.col("row_nr").rolling_mean(
         ...         window_size="2h", by="date"
@@ -5388,6 +5400,7 @@ class Expr:
         └────────┴─────────────────────┴──────────────────┘
 
         Compute the rolling mean with the closure of windows on both sides
+
         >>> df_temporal.with_columns(
         ...     rolling_row_mean=pl.col("row_nr").rolling_mean(
         ...         window_size="2h", by="date", closed="both"
@@ -5525,6 +5538,7 @@ class Expr:
         └─────┴─────────────┘
 
         Specify weights to multiply the values in the window with:
+
         >>> df.with_columns(
         ...     rolling_sum=pl.col("A").rolling_sum(
         ...         window_size=2, weights=[0.25, 0.75]
@@ -5545,6 +5559,7 @@ class Expr:
         └─────┴─────────────┘
 
         Center the values in the window
+
         >>> df.with_columns(
         ...     rolling_sum=pl.col("A").rolling_sum(window_size=3, center=True),
         ... )
@@ -5563,6 +5578,7 @@ class Expr:
         └─────┴─────────────┘
 
         Create a DataFrame with a datetime column and a row number column
+
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
@@ -5588,6 +5604,7 @@ class Expr:
         └────────┴─────────────────────┘
 
         Compute the rolling sum with the default left closure of temporal windows
+
         >>> df_temporal.with_columns(
         ...     rolling_row_sum=pl.col("row_nr").rolling_sum(
         ...         window_size="2h", by="date"
@@ -5611,6 +5628,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         Compute the rolling sum with the closure of windows on both sides
+
         >>> df_temporal.with_columns(
         ...     rolling_row_sum=pl.col("row_nr").rolling_sum(
         ...         window_size="2h", by="date", closed="both"
@@ -5751,6 +5769,7 @@ class Expr:
         └─────┴─────────────┘
 
         Specify weights to multiply the values in the window with:
+
         >>> df.with_columns(
         ...     rolling_std=pl.col("A").rolling_std(
         ...         window_size=2, weights=[0.25, 0.75]
@@ -5771,6 +5790,7 @@ class Expr:
         └─────┴─────────────┘
 
         Center the values in the window
+
         >>> df.with_columns(
         ...     rolling_std=pl.col("A").rolling_std(window_size=3, center=True),
         ... )
@@ -5789,6 +5809,7 @@ class Expr:
         └─────┴─────────────┘
 
         Create a DataFrame with a datetime column and a row number column
+
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
@@ -5814,6 +5835,7 @@ class Expr:
         └────────┴─────────────────────┘
 
         Compute the rolling std with the default left closure of temporal windows
+
         >>> df_temporal.with_columns(
         ...     rolling_row_std=pl.col("row_nr").rolling_std(
         ...         window_size="2h", by="date"
@@ -5837,6 +5859,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         Compute the rolling std with the closure of windows on both sides
+
         >>> df_temporal.with_columns(
         ...     rolling_row_std=pl.col("row_nr").rolling_std(
         ...         window_size="2h", by="date", closed="both"
@@ -5977,6 +6000,7 @@ class Expr:
         └─────┴─────────────┘
 
         Specify weights to multiply the values in the window with:
+
         >>> df.with_columns(
         ...     rolling_var=pl.col("A").rolling_var(
         ...         window_size=2, weights=[0.25, 0.75]
@@ -5997,6 +6021,7 @@ class Expr:
         └─────┴─────────────┘
 
         Center the values in the window
+
         >>> df.with_columns(
         ...     rolling_var=pl.col("A").rolling_var(window_size=3, center=True),
         ... )
@@ -6015,6 +6040,7 @@ class Expr:
         └─────┴─────────────┘
 
         Create a DataFrame with a datetime column and a row number column
+
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
@@ -6040,6 +6066,7 @@ class Expr:
         └────────┴─────────────────────┘
 
         Compute the rolling var with the default left closure of temporal windows
+
         >>> df_temporal.with_columns(
         ...     rolling_row_var=pl.col("row_nr").rolling_var(
         ...         window_size="2h", by="date"
@@ -6063,6 +6090,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         Compute the rolling var with the closure of windows on both sides
+
         >>> df_temporal.with_columns(
         ...     rolling_row_var=pl.col("row_nr").rolling_var(
         ...         window_size="2h", by="date", closed="both"
@@ -6202,6 +6230,7 @@ class Expr:
         └─────┴────────────────┘
 
         Specify weights to multiply the values in the window with:
+
         >>> df.with_columns(
         ...     rolling_median=pl.col("A").rolling_median(
         ...         window_size=2, weights=[0.25, 0.75]
@@ -6222,6 +6251,7 @@ class Expr:
         └─────┴────────────────┘
 
         Center the values in the window
+
         >>> df.with_columns(
         ...     rolling_median=pl.col("A").rolling_median(window_size=3, center=True),
         ... )
@@ -6358,6 +6388,7 @@ class Expr:
         └─────┴──────────────────┘
 
         Specify weights to multiply the values in the window with:
+
         >>> df.with_columns(
         ...     rolling_quantile=pl.col("A").rolling_quantile(
         ...         quantile=0.25, window_size=4, weights=[0.2, 0.4, 0.4, 0.2]
@@ -6378,6 +6409,7 @@ class Expr:
         └─────┴──────────────────┘
 
         Center the values in the window
+
         >>> df.with_columns(
         ...     rolling_quantile=pl.col("A").rolling_quantile(
         ...         quantile=0.2, window_size=5, center=True
