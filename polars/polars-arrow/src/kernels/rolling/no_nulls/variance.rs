@@ -1,5 +1,4 @@
 use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
-use num_traits::pow::Pow;
 
 use super::mean::MeanWindow;
 use super::*;
@@ -195,84 +194,6 @@ where
     }
 }
 
-// E[(xi - E[x])^2]
-// can be expanded to
-// E[x^2] - E[x]^2
-pub struct StdWindow<'a, T> {
-    var: VarWindow<'a, T>,
-}
-
-impl<
-        'a,
-        T: NativeType
-            + IsFloat
-            + Float
-            + std::iter::Sum
-            + AddAssign
-            + SubAssign
-            + Div<Output = T>
-            + NumCast
-            + One
-            + Zero
-            + Sub<Output = T>
-            + PartialOrd
-            + Pow<T, Output = T>,
-    > RollingAggWindowNoNulls<'a, T> for StdWindow<'a, T>
-{
-    fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
-        Self {
-            var: VarWindow::new(slice, start, end, params),
-        }
-    }
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        let var = self.var.update(start, end);
-        var.pow(NumCast::from(0.5).unwrap())
-    }
-}
-
-pub fn rolling_std<T>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-    params: DynArgs,
-) -> PolarsResult<ArrayRef>
-where
-    T: NativeType
-        + Float
-        + IsFloat
-        + std::iter::Sum
-        + AddAssign
-        + SubAssign
-        + Div<Output = T>
-        + NumCast
-        + One
-        + Zero
-        + Sub<Output = T>
-        + Pow<T, Output = T>,
-{
-    match (center, weights) {
-        (true, None) => rolling_apply_agg_window::<StdWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            params,
-        ),
-        (false, None) => rolling_apply_agg_window::<StdWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            det_offsets,
-            params,
-        ),
-        (_, Some(_)) => {
-            panic!("weights not yet supported for rolling_std")
-        }
-    }
-}
 
 #[cfg(test)]
 mod test {
