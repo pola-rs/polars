@@ -208,7 +208,9 @@ def test_rolling_crossing_dst(
         datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC", eager=True
     ).dt.replace_time_zone(time_zone)
     df = pl.DataFrame({"ts": ts, "value": [1, 2, 3, 4, 5, 6]})
-    result = df.with_columns(getattr(pl.col("value"), rolling_fn)("1d", by="ts"))
+    result = df.with_columns(
+        getattr(pl.col("value"), rolling_fn)("1d", by="ts", closed="left")
+    )
     expected = pl.DataFrame({"ts": ts, "value": expected_values})
     assert_frame_equal(result, expected)
 
