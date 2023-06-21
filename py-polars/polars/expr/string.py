@@ -942,7 +942,9 @@ class ExprStringNameSpace:
         prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
 
-    def json_extract(self, dtype: PolarsDataType | None = None) -> Expr:
+    def json_extract(
+        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+    ) -> Expr:
         """
         Parse string values as JSON.
 
@@ -953,6 +955,9 @@ class ExprStringNameSpace:
         dtype
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
+        infer_schema_length
+            How many rows to parse to determine the schema.
+            If ``None`` all rows are used.
 
         Examples
         --------
@@ -980,7 +985,7 @@ class ExprStringNameSpace:
         """
         if dtype is not None:
             dtype = py_type_to_dtype(dtype)
-        return wrap_expr(self._pyexpr.str_json_extract(dtype))
+        return wrap_expr(self._pyexpr.str_json_extract(dtype, infer_schema_length))
 
     def json_path_match(self, json_path: str) -> Expr:
         """
