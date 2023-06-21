@@ -461,21 +461,11 @@ pub(crate) fn groupby_values_iter<'a>(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
-    if period.duration_ns() > 0 {
-        // t is at the right endpoint of the window
-        let mut offset = period;
-        offset.negative = true;
-        let iter = groupby_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
-        Box::new(iter)
-    } else if matches!(closed_window, ClosedWindow::Both) {
-        // window only contains t
-        let iter = (0..time.len()).map(|i| Ok((i as IdxSize, 1)));
-        Box::new(iter)
-    } else {
-        // empty window
-        let iter = (0..time.len()).map(|i| Ok((i as IdxSize, 0)));
-        Box::new(iter)
-    }
+    let mut offset = period;
+    offset.negative = true;
+    // t is at the right endpoint of the window
+    let iter = groupby_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
+    Box::new(iter)
 }
 
 /// Different from `groupby_windows`, where define window buckets and search which values fit that
@@ -577,7 +567,7 @@ pub fn groupby_values(
             Ok(flatten_par(&vals))
         })
     } else {
-        // Duration is 0 and window is closed on the left:
+        // Offset is 0 and window is closed on the left:
         // it must be that the window starts at t and t is a member
         // --t-----------
         //  [---]
