@@ -459,6 +459,16 @@ impl PyExpr {
         self.clone().inner.arctanh().into()
     }
 
+    #[cfg(feature = "trigonometry")]
+    pub fn degrees(&self) -> Self {
+        self.clone().inner.degrees().into()
+    }
+
+    #[cfg(feature = "trigonometry")]
+    pub fn radians(&self) -> Self {
+        self.clone().inner.radians().into()
+    }
+
     #[cfg(feature = "sign")]
     fn sign(&self) -> Self {
         self.clone().inner.sign().into()

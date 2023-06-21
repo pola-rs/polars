@@ -23,6 +23,7 @@ Computation
     Expr.cumprod
     Expr.cumsum
     Expr.cumulative_eval
+    Expr.degrees
     Expr.diff
     Expr.dot
     Expr.entropy
@@ -39,6 +40,7 @@ Computation
     Expr.n_unique
     Expr.null_count
     Expr.pct_change
+    Expr.radians
     Expr.rank
     Expr.rolling_apply
     Expr.rolling_max
