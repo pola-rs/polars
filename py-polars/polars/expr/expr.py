@@ -7289,6 +7289,69 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arctanh())
 
+    def degrees(self) -> Self:
+        """
+        Convert from radians to degrees.
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        --------
+        >>> import math
+        >>> df = pl.DataFrame({"a": [x * math.pi for x in range(-4, 5)]})
+        >>> df.select(pl.col("a").degrees())
+        shape: (9, 1)
+        ┌────────┐
+        │ a      │
+        │ ---    │
+        │ f64    │
+        ╞════════╡
+        │ -720.0 │
+        │ -540.0 │
+        │ -360.0 │
+        │ -180.0 │
+        │ 0.0    │
+        │ 180.0  │
+        │ 360.0  │
+        │ 540.0  │
+        │ 720.0  │
+        └────────┘
+        """
+        return self._from_pyexpr(self._pyexpr.degrees())
+
+    def radians(self) -> Self:
+        """
+        Convert from degrees to radians.
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-720, -540, -360, -180, 0, 180, 360, 540, 720]})
+        >>> df.select(pl.col("a").radians())
+        shape: (9, 1)
+        ┌────────────┐
+        │ a          │
+        │ ---        │
+        │ f64        │
+        ╞════════════╡
+        │ -12.566371 │
+        │ -9.424778  │
+        │ -6.283185  │
+        │ -3.141593  │
+        │ 0.0        │
+        │ 3.141593   │
+        │ 6.283185   │
+        │ 9.424778   │
+        │ 12.566371  │
+        └────────────┘
+        """
+        return self._from_pyexpr(self._pyexpr.radians())
+
     def reshape(self, dimensions: tuple[int, ...]) -> Self:
         """
         Reshape this Expr to a flat Series or a Series of Lists.
