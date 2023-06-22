@@ -1,7 +1,6 @@
 use mean::MeanWindow;
 use nulls;
 use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
-use num_traits::pow::Pow;
 
 use super::*;
 
@@ -216,86 +215,6 @@ where
         det_offsets
     };
     rolling_apply_agg_window::<VarWindow<_>, _, _>(
-        arr.values().as_slice(),
-        arr.validity().as_ref().unwrap(),
-        window_size,
-        min_periods,
-        offsets_fn,
-        params,
-    )
-}
-
-pub struct StdWindow<'a, T> {
-    var: VarWindow<'a, T>,
-}
-
-impl<
-        'a,
-        T: NativeType
-            + IsFloat
-            + Float
-            + std::iter::Sum
-            + AddAssign
-            + SubAssign
-            + Div<Output = T>
-            + NumCast
-            + One
-            + Zero
-            + PartialOrd
-            + Add<Output = T>
-            + Sub<Output = T>
-            + Pow<T, Output = T>,
-    > RollingAggWindowNulls<'a, T> for StdWindow<'a, T>
-{
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        params: DynArgs,
-    ) -> Self {
-        Self {
-            var: VarWindow::new(slice, validity, start, end, params),
-        }
-    }
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        self.var
-            .update(start, end)
-            .map(|var| var.pow(NumCast::from(0.5).unwrap()))
-    }
-    fn is_valid(&self, min_periods: usize) -> bool {
-        self.var.is_valid(min_periods)
-    }
-}
-
-pub fn rolling_std<T>(
-    arr: &PrimitiveArray<T>,
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-    params: DynArgs,
-) -> ArrayRef
-where
-    T: NativeType
-        + std::iter::Sum<T>
-        + Zero
-        + AddAssign
-        + SubAssign
-        + IsFloat
-        + Float
-        + Pow<T, Output = T>,
-{
-    if weights.is_some() {
-        panic!("weights not yet supported on array with null values")
-    }
-    let offsets_fn = if center {
-        det_offsets_center
-    } else {
-        det_offsets
-    };
-    rolling_apply_agg_window::<StdWindow<_>, _, _>(
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),
         window_size,
