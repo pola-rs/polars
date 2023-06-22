@@ -127,6 +127,7 @@ impl From<SerializableDataType> for DataType {
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]
             Categorical => Self::Categorical(None),
+            #[cfg(feature = "object")]
             Object(_) => Self::Object("unknown"),
         }
     }
