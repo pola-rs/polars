@@ -2545,9 +2545,22 @@ def test_getitem() -> None:
     # slice. Below an example of taking every second row
     assert_frame_equal(df[1::2], pl.DataFrame({"a": [2.0, 4.0], "b": [4, 6]}))
 
+    # slice, empty slice
+    assert df[:0].columns == ["a", "b"]
+    assert len(df[:0]) == 0
+
+    # make mypy happy
+    empty: list[int] = []
+
+    # empty list with column selector drops rows but keeps columns
+    assert_frame_equal(df[empty, :], df[:0])
+
+    # empty list without column select return empty frame
+    assert_frame_equal(df[empty], pl.DataFrame({}))
+
     # numpy array: assumed to be row indices if integers, or columns if strings
 
-    # numpy array: positive idxs.
+    # numpy array: positive idxs and empty idx
     for np_dtype in (
         np.int8,
         np.int16,
@@ -2564,6 +2577,7 @@ def test_getitem() -> None:
                 {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
             ),
         )
+        assert df[np.array([], dtype=np_dtype)].columns == ["a", "b"]
 
     # numpy array: positive and negative idxs.
     for np_dtype in (np.int8, np.int16, np.int32, np.int64):
@@ -2593,7 +2607,7 @@ def test_getitem() -> None:
     # pl.Series: strings for column selections.
     assert_frame_equal(df[pl.Series("", ["a", "b"])], df)
 
-    # pl.Series: positive idxs for row selection.
+    # pl.Series: positive idxs or empty idxs for row selection.
     for pl_dtype in (
         pl.Int8,
         pl.Int16,
@@ -2610,6 +2624,7 @@ def test_getitem() -> None:
                 {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
             ),
         )
+        assert df[pl.Series("", [], dtype=pl_dtype)].columns == ["a", "b"]
 
     # pl.Series: positive and negative idxs for row selection.
     for pl_dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64):

@@ -34,24 +34,15 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     NUMERIC_DTYPES,
-    SIGNED_INTEGER_DTYPES,
     Boolean,
     Categorical,
     DataTypeClass,
     Float64,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
     List,
     Null,
     Object,
     Struct,
     Time,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
     Utf8,
     py_type_to_dtype,
     unpack_dtypes,
@@ -85,6 +76,7 @@ from polars.utils._construction import (
     arrow_to_pydf,
     dict_to_pydf,
     iterable_to_pydf,
+    numpy_to_idxs,
     numpy_to_pydf,
     pandas_to_pydf,
     sequence_to_pydf,
@@ -94,7 +86,6 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
-from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
@@ -1416,77 +1407,8 @@ class DataFrame:
         else:
             return self.shape[dim] + idx
 
-    def _pos_idxs(self, idxs: np.ndarray[Any, Any] | Series, dim: int) -> Series:
-        # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
-        idx_type = get_index_type()
-
-        if isinstance(idxs, pl.Series):
-            if idxs.dtype == idx_type:
-                return idxs
-            if idxs.dtype in {
-                UInt8,
-                UInt16,
-                UInt64 if idx_type == UInt32 else UInt32,
-                Int8,
-                Int16,
-                Int32,
-                Int64,
-            }:
-                if idx_type == UInt32:
-                    if idxs.dtype in {Int64, UInt64}:
-                        if idxs.max() >= 2**32:  # type: ignore[operator]
-                            raise ValueError(
-                                "Index positions should be smaller than 2^32."
-                            )
-                    if idxs.dtype == Int64:
-                        if idxs.min() < -(2**32):  # type: ignore[operator]
-                            raise ValueError(
-                                "Index positions should be bigger than -2^32 + 1."
-                            )
-                if idxs.dtype in SIGNED_INTEGER_DTYPES:
-                    if idxs.min() < 0:  # type: ignore[operator]
-                        if idx_type == UInt32:
-                            if idxs.dtype in {Int8, Int16}:
-                                idxs = idxs.cast(Int32)
-                        else:
-                            if idxs.dtype in {Int8, Int16, Int32}:
-                                idxs = idxs.cast(Int64)
-
-                        idxs = F.select(
-                            F.when(lit(idxs) < 0)
-                            .then(self.shape[dim] + lit(idxs))
-                            .otherwise(lit(idxs))
-                        ).to_series()
-
-                return idxs.cast(idx_type)
-
-        if _check_for_numpy(idxs) and isinstance(idxs, np.ndarray):
-            if idxs.ndim != 1:
-                raise ValueError("Only 1D numpy array is supported as index.")
-            if idxs.dtype.kind in ("i", "u"):
-                # Numpy array with signed or unsigned integers.
-
-                if idx_type == UInt32:
-                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
-                        raise ValueError("Index positions should be smaller than 2^32.")
-                    if idxs.dtype == np.int64 and idxs.min() < -(2**32):
-                        raise ValueError(
-                            "Index positions should be bigger than -2^32 + 1."
-                        )
-                if idxs.dtype.kind == "i" and idxs.min() < 0:
-                    if idx_type == UInt32:
-                        if idxs.dtype in (np.int8, np.int16):
-                            idxs = idxs.astype(np.int32)
-                    else:
-                        if idxs.dtype in (np.int8, np.int16, np.int32):
-                            idxs = idxs.astype(np.int64)
-
-                    # Update negative indexes to absolute indexes.
-                    idxs = np.where(idxs < 0, self.shape[dim] + idxs, idxs)
-
-                return pl.Series("", idxs, dtype=idx_type)
-
-        raise NotImplementedError("Unsupported idxs datatype.")
+    def _take_with_series(self, s: Series) -> DataFrame:
+        return self._from_pydf(self._df.take_with_series(s._s))
 
     @overload
     def __getitem__(self, item: str) -> Series:
@@ -1539,6 +1461,12 @@ class DataFrame:
         # every 2d selection, i.e. tuple is row column order, just like numpy
         if isinstance(item, tuple) and len(item) == 2:
             row_selection, col_selection = item
+
+            # df[[], :]
+            if isinstance(row_selection, Sequence):
+                if len(row_selection) == 0:
+                    # handle empty list by falling through to slice
+                    row_selection = slice(0)
 
             # df[:, unknown]
             if isinstance(row_selection, slice):
@@ -1648,9 +1576,7 @@ class DataFrame:
                 raise ValueError("Only a 1D-Numpy array is supported as index.")
             if item.dtype.kind in ("i", "u"):
                 # Numpy array with signed or unsigned integers.
-                return self._from_pydf(
-                    self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
-                )
+                return self._take_with_series(numpy_to_idxs(item, self.shape[0]))
             if isinstance(item[0], str):
                 return self._from_pydf(self._df.select(item))
 
@@ -1665,12 +1591,8 @@ class DataFrame:
             dtype = item.dtype
             if dtype == Utf8:
                 return self._from_pydf(self._df.select(item))
-            elif dtype == UInt32:
-                return self._from_pydf(self._df.take_with_series(item._s))
             elif dtype in INTEGER_DTYPES:
-                return self._from_pydf(
-                    self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
-                )
+                return self._take_with_series(item._pos_idxs(self.shape[0]))
 
         # if no data has been returned, the operation is not supported
         raise ValueError(

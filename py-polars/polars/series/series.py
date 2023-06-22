@@ -44,8 +44,6 @@ from polars.datatypes import (
     List,
     Object,
     Time,
-    UInt8,
-    UInt16,
     UInt32,
     UInt64,
     Unknown,
@@ -79,6 +77,7 @@ from polars.slice import PolarsSlice
 from polars.utils._construction import (
     arrow_to_pyseries,
     iterable_to_pyseries,
+    numpy_to_idxs,
     numpy_to_pyseries,
     pandas_to_pyseries,
     sequence_to_pyseries,
@@ -95,7 +94,6 @@ from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
     find_stacklevel,
-    is_int_sequence,
     parse_version,
     range_to_series,
     range_to_slice,
@@ -869,92 +867,60 @@ class Series:
             for offset in range(0, self.len(), buffer_size):
                 yield from self.slice(offset, buffer_size).to_list()
 
-    def _pos_idxs(self, idxs: np.ndarray[Any, Any] | Series) -> Series:
+    def _pos_idxs(self, size: int) -> Series:
+        # Unsigned or signed Series (ordered from fastest to slowest).
+        #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
+        #   - Other unsigned Series indexes are converted to pl.UInt32 (polars)
+        #     or pl.UInt64 (polars_u64_idx).
+        #   - Signed Series indexes are converted pl.UInt32 (polars) or
+        #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
+        #     to absolute indexes.
+
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
         idx_type = get_index_type()
 
-        if isinstance(idxs, Series):
-            if idxs.dtype == idx_type:
-                return idxs
-            if idxs.dtype in {
-                UInt8,
-                UInt16,
-                UInt64 if idx_type == UInt32 else UInt32,
-                Int8,
-                Int16,
-                Int32,
-                Int64,
-            }:
+        if self.dtype == idx_type:
+            return self
+
+        if self.dtype not in INTEGER_DTYPES:
+            raise NotImplementedError("Unsupported idxs datatype.")
+
+        if self.len() == 0:
+            return Series(self.name, [], dtype=idx_type)
+
+        if idx_type == UInt32:
+            if self.dtype in {Int64, UInt64}:
+                if self.max() >= 2**32:  # type: ignore[operator]
+                    raise ValueError("Index positions should be smaller than 2^32.")
+            if self.dtype == Int64:
+                if self.min() < -(2**32):  # type: ignore[operator]
+                    raise ValueError("Index positions should be bigger than -2^32 + 1.")
+
+        if self.dtype in SIGNED_INTEGER_DTYPES:
+            if self.min() < 0:  # type: ignore[operator]
                 if idx_type == UInt32:
-                    if idxs.dtype in {Int64, UInt64}:
-                        if idxs.max() >= 2**32:  # type: ignore[operator]
-                            raise ValueError(
-                                "Index positions should be smaller than 2^32."
-                            )
-                    if idxs.dtype == Int64:
-                        if idxs.min() < -(2**32):  # type: ignore[operator]
-                            raise ValueError(
-                                "Index positions should be bigger than -2^32 + 1."
-                            )
-                if idxs.dtype in SIGNED_INTEGER_DTYPES:
-                    if idxs.min() < 0:  # type: ignore[operator]
-                        if idx_type == UInt32:
-                            if idxs.dtype in {Int8, Int16}:
-                                idxs = idxs.cast(Int32)
-                        else:
-                            if idxs.dtype in {Int8, Int16, Int32}:
-                                idxs = idxs.cast(Int64)
+                    idxs = self.cast(Int32) if self.dtype in {Int8, Int16} else self
+                else:
+                    idxs = (
+                        self.cast(Int64) if self.dtype in {Int8, Int16, Int32} else self
+                    )
 
-                        # Update negative indexes to absolute indexes.
-                        return (
-                            idxs.to_frame()
-                            .select(
-                                F.when(F.col(idxs.name) < 0)
-                                .then(self.len() + F.col(idxs.name))
-                                .otherwise(F.col(idxs.name))
-                                .cast(idx_type)
-                            )
-                            .to_series(0)
-                        )
+                # Update negative indexes to absolute indexes.
+                return (
+                    idxs.to_frame()
+                    .select(
+                        F.when(F.col(idxs.name) < 0)
+                        .then(size + F.col(idxs.name))
+                        .otherwise(F.col(idxs.name))
+                        .cast(idx_type)
+                    )
+                    .to_series(0)
+                )
 
-                return idxs.cast(idx_type)
+        return self.cast(idx_type)
 
-        elif _check_for_numpy(idxs) and isinstance(idxs, np.ndarray):
-            if idxs.ndim != 1:
-                raise ValueError("Only 1D numpy array is supported as index.")
-            if idxs.dtype.kind in ("i", "u"):
-                # Numpy array with signed or unsigned integers.
-
-                if idx_type == UInt32:
-                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
-                        raise ValueError("Index positions should be smaller than 2^32.")
-                    if idxs.dtype == np.int64 and idxs.min() < -(2**32):
-                        raise ValueError(
-                            "Index positions should be bigger than -2^32 + 1."
-                        )
-                if idxs.dtype.kind == "i":
-                    if idxs.min() < 0:
-                        if idx_type == UInt32:
-                            if idxs.dtype in (np.int8, np.int16):
-                                idxs = idxs.astype(np.int32)
-                        else:
-                            if idxs.dtype in (np.int8, np.int16, np.int32):
-                                idxs = idxs.astype(np.int64)
-
-                        # Update negative indexes to absolute indexes.
-                        idxs = np.where(idxs < 0, self.len() + idxs, idxs)
-
-                    # Cast signed numpy array to unsigned numpy array as all indexes
-                    # are positive and casting signed Polars Series to unsigned
-                    # Polars series is much slower.
-                    if isinstance(idxs, np.ndarray):
-                        idxs = idxs.astype(
-                            np.uint32 if idx_type == UInt32 else np.uint64
-                        )
-
-                return Series("", idxs, dtype=idx_type)
-
-        raise NotImplementedError("Unsupported idxs datatype.")
+    def _take_with_series(self, s: Series) -> Series:
+        return self._from_pyseries(self._s.take_with_series(s._s))
 
     @overload
     def __getitem__(self, item: int) -> Any:
@@ -963,47 +929,19 @@ class Series:
     @overload
     def __getitem__(
         self,
-        item: Series | range | slice | np.ndarray[Any, Any] | list[int] | list[bool],
+        item: Series | range | slice | np.ndarray[Any, Any] | list[int],
     ) -> Series:
         ...
 
     def __getitem__(
         self,
-        item: (
-            int | Series | range | slice | np.ndarray[Any, Any] | list[int] | list[bool]
-        ),
+        item: (int | Series | range | slice | np.ndarray[Any, Any] | list[int]),
     ) -> Any:
         if isinstance(item, Series) and item.dtype in INTEGER_DTYPES:
-            # Unsigned or signed Series (ordered from fastest to slowest).
-            #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
-            #   - Other unsigned Series indexes are converted to pl.UInt32 (polars)
-            #     or pl.UInt64 (polars_u64_idx).
-            #   - Signed Series indexes are converted pl.UInt32 (polars) or
-            #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
-            #     to absolute indexes.
-            return self._from_pyseries(
-                self._s.take_with_series(self._pos_idxs(item)._s)
-            )
+            return self._take_with_series(item._pos_idxs(self.len()))
 
-        elif (
-            _check_for_numpy(item)
-            and isinstance(item, np.ndarray)
-            and item.dtype.kind in ("i", "u")
-        ):
-            if item.ndim != 1:
-                raise ValueError("Only a 1D-Numpy array is supported as index.")
-
-            # Unsigned or signed Numpy array (ordered from fastest to slowest).
-            #   - np.uint32 (polars) or np.uint64 (polars_u64_idx) numpy array
-            #     indexes.
-            #   - Other unsigned numpy array indexes are converted to pl.UInt32
-            #     (polars) or pl.UInt64 (polars_u64_idx).
-            #   - Signed numpy array indexes are converted pl.UInt32 (polars) or
-            #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
-            #     to absolute indexes.
-            return self._from_pyseries(
-                self._s.take_with_series(self._pos_idxs(item)._s)
-            )
+        elif _check_for_numpy(item) and isinstance(item, np.ndarray):
+            return self._take_with_series(numpy_to_idxs(item, self.len()))
 
         # Integer.
         elif isinstance(item, int):
@@ -1020,10 +958,14 @@ class Series:
             return self[range_to_slice(item)]
 
         # Sequence of integers (slow to check if sequence contains all integers).
-        elif is_int_sequence(item):
-            return self._from_pyseries(
-                self._s.take_with_series(self._pos_idxs(Series("", item))._s)
-            )
+        # Also triggers on empty sequence
+        elif isinstance(item, Sequence) and (not item or isinstance(item[0], int)):
+            idx_series = Series("", item, dtype=Int64)._pos_idxs(self.len())
+            if idx_series.has_validity():
+                raise ValueError(
+                    "Cannot __getitem__ with index values containing nulls"
+                )
+            return self._take_with_series(idx_series)
 
         raise ValueError(
             f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
