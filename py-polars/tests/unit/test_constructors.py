@@ -17,13 +17,13 @@ from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # noqa: TCH002
+
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
