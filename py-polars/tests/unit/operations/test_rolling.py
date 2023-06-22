@@ -720,10 +720,12 @@ def test_groupby_rolling_negative_period() -> None:
             pl.col("value")
         ).collect()
     with pytest.raises(ComputeError, match="window size should be strictly positive"):
-        df.select(pl.col("value").rolling_min(by="ts", window_size="-1d"))
+        df.select(
+            pl.col("value").rolling_min(by="ts", window_size="-1d", closed="left")
+        )
     with pytest.raises(ComputeError, match="window size should be strictly positive"):
         df.lazy().select(
-            pl.col("value").rolling_min(by="ts", window_size="-1d")
+            pl.col("value").rolling_min(by="ts", window_size="-1d", closed="left")
         ).collect()
 
 
