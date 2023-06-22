@@ -462,38 +462,10 @@ pub(crate) fn groupby_values_iter<'a>(
     tz: Option<Tz>,
 ) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
     let mut offset = period;
-    offset.negative = !period.negative;
-    if offset.duration_ns() > 0 {
-        // t is at the right endpoint of the window
-        let iter = groupby_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
-        Box::new(iter)
-    } else if closed_window == ClosedWindow::Right || closed_window == ClosedWindow::None {
-        // only lookahead
-        let iter = groupby_values_iter_full_lookahead(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            tz,
-            0,
-            None,
-        );
-        Box::new(iter)
-    } else {
-        // partial lookahead
-        let iter = groupby_values_iter_partial_lookahead(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            tz,
-            0,
-            None,
-        );
-        Box::new(iter)
-    }
+    offset.negative = true;
+    // t is at the right endpoint of the window
+    let iter = groupby_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
+    Box::new(iter)
 }
 
 /// Different from `groupby_windows`, where define window buckets and search which values fit that
@@ -595,7 +567,7 @@ pub fn groupby_values(
             Ok(flatten_par(&vals))
         })
     } else {
-        // Duration is 0 and window is closed on the left:
+        // Offset is 0 and window is closed on the left:
         // it must be that the window starts at t and t is a member
         // --t-----------
         //  [---]
