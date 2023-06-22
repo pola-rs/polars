@@ -22,6 +22,8 @@ mod list;
 mod meta;
 pub(crate) mod names;
 mod options;
+#[cfg(all(feature = "python", feature = "serde"))]
+pub mod python_udf;
 mod selector;
 #[cfg(feature = "strings")]
 pub mod string;

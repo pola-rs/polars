@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import pickle
+import typing
 from datetime import datetime, timedelta
+
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -98,3 +101,29 @@ def test_expression_json() -> None:
 
     round_tripped = pl.Expr.from_json(json)
     assert round_tripped.meta == e
+
+
+@typing.no_type_check
+def times2(x):
+    return x * 2
+
+
+def test_pickle_udf_expression() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    e = pl.col("a").map(times2)
+    b = pickle.dumps(e)
+    e = pickle.loads(b)
+
+    assert df.select(e).to_dict(False) == {"a": [2, 4, 6]}
+
+    e = pl.col("a").map(times2, return_dtype=pl.Utf8)
+    b = pickle.dumps(e)
+    e = pickle.loads(b)
+
+    # tests that 'GetOutput' is also deserialized
+    with pytest.raises(
+        pl.SchemaError,
+        match=r"expected output type 'Utf8', got 'Int64'; set `return_dtype` to the proper datatype",
+    ):
+        df.select(e)

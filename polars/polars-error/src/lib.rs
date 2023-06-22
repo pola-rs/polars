@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::ops::Deref;
 use std::{env, io};
@@ -93,6 +94,10 @@ impl PolarsError {
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
         }
     }
+}
+
+pub fn map_err<E: Error>(error: E) -> PolarsError {
+    PolarsError::ComputeError(format!("{error}").into())
 }
 
 #[macro_export]

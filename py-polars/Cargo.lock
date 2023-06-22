@@ -1598,6 +1598,7 @@ dependencies = [
  "arrow2",
  "chrono",
  "chrono-tz",
+ "ciborium",
  "once_cell",
  "polars-arrow",
  "polars-core",
