@@ -4,7 +4,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
-from hypothesis import given, reject
+from hypothesis import assume, given, reject
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -32,6 +32,7 @@ def test_groupby_rolling(
     data: st.DataObject,
     time_unit: TimeUnit,
 ) -> None:
+    assume(period != "")
     dataframe = data.draw(
         dataframes(
             [

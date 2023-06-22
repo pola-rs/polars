@@ -709,11 +709,21 @@ def test_groupby_rolling_negative_period() -> None:
     df = pl.DataFrame({"ts": [datetime(2020, 1, 1)], "value": [1]}).with_columns(
         pl.col("ts").set_sorted()
     )
-    with pytest.raises(ComputeError, match="rolling window period should be positive"):
+    with pytest.raises(
+        ComputeError, match="rolling window period should be strictly positive"
+    ):
         df.groupby_rolling("ts", period="-1d", offset="-1d").agg(pl.col("value"))
-    with pytest.raises(ComputeError, match="rolling window period should be positive"):
+    with pytest.raises(
+        ComputeError, match="rolling window period should be strictly positive"
+    ):
         df.lazy().groupby_rolling("ts", period="-1d", offset="-1d").agg(
             pl.col("value")
+        ).collect()
+    with pytest.raises(ComputeError, match="window size should be strictly positive"):
+        df.select(pl.col("value").rolling_min(by="ts", window_size="-1d"))
+    with pytest.raises(ComputeError, match="window size should be strictly positive"):
+        df.lazy().select(
+            pl.col("value").rolling_min(by="ts", window_size="-1d")
         ).collect()
 
 
