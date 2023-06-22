@@ -127,3 +127,16 @@ def test_pickle_udf_expression() -> None:
         match=r"expected output type 'Utf8', got 'Int64'; set `return_dtype` to the proper datatype",
     ):
         df.select(e)
+
+
+def test_pickle_small_integers() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series([1, 2], dtype=pl.Int16),
+            pl.Series([3, 2], dtype=pl.Int8),
+            pl.Series([32, 2], dtype=pl.UInt8),
+            pl.Series([3, 3], dtype=pl.UInt16),
+        ]
+    )
+    b = pickle.dumps(df)
+    assert_frame_equal(pickle.loads(b), df)
