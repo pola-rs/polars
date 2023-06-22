@@ -36,6 +36,7 @@ where
     /// when you read in multiple files and when to store them in a single `DataFrame`.
     /// In the latter case finish the sequence of `append` operations with a [`rechunk`](Self::rechunk).
     pub fn extend(&mut self, other: &Self) {
+        self.update_sorted_flag_before_append(other);
         // all to a single chunk
         if self.chunks.len() > 1 {
             self.append(other);
@@ -82,7 +83,6 @@ where
             }
         }
         self.compute_len();
-        self.set_sorted_flag(IsSorted::Not);
     }
 }
 

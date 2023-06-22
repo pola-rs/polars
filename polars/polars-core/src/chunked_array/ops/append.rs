@@ -14,14 +14,41 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
+    pub(super) fn update_sorted_flag_before_append(&mut self, other: &Self) {
+        if !self.is_empty() && !other.is_empty() {
+            match (self.is_sorted_flag(), other.is_sorted_flag()) {
+                (IsSorted::Ascending, IsSorted::Ascending) => {
+                    let end = unsafe { self.get_unchecked(self.len() - 1) };
+                    let start = unsafe { other.get_unchecked(0) };
+
+                    if end > start {
+                        self.set_sorted_flag(IsSorted::Not)
+                    }
+                }
+                (IsSorted::Descending, IsSorted::Descending) => {
+                    let end = unsafe { self.get_unchecked(self.len() - 1) };
+                    let start = unsafe { other.get_unchecked(0) };
+
+                    if end < start {
+                        self.set_sorted_flag(IsSorted::Not)
+                    }
+                }
+                _ => self.set_sorted_flag(IsSorted::Not),
+            }
+        } else if self.is_empty() {
+            self.set_sorted_flag(other.is_sorted_flag())
+        }
+    }
+
     /// Append in place. This is done by adding the chunks of `other` to this [`ChunkedArray`].
     ///
     /// See also [`extend`](Self::extend) for appends to the underlying memory
     pub fn append(&mut self, other: &Self) {
+        self.update_sorted_flag_before_append(other);
+
         let len = self.len();
         self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
-        self.set_sorted_flag(IsSorted::Not);
     }
 }
 
