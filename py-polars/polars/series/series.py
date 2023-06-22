@@ -957,9 +957,10 @@ class Series:
         elif isinstance(item, range):
             return self[range_to_slice(item)]
 
-        # Sequence of integers (slow to check if sequence contains all integers).
-        # Also triggers on empty sequence
-        elif isinstance(item, Sequence) and (not item or isinstance(item[0], int)):
+        # Sequence of integers (also triggers on empty sequence)
+        elif isinstance(item, Sequence) and (
+            not item or (isinstance(item[0], int) and not isinstance(item[0], bool))  # type: ignore[redundant-expr]
+        ):
             idx_series = Series("", item, dtype=Int64)._pos_idxs(self.len())
             if idx_series.has_validity():
                 raise ValueError(
