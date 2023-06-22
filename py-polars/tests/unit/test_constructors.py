@@ -182,6 +182,18 @@ def test_init_dict() -> None:
         assert df.to_dict(False)["field"][0] == test[0]["field"]
 
 
+@no_type_check
+def test_error_string_dtypes() -> None:
+    with pytest.raises(ValueError, match="Cannot infer dtype"):
+        pl.DataFrame(
+            data={"x": [1, 2], "y": [3, 4], "z": [5, 6]},
+            schema={"x": "i16", "y": "i32", "z": "f32"},
+        )
+
+    with pytest.raises(ValueError, match="not a valid Polars data type"):
+        pl.Series("n", [1, 2, 3], dtype="f32")
+
+
 def test_init_structured_objects(monkeypatch: Any) -> None:
     # validate init from dataclass, namedtuple, and pydantic model objects
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
