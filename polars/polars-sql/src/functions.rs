@@ -81,6 +81,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ATAN(column_1) from df;
     /// ```
     Atan,
+    /// SQL 'atan2' function
+    /// ```sql
+    /// SELECT ATAN2(column_1) from df;
+    /// ```
+    Atan2,
     /// SQL 'acosd' function
     /// ```sql
     /// SELECT ACOSD(column_1) from df;
@@ -96,6 +101,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ATAND(column_1) from df;
     /// ```
     AtanD,
+    /// SQL 'atan2d' function
+    /// ```sql
+    /// SELECT ATAN2D(column_1) from df;
+    /// ```
+    Atan2D,
     /// SQL 'ceil' function
     /// ```sql
     /// SELECT CEIL(column_1) from df;
@@ -367,6 +377,8 @@ impl PolarsSqlFunctions {
             "asin",
             "asind",
             "atan",
+            "atan2",
+            "atan2d",
             "atand",
             "avg",
             "cbrt",
@@ -438,9 +450,11 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "acos" => Self::Acos,
             "asin" => Self::Asin,
             "atan" => Self::Atan,
+            "atan2" => Self::Atan2,
             "acosd" => Self::AcosD,
             "asind" => Self::AsinD,
             "atand" => Self::AtanD,
+            "atan2d" => Self::Atan2D,
             "degrees" => Self::Degrees,
             "radians" => Self::Radians,
             "ceil" | "ceiling" => Self::Ceil,
@@ -527,9 +541,11 @@ impl SqlFunctionVisitor<'_> {
             Acos => self.visit_unary(Expr::arccos),
             Asin => self.visit_unary(Expr::arcsin),
             Atan => self.visit_unary(Expr::arctan),
+            Atan2 => self.visit_binary(Expr::arctan2),
             AcosD => self.visit_unary(|e| e.arccos().degrees()),
             AsinD => self.visit_unary(|e| e.arcsin().degrees()),
             AtanD => self.visit_unary(|e| e.arctan().degrees()),
+            Atan2D => self.visit_binary(|e, s| e.arctan2(s).degrees()),
             Degrees => self.visit_unary(Expr::degrees),
             Radians => self.visit_unary(Expr::radians),
             Ceil => self.visit_unary(Expr::ceil),

@@ -66,7 +66,8 @@ where
         Ok(Some(
             base.into_iter()
                 .zip(exponent.into_iter())
-                .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
+                .map(|(opt_base, opt_exponent)| 
+                    match (opt_base, opt_exponent) {
                     (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
                     _ => None,
                 })
