@@ -13,6 +13,8 @@ use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
+use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::Expr;
 
 pub type FileCount = u32;
@@ -289,8 +291,7 @@ pub struct SortArguments {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg(feature = "python")]
 pub struct PythonOptions {
-    // Serialized Fn() -> PolarsResult<DataFrame>
-    pub scan_fn: Vec<u8>,
+    pub scan_fn: Option<PythonFunction>,
     pub schema: SchemaRef,
     pub output_schema: Option<SchemaRef>,
     pub with_columns: Option<Arc<Vec<String>>>,

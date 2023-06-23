@@ -4,7 +4,6 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
-from polars.dependencies import pickle
 from polars.dependencies import pyarrow as pa  # noqa: TCH001
 
 if TYPE_CHECKING:
@@ -31,10 +30,7 @@ def _scan_pyarrow_dataset(
 
     """
     func = partial(_scan_pyarrow_dataset_impl, ds)
-    func_serialized = pickle.dumps(func)
-    return pl.LazyFrame._scan_python_function(
-        ds.schema, func_serialized, allow_pyarrow_filter
-    )
+    return pl.LazyFrame._scan_python_function(ds.schema, func, allow_pyarrow_filter)
 
 
 def _scan_pyarrow_dataset_impl(
