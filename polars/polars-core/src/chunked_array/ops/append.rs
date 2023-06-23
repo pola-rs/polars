@@ -10,41 +10,60 @@ pub(crate) fn new_chunks(chunks: &mut Vec<ArrayRef>, other: &[ArrayRef], len: us
     }
 }
 
+pub(super) fn update_sorted_flag_before_append<'a, T>(
+    ca: &mut ChunkedArray<T>,
+    other: &'a ChunkedArray<T>,
+) where
+    T: PolarsDataType,
+    &'a ChunkedArray<T>: TakeRandom,
+    <&'a ChunkedArray<T> as TakeRandom>::Item: PartialOrd,
+{
+    let get_start_end = || {
+        let end = {
+            unsafe {
+                // reborrow and
+                // inform bchk that we still have lifetime 'a
+                // this is safe as we go from &mut borrow to &
+                // because the trait is only implemented for &ChunkedArray<T>
+                let borrow = std::mem::transmute::<&ChunkedArray<T>, &'a ChunkedArray<T>>(ca);
+                borrow.get_unchecked(ca.len() - 1)
+            }
+        };
+        let start = unsafe { other.get_unchecked(0) };
+
+        (start, end)
+    };
+
+    if !ca.is_empty() && !other.is_empty() {
+        match (ca.is_sorted_flag(), other.is_sorted_flag()) {
+            (IsSorted::Ascending, IsSorted::Ascending) => {
+                let (start, end) = get_start_end();
+                if end > start {
+                    ca.set_sorted_flag(IsSorted::Not)
+                }
+            }
+            (IsSorted::Descending, IsSorted::Descending) => {
+                let (start, end) = get_start_end();
+                if end < start {
+                    ca.set_sorted_flag(IsSorted::Not)
+                }
+            }
+            _ => ca.set_sorted_flag(IsSorted::Not),
+        }
+    } else if ca.is_empty() {
+        ca.set_sorted_flag(other.is_sorted_flag())
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    pub(super) fn update_sorted_flag_before_append(&mut self, other: &Self) {
-        if !self.is_empty() && !other.is_empty() {
-            match (self.is_sorted_flag(), other.is_sorted_flag()) {
-                (IsSorted::Ascending, IsSorted::Ascending) => {
-                    let end = unsafe { self.get_unchecked(self.len() - 1) };
-                    let start = unsafe { other.get_unchecked(0) };
-
-                    if end > start {
-                        self.set_sorted_flag(IsSorted::Not)
-                    }
-                }
-                (IsSorted::Descending, IsSorted::Descending) => {
-                    let end = unsafe { self.get_unchecked(self.len() - 1) };
-                    let start = unsafe { other.get_unchecked(0) };
-
-                    if end < start {
-                        self.set_sorted_flag(IsSorted::Not)
-                    }
-                }
-                _ => self.set_sorted_flag(IsSorted::Not),
-            }
-        } else if self.is_empty() {
-            self.set_sorted_flag(other.is_sorted_flag())
-        }
-    }
-
     /// Append in place. This is done by adding the chunks of `other` to this [`ChunkedArray`].
     ///
     /// See also [`extend`](Self::extend) for appends to the underlying memory
     pub fn append(&mut self, other: &Self) {
-        self.update_sorted_flag_before_append(other);
+        update_sorted_flag_before_append(self, other);
 
         let len = self.len();
         self.length += other.length;
@@ -55,6 +74,7 @@ where
 #[doc(hidden)]
 impl BooleanChunked {
     pub fn append(&mut self, other: &Self) {
+        update_sorted_flag_before_append(self, other);
         let len = self.len();
         self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
@@ -64,6 +84,7 @@ impl BooleanChunked {
 #[doc(hidden)]
 impl Utf8Chunked {
     pub fn append(&mut self, other: &Self) {
+        update_sorted_flag_before_append(self, other);
         let len = self.len();
         self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
@@ -74,6 +95,7 @@ impl Utf8Chunked {
 #[doc(hidden)]
 impl BinaryChunked {
     pub fn append(&mut self, other: &Self) {
+        update_sorted_flag_before_append(self, other);
         let len = self.len();
         self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);

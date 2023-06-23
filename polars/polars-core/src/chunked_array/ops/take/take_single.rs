@@ -95,6 +95,24 @@ impl TakeRandom for BooleanChunked {
         // Out of bounds is checked and downcast is of correct type
         unsafe { impl_take_random_get!(self, index, BooleanArray) }
     }
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        impl_take_random_get_unchecked!(self, index, BooleanArray)
+    }
+}
+
+impl<'a> TakeRandom for &'a BooleanChunked {
+    type Item = bool;
+
+    #[inline]
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        (*self).get(index)
+    }
+
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        (*self).get_unchecked(index)
+    }
 }
 
 impl<'a> TakeRandom for &'a Utf8Chunked {
