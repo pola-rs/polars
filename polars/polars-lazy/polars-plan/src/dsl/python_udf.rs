@@ -7,6 +7,8 @@ use polars_core::error::*;
 use polars_core::prelude::Series;
 use pyo3::types::{PyBytes, PyModule};
 use pyo3::{PyErr, PyObject, Python};
+use serde::ser::Error;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::expr_dyn_fn::*;
 use crate::constants::MAP_LIST_NAME;
@@ -16,12 +18,81 @@ use crate::prelude::*;
 pub static mut CALL_LAMBDA: Option<fn(s: Series, lambda: &PyObject) -> PolarsResult<Series>> = None;
 pub(super) const MAGIC_BYTE_MARK: &[u8] = "POLARS_PYTHON_UDF".as_bytes();
 
-pub struct PythonFunction {
+#[derive(Clone, Debug)]
+pub struct PythonFunction(pub PyObject);
+
+impl From<PyObject> for PythonFunction {
+    fn from(value: PyObject) -> Self {
+        Self(value)
+    }
+}
+
+impl Eq for PythonFunction {}
+
+impl PartialEq for PythonFunction {
+    fn eq(&self, other: &Self) -> bool {
+        Python::with_gil(|py| {
+            let eq = self.0.getattr(py, "__eq__").unwrap();
+            eq.call1(py, (other.0.clone(),))
+                .unwrap()
+                .extract::<bool>(py)
+                .unwrap()
+        })
+    }
+}
+
+impl Serialize for PythonFunction {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Python::with_gil(|py| {
+            let pickle = PyModule::import(py, "pickle")
+                .expect("Unable to import 'pickle'")
+                .getattr("dumps")
+                .unwrap();
+
+            let python_function = self.0.clone();
+
+            let dumped = pickle
+                .call1((python_function,))
+                .map_err(|s| S::Error::custom(format!("cannot pickle {s}")))?;
+            let dumped = dumped.extract::<&PyBytes>().unwrap();
+
+            serializer.serialize_bytes(dumped.as_bytes())
+        })
+    }
+}
+
+impl<'a> Deserialize<'a> for PythonFunction {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        use serde::de::Error;
+        let bytes = Vec::<u8>::deserialize(deserializer)?;
+
+        Python::with_gil(|py| {
+            let pickle = PyModule::import(py, "pickle")
+                .expect("Unable to import 'pickle'")
+                .getattr("loads")
+                .unwrap();
+            let arg = (PyBytes::new(py, &bytes),);
+            let python_function = pickle
+                .call1(arg)
+                .map_err(|s| D::Error::custom(format!("cannot pickle {s}")))?;
+
+            Ok(Self(python_function.into()))
+        })
+    }
+}
+
+pub struct PythonUdfExpression {
     python_function: PyObject,
     output_type: Option<DataType>,
 }
 
-impl PythonFunction {
+impl PythonUdfExpression {
     pub fn new(lambda: PyObject, output_type: Option<DataType>) -> Self {
         Self {
             python_function: lambda,
@@ -46,10 +117,10 @@ impl PythonFunction {
                 .unwrap();
             let arg = (PyBytes::new(py, remainder),);
             let python_function = pickle.call1(arg).map_err(from_pyerr)?;
-            Ok(
-                Arc::new(PythonFunction::new(python_function.into(), output_type))
-                    as Arc<dyn SeriesUdf>,
-            )
+            Ok(Arc::new(PythonUdfExpression::new(
+                python_function.into(),
+                output_type,
+            )) as Arc<dyn SeriesUdf>)
         })
     }
 }
@@ -58,7 +129,7 @@ fn from_pyerr(e: PyErr) -> PolarsError {
     PolarsError::ComputeError(format!("error raised in python: {e}").into())
 }
 
-impl SeriesUdf for PythonFunction {
+impl SeriesUdf for PythonUdfExpression {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
         let func = unsafe { CALL_LAMBDA.unwrap() };
 
@@ -106,7 +177,7 @@ impl SeriesUdf for PythonFunction {
 }
 
 impl Expr {
-    pub fn map_python(self, func: PythonFunction, agg_list: bool) -> Expr {
+    pub fn map_python(self, func: PythonUdfExpression, agg_list: bool) -> Expr {
         let (collect_groups, name) = if agg_list {
             (ApplyOptions::ApplyList, MAP_LIST_NAME)
         } else {

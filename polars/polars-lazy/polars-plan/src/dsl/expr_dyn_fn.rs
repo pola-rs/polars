@@ -54,7 +54,7 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn SeriesUdf>> {
             let buf = Vec::<u8>::deserialize(_deserializer)?;
 
             if buf.starts_with(MAGIC_BYTE_MARK) {
-                let udf = python_udf::PythonFunction::try_deserialize(&buf)
+                let udf = python_udf::PythonUdfExpression::try_deserialize(&buf)
                     .map_err(|e| D::Error::custom(format!("{e}")))?;
                 Ok(SpecialEq::new(udf))
             } else {
