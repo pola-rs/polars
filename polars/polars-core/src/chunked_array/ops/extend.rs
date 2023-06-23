@@ -1,6 +1,7 @@
 use arrow::compute::concatenate::concatenate;
 use arrow::Either;
 
+use crate::prelude::append::update_sorted_flag_before_append;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -36,6 +37,7 @@ where
     /// when you read in multiple files and when to store them in a single `DataFrame`.
     /// In the latter case finish the sequence of `append` operations with a [`rechunk`](Self::rechunk).
     pub fn extend(&mut self, other: &Self) {
+        update_sorted_flag_before_append(self, other);
         // all to a single chunk
         if self.chunks.len() > 1 {
             self.append(other);
@@ -82,13 +84,13 @@ where
             }
         }
         self.compute_len();
-        self.set_sorted_flag(IsSorted::Not);
     }
 }
 
 #[doc(hidden)]
 impl Utf8Chunked {
     pub fn extend(&mut self, other: &Self) {
+        update_sorted_flag_before_append(self, other);
         if self.chunks.len() > 1 {
             self.append(other);
             *self = self.rechunk();
@@ -127,6 +129,7 @@ impl Utf8Chunked {
 #[doc(hidden)]
 impl BinaryChunked {
     pub fn extend(&mut self, other: &Self) {
+        update_sorted_flag_before_append(self, other);
         if self.chunks.len() > 1 {
             self.append(other);
             *self = self.rechunk();
@@ -164,6 +167,7 @@ impl BinaryChunked {
 #[doc(hidden)]
 impl BooleanChunked {
     pub fn extend(&mut self, other: &Self) {
+        update_sorted_flag_before_append(self, other);
         // make sure that we are a single chunk already
         if self.chunks.len() > 1 {
             self.append(other);

@@ -530,3 +530,19 @@ def test_streaming_restart_non_streamable_groupby() -> None:
     )
 
     assert """--- PIPELINE""" in res.explain(streaming=True)
+
+
+def test_streaming_sortedness_propagation_9494() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "when": [date(2023, 5, 10), date(2023, 5, 20), date(2023, 6, 10)],
+                "what": [1, 2, 3],
+            }
+        )
+        .lazy()
+        .sort("when")
+        .groupby_dynamic("when", every="1mo")
+        .agg(pl.col("what").sum())
+        .collect(streaming=True)
+    ).to_dict(False) == {"when": [date(2023, 5, 1), date(2023, 6, 1)], "what": [3, 3]}
