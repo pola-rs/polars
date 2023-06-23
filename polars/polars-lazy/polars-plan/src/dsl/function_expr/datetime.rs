@@ -134,11 +134,18 @@ pub(super) fn time(s: &Series) -> PolarsResult<Series> {
 pub(super) fn date(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
-        DataType::Datetime(_, Some(_)) => s
-            .datetime()
-            .unwrap()
-            .replace_time_zone(None, None)?
-            .cast(&DataType::Date),
+        DataType::Datetime(_, Some(tz)) => {
+            let mut out = s
+                .datetime()
+                .unwrap()
+                .replace_time_zone(None, None)?
+                .cast(&DataType::Date)?;
+            if tz != "UTC" {
+                // DST transitions may not preserve sortedness.
+                out.set_sorted_flag(IsSorted::Not);
+            }
+            Ok(out)
+        }
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Date),
         DataType::Date => Ok(s.clone()),
         dtype => polars_bail!(ComputeError: "expected Datetime or Date, got {}", dtype),
@@ -147,11 +154,18 @@ pub(super) fn date(s: &Series) -> PolarsResult<Series> {
 pub(super) fn datetime(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
-        DataType::Datetime(tu, Some(_)) => s
-            .datetime()
-            .unwrap()
-            .replace_time_zone(None, None)?
-            .cast(&DataType::Datetime(*tu, None)),
+        DataType::Datetime(tu, Some(tz)) => {
+            let mut out = s
+                .datetime()
+                .unwrap()
+                .replace_time_zone(None, None)?
+                .cast(&DataType::Datetime(*tu, None))?;
+            if tz != "UTC" {
+                // DST transitions may not preserve sortedness.
+                out.set_sorted_flag(IsSorted::Not);
+            }
+            Ok(out)
+        }
         DataType::Datetime(tu, _) => s.datetime().unwrap().cast(&DataType::Datetime(*tu, None)),
         dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
     }

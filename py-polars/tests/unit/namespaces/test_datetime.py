@@ -113,6 +113,32 @@ def test_dt_datetime(time_zone: str | None, time_unit: TimeUnit) -> None:
     assert result.item() == expected
 
 
+@pytest.mark.parametrize(
+    ("time_zone", "expected"),
+    [
+        (None, True),
+        ("Asia/Kathmandu", False),
+        ("UTC", True),
+    ],
+)
+@pytest.mark.parametrize("attribute", ["datetime", "date"])
+def test_local_datetime_sortedness(
+    time_zone: str | None, expected: bool, attribute: str
+) -> None:
+    ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
+    result = getattr(ser.dt, attribute)()
+    assert result.flags["SORTED_ASC"] == expected
+    assert result.flags["SORTED_DESC"] is False
+
+
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
+def test_local_time_sortedness(time_zone: str | None) -> None:
+    ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
+    result = ser.dt.time()
+    assert result.flags["SORTED_ASC"] is False
+    assert result.flags["SORTED_DESC"] is False
+
+
 def test_dt_datetime_date_time_invalid() -> None:
     with pytest.raises(ComputeError, match="expected Datetime"):
         pl.Series([date(2021, 1, 2)]).dt.datetime()
