@@ -818,14 +818,6 @@ def test_shift() -> None:
     assert_frame_equal(a, b)
 
 
-def test_to_dummies() -> None:
-    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
-    dummies = df.to_dummies()
-    assert dummies["A_a"].to_list() == [1, 0, 0]
-    assert dummies["A_b"].to_list() == [0, 1, 0]
-    assert dummies["A_c"].to_list() == [0, 0, 1]
-
-
 def test_custom_groupby() -> None:
     df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = df.groupby("b", maintain_order=True).agg(
@@ -877,9 +869,17 @@ def test_arg_where() -> None:
     assert_series_equal(pl.arg_where(s, eager=True).cast(int), pl.Series([0, 2]))
 
 
-def test_to_dummies2() -> None:
+def test_to_dummies() -> None:
+    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    dummies = df.to_dummies()
+
+    assert dummies["A_a"].to_list() == [1, 0, 0]
+    assert dummies["A_b"].to_list() == [0, 1, 0]
+    assert dummies["A_c"].to_list() == [0, 0, 1]
+
     df = pl.DataFrame({"a": [1, 2, 3]})
     res = df.to_dummies()
+
     expected = pl.DataFrame(
         {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]}
     ).with_columns(pl.all().cast(pl.UInt8))
@@ -904,6 +904,27 @@ def test_to_dummies2() -> None:
     assert pl.DataFrame({"x": pl.arange(0, 3, eager=True)}).to_dummies("x").to_dict(
         False
     ) == {"x_0": [1, 0, 0], "x_1": [0, 1, 0], "x_2": [0, 0, 1]}
+
+
+def test_to_dummies_drop_first() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [0, 1, 2],
+            "bar": [3, 4, 5],
+            "baz": ["x", "y", "z"],
+        }
+    )
+    dm = df.to_dummies()
+    dd = df.to_dummies(drop_first=True)
+
+    assert dd.columns == ["foo_1", "foo_2", "bar_4", "bar_5", "baz_y", "baz_z"]
+    assert set(dm.columns) - set(dd.columns) == {"foo_0", "bar_3", "baz_x"}
+    assert dm.select(dd.columns).frame_equal(dd)
+    assert dd.rows() == [
+        (0, 0, 0, 0, 0, 0),
+        (1, 0, 1, 0, 1, 0),
+        (0, 1, 0, 1, 0, 1),
+    ]
 
 
 def test_to_pandas(df: pl.DataFrame) -> None:

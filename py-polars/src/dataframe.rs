@@ -1235,16 +1235,20 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    #[pyo3(signature = (columns, separator, drop_first=false))]
     pub fn to_dummies(
         &self,
         columns: Option<Vec<String>>,
         separator: Option<&str>,
+        drop_first: bool,
     ) -> PyResult<Self> {
         let df = match columns {
-            Some(cols) => self
-                .df
-                .columns_to_dummies(cols.iter().map(|x| x as &str).collect(), separator),
-            None => self.df.to_dummies(separator),
+            Some(cols) => self.df.columns_to_dummies(
+                cols.iter().map(|x| x as &str).collect(),
+                separator,
+                drop_first,
+            ),
+            None => self.df.to_dummies(separator, drop_first),
         }
         .map_err(PyPolarsErr::from)?;
         Ok(df.into())

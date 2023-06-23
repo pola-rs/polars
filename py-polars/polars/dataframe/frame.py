@@ -7697,7 +7697,11 @@ class DataFrame:
         return self._from_pydf(self._df.quantile(quantile, interpolation))
 
     def to_dummies(
-        self, columns: str | Sequence[str] | None = None, *, separator: str = "_"
+        self,
+        columns: str | Sequence[str] | None = None,
+        *,
+        separator: str = "_",
+        drop_first: bool = False,
     ) -> Self:
         """
         Convert categorical variables into dummy/indicator variables.
@@ -7709,6 +7713,8 @@ class DataFrame:
             If set to ``None`` (default), convert all columns.
         separator
             Separator/delimiter used when generating column names.
+        drop_first
+            Remove the first category from the variables being encoded.
 
         Examples
         --------
@@ -7733,7 +7739,7 @@ class DataFrame:
         """
         if isinstance(columns, str):
             columns = [columns]
-        return self._from_pydf(self._df.to_dummies(columns, separator))
+        return self._from_pydf(self._df.to_dummies(columns, separator, drop_first))
 
     def unique(
         self,
