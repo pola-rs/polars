@@ -295,7 +295,7 @@ impl PyLazyFrame {
     #[staticmethod]
     fn scan_from_python_function_arrow_schema(
         schema: &PyList,
-        scan_fn: Vec<u8>,
+        scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
         let schema = pyarrow_schema_to_rust(schema)?;
@@ -305,7 +305,7 @@ impl PyLazyFrame {
     #[staticmethod]
     fn scan_from_python_function_pl_schema(
         schema: Vec<(&str, Wrap<DataType>)>,
-        scan_fn: Vec<u8>,
+        scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
         let schema = Schema::from_iter(schema.into_iter().map(|(name, dt)| Field::new(name, dt.0)));
