@@ -60,7 +60,7 @@ impl PartitionSpillBuf {
     }
 
     fn finish(self) -> Option<DataFrame> {
-        if self.len.load(Ordering::Relaxed) > 0 {
+        if !self.chunks.is_empty() {
             let iter = self.chunks.into_iter();
             Some(accumulate_dataframes_vertical_unchecked(iter))
         } else {
