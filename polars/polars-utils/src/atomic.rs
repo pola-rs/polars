@@ -31,7 +31,7 @@ impl SyncCounter {
     /// This will deref the pointer and after this all autoderef will be invalid.
     pub unsafe fn manual_drop(&mut self) {
         // recreate the box and drop it
-        unsafe { Box::from_raw(self.count.as_ptr()) };
+        unsafe { drop(Box::from_raw(self.count.as_ptr())) };
     }
 }
 
