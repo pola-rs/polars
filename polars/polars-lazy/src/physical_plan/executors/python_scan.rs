@@ -1,6 +1,5 @@
 use polars_core::error::to_compute_err;
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
 
 use super::*;
 
