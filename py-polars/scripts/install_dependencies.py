@@ -19,9 +19,9 @@ from typing import Any
 def parse_toml_file(fp) -> dict[str, dict[str, Any]]:
     if sys.version_info < (3, 11):
         subprocess.run(["pip", "install", "tomli"], capture_output=False, text=True)
-        import tomlli
+        import tomli
 
-        return tomlli.load(fp)
+        return tomli.load(fp)
     else:
         import tomllib
 
