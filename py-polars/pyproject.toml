@@ -53,8 +53,9 @@ matplotlib = ["matplotlib"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
 pydantic = ["pydantic"]
+adbc = ["adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,sqlalchemy,xlsxwriter,pydantic]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,sqlalchemy,adbc,xlsxwriter,pydantic]",
 ]
 
 # The tags below are for development of Polars. We pin precise versions here, as we have full control on this
