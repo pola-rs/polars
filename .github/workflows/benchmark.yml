@@ -43,7 +43,7 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: pip install -r requirements-dev.txt
+        run: python scripts/install_depencies.py --tag dev
 
       - name: Load benchmark data from cache
         id: cache-data

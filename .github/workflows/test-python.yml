@@ -47,7 +47,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: python scripts/install_depencies.py --tag dev
 
       - name: Set up Rust
         run: rustup show
@@ -106,7 +106,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install Python dependencies
-        run: pip install -r requirements-dev.txt
+        run: python scripts/install_depencies.py --tag dev
 
       - name: Set up Rust
         run: rustup show
