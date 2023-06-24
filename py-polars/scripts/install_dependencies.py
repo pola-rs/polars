@@ -7,15 +7,16 @@ develop mode. Unfortunately, `pip install .` or `pip install . -e` will always c
 We work around this by calling `maturin develop`, and for the Python dependencies,
 this script collects the relevant tags from pyproject.toml and pass to `pip install`.
 """
+from __future__ import annotations
 
 import argparse
 import subprocess
 import sys
 from itertools import chain
-from typing import Any, Dict
+from typing import Any
 
 
-def parse_toml_file(fp) -> Dict[str, Dict[str, Any]]:
+def parse_toml_file(fp) -> dict[str, dict[str, Any]]:
     if sys.version_info < (3, 11):
         subprocess.run(["pip", "install", "tomli"], capture_output=False, text=True)
         import tomlli
