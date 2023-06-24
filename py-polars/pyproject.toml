@@ -61,8 +61,11 @@ all = [
 ]
 
 # The tags below are for development of Polars. We pin precise versions here, as we have full control on this
-dev = [
-  "hypothesis==6.75.1", # defined above as well, keep same version!
+dev-hypothesis = [
+  "hypothesis==6.75.1",
+]
+dev-test = [
+  "polars[dev-hypothesis]",
   "maturin==1.0.1",
   "pytest==7.3.0",
   "pytest-cov==4.1.0",
@@ -78,7 +81,7 @@ dev-lint = [
 ]
 dev-docs = [
   "polars[pyarrow,pandas,numpy]",
-  "hypothesis==6.75.1", # defined above as well, keep same version!
+  "polars[dev-hypothesis]",
   "autodocsumm==0.2.10",
   "commonmark==0.9.1",
   "livereload==2.6.3",
