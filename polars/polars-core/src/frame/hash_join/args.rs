@@ -158,13 +158,13 @@ impl JoinValidation {
         &self,
         build_size: usize,
         expected_size: usize,
-        swap: bool,
+        check_rhs: bool,
     ) -> PolarsResult<()> {
         use JoinValidation::*;
 
         // all lhs `Many`s are valid
         // lhs `One`s need to be checked
-        let valid = match self.swap(swap) {
+        let valid = match self.swap(check_rhs) {
             ManyToMany | ManyToOne => true,
             OneToMany | OneToOne => build_size == expected_size,
         };

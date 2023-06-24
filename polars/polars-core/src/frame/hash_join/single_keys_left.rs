@@ -1,4 +1,4 @@
-use super::single_keys::create_probe_table;
+use super::single_keys::build_tables;
 use super::*;
 use crate::frame::hash_join::single_keys::probe_to_offsets;
 use crate::utils::flatten::flatten_par;
@@ -112,12 +112,15 @@ where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     // first we hash one relation
-    let hash_tbls = create_probe_table(build);
-    if validate.needs_checks() {
+    let hash_tbls = if validate.needs_checks() {
+        let expected_size = build.iter().map(|v| v.as_ref().len()).sum();
+        let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        let expected_size = probe.iter().map(|v| v.as_ref().len()).sum();
         validate.validate_build(build_size, expected_size, false)?;
-    }
+        hash_tbls
+    } else {
+        build_tables(build)
+    };
 
     // we determine the offset so that we later know which index to store in the join tuples
     let offsets = probe_to_offsets(&probe);
