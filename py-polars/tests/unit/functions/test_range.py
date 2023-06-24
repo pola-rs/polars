@@ -565,3 +565,29 @@ def test_deprecated_name_arg() -> None:
     with pytest.deprecated_call():
         result_eager = pl.time_range(time(10), time(12), name=name, eager=True)
         assert result_eager.name == name
+
+
+def test_date_range_schema() -> None:
+    df = pl.DataFrame(
+        {"start": [datetime(2020, 1, 1)], "end": [datetime(2020, 1, 2)]}
+    ).lazy()
+    result = df.with_columns(
+        pl.date_range(pl.col("start"), pl.col("end")).alias("date_range")
+    )
+    expected_schema = {
+        "start": pl.Datetime(time_unit="us", time_zone=None),
+        "end": pl.Datetime(time_unit="us", time_zone=None),
+        "date_range": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
+    }
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+
+def test_time_range_schema() -> None:
+    df = pl.DataFrame({"start": [time(1)], "end": [time(1, 30)]}).lazy()
+    result = df.with_columns(
+        pl.time_range(pl.col("start"), pl.col("end")).alias("time_range")
+    )
+    expected_schema = {"start": pl.Time, "end": pl.Time, "time_range": pl.List(pl.Time)}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
