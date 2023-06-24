@@ -17,12 +17,13 @@ from typing import Any
 
 def parse_toml_file(fp) -> dict[str, dict[str, Any]]:
     if sys.version_info < (3, 11):
-        subprocess.run(["pip", "install", "tomli"], capture_output=True, text=True)
+        subprocess.run(["pip", "install", "tomli"], capture_output=False, text=True)
         import tomlli
 
         return tomlli.load(fp)
     else:
         import tomllib
+
         return tomllib.load(fp)
 
 
@@ -35,7 +36,9 @@ def collect_dependencies_from_pyproject_toml(
     Parameters
     ----------
     tag
-        Select only dependencies under this tag defined in optional-dependencies
+        Select only dependencies under this tag defined in optional-dependencies.
+        Multiple tags can be provided by passing in a comma delimited string, for
+        example "dev,lint"
     include_mandatory
         Whether to return dependencies specified under `dependencies` in pyproject.toml.
 
@@ -58,7 +61,17 @@ def collect_dependencies_from_pyproject_toml(
         opt_deps = list(chain(*config["project"]["optional-dependencies"].values()))
         deps = mandatory_deps + opt_deps
 
-    return deps
+    # resolve polars[] tags
+    for d in deps:
+        if "[" in d:
+            tags_as_comma_delimited_string = d.split("[")[1].replace("]", "")
+            for pt in tags_as_comma_delimited_string.split(","):
+                deps += config["project"]["optional-dependencies"][pt]
+
+    # drop the polars tags from the list
+    deps2 = [d for d in deps if "[" not in d]
+
+    return deps2
 
 
 def pip_install(specifiers: list[str]) -> None:
@@ -66,13 +79,11 @@ def pip_install(specifiers: list[str]) -> None:
     subprocess.run(cmd, capture_output=False, text=True)
 
 
-def install_dependencies(tag: str | None = None):
-    deps = collect_dependencies_from_pyproject_toml(tag)
-
-    # remove polars to avoid building
-    deps_no_polars = list(filter(lambda x: not x.startswith("polars"), deps))
-
-    pip_install(deps_no_polars)
+def install_dependencies(
+    tag: str | None = None, include_mandatory: bool = True
+) -> None:
+    deps = collect_dependencies_from_pyproject_toml(tag, include_mandatory)
+    pip_install(deps)
 
 
 if __name__ == "__main__":
@@ -91,4 +102,4 @@ if __name__ == "__main__":
         help="Include mandatory dependencies",
     )
     args = parser.parse_args()
-    install_dependencies(args.tag)
+    install_dependencies(args.tag, args.include_mandatory)
