@@ -12,10 +12,10 @@ import argparse
 import subprocess
 import sys
 from itertools import chain
-from typing import Any
+from typing import Any, Dict
 
 
-def parse_toml_file(fp) -> dict[str, dict[str, Any]]:
+def parse_toml_file(fp) -> Dict[str, Dict[str, Any]]:
     if sys.version_info < (3, 11):
         subprocess.run(["pip", "install", "tomli"], capture_output=False, text=True)
         import tomlli
