@@ -14,8 +14,6 @@ import sys
 from itertools import chain
 from typing import Any
 
-import tomllib
-
 
 def parse_toml_file(fp) -> dict[str, dict[str, Any]]:
     if sys.version_info < (3, 11):
@@ -24,6 +22,7 @@ def parse_toml_file(fp) -> dict[str, dict[str, Any]]:
 
         return tomlli.load(fp)
     else:
+        import tomllib
         return tomllib.load(fp)
 
 
