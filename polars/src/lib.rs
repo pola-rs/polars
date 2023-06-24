@@ -18,7 +18,7 @@
 //!     .agg([
 //!         // expressions can be combined into powerful aggregations
 //!         col("foo")
-//!             .sort_by([col("ham").rank(Default::default())], [false])
+//!             .sort_by([col("ham").rank(Default::default(), None)], [false])
 //!             .last()
 //!             .alias("last_foo_ranked_by_ham"),
 //!         // every expression runs in parallel
@@ -31,7 +31,7 @@
 //!     .select([col("ham"), col("spam")]);
 //!
 //! let df = lf1
-//!     .join(lf2, [col("reverse")], [col("foo")], JoinType::Left)
+//!     .join(lf2, [col("reverse")], [col("foo")], JoinArgs::new(JoinType::Left))
 //!     // now we finally materialize the result.
 //!     .collect()?;
 //! # Ok(())
@@ -325,28 +325,24 @@
 //!
 //! ## Config with ENV vars
 //!
-//! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL_CONDENSED):
-//!
-//!                                    ASCII_FULL
-//!                                    ASCII_FULL_CONDENSED
-//!                                    ASCII_NO_BORDERS
-//!                                    ASCII_BORDERS_ONLY
-//!                                    ASCII_BORDERS_ONLY_CONDENSED
-//!                                    ASCII_HORIZONTAL_ONLY
-//!                                    ASCII_MARKDOWN
-//!                                    UTF8_FULL
-//!                                    UTF8_FULL_CONDENSED
-//!                                    UTF8_NO_BORDERS
-//!                                    UTF8_BORDERS_ONLY
-//!                                    UTF8_HORIZONTAL_ONLY
-//!                                    NOTHING
-//!
-//!                                    These options are defined by comfy-table which provides examples for each at:
-//!                                    https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs
+//! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL_CONDENSED). These options are defined by comfy-table which provides examples for each at <https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs>
+//!   * `ASCII_FULL`
+//!   * `ASCII_FULL_CONDENSED`
+//!   * `ASCII_NO_BORDERS`
+//!   * `ASCII_BORDERS_ONLY`
+//!   * `ASCII_BORDERS_ONLY_CONDENSED`
+//!   * `ASCII_HORIZONTAL_ONLY`
+//!   * `ASCII_MARKDOWN`
+//!   * `UTF8_FULL`
+//!   * `UTF8_FULL_CONDENSED`
+//!   * `UTF8_NO_BORDERS`
+//!   * `UTF8_BORDERS_ONLY`
+//!   * `UTF8_HORIZONTAL_ONLY`
+//!   * `NOTHING`
 //! * `POLARS_FMT_TABLE_CELL_ALIGNMENT` -> define cell alignment using any of the following options (default = LEFT):
-//!                                    LEFT
-//!                                    CENTER
-//!                                    RIGHT
+//!   * `LEFT`
+//!   * `CENTER`
+//!   * `RIGHT`
 //! * `POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW` -> print shape information below the table.
 //! * `POLARS_FMT_TABLE_HIDE_COLUMN_NAMES` -> hide table column names.
 //! * `POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES` -> hide data types for columns.
