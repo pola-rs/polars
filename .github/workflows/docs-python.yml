@@ -30,11 +30,11 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: py-polars/docs/requirements-docs.txt
+          cache-dependency-path: py-polars/pyproject.toml
 
       - name: Install Python dependencies
-        working-directory: py-polars/docs
-        run: pip install -r requirements-docs.txt
+        working-directory: py-polars
+        run: python scripts/install_dependencies.py --tag dev-docs
 
       - name: Build Python documentation
         working-directory: py-polars/docs

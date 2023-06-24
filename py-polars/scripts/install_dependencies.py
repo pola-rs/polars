@@ -39,7 +39,7 @@ def collect_dependencies_from_pyproject_toml(
     tag
         Select only dependencies under this tag defined in optional-dependencies.
         Multiple tags can be provided by passing in a comma delimited string, for
-        example "dev,lint"
+        example "dev,dev-lint"
     include_mandatory
         Whether to return dependencies specified under `dependencies` in pyproject.toml.
 
