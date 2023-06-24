@@ -1,8 +1,6 @@
 use super::*;
 
-pub(crate) fn create_probe_table<T, IntoSlice>(
-    keys: Vec<IntoSlice>,
-) -> Vec<PlHashMap<T, Vec<IdxSize>>>
+pub(crate) fn build_tables<T, IntoSlice>(keys: Vec<IntoSlice>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
