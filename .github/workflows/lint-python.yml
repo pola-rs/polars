@@ -54,8 +54,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python scripts/install_dependencies.py --tag dev
-          python scripts/install_dependencies.py --tag lint
+          python scripts/install_dependencies.py --tag dev,all,lint
 
       # Allow untyped calls for older Python versions
       - name: Run mypy
