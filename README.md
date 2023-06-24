@@ -4,12 +4,6 @@
 </h1>
 
 <div align="center">
-  <a href="https://docs.rs/polars/latest/polars/">
-    <img src="https://docs.rs/polars/badge.svg" alt="rust docs"/>
-  </a>
-  <a href="https://github.com/pola-rs/polars/actions">
-    <img src="https://github.com/pola-rs/polars/workflows/Build%20and%20test/badge.svg" alt="Build and test"/>
-  </a>
   <a href="https://crates.io/crates/polars">
     <img src="https://img.shields.io/crates/v/polars.svg"/>
   </a>
@@ -31,7 +25,7 @@
   <b>Documentation</b>:
   <a href="https://pola-rs.github.io/polars/py-polars/html/reference/index.html">Python</a>
   -
-  <a href="https://pola-rs.github.io/polars/polars/index.html">Rust</a>
+  <a href="https://docs.rs/polars/latest/polars/">Rust</a>
   -
   <a href="https://pola-rs.github.io/nodejs-polars/index.html">Node.js</a>
   -
