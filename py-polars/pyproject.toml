@@ -77,6 +77,9 @@ dev-lint = [
   "pandas-stubs==1.2.0.62",
 ]
 dev-docs = [
+  "numpy",
+  "pandas",
+  "pyarrow",
   "hypothesis==6.75.1", # defined above as well, keep same version!
   "autodocsumm==0.2.10",
   "commonmark==0.9.1",
