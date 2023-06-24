@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
-from itertools import chain
 from typing import Any
 
 
@@ -28,63 +27,50 @@ def parse_toml_file(fp) -> dict[str, dict[str, Any]]:
         return tomllib.load(fp)
 
 
-def collect_dependencies_from_pyproject_toml(
-    tag: str | None = None, include_mandatory: bool = True
-) -> list[str]:
+def collect_dependencies_from_pyproject_toml(tags: str | None = None) -> list[str]:
     """
     Collects all dependencies, mandatory and optional, from pyproject.toml.
 
     Parameters
     ----------
-    tag
-        Select only dependencies under this tag defined in optional-dependencies.
+    tags
+        Select dependencies under these tags defined in optional-dependencies.
         Multiple tags can be provided by passing in a comma delimited string, for
-        example "dev,dev-lint"
-    include_mandatory
-        Whether to return dependencies specified under `dependencies` in pyproject.toml.
+        example "dev-test,dev-lint". If `None` is passed in, no optional dependencies
+        are returned.
 
     """
     with open("pyproject.toml", mode="rb") as fp:
         config = parse_toml_file(fp)
 
-    if tag:
-        deps = []
-        if "," in tag:
-            for t in tag.split(","):
-                deps += config["project"]["optional-dependencies"][t]
+    deps: list[str] = config["project"]["dependencies"]
+
+    if tags:
+        if "," in tags:
+            # multiple tags are passed in
+            for t in tags.split(","):
+                deps += config["project"]["optional-dependencies"][t.strip()]
         else:
-            deps += config["project"]["optional-dependencies"][tag]
-        if include_mandatory:
-            deps += config["project"]["dependencies"]
-    else:
-        # collect everything
-        mandatory_deps = config["project"]["dependencies"]
-        opt_deps = list(chain(*config["project"]["optional-dependencies"].values()))
-        deps = mandatory_deps + opt_deps
+            # a single tag is passed in
+            deps += config["project"]["optional-dependencies"][tags]
 
     # resolve polars[] tags
     for d in deps:
-        if "[" in d:
+        if d.startswith("polars["):
             tags_as_comma_delimited_string = d.split("[")[1].replace("]", "")
             for pt in tags_as_comma_delimited_string.split(","):
                 deps += config["project"]["optional-dependencies"][pt]
 
-    # drop the polars tags from the list
-    deps2 = [d for d in deps if "[" not in d]
+    # drop the polars[] tags from the list
+    deps = [d for d in deps if not d.startswith("polars[")]
 
-    return deps2
+    return deps
 
 
-def pip_install(specifiers: list[str]) -> None:
-    cmd = ["pip", "install"] + specifiers
+def install_dependencies(tags: str | None = None) -> None:
+    deps = collect_dependencies_from_pyproject_toml(tags)
+    cmd = ["pip", "install"] + deps
     subprocess.run(cmd, capture_output=False, text=True)
-
-
-def install_dependencies(
-    tag: str | None = None, include_mandatory: bool = True
-) -> None:
-    deps = collect_dependencies_from_pyproject_toml(tag, include_mandatory)
-    pip_install(deps)
 
 
 if __name__ == "__main__":
@@ -92,15 +78,11 @@ if __name__ == "__main__":
         description="Install Polars dependencies from pyproject.toml without building Polars"
     )
     parser.add_argument(
-        "--tag",
+        "tags",
+        nargs="?",  # allows no arguments to be passed in
+        default=None,
         type=str,
         help="Optional-dependency tag(s) in pyproject.toml. Provide multiple by separating with commas.",
     )
-    parser.add_argument(
-        "--include_mandatory",
-        type=bool,
-        default=True,
-        help="Include mandatory dependencies",
-    )
     args = parser.parse_args()
-    install_dependencies(args.tag, args.include_mandatory)
+    install_dependencies(args.tags)

@@ -26,7 +26,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Python dependencies
-        run: python scripts/install_dependencies.py --tag dev-lint
+        run: python scripts/install_dependencies.py dev-lint
 
       - name: Lint Python
         run: |
@@ -54,7 +54,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python scripts/install_dependencies.py --tag dev-test,all,dev-lint
+          python scripts/install_dependencies.py dev-test,all,dev-lint
 
       # Allow untyped calls for older Python versions
       - name: Run mypy
