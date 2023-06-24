@@ -43,28 +43,24 @@ def collect_dependencies_from_pyproject_toml(tags: str | None = None) -> list[st
     with open("pyproject.toml", mode="rb") as fp:
         config = parse_toml_file(fp)
 
+    # collect dependencies
     deps: list[str] = config["project"]["dependencies"]
 
     if tags:
-        if "," in tags:
-            # multiple tags are passed in
-            for t in tags.split(","):
-                deps += config["project"]["optional-dependencies"][t.strip()]
-        else:
-            # a single tag is passed in
-            deps += config["project"]["optional-dependencies"][tags]
+        for tag in tags.split(","):
+            deps += config["project"]["optional-dependencies"][tag.strip()]
 
     # resolve polars[] tags
+    deps_resolved: list[str] = []
     for d in deps:
         if d.startswith("polars["):
             tags_as_comma_delimited_string = d.split("[")[1].replace("]", "")
             for pt in tags_as_comma_delimited_string.split(","):
-                deps += config["project"]["optional-dependencies"][pt]
+                deps_resolved += config["project"]["optional-dependencies"][pt]
+        else:
+            deps_resolved.append(d)
 
-    # drop the polars[] tags from the list
-    deps = [d for d in deps if not d.startswith("polars[")]
-
-    return deps
+    return deps_resolved
 
 
 def install_dependencies(tags: str | None = None) -> None:
