@@ -46,6 +46,17 @@ if sys.version_info >= (3, 11):
     _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 
+EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
+EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+_fromtimestamp = datetime.fromtimestamp
+
+
+def _timestamp_in_seconds(dt: datetime) -> int:
+    du = dt - EPOCH_UTC
+    return du.days * 86400 + du.seconds
+
+
 @overload
 def _timedelta_to_pl_duration(td: None) -> None:
     ...
@@ -82,16 +93,16 @@ def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
 
 def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in nanoseconds."""
-    dt = dt.replace(tzinfo=timezone.utc)
+    dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo != timezone.utc else dt
     if time_unit == "ns":
         micros = dt.microsecond
-        return 1_000 * (int(dt.replace(microsecond=0).timestamp() * 1_000_000) + micros)
+        return 1_000 * (_timestamp_in_seconds(dt) * 1_000_000 + micros)
     elif time_unit == "us" or time_unit is None:
         micros = dt.microsecond
-        return int(dt.replace(microsecond=0).timestamp() * 1_000_000) + micros
+        return _timestamp_in_seconds(dt) * 1_000_000 + micros
     elif time_unit == "ms":
         millis = dt.microsecond // 1000
-        return int(dt.replace(microsecond=0).timestamp() * 1_000) + millis
+        return _timestamp_in_seconds(dt) * 1_000 + millis
     else:
         raise ValueError(
             f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
@@ -150,12 +161,6 @@ def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> time
         )
 
 
-EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
-EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
-
-_fromtimestamp = datetime.fromtimestamp
-
-
 @lru_cache(256)
 def _to_python_date(value: int | float) -> date:
     """Convert polars int64 timestamp to Python date."""
@@ -207,11 +212,6 @@ def _localize(dt: datetime, time_zone: str) -> datetime:
         _tzinfo = _parse_fixed_tz_offset(time_zone)
 
     return dt.astimezone(_tzinfo)
-
-
-def _timestamp_in_seconds(dt: datetime) -> int:
-    du = dt - EPOCH_UTC
-    return du.days * 86400 + du.seconds
 
 
 def _datetime_for_anyvalue(dt: datetime) -> tuple[int, int]:
