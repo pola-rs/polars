@@ -1,7 +1,7 @@
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 
-use super::single_keys::create_probe_table;
+use super::single_keys::build_tables;
 use super::*;
 use crate::frame::hash_join::single_keys::probe_to_offsets;
 use crate::utils::flatten;
@@ -48,12 +48,15 @@ where
     // NOTE: see the left join for more elaborate comments
 
     // first we hash one relation
-    let hash_tbls = create_probe_table(build);
-    if validate.needs_checks() {
+    let hash_tbls = if validate.needs_checks() {
+        let expected_size = build.iter().map(|v| v.as_ref().len()).sum();
+        let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        let expected_size = probe.iter().map(|v| v.as_ref().len()).sum();
-        validate.validate_build(build_size, expected_size, swap)?;
-    }
+        validate.validate_build(build_size, expected_size, !swap)?;
+        hash_tbls
+    } else {
+        build_tables(build)
+    };
 
     let n_tables = hash_tbls.len() as u64;
     debug_assert!(n_tables.is_power_of_two());

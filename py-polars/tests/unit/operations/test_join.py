@@ -589,3 +589,26 @@ def test_join_validation() -> None:
         b.join(a, on="a", validate="m:1")
     with pytest.raises(pl.ComputeError):
         b.join(a, on="a", validate="1:1")
+
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2],
+            "ham": ["a", "a"],
+        }
+    )
+
+    other_df = pl.DataFrame(
+        {
+            "apple": ["x", "y", "z"],
+            "ham": ["a", "b", "z"],
+        }
+    )
+
+    with pytest.raises(pl.ComputeError):
+        df.join(other_df, on="ham", validate="1:m")
+
+    assert df.join(other_df, on="ham", validate="m:1")["foo"].to_list() == [1, 2]
+    assert other_df.join(df, on="ham", validate="1:m")["foo"].to_list() == [1, 2]
+
+    with pytest.raises(pl.ComputeError):
+        other_df.join(df, on="ham", validate="m:1")
