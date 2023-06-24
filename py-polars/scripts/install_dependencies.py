@@ -27,7 +27,9 @@ def parse_toml_file(fp) -> dict[str, dict[str, Any]]:
         return tomllib.load(fp)
 
 
-def collect_dependencies_from_pyproject_toml(tag: str | None = None, include_mandatory: bool = True) -> list[str]:
+def collect_dependencies_from_pyproject_toml(
+    tag: str | None = None, include_mandatory: bool = True
+) -> list[str]:
     """
     Collects all dependencies, mandatory and optional, from pyproject.toml.
 
@@ -79,8 +81,15 @@ if __name__ == "__main__":
         description="Install Polars dependencies from pyproject.toml without building Polars"
     )
     parser.add_argument(
-        "--tag", type=str, help="Optional-dependency tag(s) in pyproject.toml. Provide multiple by separating with commas."
+        "--tag",
+        type=str,
+        help="Optional-dependency tag(s) in pyproject.toml. Provide multiple by separating with commas.",
     )
-    parser.add_argument("--include_mandatory", type=bool, default=True, help="Include mandatory dependencies")
+    parser.add_argument(
+        "--include_mandatory",
+        type=bool,
+        default=True,
+        help="Include mandatory dependencies",
+    )
     args = parser.parse_args()
     install_dependencies(args.tag)
