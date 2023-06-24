@@ -45,7 +45,7 @@ pyarrow = ["pyarrow>=7.0.0"]
 pandas = ["pyarrow>=7.0.0", "pandas"]
 numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
-connectorx = ["connectorx >= 0.3.2a5"] # Latest full release is broken - unpin when 0.3.2 released
+connectorx = ["connectorx >= 0.3.2a5; python_version >= '3.8'"] # Latest full release is broken - unpin when 0.3.2 released
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 deltalake = ["deltalake >= 0.10.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
