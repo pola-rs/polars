@@ -51,7 +51,7 @@ impl GzipLevel {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Default)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ParquetCompression {
     Uncompressed,
@@ -60,8 +60,13 @@ pub enum ParquetCompression {
     Lzo,
     Brotli(Option<BrotliLevel>),
     Zstd(Option<ZstdLevel>),
-    #[default]
     Lz4Raw,
+}
+
+impl Default for ParquetCompression {
+    fn default() -> Self {
+        Self::Zstd(None)
+    }
 }
 
 impl From<ParquetCompression> for CompressionOptions {
@@ -113,7 +118,7 @@ where
     {
         ParquetWriter {
             writer,
-            compression: CompressionOptions::Zstd(None),
+            compression: ParquetCompression::default().into(),
             statistics: false,
             row_group_size: None,
             data_pagesize_limit: None,
@@ -121,9 +126,9 @@ where
         }
     }
 
-    /// Set the compression used. Defaults to `Lz4Raw`.
+    /// Set the compression used. Defaults to `Zstd`.
     ///
-    /// The default compression `Lz4Raw` has very good performance, but may not yet been supported
+    /// The default compression `Zstd` has very good performance, but may not yet been supported
     /// by older readers. If you want more compatibility guarantees, consider using `Snappy`.
     pub fn with_compression(mut self, compression: ParquetCompression) -> Self {
         self.compression = compression.into();
