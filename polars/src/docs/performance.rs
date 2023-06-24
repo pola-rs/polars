@@ -64,7 +64,7 @@
 //!
 //!     df_a.try_apply("a", |s| s.categorical().cloned())?;
 //!     df_b.try_apply("b", |s| s.categorical().cloned())?;
-//!     df_a.join(&df_b, ["a"], ["b"], JoinType::Inner, None)
+//!     df_a.join(&df_b, ["a"], ["b"], JoinArgs::new(JoinType::Inner))
 //! }
 //! ```
 //!
