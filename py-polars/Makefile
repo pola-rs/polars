@@ -17,7 +17,7 @@ endif
 .PHONY: requirements
 requirements: .venv  ## Install/refresh all project requirements
 	$(VENV_BIN)/python -m pip install --upgrade pip
-	$(VENV_BIN)/python scripts/install_dependencies.py all,dev-test,dev-lint,dev-docs
+	maturin develop --extras all,dev-test,dev-lint,dev-docs
 
 .PHONY: build
 build: .venv  ## Compile and install Polars for development
