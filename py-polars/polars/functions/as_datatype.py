@@ -399,9 +399,9 @@ def struct(
         expr = expr.cast(Struct(schema), strict=False)
 
     if eager:
-        return F.select(expr).to_series()
-    else:
-        return expr
+        return expr.to_series()
+
+    return expr
 
 
 def concat_str(
