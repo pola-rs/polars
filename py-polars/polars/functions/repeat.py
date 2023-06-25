@@ -138,7 +138,7 @@ def repeat(
     if name is not None:
         expr = expr.alias(name)
     if eager:
-        return F.select(expr).to_series()
+        return expr.to_series()
     return expr
 
 

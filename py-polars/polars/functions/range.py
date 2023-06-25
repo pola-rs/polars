@@ -135,7 +135,7 @@ def arange(
     if dtype is not None and dtype != Int64:
         result = result.cast(dtype)
     if eager:
-        return F.select(result).to_series()
+        return result.to_series()
 
     return result
 
