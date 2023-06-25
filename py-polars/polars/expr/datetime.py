@@ -76,6 +76,10 @@ class ExprDateTimeNameSpace:
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
 
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, but to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
+
         Returns
         -------
         Date/Datetime series
@@ -195,6 +199,10 @@ class ExprDateTimeNameSpace:
         Suffix with `"_saturating"` to indicate that dates too large for
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
+
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, but to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
 
         Returns
         -------
@@ -1810,6 +1818,10 @@ class ExprDateTimeNameSpace:
         Suffix with `"_saturating"` to indicate that dates too large for
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
+
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, but to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
 
         Returns
         -------

@@ -2204,6 +2204,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
 
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, but to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
+
         In case of a groupby_rolling on an integer column, the windows are defined by:
 
         - "1i"      # length 1
@@ -2352,6 +2356,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Suffix with `"_saturating"` to indicate that dates too large for
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
+
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, but to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
 
         In case of a groupby_dynamic on an integer column, the windows are defined by:
 
@@ -2734,6 +2742,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 Suffix with `"_saturating"` to indicate that dates too large for
                 their month should saturate at the largest date
                 (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
+                By "calendar day", we mean the corresponding time on the next day
+                (which may not be 24 hours, but to daylight savings). Similarly for
+                "calendar week", "calendar month", "calendar quarter", and
+                "calendar year".
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both

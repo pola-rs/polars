@@ -30,6 +30,7 @@ pub trait PolarsUpsample {
     /// - 1d    (1 calendar day)
     /// - 1w    (1 calendar week)
     /// - 1mo   (1 calendar month)
+    /// - 1q    (1 calendar quarter)
     /// - 1y    (1 calendar year)
     /// - 1i    (1 index count)
     /// Or combine them:
@@ -37,6 +38,10 @@ pub trait PolarsUpsample {
     /// Suffix with `"_saturating"` to saturate dates with days too
     /// large for their month to the last day of the month (e.g.
     /// 2022-02-29 to 2022-02-28).
+    /// By "calendar day", we mean the corresponding time on the next
+    /// day (which may not be 24 hours, depending on daylight savings).
+    /// Likewise for "calendar week", "calendar month", "calendar quarter",
+    /// and "calendar year".
     fn upsample<I: IntoVec<String>>(
         &self,
         by: I,
