@@ -223,7 +223,8 @@ impl BinaryChunked {
             .downcast_iter()
             .map(|arr| Box::new(binary_to_utf8_unchecked(arr)) as ArrayRef)
             .collect();
-        Utf8Chunked::from_chunks(self.name(), chunks)
+        let field = Arc::new(Field::new(self.name(), DataType::Utf8));
+        Utf8Chunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
     }
 }
 
@@ -238,7 +239,10 @@ impl Utf8Chunked {
                 )) as ArrayRef
             })
             .collect();
-        unsafe { BinaryChunked::from_chunks(self.name(), chunks) }
+        let field = Arc::new(Field::new(self.name(), DataType::Binary));
+        unsafe {
+            BinaryChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
+        }
     }
 }
 
