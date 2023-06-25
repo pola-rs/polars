@@ -155,7 +155,7 @@ def int_range(start: int, end: int, step: int = 1) -> Expr:
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
-    return wrap_expr(plr.arange(start, end, step).alias("int"))
+    return wrap_expr(plr.int_range(start, end, step).alias("int"))
 
 
 def int_ranges(
@@ -182,7 +182,7 @@ def int_ranges(
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
-    result = wrap_expr(plr.arange(start, end, step).alias("int_range"))
+    result = wrap_expr(plr.int_ranges(start, end, step).alias("int_range"))
 
     if dtype != Int64:
         result = result.cast(pl.List(dtype))
