@@ -13,7 +13,6 @@ pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use num_traits::Float;
-use polars_arrow::array::default_arrays::FromDataUtf8;
 use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::{FromData, ValueSize};
 use polars_arrow::trusted_len::TrustedLenPush;
@@ -419,96 +418,7 @@ fn ordering_other_columns<'a>(
 
 impl ChunkSort<Utf8Type> for Utf8Chunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<Utf8Type> {
-        sort_with_fast_path!(self, options);
-        let mut v: Vec<&str> = if self.null_count() > 0 {
-            Vec::from_iter(self.into_iter().flatten())
-        } else {
-            Vec::from_iter(self.into_no_null_iter())
-        };
-
-        sort_branch(
-            v.as_mut_slice(),
-            options.descending,
-            order_ascending,
-            order_descending,
-            options.multithreaded,
-        );
-
-        let mut values = Vec::<u8>::with_capacity(self.get_values_size());
-        let mut offsets = Vec::<i64>::with_capacity(self.len() + 1);
-        let mut length_so_far = 0i64;
-        offsets.push(length_so_far);
-
-        let len = self.len();
-        let null_count = self.null_count();
-        let mut ca: Self = match (null_count, options.nulls_last) {
-            (0, _) => {
-                for val in v {
-                    values.extend_from_slice(val.as_bytes());
-                    length_so_far = values.len() as i64;
-                    offsets.push(length_so_far);
-                }
-                // Safety:
-                // we pass valid utf8
-                let ar = unsafe {
-                    Utf8Array::from_data_unchecked_default(offsets.into(), values.into(), None)
-                };
-                (self.name(), ar).into()
-            }
-            (_, true) => {
-                for val in v {
-                    values.extend_from_slice(val.as_bytes());
-                    length_so_far = values.len() as i64;
-                    offsets.push(length_so_far);
-                }
-                let mut validity = MutableBitmap::with_capacity(len);
-                validity.extend_constant(len - null_count, true);
-                validity.extend_constant(null_count, false);
-                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
-
-                // Safety:
-                // we pass valid utf8
-                let ar = unsafe {
-                    Utf8Array::from_data_unchecked_default(
-                        offsets.into(),
-                        values.into(),
-                        Some(validity.into()),
-                    )
-                };
-                (self.name(), ar).into()
-            }
-            (_, false) => {
-                let mut validity = MutableBitmap::with_capacity(len);
-                validity.extend_constant(null_count, false);
-                validity.extend_constant(len - null_count, true);
-                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
-
-                for val in v {
-                    values.extend_from_slice(val.as_bytes());
-                    length_so_far = values.len() as i64;
-                    offsets.push(length_so_far);
-                }
-
-                // Safety:
-                // we pass valid utf8
-                let ar = unsafe {
-                    Utf8Array::from_data_unchecked_default(
-                        offsets.into(),
-                        values.into(),
-                        Some(validity.into()),
-                    )
-                };
-                (self.name(), ar).into()
-            }
-        };
-
-        let s = if options.descending {
-            IsSorted::Descending
-        } else {
-            IsSorted::Ascending
-        };
-        ca.set_sorted_flag(s);
-        ca
+        unsafe { self.as_binary().sort_with(options).to_utf8() }
     }
 
     fn sort(&self, descending: bool) -> Utf8Chunked {
@@ -568,7 +478,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                     offsets.push(length_so_far);
                 }
                 // Safety:
-                // we pass valid utf8
+                // offsets are correctly created
                 let ar = unsafe {
                     BinaryArray::from_data_unchecked_default(offsets.into(), values.into(), None)
                 };
@@ -586,7 +496,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 offsets.extend(std::iter::repeat(length_so_far).take(null_count));
 
                 // Safety:
-                // we pass valid utf8
+                // offsets are correctly created
                 let ar = unsafe {
                     BinaryArray::from_data_unchecked_default(
                         offsets.into(),
@@ -739,32 +649,34 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             self.len(),
         )
     }
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        let mut vals = Vec::with_capacity(self.len());
+        let mut count: IdxSize = 0;
+        for arr in self.downcast_iter() {
+            vals.extend_trusted_len(arr.into_iter().map(|v| {
+                let i = count;
+                count += 1;
+                (i, v.map(|v| v as u8))
+            }));
+        }
+        arg_sort_multiple_impl(vals, options)
+    }
 }
 
-pub(crate) fn convert_sort_column_multi_sort(
-    s: &Series,
-    row_ordering: bool,
-) -> PolarsResult<Series> {
+pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series> {
     use DataType::*;
     let out = match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
         Categorical(_) => s.rechunk(),
-        Binary => s.clone(),
+        Binary | Boolean => s.clone(),
         Utf8 => s.cast(&Binary).unwrap(),
-        Boolean => {
-            if row_ordering {
-                s.clone()
-            } else {
-                s.cast(&UInt8).unwrap()
-            }
-        }
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let ca = s.struct_().unwrap();
             let new_fields = ca
                 .fields()
                 .iter()
-                .map(|s| convert_sort_column_multi_sort(s, row_ordering))
+                .map(convert_sort_column_multi_sort)
                 .collect::<PolarsResult<Vec<_>>>()?;
             return StructChunked::new(ca.name(), &new_fields).map(|ca| ca.into_series());
         }
@@ -796,7 +708,7 @@ pub(crate) fn prepare_arg_sort(
 
     let mut columns = columns
         .iter()
-        .map(|s| convert_sort_column_multi_sort(s, false))
+        .map(convert_sort_column_multi_sort)
         .collect::<PolarsResult<Vec<_>>>()?;
 
     let first = columns.remove(0);
