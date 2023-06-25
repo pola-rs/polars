@@ -583,11 +583,33 @@ def test_date_range_schema() -> None:
     assert result.collect().schema == expected_schema
 
 
+def test_date_range_no_alias_schema_9037() -> None:
+    df = pl.DataFrame(
+        {"start": [datetime(2020, 1, 1)], "end": [datetime(2020, 1, 2)]}
+    ).lazy()
+    result = df.with_columns(pl.date_range(pl.col("start"), pl.col("end")))
+    expected_schema = {
+        "start": pl.Datetime(time_unit="us", time_zone=None),
+        "end": pl.Datetime(time_unit="us", time_zone=None),
+        "date": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
+    }
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+
 def test_time_range_schema() -> None:
     df = pl.DataFrame({"start": [time(1)], "end": [time(1, 30)]}).lazy()
     result = df.with_columns(
         pl.time_range(pl.col("start"), pl.col("end")).alias("time_range")
     )
     expected_schema = {"start": pl.Time, "end": pl.Time, "time_range": pl.List(pl.Time)}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+
+def test_time_range_no_alias_schema_9037() -> None:
+    df = pl.DataFrame({"start": [time(1)], "end": [time(1, 30)]}).lazy()
+    result = df.with_columns(pl.time_range(pl.col("start"), pl.col("end")))
+    expected_schema = {"start": pl.Time, "end": pl.Time, "time": pl.List(pl.Time)}
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
