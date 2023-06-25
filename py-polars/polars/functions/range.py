@@ -81,27 +81,29 @@ def arange(
     eager: bool = False,
 ) -> Expr | Series:
     """
-    Create a range expression (or Series).
+    Generate a range of integers.
 
-    This can be used in a `select`, `with_column` etc. Be sure that the resulting
+    This can be used in a ``select``, ``with_columns`` etc. Be sure that the resulting
     range size is equal to the length of the DataFrame you are collecting.
 
     Parameters
     ----------
     start
-        Lower bound of range.
+        Lower bound of the range (inclusive).
     end
-        Upper bound of range.
+        Upper bound of the range (exclusive).
     step
         Step size of the range.
     dtype
-        Apply an explicit integer dtype to the resulting expression (default is Int64).
+        Data type of the resulting column. Defaults to ``Int64``.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
 
     Examples
     --------
+    Generate a single range.
+
     >>> pl.arange(0, 3, eager=True)
     shape: (3,)
     Series: 'arange' [i64]
@@ -110,6 +112,8 @@ def arange(
             1
             2
     ]
+
+    Generate a range for each row of the input columns.
 
     >>> df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     >>> df.select(pl.arange(pl.col("a"), pl.col("b")))
@@ -126,14 +130,14 @@ def arange(
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
-    range_expr = wrap_expr(plr.arange(start, end, step))
+    result = wrap_expr(plr.arange(start, end, step))
 
     if dtype is not None and dtype != Int64:
-        range_expr = range_expr.cast(dtype)
-    if not eager:
-        return range_expr
-    else:
-        return pl.DataFrame().select(range_expr.alias("arange")).to_series()
+        result = result.cast(dtype)
+    if eager:
+        return F.select(result).to_series()
+
+    return result
 
 
 @overload
