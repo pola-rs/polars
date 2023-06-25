@@ -34,7 +34,7 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: python scripts/install_dependencies.py dev-docs
+        run: maturin develop --extras dev-docs
 
       - name: Build Python documentation
         working-directory: py-polars/docs
