@@ -244,7 +244,7 @@ fn test_ndjson_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();
     let glob = "../../examples/datasets/*.ndjson";
-    let df = LazyJsonLineReader::new(glob.into()).finish()?.collect()?;
+    let df = LazyJsonLineReader::new(glob).finish()?.collect()?;
     assert_eq!(df.shape(), (54, 4));
     let cal = df.column("calories")?;
     assert_eq!(cal.get(0)?, AnyValue::Int64(45));

@@ -18,10 +18,9 @@ pub struct LazyJsonLineReader {
 }
 
 impl LazyJsonLineReader {
-    pub fn new(path: String) -> Self {
-        // TODO: Change argument type to impl AsRef<Path>
+    pub fn new(path: impl AsRef<Path>) -> Self {
         LazyJsonLineReader {
-            path: path.into(),
+            path: path.as_ref().to_path_buf(),
             batch_size: None,
             low_memory: false,
             rechunk: true,
