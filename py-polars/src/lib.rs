@@ -93,7 +93,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
 
     // Functions - lazy
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::arange))
+    m.add_wrapped(wrap_pyfunction!(functions::range::arange))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_sort_by))
         .unwrap();
