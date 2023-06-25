@@ -59,8 +59,13 @@ impl FunctionExpr {
                     }
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return mapper.map_datetime_dtype_timezone(Some(tz)),
-                    DateRange { .. } => return mapper.map_to_list_supertype(),
-                    TimeRange { .. } => DataType::List(Box::new(DataType::Time)),
+                    DateRange { .. } => {
+                        let res = mapper.map_to_list_supertype()?;
+                        return Ok(Field::new("date", res.dtype));
+                    }
+                    TimeRange { .. } => {
+                        return Ok(Field::new("time", DataType::List(Box::new(DataType::Time))));
+                    }
                     Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
                         DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),
                         DataType::Date => DataType::Datetime(*tu, None),
