@@ -8,6 +8,22 @@ use crate::variable::decode_binary;
 /// # Safety
 /// This will not do any bound checks. Caller must ensure the `rows` are valid
 /// encodings.
+pub unsafe fn decode_rows_from_binary<'a>(
+    arr: &'a BinaryArray<i64>,
+    fields: &[SortField],
+    data_types: &[DataType],
+    rows: &mut Vec<&'a [u8]>,
+) -> Vec<ArrayRef> {
+    assert_eq!(arr.null_count(), 0);
+    rows.clear();
+    rows.extend(arr.values_iter());
+    decode_rows(rows, fields, data_types)
+}
+
+/// Decode `rows` into a arrow format
+/// # Safety
+/// This will not do any bound checks. Caller must ensure the `rows` are valid
+/// encodings.
 pub unsafe fn decode_rows(
     // the rows will be updated while the data is decoded
     rows: &mut [&[u8]],
