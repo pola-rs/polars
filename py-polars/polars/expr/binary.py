@@ -39,16 +39,16 @@ class ExprBinaryNameSpace:
         --------
         >>> colors = pl.DataFrame(
         ...     {
-        ...         'name': ['black', 'yellow', 'blue'],
-        ...         'code': [b'\x00\x00\x00', b'\xff\xff\x00', b'\x00\x00\xff']
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
         ...     }
         ... )
         >>> colors.select(
-        ...     'name',
-        ...     pl.col('code').bin.encode('hex').alias('code_encoded_hex'),
-        ...     pl.col('code').bin.contains(b'\xff').alias('contains_ff'),
-        ...     pl.col('code').bin.starts_with(b'\xff').alias('starts_with_ff'),
-        ...     pl.col('code').bin.ends_with(b'\xff').alias('ends_with_ff'),
+        ...     "name",
+        ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
+        ...     pl.col("code").bin.contains(b"\xff").alias("contains_ff"),
+        ...     pl.col("code").bin.starts_with(b"\xff").alias("starts_with_ff"),
+        ...     pl.col("code").bin.ends_with(b"\xff").alias("ends_with_ff"),
         ... )
         shape: (3, 5)
         ┌────────┬──────────────────┬─────────────┬────────────────┬──────────────┐
@@ -85,16 +85,16 @@ class ExprBinaryNameSpace:
         --------
         >>> colors = pl.DataFrame(
         ...     {
-        ...         'name': ['black', 'yellow', 'blue'],
-        ...         'code': [b'\x00\x00\x00', b'\xff\xff\x00', b'\x00\x00\xff']
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
         ...     }
         ... )
         >>> colors.select(
-        ...     'name',
-        ...     pl.col('code').bin.encode('hex').alias('code_encoded_hex'),
-        ...     pl.col('code').bin.contains(b'\xff').alias('contains_ff'),
-        ...     pl.col('code').bin.starts_with(b'\xff').alias('starts_with_ff'),
-        ...     pl.col('code').bin.ends_with(b'\xff').alias('ends_with_ff'),
+        ...     "name",
+        ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
+        ...     pl.col("code").bin.contains(b"\xff").alias("contains_ff"),
+        ...     pl.col("code").bin.starts_with(b"\xff").alias("starts_with_ff"),
+        ...     pl.col("code").bin.ends_with(b"\xff").alias("ends_with_ff"),
         ... )
         shape: (3, 5)
         ┌────────┬──────────────────┬─────────────┬────────────────┬──────────────┐
@@ -131,16 +131,16 @@ class ExprBinaryNameSpace:
         --------
         >>> colors = pl.DataFrame(
         ...     {
-        ...         'name': ['black', 'yellow', 'blue'],
-        ...         'code': [b'\x00\x00\x00', b'\xff\xff\x00', b'\x00\x00\xff']
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
         ...     }
         ... )
         >>> colors.select(
-        ...     'name',
-        ...     pl.col('code').bin.encode('hex').alias('code_encoded_hex'),
-        ...     pl.col('code').bin.contains(b'\xff').alias('contains_ff'),
-        ...     pl.col('code').bin.starts_with(b'\xff').alias('starts_with_ff'),
-        ...     pl.col('code').bin.ends_with(b'\xff').alias('ends_with_ff'),
+        ...     "name",
+        ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
+        ...     pl.col("code").bin.contains(b"\xff").alias("contains_ff"),
+        ...     pl.col("code").bin.starts_with(b"\xff").alias("starts_with_ff"),
+        ...     pl.col("code").bin.ends_with(b"\xff").alias("ends_with_ff"),
         ... )
         shape: (3, 5)
         ┌────────┬──────────────────┬─────────────┬────────────────┬──────────────┐
@@ -194,14 +194,14 @@ class ExprBinaryNameSpace:
         --------
         >>> colors = pl.DataFrame(
         ...     {
-        ...         'name': ['black', 'yellow', 'blue'],
-        ...         'code': [b'\x00\x00\x00', b'\xff\xff\x00', b'\x00\x00\xff']
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
         ...     }
         ... )
         >>> colors.select(
-        ...     'name',
-        ...     'code',
-        ...     pl.col('code').bin.encode('hex').alias('code_encoded_hex'),
+        ...     "name",
+        ...     "code",
+        ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
         ... )
         shape: (3, 3)
         ┌────────┬───────────────┬──────────────────┐
