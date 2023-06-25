@@ -22,9 +22,12 @@ Eager/Lazy functions
 .. autosummary::
    :toctree: api/
 
+    arange
     arg_where
     concat
     date_range
+    int_range
+    int_ranges
     ones
     time_range
     zeros

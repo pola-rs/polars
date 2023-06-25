@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from datetime import date
 
     from polars import Expr, Series
-    from polars.type_aliases import ClosedInterval, PolarsDataType, TimeUnit
+    from polars.type_aliases import ClosedInterval, IntoExpr, PolarsDataType, TimeUnit
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -135,6 +135,57 @@ def arange(
         result = result.cast(dtype)
     if eager:
         return F.select(result).to_series()
+
+    return result
+
+
+def int_range(start: int, end: int, step: int = 1) -> Expr:
+    """
+    Generate a range of integers.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the range (inclusive).
+    end
+        Upper bound of the range (exclusive).
+    step
+        Step size of the range.
+
+    """
+    start = parse_as_expression(start)
+    end = parse_as_expression(end)
+    return wrap_expr(plr.arange(start, end, step).alias("int"))
+
+
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = 1,
+    *,
+    dtype: PolarsDataType = Int64,
+) -> Expr:
+    """
+    Generate a range of integers for each row of the input columns.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the range (inclusive).
+    end
+        Upper bound of the range (exclusive).
+    step
+        Step size of the range.
+    dtype
+        Integer data type of the ranges. Defaults to ``Int64``.
+
+    """
+    start = parse_as_expression(start)
+    end = parse_as_expression(end)
+    result = wrap_expr(plr.arange(start, end, step).alias("int_range"))
+
+    if dtype != Int64:
+        result = result.cast(pl.List(dtype))
 
     return result
 
