@@ -9,3 +9,4 @@ Miscellaneous
     Expr.cache
     Expr.from_json
     Expr.set_sorted
+    Expr.to_series
