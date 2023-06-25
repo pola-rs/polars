@@ -65,7 +65,7 @@ pub(crate) fn arg_sort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
 }
 
 pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
-    let by = convert_sort_column_multi_sort(by, true)?;
+    let by = convert_sort_column_multi_sort(by)?;
     let by = by.rechunk();
 
     let out = match by.dtype() {

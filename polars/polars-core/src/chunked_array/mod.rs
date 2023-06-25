@@ -324,21 +324,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         keep_sorted: bool,
         keep_fast_explode: bool,
     ) -> Self {
-        let mut out = ChunkedArray {
-            field: self.field.clone(),
+        Self::from_chunks_and_metadata(
             chunks,
-            phantom: PhantomData,
-            bit_settings: self.bit_settings,
-            length: 0,
-        };
-        out.compute_len();
-        if !keep_sorted {
-            out.set_sorted_flag(IsSorted::Not);
-        }
-        if !keep_fast_explode {
-            out.unset_fast_explode_list()
-        }
-        out
+            self.field.clone(),
+            self.bit_settings,
+            keep_sorted,
+            keep_fast_explode,
+        )
     }
 
     /// Get data type of ChunkedArray.
