@@ -2399,6 +2399,24 @@ def test_truncate_by_multiple_weeks() -> None:
     }
 
 
+def test_sub_daily_crossing_dst_9491() -> None:
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.date_range(
+                datetime(2017, 4, 2),
+                datetime(2017, 4, 3),
+                timedelta(minutes=15),
+                time_zone="Australia/Sydney",
+                time_unit="ms",
+                eager=True,
+            ),
+        }
+    )
+    freq = "15m"
+    result = df.with_columns(pl.col("timestamp").dt.truncate(freq))
+    assert_frame_equal(result, df)
+
+
 def test_round_by_week() -> None:
     df = pl.DataFrame(
         {

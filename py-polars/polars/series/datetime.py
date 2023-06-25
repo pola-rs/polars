@@ -1574,7 +1574,9 @@ class DateTimeNameSpace:
         every
             Every interval start and period length
         offset
-            Offset the window
+            Offset the window. This may be useful if you're working with a time zone
+            which has a non-round offset (such as Asia/Kathmandu, which is +05:45) and
+            your `every` is hourly.
 
         Notes
         -----

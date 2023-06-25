@@ -438,26 +438,12 @@ impl Duration {
             (0, 0, 0, 0) => polars_bail!(ComputeError: "duration cannot be zero"),
             // truncate by ns/us/ms
             (0, 0, 0, _) => {
-                let t = match tz {
-                    #[cfg(feature = "timezones")]
-                    Some(tz) => {
-                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz))
-                    }
-                    _ => t,
-                };
                 let duration = nsecs_to_unit(self.nsecs);
                 let mut remainder = t % duration;
                 if remainder < 0 {
                     remainder += duration
                 }
-                match tz {
-                    #[cfg(feature = "timezones")]
-                    Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
-                        timestamp_to_datetime(t - remainder),
-                        tz,
-                    )?)),
-                    _ => Ok(t - remainder),
-                }
+                Ok(t - remainder)
             }
             // truncate by weeks
             (0, _, 0, 0) => {

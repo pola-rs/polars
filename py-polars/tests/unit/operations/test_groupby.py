@@ -474,8 +474,16 @@ def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
 
 
 @pytest.mark.parametrize("every", ["1h", timedelta(hours=1)])
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
-def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
+@pytest.mark.parametrize(
+    ("tzinfo", "offset"),
+    [
+        (None, None),
+        (ZoneInfo("Asia/Kathmandu"), "-45m"),
+    ],
+)
+def test_groupby_dynamic_iter(
+    every: str | timedelta, tzinfo: ZoneInfo | None, offset: str | None
+) -> None:
     time_zone = tzinfo.key if tzinfo is not None else None
     df = pl.DataFrame(
         {
@@ -493,7 +501,9 @@ def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -
     # Without 'by' argument
     result1 = [
         (name, data.shape)
-        for name, data in df.groupby_dynamic("datetime", every=every, closed="left")
+        for name, data in df.groupby_dynamic(
+            "datetime", every=every, closed="left", offset=offset
+        )
     ]
     expected1 = [
         (datetime(2020, 1, 1, 10, tzinfo=tzinfo), (2, 3)),
@@ -505,7 +515,7 @@ def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -
     result2 = [
         (name, data.shape)
         for name, data in df.groupby_dynamic(
-            "datetime", every=every, closed="left", by="a"
+            "datetime", every=every, closed="left", by="a", offset=offset
         )
     ]
     expected2 = [
@@ -517,8 +527,16 @@ def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -
 
 
 @pytest.mark.parametrize("every", ["1h", timedelta(hours=1)])
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
-def test_groupby_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
+@pytest.mark.parametrize(
+    ("tzinfo", "offset"),
+    [
+        (None, None),
+        (ZoneInfo("Asia/Kathmandu"), "-45m"),
+    ],
+)
+def test_groupby_dynamic_lazy(
+    every: str | timedelta, tzinfo: ZoneInfo | None, offset: str | None
+) -> None:
     ldf = pl.LazyFrame(
         {
             "time": pl.date_range(
@@ -531,7 +549,7 @@ def test_groupby_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -
         }
     )
     df = (
-        ldf.groupby_dynamic("time", every=every, closed="right")
+        ldf.groupby_dynamic("time", every=every, closed="right", offset=offset)
         .agg(
             [
                 pl.col("time").min().alias("time_min"),
