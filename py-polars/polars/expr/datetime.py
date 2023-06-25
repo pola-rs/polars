@@ -77,7 +77,7 @@ class ExprDateTimeNameSpace:
         instead of erroring.
 
         By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, but to daylight savings). Similarly for "calendar week",
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
         Returns
@@ -201,7 +201,7 @@ class ExprDateTimeNameSpace:
         instead of erroring.
 
         By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, but to daylight savings). Similarly for "calendar week",
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
         Returns
@@ -1820,7 +1820,7 @@ class ExprDateTimeNameSpace:
         instead of erroring.
 
         By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, but to daylight savings). Similarly for "calendar week",
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
         Returns

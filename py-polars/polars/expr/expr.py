@@ -4832,7 +4832,7 @@ class Expr:
             (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, but to daylight savings). Similarly for
+            (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
 
@@ -5038,7 +5038,7 @@ class Expr:
             (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, but to daylight savings). Similarly for
+            (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
 
@@ -5271,7 +5271,7 @@ class Expr:
             (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, but to daylight savings). Similarly for
+            (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
 
@@ -5504,7 +5504,7 @@ class Expr:
             (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, but to daylight savings). Similarly for
+            (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
 
@@ -5738,7 +5738,7 @@ class Expr:
             (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, but to daylight savings). Similarly for
+            (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
 
@@ -5974,7 +5974,7 @@ class Expr:
             (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, but to daylight savings). Similarly for
+            (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
 
@@ -6211,7 +6211,7 @@ class Expr:
             (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, but to daylight savings). Similarly for
+            (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
 
@@ -6372,7 +6372,7 @@ class Expr:
             (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, but to daylight savings). Similarly for
+            (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
 

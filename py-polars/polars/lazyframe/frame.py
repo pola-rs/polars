@@ -2205,7 +2205,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         instead of erroring.
 
         By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, but to daylight savings). Similarly for "calendar week",
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
         In case of a groupby_rolling on an integer column, the windows are defined by:
@@ -2358,7 +2358,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         instead of erroring.
 
         By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, but to daylight savings). Similarly for "calendar week",
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
         In case of a groupby_dynamic on an integer column, the windows are defined by:
@@ -2744,7 +2744,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
                 By "calendar day", we mean the corresponding time on the next day
-                (which may not be 24 hours, but to daylight savings). Similarly for
+                (which may not be 24 hours, due to daylight savings). Similarly for
                 "calendar week", "calendar month", "calendar quarter", and
                 "calendar year".
 
