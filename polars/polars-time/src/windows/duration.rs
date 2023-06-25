@@ -102,7 +102,7 @@ impl Duration {
     ///
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
-    /// Likewise for "calendar week", "calendar month", "calendar quarter",
+    /// Similarly for "calendar week", "calendar month", "calendar quarter",
     /// and "calendar year".
     ///
     /// # Panics

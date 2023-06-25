@@ -40,7 +40,7 @@ pub trait PolarsUpsample {
     /// 2022-02-29 to 2022-02-28).
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
-    /// Likewise for "calendar week", "calendar month", "calendar quarter",
+    /// Similarly for "calendar week", "calendar month", "calendar quarter",
     /// and "calendar year".
     fn upsample<I: IntoVec<String>>(
         &self,
@@ -80,7 +80,7 @@ pub trait PolarsUpsample {
     /// 2022-02-29 to 2022-02-28).
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
-    /// Likewise for "calendar week", "calendar month", "calendar quarter",
+    /// Similarly for "calendar week", "calendar month", "calendar quarter",
     /// and "calendar year".
     fn upsample_stable<I: IntoVec<String>>(
         &self,
