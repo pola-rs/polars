@@ -257,6 +257,24 @@ class Expr:
         expr._pyexpr = PyExpr.meta_read_json(value)
         return expr
 
+    def to_series(self) -> Series:
+        """
+        Evaluate the expression without a context and return a ``Series``.
+
+        Examples
+        --------
+        >>> pl.arange(0, 3).to_series()
+        shape: (3,)
+        Series: 'arange' [i64]
+        [
+                0
+                1
+                2
+        ]
+
+        """
+        return F.select(self).to_series()
+
     def to_physical(self) -> Self:
         """
         Cast to physical representation of the logical dtype.

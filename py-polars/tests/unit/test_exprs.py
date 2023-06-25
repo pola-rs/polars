@@ -1135,3 +1135,9 @@ def test_extend_constant_arr(const: Any, dtype: pl.PolarsDataType) -> None:
     expected = pl.Series("s", [[const, const, const, const]], dtype=pl.List(dtype))
 
     assert_series_equal(s.list.eval(pl.element().extend_constant(const, 3)), expected)
+
+
+def test_expr_to_series() -> None:
+    result = pl.arange(0, 3).alias("x").to_series()
+    expected = pl.Series("x", [0, 1, 2], dtype=pl.Int64)
+    assert_series_equal(result, expected)
