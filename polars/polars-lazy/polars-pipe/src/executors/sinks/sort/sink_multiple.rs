@@ -1,5 +1,6 @@
 use std::any::Any;
 
+use polars_arrow::export::arrow::array::BinaryArray;
 use polars_core::prelude::sort::_broadcast_descending;
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_compat_array;
 use polars_core::prelude::*;
@@ -32,6 +33,18 @@ fn sort_column_can_be_decoded(schema: &Schema, sort_idx: &[usize]) -> bool {
         .any(|i| matches!(schema.get_at_index(*i).unwrap().1, DataType::Categorical(_)))
 }
 
+fn sort_by_idx<V: Clone>(values: &[V], idx: &[usize]) -> Vec<V> {
+    assert_eq!(values.len(), idx.len());
+
+    let mut tmp = values
+        .iter()
+        .cloned()
+        .zip(idx.iter().copied())
+        .collect::<Vec<_>>();
+    tmp.sort_unstable_by_key(|k| k.1);
+    tmp.into_iter().map(|k| k.0).collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn finalize_dataframe(
     df: &mut DataFrame,
@@ -39,7 +52,7 @@ fn finalize_dataframe(
     sort_args: &SortArguments,
     can_decode: bool,
     sort_dtypes: Option<&[ArrowDataType]>,
-    rows: &mut Vec<usize>,
+    rows: &mut Vec<&'static [u8]>,
     sort_fields: &[SortField],
     schema: &Schema,
 ) {
@@ -54,23 +67,30 @@ fn finalize_dataframe(
         // those need to be inserted at the `sort_idx` position
         // in the `DataFrame`.
         if can_decode {
-            // safety:
-            // lifetime bound to this scope
-            // usize matches pointer/reference alignment and size
-            let rows = std::mem::transmute::<&mut Vec<usize>, &mut Vec<&'_ [u8]>>(rows);
-
             let sort_dtypes = sort_dtypes.expect("should be set");
+            let sort_dtypes = sort_by_idx(sort_dtypes, sort_idx);
+
             let encoded = encoded.binary().unwrap();
             assert_eq!(encoded.chunks().len(), 1);
             let arr = encoded.downcast_iter().next().unwrap();
-            let arrays = decode_rows_from_binary(arr, sort_fields, sort_dtypes, rows);
 
-            // ensure we insert the columns in the order of a sorted `sort_idx`
-            // this ensures the indices are correct
-            let mut idx_and_col = sort_idx.iter().copied().zip(arrays).collect::<Vec<_>>();
-            idx_and_col.sort_unstable_by_key(|k| k.0);
-            for (sort_idx, arr) in idx_and_col {
+            // safety
+            // temporary extend lifetime
+            // this is safe as the lifetime in rows stays bound to this scope
+            let arrays = {
+                let arr =
+                    std::mem::transmute::<&'_ BinaryArray<i64>, &'static BinaryArray<i64>>(arr);
+                decode_rows_from_binary(arr, sort_fields, &sort_dtypes, rows)
+            };
+            rows.clear();
+
+            let arrays = sort_by_idx(&arrays, sort_idx);
+            let mut sort_idx = sort_idx.to_vec();
+            sort_idx.sort_unstable();
+
+            for (sort_idx, arr) in sort_idx.into_iter().zip(arrays) {
                 let (name, logical_dtype) = schema.get_at_index(sort_idx).unwrap();
+                assert_eq!(logical_dtype.to_physical(), DataType::from(arr.data_type()));
                 let col = Series::from_chunks_and_dtype_unchecked(name, vec![arr], logical_dtype);
                 cols.insert(sort_idx, col);
             }
@@ -286,7 +306,7 @@ struct DropEncoded {
     sort_args: SortArguments,
     can_decode: bool,
     sort_dtypes: Option<Vec<ArrowDataType>>,
-    rows: Vec<usize>,
+    rows: Vec<&'static [u8]>,
     sort_fields: Arc<[SortField]>,
     output_schema: SchemaRef,
 }
