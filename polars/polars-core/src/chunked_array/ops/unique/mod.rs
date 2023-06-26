@@ -132,7 +132,6 @@ where
         }
         match self.is_sorted_flag() {
             IsSorted::Ascending | IsSorted::Descending => {
-                // TODO! optimize this branch
                 if self.null_count() > 0 {
                     let mut arr = MutablePrimitiveArray::with_capacity(self.len());
                     let mut iter = self.into_iter();
@@ -179,18 +178,39 @@ where
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
-        let mut set: PlHashSet<T::Native> = PlHashSet::new();
-        if self.null_count() > 0 {
-            for arr in self.downcast_iter() {
-                set.extend(arr.into_iter().flatten())
+        // prevent stackoverflow repeated sorted.unique call
+        if self.is_empty() {
+            return Ok(0);
+        }
+        match self.is_sorted_flag() {
+            IsSorted::Ascending | IsSorted::Descending => {
+                if self.null_count() > 0 {
+                    let mut count = 0;
+                    let mut iter = self.into_iter();
+                    let mut last = None;
+
+                    if let Some(val) = iter.next() {
+                        last = val;
+                        count += 1;
+                    };
+
+                    iter.for_each(|opt_val| {
+                        if opt_val != last {
+                            last = opt_val;
+                            count += 1;
+                        }
+                    });
+
+                    Ok(count)
+                } else {
+                    let mask = self.not_equal_and_validity(&self.shift(1));
+                    Ok(mask.sum().unwrap() as usize)
+                }
             }
-            Ok(set.len() + 1)
-        } else {
-            for arr in self.downcast_iter() {
-                let slice = arr.values().as_slice();
-                set.extend(slice.iter().copied())
+            IsSorted::Not => {
+                let sorted = self.sort(false);
+                sorted.n_unique()
             }
-            Ok(set.len())
         }
     }
 
