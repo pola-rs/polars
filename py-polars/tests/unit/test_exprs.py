@@ -1141,3 +1141,8 @@ def test_expr_to_series() -> None:
     result = pl.arange(0, 3).alias("x").to_series()
     expected = pl.Series("x", [0, 1, 2], dtype=pl.Int64)
     assert_series_equal(result, expected)
+
+
+def test_expr_to_series_not_literal() -> None:
+    with pytest.raises(pl.InvalidOperationError):
+        pl.col("a").to_series()

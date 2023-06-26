@@ -34,6 +34,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
+from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -273,7 +274,12 @@ class Expr:
         ]
 
         """
-        return F.select(self).to_series()
+        try:
+            return F.select(self).to_series()
+        except ColumnNotFoundError as exc:
+            raise InvalidOperationError(
+                "`to_series` only works on literal expressions."
+            ) from exc
 
     def to_physical(self) -> Self:
         """
