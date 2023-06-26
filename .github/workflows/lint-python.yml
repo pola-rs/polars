@@ -24,9 +24,19 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+            - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+          save-if: ${{ github.ref_name == 'main' }}
 
       - name: Install Python dependencies
-        run: maturin develop --extras dev-lint
+        run: |
+          pip install maturin==1.0.1
+          maturin develop --extras dev-lint
 
       - name: Lint Python
         run: |
@@ -52,8 +62,18 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+          save-if: ${{ github.ref_name == 'main' }}
+
       - name: Install dependencies
         run: |
+          pip install maturin=1.0.1
           maturin develop --extras dev-test,all,dev-lint
 
       # Allow untyped calls for older Python versions

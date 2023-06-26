@@ -32,9 +32,20 @@ jobs:
           cache: pip
           cache-dependency-path: py-polars/pyproject.toml
 
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+          save-if: ${{ github.ref_name == 'main' }}
+
       - name: Install Python dependencies
         working-directory: py-polars
-        run: maturin develop --extras dev-docs
+        run: |
+          pip install maturin=1.0.1
+          maturin develop --extras dev-docs
 
       - name: Build Python documentation
         working-directory: py-polars/docs

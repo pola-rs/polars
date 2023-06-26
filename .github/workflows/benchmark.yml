@@ -41,9 +41,20 @@ jobs:
           python -m venv .venv
           echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
 
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+          save-if: ${{ github.ref_name == 'main' }}
+
       - name: Install Python dependencies
         working-directory: py-polars
-        run: maturin develop --extras dev-test,all
+        run: |
+          pip install maturin=1.0.1
+          maturin develop --extras dev-test,all
 
       - name: Load benchmark data from cache
         id: cache-data

@@ -17,6 +17,7 @@ endif
 .PHONY: requirements
 requirements: .venv  ## Install/refresh all project requirements
 	$(VENV_BIN)/python -m pip install --upgrade pip
+	$(VENV_BIN)/python -m pip install maturin==1.0.1
 	maturin develop --extras all,dev-test,dev-lint,dev-docs
 
 .PHONY: build

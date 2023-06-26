@@ -58,6 +58,7 @@ jobs:
       - name: Install Polars
         run: |
           source activate
+          pip install maturin==1.0.1
           maturin develop --extras dev-test,all
 
       - name: Run tests and report coverage
@@ -102,9 +103,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install Python dependencies
-        run: maturin develop --extras dev-test,all
-
       - name: Set up Rust
         run: rustup show
 
@@ -117,8 +115,8 @@ jobs:
       - name: Install Polars
         shell: bash
         run: |
-          maturin build
-          pip install target/wheels/polars-*.whl
+          pip install maturin==1.0.1
+          maturin develop --extras dev-test,all
 
       - name: Run tests
         if: github.ref_name != 'main'
