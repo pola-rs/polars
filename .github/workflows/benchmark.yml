@@ -53,7 +53,7 @@ jobs:
       - name: Install Python dependencies
         working-directory: py-polars
         run: |
-          pip install maturin=1.0.1
+          pip install maturin==1.0.1
           maturin develop --extras dev-test,all
 
       - name: Load benchmark data from cache
