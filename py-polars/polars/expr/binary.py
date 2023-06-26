@@ -198,9 +198,7 @@ class ExprBinaryNameSpace:
         ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
         ...     }
         ... )
-        >>> colors.select(
-        ...     "name",
-        ...     "code",
+        >>> colors.with_columns(
         ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
         ... )
         shape: (3, 3)
