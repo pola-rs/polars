@@ -114,6 +114,7 @@ pub enum FunctionExpr {
     DateOffset(polars_time::Duration),
     #[cfg(feature = "trigonometry")]
     Trigonometry(TrigonometricFunction),
+    #[cfg(feature = "trigonometry")]
     Atan2,
     #[cfg(feature = "sign")]
     Sign,
@@ -465,6 +466,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Trigonometry(trig_function) => {
                 map!(trigonometry::apply_trigonometric_function, trig_function)
             }
+            #[cfg(feature = "trigonometry")]
             Atan2 => {
                 wrap!(trigonometry::apply_arctan2)
             }

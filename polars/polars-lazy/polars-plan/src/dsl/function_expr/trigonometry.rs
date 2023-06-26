@@ -115,7 +115,6 @@ where
     let x = x.cast(&dtype)?;
     let x = y.unpack_series_matching_type(&x).unwrap();
 
-    // let test_y: DataType::Float64 = 1;
     if x.len() == 1 {
         let x_value = x
             .get(0)
@@ -132,7 +131,7 @@ where
         Ok(Some(
             y.into_iter()
                 .zip(x.into_iter())
-                .map(|(opt_x, opt_y)| match (opt_y, opt_x) {
+                .map(|(opt_y, opt_x)| match (opt_y, opt_x) {
                     (Some(y), Some(x)) => Some(y.atan2(x)),
                     _ => None,
                 })
