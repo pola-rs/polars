@@ -62,11 +62,9 @@ class ExprDateTimeNameSpace:
         - 1s  # 1 second
         - 1m  # 1 minute
         - 1h  # 1 hour
-        - 1d  # 1 day
+        - 1d  # 1 calendar day
         - 1w  # 1 calendar week
         - 1mo # 1 calendar month
-        - 1mo_saturating # same as above, but saturates to the last day of the month
-          if the target date does not exist
         - 1q  # 1 calendar quarter
         - 1y  # 1 calendar year
 
@@ -77,6 +75,10 @@ class ExprDateTimeNameSpace:
         Suffix with `"_saturating"` to indicate that dates too large for
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
+
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
 
         Returns
         -------
@@ -186,7 +188,7 @@ class ExprDateTimeNameSpace:
         1s   # 1 second
         1m   # 1 minute
         1h   # 1 hour
-        1d   # 1 day
+        1d   # 1 calendar day
         1w   # 1 calendar week
         1mo  # 1 calendar month
         1q   # 1 calendar quarter
@@ -197,6 +199,10 @@ class ExprDateTimeNameSpace:
         Suffix with `"_saturating"` to indicate that dates too large for
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
+
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
 
         Returns
         -------
@@ -1802,8 +1808,8 @@ class ExprDateTimeNameSpace:
             - 1s    (1 second)
             - 1m    (1 minute)
             - 1h    (1 hour)
-            - 1d    (1 day)
-            - 1w    (1 week)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
@@ -1812,6 +1818,10 @@ class ExprDateTimeNameSpace:
         Suffix with `"_saturating"` to indicate that dates too large for
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
+
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
 
         Returns
         -------
