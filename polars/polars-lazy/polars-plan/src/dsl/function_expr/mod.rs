@@ -460,12 +460,14 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             DateOffset(offset) => {
                 map_owned!(temporal::date_offset, offset)
             }
-            
+
             #[cfg(feature = "trigonometry")]
             Trigonometry(trig_function) => {
                 map!(trigonometry::apply_trigonometric_function, trig_function)
             }
-            Atan2 => {wrap!(trigonometry::apply_arctan2)}
+            Atan2 => {
+                wrap!(trigonometry::apply_arctan2)
+            }
 
             #[cfg(feature = "sign")]
             Sign => {

@@ -70,7 +70,6 @@ pub(super) fn apply_trigonometric_function(
 }
 
 pub(super) fn apply_arctan2(s: &mut [Series]) -> PolarsResult<Option<Series>> {
-
     let y = &s[0];
     let x = &s[1];
 
@@ -130,16 +129,16 @@ where
 
         Ok(Some(x.apply(|v| y_value.atan2(v)).into_series()))
     } else {
-        Ok(Some(y.into_iter()
+        Ok(Some(
+            y.into_iter()
                 .zip(x.into_iter())
-                .map(|(opt_x, opt_y)| 
-                    match (opt_y, opt_x) {
-                        (Some(y), Some(x)) => Some(y.atan2(x)),
-                        _ => None,
-                    }
-                )
+                .map(|(opt_x, opt_y)| match (opt_y, opt_x) {
+                    (Some(y), Some(x)) => Some(y.atan2(x)),
+                    _ => None,
+                })
                 .collect_trusted::<ChunkedArray<T>>()
-                .into_series()))
+                .into_series(),
+        ))
     }
 }
 
