@@ -8324,7 +8324,7 @@ class DataFrame:
         unique: bool = False,
     ) -> dict[Any, Iterable[Any]]:
         """
-        Returns DataFrame data as a keyed-dictionary of python-native values.
+        Returns DataFrame data as a keyed dictionary of python-native values.
 
         Parameters
         ----------
@@ -8436,7 +8436,7 @@ class DataFrame:
         # returning a list of rows for each key, so append into a defaultdict.
         rows: dict[Any, Any] = {} if unique else defaultdict(list)
 
-        # return named values (key -> dict / list of dicts), eg:
+        # return named values (key -> dict | list of dicts), eg:
         # "{(key,): [{col:val, col:val, ...}],
         #   (key,): [{col:val, col:val, ...}],}"
         if named:
@@ -8453,7 +8453,7 @@ class DataFrame:
                     else:
                         rows[k].append(d)
 
-        # return values (key -> tuple / list of tuples), eg:
+        # return values (key -> tuple | list of tuples), eg:
         # "{(key,): [(val, val, ...)],
         #   (key,): [(val, val, ...)], ...}"
         elif unique:
@@ -8462,9 +8462,12 @@ class DataFrame:
                 if include_key
                 else {get_key(row): get_data(row) for row in self.iter_rows()}
             )
+        elif include_key:
+            for row in self.iter_rows(named=False):
+                rows[get_key(row)].append(row)
         else:
             for row in self.iter_rows(named=False):
-                rows[get_key(row)].append(row if include_key else get_data(row))
+                rows[get_key(row)].append(get_data(row))
 
         return rows
 
