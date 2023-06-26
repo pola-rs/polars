@@ -27,10 +27,15 @@ fn get_sort_fields(sort_idx: &[usize], sort_args: &SortArguments) -> Vec<SortFie
         .collect()
 }
 
+#[cfg(feature = "dtype-categorical")]
 fn sort_column_can_be_decoded(schema: &Schema, sort_idx: &[usize]) -> bool {
     !sort_idx
         .iter()
         .any(|i| matches!(schema.get_at_index(*i).unwrap().1, DataType::Categorical(_)))
+}
+#[cfg(not(feature = "dtype-categorical"))]
+fn sort_column_can_be_decoded(_schema: &Schema, _sort_idx: &[usize]) -> bool {
+    true
 }
 
 fn sort_by_idx<V: Clone>(values: &[V], idx: &[usize]) -> Vec<V> {
