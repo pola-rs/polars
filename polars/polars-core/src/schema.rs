@@ -276,6 +276,16 @@ impl Schema {
         self.inner.shift_remove(name)
     }
 
+    /// Remove a field by name, preserving order, and, if the field existed, return its dtype
+    ///
+    /// If the field does not exist, the schema is not modified and `None` is returned.
+    ///
+    /// This method does a `shift_remove`, which preserves the order of the fields in the schema but **is O(n)**. For a
+    /// faster, but not order-preserving, method, use [`remove`][Self::remove].
+    pub fn shift_remove_index(&mut self, index: usize) -> Option<(SmartString, DataType)> {
+        self.inner.shift_remove_index(index)
+    }
+
     /// Whether the schema contains a field named `name`
     pub fn contains(&self, name: &str) -> bool {
         self.get(name).is_some()

@@ -216,11 +216,11 @@ where
     let values = rows
         .iter()
         .map(|row| {
-            has_nulls |= *row.get_unchecked(0) == null_sentinel;
+            has_nulls |= *row.get_unchecked_release(0) == null_sentinel;
             // skip null sentinel
             let start = 1;
             let end = start + T::ENCODED_LEN - 1;
-            let slice = row.get_unchecked(start..end);
+            let slice = row.get_unchecked_release(start..end);
             let bytes = T::Encoded::from_slice(slice);
             T::decode(bytes)
         })
@@ -247,11 +247,11 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> Boole
     let values = rows
         .iter()
         .map(|row| {
-            has_nulls |= *row.get_unchecked(0) == null_sentinel;
+            has_nulls |= *row.get_unchecked_release(0) == null_sentinel;
             // skip null sentinel
             let start = 1;
             let end = start + bool::ENCODED_LEN - 1;
-            let slice = row.get_unchecked(start..end);
+            let slice = row.get_unchecked_release(start..end);
             let bytes = <bool as FixedLengthEncoding>::Encoded::from_slice(slice);
             bool::decode(bytes)
         })
@@ -271,12 +271,12 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> Boole
 }
 unsafe fn increment_row_counter(rows: &mut [&[u8]], fixed_size: usize) {
     for row in rows {
-        *row = row.get_unchecked(fixed_size..);
+        *row = row.get_unchecked_release(fixed_size..);
     }
 }
 
 pub(super) unsafe fn decode_nulls(rows: &[&[u8]], null_sentinel: u8) -> Bitmap {
     rows.iter()
-        .map(|row| *row.get_unchecked(0) != null_sentinel)
+        .map(|row| *row.get_unchecked_release(0) != null_sentinel)
         .collect()
 }
