@@ -117,7 +117,7 @@ impl Expr {
     #[cfg(feature = "trigonometry")]
     pub fn arctan2(self, x: Self) -> Self {
         Expr::Function {
-            input: vec![self, x.into()],
+            input: vec![self, x],
             function: FunctionExpr::Atan2,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
