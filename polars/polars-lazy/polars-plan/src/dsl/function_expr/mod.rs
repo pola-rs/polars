@@ -262,6 +262,7 @@ impl Display for FunctionExpr {
             DateOffset(_) => "dt.offset_by",
             #[cfg(feature = "trigonometry")]
             Trigonometry(func) => return write!(f, "{func}"),
+            #[cfg(feature = "trigonometry")]
             Atan2 => return write!(f, "arctan2"),
             #[cfg(feature = "sign")]
             Sign => "sign",
