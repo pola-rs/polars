@@ -2158,11 +2158,19 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
     fn apply_to_struct(
         &'a self,
         _py: Python,
-        _lambda: &'a PyAny,
-        _init_null_count: usize,
-        _first_value: AnyValue<'a>,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: AnyValue<'a>,
     ) -> PyResult<PySeries> {
-        todo!()
+        let skip = 1;
+        let it = self
+            .into_iter()
+            .skip(init_null_count + skip)
+            .map(|object_value| {
+                let out = lambda.call1((object_value.map(|v| &v.inner),)).unwrap();
+                Some(out)
+            });
+        iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
     }
 
     fn apply_lambda_with_primitive_out_type<D>(
