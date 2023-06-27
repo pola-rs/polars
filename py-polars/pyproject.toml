@@ -85,6 +85,7 @@ module = [
   "sqlalchemy",
   "xlsx2csv",
   "xlsxwriter.*",
+  "openpyxl",
   "zoneinfo",
 ]
 ignore_missing_imports = true

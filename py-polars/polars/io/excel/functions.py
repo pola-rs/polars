@@ -182,7 +182,7 @@ def read_excel(
     # do conditions imports
     if engine == "openpyxl":
         try:
-            import openpyxl  # type: ignore[import]
+            import openpyxl
         except ImportError:
             raise ImportError(
                 "openpyxl is not installed. Please run `pip install openpyxl`."
