@@ -948,12 +948,16 @@ def test_u64_lit_5031() -> None:
 
 
 def test_from_dicts_missing_columns() -> None:
+    # missing columns from some of the data dicts
     data = [
         {"a": 1},
         {"b": 2},
     ]
-
     assert pl.from_dicts(data).to_dict(False) == {"a": [1, None], "b": [None, 2]}
+
+    # missing columns in the schema; only load the declared keys
+    data = [{"a": 1, "b": 2}]
+    assert pl.from_dicts(data, schema=["a"]).to_dict(False) == {"a": [1]}
 
 
 @no_type_check

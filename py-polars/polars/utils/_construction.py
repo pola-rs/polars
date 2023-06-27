@@ -1036,8 +1036,13 @@ def _sequence_of_dict_to_pydf(
     )
     pydf = PyDataFrame.read_dicts(data, infer_schema_length, dicts_schema)
 
-    if column_names and set(column_names).intersection(pydf.columns()):
-        column_names = []
+    if column_names:
+        if len(column_names) < len(pydf.columns()):
+            schema_cols = set(column_names)
+            column_names = [c for c in pydf.columns() if c in schema_cols]
+        elif set(column_names).intersection(pydf.columns()):
+            column_names = []
+
     if column_names or schema_overrides:
         pydf = _post_apply_columns(
             pydf,
