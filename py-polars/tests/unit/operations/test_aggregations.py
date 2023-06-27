@@ -265,3 +265,11 @@ def test_mapped_literal_to_literal_9217() -> None:
     assert df.groupby(True).agg(
         pl.struct(pl.lit("unique_id").alias("unique_id"))
     ).to_dict(False) == {"literal": [True], "unique_id": [{"unique_id": "unique_id"}]}
+
+
+def test_sum_empty_and_null_set() -> None:
+    series = pl.Series("a", [])
+    assert series.sum() == 0
+
+    series = pl.Series("a", [None])
+    assert series.sum() == 0
