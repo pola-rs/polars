@@ -119,9 +119,13 @@ pub trait ListNameSpaceImpl: AsList {
         let mut out: BooleanChunked = ca
             .amortized_iter()
             .map(|opt_s| {
-                opt_s.and_then(|s| {
+                opt_s.map(|s| {
                     let ca = s.as_ref().bool().unwrap();
-                    Some(ca.into_iter().all(|opt_b| opt_b.unwrap_or(false)))
+                    if ca.len() == 0 {
+                        false
+                    } else {
+                        ca.into_iter().all(|opt_b| opt_b.unwrap_or(false))
+                    }
                 })
             })
             .collect_trusted();
@@ -134,9 +138,13 @@ pub trait ListNameSpaceImpl: AsList {
         let mut out: BooleanChunked = ca
             .amortized_iter()
             .map(|opt_s| {
-                opt_s.and_then(|s| {
+                opt_s.map(|s| {
                     let ca = s.as_ref().bool().unwrap();
-                    Some(ca.into_iter().any(|opt_b| opt_b.unwrap_or(false)))
+                    if ca.len() == 0 {
+                        false
+                    } else {
+                        ca.into_iter().any(|opt_b| opt_b.unwrap_or(false))
+                    }
                 })
             })
             .collect_trusted();

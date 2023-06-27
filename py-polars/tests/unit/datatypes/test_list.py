@@ -299,17 +299,37 @@ def test_list_mean() -> None:
 
 def test_list_all() -> None:
     assert pl.DataFrame(
-        {"a": [[True], [False], [True, True], [True, False], [False, False], [None]]}
+        {
+            "a": [
+                [True],
+                [False],
+                [True, True],
+                [True, False],
+                [False, False],
+                [None],
+                [],
+            ]
+        }
     ).select(pl.col("a").list.all()).to_dict(False) == {
-        "a": [True, False, True, False, False, False]
+        "a": [True, False, True, False, False, False, False]
     }
 
 
 def test_list_any() -> None:
     assert pl.DataFrame(
-        {"a": [[True], [False], [True, True], [True, False], [False, False], [None]]}
+        {
+            "a": [
+                [True],
+                [False],
+                [True, True],
+                [True, False],
+                [False, False],
+                [None],
+                [],
+            ]
+        }
     ).select(pl.col("a").list.any()).to_dict(False) == {
-        "a": [True, False, True, True, False, False]
+        "a": [True, False, True, True, False, False, False]
     }
 
 
