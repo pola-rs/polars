@@ -115,7 +115,6 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     fn lst_all(&self) -> Series {
-        // check whether all values in each sublist are true. Return series of booleans.
         let ca = self.as_list();
         let mut out: BooleanChunked = ca
             .amortized_iter()
@@ -131,8 +130,6 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     fn lst_any(&self) -> Series {
-        // check whether any value in each sublist is true. Return series of booleans.
-        // None values are return none.
         let ca = self.as_list();
         let mut out: BooleanChunked = ca
             .amortized_iter()
