@@ -121,7 +121,7 @@ pub trait ListNameSpaceImpl: AsList {
             .map(|opt_s| {
                 opt_s.map(|s| {
                     let ca = s.as_ref().bool().unwrap();
-                    if ca.len() == 0 {
+                    if ca.is_empty() {
                         false
                     } else {
                         ca.into_iter().all(|opt_b| opt_b.unwrap_or(false))
@@ -140,7 +140,7 @@ pub trait ListNameSpaceImpl: AsList {
             .map(|opt_s| {
                 opt_s.map(|s| {
                     let ca = s.as_ref().bool().unwrap();
-                    if ca.len() == 0 {
+                    if ca.is_empty() {
                         false
                     } else {
                         ca.into_iter().any(|opt_b| opt_b.unwrap_or(false))
