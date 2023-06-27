@@ -36,3 +36,14 @@ def test_array_construction() -> None:
     s = pl.Series(payload, dtype=dtype)
     assert s.dtype == dtype
     assert s.to_list() == payload
+
+
+def test_array_in_groupby() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("id", [1, 2]),
+            pl.Series("list", [[1, 2], [5, 5]], dtype=pl.Array(2, pl.UInt8)),
+        ]
+    )
+
+    assert next(iter(df.groupby("id")))[1]["list"].to_list() == [[1, 2]]
