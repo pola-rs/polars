@@ -297,6 +297,22 @@ def test_list_mean() -> None:
     ).to_dict(False) == {"a": [1.0, 2.0, 2.5, None]}
 
 
+def test_list_all() -> None:
+    assert pl.DataFrame(
+        {"a": [[True], [False], [True, True], [True, False], [False, False], [None]]}
+    ).select(pl.col("a").list.all()).to_dict(False) == {
+        "a": [True, False, True, False, False, False]
+    }
+
+
+def test_list_any() -> None:
+    assert pl.DataFrame(
+        {"a": [[True], [False], [True, True], [True, False], [False, False], [None]]}
+    ).select(pl.col("a").list.any()).to_dict(False) == {
+        "a": [True, False, True, True, False, False]
+    }
+
+
 def test_list_min_max() -> None:
     for dt in pl.NUMERIC_DTYPES:
         if dt == pl.Decimal:

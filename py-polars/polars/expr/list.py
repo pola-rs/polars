@@ -27,6 +27,12 @@ class ExprListNameSpace:
     def __getitem__(self, item: int) -> Expr:
         return self.get(item)
 
+    def all(self) -> Expr:
+        return wrap_expr(self._pyexpr.list_all())
+
+    def any(self) -> Expr:
+        return wrap_expr(self._pyexpr.list_any())
+
     def lengths(self) -> Expr:
         """
         Get the length of the arrays as UInt32.

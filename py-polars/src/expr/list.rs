@@ -9,6 +9,14 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
+    fn list_all(&self) -> Self {
+        self.inner.clone().list().all().into()
+    }
+
+    fn list_any(&self) -> Self {
+        self.inner.clone().list().any().into()
+    }
+
     fn list_arg_max(&self) -> Self {
         self.inner.clone().list().arg_max().into()
     }

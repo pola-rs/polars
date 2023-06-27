@@ -14,6 +14,24 @@ use crate::prelude::*;
 pub struct ListNameSpace(pub Expr);
 
 impl ListNameSpace {
+    pub fn any(self) -> Expr {
+        self.0
+            .map(
+                |s| Ok(Some(s.list()?.lst_any().into_series())),
+                GetOutput::from_type(DataType::Boolean),
+            )
+            .with_fmt("list.any")
+    }
+
+    pub fn all(self) -> Expr {
+        self.0
+            .map(
+                |s| Ok(Some(s.list()?.lst_all().into_series())),
+                GetOutput::from_type(DataType::Boolean),
+            )
+            .with_fmt("list.all")
+    }
+
     /// Get lengths of the arrays in the List type.
     pub fn lengths(self) -> Expr {
         let function = |s: Series| {

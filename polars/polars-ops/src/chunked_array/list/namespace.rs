@@ -114,6 +114,39 @@ pub trait ListNameSpaceImpl: AsList {
         list_max_function(self.as_list())
     }
 
+    fn lst_all(&self) -> Series {
+        // check whether all values in each sublist are true. Return series of booleans.
+        let ca = self.as_list();
+        let mut out: BooleanChunked = ca
+            .amortized_iter()
+            .map(|opt_s| {
+                opt_s.and_then(|s| {
+                    let ca = s.as_ref().bool().unwrap();
+                    Some(ca.into_iter().all(|opt_b| opt_b.unwrap_or(false)))
+                })
+            })
+            .collect_trusted();
+        out.rename(ca.name());
+        out.into_series()
+    }
+
+    fn lst_any(&self) -> Series {
+        // check whether any value in each sublist is true. Return series of booleans.
+        // None values are return none.
+        let ca = self.as_list();
+        let mut out: BooleanChunked = ca
+            .amortized_iter()
+            .map(|opt_s| {
+                opt_s.and_then(|s| {
+                    let ca = s.as_ref().bool().unwrap();
+                    Some(ca.into_iter().any(|opt_b| opt_b.unwrap_or(false)))
+                })
+            })
+            .collect_trusted();
+        out.rename(ca.name());
+        out.into_series()
+    }
+
     fn lst_min(&self) -> Series {
         list_min_function(self.as_list())
     }
