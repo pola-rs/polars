@@ -346,7 +346,7 @@ fn process_projection(
     // Thus joining two tables with both a foo column leads to ["foo", "foo_right"]
 
     // try to push down projection in either of two tables
-    if !proj_pd.join_push_down(
+    let (pushed_at_least_once, already_projected) = proj_pd.join_push_down(
         schema_left,
         schema_right,
         proj,
@@ -355,7 +355,9 @@ fn process_projection(
         names_left,
         names_right,
         expr_arena,
-    )
+    );
+
+    if !(pushed_at_least_once || already_projected)
     // did not succeed push down in any tables.,
     // this might be due to the suffix in the projection name
     // this branch tries to pushdown the column without suffix
@@ -381,7 +383,7 @@ fn process_projection(
     }
     // did succeed pushdown at least in any of the two tables
     // if not already added locally we ensure we project local as well
-    else if add_local {
+    else if add_local && !already_projected {
         // always also do the projection locally, because the join columns may not be
         // included in the projection.
         // for instance:
