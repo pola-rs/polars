@@ -428,7 +428,10 @@ impl SQLContext {
                 }
                 let tbl_name = name.0.get(0).unwrap().value.as_str();
                 if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
-                    Ok((tbl_name.to_string(), lf))
+                    match alias {
+                        Some(alias) => Ok((alias.to_string(), lf)),
+                        None => Ok((tbl_name.to_string(), lf)),
+                    }
                 } else {
                     polars_bail!(ComputeError: "relation '{}' was not found", tbl_name);
                 }
