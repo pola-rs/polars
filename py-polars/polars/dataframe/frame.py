@@ -6,8 +6,10 @@ import os
 import random
 import typing
 import warnings
+from collections import defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO
+from operator import itemgetter
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -45,7 +47,6 @@ from polars.datatypes import (
     Time,
     Utf8,
     py_type_to_dtype,
-    unpack_dtypes,
 )
 from polars.dependencies import (
     _PYARROW_AVAILABLE,
@@ -89,6 +90,7 @@ from polars.utils.decorators import deprecated_alias
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
+    can_create_dicts_with_pyarrow,
     find_stacklevel,
     handle_projection_columns,
     is_bool_sequence,
@@ -141,6 +143,7 @@ if TYPE_CHECKING:
         RowTotalsDefinition,
         SchemaDefinition,
         SchemaDict,
+        SelectorType,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,
@@ -6695,7 +6698,8 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ a   ┆ 1   ┆ 5   │
         │ a   ┆ 1   ┆ 3   │
-        └─────┴─────┴─────┘, shape: (2, 3)
+        └─────┴─────┴─────┘,
+        shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -6703,7 +6707,8 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ b   ┆ 2   ┆ 4   │
         │ b   ┆ 3   ┆ 2   │
-        └─────┴─────┴─────┘, shape: (1, 3)
+        └─────┴─────┴─────┘,
+        shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -6724,21 +6729,24 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ a   ┆ 1   ┆ 5   │
         │ a   ┆ 1   ┆ 3   │
-        └─────┴─────┴─────┘, shape: (1, 3)
+        └─────┴─────┴─────┘,
+        shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
         │ str ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
         │ b   ┆ 2   ┆ 4   │
-        └─────┴─────┴─────┘, shape: (1, 3)
+        └─────┴─────┴─────┘,
+        shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
         │ str ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
         │ b   ┆ 3   ┆ 2   │
-        └─────┴─────┴─────┘, shape: (1, 3)
+        └─────┴─────┴─────┘,
+        shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -6758,7 +6766,8 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ a   ┆ 1   ┆ 5   │
         │ a   ┆ 1   ┆ 3   │
-        └─────┴─────┴─────┘, 'b': shape: (2, 3)
+        └─────┴─────┴─────┘,
+        'b': shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -6766,7 +6775,8 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ b   ┆ 2   ┆ 4   │
         │ b   ┆ 3   ┆ 2   │
-        └─────┴─────┴─────┘, 'c': shape: (1, 3)
+        └─────┴─────┴─────┘,
+        'c': shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -7901,11 +7911,10 @@ class DataFrame:
 
         """
         if isinstance(subset, str):
-            subset = [F.col(subset)]
+            expr = F.col(subset)
         elif isinstance(subset, pl.Expr):
-            subset = [subset]
-
-        if isinstance(subset, Sequence) and len(subset) == 1:
+            expr = subset
+        elif isinstance(subset, Sequence) and len(subset) == 1:
             expr = wrap_expr(parse_as_expression(subset[0]))
         else:
             struct_fields = F.all() if (subset is None) else subset
@@ -8196,7 +8205,7 @@ class DataFrame:
         See Also
         --------
         iter_rows : Row iterator over frame data (does not materialise all rows).
-        rows : Materialises all frame data as a list of rows.
+        rows : Materialise all frame data as a list of rows (potentially expensive).
         item: Return dataframe element as a scalar.
 
         """
@@ -8264,12 +8273,14 @@ class DataFrame:
         -----
         If you have ``ns``-precision temporal values you should be aware that python
         natively only supports up to ``us``-precision; if this matters you should export
-        to a different format.
+        to a different format, as this method returns only python-native values.
 
         Warnings
         --------
         Row-iteration is not optimal as the underlying data is stored in columnar form;
         where possible, prefer export via one of the dedicated export/output methods.
+        Where possible you should also consider using ``iter_rows`` instead to avoid
+        materialising all the data at once.
 
         Returns
         -------
@@ -8279,18 +8290,23 @@ class DataFrame:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
+        ...         "x": ["a", "b", "b", "a"],
+        ...         "y": [1, 2, 3, 4],
+        ...         "z": [0, 3, 6, 9],
         ...     }
         ... )
         >>> df.rows()
-        [(1, 2), (3, 4), (5, 6)]
+        [('a', 1, 0), ('b', 2, 3), ('b', 3, 6), ('a', 4, 9)]
         >>> df.rows(named=True)
-        [{'a': 1, 'b': 2}, {'a': 3, 'b': 4}, {'a': 5, 'b': 6}]
+        [{'x': 'a', 'y': 1, 'z': 0},
+         {'x': 'b', 'y': 2, 'z': 3},
+         {'x': 'b', 'y': 3, 'z': 6},
+         {'x': 'a', 'y': 4, 'z': 9}]
 
         See Also
         --------
         iter_rows : Row iterator over frame data (does not materialise all rows).
+        rows_by_key : Materialises frame data as a key-indexed dictionary.
 
         """
         if named:
@@ -8299,6 +8315,168 @@ class DataFrame:
             return [dict_(zip_(columns, row)) for row in self._df.row_tuples()]
         else:
             return self._df.row_tuples()
+
+    def rows_by_key(
+        self,
+        key: str | Sequence[str] | SelectorType,
+        *,
+        named: bool = False,
+        include_key: bool = False,
+        unique: bool = False,
+    ) -> dict[Any, Iterable[Any]]:
+        """
+        Returns DataFrame data as a keyed dictionary of python-native values.
+
+        Note that this method should not be used in place of native operations, due to
+        the high cost of materialising all frame data out into a dictionary; it should
+        be used only when you need to move the values out into a Python data structure
+        or other object that cannot operate directly with Polars/Arrow.
+
+        Parameters
+        ----------
+        key
+            The column(s) to use as the key for the returned dictionary. If multiple
+            columns are specified, the key will be a tuple of those values, otherwise
+            it will be a string.
+        named
+            Return dictionary rows instead of tuples, mapping column name to row value.
+        include_key
+            Include key values inline with the associated data (by default the key
+            values are omitted as a memory/performance optimisation, as they can be
+            reoconstructed from the key).
+        unique
+            Indicate that the key is unique; this will result in a 1:1 mapping from
+            key to a single associated row. Note that if the key is *not* actually
+            unique the last row with the given key will be returned.
+
+        Notes
+        -----
+        If you have ``ns``-precision temporal values you should be aware that python
+        natively only supports up to ``us``-precision; if this matters you should export
+        to a different format, as this method returns only python-native values.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "w": ["a", "b", "b", "a"],
+        ...         "x": ["q", "q", "q", "k"],
+        ...         "y": [1.0, 2.5, 3.0, 4.5],
+        ...         "z": [9, 8, 7, 6],
+        ...     }
+        ... )
+
+        Group rows by the given key column(s):
+
+        >>> df.rows_by_key(key=["w"])
+        defaultdict(<class 'list'>,
+            {'a': [('q', 1.0, 9), ('k', 4.5, 6)],
+             'b': [('q', 2.5, 8), ('q', 3.0, 7)]})
+
+        Return the same row groupings as dictionaries:
+
+        >>> df.rows_by_key(key=["w"], named=True)
+        defaultdict(<class 'list'>,
+            {'a': [{'x': 'q', 'y': 1.0, 'z': 9},
+                   {'x': 'k', 'y': 4.5, 'z': 6}],
+             'b': [{'x': 'q', 'y': 2.5, 'z': 8},
+                   {'x': 'q', 'y': 3.0, 'z': 7}]})
+
+        Return row groupings, assuming keys are unique:
+
+        >>> df.rows_by_key(key=["z"], unique=True)
+        {9: ('a', 'q', 1.0),
+         8: ('b', 'q', 2.5),
+         7: ('b', 'q', 3.0),
+         6: ('a', 'k', 4.5)}
+
+        Return row groupings as dictionaries, assuming keys are unique:
+
+        >>> df.rows_by_key(key=["z"], named=True, unique=True)
+        {9: {'w': 'a', 'x': 'q', 'y': 1.0},
+         8: {'w': 'b', 'x': 'q', 'y': 2.5},
+         7: {'w': 'b', 'x': 'q', 'y': 3.0},
+         6: {'w': 'a', 'x': 'k', 'y': 4.5}}
+
+        Return dictionary rows grouped by a compound key, including key values:
+
+        >>> df.rows_by_key(key=["w", "x"], named=True, include_key=True)
+        defaultdict(<class 'list'>,
+            {('a', 'q'): [{'w': 'a', 'x': 'q', 'y': 1.0, 'z': 9}],
+             ('b', 'q'): [{'w': 'b', 'x': 'q', 'y': 2.5, 'z': 8},
+                          {'w': 'b', 'x': 'q', 'y': 3.0, 'z': 7}],
+             ('a', 'k'): [{'w': 'a', 'x': 'k', 'y': 4.5, 'z': 6}]})
+
+        See Also
+        --------
+        rows : Materialise all frame data as a list of rows (potentially expensive).
+        iter_rows : Row iterator over frame data (does not materialise all rows).
+
+        """
+        from polars.selectors import is_selector, selector_column_names
+
+        if is_selector(key):
+            key = selector_column_names(frame=self, selector=key)  # type: ignore[type-var]
+        elif not isinstance(key, str):
+            key = tuple(key)  # type: ignore[arg-type]
+        else:
+            key = (key,)
+
+        # establish index or name-based getters for the key and data values
+        data_cols = [k for k in self.schema if k not in key]
+        if named:
+            get_data = itemgetter(*data_cols)
+            get_key = itemgetter(*key)
+        else:
+            data_idxs, index_idxs = [], []
+            for idx, c in enumerate(self.columns):
+                if c in key:
+                    index_idxs.append(idx)
+                else:
+                    data_idxs.append(idx)
+            if not index_idxs:
+                raise ValueError(f"No columns found for key: {key!r}")
+            get_data = itemgetter(*data_idxs)  # type: ignore[assignment]
+            get_key = itemgetter(*index_idxs)  # type: ignore[assignment]
+
+        # if unique, we expect to write just one entry per key; otherwise, we're
+        # returning a list of rows for each key, so append into a defaultdict.
+        rows: dict[Any, Any] = {} if unique else defaultdict(list)
+
+        # return named values (key -> dict | list of dicts), eg:
+        # "{(key,): [{col:val, col:val, ...}],
+        #   (key,): [{col:val, col:val, ...}],}"
+        if named:
+            if unique and include_key:
+                rows = {get_key(row): row for row in self.iter_rows(named=True)}
+            else:
+                for d in self.iter_rows(named=True):
+                    k = get_key(d)
+                    if not include_key:
+                        for ix in key:
+                            del d[ix]
+                    if unique:
+                        rows[k] = d
+                    else:
+                        rows[k].append(d)
+
+        # return values (key -> tuple | list of tuples), eg:
+        # "{(key,): [(val, val, ...)],
+        #   (key,): [(val, val, ...)], ...}"
+        elif unique:
+            rows = (
+                {get_key(row): row for row in self.iter_rows()}
+                if include_key
+                else {get_key(row): get_data(row) for row in self.iter_rows()}
+            )
+        elif include_key:
+            for row in self.iter_rows(named=False):
+                rows[get_key(row)].append(row)
+        else:
+            for row in self.iter_rows(named=False):
+                rows[get_key(row)].append(get_data(row))
+
+        return rows
 
     @overload
     def iter_rows(
@@ -8362,28 +8540,20 @@ class DataFrame:
 
         See Also
         --------
-        rows : Materialises all frame data as a list of rows.
+        rows : Materialises all frame data as a list of rows (potentially expensive).
+        rows_by_key : Materialises frame data as a key-indexed dictionary.
 
         """
-        # load into the local namespace for a modest performance boost in the hot loops
+        # load into the local namespace for a (minor) performance boost in the hot loops
         columns, get_row, dict_, zip_ = self.columns, self.row, dict, zip
         has_object = Object in self.dtypes
 
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
         if buffer_size and not has_object:
-            load_pyarrow_dicts = (
-                named
-                and _PYARROW_AVAILABLE
-                # note: 'ns' precision instantiates values as pandas types - avoid
-                and not any(
-                    (getattr(tp, "time_unit", None) == "ns")
-                    for tp in unpack_dtypes(*self.dtypes)
-                )
-            )
             for offset in range(0, self.height, buffer_size):
                 zerocopy_slice = self.slice(offset, buffer_size)
-                if load_pyarrow_dicts:
+                if named and can_create_dicts_with_pyarrow(self.dtypes):
                     yield from zerocopy_slice.to_arrow().to_pylist()
                 else:
                     rows_chunk = zerocopy_slice.rows(named=False)

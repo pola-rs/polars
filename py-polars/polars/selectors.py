@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Collection
+from typing import TYPE_CHECKING, Any, Collection, TypeVar
 
 from polars import Expr
 from polars import functions as F
@@ -20,6 +20,7 @@ from polars.datatypes import (
 if TYPE_CHECKING:
     import sys
 
+    from polars import DataFrame, LazyFrame
     from polars.datatypes import PolarsDataType
     from polars.type_aliases import TimeUnit
 
@@ -27,6 +28,21 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
+
+
+SelectorType = TypeVar("SelectorType", bound="_selector_proxy_")
+
+
+def is_selector(obj: Any) -> bool:
+    """Return whether the given object is a selector."""
+    return isinstance(obj, _selector_proxy_)
+
+
+def selector_column_names(
+    frame: DataFrame | LazyFrame, selector: SelectorType
+) -> tuple[str, ...]:
+    """Return the column names that would be selected from the given frame."""
+    return tuple(frame.clear().select(selector).columns)
 
 
 class _selector_proxy_(Expr):
@@ -204,7 +220,7 @@ def all() -> Expr:
 
     Select all columns *except* for those matching the given dtypes:
 
-    >>> df.select(cs.all().exclude(pl.NUMERIC_DTYPES))
+    >>> df.select(cs.all() - cs.numeric())
     shape: (2, 1)
     ┌────────────┐
     │ dt         │
@@ -1097,7 +1113,7 @@ def temporal() -> Expr:
 
     Match all temporal columns *except* for `Time` columns:
 
-    >>> df.select(cs.temporal().exclude(pl.Time))
+    >>> df.select(cs.temporal() - cs.by_dtype(pl.Time))
     shape: (2, 1)
     ┌────────────┐
     │ dt         │
@@ -1151,4 +1167,7 @@ __all__ = [
     "starts_with",
     "temporal",
     "string",
+    "is_selector",
+    "selector_column_names",
+    "SelectorType",
 ]

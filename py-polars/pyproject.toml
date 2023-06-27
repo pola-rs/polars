@@ -71,6 +71,8 @@ disable_error_code = [
 [[tool.mypy.overrides]]
 module = [
   "IPython.*",
+  "adbc_driver_postgresql.*",
+  "adbc_driver_sqlite.*",
   "backports",
   "connectorx",
   "deltalake.*",
