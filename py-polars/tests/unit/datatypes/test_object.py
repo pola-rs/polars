@@ -108,3 +108,9 @@ def test_object_row_construction() -> None:
     )
     assert df.dtypes == [pl.Object]
     assert df["column_0"].to_list() == [value[0] for value in data]
+
+
+def test_object_apply_to_struct() -> None:
+    s = pl.Series([0, 1, 2], dtype=pl.Object)
+    out = s.apply(lambda x: {"a": str(x), "b": x})
+    assert out.dtype == pl.Struct([pl.Field("a", pl.Utf8), pl.Field("b", pl.Int64)])
