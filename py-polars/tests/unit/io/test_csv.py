@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import gzip
 import io
-import sys
-import tempfile
 import textwrap
 import typing
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -24,6 +21,8 @@ from polars.testing import (
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.type_aliases import TimeUnit
 
 
@@ -61,13 +60,14 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
 
 
 @pytest.mark.write_disk()
-def test_to_from_file(df_no_lists: pl.DataFrame) -> None:
+def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     df = df_no_lists.drop("strings_nulls")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.csv"
-        df.write_csv(file_path)
-        read_df = pl.read_csv(file_path, try_parse_dates=True)
+    file_path = tmp_path / "small.csv"
+    df.write_csv(file_path)
+    read_df = pl.read_csv(file_path, try_parse_dates=True)
 
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
@@ -262,10 +262,10 @@ def test_datetime_parsing_default_formats() -> None:
     csv = textwrap.dedent(
         """\
         ts_dmy,ts_dmy_f,ts_dmy_p
-        01/01/21 00:00:00,31-01-2021T00:00:00.123,31-01-2021 11:00 AM
-        01/01/21 00:15:00,31-01-2021T00:15:00.123,31-01-2021 01:00 PM
-        01/01/21 00:30:00,31-01-2021T00:30:00.123,31-01-2021 01:15 PM
-        01/01/21 00:45:00,31-01-2021T00:45:00.123,31-01-2021 01:30 PM
+        01/01/21 00:00:00,31-01-2021T00:00:00.123,31-01-2021 11:00
+        01/01/21 00:15:00,31-01-2021T00:15:00.123,31-01-2021 01:00
+        01/01/21 00:30:00,31-01-2021T00:30:00.123,31-01-2021 01:15
+        01/01/21 00:45:00,31-01-2021T00:45:00.123,31-01-2021 01:30
         """
     )
 
@@ -368,7 +368,9 @@ def test_read_csv_buffer_ownership() -> None:
 
 
 @pytest.mark.write_disk()
-def test_read_csv_encoding() -> None:
+def test_read_csv_encoding(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     bts = (
         b"Value1,Value2,Value3,Value4,Region\n"
         b"-30,7.5,2578,1,\xa5x\xa5_\n-32,7.97,3006,1,\xa5x\xa4\xa4\n"
@@ -376,25 +378,24 @@ def test_read_csv_encoding() -> None:
         b"-20,7.91,3384,4,\xac\xfc\xb0\xea\n"
     )
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "encoding.csv"
-        with open(file_path, "wb") as f:
-            f.write(bts)
+    file_path = tmp_path / "encoding.csv"
+    with open(file_path, "wb") as f:
+        f.write(bts)
 
-        file_str = str(file_path)
-        bytesio = io.BytesIO(bts)
+    file_str = str(file_path)
+    bytesio = io.BytesIO(bts)
 
-        for use_pyarrow in (False, True):
-            bytesio.seek(0)
-            for file in [file_path, file_str, bts, bytesio]:
-                assert_series_equal(
-                    pl.read_csv(
-                        file,  # type: ignore[arg-type]
-                        encoding="big5",
-                        use_pyarrow=use_pyarrow,
-                    ).get_column("Region"),
-                    pl.Series("Region", ["台北", "台中", "新竹", "高雄", "美國"]),
-                )
+    for use_pyarrow in (False, True):
+        bytesio.seek(0)
+        for file in [file_path, file_str, bts, bytesio]:
+            assert_series_equal(
+                pl.read_csv(
+                    file,  # type: ignore[arg-type]
+                    encoding="big5",
+                    use_pyarrow=use_pyarrow,
+                ).get_column("Region"),
+                pl.Series("Region", ["台北", "台中", "新竹", "高雄", "美國"]),
+            )
 
 
 def test_column_rename_and_dtype_overwrite() -> None:
@@ -674,6 +675,13 @@ def test_csv_schema_offset(foods_file_path: Path) -> None:
     assert df.shape == (3, 4)
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64, pl.Int64]
 
+    df = pl.scan_csv(
+        foods_file_path, skip_rows_after_header=24, infer_schema_length=1
+    ).collect()
+    assert df.columns == ["category", "calories", "fats_g", "sugars_g"]
+    assert df.shape == (3, 4)
+    assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64, pl.Int64]
+
 
 def test_empty_string_missing_round_trip() -> None:
     df = pl.DataFrame({"varA": ["A", "", None], "varB": ["B", "", None]})
@@ -741,6 +749,63 @@ def test_fallback_chrono_parser() -> None:
     assert df.null_count().row(0) == (0, 0)
 
 
+def test_tz_aware_try_parse_dates() -> None:
+    data = (
+        "a,b,c,d\n"
+        "2020-01-01T02:00:00+01:00,2021-04-28T00:00:00+02:00,2021-03-28T00:00:00+01:00,2\n"
+        "2020-01-01T03:00:00+01:00,2021-04-29T00:00:00+02:00,2021-03-29T00:00:00+02:00,3\n"
+    )
+    result = pl.read_csv(io.StringIO(data), try_parse_dates=True)
+    expected = pl.DataFrame(
+        {
+            "a": [
+                datetime(2020, 1, 1, 1, tzinfo=timezone.utc),
+                datetime(2020, 1, 1, 2, tzinfo=timezone.utc),
+            ],
+            "b": [
+                datetime(2021, 4, 27, 22, tzinfo=timezone.utc),
+                datetime(2021, 4, 28, 22, tzinfo=timezone.utc),
+            ],
+            "c": [
+                datetime(2021, 3, 27, 23, tzinfo=timezone.utc),
+                datetime(2021, 3, 28, 22, tzinfo=timezone.utc),
+            ],
+            "d": [2, 3],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("try_parse_dates", [True, False])
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_csv_overwrite_datetime_dtype(
+    try_parse_dates: bool, time_unit: TimeUnit
+) -> None:
+    data = """\
+    a
+    2020-1-1T00:00:00.123456789
+    2020-1-2T00:00:00.987654321
+    2020-1-3T00:00:00.132547698
+    """
+    result = pl.read_csv(
+        io.StringIO(data),
+        try_parse_dates=try_parse_dates,
+        dtypes={"a": pl.Datetime(time_unit)},
+    )
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [
+                    "2020-01-01T00:00:00.123456789",
+                    "2020-01-02T00:00:00.987654321",
+                    "2020-01-03T00:00:00.132547698",
+                ]
+            ).str.to_datetime(time_unit=time_unit)
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_csv_string_escaping() -> None:
     df = pl.DataFrame({"a": ["Free trip to A,B", '''Special rate "1.79"''']})
     f = io.BytesIO()
@@ -751,15 +816,16 @@ def test_csv_string_escaping() -> None:
 
 
 @pytest.mark.write_disk()
-def test_glob_csv(df_no_lists: pl.DataFrame) -> None:
-    df = df_no_lists.drop("strings_nulls")
-    with tempfile.TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.csv"
-        df.write_csv(file_path)
+def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
 
-        path_glob = Path(temp_dir) / "small*.csv"
-        assert pl.scan_csv(path_glob).collect().shape == (3, 11)
-        assert pl.read_csv(path_glob).shape == (3, 11)
+    df = df_no_lists.drop("strings_nulls")
+    file_path = tmp_path / "small.csv"
+    df.write_csv(file_path)
+
+    path_glob = tmp_path / "small*.csv"
+    assert pl.scan_csv(path_glob).collect().shape == (3, 11)
+    assert pl.read_csv(path_glob).shape == (3, 11)
 
 
 def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
@@ -797,7 +863,6 @@ def test_csv_multiple_null_values() -> None:
             "b": ["2022-01-01", "__NA__", "", "NA"],
         }
     )
-
     f = io.BytesIO()
     df.write_csv(f)
     f.seek(0)
@@ -809,7 +874,6 @@ def test_csv_multiple_null_values() -> None:
             "b": ["2022-01-01", None, "", None],
         }
     )
-
     assert_frame_equal(df2, expected)
 
 
@@ -821,6 +885,21 @@ def test_different_eol_char() -> None:
     assert_frame_equal(
         pl.read_csv(csv.encode(), eol_char=";", has_header=False), expected
     )
+
+
+def test_csv_write_escape_headers() -> None:
+    df0 = pl.DataFrame({"col,1": ["data,1"], 'col"2': ['data"2'], "col:3": ["data:3"]})
+    out = io.BytesIO()
+    df0.write_csv(out)
+    assert out.getvalue() == b'"col,1","col""2",col:3\n"data,1","data""2",data:3\n'
+
+    df1 = pl.DataFrame({"c,o,l,u,m,n": [123]})
+    out = io.BytesIO()
+    df1.write_csv(out)
+
+    df2 = pl.read_csv(out)
+    assert_frame_equal(df1, df2)
+    assert df2.schema == {"c,o,l,u,m,n": pl.Int64}
 
 
 def test_csv_write_escape_newlines() -> None:
@@ -950,7 +1029,7 @@ def test_datetime_format_inferred_precision(
 
 
 def test_inferred_datetime_format_mixed() -> None:
-    ts = pl.date_range(datetime(2000, 1, 1), datetime(2000, 1, 2))
+    ts = pl.date_range(datetime(2000, 1, 1), datetime(2000, 1, 2), eager=True)
     df = pl.DataFrame({"naive": ts, "aware": ts.dt.replace_time_zone("UTC")})
     result = df.write_csv()
     expected = (
@@ -1060,7 +1139,7 @@ def test_csv_categorical_lifetime() -> None:
         "b": ["b", "b", None],
     }
 
-    assert (df["a"] == df["b"]).to_list() == [False, False, False]
+    assert (df["a"] == df["b"]).to_list() == [False, False, None]
 
 
 def test_csv_categorical_categorical_merge() -> None:
@@ -1068,9 +1147,9 @@ def test_csv_categorical_categorical_merge() -> None:
     f = io.BytesIO()
     pl.DataFrame({"x": ["A"] * N + ["B"] * N}).write_csv(f)
     f.seek(0)
-    assert pl.read_csv(f, dtypes={"x": pl.Categorical}, sample_size=10).unique()[
-        "x"
-    ].to_list() == ["A", "B"]
+    assert pl.read_csv(f, dtypes={"x": pl.Categorical}, sample_size=10).unique(
+        maintain_order=True
+    )["x"].to_list() == ["A", "B"]
 
 
 @typing.no_type_check
@@ -1192,14 +1271,15 @@ def test_csv_statistics_offset() -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
-def test_csv_scan_categorical() -> None:
+def test_csv_scan_categorical(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     N = 5_000
     df = pl.DataFrame({"x": ["A"] * N})
-    with tempfile.TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "test_csv_scan_categorical.csv"
-        df.write_csv(file_path)
-        result = pl.scan_csv(file_path, dtypes={"x": pl.Categorical}).collect()
+
+    file_path = tmp_path / "test_csv_scan_categorical.csv"
+    df.write_csv(file_path)
+    result = pl.scan_csv(file_path, dtypes={"x": pl.Categorical}).collect()
 
     assert result["x"].dtype == pl.Categorical
 
@@ -1216,7 +1296,7 @@ def test_read_csv_chunked() -> None:
 
 @pytest.mark.slow()
 def test_read_web_file() -> None:
-    url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/datasets/foods1.csv"
+    url = "https://raw.githubusercontent.com/pola-rs/polars/main/examples/datasets/foods1.csv"
     df = pl.read_csv(url)
     assert df.shape == (27, 4)
 
@@ -1246,3 +1326,17 @@ def test_csv_multiline_splits() -> None:
 
     f.seek(0)
     assert pl.read_csv(f, has_header=False).shape == (4, 3)
+
+
+def test_read_csv_n_rows_outside_heuristic() -> None:
+    # create a fringe case csv file that breaks the heuristic determining how much of
+    # the file to read, and ensure n_rows is still adhered to
+
+    f = io.StringIO()
+
+    f.write(",,,?????????\n" * 1000)
+    f.write("?????????????????????????????????????????????????,,,\n")
+    f.write(",,,?????????\n" * 1048)
+
+    f.seek(0)
+    assert pl.read_csv(f, n_rows=2048, has_header=False).shape == (2048, 4)

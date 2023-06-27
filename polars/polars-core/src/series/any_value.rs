@@ -133,7 +133,8 @@ fn any_values_to_list(
 ) -> PolarsResult<ListChunked> {
     // this is handled downstream. The builder will choose the first non null type
     let mut valid = true;
-    let out = if inner_type == &DataType::Null {
+    #[allow(unused_mut)]
+    let mut out: ListChunked = if inner_type == &DataType::Null {
         avs.iter()
             .map(|av| match av {
                 AnyValue::List(b) => Some(b.clone()),
@@ -167,6 +168,15 @@ fn any_values_to_list(
             })
             .collect_trusted()
     };
+    #[cfg(feature = "dtype-struct")]
+    if !matches!(inner_type, DataType::Null)
+        && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
+    {
+        // ensure the logical type is correct
+        unsafe {
+            out.set_dtype(DataType::List(Box::new(inner_type.clone())));
+        };
+    }
     if valid || !strict {
         Ok(out)
     } else {
@@ -299,9 +309,7 @@ impl Series {
                     };
                     series_fields.push(s)
                 }
-                return Ok(StructChunked::new(name, &series_fields)
-                    .unwrap()
-                    .into_series());
+                return StructChunked::new(name, &series_fields).map(|ca| ca.into_series());
             }
             #[cfg(feature = "object")]
             DataType::Object(_) => {
@@ -323,7 +331,7 @@ impl Series {
             DataType::Categorical(_) => {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
-                        AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) => {
+                        AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) | AnyValue::Null => {
                             any_values_to_utf8(av, strict)?
                         }
                         _ => polars_bail!(
@@ -345,8 +353,27 @@ impl Series {
     }
 
     pub fn from_any_values(name: &str, avs: &[AnyValue], strict: bool) -> PolarsResult<Series> {
-        match avs.iter().find(|av| !matches!(av, AnyValue::Null)) {
-            None => Ok(Series::full_null(name, avs.len(), &DataType::Int32)),
+        let mut all_flat_null = true;
+        match avs.iter().find(|av| {
+            if !matches!(av, AnyValue::Null) {
+                all_flat_null = false;
+            }
+            !av.is_nested_null()
+        }) {
+            None => {
+                if all_flat_null {
+                    Ok(Series::full_null(name, avs.len(), &DataType::Null))
+                } else {
+                    // second pass and check for the nested null value that toggled `all_flat_null` to false
+                    // e.g. a list<null>
+                    if let Some(av) = avs.iter().find(|av| !matches!(av, AnyValue::Null)) {
+                        let dtype: DataType = av.into();
+                        Series::from_any_values_and_dtype(name, avs, &dtype, strict)
+                    } else {
+                        unreachable!()
+                    }
+                }
+            }
             Some(av) => {
                 #[cfg(feature = "dtype-decimal")]
                 {
@@ -383,6 +410,8 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             Datetime(_, tu, tz) => DataType::Datetime(*tu, (*tz).clone()),
             #[cfg(feature = "dtype-time")]
             Time(_) => DataType::Time,
+            #[cfg(feature = "dtype-array")]
+            Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.to_vec()),

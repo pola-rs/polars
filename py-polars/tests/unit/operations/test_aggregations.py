@@ -1,5 +1,6 @@
+import math
 import typing
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pytest
@@ -43,10 +44,16 @@ def test_duration_aggs() -> None:
     df = pl.DataFrame(
         {
             "time1": pl.date_range(
-                low=datetime(2022, 12, 12), high=datetime(2022, 12, 18), interval="1d"
+                start=datetime(2022, 12, 12),
+                end=datetime(2022, 12, 18),
+                interval="1d",
+                eager=True,
             ),
             "time2": pl.date_range(
-                low=datetime(2023, 1, 12), high=datetime(2023, 1, 18), interval="1d"
+                start=datetime(2023, 1, 12),
+                end=datetime(2023, 1, 18),
+                interval="1d",
+                eager=True,
             ),
         }
     )
@@ -88,6 +95,12 @@ def test_median() -> None:
     assert s.median() == 2
 
 
+def test_single_element_std() -> None:
+    s = pl.Series([1])
+    assert math.isnan(typing.cast(float, s.std(ddof=1)))
+    assert s.std(ddof=0) == 0.0
+
+
 def test_quantile() -> None:
     s = pl.Series([1, 2, 3])
     assert s.quantile(0.5, "nearest") == 2
@@ -124,3 +137,139 @@ def test_quantile_vs_numpy() -> None:
                 assert np.isclose(
                     pl.Series(a).quantile(q, interpolation="linear"), np_result
                 )
+
+
+@typing.no_type_check
+def test_mean_overflow() -> None:
+    assert np.isclose(
+        pl.Series([9_223_372_036_854_775_800, 100]).mean(), 4.611686018427388e18
+    )
+
+
+def test_mean_null_simd() -> None:
+    for dtype in [int, float]:
+        df = (
+            pl.Series(np.random.randint(0, 100, 1000))
+            .cast(dtype)
+            .to_frame("a")
+            .select(pl.when(pl.col("a") > 40).then(pl.col("a")))
+        )
+
+    s = df["a"]
+    assert s.mean() == s.to_pandas().mean()
+
+
+def test_literal_group_agg_chunked_7968() -> None:
+    df = pl.DataFrame({"A": [1, 1], "B": [1, 3]})
+    ser = pl.concat([pl.Series([3]), pl.Series([4, 5])], rechunk=False)
+
+    assert_frame_equal(
+        df.groupby("A").agg(pl.col("B").search_sorted(ser)),
+        pl.DataFrame(
+            [
+                pl.Series("A", [1], dtype=pl.Int64),
+                pl.Series("B", [[1, 2, 2]], dtype=pl.List(pl.UInt32)),
+            ]
+        ),
+    )
+
+
+def test_duration_function_literal() -> None:
+    df = pl.DataFrame(
+        {
+            "A": ["x", "x", "y", "y", "y"],
+            "T": [date(2022, m, 1) for m in range(1, 6)],
+            "S": [1, 2, 4, 8, 16],
+        }
+    ).with_columns(
+        [
+            pl.col("T").cast(pl.Datetime),
+        ]
+    )
+
+    # this checks if the `pl.duration` is flagged as AggState::Literal
+    assert df.groupby("A", maintain_order=True).agg(
+        [((pl.col("T").max() + pl.duration(seconds=1)) - pl.col("T"))]
+    ).to_dict(False) == {
+        "A": ["x", "y"],
+        "T": [
+            [timedelta(days=31, seconds=1), timedelta(seconds=1)],
+            [
+                timedelta(days=61, seconds=1),
+                timedelta(days=30, seconds=1),
+                timedelta(seconds=1),
+            ],
+        ],
+    }
+
+
+def test_string_par_materialize_8207() -> None:
+    df = pl.LazyFrame(
+        {
+            "a": ["a", "b", "d", "c", "e"],
+            "b": ["P", "L", "R", "T", "a long string"],
+        }
+    )
+
+    assert df.groupby(["a"]).agg(pl.min("b")).sort("a").collect().to_dict(False) == {
+        "a": ["a", "b", "c", "d", "e"],
+        "b": ["P", "L", "T", "R", "a long string"],
+    }
+
+
+def test_online_variance() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1] * 5,
+            "no_nulls": [1, 2, 3, 4, 5],
+            "nulls": [1, None, 3, None, 5],
+        }
+    )
+
+    assert_frame_equal(
+        df.groupby("id")
+        .agg(pl.all().exclude("id").std())
+        .select(["no_nulls", "nulls"]),
+        df.select(pl.all().exclude("id").std()),
+    )
+
+
+def test_err_on_implode_and_agg() -> None:
+    df = pl.DataFrame({"type": ["water", "fire", "water", "earth"]})
+
+    # this would OOB
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"'implode' followed by an aggregation is not allowed",
+    ):
+        df.groupby("type").agg(pl.col("type").implode().first().alias("foo"))
+
+    # implode + function should be allowed in groupby
+    assert df.groupby("type", maintain_order=True).agg(
+        pl.col("type").implode().list.head().alias("foo")
+    ).to_dict(False) == {
+        "type": ["water", "fire", "earth"],
+        "foo": [["water", "water"], ["fire"], ["earth"]],
+    }
+
+    # but not during a window function as the groups cannot be mapped back
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"'implode' followed by an aggregation is not allowed",
+    ):
+        df.lazy().select(pl.col("type").implode().list.head(1).over("type")).collect()
+
+
+def test_mapped_literal_to_literal_9217() -> None:
+    df = pl.DataFrame({"unique_id": ["a", "b"]})
+    assert df.groupby(True).agg(
+        pl.struct(pl.lit("unique_id").alias("unique_id"))
+    ).to_dict(False) == {"literal": [True], "unique_id": [{"unique_id": "unique_id"}]}
+
+
+def test_sum_empty_and_null_set() -> None:
+    series = pl.Series("a", [])
+    assert series.sum() == 0
+
+    series = pl.Series("a", [None])
+    assert series.sum() == 0

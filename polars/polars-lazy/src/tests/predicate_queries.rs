@@ -126,8 +126,7 @@ fn test_strptime_block_predicate() -> PolarsResult<()> {
 
     let q = df
         .lazy()
-        .with_column(col("date").str().strptime(StrpTimeOptions {
-            date_dtype: DataType::Date,
+        .with_column(col("date").str().to_date(StrptimeOptions {
             ..Default::default()
         }))
         .filter(
@@ -179,7 +178,7 @@ fn test_filter_nulls_created_by_join() -> PolarsResult<()> {
     let out = a
         .clone()
         .lazy()
-        .join(b.clone(), [col("key")], [col("key")], JoinType::Left)
+        .join(b.clone(), [col("key")], [col("key")], JoinType::Left.into())
         .filter(col("flag").is_null())
         .collect()?;
     let expected = df![
@@ -191,7 +190,7 @@ fn test_filter_nulls_created_by_join() -> PolarsResult<()> {
 
     let out = a
         .lazy()
-        .join(b.clone(), [col("key")], [col("key")], JoinType::Left)
+        .join(b.clone(), [col("key")], [col("key")], JoinType::Left.into())
         .filter(col("flag").eq(lit(NULL)))
         .with_predicate_pushdown(false)
         .collect()?;

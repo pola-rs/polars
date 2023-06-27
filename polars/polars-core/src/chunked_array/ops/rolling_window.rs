@@ -1,3 +1,5 @@
+use polars_arrow::prelude::DynArgs;
+
 #[derive(Clone)]
 pub struct RollingOptionsFixedWindow {
     /// The length of the window.
@@ -9,6 +11,7 @@ pub struct RollingOptionsFixedWindow {
     pub weights: Option<Vec<f64>>,
     /// Set the labels at the center of the window.
     pub center: bool,
+    pub fn_params: DynArgs,
 }
 
 impl Default for RollingOptionsFixedWindow {
@@ -18,6 +21,7 @@ impl Default for RollingOptionsFixedWindow {
             min_periods: 1,
             weights: None,
             center: false,
+            fn_params: None,
         }
     }
 }
@@ -32,7 +36,7 @@ mod inner_mod {
     use num_traits::{Float, Zero};
     use polars_arrow::bit_util::unset_bit_raw;
     use polars_arrow::data_types::IsFloat;
-    use polars_arrow::trusted_len::PushUnchecked;
+    use polars_arrow::trusted_len::TrustedLenPush;
 
     use crate::prelude::*;
 
@@ -70,7 +74,7 @@ mod inner_mod {
         fn rolling_apply(
             &self,
             f: &dyn Fn(&Series) -> Series,
-            options: RollingOptionsFixedWindow,
+            mut options: RollingOptionsFixedWindow,
         ) -> PolarsResult<Series> {
             check_input(options.window_size, options.min_periods)?;
 
@@ -82,9 +86,7 @@ mod inner_mod {
                 return s.rolling_apply(f, options);
             }
 
-            if options.window_size >= self.len() {
-                return Ok(Self::full_null(self.name(), self.len()).into_series());
-            }
+            options.window_size = std::cmp::min(self.len(), options.window_size);
 
             let len = self.len();
             let arr = ca.downcast_iter().next().unwrap();

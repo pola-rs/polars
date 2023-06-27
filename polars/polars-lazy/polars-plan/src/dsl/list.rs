@@ -22,7 +22,7 @@ impl ListNameSpace {
         };
         self.0
             .map(function, GetOutput::from_type(IDX_DTYPE))
-            .with_fmt("arr.len")
+            .with_fmt("list.len")
     }
 
     /// Compute the maximum of the items in every sublist.
@@ -39,7 +39,7 @@ impl ListNameSpace {
                     }
                 }),
             )
-            .with_fmt("arr.max")
+            .with_fmt("list.max")
     }
 
     /// Compute the minimum of the items in every sublist.
@@ -56,7 +56,7 @@ impl ListNameSpace {
                     }
                 }),
             )
-            .with_fmt("arr.min")
+            .with_fmt("list.min")
     }
 
     /// Compute the sum the items in every sublist.
@@ -72,7 +72,7 @@ impl ListNameSpace {
                 |s| Ok(Some(s.list()?.lst_mean().into_series())),
                 GetOutput::from_type(DataType::Float64),
             )
-            .with_fmt("arr.mean")
+            .with_fmt("list.mean")
     }
 
     /// Sort every sublist.
@@ -82,7 +82,7 @@ impl ListNameSpace {
                 move |s| Ok(Some(s.list()?.lst_sort(options).into_series())),
                 GetOutput::same_type(),
             )
-            .with_fmt("arr.sort")
+            .with_fmt("list.sort")
     }
 
     /// Reverse every sublist
@@ -92,7 +92,7 @@ impl ListNameSpace {
                 move |s| Ok(Some(s.list()?.lst_reverse().into_series())),
                 GetOutput::same_type(),
             )
-            .with_fmt("arr.reverse")
+            .with_fmt("list.reverse")
     }
 
     /// Keep only the unique values in every sublist.
@@ -102,7 +102,17 @@ impl ListNameSpace {
                 move |s| Ok(Some(s.list()?.lst_unique()?.into_series())),
                 GetOutput::same_type(),
             )
-            .with_fmt("arr.unique")
+            .with_fmt("list.unique")
+    }
+
+    /// Keep only the unique values in every sublist.
+    pub fn unique_stable(self) -> Expr {
+        self.0
+            .map(
+                move |s| Ok(Some(s.list()?.lst_unique_stable()?.into_series())),
+                GetOutput::same_type(),
+            )
+            .with_fmt("list.unique_stable")
     }
 
     /// Get items in every sublist by index.
@@ -115,7 +125,7 @@ impl ListNameSpace {
     ///
     /// # Arguments
     /// - `null_on_oob`: Return a null when an index is out of bounds.
-    /// This behavior is more expensive than defaulting to returing an `Error`.
+    /// This behavior is more expensive than defaulting to returning an `Error`.
     #[cfg(feature = "list_take")]
     pub fn take(self, index: Expr, null_on_oob: bool) -> Expr {
         self.0.map_many_private(
@@ -149,7 +159,7 @@ impl ListNameSpace {
                 },
                 GetOutput::from_type(DataType::Utf8),
             )
-            .with_fmt("arr.join")
+            .with_fmt("list.join")
     }
 
     /// Return the index of the minimal value of every sublist
@@ -159,7 +169,7 @@ impl ListNameSpace {
                 |s| Ok(Some(s.list()?.lst_arg_min().into_series())),
                 GetOutput::from_type(IDX_DTYPE),
             )
-            .with_fmt("arr.arg_min")
+            .with_fmt("list.arg_min")
     }
 
     /// Return the index of the maximum value of every sublist
@@ -169,18 +179,18 @@ impl ListNameSpace {
                 |s| Ok(Some(s.list()?.lst_arg_max().into_series())),
                 GetOutput::from_type(IDX_DTYPE),
             )
-            .with_fmt("arr.arg_max")
+            .with_fmt("list.arg_max")
     }
 
     /// Diff every sublist.
     #[cfg(feature = "diff")]
-    pub fn diff(self, n: usize, null_behavior: NullBehavior) -> Expr {
+    pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
         self.0
             .map(
-                move |s| Ok(Some(s.list()?.lst_diff(n, null_behavior).into_series())),
+                move |s| Ok(Some(s.list()?.lst_diff(n, null_behavior)?.into_series())),
                 GetOutput::same_type(),
             )
-            .with_fmt("arr.diff")
+            .with_fmt("list.diff")
     }
 
     /// Shift every sublist.
@@ -190,7 +200,7 @@ impl ListNameSpace {
                 move |s| Ok(Some(s.list()?.lst_shift(periods).into_series())),
                 GetOutput::same_type(),
             )
-            .with_fmt("arr.shift")
+            .with_fmt("list.shift")
     }
 
     /// Slice every sublist.
@@ -209,7 +219,7 @@ impl ListNameSpace {
 
     /// Get the tail of every sublist
     pub fn tail(self, n: Expr) -> Expr {
-        self.slice(lit(0) - n.clone().cast(DataType::Int64), n)
+        self.slice(lit(0i64) - n.clone().cast(DataType::Int64), n)
     }
 
     #[cfg(feature = "list_to_struct")]
@@ -265,7 +275,7 @@ impl ListNameSpace {
                     }
                 }),
             )
-            .with_fmt("arr.to_struct")
+            .with_fmt("list.to_struct")
     }
 
     #[cfg(feature = "is_in")]

@@ -113,7 +113,8 @@ fn read_unordered_json() {
 
 #[test]
 fn read_ndjson_with_trailing_newline() {
-    let data = r#"{"Column1":"Value1"}\n"#;
+    let data = r#"{"Column1":"Value1"}
+"#;
 
     let file = Cursor::new(data);
     let df = JsonReader::new(file)

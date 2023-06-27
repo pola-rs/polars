@@ -1,7 +1,7 @@
 import pytest
 
 import polars as pl
-from polars.exceptions import NoRowsReturned, TooManyRowsReturned
+from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 
 
 def test_row_tuple() -> None:
@@ -25,10 +25,10 @@ def test_row_tuple() -> None:
     assert row == {"a": "bar", "b": 2, "c": 2.0}
 
     # expected error conditions
-    with pytest.raises(TooManyRowsReturned):
+    with pytest.raises(TooManyRowsReturnedError):
         df.row(by_predicate=pl.col("b").is_in([1, 3, 5]))
 
-    with pytest.raises(NoRowsReturned):
+    with pytest.raises(NoRowsReturnedError):
         df.row(by_predicate=pl.col("a") == "???")
 
     # cannot set both 'index' and 'by_predicate'
@@ -69,6 +69,98 @@ def test_rows() -> None:
     ]
 
 
+def test_rows_by_key() -> None:
+    df = pl.DataFrame(
+        {
+            "w": ["a", "b", "b", "a"],
+            "x": ["q", "q", "q", "k"],
+            "y": [1.0, 2.5, 3.0, 4.5],
+            "z": [9, 8, 7, 6],
+        }
+    )
+
+    # tuple (unnamed) rows
+    assert df.rows_by_key("w") == {
+        "a": [("q", 1.0, 9), ("k", 4.5, 6)],
+        "b": [("q", 2.5, 8), ("q", 3.0, 7)],
+    }
+    assert df.rows_by_key("w", unique=True) == {
+        "a": ("k", 4.5, 6),
+        "b": ("q", 3.0, 7),
+    }
+    assert df.rows_by_key("w", include_key=True) == {
+        "a": [("a", "q", 1.0, 9), ("a", "k", 4.5, 6)],
+        "b": [("b", "q", 2.5, 8), ("b", "q", 3.0, 7)],
+    }
+    assert df.rows_by_key("w", include_key=True) == {
+        key: grp.rows() for key, grp in df.groupby("w")
+    }
+    assert df.rows_by_key("w", include_key=True, unique=True) == {
+        "a": ("a", "k", 4.5, 6),
+        "b": ("b", "q", 3.0, 7),
+    }
+    assert df.rows_by_key(["x", "w"]) == {
+        ("a", "q"): [(1.0, 9)],
+        ("b", "q"): [(2.5, 8), (3.0, 7)],
+        ("a", "k"): [(4.5, 6)],
+    }
+    assert df.rows_by_key(["w", "x"], include_key=True) == {
+        ("a", "q"): [("a", "q", 1.0, 9)],
+        ("a", "k"): [("a", "k", 4.5, 6)],
+        ("b", "q"): [("b", "q", 2.5, 8), ("b", "q", 3.0, 7)],
+    }
+    assert df.rows_by_key(["w", "x"], include_key=True, unique=True) == {
+        ("a", "q"): ("a", "q", 1.0, 9),
+        ("b", "q"): ("b", "q", 3.0, 7),
+        ("a", "k"): ("a", "k", 4.5, 6),
+    }
+
+    # dict (named) rows
+    assert df.rows_by_key("w", named=True) == {
+        "a": [{"x": "q", "y": 1.0, "z": 9}, {"x": "k", "y": 4.5, "z": 6}],
+        "b": [{"x": "q", "y": 2.5, "z": 8}, {"x": "q", "y": 3.0, "z": 7}],
+    }
+    assert df.rows_by_key("w", named=True, unique=True) == {
+        "a": {"x": "k", "y": 4.5, "z": 6},
+        "b": {"x": "q", "y": 3.0, "z": 7},
+    }
+    assert df.rows_by_key("w", named=True, include_key=True) == {
+        "a": [
+            {"w": "a", "x": "q", "y": 1.0, "z": 9},
+            {"w": "a", "x": "k", "y": 4.5, "z": 6},
+        ],
+        "b": [
+            {"w": "b", "x": "q", "y": 2.5, "z": 8},
+            {"w": "b", "x": "q", "y": 3.0, "z": 7},
+        ],
+    }
+    assert df.rows_by_key("w", named=True, include_key=True) == {
+        key: grp.rows(named=True) for key, grp in df.groupby("w")
+    }
+    assert df.rows_by_key("w", named=True, include_key=True, unique=True) == {
+        "a": {"w": "a", "x": "k", "y": 4.5, "z": 6},
+        "b": {"w": "b", "x": "q", "y": 3.0, "z": 7},
+    }
+    assert df.rows_by_key(["x", "w"], named=True) == {
+        ("q", "a"): [{"y": 1.0, "z": 9}],
+        ("q", "b"): [{"y": 2.5, "z": 8}, {"y": 3.0, "z": 7}],
+        ("k", "a"): [{"y": 4.5, "z": 6}],
+    }
+    assert df.rows_by_key(["w", "x"], named=True, include_key=True) == {
+        ("a", "q"): [{"w": "a", "x": "q", "y": 1.0, "z": 9}],
+        ("a", "k"): [{"w": "a", "x": "k", "y": 4.5, "z": 6}],
+        ("b", "q"): [
+            {"w": "b", "x": "q", "y": 2.5, "z": 8},
+            {"w": "b", "x": "q", "y": 3.0, "z": 7},
+        ],
+    }
+    assert df.rows_by_key(["w", "x"], named=True, include_key=True, unique=True) == {
+        ("a", "q"): {"w": "a", "x": "q", "y": 1.0, "z": 9},
+        ("b", "q"): {"w": "b", "x": "q", "y": 3.0, "z": 7},
+        ("a", "k"): {"w": "a", "x": "k", "y": 4.5, "z": 6},
+    }
+
+
 def test_iter_rows() -> None:
     df = pl.DataFrame(
         {
@@ -89,15 +181,6 @@ def test_iter_rows() -> None:
     assert next(it) == (3, None, c3)
     with pytest.raises(StopIteration):
         next(it)
-
-    # TODO: Remove this section once iterrows is removed
-    with pytest.deprecated_call():
-        it = df.iterrows()  # type: ignore[attr-defined]
-        assert next(it) == (1, True, c1)
-        assert next(it) == (2, False, c2)
-        assert next(it) == (3, None, c3)
-        with pytest.raises(StopIteration):
-            next(it)
 
     # Apply explicit row-buffer size
     for sz in (0, 1, 2, 3, 4):
@@ -135,3 +218,36 @@ def test_iter_rows() -> None:
         {"id": 2, "values": "c"},
         {"id": 3, "values": "d"},
     ]
+
+
+def test_row_constructor_schema() -> None:
+    expected = {"d": [1, 2, 3]}
+    for primitive in [
+        pl.UInt8,
+        pl.Int8,
+        pl.UInt16,
+        pl.Int16,
+        pl.UInt32,
+        pl.Int32,
+        pl.UInt64,
+        pl.Int64,
+    ]:
+        out = pl.DataFrame(
+            data=[
+                [1],
+                [2],
+                [3],
+            ],
+            schema={"d": primitive},
+        )
+        assert out.dtypes == [primitive]
+        assert out.to_dict(False) == expected
+
+
+def test_row_constructor_uint64() -> None:
+    # validate init with a valid UInt64 that exceeds Int64 upper bound
+    df = pl.DataFrame(
+        data=[[0], [int(2**63) + 1]],
+        schema={"x": pl.UInt64},
+    )
+    assert df.rows() == [(0,), (9223372036854775809,)]

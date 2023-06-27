@@ -5,13 +5,14 @@ import sys
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import dtype_to_ffiname
+from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
+    from polars import Series
     from polars.polars import PySeries
-    from polars.series.series import Series
     from polars.type_aliases import PolarsDataType
 
     if sys.version_info >= (3, 10):
@@ -65,7 +66,7 @@ def _is_empty_method(func: SeriesMethod) -> bool:
 def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str, ...]]]:
     """Create lookup of potential Expr methods (in the given namespace)."""
     # dummy Expr object that we can introspect
-    expr = pli.Expr()
+    expr = pl.Expr()
     expr._pyexpr = None
 
     # optional indirection to "expr.str", "expr.dt", etc
@@ -92,7 +93,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
 
     @wraps(func)  # type: ignore[arg-type]
     def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> Series:
-        s = pli.wrap_s(self._s)
+        s = wrap_s(self._s)
         expr = F.col(s.name)
         namespace = getattr(self, "_accessor", None)
         if namespace is not None:

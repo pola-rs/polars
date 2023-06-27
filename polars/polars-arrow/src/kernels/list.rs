@@ -3,7 +3,7 @@ use arrow::offset::{Offsets, OffsetsBuffer};
 
 use crate::compute::take::take_unchecked;
 use crate::prelude::*;
-use crate::trusted_len::PushUnchecked;
+use crate::trusted_len::TrustedLenPush;
 use crate::utils::CustomIterTools;
 
 /// Get the indices that would result in a get operation on the lists values.
@@ -104,7 +104,7 @@ mod test {
     use super::*;
 
     fn get_array() -> ListArray<i64> {
-        let values = Int32Array::from_slice(&[1, 2, 3, 4, 5, 6]);
+        let values = Int32Array::from_slice([1, 2, 3, 4, 5, 6]);
         let offsets = OffsetsBuffer::try_from(vec![0i64, 3, 5, 6]).unwrap();
 
         let dtype = ListArray::<i64>::default_datatype(DataType::Int32);

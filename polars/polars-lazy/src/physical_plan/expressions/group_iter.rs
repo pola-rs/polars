@@ -7,33 +7,43 @@ use super::*;
 impl<'a> AggregationContext<'a> {
     pub(super) fn iter_groups(
         &mut self,
+        keep_names: bool,
     ) -> Box<dyn Iterator<Item = Option<UnstableSeries<'_>>> + '_> {
         match self.agg_state() {
             AggState::Literal(_) => {
                 self.groups();
-                let s = self.series();
-                Box::new(LitIter::new(s.array_ref(0).clone(), self.groups.len()))
+                let s = self.series().rechunk();
+                let name = if keep_names { s.name() } else { "" };
+                Box::new(LitIter::new(
+                    s.array_ref(0).clone(),
+                    self.groups.len(),
+                    name,
+                ))
             }
             AggState::AggregatedFlat(_) => {
                 self.groups();
                 let s = self.series();
+                let name = if keep_names { s.name() } else { "" };
                 Box::new(FlatIter::new(
                     s.array_ref(0).clone(),
                     self.groups.len(),
                     s.dtype(),
+                    name,
                 ))
             }
             AggState::AggregatedList(_) => {
                 let s = self.series();
                 let list = s.list().unwrap();
-                Box::new(list.amortized_iter())
+                let name = if keep_names { s.name() } else { "" };
+                Box::new(list.amortized_iter_with_name(name))
             }
             AggState::NotAggregated(_) => {
                 // we don't take the owned series as we want a reference
                 let _ = self.aggregated();
                 let s = self.series();
                 let list = s.list().unwrap();
-                Box::new(list.amortized_iter())
+                let name = if keep_names { s.name() } else { "" };
+                Box::new(list.amortized_iter_with_name(name))
             }
         }
     }
@@ -49,8 +59,8 @@ struct LitIter<'a> {
 }
 
 impl<'a> LitIter<'a> {
-    fn new(array: ArrayRef, len: usize) -> Self {
-        let mut series_container = Box::pin(Series::try_from(("", array.clone())).unwrap());
+    fn new(array: ArrayRef, len: usize, name: &str) -> Self {
+        let mut series_container = Box::pin(Series::try_from((name, array.clone())).unwrap());
         let ref_s = &mut *series_container as *mut Series;
         Self {
             offset: 0,
@@ -90,9 +100,9 @@ struct FlatIter<'a> {
 }
 
 impl<'a> FlatIter<'a> {
-    fn new(array: ArrayRef, len: usize, logical: &DataType) -> Self {
+    fn new(array: ArrayRef, len: usize, logical: &DataType, name: &str) -> Self {
         let mut series_container = Box::pin(
-            Series::try_from(("", array.clone()))
+            Series::try_from((name, array.clone()))
                 .unwrap()
                 .cast(logical)
                 .unwrap(),

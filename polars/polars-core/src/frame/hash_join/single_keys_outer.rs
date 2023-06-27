@@ -61,10 +61,11 @@ fn probe_outer<T, F, G, H>(
 
 /// Hash join outer. Both left and right can have no match so Options
 pub(super) fn hash_join_tuples_outer<T, I, J>(
-    a: Vec<I>,
-    b: Vec<J>,
+    probe: Vec<I>,
+    build: Vec<J>,
     swap: bool,
-) -> Vec<(Option<IdxSize>, Option<IdxSize>)>
+    validate: JoinValidation,
+) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>>
 where
     I: Iterator<Item = T> + Send + TrustedLen,
     J: Iterator<Item = T> + Send + TrustedLen,
@@ -78,16 +79,24 @@ where
     // during the probe phase values are removed from the tables, that's done single threaded to
     // keep it lock free.
 
-    let size = a.iter().map(|a| a.size_hint().0).sum::<usize>()
-        + b.iter().map(|b| b.size_hint().0).sum::<usize>();
+    let size = probe.iter().map(|a| a.size_hint().0).sum::<usize>()
+        + build.iter().map(|b| b.size_hint().0).sum::<usize>();
     let mut results = Vec::with_capacity(size);
 
     // prepare hash table
-    let mut hash_tbls = prepare_hashed_relation_threaded(b);
+    let mut hash_tbls = if validate.needs_checks() {
+        let expected_size = build.iter().map(|i| i.size_hint().0).sum();
+        let hash_tbls = prepare_hashed_relation_threaded(build);
+        let build_size = hash_tbls.iter().map(|m| m.len()).sum();
+        validate.validate_build(build_size, expected_size, !swap)?;
+        hash_tbls
+    } else {
+        prepare_hashed_relation_threaded(build)
+    };
     let random_state = hash_tbls[0].hasher().clone();
 
     // we pre hash the probing values
-    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));
+    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(random_state));
 
     let n_tables = hash_tbls.len() as u64;
 
@@ -117,5 +126,5 @@ where
             |idx_b| (None, Some(idx_b)),
         )
     }
-    results
+    Ok(results)
 }

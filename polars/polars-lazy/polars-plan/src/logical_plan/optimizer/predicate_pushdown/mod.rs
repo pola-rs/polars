@@ -283,7 +283,7 @@ impl PredicatePushDown {
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 path,
                 file_info,
@@ -353,32 +353,41 @@ impl PredicatePushDown {
                 input,
                 options
             } => {
-                // currently the distinct operation only keeps the first occurrences.
-                // this may have influence on the pushed down predicates. If the pushed down predicates
-                // contain a binary expression (thus depending on values in multiple columns)
-                // the final result may differ if it is pushed down.
 
-                let mut root_count = 0;
+                if matches!(options.keep_strategy, UniqueKeepStrategy::Any | UniqueKeepStrategy::None) {
+                    // currently the distinct operation only keeps the first occurrences.
+                    // this may have influence on the pushed down predicates. If the pushed down predicates
+                    // contain a binary expression (thus depending on values in multiple columns)
+                    // the final result may differ if it is pushed down.
 
-                // if this condition is called more than once, its a binary or ternary operation.
-                let condition = |_| {
-                    if root_count == 0 {
-                        root_count += 1;
-                        false
-                    } else {
-                        true
-                    }
-                };
-                let mut local_predicates =
-                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-                local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
+                    let mut root_count = 0;
 
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                let lp = Distinct {
-                    input,
-                    options
-                };
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                    // if this condition is called more than once, its a binary or ternary operation.
+                    let condition = |_| {
+                        if root_count == 0 {
+                            root_count += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    };
+                    let mut local_predicates =
+                        transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
+                    local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
+
+                    self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+                    let lp = Distinct {
+                        input,
+                        options
+                    };
+                    Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                } else {
+                    let lp = Distinct {
+                        input,
+                        options
+                    };
+                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+                }
             }
             Join {
                 input_left,
@@ -399,7 +408,11 @@ impl PredicatePushDown {
                     // unique and duplicated can be caused by joins
                     #[cfg(feature = "is_unique")]
                     let matches = {
-                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsDuplicated | FunctionExpr::IsUnique, ..})
+                        |e: &AExpr| matches!(e, AExpr::Function{
+                            function: FunctionExpr::Boolean(BooleanFunction::IsDuplicated)
+                                | FunctionExpr::Boolean(BooleanFunction::IsUnique),
+                            ..
+                        })
                     };
                     #[cfg(not(feature = "is_unique"))]
                         let matches = {
@@ -408,7 +421,11 @@ impl PredicatePushDown {
 
 
                     let checks_nulls =
-                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsNotNull | FunctionExpr::IsNull, ..} ) ||
+                        |e: &AExpr| matches!(e, AExpr::Function{
+                            function: FunctionExpr::Boolean(BooleanFunction::IsNotNull)
+                                | FunctionExpr::Boolean(BooleanFunction::IsNull),
+                            ..
+                        }) ||
                             // any operation that checks for equality or ordering can be wrong because
                             // the join can produce null values
                             matches!(e, AExpr::BinaryExpr {op, ..} if !matches!(op, Operator::NotEq));
@@ -416,7 +433,7 @@ impl PredicatePushDown {
                         // join might create null values.
                         || has_aexpr(predicate, expr_arena, checks_nulls)
                         // only these join types produce null values
-                        && join_produces_null(&options.how) {
+                        && join_produces_null(&options.args.how) {
                         local_predicates.push(predicate);
                         continue;
                     }
@@ -449,7 +466,7 @@ impl PredicatePushDown {
                             filter_right = true;
                         }
                     }
-                    match (filter_left, filter_right, &options.how) {
+                    match (filter_left, filter_right, &options.args.how) {
                         // if not pushed down on one of the tables we have to do it locally.
                         (false, false, _) |
                         // if left join and predicate only available in right table,
@@ -561,8 +578,22 @@ impl PredicatePushDown {
                 let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
+            lp @ Sort{..} => {
+                let mut local_predicates = vec![];
+                acc_predicates.retain(|_, predicate| {
+                    if predicate_is_sort_boundary(*predicate, expr_arena) {
+                        local_predicates.push(*predicate);
+                        false
+                    } else {
+                        true
+                    }
+                });
+                let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+
+            }
             // Pushed down passed these nodes
-            lp @ Sort { .. } |lp @ FileSink {..} => {
+            lp@ FileSink {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {
@@ -590,7 +621,7 @@ impl PredicatePushDown {
                         let lp_top = stack_opt.optimize_loop(&mut [Box::new(SimplifyExprRule{})], expr_arena, lp_arena, lp_top).unwrap();
                         let PythonScan {options: _, predicate: Some(predicate)} = lp_arena.take(lp_top) else {unreachable!()};
 
-                        match super::super::pyarrow::predicate_to_pa(predicate, expr_arena) {
+                        match super::super::pyarrow::predicate_to_pa(predicate, expr_arena, Default::default()) {
                             // we we able to create a pyarrow string, mutate the options
                             Some(eval_str) => {
                                 options.predicate = Some(eval_str)

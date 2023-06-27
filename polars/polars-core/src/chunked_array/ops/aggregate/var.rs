@@ -15,9 +15,6 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
 {
     fn var(&self, ddof: u8) -> Option<f64> {
-        if self.len() == 1 {
-            return Some(0.0);
-        }
         let n_values = self.len() - self.null_count();
 
         if ddof as usize > n_values {
@@ -90,6 +87,8 @@ impl ChunkVar<f64> for Float64Chunked {
 
 impl ChunkVar<String> for Utf8Chunked {}
 impl ChunkVar<Series> for ListChunked {}
+#[cfg(feature = "dtype-array")]
+impl ChunkVar<Series> for ArrayChunked {}
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkVar<Series> for ObjectChunked<T> {}
 impl ChunkVar<bool> for BooleanChunked {}

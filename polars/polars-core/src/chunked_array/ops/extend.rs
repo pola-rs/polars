@@ -1,6 +1,7 @@
 use arrow::compute::concatenate::concatenate;
 use arrow::Either;
 
+use crate::prelude::append::update_sorted_flag_before_append;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -36,6 +37,7 @@ where
     /// when you read in multiple files and when to store them in a single `DataFrame`.
     /// In the latter case finish the sequence of `append` operations with a [`rechunk`](Self::rechunk).
     pub fn extend(&mut self, other: &Self) {
+        update_sorted_flag_before_append(self, other);
         // all to a single chunk
         if self.chunks.len() > 1 {
             self.append(other);
@@ -62,29 +64,33 @@ where
 
         use Either::*;
 
-        match arr.into_mut() {
-            Left(immutable) => {
-                extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            }
-            Right(mut mutable) => {
-                for arr in other.downcast_iter() {
-                    match arr.null_count() {
-                        0 => mutable.extend_from_slice(arr.values()),
-                        _ => mutable.extend_trusted_len(arr.into_iter()),
-                    }
+        if arr.values().is_sliced() {
+            extend_immutable(&arr, &mut self.chunks, &other.chunks);
+        } else {
+            match arr.into_mut() {
+                Left(immutable) => {
+                    extend_immutable(&immutable, &mut self.chunks, &other.chunks);
                 }
-                let arr: PrimitiveArray<T::Native> = mutable.into();
-                self.chunks.push(Box::new(arr) as ArrayRef)
+                Right(mut mutable) => {
+                    for arr in other.downcast_iter() {
+                        match arr.null_count() {
+                            0 => mutable.extend_from_slice(arr.values()),
+                            _ => mutable.extend_trusted_len(arr.into_iter()),
+                        }
+                    }
+                    let arr: PrimitiveArray<T::Native> = mutable.into();
+                    self.chunks.push(Box::new(arr) as ArrayRef)
+                }
             }
         }
         self.compute_len();
-        self.set_sorted_flag(IsSorted::Not);
     }
 }
 
 #[doc(hidden)]
 impl Utf8Chunked {
     pub fn extend(&mut self, other: &Self) {
+        update_sorted_flag_before_append(self, other);
         if self.chunks.len() > 1 {
             self.append(other);
             *self = self.rechunk();
@@ -123,6 +129,7 @@ impl Utf8Chunked {
 #[doc(hidden)]
 impl BinaryChunked {
     pub fn extend(&mut self, other: &Self) {
+        update_sorted_flag_before_append(self, other);
         if self.chunks.len() > 1 {
             self.append(other);
             *self = self.rechunk();
@@ -160,6 +167,7 @@ impl BinaryChunked {
 #[doc(hidden)]
 impl BooleanChunked {
     pub fn extend(&mut self, other: &Self) {
+        update_sorted_flag_before_append(self, other);
         // make sure that we are a single chunk already
         if self.chunks.len() > 1 {
             self.append(other);
@@ -198,6 +206,17 @@ impl BooleanChunked {
 
 #[doc(hidden)]
 impl ListChunked {
+    pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
+        // TODO! properly implement mutation
+        // this is harder because we don't know the inner type of the list
+        self.set_sorted_flag(IsSorted::Not);
+        self.append(other)
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+#[doc(hidden)]
+impl ArrayChunked {
     pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
         // TODO! properly implement mutation
         // this is harder because we don't know the inner type of the list

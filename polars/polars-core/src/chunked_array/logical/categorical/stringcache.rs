@@ -6,7 +6,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ahash::RandomState;
 use hashbrown::hash_map::RawEntryMut;
 use once_cell::sync::Lazy;
-use polars_utils::HashSingle;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::datatypes::PlIdHashMap;
@@ -34,21 +33,21 @@ impl Default for IUseStringCache {
 impl IUseStringCache {
     /// Hold the StringCache
     pub fn new() -> IUseStringCache {
-        toggle_string_cache(true);
+        enable_string_cache(true);
         IUseStringCache { private_zst: () }
     }
 }
 
 impl Drop for IUseStringCache {
     fn drop(&mut self) {
-        toggle_string_cache(false)
+        enable_string_cache(false)
     }
 }
 
 pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
-    toggle_string_cache(true);
+    enable_string_cache(true);
     let out = func();
-    toggle_string_cache(false);
+    enable_string_cache(false);
     out
 }
 
@@ -56,7 +55,7 @@ pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
 ///
 /// This is used to cache the string categories locally.
 /// This allows join operations on categorical types.
-pub fn toggle_string_cache(toggle: bool) {
+pub fn enable_string_cache(toggle: bool) {
     if toggle {
         USE_STRING_CACHE.fetch_add(1, Ordering::Release);
     } else {
@@ -147,7 +146,7 @@ impl SCacheInner {
 
     #[inline]
     pub(crate) fn get_cat(&self, s: &str) -> Option<u32> {
-        let h = StringCache::get_hash_builder().hash_single(s);
+        let h = StringCache::get_hash_builder().hash_one(s);
         // as StrHashGlobal may allocate a string
         self.map
             .raw_entry()
@@ -163,7 +162,7 @@ impl SCacheInner {
 
     #[inline]
     pub(crate) fn insert(&mut self, s: &str) -> u32 {
-        let h = StringCache::get_hash_builder().hash_single(s);
+        let h = StringCache::get_hash_builder().hash_one(s);
         self.insert_from_hash(h, s)
     }
 }

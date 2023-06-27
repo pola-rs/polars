@@ -1,8 +1,8 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
-use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::{fmt, str};
 
 #[cfg(any(
     feature = "dtype-date",
@@ -35,7 +35,7 @@ pub enum FloatFmt {
 }
 static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
 
-fn get_float_fmt() -> FloatFmt {
+pub fn get_float_fmt() -> FloatFmt {
     match FLOAT_FMT.load(Ordering::Relaxed) {
         0 => FloatFmt::Mixed,
         1 => FloatFmt::Full,
@@ -52,7 +52,7 @@ macro_rules! format_array {
         write!(
             $f,
             "shape: ({},)\n{}: '{}' [{}]\n[\n",
-            $a.len(),
+            fmt_uint(&$a.len()),
             $array_type,
             $name,
             $dtype
@@ -94,7 +94,7 @@ macro_rules! format_array {
             };
             Ok(())
         };
-        if limit < $a.len() {
+        if (limit == 0 && $a.len() > 0) || ($a.len() > limit + 1) {
             if limit > 0 {
                 for i in 0..std::cmp::max((limit / 2), 1) {
                     let v = $a.get_any_value(i).unwrap();
@@ -109,7 +109,7 @@ macro_rules! format_array {
                 }
             }
         } else {
-            for i in 0..limit {
+            for i in 0..$a.len() {
                 let v = $a.get_any_value(i).unwrap();
                 write_fn(v, $f)?;
             }
@@ -133,7 +133,7 @@ fn format_object_array(
             write!(
                 f,
                 "shape: ({},)\n{}: '{}' [o][{}]\n[\n",
-                object.len(),
+                fmt_uint(&object.len()),
                 array_type,
                 name,
                 inner_type
@@ -181,6 +181,13 @@ impl Debug for BinaryChunked {
 impl Debug for ListChunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         format_array!(f, self, "list", self.name(), "ChunkedArray")
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl Debug for ArrayChunked {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        format_array!(f, self, "fixed size list", self.name(), "ChunkedArray")
     }
 }
 
@@ -284,6 +291,11 @@ impl Debug for Series {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.decimal().unwrap(), &dt, self.name(), "Series")
             }
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.array().unwrap(), &dt, self.name(), "Series")
+            }
             DataType::List(_) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.list().unwrap(), &dt, self.name(), "Series")
@@ -362,6 +374,24 @@ fn prepare_row(
 
 fn env_is_true(varname: &str) -> bool {
     std::env::var(varname).as_deref().unwrap_or("0") == "1"
+}
+
+fn fmt_uint(num: &usize) -> String {
+    // Return a string with thousands separated by _
+    // e.g. 1_000_000
+    num.to_string()
+        .as_bytes()
+        .rchunks(3)
+        .rev()
+        .map(str::from_utf8)
+        .collect::<Result<Vec<&str>, _>>()
+        .unwrap()
+        .join("_") // separator
+}
+
+fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
+    // e.g. (1_000_000, 4_000)
+    format!("({}, {})", fmt_uint(shape0), fmt_uint(shape1))
 }
 
 impl Display for DataFrame {
@@ -480,7 +510,9 @@ impl Display for DataFrame {
                 table.apply_modifier(UTF8_ROUND_CORNERS);
             }
             if max_n_rows > 0 {
-                if height > max_n_rows {
+                if height > max_n_rows + 1 {
+                    // Truncate the table if we have more rows than the configured maximum number
+                    // of rows plus the single row which would contain "…".
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
                     for i in 0..std::cmp::max(max_n_rows / 2, 1) {
                         let row = self
@@ -572,12 +604,14 @@ impl Display for DataFrame {
             }
 
             // establish 'shape' information (above/below/hidden)
+            let shape_str = fmt_df_shape(&self.shape());
+
             if env_is_true(FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION) {
                 write!(f, "{table}")?;
             } else if env_is_true(FMT_TABLE_DATAFRAME_SHAPE_BELOW) {
-                write!(f, "{table}\nshape: {:?}", self.shape())?;
+                write!(f, "{table}\nshape: {}", shape_str)?;
             } else {
-                write!(f, "shape: {:?}\n{}", self.shape(), table)?;
+                write!(f, "shape: {}\n{}", shape_str, table)?;
             }
         }
 
@@ -766,6 +800,8 @@ impl Display for AnyValue<'_> {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             }
+            #[cfg(feature = "dtype-array")]
+            AnyValue::Array(s, _size) => write!(f, "{}", s.fmt_list()),
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{v}"),
@@ -810,13 +846,7 @@ impl Display for PlTzAware<'_> {
                 let dt_tz_aware = dt_utc.with_timezone(&tz);
                 write!(f, "{dt_tz_aware}")
             }
-            Err(_) => match parse_offset(self.tz) {
-                Ok(offset) => {
-                    let dt_tz_aware = offset.from_utc_datetime(&self.ndt);
-                    write!(f, "{dt_tz_aware}")
-                }
-                Err(_) => write!(f, "invalid timezone"),
-            },
+            Err(_) => write!(f, "invalid timezone"),
         }
         #[cfg(not(feature = "timezones"))]
         {
@@ -838,116 +868,25 @@ fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
     write!(f, "}}")
 }
 
-macro_rules! impl_fmt_list {
-    ($self:ident) => {{
-        match $self.len() {
-            0 => format!("[]"),
-            1 => format!("[{}]", $self.get_any_value(0).unwrap()),
-            2 => format!(
-                "[{}, {}]",
-                $self.get_any_value(0).unwrap(),
-                $self.get_any_value(1).unwrap()
-            ),
+impl Series {
+    pub fn fmt_list(&self) -> String {
+        match self.len() {
+            0 => "[]".to_string(),
+            1 => format!("[{}]", self.get(0).unwrap()),
+            2 => format!("[{}, {}]", self.get(0).unwrap(), self.get(1).unwrap()),
             3 => format!(
                 "[{}, {}, {}]",
-                $self.get_any_value(0).unwrap(),
-                $self.get_any_value(1).unwrap(),
-                $self.get_any_value(2).unwrap()
+                self.get(0).unwrap(),
+                self.get(1).unwrap(),
+                self.get(2).unwrap()
             ),
             _ => format!(
                 "[{}, {}, … {}]",
-                $self.get_any_value(0).unwrap(),
-                $self.get_any_value(1).unwrap(),
-                $self.get_any_value($self.len() - 1).unwrap()
+                self.get(0).unwrap(),
+                self.get(1).unwrap(),
+                self.get(self.len() - 1).unwrap()
             ),
         }
-    }};
-}
-
-pub(crate) trait FmtList {
-    fn fmt_list(&self) -> String;
-}
-
-impl<T> FmtList for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: fmt::Display,
-{
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for BooleanChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for Utf8Chunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for BinaryChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for ListChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl FmtList for CategoricalChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-date")]
-impl FmtList for DateChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-datetime")]
-impl FmtList for DatetimeChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-duration")]
-impl FmtList for DurationChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-time")]
-impl FmtList for TimeChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-struct")]
-impl FmtList for StructChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T: PolarsObject> FmtList for ObjectChunked<T> {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
     }
 }
 

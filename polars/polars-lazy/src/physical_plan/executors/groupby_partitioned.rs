@@ -3,45 +3,55 @@ use polars_core::POOL;
 use rayon::prelude::*;
 
 use super::*;
+#[cfg(feature = "streaming")]
+use crate::physical_plan::planner::create_physical_plan;
 
 /// Take an input Executor and a multiple expressions
 pub struct PartitionGroupByExec {
     input: Box<dyn Executor>,
-    keys: Vec<Arc<dyn PhysicalExpr>>,
+    phys_keys: Vec<Arc<dyn PhysicalExpr>>,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
     maintain_order: bool,
     slice: Option<(i64, usize)>,
     input_schema: SchemaRef,
     output_schema: SchemaRef,
     from_partitioned_ds: bool,
+    #[allow(dead_code)]
+    keys: Vec<Expr>,
+    #[allow(dead_code)]
+    aggs: Vec<Expr>,
 }
 
 impl PartitionGroupByExec {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         input: Box<dyn Executor>,
-        keys: Vec<Arc<dyn PhysicalExpr>>,
+        phys_keys: Vec<Arc<dyn PhysicalExpr>>,
         phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
         maintain_order: bool,
         slice: Option<(i64, usize)>,
         input_schema: SchemaRef,
         output_schema: SchemaRef,
         from_partitioned_ds: bool,
+        keys: Vec<Expr>,
+        aggs: Vec<Expr>,
     ) -> Self {
         Self {
             input,
-            keys,
+            phys_keys,
             phys_aggs,
             maintain_order,
             slice,
             input_schema,
             output_schema,
             from_partitioned_ds,
+            keys,
+            aggs,
         }
     }
 
     fn keys(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Vec<Series>> {
-        compute_keys(&self.keys, df, state)
+        compute_keys(&self.phys_keys, df, state)
     }
 }
 
@@ -66,7 +76,7 @@ fn run_partitions(
     let dfs = split_df(df, n_threads)?;
 
     let phys_aggs = &exec.phys_aggs;
-    let keys = &exec.keys;
+    let keys = &exec.phys_keys;
     POOL.install(|| {
         dfs.into_par_iter()
             .map(|df| {
@@ -116,14 +126,14 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> PolarsResul
     }
 
     let finish = |groups: &GroupsProxy| {
-        let u = groups.len() as f32;
+        let u = groups.len() as f64;
         let ui = if groups.len() == sample_size {
             u
         } else {
-            groups.iter().filter(|g| g.len() == 1).count() as f32
+            groups.iter().filter(|g| g.len() == 1).count() as f64
         };
 
-        (u + (ui / sample_size as f32) * (set_size - sample_size) as f32) as usize
+        (u + (ui / sample_size as f64) * (set_size - sample_size) as f64) as usize
     };
 
     if keys.len() == 1 {
@@ -179,13 +189,10 @@ fn can_run_partitioned(
             #[cfg(feature = "dtype-categorical")]
             (1, DataType::Categorical(Some(rev_map))) => (rev_map.len(), "known"),
             _ => {
-                let sample_frac = std::env::var("POLARS_PARTITION_SAMPLE_FRAC")
-                    .map(|s| s.parse::<f32>().unwrap())
-                    .unwrap_or(0.001);
-                let sample_size = (original_df.height() as f32 * sample_frac) as usize;
+                // sqrt(N) is a good sample size as it remains low on large numbers
+                // it is better than taking a fraction as it saturates
+                let sample_size = (original_df.height() as f64).powf(0.5) as usize;
 
-                // we never sample more than 1k data points
-                let sample_size = std::cmp::min(sample_size, 1_000);
                 // we never sample less than 100 data points.
                 let sample_size = std::cmp::max(100, sample_size);
                 (estimate_unique_count(keys, sample_size)?, "estimated")
@@ -216,6 +223,52 @@ fn can_run_partitioned(
 }
 
 impl PartitionGroupByExec {
+    #[cfg(feature = "streaming")]
+    fn run_streaming(
+        &mut self,
+        state: &mut ExecutionState,
+        original_df: DataFrame,
+    ) -> Option<PolarsResult<DataFrame>> {
+        #[allow(clippy::needless_update)]
+        let groupby_options = GroupbyOptions {
+            slice: self.slice,
+            ..Default::default()
+        };
+        let lp = LogicalPlan::Aggregate {
+            input: Box::new(original_df.lazy().logical_plan),
+            keys: Arc::new(std::mem::take(&mut self.keys)),
+            aggs: std::mem::take(&mut self.aggs),
+            schema: self.output_schema.clone(),
+            apply: None,
+            maintain_order: false,
+            options: groupby_options,
+        };
+        let mut expr_arena = Default::default();
+        let mut lp_arena = Default::default();
+        let node = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
+
+        let inserted = streaming::insert_streaming_nodes(
+            node,
+            &mut lp_arena,
+            &mut expr_arena,
+            &mut vec![],
+            false,
+            false,
+        )
+        .unwrap();
+
+        if inserted {
+            let mut phys_plan = create_physical_plan(node, &mut lp_arena, &mut expr_arena).unwrap();
+
+            if state.verbose() {
+                eprintln!("run STREAMING HASH AGGREGATION")
+            }
+            Some(phys_plan.execute(state))
+        } else {
+            None
+        }
+    }
+
     fn execute_impl(
         &mut self,
         state: &mut ExecutionState,
@@ -239,6 +292,14 @@ impl PartitionGroupByExec {
                     self.slice,
                 );
             }
+
+            #[cfg(feature = "streaming")]
+            if !self.maintain_order {
+                if let Some(out) = self.run_streaming(state, original_df.clone()) {
+                    return out;
+                }
+            }
+
             if state.verbose() {
                 eprintln!("run PARTITIONED HASH AGGREGATION")
             }
@@ -281,7 +342,7 @@ impl PartitionGroupByExec {
                 .phys_aggs
                 .par_iter()
                 // we slice the keys off and finalize every aggregation
-                .zip(&df.get_columns()[self.keys.len()..])
+                .zip(&df.get_columns()[self.phys_keys.len()..])
                 .map(|(expr, partitioned_s)| {
                     let agg_expr = expr.as_partitioned_aggregator().unwrap();
                     agg_expr.finalize(partitioned_s.clone(), groups, state)
@@ -312,7 +373,7 @@ impl Executor for PartitionGroupByExec {
 
         let profile_name = if state.has_node_timer() {
             let by = self
-                .keys
+                .phys_keys
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;

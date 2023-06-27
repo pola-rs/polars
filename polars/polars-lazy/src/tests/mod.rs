@@ -43,7 +43,7 @@ use polars_plan::logical_plan::{
     ArenaLpIter, OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
 };
 
-use crate::dsl::{arg_sort_by, pearson_corr};
+use crate::dsl::pearson_corr;
 use crate::prelude::*;
 
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";
@@ -53,7 +53,7 @@ static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
 static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
 static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
 
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 fn scan_foods_csv() -> LazyFrame {
     LazyCsvReader::new(FOODS_CSV).finish().unwrap()
 }
@@ -150,30 +150,4 @@ pub(crate) fn get_df() -> DataFrame {
         .finish()
         .unwrap();
     df
-}
-
-#[test]
-fn test_foo() -> PolarsResult<()> {
-    let dfa: DataFrame = df![
-        "a" => [1, 2, 2],
-        "b" => ["bleft", "bleft", "bleft"]
-    ]?;
-    let dfb: DataFrame = df![
-        "a" => ["ar", "ar", "ar"],
-        "b" => [1, 2, 2]
-    ]?;
-
-    let out = dfa
-        .lazy()
-        .join(
-            dfb.lazy(),
-            [col("a")],
-            [col("b")],
-            JoinType::AsOf(Default::default()),
-        )
-        .select([col("a"), col("b")])
-        .collect()?;
-
-    dbg!(out);
-    Ok(())
 }

@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import io
-import sys
-import tempfile
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -13,6 +10,8 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.type_aliases import IpcCompression
 
 COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
@@ -20,36 +19,43 @@ COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_from_to_buffer(df: pl.DataFrame, compression: IpcCompression) -> None:
-    buf = io.BytesIO()
-    df.write_ipc(buf, compression=compression)
-    buf.seek(0)
-    read_df = pl.read_ipc(buf, use_pyarrow=False)
+    # use an ad-hoc buffer (file=None)
+    buf1 = df.write_ipc(None, compression=compression)
+    assert_frame_equal_local_categoricals(df, pl.read_ipc(buf1, use_pyarrow=False))
+
+    # explicitly supply an existing buffer
+    buf2 = io.BytesIO()
+    df.write_ipc(buf2, compression=compression)
+    buf2.seek(0)
+    read_df = pl.read_ipc(buf2, use_pyarrow=False)
     assert_frame_equal_local_categoricals(df, read_df)
 
 
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 @pytest.mark.parametrize("compression", COMPRESSIONS)
-@pytest.mark.parametrize("path_type", [str, Path])
+@pytest.mark.parametrize("path_as_string", [True, False])
 @pytest.mark.write_disk()
 def test_from_to_file(
-    df: pl.DataFrame, compression: IpcCompression, path_type: type[str] | type[Path]
+    df: pl.DataFrame,
+    compression: IpcCompression,
+    path_as_string: bool,
+    tmp_path: Path,
 ) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.ipc"
-        file_path_cast = path_type(file_path)
-        df.write_ipc(file_path_cast, compression=compression)
-        df_read = pl.read_ipc(file_path_cast, use_pyarrow=False)
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "small.ipc"
+    if path_as_string:
+        file_path = str(file_path)  # type: ignore[assignment]
+    df.write_ipc(file_path, compression=compression)
+    df_read = pl.read_ipc(file_path, use_pyarrow=False)
 
     assert_frame_equal_local_categoricals(df, df_read)
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
-def test_select_columns_from_file(df: pl.DataFrame) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.ipc"
-        df.write_ipc(file_path)
-        df_read = pl.read_ipc(file_path, columns=["bools"])
+def test_select_columns_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "small.ipc"
+    df.write_ipc(file_path)
+    df_read = pl.read_ipc(file_path, columns=["bools"])
 
     assert df_read.columns == ["bools"]
 
@@ -103,19 +109,21 @@ def test_ipc_schema(compression: IpcCompression) -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 @pytest.mark.parametrize("compression", COMPRESSIONS)
-@pytest.mark.parametrize("path_type", [str, Path])
+@pytest.mark.parametrize("path_as_string", [True, False])
 def test_ipc_schema_from_file(
     df_no_lists: pl.DataFrame,
     compression: IpcCompression,
-    path_type: type[str] | type[Path],
+    path_as_string: bool,
+    tmp_path: Path,
 ) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.ipc"
-        file_path_cast = path_type(file_path)
-        df_no_lists.write_ipc(file_path_cast, compression=compression)
-        schema = pl.read_ipc_schema(file_path_cast)
+    tmp_path.mkdir(exist_ok=True)
+
+    file_path = tmp_path / "small.ipc"
+    if path_as_string:
+        file_path = str(file_path)  # type: ignore[assignment]
+    df_no_lists.write_ipc(file_path, compression=compression)
+    schema = pl.read_ipc_schema(file_path)
 
     expected = {
         "bools": pl.Boolean,
@@ -152,16 +160,15 @@ def test_ipc_column_order() -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
-def test_glob_ipc(df: pl.DataFrame) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.ipc"
-        df.write_ipc(file_path)
+def test_glob_ipc(df: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "small.ipc"
+    df.write_ipc(file_path)
 
-        file_path_glob = Path(temp_dir) / "small*.ipc"
+    file_path_glob = tmp_path / "small*.ipc"
 
-        result_scan = pl.scan_ipc(file_path_glob).collect()
-        result_read = pl.read_ipc(file_path_glob, use_pyarrow=False)
+    result_scan = pl.scan_ipc(file_path_glob).collect()
+    result_read = pl.read_ipc(file_path_glob, use_pyarrow=False)
 
     for result in [result_scan, result_read]:
         assert_frame_equal_local_categoricals(result, df)

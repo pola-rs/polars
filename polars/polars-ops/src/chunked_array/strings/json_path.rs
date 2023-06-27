@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use arrow::io::ndjson;
 use jsonpath_lib::PathCompiled;
 use serde_json::Value;
 
@@ -49,7 +48,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             .apply_on_opt(|opt_s| opt_s.and_then(|s| extract_json(&pat, s))))
     }
 
-    /// Returns the infered DataType for JSON values for each row
+    /// Returns the inferred DataType for JSON values for each row
     /// in the Utf8Chunked, with an optional number of rows to inspect.
     /// When None is passed for the number of rows, all rows are inspected.
     fn json_infer(&self, number_of_rows: Option<usize>) -> PolarsResult<DataType> {
@@ -59,22 +58,33 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             .map(|x| x.unwrap_or("null"))
             .take(number_of_rows.unwrap_or(ca.len()));
 
-        ndjson::read::infer_iter(values_iter)
+        polars_json::ndjson::infer_iter(values_iter)
             .map(|d| DataType::from(&d))
             .map_err(|e| polars_err!(ComputeError: "error inferring JSON: {}", e))
     }
 
     /// Extracts a typed-JSON value for each row in the Utf8Chunked
-    fn json_extract(&self, dtype: Option<DataType>) -> PolarsResult<Series> {
+    fn json_extract(
+        &self,
+        dtype: Option<DataType>,
+        infer_schema_len: Option<usize>,
+    ) -> PolarsResult<Series> {
         let ca = self.as_utf8();
         let dtype = match dtype {
             Some(dt) => dt,
-            None => ca.json_infer(None)?,
+            None => ca.json_infer(infer_schema_len)?,
         };
 
+        let buf_size = ca.get_values_size() + ca.null_count() * "null".len();
         let iter = ca.into_iter().map(|x| x.unwrap_or("null"));
-        let array = ndjson::read::deserialize_iter(iter, dtype.to_arrow())
-            .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
+
+        let array = polars_json::ndjson::deserialize::deserialize_iter(
+            iter,
+            dtype.to_arrow(),
+            buf_size,
+            ca.len(),
+        )
+        .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
         Series::try_from(("", array))
     }
 
@@ -86,9 +96,14 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             .apply_on_opt(|opt_s| opt_s.and_then(|s| select_json(&pat, s))))
     }
 
-    fn json_path_extract(&self, json_path: &str, dtype: Option<DataType>) -> PolarsResult<Series> {
+    fn json_path_extract(
+        &self,
+        json_path: &str,
+        dtype: Option<DataType>,
+        infer_schema_len: Option<usize>,
+    ) -> PolarsResult<Series> {
         let selected_json = self.as_utf8().json_path_select(json_path)?;
-        selected_json.json_extract(dtype)
+        selected_json.json_extract(dtype, infer_schema_len)
     }
 }
 
@@ -172,11 +187,11 @@ mod tests {
         let expected_dtype = expected_series.dtype().clone();
 
         assert!(ca
-            .json_extract(None)
+            .json_extract(None, None)
             .unwrap()
             .series_equal_missing(&expected_series));
         assert!(ca
-            .json_extract(Some(expected_dtype))
+            .json_extract(Some(expected_dtype), None)
             .unwrap()
             .series_equal_missing(&expected_series));
     }
@@ -247,7 +262,7 @@ mod tests {
         );
 
         assert!(ca
-            .json_path_extract("$.b[:].c", None)
+            .json_path_extract("$.b[:].c", None, None)
             .unwrap()
             .into_series()
             .series_equal_missing(&c_series));

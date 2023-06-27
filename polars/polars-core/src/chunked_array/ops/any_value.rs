@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 
@@ -32,7 +30,6 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             arr.value_unchecked(idx)
         }};
     }
-    // TODO: insert types
     match dtype {
         DataType::Utf8 => downcast_and_pack!(LargeStringArray, Utf8),
         DataType::Binary => downcast_and_pack!(LargeBinaryArray, Binary),
@@ -49,24 +46,28 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray);
-            let mut s = Series::try_from(("", v)).unwrap();
-
-            match &**dt {
-                #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(Some(rev_map)) => {
-                    let cats = s.u32().unwrap().clone();
-                    let out =
-                        CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.clone());
-                    s = out.into_series();
-                }
-                DataType::Date
-                | DataType::Datetime(_, _)
-                | DataType::Time
-                | DataType::Duration(_) => s = s.cast(dt).unwrap(),
-                _ => {}
+            if dt.is_primitive() {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], dt);
+                AnyValue::List(s)
+            } else {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], &dt.to_physical())
+                    .cast_unchecked(dt)
+                    .unwrap();
+                AnyValue::List(s)
             }
-
-            AnyValue::List(s)
+        }
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(dt, width) => {
+            let v: ArrayRef = downcast!(FixedSizeListArray);
+            if dt.is_primitive() {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], dt);
+                AnyValue::Array(s, *width)
+            } else {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], &dt.to_physical())
+                    .cast_unchecked(dt)
+                    .unwrap();
+                AnyValue::Array(s, *width)
+            }
         }
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(rev_map) => {
@@ -242,6 +243,18 @@ impl ChunkAnyValue for BinaryChunked {
 }
 
 impl ChunkAnyValue for ListChunked {
+    #[inline]
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+        get_any_value_unchecked!(self, index)
+    }
+
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+        get_any_value!(self, index)
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ChunkAnyValue for ArrayChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)

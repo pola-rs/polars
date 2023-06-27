@@ -11,22 +11,29 @@ from polars.datatypes import (
     NUMERIC_DTYPES,
     Date,
     Datetime,
+    Float64,
+    List,
+    Object,
+    Struct,
     Time,
 )
+from polars.dependencies import json
 from polars.exceptions import DuplicateError
 
 if TYPE_CHECKING:
     import sys
 
     from xlsxwriter import Workbook
+    from xlsxwriter.format import Format
     from xlsxwriter.worksheet import Worksheet
 
-    from polars.dataframe import DataFrame
+    from polars import DataFrame, Series
     from polars.type_aliases import (
         ColumnTotalsDefinition,
         ConditionalFormatDict,
         OneOrMoreDataTypes,
         PolarsDataType,
+        RowTotalsDefinition,
     )
 
     if sys.version_info >= (3, 8):
@@ -39,7 +46,7 @@ def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:
     return zip(*[iter(iterable)] * n)
 
 
-_XL_DEFAULT_FLOAT_FORMAT_ = "#,##0.{zeros};[Red]-#,##0.{zeros}"
+_XL_DEFAULT_FLOAT_FORMAT_ = "#,##0.000;[Red]-#,##0.000"
 _XL_DEFAULT_INTEGER_FORMAT_ = "#,##0;[Red]-#,##0"
 _XL_DEFAULT_DTYPE_FORMATS_: dict[PolarsDataType, str] = {
     Datetime: "yyyy-mm-dd hh:mm:ss",
@@ -50,10 +57,36 @@ for tp in INTEGER_DTYPES:
     _XL_DEFAULT_DTYPE_FORMATS_[tp] = _XL_DEFAULT_INTEGER_FORMAT_
 
 
-def _adjacent_cols(df: DataFrame, cols: Iterable[str]) -> bool:
+class _XLFormatCache:
+    """Create/cache only one Format object per distinct set of format options."""
+
+    def __init__(self, wb: Workbook):
+        self._cache: dict[str, Format] = {}
+        self.wb = wb
+
+    @staticmethod
+    def _key(fmt: dict[str, Any]) -> str:
+        return json.dumps(fmt, sort_keys=True, default=str)
+
+    def get(self, fmt: dict[str, Any]) -> Format:
+        key = self._key(fmt)
+        wbfmt = self._cache.get(key)
+        if wbfmt is None:
+            wbfmt = self.wb.add_format(fmt)
+            self._cache[key] = wbfmt
+        return wbfmt
+
+
+def _adjacent_cols(df: DataFrame, cols: Iterable[str], min_max: dict[str, Any]) -> bool:
     """Indicate if the given columns are all adjacent to one another."""
     idxs = sorted(df.find_idx_by_name(col) for col in cols)
-    return idxs == sorted(range(min(idxs), max(idxs) + 1))
+    if idxs != sorted(range(min(idxs), max(idxs) + 1)):
+        return False
+    else:
+        columns = df.columns
+        min_max["min"] = {"idx": idxs[0], "name": columns[idxs[0]]}
+        min_max["max"] = {"idx": idxs[-1], "name": columns[idxs[-1]]}
+        return True
 
 
 def _unpack_multi_column_dict(
@@ -73,18 +106,18 @@ def _unpack_multi_column_dict(
 
 def _xl_apply_conditional_formats(
     df: DataFrame,
-    workbook: Workbook,
-    worksheet: Worksheet,
+    ws: Worksheet,
     conditional_formats: ConditionalFormatDict,
     table_start: tuple[int, int],
     has_header: bool,
+    format_cache: _XLFormatCache,
 ) -> None:
     """Take all conditional formatting options and apply them to the table/range."""
     from xlsxwriter.format import Format
 
     for cols, formats in conditional_formats.items():
         if not isinstance(cols, str) and len(cols) == 1:
-            cols = cols[0]
+            cols = list(cols)[0]
         if isinstance(formats, (str, dict)):
             formats = [formats]
 
@@ -96,7 +129,7 @@ def _xl_apply_conditional_formats(
             else:
                 col_range = _xl_column_multi_range(df, table_start, cols, has_header)
                 if " " in col_range:
-                    col = cols[0]
+                    col = list(cols)[0]
                     fmt["multi_range"] = col_range
                     col_range = _xl_column_range(df, table_start, col, has_header)
 
@@ -105,11 +138,11 @@ def _xl_apply_conditional_formats(
                 fmt["format"] = (
                     f  # already registered
                     if isinstance(f, Format)
-                    else workbook.add_format(
+                    else format_cache.get(
                         {"num_format": f} if isinstance(f, str) else f
                     )
                 )
-            worksheet.conditional_format(col_range, fmt)
+            ws.conditional_format(col_range, fmt)
 
 
 @overload
@@ -163,20 +196,21 @@ def _xl_column_multi_range(
     has_header: bool,
 ) -> str:
     """Return column ranges as an xlsxwriter 'multi_range' string, or spanning range."""
-    if _adjacent_cols(df, cols):
-        col_idxs = sorted(df.find_idx_by_name(c) for c in cols)
+    m: dict[str, Any] = {}
+    if _adjacent_cols(df, cols, min_max=m):
         return _xl_column_range(
-            df, table_start, (col_idxs[0], col_idxs[-1]), has_header
+            df, table_start, (m["min"]["idx"], m["max"]["idx"]), has_header
         )
     return " ".join(_xl_column_range(df, table_start, col, has_header) for col in cols)
 
 
 def _xl_inject_dummy_table_columns(
-    df: DataFrame, options: dict[str, Sequence[str] | dict[str, Any]]
+    df: DataFrame, options: dict[str, Any], dtype: PolarsDataType | None = None
 ) -> DataFrame:
     """Insert dummy frame columns in order to create empty/named table columns."""
     df_original_columns = set(df.columns)
     df_select_cols = df.columns.copy()
+    cast_lookup = {}
 
     for col, definition in options.items():
         if col in df_original_columns:
@@ -184,8 +218,10 @@ def _xl_inject_dummy_table_columns(
         elif not isinstance(definition, dict):
             df_select_cols.append(col)
         else:
-            insert_after = definition.get("insert_after")
+            cast_lookup[col] = definition.get("return_dtype")
             insert_before = definition.get("insert_before")
+            insert_after = definition.get("insert_after")
+
             if insert_after is None and insert_before is None:
                 df_select_cols.append(col)
             else:
@@ -198,7 +234,17 @@ def _xl_inject_dummy_table_columns(
 
     df = df.select(
         [
-            (col if col in df_original_columns else F.lit(None).alias(col))
+            (
+                col
+                if col in df_original_columns
+                else (
+                    F.lit(None).cast(
+                        cast_lookup.get(col, dtype)  # type:ignore[arg-type]
+                    )
+                    if dtype or (col in cast_lookup and cast_lookup[col] is not None)
+                    else F.lit(None)
+                ).alias(col)
+            )
             for col in df_select_cols
         ]
     )
@@ -216,18 +262,18 @@ def _xl_inject_sparklines(
     """Inject sparklines into (previously-created) empty table columns."""
     from xlsxwriter.utility import xl_rowcol_to_cell
 
+    m: dict[str, Any] = {}
     data_cols = params.get("columns") if isinstance(params, dict) else params
     if not data_cols:
         raise ValueError("Supplying 'columns' param value is mandatory for sparklines")
-    if not _adjacent_cols(df, data_cols):
+    elif not _adjacent_cols(df, data_cols, min_max=m):
         raise RuntimeError("sparkline data range/cols must all be adjacent")
 
     spk_row, spk_col, _, _ = _xl_column_range(
         df, table_start, col, has_header, as_range=False
     )
-    data_idxs = sorted(df.find_idx_by_name(col) for col in data_cols)
-    data_start_col = table_start[1] + data_idxs[0]
-    data_end_col = table_start[1] + data_idxs[-1]
+    data_start_col = table_start[1] + m["min"]["idx"]
+    data_end_col = table_start[1] + m["max"]["idx"]
 
     if not isinstance(params, dict):
         options = {}
@@ -259,39 +305,98 @@ def _xl_rowcols_to_range(*row_col_pairs: int) -> list[str]:
 
 def _xl_setup_table_columns(
     df: DataFrame,
-    wb: Workbook,
+    format_cache: _XLFormatCache,
     column_totals: ColumnTotalsDefinition | None = None,
-    column_formats: dict[str | tuple[str, ...], str] | None = None,
+    column_formats: dict[str | tuple[str, ...], str | dict[str, str]] | None = None,
     dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
     sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
+    formulas: dict[str, str | dict[str, str]] | None = None,
+    row_totals: RowTotalsDefinition | None = None,
     float_precision: int = 3,
-) -> tuple[list[dict[str, Any]], DataFrame]:
+) -> tuple[list[dict[str, Any]], dict[str | tuple[str, ...], str], DataFrame]:
     """Setup and unify all column-related formatting/defaults."""
+
+    # no excel support for compound types; cast to their simple string representation
+    def _map_str(s: Series) -> Series:
+        return s.__class__(s.name, [str(v) for v in s.to_list()])
+
+    cast_cols = [
+        F.col(col).map(_map_str).alias(col)
+        for col, tp in df.schema.items()
+        if tp in (List, Struct, Object)
+    ]
+    if cast_cols:
+        df = df.with_columns(cast_cols)
+
     column_totals = _unpack_multi_column_dict(column_totals)  # type: ignore[assignment]
     column_formats = _unpack_multi_column_dict(column_formats)  # type: ignore[assignment]
 
-    total_funcs = (
+    # normalise column totals
+    column_total_funcs = (
         {col: "sum" for col in column_totals}
         if isinstance(column_totals, Sequence)
         else (column_totals.copy() if isinstance(column_totals, dict) else {})
     )
+
+    # normalise row totals
+    if not row_totals:
+        row_total_funcs = {}
+    else:
+        numeric_cols = {
+            col for col, tp in df.schema.items() if tp.base_type() in NUMERIC_DTYPES
+        }
+        if not isinstance(row_totals, dict):
+            sum_cols = (
+                numeric_cols
+                if row_totals is True
+                else ({row_totals} if isinstance(row_totals, str) else set(row_totals))
+            )
+            n_ucase = sum((c[0] if c else "").isupper() for c in df.columns)
+            total = f"{'T' if (n_ucase > len(df.columns) // 2) else 't'}otal"
+            row_total_funcs = {total: _xl_table_formula(df, sum_cols, "sum")}
+        else:
+            row_total_funcs = {
+                name: _xl_table_formula(
+                    df, numeric_cols if cols is True else cols, "sum"
+                )
+                for name, cols in row_totals.items()
+            }
+
+    # normalise formulas
+    column_formulas = {
+        col: {"formula": options} if isinstance(options, str) else options
+        for col, options in (formulas or {}).items()
+    }
+
+    # normalise formats
     column_formats = (column_formats or {}).copy()
     dtype_formats = (dtype_formats or {}).copy()
-    for tp, _fmt in list(dtype_formats.items()):
+    for tp in list(dtype_formats):
         if isinstance(tp, (tuple, frozenset)):
             dtype_formats.update(dict.fromkeys(tp, dtype_formats.pop(tp)))
+    for fmt in dtype_formats.values():
+        if not isinstance(fmt, str):
+            raise TypeError(
+                f"Invalid dtype_format value: {fmt!r} (expected format string, got {type(fmt)})"
+            )
 
-    # inject sparkline placeholder(s)
+    # inject sparkline/row-total placeholder(s)
     if sparklines:
         df = _xl_inject_dummy_table_columns(df, sparklines)
+    if column_formulas:
+        df = _xl_inject_dummy_table_columns(df, column_formulas)
+    if row_totals:
+        df = _xl_inject_dummy_table_columns(df, row_total_funcs, dtype=Float64)
 
-    # default float/fallback format
-    fmt_default = wb.add_format({"valign": "vcenter"})
+    # seed format cache with default fallback format
+    fmt_default = format_cache.get({"valign": "vcenter"})
+
+    # default float format
     zeros = "0" * float_precision
     fmt_float = (
         _XL_DEFAULT_INTEGER_FORMAT_
         if not zeros
-        else _XL_DEFAULT_FLOAT_FORMAT_.format(zeros=zeros)
+        else _XL_DEFAULT_FLOAT_FORMAT_.replace(".000", f".{zeros}")
     )
 
     # assign default dtype formats
@@ -310,12 +415,16 @@ def _xl_setup_table_columns(
             column_formats.setdefault(col, fmt)
         if base_type in NUMERIC_DTYPES:
             if column_totals is True:
-                total_funcs.setdefault(col, "sum")  # type: ignore[attr-defined]
+                column_total_funcs.setdefault(col, "sum")
+            elif isinstance(column_totals, str):
+                column_total_funcs.setdefault(col, column_totals.lower())
+        if col not in column_formats:
+            column_formats[col] = fmt_default
 
     # ensure externally supplied formats are made available
     for col, fmt in column_formats.items():  # type: ignore[assignment]
         if isinstance(fmt, str):
-            column_formats[col] = wb.add_format(
+            column_formats[col] = format_cache.get(
                 {"num_format": fmt, "valign": "vcenter"}
             )
         elif isinstance(fmt, dict):
@@ -325,18 +434,26 @@ def _xl_setup_table_columns(
                     fmt["num_format"] = dtype_formats[tp]
             if "valign" not in fmt:
                 fmt["valign"] = "vcenter"
-            column_formats[col] = wb.add_format(fmt)
+            column_formats[col] = format_cache.get(fmt)
 
     # assemble table columns
     table_columns = [
         {
-            "header": col,
-            "format": column_formats.get(col, fmt_default),
-            "total_function": total_funcs.get(col),  # type: ignore[attr-defined]
+            k: v
+            for k, v in {
+                "header": col,
+                "format": column_formats[col],
+                "total_function": column_total_funcs.get(col),
+                "formula": (
+                    row_total_funcs.get(col)
+                    or column_formulas.get(col, {}).get("formula")
+                ),
+            }.items()
+            if v is not None
         }
         for col in df.columns
     ]
-    return table_columns, df
+    return table_columns, column_formats, df  # type: ignore[return-value]
 
 
 def _xl_setup_table_options(
@@ -395,9 +512,21 @@ def _xl_setup_workbook(
     return wb, ws, can_close
 
 
+def _xl_table_formula(df: DataFrame, cols: Iterable[str], func: str) -> str:
+    """Return a formula using structured references to columns in a named table."""
+    m: dict[str, Any] = {}
+    if isinstance(cols, str):
+        cols = [cols]
+    if _adjacent_cols(df, cols, min_max=m):
+        return f"={func.upper()}([@[{m['min']['name']}]:[{m['max']['name']}]])"
+    else:
+        colrefs = ",".join(f"[@[{c}]]" for c in cols)
+        return f"={func.upper()}({colrefs})"
+
+
 def _xl_unique_table_name(wb: Workbook) -> str:
     """Establish a unique (per-workbook) table object name."""
-    table_prefix = "PolarsFrameTable"
+    table_prefix = "Frame"
     polars_tables: set[str] = set()
     for ws in wb.worksheets():
         polars_tables.update(

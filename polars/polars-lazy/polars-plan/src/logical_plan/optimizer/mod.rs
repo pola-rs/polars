@@ -8,14 +8,13 @@ mod cache_states;
 mod cse;
 mod delay_rechunk;
 mod drop_nulls;
+
 mod fast_projection;
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv-file",
-    feature = "cse"
-))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
 pub(crate) mod file_caching;
+mod flatten_union;
+#[cfg(feature = "fused")]
+mod fused;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod simplify_expr;
@@ -27,7 +26,7 @@ mod type_coercion;
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
 use fast_projection::FastProjectionAndCollapse;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 use file_caching::{find_column_union_and_fingerprints, FileCacher};
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
@@ -36,6 +35,7 @@ use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
 pub use type_coercion::TypeCoercionRule;
 
+use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
 
 pub trait Optimize {
@@ -93,6 +93,8 @@ pub fn optimize(
     // we do simplification
     if simplify_expr {
         rules.push(Box::new(SimplifyExprRule {}));
+        #[cfg(feature = "fused")]
+        rules.push(Box::new(fused::FusedArithmetic {}));
     }
 
     // should be run before predicate pushdown
@@ -142,12 +144,7 @@ pub fn optimize(
     // make sure that we do that once slice pushdown
     // and predicate pushdown are done. At that moment
     // the file fingerprints are finished.
-    #[cfg(any(
-        feature = "cse",
-        feature = "parquet",
-        feature = "ipc",
-        feature = "csv-file"
-    ))]
+    #[cfg(any(feature = "cse", feature = "parquet", feature = "ipc", feature = "csv"))]
     if agg_scan_projection || cse_changed {
         // we do this so that expressions are simplified created by the pushdown optimizations
         // we must clean up the predicates, because the agg_scan_projection
@@ -176,6 +173,7 @@ pub fn optimize(
     }
 
     rules.push(Box::new(ReplaceDropNulls {}));
+    rules.push(Box::new(FlattenUnionRule {}));
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 

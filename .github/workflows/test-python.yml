@@ -6,10 +6,20 @@ on:
       - py-polars/**
       - polars/**
       - .github/workflows/test-python.yml
+  push:
+    branches:
+      - main
+    paths:
+      - polars/**
+      - py-polars/**
+      - .github/workflows/test-python.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
 
 defaults:
   run:
@@ -30,18 +40,14 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-          cache-dependency-path: 'py-polars/requirements-dev.txt'
 
       - name: Create virtual environment
         run: |
-          python -m venv venv
-          echo "$GITHUB_WORKSPACE/py-polars/venv/bin" >> $GITHUB_PATH
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.txt
 
       - name: Set up Rust
         run: rustup show
@@ -50,21 +56,23 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: py-polars
+          save-if: ${{ github.ref_name == 'main' }}
 
       - name: Install Polars
-        env:
-          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: |
           source activate
           maturin develop
 
       - name: Run tests and report coverage
+        if: github.ref_name != 'main'
         run: pytest --cov -n auto --dist worksteal -m "not benchmark"
 
       - name: Run doctests
+        if: github.ref_name != 'main'
         run: python tests/docs/run_doctest.py
 
       - name: Check import without optional dependencies
+        if: github.ref_name != 'main'
         run: |
           declare -a deps=("pandas"
           "pyarrow"
@@ -96,13 +104,9 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: py-polars/requirements-dev.txt
 
       - name: Install Python dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.txt
 
       - name: Set up Rust
         run: rustup show
@@ -111,19 +115,20 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: py-polars
+          save-if: ${{ github.ref_name == 'main' }}
 
       - name: Install Polars
         shell: bash
-        env:
-          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: |
           maturin build
           pip install target/wheels/polars-*.whl
 
       - name: Run tests
+        if: github.ref_name != 'main'
         run: pytest -n auto --dist worksteal -m "not benchmark"
 
       - name: Check import without optional dependencies
+        if: github.ref_name != 'main'
         run: |
           pip uninstall pandas -y
           python -c 'import polars'

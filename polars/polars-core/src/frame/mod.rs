@@ -26,20 +26,21 @@ pub mod groupby;
 pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
+mod top_k;
 mod upstream_traits;
+
 pub use chunks::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
 use crate::frame::groupby::GroupsIndicator;
-#[cfg(feature = "sort_multiple")]
-use crate::prelude::sort::argsort_multiple_row_fmt;
-#[cfg(feature = "sort_multiple")]
-use crate::prelude::sort::prepare_arg_sort;
-use crate::series::IsSorted;
 #[cfg(feature = "row_hash")]
-use crate::vector_hasher::df_rows_to_hashes_threaded;
+use crate::hashing::df_rows_to_hashes_threaded_vertical;
+#[cfg(feature = "zip_with")]
+use crate::prelude::min_max_binary::min_max_binary_series;
+use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
+use crate::series::IsSorted;
 use crate::POOL;
 
 #[derive(Copy, Clone, Debug)]
@@ -52,12 +53,15 @@ pub enum NullStrategy {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UniqueKeepStrategy {
     /// Keep the first unique row.
-    #[default]
     First,
     /// Keep the last unique row.
     Last,
     /// Keep None of the unique rows.
     None,
+    /// Keep any of the unique rows
+    /// This allows more optimizations
+    #[default]
+    Any,
 }
 
 /// A contiguous growable collection of `Series` that have the same length.
@@ -135,7 +139,6 @@ pub enum UniqueKeepStrategy {
 /// # Ok::<(), PolarsError>(())
 /// ```
 #[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DataFrame {
     pub(crate) columns: Vec<Series>,
 }
@@ -447,13 +450,13 @@ impl DataFrame {
 
     /// Returns true if the chunks of the columns do not align and re-chunking should be done
     pub fn should_rechunk(&self) -> bool {
-        let mut chunk_lenghts = self.columns.iter().map(|s| s.chunk_lengths());
-        match chunk_lenghts.next() {
+        let mut chunk_lengths = self.columns.iter().map(|s| s.chunk_lengths());
+        match chunk_lengths.next() {
             None => false,
             Some(first_column_chunk_lengths) => {
                 // Fast Path for single Chunk Series
                 if first_column_chunk_lengths.len() == 1 {
-                    return chunk_lenghts.any(|cl| cl.len() != 1);
+                    return chunk_lengths.any(|cl| cl.len() != 1);
                 }
                 // Always rechunk if we have more chunks than rows.
                 // except when we have an empty df containing a single chunk
@@ -464,7 +467,7 @@ impl DataFrame {
                 }
                 // Slow Path for multi Chunk series
                 let v: Vec<_> = first_column_chunk_lengths.collect();
-                for cl in chunk_lenghts {
+                for cl in chunk_lengths {
                     if cl.enumerate().any(|(idx, el)| Some(&el) != v.get(idx)) {
                         return true;
                     }
@@ -475,7 +478,7 @@ impl DataFrame {
     }
 
     /// Ensure all the chunks in the DataFrame are aligned.
-    pub fn rechunk(&mut self) -> &mut Self {
+    pub fn align_chunks(&mut self) -> &mut Self {
         if self.should_rechunk() {
             self.as_single_chunk_par()
         } else {
@@ -494,13 +497,13 @@ impl DataFrame {
     ///
     /// let f1: Field = Field::new("Thing", DataType::Utf8);
     /// let f2: Field = Field::new("Diameter (m)", DataType::Float64);
-    /// let sc: Schema = Schema::from(vec![f1, f2].into_iter());
+    /// let sc: Schema = Schema::from_iter(vec![f1, f2]);
     ///
     /// assert_eq!(df.schema(), sc);
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> Schema {
-        Schema::from(self.iter().map(|s| s.field().into_owned()))
+        self.iter().map(|s| s.field().into_owned()).collect()
     }
 
     /// Get a reference to the `DataFrame` columns.
@@ -522,7 +525,6 @@ impl DataFrame {
         &self.columns
     }
 
-    #[cfg(feature = "private")]
     #[inline]
     /// Get mutable access to the underlying columns.
     /// # Safety
@@ -816,7 +818,7 @@ impl DataFrame {
 
     /// Concatenate a `DataFrame` to this `DataFrame` and return as newly allocated `DataFrame`.
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::rechunk`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
     ///
     /// # Example
     ///
@@ -862,7 +864,7 @@ impl DataFrame {
 
     /// Concatenate a DataFrame to this DataFrame
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::rechunk`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
     ///
     /// # Example
     ///
@@ -917,7 +919,7 @@ impl DataFrame {
             .zip(other.columns.iter())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(left, right)?;
-                left.append(right).expect("should not fail");
+                left.append(right)?;
                 Ok(())
             })?;
         Ok(self)
@@ -946,7 +948,7 @@ impl DataFrame {
     ///
     /// Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
     /// when you read in multiple files and when to store them in a single `DataFrame`. In the latter case, finish the sequence
-    /// of `append` operations with a [`rechunk`](Self::rechunk).
+    /// of `append` operations with a [`rechunk`](Self::align_chunks).
     pub fn extend(&mut self, other: &DataFrame) -> PolarsResult<()> {
         polars_ensure!(
             self.width() == other.width(),
@@ -1426,6 +1428,63 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(selected))
     }
 
+    /// Select with a known schema.
+    pub fn select_with_schema<I, S>(&self, selection: I, schema: &SchemaRef) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let cols = selection
+            .into_iter()
+            .map(|s| SmartString::from(s.as_ref()))
+            .collect::<Vec<_>>();
+        self.select_with_schema_impl(&cols, schema, true)
+    }
+
+    /// Select with a known schema. This doesn't check for duplicates.
+    pub fn select_with_schema_unchecked<I, S>(
+        &self,
+        selection: I,
+        schema: &Schema,
+    ) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let cols = selection
+            .into_iter()
+            .map(|s| SmartString::from(s.as_ref()))
+            .collect::<Vec<_>>();
+        self.select_with_schema_impl(&cols, schema, false)
+    }
+
+    fn select_with_schema_impl(
+        &self,
+        cols: &[SmartString],
+        schema: &Schema,
+        check_duplicates: bool,
+    ) -> PolarsResult<Self> {
+        if check_duplicates {
+            self.select_check_duplicates(cols)?;
+        }
+        let selected = self.select_series_impl_with_schema(cols, schema)?;
+        Ok(DataFrame::new_no_checks(selected))
+    }
+
+    /// A non generic implementation to reduce compiler bloat.
+    fn select_series_impl_with_schema(
+        &self,
+        cols: &[SmartString],
+        schema: &Schema,
+    ) -> PolarsResult<Vec<Series>> {
+        cols.iter()
+            .map(|name| {
+                let index = schema.try_get_full(name)?.0;
+                Ok(self.columns[index].clone())
+            })
+            .collect()
+    }
+
     pub fn select_physical<I, S>(&self, selection: I) -> PolarsResult<Self>
     where
         I: IntoIterator<Item = S>,
@@ -1783,7 +1842,6 @@ impl DataFrame {
     }
 
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
-    #[cfg(feature = "private")]
     pub fn sort_impl(
         &self,
         by_column: Vec<Series>,
@@ -1792,12 +1850,6 @@ impl DataFrame {
         slice: Option<(i64, usize)>,
         parallel: bool,
     ) -> PolarsResult<Self> {
-        if self.height() == 0 {
-            return Ok(self.clone());
-        }
-        // a lot of indirection in both sorting and take
-        let mut df = self.clone();
-        let df = df.as_single_chunk_par();
         // note that the by_column argument also contains evaluated expression from polars-lazy
         // that may not even be present in this dataframe.
 
@@ -1805,8 +1857,47 @@ impl DataFrame {
         // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
         let first_descending = descending[0];
         let first_by_column = by_column[0].name().to_string();
-        let mut take = match by_column.len() {
-            1 => {
+
+        let set_sorted = |df: &mut DataFrame| {
+            // Mark the first sort column as sorted
+            // if the column did not exists it is ok, because we sorted by an expression
+            // not present in the dataframe
+            let _ = df.apply(&first_by_column, |s| {
+                let mut s = s.clone();
+                if first_descending {
+                    s.set_sorted_flag(IsSorted::Descending)
+                } else {
+                    s.set_sorted_flag(IsSorted::Ascending)
+                }
+                s
+            });
+        };
+
+        if self.height() == 0 {
+            let mut out = self.clone();
+            set_sorted(&mut out);
+
+            return Ok(out);
+        }
+
+        if let Some((0, k)) = slice {
+            return self.top_k_impl(k, descending, by_column, nulls_last);
+        }
+
+        #[cfg(feature = "dtype-struct")]
+        let has_struct = by_column
+            .iter()
+            .any(|s| matches!(s.dtype(), DataType::Struct(_)));
+
+        #[cfg(not(feature = "dtype-struct"))]
+        #[allow(non_upper_case_globals)]
+        const has_struct: bool = false;
+
+        // a lot of indirection in both sorting and take
+        let mut df = self.clone();
+        let df = df.as_single_chunk_par();
+        let mut take = match (by_column.len(), has_struct) {
+            (1, false) => {
                 let s = &by_column[0];
                 let options = SortOptions {
                     descending: descending[0],
@@ -1827,19 +1918,16 @@ impl DataFrame {
                 s.arg_sort(options)
             }
             _ => {
-                #[cfg(feature = "sort_multiple")]
-                {
-                    if nulls_last || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
-                        argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
-                    } else {
-                        let (first, by_column, descending) =
-                            prepare_arg_sort(by_column, descending)?;
-                        first.arg_sort_multiple(&by_column, &descending)?
-                    }
-                }
-                #[cfg(not(feature = "sort_multiple"))]
-                {
-                    panic!("activate `sort_multiple` feature gate to enable this functionality");
+                if nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
+                    argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
+                } else {
+                    let (first, other, descending) = prepare_arg_sort(by_column, descending)?;
+                    let options = SortMultipleOptions {
+                        other,
+                        descending,
+                        multithreaded: parallel,
+                    };
+                    first.arg_sort_multiple(&options)?
                 }
             }
         };
@@ -1851,18 +1939,7 @@ impl DataFrame {
         // Safety:
         // the created indices are in bounds
         let mut df = unsafe { df.take_unchecked_impl(&take, parallel) };
-        // Mark the first sort column as sorted
-        // if the column did not exists it is ok, because we sorted by an expression
-        // not present in the dataframe
-        let _ = df.apply(&first_by_column, |s| {
-            let mut s = s.clone();
-            if first_descending {
-                s.set_sorted_flag(IsSorted::Descending)
-            } else {
-                s.set_sorted_flag(IsSorted::Ascending)
-            }
-            s
-        });
+        set_sorted(&mut df);
         Ok(df)
     }
 
@@ -2776,10 +2853,7 @@ impl DataFrame {
     /// Aggregate the column horizontally to their min values.
     #[cfg(feature = "zip_with")]
     pub fn hmin(&self) -> PolarsResult<Option<Series>> {
-        let min_fn = |acc: &Series, s: &Series| {
-            let mask = acc.lt(s)? & acc.is_not_null() | s.is_null();
-            acc.zip_with(&mask, s)
-        };
+        let min_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, true);
 
         match self.columns.len() {
             0 => Ok(None),
@@ -2805,10 +2879,7 @@ impl DataFrame {
     /// Aggregate the column horizontally to their max values.
     #[cfg(feature = "zip_with")]
     pub fn hmax(&self) -> PolarsResult<Option<Series>> {
-        let max_fn = |acc: &Series, s: &Series| {
-            let mask = acc.gt(s)? & acc.is_not_null() | s.is_null();
-            acc.zip_with(&mask, s)
-        };
+        let max_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, false);
 
         match self.columns.len() {
             0 => Ok(None),
@@ -3006,19 +3077,22 @@ impl DataFrame {
             Some(s) => s.iter().map(|s| &**s).collect(),
             None => self.get_column_names(),
         };
+        let mut df = self.clone();
+        // take on multiple chunks is terrible
+        df.as_single_chunk_par();
 
         let columns = match (keep, maintain_order) {
-            (UniqueKeepStrategy::First, true) => {
-                let gb = self.groupby_stable(names)?;
+            (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, true) => {
+                let gb = df.groupby_stable(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                self.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
+                df.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             }
             (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
                 // are sorted by the first value
-                let gb = self.groupby(names)?;
+                let gb = df.groupby(names)?;
                 let groups = gb.get_groups();
 
                 let func = |g: GroupsIndicator| match g {
@@ -3035,30 +3109,30 @@ impl DataFrame {
                 };
 
                 let last_idx = last_idx.sort(false);
-                return Ok(unsafe { self.take_unchecked(&last_idx) });
+                return Ok(unsafe { df.take_unchecked(&last_idx) });
             }
-            (UniqueKeepStrategy::First, false) => {
-                let gb = self.groupby(names)?;
+            (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
+                let gb = df.groupby(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                self.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
+                df.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             }
             (UniqueKeepStrategy::Last, false) => {
-                let gb = self.groupby(names)?;
+                let gb = df.groupby(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                self.apply_columns_par(&|s| unsafe { s.agg_last(&groups) })
+                df.apply_columns_par(&|s| unsafe { s.agg_last(&groups) })
             }
             (UniqueKeepStrategy::None, _) => {
-                let df_part = self.select(names)?;
+                let df_part = df.select(names)?;
                 let mask = df_part.is_unique()?;
                 let mask = match slice {
                     None => mask,
                     Some((offset, len)) => mask.slice(offset, len),
                 };
-                return self.filter(&mask);
+                return df.filter(&mask);
             }
         };
         Ok(DataFrame::new_no_checks(columns))
@@ -3130,7 +3204,7 @@ impl DataFrame {
         hasher_builder: Option<ahash::RandomState>,
     ) -> PolarsResult<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads())?;
-        let (cas, _) = df_rows_to_hashes_threaded(&dfs, hasher_builder)?;
+        let (cas, _) = df_rows_to_hashes_threaded_vertical(&dfs, hasher_builder)?;
 
         let mut iter = cas.into_iter();
         let mut acc_ca = iter.next().unwrap();
@@ -3150,7 +3224,7 @@ impl DataFrame {
 
     #[cfg(feature = "chunked_ids")]
     #[doc(hidden)]
-    //// Take elements by a slice of [`ChunkId`]s.
+    /// Take elements by a slice of [`ChunkId`]s.
     /// # Safety
     /// Does not do any bound checks.
     /// `sorted` indicates if the chunks are sorted.
@@ -3161,7 +3235,7 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
     #[cfg(feature = "chunked_ids")]
-    //// Take elements by a slice of optional [`ChunkId`]s.
+    /// Take elements by a slice of optional [`ChunkId`]s.
     /// # Safety
     /// Does not do any bound checks.
     #[doc(hidden)]

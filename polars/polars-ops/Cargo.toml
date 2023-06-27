@@ -10,19 +10,23 @@ description = "More operations on polars data structures"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
 arrow.workspace = true
 base64 = { version = "0.21", optional = true }
+either.workspace = true
 hex = { version = "0.4", optional = true }
 jsonpath_lib = { version = "0.3.0", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 memchr.workspace = true
-polars-arrow = { version = "0.27.2", path = "../polars-arrow", default-features = false }
-polars-core = { version = "0.27.2", path = "../polars-core", features = ["private"], default-features = false }
-polars-utils = { version = "0.27.2", path = "../polars-utils", default-features = false }
+polars-arrow = { version = "0.30.0", path = "../polars-arrow", default-features = false }
+polars-core = { version = "0.30.0", path = "../polars-core", features = [], default-features = false }
+polars-json = { version = "0.30.0", optional = true, path = "../polars-json", default-features = false }
+polars-utils = { version = "0.30.0", path = "../polars-utils", default-features = false }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 smartstring.workspace = true
 
 [features]
+simd = ["argminmax/nightly_simd"]
 nightly = ["polars-utils/nightly"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]
@@ -34,14 +38,17 @@ dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
+dtype-array = ["polars-core/dtype-array"]
 dtype-decimal = ["polars-core/dtype-decimal"]
 object = ["polars-core/object"]
 propagate_nans = []
-performant = ["polars-core/performant"]
+performant = ["polars-core/performant", "fused"]
 big_idx = ["polars-core/bigidx"]
 round_series = []
 is_first = []
 is_unique = []
+approx_unique = []
+fused = []
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
@@ -56,7 +63,7 @@ diff = ["polars-core/diff"]
 strings = ["polars-core/strings"]
 string_justify = ["polars-core/strings"]
 string_from_radix = ["polars-core/strings"]
-extract_jsonpath = ["arrow/io_json", "serde_json", "jsonpath_lib"]
+extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
 log = []
 hash = []
 rolling_window = ["polars-core/rolling_window"]

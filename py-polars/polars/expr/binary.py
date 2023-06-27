@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import internals as pli
+from polars.utils._wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from polars.expr.expr import Expr
+    from polars import Expr
     from polars.type_aliases import TransferEncoding
 
 
@@ -17,45 +17,143 @@ class ExprBinaryNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def contains(self, lit: bytes) -> Expr:
-        """
+    def contains(self, literal: bytes) -> Expr:
+        r"""
         Check if binaries in Series contain a binary substring.
 
         Parameters
         ----------
-        lit
+        literal
             The binary substring to look for
 
         Returns
         -------
         Boolean mask
 
-        """
-        return pli.wrap_expr(self._pyexpr.binary_contains(lit))
+        See Also
+        --------
+        starts_with : Check if the binary substring exists at the start
+        ends_with : Check if the binary substring exists at the end
 
-    def ends_with(self, sub: bytes) -> Expr:
+        Examples
+        --------
+        >>> colors = pl.DataFrame(
+        ...     {
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
+        ...     }
+        ... )
+        >>> colors.select(
+        ...     "name",
+        ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
+        ...     pl.col("code").bin.contains(b"\xff").alias("contains_ff"),
+        ...     pl.col("code").bin.starts_with(b"\xff").alias("starts_with_ff"),
+        ...     pl.col("code").bin.ends_with(b"\xff").alias("ends_with_ff"),
+        ... )
+        shape: (3, 5)
+        ┌────────┬──────────────────┬─────────────┬────────────────┬──────────────┐
+        │ name   ┆ code_encoded_hex ┆ contains_ff ┆ starts_with_ff ┆ ends_with_ff │
+        │ ---    ┆ ---              ┆ ---         ┆ ---            ┆ ---          │
+        │ str    ┆ str              ┆ bool        ┆ bool           ┆ bool         │
+        ╞════════╪══════════════════╪═════════════╪════════════════╪══════════════╡
+        │ black  ┆ 000000           ┆ false       ┆ false          ┆ false        │
+        │ yellow ┆ ffff00           ┆ true        ┆ true           ┆ false        │
+        │ blue   ┆ 0000ff           ┆ true        ┆ false          ┆ true         │
+        └────────┴──────────────────┴─────────────┴────────────────┴──────────────┘
         """
+        return wrap_expr(self._pyexpr.bin_contains(literal))
+
+    def ends_with(self, suffix: bytes) -> Expr:
+        r"""
         Check if string values end with a binary substring.
 
         Parameters
         ----------
-        sub
+        suffix
             Suffix substring.
 
-        """
-        return pli.wrap_expr(self._pyexpr.binary_ends_with(sub))
+        Returns
+        -------
+        Boolean mask
 
-    def starts_with(self, sub: bytes) -> Expr:
+        See Also
+        --------
+        starts_with : Check if the binary substring exists at the start
+        contains : Check if the binary substring exists anywhere
+
+        Examples
+        --------
+        >>> colors = pl.DataFrame(
+        ...     {
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
+        ...     }
+        ... )
+        >>> colors.select(
+        ...     "name",
+        ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
+        ...     pl.col("code").bin.contains(b"\xff").alias("contains_ff"),
+        ...     pl.col("code").bin.starts_with(b"\xff").alias("starts_with_ff"),
+        ...     pl.col("code").bin.ends_with(b"\xff").alias("ends_with_ff"),
+        ... )
+        shape: (3, 5)
+        ┌────────┬──────────────────┬─────────────┬────────────────┬──────────────┐
+        │ name   ┆ code_encoded_hex ┆ contains_ff ┆ starts_with_ff ┆ ends_with_ff │
+        │ ---    ┆ ---              ┆ ---         ┆ ---            ┆ ---          │
+        │ str    ┆ str              ┆ bool        ┆ bool           ┆ bool         │
+        ╞════════╪══════════════════╪═════════════╪════════════════╪══════════════╡
+        │ black  ┆ 000000           ┆ false       ┆ false          ┆ false        │
+        │ yellow ┆ ffff00           ┆ true        ┆ true           ┆ false        │
+        │ blue   ┆ 0000ff           ┆ true        ┆ false          ┆ true         │
+        └────────┴──────────────────┴─────────────┴────────────────┴──────────────┘
         """
+        return wrap_expr(self._pyexpr.bin_ends_with(suffix))
+
+    def starts_with(self, prefix: bytes) -> Expr:
+        r"""
         Check if values start with a binary substring.
 
         Parameters
         ----------
-        sub
+        prefix
             Prefix substring.
 
+        Returns
+        -------
+        Boolean mask
+
+        See Also
+        --------
+        ends_with : Check if the binary substring exists at the end
+        contains : Check if the binary substring exists anywhere
+
+        Examples
+        --------
+        >>> colors = pl.DataFrame(
+        ...     {
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
+        ...     }
+        ... )
+        >>> colors.select(
+        ...     "name",
+        ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
+        ...     pl.col("code").bin.contains(b"\xff").alias("contains_ff"),
+        ...     pl.col("code").bin.starts_with(b"\xff").alias("starts_with_ff"),
+        ...     pl.col("code").bin.ends_with(b"\xff").alias("ends_with_ff"),
+        ... )
+        shape: (3, 5)
+        ┌────────┬──────────────────┬─────────────┬────────────────┬──────────────┐
+        │ name   ┆ code_encoded_hex ┆ contains_ff ┆ starts_with_ff ┆ ends_with_ff │
+        │ ---    ┆ ---              ┆ ---         ┆ ---            ┆ ---          │
+        │ str    ┆ str              ┆ bool        ┆ bool           ┆ bool         │
+        ╞════════╪══════════════════╪═════════════╪════════════════╪══════════════╡
+        │ black  ┆ 000000           ┆ false       ┆ false          ┆ false        │
+        │ yellow ┆ ffff00           ┆ true        ┆ true           ┆ false        │
+        │ blue   ┆ 0000ff           ┆ true        ┆ false          ┆ true         │
+        └────────┴──────────────────┴─────────────┴────────────────┴──────────────┘
         """
-        return pli.wrap_expr(self._pyexpr.binary_starts_with(sub))
+        return wrap_expr(self._pyexpr.bin_starts_with(prefix))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
         """
@@ -71,16 +169,16 @@ class ExprBinaryNameSpace:
 
         """
         if encoding == "hex":
-            return pli.wrap_expr(self._pyexpr.binary_hex_decode(strict))
+            return wrap_expr(self._pyexpr.bin_hex_decode(strict))
         elif encoding == "base64":
-            return pli.wrap_expr(self._pyexpr.binary_base64_decode(strict))
+            return wrap_expr(self._pyexpr.bin_base64_decode(strict))
         else:
             raise ValueError(
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
             )
 
     def encode(self, encoding: TransferEncoding) -> Expr:
-        """
+        r"""
         Encode a value using the provided encoding.
 
         Parameters
@@ -92,11 +190,32 @@ class ExprBinaryNameSpace:
         -------
         Binary array with values encoded using provided encoding
 
+        Examples
+        --------
+        >>> colors = pl.DataFrame(
+        ...     {
+        ...         "name": ["black", "yellow", "blue"],
+        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
+        ...     }
+        ... )
+        >>> colors.with_columns(
+        ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
+        ... )
+        shape: (3, 3)
+        ┌────────┬───────────────┬──────────────────┐
+        │ name   ┆ code          ┆ code_encoded_hex │
+        │ ---    ┆ ---           ┆ ---              │
+        │ str    ┆ binary        ┆ str              │
+        ╞════════╪═══════════════╪══════════════════╡
+        │ black  ┆ [binary data] ┆ 000000           │
+        │ yellow ┆ [binary data] ┆ ffff00           │
+        │ blue   ┆ [binary data] ┆ 0000ff           │
+        └────────┴───────────────┴──────────────────┘
         """
         if encoding == "hex":
-            return pli.wrap_expr(self._pyexpr.binary_hex_encode())
+            return wrap_expr(self._pyexpr.bin_hex_encode())
         elif encoding == "base64":
-            return pli.wrap_expr(self._pyexpr.binary_base64_encode())
+            return wrap_expr(self._pyexpr.bin_base64_encode())
         else:
             raise ValueError(
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"

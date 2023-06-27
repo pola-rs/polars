@@ -212,27 +212,29 @@ impl ProjectionPushDown {
         names_left: &mut PlHashSet<Arc<str>>,
         names_right: &mut PlHashSet<Arc<str>>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> bool {
+    ) -> (bool, bool) {
         let mut pushed_at_least_one = false;
+        let mut already_projected = false;
         let names = aexpr_to_leaf_names(proj, expr_arena);
         let root_projections = aexpr_to_leaf_nodes(proj, expr_arena);
 
         for (name, root_projection) in names.into_iter().zip(root_projections) {
-            if check_input_node(root_projection, schema_left, expr_arena)
-                && names_left.insert(name.clone())
-            {
+            let was_not_in_left = names_left.insert(name.clone());
+            let was_not_in_right = names_right.insert(name.clone());
+            already_projected |= !was_not_in_left;
+            already_projected |= !was_not_in_right;
+
+            if check_input_node(root_projection, schema_left, expr_arena) && was_not_in_left {
                 pushdown_left.push(proj);
                 pushed_at_least_one = true;
             }
-            if check_input_node(root_projection, schema_right, expr_arena)
-                && names_right.insert(name)
-            {
+            if check_input_node(root_projection, schema_right, expr_arena) && was_not_in_right {
                 pushdown_right.push(proj);
                 pushed_at_least_one = true;
             }
         }
 
-        pushed_at_least_one
+        (pushed_at_least_one, already_projected)
     }
 
     /// This pushes down current node and assigns the result to this node.
@@ -494,7 +496,7 @@ impl ProjectionPushDown {
                 };
                 Ok(PythonScan { options, predicate })
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 path,
                 file_info,
@@ -572,7 +574,7 @@ impl ProjectionPushDown {
                             )
                         })
                     } else {
-                        // the distint needs all columns
+                        // distinct needs all columns
                         let input_schema = lp_arena.get(input).schema(lp_arena);
                         for name in input_schema.iter_names() {
                             add_str_to_accumulated(
@@ -645,7 +647,7 @@ impl ProjectionPushDown {
                 right_on,
                 options,
                 ..
-            } => match options.how {
+            } => match options.args.how {
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Semi | JoinType::Anti => process_semi_anti_join(
                     self,

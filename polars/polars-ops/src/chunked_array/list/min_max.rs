@@ -77,7 +77,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> Series {
     fn inner(ca: &ListChunked) -> Series {
         match ca.inner_dtype() {
             DataType::Boolean => {
-                let out: IdxCa = ca
+                let out: BooleanChunked = ca
                     .amortized_iter()
                     .map(|s| s.and_then(|s| s.as_ref().bool().unwrap().min()))
                     .collect_trusted();
@@ -183,7 +183,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> Series {
     fn inner(ca: &ListChunked) -> Series {
         match ca.inner_dtype() {
             DataType::Boolean => {
-                let out: IdxCa = ca
+                let out: BooleanChunked = ca
                     .amortized_iter()
                     .map(|s| s.and_then(|s| s.as_ref().bool().unwrap().max()))
                     .collect_trusted();

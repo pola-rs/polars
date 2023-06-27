@@ -11,26 +11,23 @@ from typing import (
     TextIO,
 )
 
-from polars import internals as pli
+import polars._reexport as pl
 from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import handle_projection_columns, normalise_filepath
 
 if TYPE_CHECKING:
     from io import BytesIO
 
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", sep="separator", parse_dates="try_parse_dates")
 def read_csv(
     source: str | TextIO | BytesIO | Path | BinaryIO | bytes,
+    *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
@@ -114,12 +111,12 @@ def read_csv(
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         Before using this option, try to increase the number of lines used for schema
-        inference with e.g ```infer_schema_length=10000`` or override automatic dtype
+        inference with e.g ``infer_schema_length=10000`` or override automatic dtype
         inference for specific columns with the ``dtypes`` option or use
         ``infer_schema_length=0`` to read all columns as ``pl.Utf8`` to check which
         values might cause an issue.
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats can
+        Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
         If ``use_pyarrow=True``, dates will always be parsed.
@@ -143,7 +140,7 @@ def read_csv(
     encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. When using other encodings than ``utf8`` or
-        ``utf8-lossy``, the input is first decoded im memory with
+        ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
@@ -258,7 +255,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        df = pli.DataFrame._from_arrow(tbl, rechunk=rechunk)
+        df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
         if new_columns:
             return _update_columns(df, new_columns)
         return df
@@ -288,7 +285,7 @@ def read_csv(
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        dtypes = {column: dtype for column, dtype in zip(columns, dtypes)}
+        dtypes = dict(zip(columns, dtypes))
 
     if new_columns and dtypes and isinstance(dtypes, dict):
         current_columns = None
@@ -344,10 +341,7 @@ def read_csv(
                     dtypes = dtype_list
 
         if current_columns and isinstance(dtypes, dict):
-            new_to_current = {
-                new_column: current_column
-                for new_column, current_column in zip(new_columns, current_columns)
-            }
+            new_to_current = dict(zip(new_columns, current_columns))
             # Change new column names to current column names in dtype.
             dtypes = {
                 new_to_current.get(column_name, column_name): column_dtype
@@ -357,7 +351,7 @@ def read_csv(
     with _prepare_file_arg(
         source, encoding=encoding, use_pyarrow=False, **storage_options
     ) as data:
-        df = pli.DataFrame._read_csv(
+        df = pl.DataFrame._read_csv(
             data,
             has_header=has_header,
             columns=columns if columns else projection,
@@ -389,10 +383,9 @@ def read_csv(
     return df
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", sep="separator")
 def read_csv_batched(
     source: str | Path,
+    *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
@@ -473,7 +466,7 @@ def read_csv_batched(
         First try ``infer_schema_length=0`` to read all columns as
         ``pl.Utf8`` to check which values might cause an issue.
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats can
+        Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     n_threads
@@ -494,7 +487,7 @@ def read_csv_batched(
     encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. When using other encodings than ``utf8`` or
-        ``utf8-lossy``, the input is first decoded im memory with
+        ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
@@ -592,7 +585,7 @@ def read_csv_batched(
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        dtypes = {column: dtype for column, dtype in zip(columns, dtypes)}
+        dtypes = dict(zip(columns, dtypes))
 
     if new_columns and dtypes and isinstance(dtypes, dict):
         current_columns = None
@@ -648,10 +641,7 @@ def read_csv_batched(
                     dtypes = dtype_list
 
         if current_columns and isinstance(dtypes, dict):
-            new_to_current = {
-                new_column: current_column
-                for new_column, current_column in zip(new_columns, current_columns)
-            }
+            new_to_current = dict(zip(new_columns, current_columns))
             # Change new column names to current column names in dtype.
             dtypes = {
                 new_to_current.get(column_name, column_name): column_dtype
@@ -687,10 +677,9 @@ def read_csv_batched(
     )
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", sep="separator", parse_dates="try_parse_dates")
 def scan_csv(
     source: str | Path,
+    *,
     has_header: bool = True,
     separator: str = ",",
     comment_char: str | None = None,
@@ -785,7 +774,7 @@ def scan_csv(
     row_count_offset
         Offset to start the row_count column (only used if the name is set).
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats
+        Try to automatically parse dates. Most ISO8601-like formats
         can be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     eol_char
@@ -883,7 +872,7 @@ def scan_csv(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return pli.LazyFrame._scan_csv(
+    return pl.LazyFrame._scan_csv(
         source,
         has_header=has_header,
         separator=separator,

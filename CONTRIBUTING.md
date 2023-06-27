@@ -87,7 +87,7 @@ make test
 
 This will do a number of things:
 
-- Use Python to create a virtual environment in the `py-polars/venv` folder.
+- Use Python to create a virtual environment in the `py-polars/.venv` folder.
 - Use [pip](https://pip.pypa.io/) to install all Python dependencies for development, linting, and building documentation.
 - Use Rust to compile and install Polars in your virtual environment.
 - Use [pytest](https://docs.pytest.org/) to run the Python unittests in your virtual environment
@@ -112,7 +112,7 @@ If this all runs correctly, you're ready to start contributing to the Polars cod
 
 ### Working on your issue
 
-Create a new git branch from the `master` branch in your local repository, and start coding!
+Create a new git branch from the `main` branch in your local repository, and start coding!
 
 The Rust codebase is located in the `polars` directory, while the Python codebase is located in the `py-polars` directory.
 Both directories contain a `Makefile` with helpful commands. Most notably:
@@ -137,8 +137,8 @@ Please adhere to the following guidelines:
 - Use a descriptive title. This text will end up in the [changelog](https://github.com/pola-rs/polars/releases).
 - In the pull request description, [link](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) to the issue you were working on.
 - Add any relevant information to the description that you think may help the maintainers review your code.
-- Make sure your branch is [rebased](https://docs.github.com/en/get-started/using-git/about-git-rebase) against the latest version of the `master` branch.
-- Make sure all GitHub Actions checks pass.
+- Make sure your branch is [rebased](https://docs.github.com/en/get-started/using-git/about-git-rebase) against the latest version of the `main` branch.
+- Make sure all [GitHub Actions checks](/.github/workflows/README.md) pass.
 
 After you have opened your pull request, a maintainer will review it and possibly leave some comments.
 Once all issues are resolved, the maintainer will merge your pull request, and your work will be part of the next Polars release!
@@ -216,24 +216,24 @@ Start by bumping the version number in the source code:
 3. Bump the version number.
 
 - _Rust:_ Update the version number in all `Cargo.toml` files in the `polars` directory and subdirectories. You'll probably want to use some search/replace strategy, as there are quite a few crates that need to be updated.
-- _Python:_ Update the version number in [`py-polars/Cargo.toml`](https://github.com/pola-rs/polars/blob/master/py-polars/Cargo.toml#L3) to match the version of the draft release.
+- _Python:_ Update the version number in [`py-polars/Cargo.toml`](https://github.com/pola-rs/polars/blob/main/py-polars/Cargo.toml#L3) to match the version of the draft release.
 
 4. From the `py-polars` directory, run `make build` to generate a new `Cargo.lock` file.
 5. Create a new commit with all files added. The name of the commit should follow the format `release(<language>): <Language> Polars <version-number>`. For example: `release(python): Python Polars 0.16.1`
-6. Push your branch and open a new pull request to the `master` branch of the main Polars repository.
+6. Push your branch and open a new pull request to the `main` branch of the main Polars repository.
 7. Wait for the GitHub Actions checks to pass, then squash and merge your pull request.
 
 Directly after merging your pull request, release the new version:
 
 8. Go back to the [releases page](https://github.com/pola-rs/polars/releases) and click _Edit_ on the appropriate draft release.
-9. On the draft release page, click _Publish release_. This will create a new release and a new tag, which will trigger the GitHub Actions release workflow ([Python](https://github.com/pola-rs/polars/actions/workflows/create-python-release.yml) / [Rust](https://github.com/pola-rs/polars/actions/workflows/release-rust.yml)).
+9. On the draft release page, click _Publish release_. This will create a new release and a new tag, which will trigger the GitHub Actions release workflow ([Python](https://github.com/pola-rs/polars/actions/workflows/release-python.yml) / [Rust](https://github.com/pola-rs/polars/actions/workflows/release-rust.yml)).
 10. Wait for all release jobs to finish, then check [crates.io](https://crates.io/crates/polars)/[PyPI](https://pypi.org/project/polars/) to verify that the new Polars release is now available.
 
 ### Troubleshooting
 
 It may happen that one or multiple release jobs fail. If so, you should first try to simply re-run the failed jobs from the GitHub Actions UI.
 
-If that doesn't help, you will have to figure out what's wrong and commit a fix. Once your fix has made it to the `master` branch, re-trigger the release workflow by updating the git tag associated with the release. Note the commit hash of your fix, and run the following command:
+If that doesn't help, you will have to figure out what's wrong and commit a fix. Once your fix has made it to the `main` branch, re-trigger the release workflow by updating the git tag associated with the release. Note the commit hash of your fix, and run the following command:
 
 ```shell
 git tag -f <version-number> <commit-hash> && git push -f origin <version-number>

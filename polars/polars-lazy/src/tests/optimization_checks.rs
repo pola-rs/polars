@@ -57,6 +57,32 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     })
 }
 
+pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    matches!(
+        lp_arena.get(lp),
+        ALogicalPlan::MapFunction {
+            function: FunctionNode::Pipeline { .. },
+            ..
+        }
+    )
+}
+
+pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    (&lp_arena).iter(lp).any(|(_, lp)| {
+        matches!(
+            lp,
+            ALogicalPlan::MapFunction {
+                function: FunctionNode::Pipeline { .. },
+                ..
+            }
+        )
+    })
+}
+
 fn slice_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -122,7 +148,12 @@ fn test_no_left_join_pass() -> PolarsResult<()> {
 
     let out = df1
         .lazy()
-        .join(df2.lazy(), [col("idx1")], [col("idx2")], JoinType::Left)
+        .join(
+            df2.lazy(),
+            [col("idx1")],
+            [col("idx2")],
+            JoinType::Left.into(),
+        )
         .filter(col("bar").eq(lit(5i32)))
         .collect()?;
 
@@ -163,7 +194,12 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
     let q2 = scan_foods_parquet(false);
 
     let q = q1
-        .join(q2, [col("category")], [col("category")], JoinType::Left)
+        .join(
+            q2,
+            [col("category")],
+            [col("category")],
+            JoinType::Left.into(),
+        )
         .slice(1, 3)
         // this inserts a cache and blocks slice pushdown
         .with_common_subplan_elimination(false);
@@ -175,7 +211,7 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
-            Join { options, .. } => options.slice == Some((1, 3)),
+            Join { options, .. } => options.args.slice == Some((1, 3)),
             Slice { .. } => false,
             _ => true,
         }
@@ -506,7 +542,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
     }));
     assert_eq!(
         q.schema().unwrap().as_ref(),
-        &Schema::from([Field::new("c1", DataType::Int32)].into_iter())
+        &Schema::from_iter([Field::new("c1", DataType::Int32)])
     );
     Ok(())
 }
@@ -524,5 +560,35 @@ fn test_slice_at_scan_groupby() -> PolarsResult<()> {
         .select([col("fats_g")]);
 
     assert!(slice_at_scan(q));
+    Ok(())
+}
+
+#[test]
+fn test_flatten_unions() -> PolarsResult<()> {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+
+    let lf = df! {
+        "a" => [1,2,3,4,5],
+    }
+    .unwrap()
+    .lazy();
+
+    let args = UnionArgs {
+        rechunk: false,
+        parallel: true,
+        ..Default::default()
+    };
+    let lf2 = concat(&[lf.clone(), lf.clone()], args).unwrap();
+    let lf3 = concat(&[lf.clone(), lf.clone(), lf.clone()], args).unwrap();
+    let lf4 = concat(&[lf2.clone(), lf3], args).unwrap();
+    let root = lf4.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    let lp = lp_arena.get(root);
+    match lp {
+        ALogicalPlan::Union { inputs, .. } => {
+            // we make sure that the nested unions are flattened into a single union
+            assert_eq!(inputs.len(), 5);
+        }
+        _ => panic!(),
+    }
     Ok(())
 }

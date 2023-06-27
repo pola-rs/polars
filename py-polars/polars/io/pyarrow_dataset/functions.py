@@ -4,11 +4,11 @@ import warnings
 from typing import TYPE_CHECKING
 
 from polars.io.pyarrow_dataset.anonymous_scan import _scan_pyarrow_dataset
-from polars.utils.decorators import deprecate_nonkeyword_arguments
+from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
+    from polars import LazyFrame
     from polars.dependencies import pyarrow as pa
-    from polars.lazyframe import LazyFrame
 
 
 def scan_pyarrow_dataset(
@@ -56,8 +56,7 @@ def scan_pyarrow_dataset(
     return _scan_pyarrow_dataset(source, allow_pyarrow_filter=allow_pyarrow_filter)
 
 
-@deprecate_nonkeyword_arguments()
-def scan_ds(ds: pa.dataset.Dataset, allow_pyarrow_filter: bool = True) -> LazyFrame:
+def scan_ds(ds: pa.dataset.Dataset, *, allow_pyarrow_filter: bool = True) -> LazyFrame:
     """
     Scan a pyarrow dataset.
 
@@ -101,6 +100,6 @@ def scan_ds(ds: pa.dataset.Dataset, allow_pyarrow_filter: bool = True) -> LazyFr
         "`scan_ds` has been renamed; this"
         " redirect is temporary, please use `scan_pyarrow_dataset` instead",
         category=DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     return scan_pyarrow_dataset(ds, allow_pyarrow_filter=allow_pyarrow_filter)

@@ -1,21 +1,24 @@
 mod agg_list;
+mod boolean;
 mod dispatch;
+mod utf8;
 
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
-use num_traits::{Bounded, Num, NumCast, ToPrimitive, Zero};
+use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::data_types::IsFloat;
 use polars_arrow::kernels::rolling;
 use polars_arrow::kernels::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, RollingAggWindowNoNulls, StdWindow, SumWindow, VarWindow,
+    MaxWindow, MeanWindow, MinWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
 use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
+use polars_arrow::kernels::rolling::{DynArgs, RollingVarParams};
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::trusted_len::TrustedLenPush;
 use rayon::prelude::*;
 
 #[cfg(feature = "object")]
@@ -27,6 +30,10 @@ use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
 use crate::{apply_method_physical_integer, POOL};
+
+fn idx2usize(idx: &[IdxSize]) -> impl Iterator<Item = usize> + ExactSizeIterator + '_ {
+    idx.iter().map(|i| *i as usize)
+}
 
 // if the windows overlap, we can use the rolling_<agg> kernels
 // they maintain state, which saves a lot of compute by not naively traversing all elements every
@@ -51,6 +58,7 @@ pub fn _rolling_apply_agg_window_nulls<'a, Agg, T, O>(
     values: &'a [T],
     validity: &'a Bitmap,
     offsets: O,
+    params: DynArgs,
 ) -> ArrayRef
 where
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
@@ -68,7 +76,7 @@ where
     // start with a dummy index, will be overwritten on first iteration.
     // Safety:
     // we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0) };
+    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params) };
 
     let mut validity = MutableBitmap::with_capacity(output_len);
     validity.extend_constant(output_len, true);
@@ -106,7 +114,11 @@ where
 }
 
 // Use an aggregation window that maintains the state
-pub fn _rolling_apply_agg_window_no_nulls<'a, Agg, T, O>(values: &'a [T], offsets: O) -> ArrayRef
+pub fn _rolling_apply_agg_window_no_nulls<'a, Agg, T, O>(
+    values: &'a [T],
+    offsets: O,
+    params: DynArgs,
+) -> ArrayRef
 where
     // items (offset, len) -> so offsets are offset, offset + len
     Agg: RollingAggWindowNoNulls<'a, T>,
@@ -118,7 +130,7 @@ where
         return Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None));
     }
     // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, 0, 0);
+    let mut agg_window = Agg::new(values, 0, 0, params);
 
     let out = offsets
         .map(|(start, len)| {
@@ -155,22 +167,6 @@ where
     ca.into_series()
 }
 
-pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
-where
-    F: Fn((IdxSize, &Vec<IdxSize>)) -> Option<bool> + Send + Sync,
-{
-    let ca: BooleanChunked = POOL.install(|| groups.into_par_iter().map(f).collect());
-    ca.into_series()
-}
-
-pub fn _agg_helper_idx_utf8<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
-where
-    F: Fn((IdxSize, &'a Vec<IdxSize>)) -> Option<&'a str> + Send + Sync,
-{
-    let ca: Utf8Chunked = POOL.install(|| groups.into_par_iter().map(f).collect());
-    ca.into_series()
-}
-
 // helper that iterates on the `all: Vec<Vec<u32>` collection
 // this doesn't have traverse the `first: Vec<u32>` memory and is therefore faster
 fn agg_helper_idx_on_all<T, F>(groups: &GroupsIdx, f: F) -> Series
@@ -191,235 +187,6 @@ where
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
-}
-
-pub fn _agg_helper_slice_bool<F>(groups: &[[IdxSize; 2]], f: F) -> Series
-where
-    F: Fn([IdxSize; 2]) -> Option<bool> + Send + Sync,
-{
-    let ca: BooleanChunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
-    ca.into_series()
-}
-
-pub fn _agg_helper_slice_utf8<'a, F>(groups: &'a [[IdxSize; 2]], f: F) -> Series
-where
-    F: Fn([IdxSize; 2]) -> Option<&'a str> + Send + Sync,
-{
-    let ca: Utf8Chunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
-    ca.into_series()
-}
-
-impl BooleanChunked {
-    pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
-        // faster paths
-        match (self.is_sorted_flag2(), self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            }
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            }
-            _ => {}
-        }
-        match groups {
-            GroupsProxy::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    None
-                } else if idx.len() == 1 {
-                    self.get(first as usize)
-                } else {
-                    // TODO! optimize this
-                    // can just check if any is false and early stop
-                    let take = { self.take_unchecked(idx.into()) };
-                    take.min().map(|v| v == 1)
-                }
-            }),
-            GroupsProxy::Slice {
-                groups: groups_slice,
-                ..
-            } => _agg_helper_slice_bool(groups_slice, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize),
-                    _ => {
-                        let arr_group = _slice_from_offsets(self, first, len);
-                        arr_group.min().map(|v| v == 1)
-                    }
-                }
-            }),
-        }
-    }
-    pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
-        // faster paths
-        match (self.is_sorted_flag2(), self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            }
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            }
-            _ => {}
-        }
-
-        match groups {
-            GroupsProxy::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    None
-                } else if idx.len() == 1 {
-                    self.get(first as usize)
-                } else {
-                    // TODO! optimize this
-                    // can just check if any is true and early stop
-                    let take = { self.take_unchecked(idx.into()) };
-                    take.max().map(|v| v == 1)
-                }
-            }),
-            GroupsProxy::Slice {
-                groups: groups_slice,
-                ..
-            } => _agg_helper_slice_bool(groups_slice, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize),
-                    _ => {
-                        let arr_group = _slice_from_offsets(self, first, len);
-                        arr_group.max().map(|v| v == 1)
-                    }
-                }
-            }),
-        }
-    }
-    pub(crate) unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
-        self.cast(&IDX_DTYPE).unwrap().agg_sum(groups)
-    }
-}
-
-impl Utf8Chunked {
-    #[allow(clippy::needless_lifetimes)]
-    pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsProxy) -> Series {
-        // faster paths
-        match (&self.is_sorted_flag2(), &self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            }
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            }
-            _ => {}
-        }
-
-        match groups {
-            GroupsProxy::Idx(groups) => {
-                let ca_self = self.rechunk();
-                let arr = ca_self.downcast_iter().next().unwrap();
-                _agg_helper_idx_utf8(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= ca_self.len());
-                    if idx.is_empty() {
-                        None
-                    } else if idx.len() == 1 {
-                        ca_self.get(first as usize)
-                    } else if self.null_count() == 0 {
-                        take_agg_utf8_iter_unchecked_no_null(
-                            arr,
-                            indexes_to_usizes(idx),
-                            |acc, v| if acc < v { acc } else { v },
-                        )
-                    } else {
-                        take_agg_utf8_iter_unchecked(
-                            arr,
-                            indexes_to_usizes(idx),
-                            |acc, v| if acc < v { acc } else { v },
-                            idx.len() as IdxSize,
-                        )
-                    }
-                })
-            }
-            GroupsProxy::Slice {
-                groups: groups_slice,
-                ..
-            } => _agg_helper_slice_utf8(groups_slice, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize),
-                    _ => {
-                        let arr_group = _slice_from_offsets(self, first, len);
-                        let borrowed = arr_group.min_str();
-
-                        // Safety:
-                        // The borrowed has `arr_group`s lifetime, but it actually points to data
-                        // hold by self. Here we tell the compiler that.
-                        unsafe { std::mem::transmute::<Option<&str>, Option<&'a str>>(borrowed) }
-                    }
-                }
-            }),
-        }
-    }
-
-    #[allow(clippy::needless_lifetimes)]
-    pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsProxy) -> Series {
-        // faster paths
-        match (self.is_sorted_flag2(), self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            }
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            }
-            _ => {}
-        }
-
-        match groups {
-            GroupsProxy::Idx(groups) => {
-                let ca_self = self.rechunk();
-                let arr = ca_self.downcast_iter().next().unwrap();
-                _agg_helper_idx_utf8(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= self.len());
-                    if idx.is_empty() {
-                        None
-                    } else if idx.len() == 1 {
-                        ca_self.get(first as usize)
-                    } else if ca_self.null_count() == 0 {
-                        take_agg_utf8_iter_unchecked_no_null(
-                            arr,
-                            indexes_to_usizes(idx),
-                            |acc, v| if acc > v { acc } else { v },
-                        )
-                    } else {
-                        take_agg_utf8_iter_unchecked(
-                            arr,
-                            indexes_to_usizes(idx),
-                            |acc, v| if acc > v { acc } else { v },
-                            idx.len() as IdxSize,
-                        )
-                    }
-                })
-            }
-            GroupsProxy::Slice {
-                groups: groups_slice,
-                ..
-            } => _agg_helper_slice_utf8(groups_slice, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize),
-                    _ => {
-                        let arr_group = _slice_from_offsets(self, first, len);
-                        let borrowed = arr_group.max_str();
-
-                        // Safety:
-                        // The borrowed has `arr_group`s lifetime, but it actually points to data
-                        // hold by self. Here we tell the compiler that.
-                        unsafe { std::mem::transmute::<Option<&str>, Option<&'a str>>(borrowed) }
-                    }
-                }
-            }),
-        }
-    }
 }
 
 #[inline(always)]
@@ -510,15 +277,18 @@ where
         return Series::full_null(ca.name(), groups.len(), ca.dtype());
     }
     match groups {
-        GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<K, _>(groups, |idx| {
-            debug_assert!(idx.len() <= ca.len());
-            if idx.is_empty() {
-                return None;
-            }
-            let take = { ca.take_unchecked(idx.into()) };
-            // checked with invalid quantile check
-            take._quantile(quantile, interpol).unwrap_unchecked()
-        }),
+        GroupsProxy::Idx(groups) => {
+            let ca = ca.rechunk();
+            agg_helper_idx_on_all::<K, _>(groups, |idx| {
+                debug_assert!(idx.len() <= ca.len());
+                if idx.is_empty() {
+                    return None;
+                }
+                let take = { ca.take_unchecked(idx.into()) };
+                // checked with invalid quantile check
+                take._quantile(quantile, interpol).unwrap_unchecked()
+            })
+        }
         GroupsProxy::Slice { groups, .. } => {
             if _use_rolling_kernels(groups, ca.chunks()) {
                 // this cast is a no-op for floats
@@ -574,14 +344,17 @@ where
     K: PolarsNumericType,
 {
     match groups {
-        GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<K, _>(groups, |idx| {
-            debug_assert!(idx.len() <= ca.len());
-            if idx.is_empty() {
-                return None;
-            }
-            let take = { ca.take_unchecked(idx.into()) };
-            take._median()
-        }),
+        GroupsProxy::Idx(groups) => {
+            let ca = ca.rechunk();
+            agg_helper_idx_on_all::<K, _>(groups, |idx| {
+                debug_assert!(idx.len() <= ca.len());
+                if idx.is_empty() {
+                    return None;
+                }
+                let take = { ca.take_unchecked(idx.into()) };
+                take._median()
+            })
+        }
         GroupsProxy::Slice { .. } => {
             agg_quantile_generic::<T, K>(ca, groups, 0.5, QuantileInterpolOptions::Linear)
         }
@@ -600,7 +373,7 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         // faster paths
-        match (self.is_sorted_flag2(), self.null_count()) {
+        match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_first(groups);
             }
@@ -610,34 +383,34 @@ where
             _ => {}
         }
         match groups {
-            GroupsProxy::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    None
-                } else if idx.len() == 1 {
-                    self.get(first as usize)
-                } else {
-                    match (self.has_validity(), self.chunks.len()) {
-                        (false, 1) => Some(take_agg_no_null_primitive_iter_unchecked(
-                            self.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
+            GroupsProxy::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                _agg_helper_idx::<T, _>(groups, |(first, idx)| {
+                    debug_assert!(idx.len() <= arr.len());
+                    if idx.is_empty() {
+                        None
+                    } else if idx.len() == 1 {
+                        arr.get(first as usize)
+                    } else if no_nulls {
+                        Some(take_agg_no_null_primitive_iter_unchecked(
+                            arr,
+                            idx2usize(idx),
                             take_min,
                             T::Native::max_value(),
-                        )),
-                        (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                            self.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
+                        ))
+                    } else {
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            arr,
+                            idx2usize(idx),
                             take_min,
                             T::Native::max_value(),
                             idx.len() as IdxSize,
-                        ),
-                        _ => {
-                            let take = { self.take_unchecked(idx.into()) };
-                            take.min()
-                        }
+                        )
                     }
-                }
-            }),
+                })
+            }
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
@@ -650,12 +423,15 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _>(
                             values,
                             offset_iter,
+                            None,
                         ),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
                             rolling::nulls::MinWindow<_>,
                             _,
                             _,
-                        >(values, validity, offset_iter),
+                        >(
+                            values, validity, offset_iter, None
+                        ),
                     };
                     Self::from_chunks("", vec![arr]).into_series()
                 } else {
@@ -677,7 +453,7 @@ where
 
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         // faster paths
-        match (self.is_sorted_flag2(), self.null_count()) {
+        match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_last(groups);
             }
@@ -688,36 +464,36 @@ where
         }
 
         match groups {
-            GroupsProxy::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    None
-                } else if idx.len() == 1 {
-                    self.get(first as usize)
-                } else {
-                    match (self.has_validity(), self.chunks.len()) {
-                        (false, 1) => Some({
+            GroupsProxy::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                _agg_helper_idx::<T, _>(groups, |(first, idx)| {
+                    debug_assert!(idx.len() <= arr.len());
+                    if idx.is_empty() {
+                        None
+                    } else if idx.len() == 1 {
+                        arr.get(first as usize)
+                    } else if no_nulls {
+                        Some({
                             take_agg_no_null_primitive_iter_unchecked(
-                                self.downcast_iter().next().unwrap(),
-                                idx.iter().map(|i| *i as usize),
+                                arr,
+                                idx2usize(idx),
                                 take_max,
                                 T::Native::min_value(),
                             )
-                        }),
-                        (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                            self.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
+                        })
+                    } else {
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            arr,
+                            idx2usize(idx),
                             take_max,
                             T::Native::min_value(),
                             idx.len() as IdxSize,
-                        ),
-                        _ => {
-                            let take = { self.take_unchecked(idx.into()) };
-                            take.max()
-                        }
+                        )
                     }
-                }
-            }),
+                })
+            }
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
@@ -730,12 +506,15 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _>(
                             values,
                             offset_iter,
+                            None,
                         ),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
                             rolling::nulls::MaxWindow<_>,
                             _,
                             _,
-                        >(values, validity, offset_iter),
+                        >(
+                            values, validity, offset_iter, None
+                        ),
                     };
                     Self::from_chunks("", vec![arr]).into_series()
                 } else {
@@ -757,36 +536,34 @@ where
 
     pub(crate) unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    None
-                } else if idx.len() == 1 {
-                    self.get(first as usize)
-                } else {
-                    match (self.has_validity(), self.chunks.len()) {
-                        (false, 1) => Some({
-                            take_agg_no_null_primitive_iter_unchecked(
-                                self.downcast_iter().next().unwrap(),
-                                idx.iter().map(|i| *i as usize),
-                                |a, b| a + b,
-                                T::Native::zero(),
-                            )
-                        }),
-                        (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                            self.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
+            GroupsProxy::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                _agg_helper_idx::<T, _>(groups, |(first, idx)| {
+                    debug_assert!(idx.len() <= self.len());
+                    if idx.is_empty() {
+                        None
+                    } else if idx.len() == 1 {
+                        arr.get(first as usize)
+                    } else if no_nulls {
+                        Some(take_agg_no_null_primitive_iter_unchecked(
+                            arr,
+                            idx2usize(idx),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                        ))
+                    } else {
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            arr,
+                            idx2usize(idx),
                             |a, b| a + b,
                             T::Native::zero(),
                             idx.len() as IdxSize,
-                        ),
-                        _ => {
-                            let take = { self.take_unchecked(idx.into()) };
-                            take.sum()
-                        }
+                        )
                     }
-                }
-            }),
+                })
+            }
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
@@ -796,12 +573,15 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<SumWindow<_>, _, _>(
                             values,
                             offset_iter,
+                            None,
                         ),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
                             rolling::nulls::SumWindow<_>,
                             _,
                             _,
-                        >(values, validity, offset_iter),
+                        >(
+                            values, validity, offset_iter, None
+                        ),
                     };
                     Self::from_chunks("", vec![arr]).into_series()
                 } else {
@@ -836,6 +616,9 @@ where
         + arrow::compute::aggregate::SimdOrd<T::Native>,
 {
     pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
+        let ca = self.rechunk();
+        let arr = ca.downcast_iter().next().unwrap();
+        let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsProxy::Idx(groups) => {
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
@@ -849,37 +632,28 @@ where
                         None
                     } else if idx.len() == 1 {
                         self.get(first as usize).map(|sum| sum.to_f64().unwrap())
+                    } else if no_nulls {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx2usize(idx),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                        )
+                        .to_f64()
+                        .map(|sum| sum / idx.len() as f64)
                     } else {
-                        match (self.has_validity(), self.chunks.len()) {
-                            (false, 1) => {
-                                take_agg_no_null_primitive_iter_unchecked(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| a + b,
-                                    T::Native::zero(),
-                                )
-                            }
-                            .to_f64()
-                            .map(|sum| sum / idx.len() as f64),
-                            (_, 1) => {
-                                take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _, _>(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| a + b,
-                                    T::Native::zero(),
-                                    idx.len() as IdxSize,
-                                )
-                            }
-                            .map(|(sum, null_count)| {
-                                sum.to_f64()
-                                    .map(|sum| sum / (idx.len() as f64 - null_count as f64))
-                                    .unwrap()
-                            }),
-                            _ => {
-                                let take = { self.take_unchecked(idx.into()) };
-                                take.mean()
-                            }
-                        }
+                        take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _, _>(
+                            self.downcast_iter().next().unwrap(),
+                            idx2usize(idx),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                            idx.len() as IdxSize,
+                        )
+                        .map(|(sum, null_count)| {
+                            sum.to_f64()
+                                .map(|sum| sum / (idx.len() as f64 - null_count as f64))
+                                .unwrap()
+                        })
                     };
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
@@ -893,12 +667,15 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<MeanWindow<_>, _, _>(
                             values,
                             offset_iter,
+                            None,
                         ),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
                             rolling::nulls::MeanWindow<_>,
                             _,
                             _,
-                        >(values, validity, offset_iter),
+                        >(
+                            values, validity, offset_iter, None
+                        ),
                     };
                     ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
                 } else {
@@ -918,17 +695,29 @@ where
         }
     }
 
-    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
-        let ca = &self.0;
+    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series
+    where
+        <T as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    {
+        let ca = &self.0.rechunk();
         match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = { ca.take_unchecked(idx.into()) };
-                take.var(ddof)
-            }),
+            GroupsProxy::Idx(groups) => {
+                let ca = ca.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                agg_helper_idx_on_all::<T, _>(groups, |idx| {
+                    debug_assert!(idx.len() <= ca.len());
+                    if idx.is_empty() {
+                        return None;
+                    }
+                    let out = if no_nulls {
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    } else {
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    };
+                    out.map(|flt| NumCast::from(flt).unwrap())
+                })
+            }
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
@@ -938,12 +727,16 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<VarWindow<_>, _, _>(
                             values,
                             offset_iter,
+                            Some(Arc::new(RollingVarParams { ddof })),
                         ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::VarWindow<_>,
-                            _,
-                            _,
-                        >(values, validity, offset_iter),
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
+                                values,
+                                validity,
+                                offset_iter,
+                                Some(Arc::new(RollingVarParams { ddof })),
+                            )
+                        }
                     };
                     ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
                 } else {
@@ -962,34 +755,52 @@ where
             }
         }
     }
-    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
-        let ca = &self.0;
+    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series
+    where
+        <T as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    {
+        let ca = &self.0.rechunk();
         match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = { ca.take_unchecked(idx.into()) };
-                take.std(ddof)
-            }),
+            GroupsProxy::Idx(groups) => {
+                let arr = self.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                agg_helper_idx_on_all::<T, _>(groups, |idx| {
+                    debug_assert!(idx.len() <= ca.len());
+                    if idx.is_empty() {
+                        return None;
+                    }
+                    let out = if no_nulls {
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    } else {
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    };
+                    out.map(|flt| NumCast::from(flt.sqrt()).unwrap())
+                })
+            }
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<StdWindow<_>, _, _>(
+                        None => _rolling_apply_agg_window_no_nulls::<VarWindow<_>, _, _>(
                             values,
                             offset_iter,
+                            Some(Arc::new(RollingVarParams { ddof })),
                         ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::StdWindow<_>,
-                            _,
-                            _,
-                        >(values, validity, offset_iter),
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
+                                values,
+                                validity,
+                                offset_iter,
+                                Some(Arc::new(RollingVarParams { ddof })),
+                            )
+                        }
                     };
-                    ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
+
+                    let mut ca = ChunkedArray::<T>::from_chunks("", vec![arr]);
+                    ca.apply_mut(|v| v.powf(NumCast::from(0.5).unwrap()));
+                    ca.into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -1063,7 +874,7 @@ where
                             (false, 1) => {
                                 take_agg_no_null_primitive_iter_unchecked(
                                     self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
+                                    idx2usize(idx),
                                     |a, b| a + b,
                                     0.0f64,
                                 )
@@ -1079,7 +890,7 @@ where
                                         _,
                                     >(
                                         self.downcast_iter().next().unwrap(),
-                                        idx.iter().map(|i| *i as usize),
+                                        idx2usize(idx),
                                         |a, b| a + b,
                                         0.0,
                                         idx.len() as IdxSize,
@@ -1123,14 +934,22 @@ where
 
     pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = { self.take_unchecked(idx.into()) };
-                take.var(ddof)
-            }),
+            GroupsProxy::Idx(groups) => {
+                let ca_self = self.rechunk();
+                let arr = ca_self.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
+                    debug_assert!(idx.len() <= arr.len());
+                    if idx.is_empty() {
+                        return None;
+                    }
+                    if no_nulls {
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    } else {
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    }
+                })
+            }
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
@@ -1156,14 +975,23 @@ where
     }
     pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = { self.take_unchecked(idx.into()) };
-                take.std(ddof)
-            }),
+            GroupsProxy::Idx(groups) => {
+                let ca_self = self.rechunk();
+                let arr = ca_self.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
+                    debug_assert!(idx.len() <= self.len());
+                    if idx.is_empty() {
+                        return None;
+                    }
+                    let out = if no_nulls {
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    } else {
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    };
+                    out.map(|v| v.sqrt())
+                })
+            }
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..

@@ -1,8 +1,8 @@
-use arrow::array::Utf8Array;
+use arrow::array::{BinaryArray, Utf8Array};
 use arrow::datatypes::DataType;
 use arrow::offset::Offsets;
 
-use crate::trusted_len::PushUnchecked;
+use crate::trusted_len::TrustedLenPush;
 
 #[inline]
 unsafe fn extend_from_trusted_len_values_iter<I, P>(
@@ -69,3 +69,17 @@ pub trait Utf8FromIter {
 }
 
 impl Utf8FromIter for Utf8Array<i64> {}
+
+pub trait BinaryFromIter {
+    #[inline]
+    fn from_values_iter<I, S>(iter: I, len: usize, value_cap: usize) -> BinaryArray<i64>
+    where
+        S: AsRef<[u8]>,
+        I: Iterator<Item = S>,
+    {
+        let (offsets, values) = unsafe { fill_offsets_and_values(iter, value_cap, len) };
+        BinaryArray::new(DataType::LargeBinary, offsets.into(), values.into(), None)
+    }
+}
+
+impl BinaryFromIter for BinaryArray<i64> {}

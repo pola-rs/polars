@@ -51,7 +51,7 @@ pub(super) fn process_asof_join(
     let mut names_right = PlHashSet::with_capacity(n);
     let mut local_projection = Vec::with_capacity(n);
 
-    let JoinType::AsOf(asof_options) = &options.how else {unreachable!()};
+    let JoinType::AsOf(asof_options) = &options.args.how else {unreachable!()};
 
     // if there are no projections we don't have to do anything (all columns are projected)
     // otherwise we build local projections to sort out proper column names due to the
@@ -204,7 +204,7 @@ pub(super) fn process_join(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<ALogicalPlan> {
     #[cfg(feature = "asof_join")]
-    if matches!(options.how, JoinType::AsOf(_)) {
+    if matches!(options.args.how, JoinType::AsOf(_)) {
         return process_asof_join(
             proj_pd,
             input_left,
@@ -346,7 +346,7 @@ fn process_projection(
     // Thus joining two tables with both a foo column leads to ["foo", "foo_right"]
 
     // try to push down projection in either of two tables
-    if !proj_pd.join_push_down(
+    let (pushed_at_least_once, already_projected) = proj_pd.join_push_down(
         schema_left,
         schema_right,
         proj,
@@ -355,7 +355,9 @@ fn process_projection(
         names_left,
         names_right,
         expr_arena,
-    )
+    );
+
+    if !(pushed_at_least_once || already_projected)
     // did not succeed push down in any tables.,
     // this might be due to the suffix in the projection name
     // this branch tries to pushdown the column without suffix
@@ -363,7 +365,7 @@ fn process_projection(
         // Column name of the projection without any alias.
         let leaf_column_name = aexpr_to_leaf_names(proj, expr_arena).pop().unwrap();
 
-        let suffix = options.suffix.as_ref();
+        let suffix = options.args.suffix();
         // If _right suffix exists we need to push a projection down without this
         // suffix.
         if leaf_column_name.ends_with(suffix) {
@@ -381,7 +383,7 @@ fn process_projection(
     }
     // did succeed pushdown at least in any of the two tables
     // if not already added locally we ensure we project local as well
-    else if add_local {
+    else if add_local && pushed_at_least_once {
         // always also do the projection locally, because the join columns may not be
         // included in the projection.
         // for instance:
@@ -439,16 +441,15 @@ fn resolve_join_suffixes(
     expr_arena: &mut Arena<AExpr>,
     local_projection: &mut [Node],
 ) -> ALogicalPlan {
-    let suffix = options.suffix.clone();
-
+    let suffix = options.args.suffix();
     let alp = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena)
-        .join(input_right, left_on, right_on, options)
+        .join(input_right, left_on, right_on, options.clone())
         .build();
     let schema_after_join = alp.schema(lp_arena);
 
     for proj in local_projection {
         for name in aexpr_to_leaf_names(*proj, expr_arena) {
-            if name.contains(suffix.as_ref()) && schema_after_join.get(&name).is_none() {
+            if name.contains(suffix) && schema_after_join.get(&name).is_none() {
                 let new_name = &name.as_ref()[..name.len() - suffix.len()];
 
                 let renamed = aexpr_assign_renamed_leaf(*proj, expr_arena, &name, new_name);

@@ -1,5 +1,5 @@
 //! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use anonymous_scan::*;
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 pub use csv::*;
 pub use file_list_reader::*;
 #[cfg(feature = "ipc")]
@@ -32,12 +32,12 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
-use polars_core::frame::hash_join::JoinType;
+use polars_core::frame::hash_join::{JoinType, JoinValidation};
 use polars_core::prelude::*;
 use polars_io::RowCount;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
 use polars_plan::utils::expr_to_leaf_column_names;
@@ -173,12 +173,12 @@ impl LazyFrame {
         self
     }
 
-    /// Describe the logical plan.
+    /// Explain the naive logical plan.
     pub fn describe_plan(&self) -> String {
         self.logical_plan.describe()
     }
 
-    /// Describe the optimized logical plan.
+    /// Explain the optimized logical plan.
     pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(64);
@@ -190,6 +190,15 @@ impl LazyFrame {
         )?;
         let logical_plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
         Ok(logical_plan.describe())
+    }
+
+    /// Explain the logical plan.
+    pub fn explain(&self, optimized: bool) -> PolarsResult<String> {
+        if optimized {
+            self.describe_optimized_plan()
+        } else {
+            Ok(self.describe_plan())
+        }
     }
 
     /// Add a sort operation to the logical plan.
@@ -250,6 +259,36 @@ impl LazyFrame {
                 .build();
             Self::from_logical_plan(lp, opt_state)
         }
+    }
+
+    pub fn top_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+        self,
+        k: IdxSize,
+        by_exprs: E,
+        descending: B,
+        nulls_last: bool,
+    ) -> Self {
+        let mut descending = descending.as_ref().to_vec();
+        // top-k is reverse from sort
+        for v in &mut descending {
+            *v = !*v;
+        }
+        // this will optimize to top-k
+        self.sort_by_exprs(by_exprs, descending, nulls_last)
+            .slice(0, k)
+    }
+
+    pub fn bottom_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+        self,
+        k: IdxSize,
+        by_exprs: E,
+        descending: B,
+        nulls_last: bool,
+    ) -> Self {
+        let descending = descending.as_ref().to_vec();
+        // this will optimize to bottom-k
+        self.sort_by_exprs(by_exprs, descending, nulls_last)
+            .slice(0, k)
     }
 
     /// Reverse the DataFrame
@@ -440,7 +479,7 @@ impl LazyFrame {
         if streaming {
             #[cfg(feature = "streaming")]
             {
-                insert_streaming_nodes(lp_top, lp_arena, expr_arena, scratch, _fmt)?;
+                insert_streaming_nodes(lp_top, lp_arena, expr_arena, scratch, _fmt, true)?;
             }
             #[cfg(not(feature = "streaming"))]
             {
@@ -463,13 +502,13 @@ impl LazyFrame {
             self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch, false)?;
 
         let finger_prints = if file_caching {
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
             {
                 let mut fps = Vec::with_capacity(8);
                 collect_fingerprints(lp_top, &mut fps, &lp_arena, &expr_arena);
                 Some(fps)
             }
-            #[cfg(not(any(feature = "ipc", feature = "parquet", feature = "csv-file")))]
+            #[cfg(not(any(feature = "ipc", feature = "parquet", feature = "csv")))]
             {
                 None
             }
@@ -510,19 +549,19 @@ impl LazyFrame {
         let out = physical_plan.execute(&mut state);
         #[cfg(debug_assertions)]
         {
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
             state.file_cache.assert_empty();
         }
         out
     }
 
-    //// Profile a LazyFrame.
-    ////
-    //// This will run the query and return a tuple
-    //// containing the materialized DataFrame and a DataFrame that contains profiling information
-    //// of each node that is executed.
-    ////
-    //// The units of the timings are microseconds.
+    /// Profile a LazyFrame.
+    ///
+    /// This will run the query and return a tuple
+    /// containing the materialized DataFrame and a DataFrame that contains profiling information
+    /// of each node that is executed.
+    ///
+    /// The units of the timings are microseconds.
     pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
         let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
         state.time_nodes();
@@ -531,7 +570,7 @@ impl LazyFrame {
         Ok((out, timer_df))
     }
 
-    //// Stream a query result into a parquet file. This is useful if the final result doesn't fit
+    /// Stream a query result into a parquet file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "parquet")]
@@ -554,7 +593,7 @@ impl LazyFrame {
         Ok(())
     }
 
-    //// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
+    /// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "ipc")]
@@ -693,15 +732,24 @@ impl LazyFrame {
     ///
     /// Also works for index values of type Int32 or Int64.
     ///
-    /// Different from a [`dynamic_groupby`] the windows are now determined by the
+    /// Different from a [`groupby_dynamic`][`Self::groupby_dynamic`], the windows are now determined by the
     /// individual values and are not of constant intervals. For constant intervals use
     /// *groupby_dynamic*
     #[cfg(feature = "dynamic_groupby")]
     pub fn groupby_rolling<E: AsRef<[Expr]>>(
         self,
+        index_column: Expr,
         by: E,
-        options: RollingGroupOptions,
+        mut options: RollingGroupOptions,
     ) -> LazyGroupBy {
+        if let Expr::Column(name) = index_column {
+            options.index_column = name.as_ref().into();
+        } else {
+            let name = expr_output_name(&index_column).unwrap();
+            return self
+                .with_column(index_column)
+                .groupby_rolling(Expr::Column(name), by, options);
+        }
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,
@@ -731,9 +779,18 @@ impl LazyFrame {
     #[cfg(feature = "dynamic_groupby")]
     pub fn groupby_dynamic<E: AsRef<[Expr]>>(
         self,
+        index_column: Expr,
         by: E,
-        options: DynamicGroupOptions,
+        mut options: DynamicGroupOptions,
     ) -> LazyGroupBy {
+        if let Expr::Column(name) = index_column {
+            options.index_column = name.as_ref().into();
+        } else {
+            let name = expr_output_name(&index_column).unwrap();
+            return self
+                .with_column(index_column)
+                .groupby_dynamic(Expr::Column(name), by, options);
+        }
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,
@@ -745,7 +802,7 @@ impl LazyFrame {
         }
     }
 
-    /// Similar to [`groupby`], but order of the DataFrame is maintained.
+    /// Similar to [`groupby`][`Self::groupby`], but order of the DataFrame is maintained.
     pub fn groupby_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
         let keys = by
             .as_ref()
@@ -790,7 +847,12 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn left_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
-        self.join(other, [left_on.into()], [right_on.into()], JoinType::Left)
+        self.join(
+            other,
+            [left_on.into()],
+            [right_on.into()],
+            JoinArgs::new(JoinType::Left),
+        )
     }
 
     /// Join query with other lazy query.
@@ -806,7 +868,12 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn outer_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
-        self.join(other, [left_on.into()], [right_on.into()], JoinType::Outer)
+        self.join(
+            other,
+            [left_on.into()],
+            [right_on.into()],
+            JoinArgs::new(JoinType::Outer),
+        )
     }
 
     /// Join query with other lazy query.
@@ -822,13 +889,18 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn inner_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
-        self.join(other, [left_on.into()], [right_on.into()], JoinType::Inner)
+        self.join(
+            other,
+            [left_on.into()],
+            [right_on.into()],
+            JoinArgs::new(JoinType::Inner),
+        )
     }
 
     /// Creates the cartesian product from both frames, preserves the order of the left keys.
     #[cfg(feature = "cross_join")]
     pub fn cross_join(self, other: LazyFrame) -> LazyFrame {
-        self.join(other, vec![], vec![], JoinType::Cross)
+        self.join(other, vec![], vec![], JoinArgs::new(JoinType::Cross))
     }
 
     /// Generic join function that can join on multiple columns.
@@ -841,7 +913,7 @@ impl LazyFrame {
     ///
     /// fn example(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinType::Inner)
+    ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinArgs::new(JoinType::Inner))
     /// }
     /// ```
     pub fn join<E: AsRef<[Expr]>>(
@@ -849,7 +921,7 @@ impl LazyFrame {
         other: LazyFrame,
         left_on: E,
         right_on: E,
-        how: JoinType,
+        args: JoinArgs,
     ) -> LazyFrame {
         // if any of the nodes reads from files we must activate this this plan as well.
         self.opt_state.file_caching |= other.opt_state.file_caching;
@@ -860,7 +932,7 @@ impl LazyFrame {
             .with(other)
             .left_on(left_on)
             .right_on(right_on)
-            .how(how)
+            .how(args.how)
             .finish()
     }
 
@@ -974,6 +1046,11 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().explode(columns).build();
         Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Aggregate all the columns as the sum of their null value count.
+    pub fn null_count(self) -> LazyFrame {
+        self.select_local(vec![col("*").null_count()])
     }
 
     /// Keep unique rows and maintain order
@@ -1108,7 +1185,7 @@ impl LazyFrame {
     pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
         let add_row_count_in_map = match &mut self.logical_plan {
             // Do the row count at scan
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             LogicalPlan::CsvScan { options, .. } => {
                 options.row_count = Some(RowCount {
                     name: name.to_string(),
@@ -1137,7 +1214,10 @@ impl LazyFrame {
 
         let name2: SmartString = name.into();
         let udf_schema = move |s: &Schema| {
-            let new = s.insert_index(0, name2.clone(), IDX_DTYPE).unwrap();
+            // Can't error, index 0 is always in bounds
+            let new = s
+                .new_inserting_at_index(0, name2.clone(), IDX_DTYPE)
+                .unwrap();
             Ok(Arc::new(new))
         };
 
@@ -1185,7 +1265,14 @@ impl LazyFrame {
         // this trick allows us to reuse the `Union` architecture to get map over
         // two DataFrames
         let left = self.map_private(FunctionNode::Rechunk);
-        let q = concat(&[left, other], false, true)?;
+        let q = concat(
+            &[left, other],
+            UnionArgs {
+                rechunk: false,
+                parallel: true,
+                ..Default::default()
+            },
+        )?;
         Ok(q.map_private(FunctionNode::MergeSorted {
             column: Arc::from(key),
         }))
@@ -1280,8 +1367,8 @@ impl LazyGroupBy {
     {
         #[cfg(feature = "dynamic_groupby")]
         let options = GroupbyOptions {
-            dynamic: None,
-            rolling: None,
+            dynamic: self.dynamic_options,
+            rolling: self.rolling_options,
             slice: None,
         };
 
@@ -1311,6 +1398,7 @@ pub struct JoinBuilder {
     allow_parallel: bool,
     force_parallel: bool,
     suffix: Option<String>,
+    validation: JoinValidation,
 }
 impl JoinBuilder {
     pub fn new(lf: LazyFrame) -> Self {
@@ -1323,6 +1411,7 @@ impl JoinBuilder {
             allow_parallel: true,
             force_parallel: false,
             suffix: None,
+            validation: Default::default(),
         }
     }
 
@@ -1335,6 +1424,11 @@ impl JoinBuilder {
     /// Select the join type.
     pub fn how(mut self, how: JoinType) -> Self {
         self.how = how;
+        self
+    }
+
+    pub fn validate(mut self, validation: JoinValidation) -> Self {
+        self.validation = validation;
         self
     }
 
@@ -1364,8 +1458,8 @@ impl JoinBuilder {
     }
 
     /// Force parallel table evaluation.
-    pub fn force_parallel(mut self, allow: bool) -> Self {
-        self.allow_parallel = allow;
+    pub fn force_parallel(mut self, force: bool) -> Self {
+        self.force_parallel = force;
         self
     }
 
@@ -1384,9 +1478,11 @@ impl JoinBuilder {
         // if any of the nodes reads from files we must activate this this plan as well.
         opt_state.file_caching |= other.opt_state.file_caching;
 
-        let suffix = match self.suffix {
-            None => Cow::Borrowed("_right"),
-            Some(suffix) => Cow::Owned(suffix),
+        let args = JoinArgs {
+            how: self.how,
+            validation: self.validation,
+            suffix: self.suffix,
+            slice: None,
         };
 
         let lp = self
@@ -1399,8 +1495,7 @@ impl JoinBuilder {
                 JoinOptions {
                     allow_parallel: self.allow_parallel,
                     force_parallel: self.force_parallel,
-                    how: self.how,
-                    suffix,
+                    args,
                     ..Default::default()
                 },
             )

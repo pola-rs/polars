@@ -102,9 +102,7 @@ def test_unnest_columns_available() -> None:
     q = df.with_columns(
         pl.col("genres")
         .str.split("|")
-        .arr.to_struct(
-            n_field_strategy="max_width", name_generator=lambda i: f"genre{i+1}"
-        )
+        .list.to_struct(n_field_strategy="max_width", fields=lambda i: f"genre{i+1}")
     ).unnest("genres")
 
     out = q.collect()
@@ -162,15 +160,19 @@ def test_double_projection_union() -> None:
 
 @typing.no_type_check
 def test_asof_join_projection_() -> None:
-    lf1 = pl.DataFrame(
-        {
-            "m": np.linspace(0, 5, 7),
-            "a": np.linspace(0, 5, 7),
-            "b": np.linspace(0, 5, 7),
-            "c": pl.Series(np.linspace(0, 5, 7)).cast(str),
-            "d": np.linspace(0, 5, 7),
-        }
-    ).lazy()
+    lf1 = (
+        pl.DataFrame(
+            {
+                "m": np.linspace(0, 5, 7),
+                "a": np.linspace(0, 5, 7),
+                "b": np.linspace(0, 5, 7),
+                "c": pl.Series(np.linspace(0, 5, 7)).cast(str),
+                "d": np.linspace(0, 5, 7),
+            }
+        )
+        .lazy()
+        .set_sorted("b")
+    )
     lf2 = (
         pl.DataFrame(
             {
@@ -181,6 +183,7 @@ def test_asof_join_projection_() -> None:
         )
         .with_columns(pl.col("val").alias("b"))
         .lazy()
+        .set_sorted("b")
     )
 
     joined = lf1.join_asof(
@@ -268,3 +271,23 @@ def test_distinct_projection_pd_7578() -> None:
         "bar": ["a", "b"],
         "count": [3, 2],
     }
+
+
+def test_join_suffix_collision_9562() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    other_df = pl.DataFrame(
+        {
+            "apple": ["x", "y", "z"],
+            "ham": ["a", "b", "d"],
+        }
+    )
+    df.join(other_df, on="ham")
+    assert df.lazy().join(
+        other_df.lazy(), how="inner", left_on="ham", right_on="ham", suffix="m"
+    ).select("ham").collect().to_dict(False) == {"ham": ["a", "b"]}

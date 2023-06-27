@@ -4,6 +4,9 @@ use super::*;
 use crate::prelude::{AnonymousScan, AnonymousScanOptions, LazyJsonLineReader};
 
 impl AnonymousScan for LazyJsonLineReader {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     fn scan(&self, scan_opts: AnonymousScanOptions) -> PolarsResult<DataFrame> {
         let schema = scan_opts.output_schema.unwrap_or(scan_opts.schema);
         JsonLineReader::from_path(&self.path)?
@@ -21,8 +24,8 @@ impl AnonymousScan for LazyJsonLineReader {
         let mut reader = std::io::BufReader::new(f);
 
         let data_type =
-            arrow_ndjson::read::infer(&mut reader, infer_schema_length).map_err(to_compute_err)?;
-        let schema: Schema = StructArray::get_fields(&data_type).iter().into();
+            polars_json::ndjson::infer(&mut reader, infer_schema_length).map_err(to_compute_err)?;
+        let schema = Schema::from_iter(StructArray::get_fields(&data_type));
 
         Ok(schema)
     }

@@ -1,7 +1,6 @@
 use polars_core::prelude::*;
 
 use crate::prelude::*;
-use crate::utils::aexpr_is_simple_projection;
 
 pub(super) struct SlicePushDown {
     streaming: bool,
@@ -183,7 +182,7 @@ impl SlicePushDown {
 
             }
 
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             (CsvScan {
                 path,
                 file_info,
@@ -205,9 +204,7 @@ impl SlicePushDown {
             }
 
             (Union {inputs, mut options }, Some(state)) => {
-                options.slice = true;
-                options.slice_offset = state.offset;
-                options.slice_len = state.len;
+                options.slice = Some((state.offset, state.len as usize));
                 Ok(Union {inputs, options})
             },
             (Join {
@@ -229,7 +226,7 @@ impl SlicePushDown {
 
                 // then assign the slice state to the join operation
 
-                options.slice = Some((state.offset, state.len as usize));
+                options.args.slice = Some((state.offset, state.len as usize));
 
                 Ok(Join {
                     input_left,
@@ -353,29 +350,18 @@ impl SlicePushDown {
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
             }
             // there is state, inspect the projection to determine how to deal with it
-            (Projection {input, mut expr, schema}, Some(State{offset, len})) => {
+            (Projection {input, expr, schema}, Some(_)) => {
                 // The slice operation may only pass on simple projections. col("foo").alias("bar")
                 if expr.iter().all(|root|  {
-                    aexpr_is_simple_projection(*root, expr_arena)
+                    aexpr_is_elementwise(*root, expr_arena)
                 }) {
                     let lp = Projection {input, expr, schema};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
                 }
-                // we add a slice node to the projections
+                // don't push down slice, but restart optimization
                 else {
-                    let offset_node = to_aexpr(lit(offset), expr_arena);
-                    let length_node = to_aexpr(lit(len), expr_arena);
-                    expr.iter_mut().for_each(|node| {
-                        let aexpr = AExpr::Slice {
-                            input: *node,
-                            offset: offset_node,
-                            length: length_node
-                        };
-                        *node = expr_arena.add(aexpr)
-                    });
                     let lp = Projection {input, expr, schema};
-
-                    self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
+                    self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
                 }
             }
             (catch_all, state) => {

@@ -9,23 +9,24 @@ description = "Lazy query engine for the Polars DataFrame library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crossbeam-channel = "0.5"
+crossbeam-channel = { version = "0.5", optional = true }
+crossbeam-queue = { version = "0.3", optional = true }
 enum_dispatch = "0.3"
 hashbrown.workspace = true
 num-traits.workspace = true
-polars-arrow = { version = "0.27.2", path = "../../polars-arrow", default-features = false }
-polars-core = { version = "0.27.2", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.27.2", path = "../../polars-io", default-features = false, features = ["ipc"] }
-polars-ops = { version = "0.27.2", path = "../../polars-ops", features = ["search_sorted"] }
-polars-plan = { version = "0.27.2", path = "../polars-plan", default-features = false, features = ["compile"] }
-polars-row = { version = "0.27.2", path = "../../polars-row" }
-polars-utils = { version = "0.27.2", path = "../../polars-utils", features = ["sysinfo"] }
+polars-arrow = { version = "0.30.0", path = "../../polars-arrow", default-features = false }
+polars-core = { version = "0.30.0", path = "../../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.30.0", path = "../../polars-io", default-features = false, features = ["ipc", "async"] }
+polars-ops = { version = "0.30.0", path = "../../polars-ops", features = ["search_sorted"] }
+polars-plan = { version = "0.30.0", path = "../polars-plan", default-features = false, features = ["compile"] }
+polars-row = { version = "0.30.0", path = "../../polars-row" }
+polars-utils = { version = "0.30.0", path = "../../polars-utils", features = ["sysinfo"] }
 rayon.workspace = true
 smartstring = { version = "1" }
 
 [features]
-compile = []
-csv-file = ["polars-plan/csv-file", "polars-io/csv-file"]
+compile = ["crossbeam-channel", "crossbeam-queue"]
+csv = ["polars-plan/csv", "polars-io/csv"]
 parquet = ["polars-plan/parquet", "polars-io/parquet"]
 ipc = ["polars-plan/ipc", "polars-io/ipc"]
 async = ["polars-plan/async", "polars-io/async"]
@@ -36,4 +37,7 @@ dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-decimal = ["polars-core/dtype-decimal"]
+dtype-array = ["polars-core/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
+trigger_ooc = []
+test = ["compile", "polars-core/chunked_ids"]

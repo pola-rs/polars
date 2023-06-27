@@ -21,6 +21,8 @@ pub mod kernels;
 #[cfg(feature = "ndarray")]
 mod ndarray;
 
+#[cfg(feature = "dtype-array")]
+pub(crate) mod array;
 mod bitwise;
 #[cfg(feature = "object")]
 mod drop;
@@ -37,6 +39,7 @@ mod random;
     feature = "dtype-date"
 ))]
 pub mod temporal;
+mod to_vec;
 mod trusted_len;
 pub mod upstream_traits;
 
@@ -44,6 +47,7 @@ use std::mem;
 use std::slice::Iter;
 
 use bitflags::bitflags;
+use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use polars_arrow::prelude::*;
 
 use crate::series::IsSorted;
@@ -170,7 +174,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
     }
 
-    pub fn is_sorted_flag2(&self) -> IsSorted {
+    pub fn is_sorted_flag(&self) -> IsSorted {
         if self.is_sorted_ascending_flag() {
             IsSorted::Ascending
         } else if self.is_sorted_descending_flag() {
@@ -235,14 +239,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
-        self.chunks = vec![arrow::compute::concatenate::concatenate(
-            self.chunks
-                .iter()
-                .map(|a| &**a)
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
-        .unwrap()];
+        self.chunks = vec![concatenate_owned_unchecked(self.chunks.as_slice()).unwrap()];
     }
 
     /// Unpack a Series to the same physical type.
@@ -273,7 +270,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
-    /// Series to ChunkedArray<T>
+    /// Series to [`ChunkedArray<T>`]
     pub fn unpack_series_matching_type(&self, series: &Series) -> PolarsResult<&ChunkedArray<T>> {
         polars_ensure!(
             self.dtype() == series.dtype(),
@@ -318,91 +315,32 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Create a new ChunkedArray from self, where the chunks are replaced.
-    fn copy_with_chunks(
+    ///
+    /// # Safety
+    /// The caller must ensure the dtypes of the chunks are correct
+    unsafe fn copy_with_chunks(
         &self,
         chunks: Vec<ArrayRef>,
         keep_sorted: bool,
         keep_fast_explode: bool,
     ) -> Self {
-        let mut out = ChunkedArray {
-            field: self.field.clone(),
+        Self::from_chunks_and_metadata(
             chunks,
-            phantom: PhantomData,
-            bit_settings: self.bit_settings,
-            length: 0,
-        };
-        out.compute_len();
-        if !keep_sorted {
-            out.set_sorted_flag(IsSorted::Not);
-        }
-        if !keep_fast_explode {
-            out.unset_fast_explode_list()
-        }
-        out
-    }
-
-    /// Get a mask of the null values.
-    pub fn is_null(&self) -> BooleanChunked {
-        if !self.has_validity() {
-            return BooleanChunked::full(self.name(), false, self.len());
-        }
-        let chunks = self
-            .chunks
-            .iter()
-            .map(|arr| {
-                let bitmap = arr
-                    .validity()
-                    .map(|bitmap| !bitmap)
-                    .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
-                Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
-    }
-
-    /// Get a mask of the valid values.
-    pub fn is_not_null(&self) -> BooleanChunked {
-        if !self.has_validity() {
-            return BooleanChunked::full(self.name(), true, self.len());
-        }
-        let chunks = self
-            .chunks
-            .iter()
-            .map(|arr| {
-                let bitmap = arr
-                    .validity()
-                    .cloned()
-                    .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
-                Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
-    }
-
-    pub(crate) fn coalesce_nulls(&self, other: &[ArrayRef]) -> Self {
-        assert_eq!(self.chunks.len(), other.len());
-        let chunks = self
-            .chunks
-            .iter()
-            .zip(other)
-            .map(|(a, b)| {
-                assert_eq!(a.len(), b.len());
-                let validity = match (a.validity(), b.validity()) {
-                    (None, Some(b)) => Some(b.clone()),
-                    (Some(a), Some(b)) => Some(a & b),
-                    (Some(a), None) => Some(a.clone()),
-                    (None, None) => None,
-                };
-
-                a.with_validity(validity)
-            })
-            .collect();
-        self.copy_with_chunks(chunks, true, false)
+            self.field.clone(),
+            self.bit_settings,
+            keep_sorted,
+            keep_fast_explode,
+        )
     }
 
     /// Get data type of ChunkedArray.
     pub fn dtype(&self) -> &DataType {
         self.field.data_type()
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    pub(crate) unsafe fn set_dtype(&mut self, dtype: DataType) {
+        self.field = Arc::new(Field::new(self.name(), dtype))
     }
 
     /// Name of the ChunkedArray.
@@ -489,6 +427,8 @@ where
 
 impl AsSinglePtr for BooleanChunked {}
 impl AsSinglePtr for ListChunked {}
+#[cfg(feature = "dtype-array")]
+impl AsSinglePtr for ArrayChunked {}
 impl AsSinglePtr for Utf8Chunked {}
 impl AsSinglePtr for BinaryChunked {}
 #[cfg(feature = "object")]
@@ -573,6 +513,14 @@ impl ValueSize for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+impl ValueSize for ArrayChunked {
+    fn get_values_size(&self) -> usize {
+        self.chunks
+            .iter()
+            .fold(0usize, |acc, arr| acc + arr.get_values_size())
+    }
+}
 impl ValueSize for Utf8Chunked {
     fn get_values_size(&self) -> usize {
         self.chunks
@@ -586,22 +534,6 @@ impl ValueSize for BinaryChunked {
         self.chunks
             .iter()
             .fold(0usize, |acc, arr| acc + arr.get_values_size())
-    }
-}
-
-impl ListChunked {
-    /// Get the inner data type of the list.
-    pub fn inner_dtype(&self) -> DataType {
-        match self.dtype() {
-            DataType::List(dt) => *dt.clone(),
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn set_inner_dtype(&mut self, dtype: DataType) {
-        assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
-        let field = Arc::make_mut(&mut self.field);
-        field.coerce(DataType::List(Box::new(dtype)));
     }
 }
 
@@ -646,7 +578,7 @@ pub(crate) mod test {
         let a = a.sort(false);
         let b = a.into_iter().collect::<Vec<_>>();
         assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
-        assert_eq!(a.is_sorted_ascending_flag(), true);
+        assert!(a.is_sorted_ascending_flag());
     }
 
     #[test]

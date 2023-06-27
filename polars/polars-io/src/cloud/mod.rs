@@ -21,6 +21,7 @@ fn err_missing_feature(feature: &str, scheme: &str) -> BuildResult {
         "feature '{}' must be enabled in order to use '{}' cloud urls", feature, scheme,
     );
 }
+#[cfg(any(feature = "azure", feature = "aws", feature = "gcp"))]
 fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
     polars_bail!(
         ComputeError:
@@ -28,7 +29,7 @@ fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
     );
 }
 /// Build an ObjectStore based on the URL and passed in url. Return the cloud location and an implementation of the object store.
-pub fn build(url: &str, options: Option<&CloudOptions>) -> BuildResult {
+pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
     let store = match CloudType::from_str(url)? {
         CloudType::File => {
@@ -37,7 +38,7 @@ pub fn build(url: &str, options: Option<&CloudOptions>) -> BuildResult {
         }
         CloudType::Aws => {
             #[cfg(feature = "aws")]
-            match options {
+            match _options {
                 Some(options) => {
                     let store = options.build_aws(&cloud_location.bucket)?;
                     Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
@@ -49,7 +50,7 @@ pub fn build(url: &str, options: Option<&CloudOptions>) -> BuildResult {
         }
         CloudType::Gcp => {
             #[cfg(feature = "gcp")]
-            match options {
+            match _options {
                 Some(options) => {
                     let store = options.build_gcp(&cloud_location.bucket)?;
                     Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
@@ -62,7 +63,7 @@ pub fn build(url: &str, options: Option<&CloudOptions>) -> BuildResult {
         CloudType::Azure => {
             {
                 #[cfg(feature = "azure")]
-                match options {
+                match _options {
                     Some(options) => {
                         let store = options.build_azure(&cloud_location.bucket)?;
                         Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)

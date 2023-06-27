@@ -66,20 +66,42 @@ def test_str_decode() -> None:
 
 def test_str_decode_exception() -> None:
     s = pl.Series(["not a valid", "626172", None])
-    with pytest.raises(Exception):
+    with pytest.raises(pl.ComputeError):
         s.str.decode(encoding="hex")
-    with pytest.raises(Exception):
+    with pytest.raises(pl.ComputeError):
         s.str.decode(encoding="base64")
     with pytest.raises(ValueError):
         s.str.decode("utf8")  # type: ignore[arg-type]
 
 
+def test_hex_decode_return_dtype() -> None:
+    data = {"a": ["68656c6c6f", "776f726c64"]}
+    expr = pl.col("a").str.decode("hex")
+
+    df = pl.DataFrame(data).select(expr)
+    assert df.schema == {"a": pl.Binary}
+
+    ldf = pl.LazyFrame(data).select(expr)
+    assert ldf.schema == {"a": pl.Binary}
+
+
+def test_base64_decode_return_dtype() -> None:
+    data = {"a": ["Zm9v", "YmFy"]}
+    expr = pl.col("a").str.decode("base64")
+
+    df = pl.DataFrame(data).select(expr)
+    assert df.schema == {"a": pl.Binary}
+
+    ldf = pl.LazyFrame(data).select(expr)
+    assert ldf.schema == {"a": pl.Binary}
+
+
 def test_str_replace_str_replace_all() -> None:
-    s = pl.Series(["hello", "world", "test", "root"])
-    expected = pl.Series(["hell0", "w0rld", "test", "r0ot"])
+    s = pl.Series(["hello", "world", "test", "rooted"])
+    expected = pl.Series(["hell0", "w0rld", "test", "r0oted"])
     assert_series_equal(s.str.replace("o", "0"), expected)
 
-    expected = pl.Series(["hell0", "w0rld", "test", "r00t"])
+    expected = pl.Series(["hell0", "w0rld", "test", "r00ted"])
     assert_series_equal(s.str.replace_all("o", "0"), expected)
 
 
@@ -112,13 +134,20 @@ def test_str_to_uppercase() -> None:
     assert_series_equal(s.str.to_uppercase(), expected)
 
 
+def test_str_case_cyrillic() -> None:
+    vals = ["Biтpyк", "Iвaн"]
+    s = pl.Series(vals)
+    assert s.str.to_lowercase().to_list() == [a.lower() for a in vals]
+    assert s.str.to_uppercase().to_list() == [a.upper() for a in vals]
+
+
 def test_str_parse_int() -> None:
     bin = pl.Series(["110", "101", "010"])
     assert_series_equal(bin.str.parse_int(2), pl.Series([6, 5, 2]).cast(pl.Int32))
 
     hex = pl.Series(["fa1e", "ff00", "cafe", "invalid", None])
     assert_series_equal(
-        hex.str.parse_int(16, False),
+        hex.str.parse_int(16, strict=False),
         pl.Series([64030, 65280, 51966, None, None]).cast(pl.Int32),
         check_exact=True,
     )
@@ -135,7 +164,10 @@ def test_str_parse_int_df() -> None:
         }
     )
     out = df.with_columns(
-        [pl.col("bin").str.parse_int(2, False), pl.col("hex").str.parse_int(16, False)]
+        [
+            pl.col("bin").str.parse_int(2, strict=False),
+            pl.col("hex").str.parse_int(16, strict=False),
+        ]
     )
 
     expected = pl.DataFrame(
@@ -157,8 +189,8 @@ def test_str_strip() -> None:
     expected = pl.Series(["hello", "world"])
     assert_series_equal(s.str.strip(), expected)
 
-    expected = pl.Series(["hello", "worl"])
-    assert_series_equal(s.str.strip().str.strip("d"), expected)
+    expected = pl.Series(["hell", "world"])
+    assert_series_equal(s.str.strip().str.strip("o"), expected)
 
     expected = pl.Series(["ell", "rld\t"])
     assert_series_equal(s.str.strip(" hwo"), expected)
@@ -233,6 +265,11 @@ def test_json_extract_series() -> None:
     expected = pl.Series([{"a": 1}, None, {"a": 2}])
     dtype2 = pl.Struct([pl.Field("a", pl.Int64)])
     assert_series_equal(s.str.json_extract(dtype2), expected)
+
+    s = pl.Series([], dtype=pl.Utf8)
+    expected = pl.Series([], dtype=pl.List(pl.Int64))
+    dtype = pl.List(pl.Int64)
+    assert_series_equal(s.str.json_extract(dtype), expected)
 
 
 def test_json_extract_lazy_expr() -> None:
@@ -597,17 +634,6 @@ def test_decode_strict() -> None:
         df.select(pl.col("strings").str.decode("base64", strict=True))
 
 
-def test_wildcard_expansion() -> None:
-    # one function requires wildcard expansion the other need
-    # this tests the nested behavior
-    # see: #2867
-
-    df = pl.DataFrame({"a": ["x", "Y", "z"], "b": ["S", "o", "S"]})
-    assert df.select(
-        pl.concat_str(pl.all()).str.to_lowercase()
-    ).to_series().to_list() == ["xs", "yo", "zs"]
-
-
 def test_split() -> None:
     df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
     out = df.select([pl.col("x").str.split("_")])
@@ -675,3 +701,25 @@ def test_splitn() -> None:
 
     assert_frame_equal(out, expected)
     assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
+
+
+def test_titlecase() -> None:
+    df = pl.DataFrame(
+        {
+            "sing": [
+                "welcome to my world",
+                "THERE'S NO TURNING BACK",
+                "double  space",
+                "and\ta\t tab",
+            ]
+        }
+    )
+
+    assert df.select(pl.col("sing").str.to_titlecase()).to_dict(False) == {
+        "sing": [
+            "Welcome To My World",
+            "There's No Turning Back",
+            "Double  Space",
+            "And\tA\t Tab",
+        ]
+    }

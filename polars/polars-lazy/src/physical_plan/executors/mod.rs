@@ -63,9 +63,7 @@ fn execute_projection_cached_window_fns(
     #[allow(clippy::type_complexity)]
     // String: partition_name,
     // u32: index,
-    // bool: flatten (we must run those first because they need a sorted group tuples.
-    //       if we cache the group tuples we must ensure we cast the sorted onces.
-    let mut windows: Vec<(String, Vec<(u32, bool, Arc<dyn PhysicalExpr>)>)> = vec![];
+    let mut windows: Vec<(String, Vec<(u32, Arc<dyn PhysicalExpr>)>)> = vec![];
     let mut other = Vec::with_capacity(exprs.len());
 
     // first we partition the window function by the values they group over.
@@ -77,17 +75,12 @@ fn execute_projection_cached_window_fns(
 
         let mut is_window = false;
         for e in e.into_iter() {
-            if let Expr::Window {
-                partition_by,
-                options,
-                ..
-            } = e
-            {
+            if let Expr::Window { partition_by, .. } = e {
                 let groupby = format!("{:?}", partition_by.as_slice());
                 if let Some(tpl) = windows.iter_mut().find(|tpl| tpl.0 == groupby) {
-                    tpl.1.push((index, options.explode, phys.clone()))
+                    tpl.1.push((index, phys.clone()))
                 } else {
-                    windows.push((groupby, vec![(index, options.explode, phys.clone())]))
+                    windows.push((groupby, vec![(index, phys.clone())]))
                 }
                 is_window = true;
                 break;
@@ -105,9 +98,11 @@ fn execute_projection_cached_window_fns(
             .collect::<PolarsResult<Vec<_>>>()
     })?;
 
-    for mut partition in windows {
+    for partition in windows {
         // clear the cache for every partitioned group
         let mut state = state.split();
+        // inform the expression it has window functions.
+        state.insert_has_window_function_flag();
 
         // don't bother caching if we only have a single window function in this partition
         if partition.1.len() == 1 {
@@ -116,13 +111,7 @@ fn execute_projection_cached_window_fns(
             state.insert_cache_window_flag();
         }
 
-        partition.1.sort_unstable_by_key(|(_idx, explode, _)| {
-            // negate as `false` will be first and we want the exploded
-            // e.g. the sorted groups cd to be the first to fill the cache.
-            !explode
-        });
-
-        for (index, _, e) in partition.1 {
+        for (index, e) in partition.1 {
             if e.as_expression()
                 .unwrap()
                 .into_iter()
@@ -154,6 +143,7 @@ pub(crate) fn evaluate_physical_expressions(
     state: &mut ExecutionState,
     has_windows: bool,
 ) -> PolarsResult<DataFrame> {
+    state.expr_cache = Some(Default::default());
     let zero_length = df.height() == 0;
     let selected_columns = if has_windows {
         execute_projection_cached_window_fns(df, exprs, state)?
@@ -165,6 +155,8 @@ pub(crate) fn evaluate_physical_expressions(
                 .collect::<PolarsResult<_>>()
         })?
     };
+    state.clear_window_expr_cache();
+    state.expr_cache = None;
 
     check_expand_literals(selected_columns, zero_length)
 }

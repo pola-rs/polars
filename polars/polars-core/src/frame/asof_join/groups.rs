@@ -4,7 +4,7 @@ use std::ops::Sub;
 
 use ahash::RandomState;
 use arrow::types::NativeType;
-use num_traits::Zero;
+use num_traits::{Bounded, Zero};
 use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
@@ -13,10 +13,10 @@ use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 #[cfg(feature = "dtype-categorical")]
 use crate::frame::hash_join::_check_categorical_src;
 use crate::frame::hash_join::{
-    create_probe_table, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_bytes,
+    build_tables, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_bytes,
 };
+use crate::hashing::{df_rows_to_hashes_threaded_vertical, AsU64};
 use crate::utils::{split_ca, split_df};
-use crate::vector_hasher::{df_rows_to_hashes_threaded, AsU64};
 use crate::POOL;
 
 pub(super) unsafe fn join_asof_backward_with_indirection_and_tolerance<
@@ -140,6 +140,46 @@ pub(super) unsafe fn join_asof_forward_with_indirection<T: PartialOrd + Copy + D
     (None, offsets.len())
 }
 
+pub(super) unsafe fn join_asof_nearest_with_indirection<
+    T: PartialOrd + Copy + Debug + Sub<Output = T> + Bounded,
+>(
+    val_l: T,
+    right: &[T],
+    offsets: &[IdxSize],
+    // only there to have the same function signature
+    _: T,
+) -> (Option<IdxSize>, usize) {
+    if offsets.is_empty() {
+        return (None, 0);
+    }
+    let max_value = <T as Bounded>::max_value();
+    let mut dist: T = max_value;
+    for (idx, &offset) in offsets.iter().enumerate() {
+        let val_r = *right.get_unchecked(offset as usize);
+        if val_r >= val_l {
+            // This is (val_r - val_l).abs(), but works on strings/dates
+            let dist_curr = if val_r > val_l {
+                val_r - val_l
+            } else {
+                val_l - val_r
+            };
+            if dist_curr <= dist {
+                // candidate for match
+                dist = dist_curr;
+            } else {
+                // note for a nearest-match, we can re-match on the same val_r next time,
+                // so we need to rewind the idx by 1
+                return (Some(offset - 1), idx - 1);
+            }
+        }
+    }
+
+    // if we've reached the end with nearest and haven't returned, it means that the last item was the closest
+    // note for a nearest-match, we can re-match on the same val_r next time,
+    // so we need to rewind the idx by 1
+    (Some(offsets[offsets.len() - 1]), offsets.len() - 1)
+}
+
 // process the group taken by the `by` operation and keep track of the offset.
 // we don't process a group at once but per `index_left` we find the `right_index` and keep track
 // of the offsets we have already processed in a separate hashmap. Then on a next iteration we can
@@ -234,6 +274,9 @@ where
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
         }
+        (_, AsofStrategy::Nearest) => {
+            (join_asof_nearest_with_indirection, T::Native::zero(), false)
+        }
     };
 
     let left_asof = left_asof.rechunk();
@@ -260,7 +303,7 @@ where
         .map(|ca| ca.cont_slice().unwrap())
         .collect::<Vec<_>>();
 
-    let hash_tbls = create_probe_table(vals_right);
+    let hash_tbls = build_tables(vals_right);
 
     // we determine the offset so that we later know which index to store in the join tuples
     let offsets = vals_left
@@ -365,6 +408,9 @@ where
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
         }
+        (_, AsofStrategy::Nearest) => {
+            (join_asof_nearest_with_indirection, T::Native::zero(), false)
+        }
     };
 
     let left_asof = left_asof.rechunk();
@@ -381,7 +427,7 @@ where
     let vals_left = prepare_bytes(&splitted_by_left, &hb);
     let vals_right = prepare_bytes(&splitted_right, &hb);
 
-    let hash_tbls = create_probe_table(vals_right);
+    let hash_tbls = build_tables(vals_right);
 
     // we determine the offset so that we later know which index to store in the join tuples
     let offsets = vals_left
@@ -488,6 +534,9 @@ where
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
         }
+        (_, AsofStrategy::Nearest) => {
+            (join_asof_nearest_with_indirection, T::Native::zero(), false)
+        }
     };
     let left_asof = left_asof.rechunk();
     let left_asof = left_asof.cont_slice().unwrap();
@@ -499,8 +548,9 @@ where
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None).unwrap();
-    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state)).unwrap();
+    let (build_hashes, random_state) = df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
+    let (probe_hashes, _) =
+        df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
 
     let hash_tbls = mk::create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure
@@ -618,7 +668,9 @@ fn dispatch_join<T: PolarsNumericType>(
         }
     } else {
         for (lhs, rhs) in left_by.get_columns().iter().zip(right_by.get_columns()) {
-            check_asof_columns(lhs, rhs)?;
+            polars_ensure!(lhs.dtype() == rhs.dtype(),
+                ComputeError: "mismatching dtypes in 'on' parameter of asof-join: `{}` and `{}`", lhs.dtype(), rhs.dtype()
+            );
             #[cfg(feature = "dtype-categorical")]
             _check_categorical_src(lhs.dtype(), rhs.dtype())?;
         }
@@ -649,7 +701,11 @@ impl DataFrame {
         let right_asof_name = right_asof.name();
         let left_asof_name = left_asof.name();
 
-        check_asof_columns(&left_asof, &right_asof)?;
+        check_asof_columns(
+            &left_asof,
+            &right_asof,
+            left_by.is_empty() && right_by.is_empty(),
+        )?;
 
         let mut left_by = self.select(left_by)?;
         let mut right_by = other.select(right_by)?;

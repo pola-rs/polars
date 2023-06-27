@@ -7,9 +7,9 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
 use self::hashing::*;
+use crate::hashing::{get_null_hash_value, AsU64, BytesHash};
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
-use crate::vector_hasher::{get_null_hash_value, AsU64, BytesHash};
 use crate::POOL;
 
 pub mod aggregations;
@@ -21,6 +21,9 @@ mod proxy;
 
 pub use into_groups::*;
 pub use proxy::*;
+
+#[cfg(feature = "dtype-struct")]
+use crate::prelude::sort::arg_sort_multiple::encode_rows_vertical;
 
 // This will remove the sorted flag on signed integers
 fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
@@ -75,8 +78,20 @@ impl DataFrame {
             let series = &by[0];
             series.group_tuples(multithreaded, sorted)
         } else {
+            #[cfg(feature = "dtype-struct")]
+            {
+                if by.iter().any(|s| matches!(s.dtype(), DataType::Struct(_))) {
+                    let rows = encode_rows_vertical(&by)?;
+                    let groups = rows.group_tuples(multithreaded, sorted)?;
+                    return Ok(GroupBy::new(self, by, groups, None));
+                }
+            }
             let keys_df = prepare_dataframe_unsorted(&by);
-            groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+            if multithreaded {
+                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+            } else {
+                groupby_multiple_keys(keys_df, sorted)
+            }
         };
         Ok(GroupBy::new(self, by, groups?, None))
     }
@@ -206,7 +221,7 @@ impl<'df> GroupBy<'df> {
 
     /// Get the internal representation of the GroupBy operation.
     /// The Vec returned contains:
-    ///     (first_idx, Vec<indexes>)
+    ///     (first_idx, [`Vec<indexes>`])
     ///     Where second value in the tuple is a vector with all matching indexes.
     pub fn get_groups(&self) -> &GroupsProxy {
         &self.groups
@@ -214,7 +229,7 @@ impl<'df> GroupBy<'df> {
 
     /// Get the internal representation of the GroupBy operation.
     /// The Vec returned contains:
-    ///     (first_idx, Vec<indexes>)
+    ///     (first_idx, [`Vec<indexes>`])
     ///     Where second value in the tuple is a vector with all matching indexes.
     ///
     /// # Safety
@@ -250,7 +265,7 @@ impl<'df> GroupBy<'df> {
                 .map(|s| {
                     match groups {
                         GroupsProxy::Idx(groups) => {
-                            let mut iter = groups.iter().map(|(first, _idx)| first as usize);
+                            let mut iter = groups.first().iter().map(|first| *first as usize);
                             // Safety:
                             // groups are always in bounds
                             let mut out = unsafe { s.take_iter_unchecked(&mut iter) };
@@ -750,7 +765,7 @@ impl<'df> GroupBy<'df> {
     pub fn agg_list(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::List);
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Implode);
             let mut agg = unsafe { agg_col.agg_list(&self.groups) };
             agg.rename(&new_name);
             cols.push(agg);
@@ -759,6 +774,7 @@ impl<'df> GroupBy<'df> {
     }
 
     fn prepare_apply(&self) -> PolarsResult<DataFrame> {
+        polars_ensure!(self.df.height() > 0, ComputeError: "cannot groupby + apply on empty 'DataFrame'");
         if let Some(agg) = &self.selected_agg {
             if agg.is_empty() {
                 Ok(self.df.clone())
@@ -793,7 +809,7 @@ impl<'df> GroupBy<'df> {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
-        df.as_single_chunk();
+        df.as_single_chunk_par();
         Ok(df)
     }
 
@@ -815,7 +831,7 @@ impl<'df> GroupBy<'df> {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
-        df.as_single_chunk();
+        df.as_single_chunk_par();
         Ok(df)
     }
 }
@@ -842,7 +858,7 @@ pub enum GroupByMethod {
     NUnique,
     Quantile(f64, QuantileInterpolOptions),
     Count,
-    List,
+    Implode,
     Std(u8),
     Var(u8),
 }
@@ -864,7 +880,7 @@ impl Display for GroupByMethod {
             NUnique => "n_unique",
             Quantile(_, _) => "quantile",
             Count => "count",
-            List => "list",
+            Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
         };
@@ -888,7 +904,7 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
         Groups => "groups".to_string(),
         NUnique => format!("{name}_n_unique"),
         Count => format!("{name}_count"),
-        List => format!("{name}_agg_list"),
+        Implode => format!("{name}_agg_list"),
         Quantile(quantile, _interpol) => format!("{name}_quantile_{quantile:.2}"),
         Std(_) => format!("{name}_agg_std"),
         Var(_) => format!("{name}_agg_var"),
@@ -899,9 +915,7 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
 mod test {
     use num_traits::FloatConst;
 
-    use crate::frame::groupby::{groupby, groupby_threaded_num};
     use crate::prelude::*;
-    use crate::utils::split_ca;
 
     #[test]
     #[cfg(feature = "dtype-date")]
@@ -932,7 +946,7 @@ mod test {
         // Select multiple
         let out = df
             .groupby_stable(["date"])?
-            .select(&["temp", "rain"])
+            .select(["temp", "rain"])
             .mean()?;
         assert_eq!(
             out.column("temp_mean")?,
@@ -943,7 +957,7 @@ mod test {
         #[allow(deprecated)]
         // Group by multiple
         let out = df
-            .groupby_stable(&["date", "temp"])?
+            .groupby_stable(["date", "temp"])?
             .select(["rain"])
             .mean()?;
         assert!(out.column("rain_mean").is_ok());
@@ -989,7 +1003,7 @@ mod test {
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]
         let adf = df
-            .groupby(&[
+            .groupby([
                 "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12",
             ])
             .unwrap()
@@ -1019,13 +1033,13 @@ mod test {
 
         // Create a series for every group name.
         for series_name in &series_names {
-            let serie = Series::new(series_name, series_content.as_ref());
-            series.push(serie);
+            let group_series = Series::new(series_name, series_content.as_ref());
+            series.push(group_series);
         }
 
         // Create a series for the aggregation column.
-        let serie = Series::new("N", [1, 2, 3, 3, 4].as_ref());
-        series.push(serie);
+        let agg_series = Series::new("N", [1, 2, 3, 3, 4].as_ref());
+        series.push(agg_series);
 
         // Create the dataframe with the computed series.
         let df = DataFrame::new(series).unwrap();
@@ -1034,7 +1048,7 @@ mod test {
         #[allow(deprecated)]
         // Compute the aggregated DataFrame by the 13 columns defined in `series_names`.
         let adf = df
-            .groupby(&series_names)
+            .groupby(series_names)
             .unwrap()
             .select(["N"])
             .sum()
@@ -1100,26 +1114,6 @@ mod test {
             Vec::from(res.column("bar_sum").unwrap().i32().unwrap()),
             &[Some(2), Some(2), Some(1)]
         );
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_groupby_threaded() {
-        for slice in &[
-            vec![1, 2, 3, 4, 4, 4, 2, 1],
-            vec![1, 2, 3, 4, 4, 4, 2, 1, 1],
-            vec![1, 2, 3, 4, 4, 4],
-        ] {
-            let ca = UInt32Chunked::new("", slice);
-            let split = split_ca(&ca, 4).unwrap();
-
-            let a = groupby(ca.into_iter(), true).into_idx();
-
-            let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let b = groupby_threaded_num(keys, 0, split.len() as u64, true).into_idx();
-
-            assert_eq!(a, b);
-        }
     }
 
     #[test]

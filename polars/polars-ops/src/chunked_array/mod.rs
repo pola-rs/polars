@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-array")]
+pub mod array;
 mod binary;
 #[cfg(feature = "interpolate")]
 mod interpolate;
@@ -6,6 +8,7 @@ pub mod list;
 pub mod nan_propagating_aggregate;
 mod set;
 mod strings;
+mod sum;
 #[cfg(feature = "top_k")]
 mod top_k;
 

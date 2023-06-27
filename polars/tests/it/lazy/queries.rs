@@ -43,13 +43,15 @@ fn test_special_groupby_schemas() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
+        .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
         .groupby_rolling(
+            col("a"),
             [],
             RollingGroupOptions {
-                index_column: "a".into(),
                 period: Duration::parse("2i"),
                 offset: Duration::parse("0i"),
                 closed_window: ClosedWindow::Left,
+                ..Default::default()
             },
         )
         .agg([col("b").sum().alias("sum")])
@@ -66,10 +68,11 @@ fn test_special_groupby_schemas() -> PolarsResult<()> {
 
     let out = df
         .lazy()
+        .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
         .groupby_dynamic(
+            col("a"),
             [],
             DynamicGroupOptions {
-                index_column: "a".into(),
                 every: Duration::parse("2i"),
                 period: Duration::parse("2i"),
                 offset: Duration::parse("0i"),
@@ -164,7 +167,7 @@ fn test_sorted_path_joins() -> PolarsResult<()> {
     let out = dfa
         .lazy()
         .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
-        .join(dfb.lazy(), [col("a")], [col("a")], JoinType::Left)
+        .join(dfb.lazy(), [col("a")], [col("a")], JoinType::Left.into())
         .collect()?;
 
     let s = out.column("a")?;
@@ -257,7 +260,7 @@ fn test_groupby_on_lists() -> PolarsResult<()> {
         .clone()
         .lazy()
         .groupby([col("groups")])
-        .agg([col("arrays").list()])
+        .agg([col("arrays").implode()])
         .collect()?;
 
     // a list of lists

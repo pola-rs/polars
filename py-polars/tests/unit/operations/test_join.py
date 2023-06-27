@@ -99,8 +99,12 @@ def test_sorted_merge_joins(reverse: bool) -> None:
 
             # sorted merge join
             out_sorted_merge_join = df_a_.with_columns(
-                pl.col("a").set_sorted(reverse)
-            ).join(df_b_.with_columns(pl.col("a").set_sorted(reverse)), on="a", how=how)
+                pl.col("a").set_sorted(descending=reverse)
+            ).join(
+                df_b_.with_columns(pl.col("a").set_sorted(descending=reverse)),
+                on="a",
+                how=how,
+            )
 
             assert_frame_equal(out_hash_join, out_sorted_merge_join)
 
@@ -501,6 +505,12 @@ def test_update() -> None:
 
     assert df1.update(df2, on="a").to_dict(False) == {"a": [1, 2, 3], "b": [4, 8, 9]}
 
+    a = pl.DataFrame({"a": [1, 2, 3]})
+    b = pl.DataFrame({"b": [4, 5]})
+    c = a.update(b)
+
+    assert c.rows() == a.rows()
+
 
 @typing.no_type_check
 def test_join_frame_consistency() -> None:
@@ -527,3 +537,78 @@ def test_join_concat_projection_pd_case_7071() -> None:
 
     expected = pl.DataFrame({"id": [1, 1, 3]}).lazy()
     assert_frame_equal(result, expected)
+
+
+def test_join_sorted_fast_paths_null() -> None:
+    df1 = pl.DataFrame({"x": [0, 1, 0]}).sort("x")
+    df2 = pl.DataFrame({"x": [0, None], "y": [0, 1]})
+    assert df1.join(df2, on="x", how="inner").to_dict(False) == {
+        "x": [0, 0],
+        "y": [0, 0],
+    }
+    assert df1.join(df2, on="x", how="left").to_dict(False) == {
+        "x": [0, 0, 1],
+        "y": [0, 0, None],
+    }
+    assert df1.join(df2, on="x", how="anti").to_dict(False) == {"x": [1]}
+    assert df1.join(df2, on="x", how="semi").to_dict(False) == {"x": [0, 0]}
+    assert df1.join(df2, on="x", how="outer").to_dict(False) == {
+        "x": [0, 0, 1, None],
+        "y": [0, 0, None, 1],
+    }
+
+
+@typing.no_type_check
+def test_outer_join_list_() -> None:
+    schema = {"id": pl.Int64, "vals": pl.List(pl.Float64)}
+
+    df1 = pl.DataFrame({"id": [1], "vals": [[]]}, schema=schema)
+    df2 = pl.DataFrame({"id": [2, 3], "vals": [[], [4]]}, schema=schema)
+    assert df1.join(df2, on="id", how="outer").to_dict(False) == {
+        "id": [2, 3, 1],
+        "vals": [None, None, []],
+        "vals_right": [[], [4.0], None],
+    }
+
+
+def test_join_validation() -> None:
+    a = pl.DataFrame({"a": [1, 1, 1, 2]})
+
+    b = pl.DataFrame({"a": [2]})
+
+    assert a.join(b, on="a", validate="m:m")["a"].to_list() == [2]
+    assert a.join(b, on="a", validate="m:1")["a"].to_list() == [2]
+    # swap the tables
+    assert b.join(a, on="a", validate="1:m")["a"].to_list() == [2]
+
+    with pytest.raises(pl.ComputeError):
+        a.join(b, on="a", validate="1:m")
+    with pytest.raises(pl.ComputeError):
+        a.join(b, on="a", validate="1:1")
+    with pytest.raises(pl.ComputeError):
+        b.join(a, on="a", validate="m:1")
+    with pytest.raises(pl.ComputeError):
+        b.join(a, on="a", validate="1:1")
+
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2],
+            "ham": ["a", "a"],
+        }
+    )
+
+    other_df = pl.DataFrame(
+        {
+            "apple": ["x", "y", "z"],
+            "ham": ["a", "b", "z"],
+        }
+    )
+
+    with pytest.raises(pl.ComputeError):
+        df.join(other_df, on="ham", validate="1:m")
+
+    assert df.join(other_df, on="ham", validate="m:1")["foo"].to_list() == [1, 2]
+    assert other_df.join(df, on="ham", validate="1:m")["foo"].to_list() == [1, 2]
+
+    with pytest.raises(pl.ComputeError):
+        other_df.join(df, on="ham", validate="m:1")

@@ -81,8 +81,8 @@ pub fn pivot<I0, S0, I1, S1, I2, S2>(
     values: I0,
     index: I1,
     columns: I2,
-    agg_fn: PivotAgg,
     sort_columns: bool,
+    agg_fn: Option<PivotAgg>,
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
@@ -127,8 +127,8 @@ pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
     values: I0,
     index: I1,
     columns: I2,
-    agg_fn: PivotAgg,
     sort_columns: bool,
+    agg_fn: Option<PivotAgg>,
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
@@ -175,7 +175,7 @@ fn pivot_impl(
     // the rows of this nested groupby will be pivoted as header column values
     columns: &[String],
     // aggregation function
-    agg_fn: PivotAgg,
+    agg_fn: Option<PivotAgg>,
     sort_columns: bool,
     stable: bool,
     // used as separator/delimiter in generated column names.
@@ -188,9 +188,9 @@ fn pivot_impl(
 
     let mut count = 0;
     let out: PolarsResult<()> = POOL.install(|| {
-        for column in columns {
+        for column_column_name in columns {
             let mut groupby = index.to_vec();
-            groupby.push(column.clone());
+            groupby.push(column_column_name.clone());
 
             let groups = pivot_df.groupby_stable(groupby)?.take_groups();
 
@@ -200,7 +200,7 @@ fn pivot_impl(
             };
 
             let (col, row) = POOL.join(
-                || positioning::compute_col_idx(pivot_df, column, &groups),
+                || positioning::compute_col_idx(pivot_df, column_column_name, &groups),
                 || positioning::compute_row_idx(pivot_df, index, &groups, count),
             );
             let (col_locations, column_agg) = col?;
@@ -211,31 +211,37 @@ fn pivot_impl(
 
                 use PivotAgg::*;
                 let value_agg = unsafe {
-                    match agg_fn {
-                        Sum => value_col.agg_sum(&groups),
-                        Min => value_col.agg_min(&groups),
-                        Max => value_col.agg_max(&groups),
-                        Last => value_col.agg_last(&groups),
-                        First => value_col.agg_first(&groups),
-                        Mean => value_col.agg_mean(&groups),
-                        Median => value_col.agg_median(&groups),
-                        Count => groups.group_count().into_series(),
-                        Expr(ref expr) => {
-                            let name = expr.root_name()?;
-                            let mut value_col = value_col.clone();
-                            value_col.rename(name);
-                            let tmp_df = DataFrame::new_no_checks(vec![value_col]);
-                            let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
-                            aggregated.rename(value_col_name);
-                            aggregated
+                    match &agg_fn {
+                        None => match value_col.len() > groups.len() {
+                            true => polars_bail!(ComputeError: "found multiple elements in the same group, please specify an aggregation function"),
+                            false => value_col.agg_first(&groups),
                         }
+                        Some(agg_fn) => match agg_fn {
+                            Sum => value_col.agg_sum(&groups),
+                            Min => value_col.agg_min(&groups),
+                            Max => value_col.agg_max(&groups),
+                            Last => value_col.agg_last(&groups),
+                            First => value_col.agg_first(&groups),
+                            Mean => value_col.agg_mean(&groups),
+                            Median => value_col.agg_median(&groups),
+                            Count => groups.group_count().into_series(),
+                            Expr(ref expr) => {
+                                let name = expr.root_name()?;
+                                let mut value_col = value_col.clone();
+                                value_col.rename(name);
+                                let tmp_df = DataFrame::new_no_checks(vec![value_col]);
+                                let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
+                                aggregated.rename(value_col_name);
+                                aggregated
+                            }
+                        },
                     }
                 };
 
                 let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
                 let mut headers = headers.utf8().unwrap().clone();
                 if values.len() > 1 {
-                    headers = headers.apply(|v| Cow::from(format!("{value_col_name}{sep}{v}")))
+                    headers = headers.apply(|v| Cow::from(format!("{value_col_name}{sep}{column_column_name}{sep}{v}")))
                 }
 
                 let n_cols = headers.len();

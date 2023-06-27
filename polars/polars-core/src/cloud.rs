@@ -33,7 +33,7 @@ type Configs<T> = Vec<(T, String)>;
 
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
-/// Options to conect to various cloud providers.
+/// Options to connect to various cloud providers.
 pub struct CloudOptions {
     #[cfg(feature = "aws")]
     aws: Option<Configs<AmazonS3ConfigKey>>,
@@ -114,9 +114,14 @@ impl CloudOptions {
             .aws
             .as_ref()
             .ok_or_else(|| polars_err!(ComputeError: "`aws` configuration missing"))?;
-        AmazonS3Builder::new()
-            .try_with_options(options.clone().into_iter())
-            .and_then(|b| b.with_bucket_name(bucket_name).build())
+
+        let mut builder = AmazonS3Builder::new();
+        for (key, value) in options.iter() {
+            builder = builder.with_config(*key, value);
+        }
+        builder
+            .with_bucket_name(bucket_name)
+            .build()
             .map_err(polars_error::to_compute_err)
     }
 
@@ -142,9 +147,14 @@ impl CloudOptions {
             .azure
             .as_ref()
             .ok_or_else(|| polars_err!(ComputeError: "`azure` configuration missing"))?;
-        MicrosoftAzureBuilder::new()
-            .try_with_options(options.clone().into_iter())
-            .and_then(|b| b.with_container_name(container_name).build())
+
+        let mut builder = MicrosoftAzureBuilder::new();
+        for (key, value) in options.iter() {
+            builder = builder.with_config(*key, value);
+        }
+        builder
+            .with_container_name(container_name)
+            .build()
             .map_err(polars_error::to_compute_err)
     }
 
@@ -170,9 +180,14 @@ impl CloudOptions {
             .gcp
             .as_ref()
             .ok_or_else(|| polars_err!(ComputeError: "`gcp` configuration missing"))?;
-        GoogleCloudStorageBuilder::new()
-            .try_with_options(options.clone().into_iter())
-            .and_then(|b| b.with_bucket_name(bucket_name).build())
+
+        let mut builder = GoogleCloudStorageBuilder::new();
+        for (key, value) in options.iter() {
+            builder = builder.with_config(*key, value);
+        }
+        builder
+            .with_bucket_name(bucket_name)
+            .build()
             .map_err(polars_error::to_compute_err)
     }
 

@@ -7,8 +7,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crossbeam_channel::{bounded, Sender};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
-use polars_core::POOL;
 use polars_io::prelude::*;
+
+use crate::pipeline::morsels_per_sink;
 
 pub(in crate::executors::sinks) type DfIter =
     Box<dyn ExactSizeIterator<Item = DataFrame> + Sync + Send>;
@@ -22,6 +23,8 @@ pub(crate) struct IOThread {
     pub(in crate::executors::sinks) dir: PathBuf,
     pub(in crate::executors::sinks) sent: Arc<AtomicUsize>,
     pub(in crate::executors::sinks) total: Arc<AtomicUsize>,
+    pub(in crate::executors::sinks) thread_local_count: Arc<AtomicUsize>,
+    schema: SchemaRef,
 }
 
 fn get_lockfile_path(dir: &Path) -> PathBuf {
@@ -34,7 +37,8 @@ fn get_lockfile_path(dir: &Path) -> PathBuf {
 /// have a lockfile (opened with 'w' permissions).
 fn gc_thread(operation_name: &'static str) {
     let _ = std::thread::spawn(move || {
-        let dir = resolve_homedir(Path::new(&format!("~/.polars/{operation_name}/")));
+        let mut dir = std::env::temp_dir();
+        dir.push(&format!("polars/{operation_name}"));
 
         // if the directory does not exist, there is nothing to clean
         let rd = match std::fs::read_dir(&dir) {
@@ -81,31 +85,42 @@ impl IOThread {
             .unwrap()
             .as_nanos();
 
+        let mut dir = std::env::temp_dir();
+        dir.push(&format!("polars/{operation_name}/{uuid}"));
+        std::fs::create_dir_all(&dir)?;
+
+        // make sure we create lockfile before we GC
+        let lockfile_path = get_lockfile_path(&dir);
+        let lockfile = Arc::new(LockFile::new(lockfile_path)?);
+
         // start a thread that will clean up old dumps.
         // TODO: if we will have more ooc in the future  we will have a dedicated GC thread
         gc_thread(operation_name);
 
-        let dir = resolve_homedir(Path::new(&format!("~/.polars/{operation_name}/{uuid}")));
-        std::fs::create_dir_all(&dir)?;
-
-        let lockfile_path = get_lockfile_path(&dir);
-        let lockfile = Arc::new(LockFile::new(lockfile_path)?);
-
         // we need some pushback otherwise we still could go OOM.
-        let (sender, receiver) = bounded::<Payload>(POOL.current_num_threads() * 2);
+        let (sender, receiver) = bounded::<Payload>(morsels_per_sink() * 2);
 
         let sent: Arc<AtomicUsize> = Default::default();
         let total: Arc<AtomicUsize> = Default::default();
+        let thread_local_count: Arc<AtomicUsize> = Default::default();
 
         let dir2 = dir.clone();
         let total2 = total.clone();
         let lockfile2 = lockfile.clone();
+        let schema2 = schema.clone();
         std::thread::spawn(move || {
+            let schema = schema2;
             // this moves the lockfile in the thread
             // we keep one in the thread and one in the `IoThread` struct
             let _keep_hold_on_lockfile = lockfile2;
 
             let mut count = 0usize;
+
+            // We accept 2 cases. E.g.
+            // 1. (None, DfIter):
+            //    This will dump to `dir/count.ipc`
+            // 2. (Some(partitions), DfIter)
+            //    This will dump to `dir/partition/count.ipc`
             while let Ok((partitions, iter)) = receiver.recv() {
                 if let Some(partitions) = partitions {
                     for (part, df) in partitions.into_no_null_iter().zip(iter) {
@@ -115,7 +130,7 @@ impl IOThread {
                         let _ = std::fs::create_dir(&path);
                         path.push(format!("{count}.ipc"));
 
-                        let file = std::fs::File::create(path).unwrap();
+                        let file = File::create(path).unwrap();
                         let writer = IpcWriter::new(file);
                         let mut writer = writer.batched(&schema).unwrap();
                         writer.write_batch(&df).unwrap();
@@ -126,7 +141,7 @@ impl IOThread {
                     let mut path = dir2.clone();
                     path.push(format!("{count}.ipc"));
 
-                    let file = std::fs::File::create(path).unwrap();
+                    let file = File::create(path).unwrap();
                     let writer = IpcWriter::new(file);
                     let mut writer = writer.batched(&schema).unwrap();
 
@@ -147,13 +162,56 @@ impl IOThread {
             sent,
             total,
             _lockfile: lockfile,
+            thread_local_count,
+            schema,
         })
     }
 
-    pub(in crate::executors::sinks) fn dump_chunk(&self, df: DataFrame) {
-        let iter = Box::new(std::iter::once(df));
-        self.dump_iter(None, iter)
+    pub(in crate::executors::sinks) fn dump_chunk(&self, mut df: DataFrame) {
+        // if IO thread is blocked
+        // we write locally on this thread
+        if self.sender.is_full() {
+            let mut path = self.dir.clone();
+            let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
+            // thread local name we start with an underscore to ensure we don't get
+            // duplicates
+            path.push(format!("_{count}.ipc"));
+
+            let file = File::create(path).unwrap();
+            let mut writer = IpcWriter::new(file);
+            writer.finish(&mut df).unwrap();
+        } else {
+            let iter = Box::new(std::iter::once(df));
+            self.dump_iter(None, iter)
+        }
     }
+
+    pub(in crate::executors::sinks) fn dump_partition(&self, partition_no: IdxSize, df: DataFrame) {
+        let partition = Some(IdxCa::from_vec("", vec![partition_no]));
+        let iter = Box::new(std::iter::once(df));
+        self.dump_iter(partition, iter)
+    }
+
+    pub(in crate::executors::sinks) fn dump_partition_local(
+        &self,
+        partition_no: IdxSize,
+        df: DataFrame,
+    ) {
+        let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
+        let mut path = self.dir.clone();
+        path.push(format!("{partition_no}"));
+
+        let _ = std::fs::create_dir(&path);
+        // thread local name we start with an underscore to ensure we don't get
+        // duplicates
+        path.push(format!("_{count}.ipc"));
+        let file = File::create(path).unwrap();
+        let writer = IpcWriter::new(file);
+        let mut writer = writer.batched(&self.schema).unwrap();
+        writer.write_batch(&df).unwrap();
+        writer.finish().unwrap();
+    }
+
     pub(in crate::executors::sinks) fn dump_iter(&self, partition: Option<IdxCa>, iter: DfIter) {
         let add = iter.size_hint().1.unwrap();
         self.sender.send((partition, iter)).unwrap();

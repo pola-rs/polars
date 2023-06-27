@@ -3,21 +3,19 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Sequence
 
-from polars import internals as pli
 from polars.series.utils import expr_dispatch
-from polars.utils.decorators import redirect
+from polars.utils._wrap import wrap_df
 from polars.utils.various import sphinx_accessor
 
 if TYPE_CHECKING:
-    from polars.dataframe.frame import DataFrame
+    from polars import DataFrame, Series
+    from polars.datatypes import PolarsDataType
     from polars.polars import PySeries
-    from polars.series.series import Series
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
 
 @expr_dispatch
-@redirect({"to_frame": "unnest"})
 class StructNameSpace:
     """Series.struct namespace."""
 
@@ -66,6 +64,13 @@ class StructNameSpace:
 
         """
 
+    @property
+    def schema(self) -> dict[str, PolarsDataType]:
+        """Get the struct definition as a name/dtype schema dict."""
+        if getattr(self, "_s", None) is None:
+            return {}
+        return self._s.dtype().to_schema()
+
     def unnest(self) -> DataFrame:
         """
         Convert this struct Series to a DataFrame with a separate column for each field.
@@ -85,4 +90,4 @@ class StructNameSpace:
         └─────┴─────┘
 
         """
-        return pli.wrap_df(self._s.struct_unnest())
+        return wrap_df(self._s.struct_unnest())

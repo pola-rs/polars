@@ -1,4 +1,7 @@
+import pytest
+
 import polars as pl
+from polars.type_aliases import TransferEncoding
 
 
 def test_binary_conversions() -> None:
@@ -72,3 +75,35 @@ def test_hex_decode() -> None:
     df = pl.DataFrame({"data": [b"617364", b"717765"]})
 
     assert [b"asd", b"qwe"] == df["data"].bin.decode("hex").to_list()
+
+
+@pytest.mark.parametrize(
+    "encoding",
+    [
+        "hex",
+        "base64",
+    ],
+)
+def test_compare_encode_between_lazy_and_eager_6814(encoding: TransferEncoding) -> None:
+    df = pl.DataFrame({"x": [b"aa", b"bb", b"cc"]})
+    expr = pl.col("x").bin.encode(encoding)
+    result_eager = df.select(expr)
+    dtype = result_eager["x"].dtype
+    result_lazy = df.lazy().select(expr).select(pl.col(dtype)).collect()
+    assert result_eager.frame_equal(result_lazy)
+
+
+@pytest.mark.parametrize(
+    "encoding",
+    [
+        "hex",
+        "base64",
+    ],
+)
+def test_compare_decode_between_lazy_and_eager_6814(encoding: TransferEncoding) -> None:
+    df = pl.DataFrame({"x": [b"d3d3", b"abcd", b"1234"]})
+    expr = pl.col("x").bin.decode(encoding)
+    result_eager = df.select(expr)
+    dtype = result_eager["x"].dtype
+    result_lazy = df.lazy().select(expr).select(pl.col(dtype)).collect()
+    assert result_eager.frame_equal(result_lazy)

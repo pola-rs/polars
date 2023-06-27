@@ -19,14 +19,10 @@ pub struct PySQLContext {
 impl PySQLContext {
     #[staticmethod]
     #[allow(clippy::new_without_default)]
-    pub fn new() -> PyResult<PySQLContext> {
-        Ok(PySQLContext {
-            context: SQLContext::try_new().map_err(PyPolarsErr::from)?,
-        })
-    }
-
-    pub fn register(&mut self, name: &str, lf: PyLazyFrame) {
-        self.context.register(name, lf.ldf)
+    pub fn new() -> PySQLContext {
+        PySQLContext {
+            context: SQLContext::new(),
+        }
     }
 
     pub fn execute(&mut self, query: &str) -> PyResult<PyLazyFrame> {
@@ -35,5 +31,17 @@ impl PySQLContext {
             .execute(query)
             .map_err(PyPolarsErr::from)?
             .into())
+    }
+
+    pub fn get_tables(&self) -> PyResult<Vec<String>> {
+        Ok(self.context.get_tables())
+    }
+
+    pub fn register(&mut self, name: &str, lf: PyLazyFrame) {
+        self.context.register(name, lf.ldf)
+    }
+
+    pub fn unregister(&mut self, name: &str) {
+        self.context.unregister(name)
     }
 }

@@ -313,7 +313,6 @@ where
         self
     }
 
-    #[cfg(feature = "private")]
     pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
         self.predicate = predicate;
         self
@@ -370,43 +369,67 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         )
     }
 
-    fn prepare_schema_overwrite(&self, overwriting_schema: &Schema) -> (Schema, Vec<Field>, bool) {
+    fn prepare_schema_overwrite(
+        &self,
+        overwriting_schema: &Schema,
+    ) -> PolarsResult<(Schema, Vec<Field>, bool)> {
         // This branch we check if there are dtypes we cannot parse.
         // We only support a few dtypes in the parser and later cast to the required dtype
         let mut to_cast = Vec::with_capacity(overwriting_schema.len());
 
         let mut _has_categorical = false;
+        let mut _err: Option<PolarsError> = None;
 
-        #[allow(clippy::unnecessary_filter_map)]
-        let fields = overwriting_schema.iter_fields().filter_map(|mut fld| {
-            use DataType::*;
-            match fld.data_type() {
-                Time => {
-                    to_cast.push(fld);
-                    // let inference decide the column type
-                    None
+        let schema = overwriting_schema
+            .iter_fields()
+            .filter_map(|mut fld| {
+                use DataType::*;
+                match fld.data_type() {
+                    Time => {
+                        to_cast.push(fld);
+                        // let inference decide the column type
+                        None
+                    }
+                    Int8 | Int16 | UInt8 | UInt16 => {
+                        // We have not compiled these buffers, so we cast them later.
+                        to_cast.push(fld.clone());
+                        fld.coerce(DataType::Int32);
+                        Some(fld)
+                    }
+                    #[cfg(feature = "dtype-categorical")]
+                    Categorical(_) => {
+                        _has_categorical = true;
+                        Some(fld)
+                    }
+                    #[cfg(feature = "dtype-decimal")]
+                    Decimal(precision, scale) => match (precision, scale) {
+                        (_, Some(_)) => {
+                            to_cast.push(fld.clone());
+                            fld.coerce(Utf8);
+                            Some(fld)
+                        }
+                        _ => {
+                            _err = Some(PolarsError::ComputeError(
+                                "'scale' must be set when reading csv column as Decimal".into(),
+                            ));
+                            None
+                        }
+                    },
+                    _ => Some(fld),
                 }
-                Int8 | Int16 | UInt8 | UInt16 => {
-                    // We have not compiled these buffers, so we cast them later.
-                    to_cast.push(fld.clone());
-                    fld.coerce(DataType::Int32);
-                    Some(fld)
-                }
-                #[cfg(feature = "dtype-categorical")]
-                Categorical(_) => {
-                    _has_categorical = true;
-                    Some(fld)
-                }
-                _ => Some(fld),
-            }
-        });
-        let schema = Schema::from(fields);
-        (schema, to_cast, _has_categorical)
+            })
+            .collect::<Schema>();
+
+        if let Some(err) = _err {
+            Err(err)
+        } else {
+            Ok((schema, to_cast, _has_categorical))
+        }
     }
 
     pub fn batched_borrowed_mmap(&'a mut self) -> PolarsResult<BatchedCsvReaderMmap<'a>> {
         if let Some(schema) = self.schema_overwrite.as_deref() {
-            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema);
+            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema)?;
             let schema = Arc::new(schema);
 
             let csv_reader = self.core_reader(Some(schema), to_cast)?;
@@ -418,7 +441,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
     }
     pub fn batched_borrowed_read(&'a mut self) -> PolarsResult<BatchedCsvReaderRead<'a>> {
         if let Some(schema) = self.schema_overwrite.as_deref() {
-            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema);
+            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema)?;
             let schema = Arc::new(schema);
 
             let csv_reader = self.core_reader(Some(schema), to_cast)?;
@@ -537,7 +560,7 @@ where
         let mut _cat_lock = None;
 
         let mut df = if let Some(schema) = schema_overwrite.as_deref() {
-            let (schema, to_cast, _has_cat) = self.prepare_schema_overwrite(schema);
+            let (schema, to_cast, _has_cat) = self.prepare_schema_overwrite(schema)?;
 
             #[cfg(feature = "dtype-categorical")]
             if _has_cat {
@@ -583,12 +606,13 @@ where
             let fixed_schema = match (schema_overwrite, self.dtype_overwrite) {
                 (Some(schema), _) => schema,
                 (None, Some(dtypes)) => {
-                    let fields = dtypes
+                    let schema = dtypes
                         .iter()
                         .zip(df.get_column_names())
-                        .map(|(dtype, name)| Field::new(name, dtype.clone()));
+                        .map(|(dtype, name)| Field::new(name, dtype.clone()))
+                        .collect::<Schema>();
 
-                    Arc::new(Schema::from(fields))
+                    Arc::new(schema)
                 }
                 _ => Arc::default(),
             };

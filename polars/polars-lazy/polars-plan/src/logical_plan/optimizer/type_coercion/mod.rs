@@ -333,7 +333,7 @@ impl OptimizationRule for TypeCoercionRule {
             } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
             #[cfg(feature = "is_in")]
             AExpr::Function {
-                function: FunctionExpr::IsIn,
+                function: FunctionExpr::Boolean(BooleanFunction::IsIn),
                 ref input,
                 options,
             } => {
@@ -386,7 +386,7 @@ impl OptimizationRule for TypeCoercionRule {
                 input[1] = other_input;
 
                 Some(AExpr::Function {
-                    function: FunctionExpr::IsIn,
+                    function: FunctionExpr::Boolean(BooleanFunction::IsIn),
                     input,
                     options,
                 })
@@ -434,6 +434,8 @@ impl OptimizationRule for TypeCoercionRule {
                 let (self_ae, type_self) =
                     unpack!(get_aexpr_and_type(expr_arena, self_node, &input_schema));
 
+                // TODO remove: false positive
+                #[allow(clippy::redundant_clone)]
                 let mut super_type = type_self.clone();
                 for other in &input[1..] {
                     let (other, type_other) =
@@ -444,7 +446,15 @@ impl OptimizationRule for TypeCoercionRule {
                         return Ok(None);
                     }
                     let new_st = unpack!(get_supertype(&super_type, &type_other));
-                    super_type = modify_supertype(new_st, self_ae, other, &type_self, &type_other)
+                    if input.len() == 2 {
+                        // modify_supertype is a bit more conservative of casting columns
+                        // to literals
+                        super_type =
+                            modify_supertype(new_st, self_ae, other, &type_self, &type_other)
+                    } else {
+                        // when dealing with more than 1 argument, we simply find the supertypes
+                        super_type = new_st
+                    }
                 }
                 // only cast if the type is not already the super type.
                 // this can prevent an expensive flattening and subsequent aggregation
@@ -516,7 +526,7 @@ mod test {
     #[test]
     fn test_categorical_utf8() {
         let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(TypeCoercionRule {})];
-        let schema = Schema::from(vec![Field::new("fruits", DataType::Categorical(None))]);
+        let schema = Schema::from_iter([Field::new("fruits", DataType::Categorical(None))]);
 
         let expr = col("fruits").eq(lit("somestr"));
         let out = optimize_expr(expr.clone(), schema.clone(), &mut rules);

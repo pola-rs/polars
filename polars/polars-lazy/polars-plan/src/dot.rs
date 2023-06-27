@@ -340,7 +340,7 @@ impl LogicalPlan {
                     self.write_dot(acc_str, prev_node, current_node, id_map)
                 }
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 path,
                 options,
@@ -409,7 +409,7 @@ impl LogicalPlan {
                     r#"JOIN {}
                     left {:?};
                     right: {:?}"#,
-                    options.how, left_on, right_on
+                    options.args.how, left_on, right_on
                 );
                 let current_node = DotNode {
                     branch,

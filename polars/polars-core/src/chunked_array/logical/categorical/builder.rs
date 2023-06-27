@@ -1,9 +1,9 @@
+use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 
 use arrow::array::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
-use polars_arrow::trusted_len::PushUnchecked;
-use polars_utils::HashSingle;
+use polars_arrow::trusted_len::TrustedLenPush;
 
 use crate::datatypes::PlHashMap;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
@@ -46,13 +46,26 @@ impl RevMappingBuilder {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum RevMapping {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
     Global(PlHashMap<u32, u32>, Utf8Array<i64>, u128),
     /// Utf8Array: caches the string values
     Local(Utf8Array<i64>),
+}
+
+impl Debug for RevMapping {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RevMapping::Global(_, _, _) => {
+                write!(f, "global")
+            }
+            RevMapping::Local(_) => {
+                write!(f, "local")
+            }
+        }
+    }
 }
 
 impl Default for RevMapping {
@@ -73,6 +86,10 @@ impl Default for RevMapping {
 impl RevMapping {
     pub fn is_global(&self) -> bool {
         matches!(self, Self::Global(_, _, _))
+    }
+
+    pub fn is_local(&self) -> bool {
+        !self.is_global()
     }
 
     /// Get the length of the [`RevMapping`]
@@ -208,7 +225,7 @@ impl CategoricalChunkedBuilder<'_> {
 }
 impl<'a> CategoricalChunkedBuilder<'a> {
     fn push_impl(&mut self, s: &'a str, store_hashes: bool) {
-        let h = self.local_mapping.hasher().hash_single(s);
+        let h = self.local_mapping.hasher().hash_one(s);
         let key = StrHashLocal::new(s, h);
         let mut idx = self.local_mapping.len() as u32;
 
@@ -232,7 +249,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
 
     /// Check if this categorical already exists
     pub fn exits(&self, s: &str) -> bool {
-        let h = self.local_mapping.hasher().hash_single(s);
+        let h = self.local_mapping.hasher().hash_one(s);
         let key = StrHashLocal::new(s, h);
         self.local_mapping.contains_key(&key)
     }
@@ -481,7 +498,7 @@ impl CategoricalChunked {
 mod test {
     use crate::chunked_array::categorical::CategoricalChunkedBuilder;
     use crate::prelude::*;
-    use crate::{reset_string_cache, toggle_string_cache, SINGLE_LOCK};
+    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
 
     #[test]
     fn test_categorical_rev() -> PolarsResult<()> {
@@ -501,7 +518,7 @@ mod test {
         assert_eq!(out.get_rev_map().len(), 2);
 
         // test the global branch
-        toggle_string_cache(true);
+        enable_string_cache(true);
         // empty global cache
         let out = ca.cast(&DataType::Categorical(None))?;
         let out = out.categorical().unwrap().clone();
@@ -525,11 +542,11 @@ mod test {
 
     #[test]
     fn test_categorical_builder() {
-        use crate::{reset_string_cache, toggle_string_cache};
+        use crate::{enable_string_cache, reset_string_cache};
         let _lock = crate::SINGLE_LOCK.lock();
         for b in &[false, true] {
             reset_string_cache();
-            toggle_string_cache(*b);
+            enable_string_cache(*b);
 
             // Use 2 builders to check if the global string cache
             // does not interfere with the index mapping

@@ -1,6 +1,6 @@
 use polars_utils::arena::Arena;
 
-#[cfg(feature = "strings")]
+#[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::dsl::function_expr::StringFunction;
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::*;
@@ -254,7 +254,7 @@ impl OptimizationRule for SimplifyBooleanRule {
             }
             AExpr::Function {
                 input,
-                function: FunctionExpr::Not,
+                function: FunctionExpr::Boolean(BooleanFunction::IsNot),
                 ..
             } => {
                 let y = expr_arena.get(input[0]);
@@ -263,7 +263,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                     // not(not x) => x
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::Not,
+                        function: FunctionExpr::Boolean(BooleanFunction::IsNot),
                         ..
                     } => Some(expr_arena.get(input[0]).clone()),
                     // not(lit x) => !x
@@ -458,7 +458,7 @@ impl OptimizationRule for SimplifyExprRule {
                 // lit(left) + lit(right) => lit(left + right)
                 #[allow(clippy::manual_map)]
                 let out = match op {
-                    Operator::Plus => {
+                    Plus => {
                         match eval_binary_same_type!(left_aexpr, +, right_aexpr) {
                             Some(new) => Some(new),
                             None => {
@@ -482,10 +482,10 @@ impl OptimizationRule for SimplifyExprRule {
                             }
                         }
                     }
-                    Operator::Minus => eval_binary_same_type!(left_aexpr, -, right_aexpr),
-                    Operator::Multiply => eval_binary_same_type!(left_aexpr, *, right_aexpr),
-                    Operator::Divide => eval_binary_same_type!(left_aexpr, /, right_aexpr),
-                    Operator::TrueDivide => {
+                    Minus => eval_binary_same_type!(left_aexpr, -, right_aexpr),
+                    Multiply => eval_binary_same_type!(left_aexpr, *, right_aexpr),
+                    Divide => eval_binary_same_type!(left_aexpr, /, right_aexpr),
+                    TrueDivide => {
                         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) =
                             (left_aexpr, right_aexpr)
                         {
@@ -530,17 +530,17 @@ impl OptimizationRule for SimplifyExprRule {
                             None
                         }
                     }
-                    Operator::FloorDivide => None,
-                    Operator::Modulus => eval_binary_same_type!(left_aexpr, %, right_aexpr),
-                    Operator::Lt => eval_binary_bool_type!(left_aexpr, <, right_aexpr),
-                    Operator::Gt => eval_binary_bool_type!(left_aexpr, >, right_aexpr),
-                    Operator::Eq => eval_binary_bool_type!(left_aexpr, ==, right_aexpr),
-                    Operator::NotEq => eval_binary_bool_type!(left_aexpr, !=, right_aexpr),
-                    Operator::GtEq => eval_binary_bool_type!(left_aexpr, >=, right_aexpr),
-                    Operator::LtEq => eval_binary_bool_type!(left_aexpr, <=, right_aexpr),
-                    Operator::And => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
-                    Operator::Or => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
-                    Operator::Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
+                    Modulus => eval_binary_same_type!(left_aexpr, %, right_aexpr),
+                    Lt => eval_binary_bool_type!(left_aexpr, <, right_aexpr),
+                    Gt => eval_binary_bool_type!(left_aexpr, >, right_aexpr),
+                    Eq | EqValidity => eval_binary_bool_type!(left_aexpr, ==, right_aexpr),
+                    NotEq | NotEqValidity => eval_binary_bool_type!(left_aexpr, !=, right_aexpr),
+                    GtEq => eval_binary_bool_type!(left_aexpr, >=, right_aexpr),
+                    LtEq => eval_binary_bool_type!(left_aexpr, <=, right_aexpr),
+                    And => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
+                    Or => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
+                    Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
+                    FloorDivide => None,
                 };
                 if out.is_some() {
                     return Ok(out);
@@ -556,7 +556,7 @@ impl OptimizationRule for SimplifyExprRule {
                     // null == column -> column.is_null()
                     (true, Eq, false) => Some(AExpr::Function {
                         input: vec![*right],
-                        function: FunctionExpr::IsNull,
+                        function: BooleanFunction::IsNull.into(),
                         options: FunctionOptions {
                             collect_groups: ApplyOptions::ApplyGroups,
                             ..Default::default()
@@ -565,7 +565,7 @@ impl OptimizationRule for SimplifyExprRule {
                     // column == null -> column.is_null()
                     (false, Eq, true) => Some(AExpr::Function {
                         input: vec![*left],
-                        function: FunctionExpr::IsNull,
+                        function: BooleanFunction::IsNull.into(),
                         options: FunctionOptions {
                             collect_groups: ApplyOptions::ApplyGroups,
                             ..Default::default()
@@ -574,7 +574,7 @@ impl OptimizationRule for SimplifyExprRule {
                     // null != column -> column.is_not_null()
                     (true, NotEq, false) => Some(AExpr::Function {
                         input: vec![*right],
-                        function: FunctionExpr::IsNotNull,
+                        function: BooleanFunction::IsNotNull.into(),
                         options: FunctionOptions {
                             collect_groups: ApplyOptions::ApplyGroups,
                             ..Default::default()
@@ -583,7 +583,7 @@ impl OptimizationRule for SimplifyExprRule {
                     // column != null -> column.is_not_null()
                     (false, NotEq, true) => Some(AExpr::Function {
                         input: vec![*left],
-                        function: FunctionExpr::IsNotNull,
+                        function: BooleanFunction::IsNotNull.into(),
                         options: FunctionOptions {
                             collect_groups: ApplyOptions::ApplyGroups,
                             ..Default::default()
@@ -668,7 +668,7 @@ impl OptimizationRule for SimplifyExprRule {
 fn inline_cast(input: &AExpr, dtype: &DataType) -> Option<AExpr> {
     match (input, dtype) {
         #[cfg(feature = "dtype-duration")]
-        (AExpr::Literal(lv), _) => {
+        (AExpr::Literal(lv), _) if !matches!(dtype, DataType::Unknown) => {
             let av = lv.to_anyvalue()?;
             let out = av.cast(dtype).ok()?;
             let lv: LiteralValue = out.try_into().ok()?;

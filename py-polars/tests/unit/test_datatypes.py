@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import pickle
+import typing
 from datetime import datetime, timedelta
 
 import pytest
 
 import polars as pl
 from polars import datatypes
+from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
+    DataTypeClass,
+    DataTypeGroup,
+    py_type_to_dtype,
+)
 
 
 def test_dtype_init_equivalence() -> None:
@@ -14,7 +21,7 @@ def test_dtype_init_equivalence() -> None:
     all_datatypes = {
         dtype
         for dtype in (getattr(datatypes, attr) for attr in dir(datatypes))
-        if isinstance(dtype, datatypes.DataTypeClass)
+        if isinstance(dtype, DataTypeClass)
     }
     for dtype in all_datatypes:
         assert dtype == dtype()
@@ -22,23 +29,29 @@ def test_dtype_init_equivalence() -> None:
 
 def test_dtype_temporal_units() -> None:
     # check (in)equality behaviour of temporal types that take units
-    for tu in datatypes.DTYPE_TEMPORAL_UNITS:
-        assert pl.Datetime == pl.Datetime(tu)
-        assert pl.Duration == pl.Duration(tu)
+    for time_unit in DTYPE_TEMPORAL_UNITS:
+        assert pl.Datetime == pl.Datetime(time_unit)
+        assert pl.Duration == pl.Duration(time_unit)
 
-        assert pl.Datetime(tu) == pl.Datetime()
-        assert pl.Duration(tu) == pl.Duration()
+        assert pl.Datetime(time_unit) == pl.Datetime()
+        assert pl.Duration(time_unit) == pl.Duration()
 
     assert pl.Datetime("ms") != pl.Datetime("ns")
     assert pl.Duration("ns") != pl.Duration("us")
 
     # check timeunit from pytype
     for inferred_dtype, expected_dtype in (
-        (datatypes.py_type_to_dtype(datetime), pl.Datetime),
-        (datatypes.py_type_to_dtype(timedelta), pl.Duration),
+        (py_type_to_dtype(datetime), pl.Datetime),
+        (py_type_to_dtype(timedelta), pl.Duration),
     ):
         assert inferred_dtype == expected_dtype
-        assert inferred_dtype.tu == "us"  # type: ignore[union-attr]
+        assert inferred_dtype.time_unit == "us"  # type: ignore[union-attr]
+
+    with pytest.raises(ValueError, match="Invalid time_unit"):
+        pl.Datetime("?")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Invalid time_unit"):
+        pl.Duration("?")  # type: ignore[arg-type]
 
 
 def test_dtype_base_type() -> None:
@@ -50,6 +63,14 @@ def test_dtype_base_type() -> None:
     )
     for dtype in pl.DATETIME_DTYPES:
         assert dtype.base_type() is pl.Datetime
+
+
+def test_dtype_groups() -> None:
+    grp = DataTypeGroup([pl.Datetime], match_base_type=False)
+    assert pl.Datetime("ms", "Asia/Tokyo") not in grp
+
+    grp = DataTypeGroup([pl.Datetime])
+    assert pl.Datetime("ms", "Asia/Tokyo") in grp
 
 
 def test_get_index_type() -> None:
@@ -84,10 +105,10 @@ def test_dtypes_hashable() -> None:
         (pl.Datetime, "Datetime"),
         (
             pl.Datetime(time_zone="Europe/Amsterdam"),
-            "Datetime(tu='us', tz='Europe/Amsterdam')",
+            "Datetime(time_unit='us', time_zone='Europe/Amsterdam')",
         ),
         (pl.List(pl.Int8), "List(Int8)"),
-        (pl.List(pl.Duration(time_unit="ns")), "List(Duration(tu='ns'))"),
+        (pl.List(pl.Duration(time_unit="ns")), "List(Duration(time_unit='ns'))"),
         (pl.Struct, "Struct"),
         (
             pl.Struct({"name": pl.Utf8, "ids": pl.List(pl.UInt32)}),
@@ -97,3 +118,49 @@ def test_dtypes_hashable() -> None:
 )
 def test_repr(dtype: pl.PolarsDataType, representation: str) -> None:
     assert repr(dtype) == representation
+
+
+@typing.no_type_check
+def test_conversion_dtype() -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "id_column": [1, 2, 3, 4],
+                "some_column": ["a", "b", "c", "d"],
+                "some_partition_column": [
+                    "partition_1",
+                    "partition_2",
+                    "partition_1",
+                    "partition_2",
+                ],
+            }
+        )
+        .select(
+            [
+                pl.struct(
+                    [pl.col("id_column"), pl.col("some_column").cast(pl.Categorical)]
+                ).alias("struct"),
+                pl.col("some_partition_column"),
+            ]
+        )
+        .groupby(["some_partition_column"], maintain_order=True)
+        .agg([pl.col(["struct"])])
+    )
+
+    df = pl.from_arrow(df.to_arrow())
+    # the assertion is not the real test
+    # this tests if dtype as bubbled up correctly in conversion
+    # if not we would UB
+    assert df.to_dict(False) == {
+        "some_partition_column": ["partition_1", "partition_2"],
+        "struct": [
+            [
+                {"id_column": 1, "some_column": "a"},
+                {"id_column": 3, "some_column": "c"},
+            ],
+            [
+                {"id_column": 2, "some_column": "b"},
+                {"id_column": 4, "some_column": "d"},
+            ],
+        ],
+    }

@@ -110,10 +110,15 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
             #[cfg(feature = "polars-time")]
             {
                 match date_infer::infer_pattern_single(&string[1..string.len() - 1]) {
-                    Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
-                        DataType::Datetime(TimeUnit::Microseconds, None)
-                    }
-                    Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
+                    Some(pattern_with_offset) => match pattern_with_offset {
+                        Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
+                            DataType::Datetime(TimeUnit::Microseconds, None)
+                        }
+                        Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
+                        Pattern::DatetimeYMDZ => {
+                            DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
+                        }
+                    },
                     None => DataType::Utf8,
                 }
             }
@@ -136,10 +141,15 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
         #[cfg(feature = "polars-time")]
         {
             match date_infer::infer_pattern_single(string) {
-                Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
-                    DataType::Datetime(TimeUnit::Microseconds, None)
-                }
-                Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
+                Some(pattern_with_offset) => match pattern_with_offset {
+                    Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
+                        DataType::Datetime(TimeUnit::Microseconds, None)
+                    }
+                    Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
+                    Pattern::DatetimeYMDZ => {
+                        DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
+                    }
+                },
                 None => DataType::Utf8,
             }
         }
@@ -165,10 +175,10 @@ pub(crate) fn parse_bytes_with_encoding(
     })
 }
 
-/// Infer the schema of a CSV file by reading through the first n records of the file,
-/// with `max_read_records` controlling the maximum number of records to read.
+/// Infer the schema of a CSV file by reading through the first n rows of the file,
+/// with `max_read_rows` controlling the maximum number of rows to read.
 ///
-/// If `max_read_records` is not set, the whole file is read to infer its schema.
+/// If `max_read_rows` is not set, the whole file is read to infer its schema.
 ///
 /// Returns
 ///     - inferred schema
@@ -178,7 +188,7 @@ pub(crate) fn parse_bytes_with_encoding(
 pub fn infer_file_schema(
     reader_bytes: &ReaderBytes,
     delimiter: u8,
-    max_read_lines: Option<usize>,
+    max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
     // we take &mut because we maybe need to skip more rows dependent
@@ -288,7 +298,7 @@ pub fn infer_file_schema(
         return infer_file_schema(
             &ReaderBytes::Owned(buf),
             delimiter,
-            max_read_lines,
+            max_read_rows,
             has_header,
             schema_overwrite,
             skip_rows,
@@ -322,7 +332,19 @@ pub fn infer_file_schema(
 
     let mut end_ptr = start_ptr;
     for mut line in records_ref
-        .take(max_read_lines.unwrap_or(usize::MAX))
+        .take(match max_read_rows {
+            Some(max_read_rows) => {
+                if max_read_rows <= (usize::MAX - skip_rows_after_header) {
+                    // read skip_rows_after_header more rows for inferring
+                    // the correct schema as the first skip_rows_after_header
+                    // rows will be skipped
+                    max_read_rows + skip_rows_after_header
+                } else {
+                    max_read_rows
+                }
+            }
+            None => usize::MAX,
+        })
         .skip(skip_rows_after_header)
     {
         rows_count += 1;
@@ -404,7 +426,7 @@ pub fn infer_file_schema(
             // column might have been renamed
             // execute only if schema is complete
             if schema_overwrite.len() == header_length {
-                if let Some((name, dtype)) = schema_overwrite.get_index(i) {
+                if let Some((name, dtype)) = schema_overwrite.get_at_index(i) {
                     fields.push(Field::new(name, dtype.clone()));
                     continue;
                 }
@@ -458,7 +480,7 @@ pub fn infer_file_schema(
         return infer_file_schema(
             &ReaderBytes::Owned(rb),
             delimiter,
-            max_read_lines,
+            max_read_rows,
             has_header,
             schema_overwrite,
             skip_rows,
@@ -471,11 +493,7 @@ pub fn infer_file_schema(
         );
     }
 
-    Ok((
-        Schema::from(fields.into_iter()),
-        rows_count,
-        end_ptr - start_ptr,
-    ))
+    Ok((Schema::from_iter(fields), rows_count, end_ptr - start_ptr))
 }
 
 // magic numbers

@@ -58,7 +58,7 @@ pub fn collect_fingerprints(
 ) {
     use ALogicalPlan::*;
     match lp_arena.get(root) {
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         CsvScan {
             path,
             options,
@@ -127,7 +127,7 @@ pub fn find_column_union_and_fingerprints(
 ) {
     use ALogicalPlan::*;
     match lp_arena.get(root) {
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         CsvScan {
             path,
             options,
@@ -318,7 +318,7 @@ impl FileCacher {
                     );
                     lp_arena.replace(root, lp);
                 }
-                #[cfg(feature = "csv-file")]
+                #[cfg(feature = "csv")]
                 ALogicalPlan::CsvScan {
                     path,
                     file_info,

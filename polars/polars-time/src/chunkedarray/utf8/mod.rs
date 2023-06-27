@@ -1,15 +1,16 @@
 pub mod infer;
+use chrono::DateTime;
 mod patterns;
 mod strptime;
 
 use chrono::ParseError;
 pub use patterns::Pattern;
+#[cfg(feature = "dtype-time")]
+use polars_core::chunked_array::temporal::time_to_time64ns;
 
 use super::*;
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
-#[cfg(feature = "dtype-time")]
-use crate::chunkedarray::time::time_to_time64ns;
 use crate::prelude::utf8::strptime::StrpTimeState;
 
 #[cfg(feature = "dtype-time")]
@@ -250,6 +251,7 @@ pub trait Utf8Methods: AsUtf8 {
         &self,
         fmt: Option<&str>,
         tu: TimeUnit,
+        tz_aware: bool,
         tz: Option<&TimeZone>,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
@@ -275,8 +277,12 @@ pub trait Utf8Methods: AsUtf8 {
                         if s.is_empty() {
                             return None;
                         }
-                        match NaiveDateTime::parse_from_str(s, fmt).map(func) {
-                            Ok(nd) => return Some(nd),
+                        let timestamp = match tz_aware {
+                            true => DateTime::parse_from_str(s, fmt).map(|dt| func(dt.naive_utc())),
+                            false => NaiveDateTime::parse_from_str(s, fmt).map(func),
+                        };
+                        match timestamp {
+                            Ok(ts) => return Some(ts),
                             Err(e) => {
                                 let e: ParseErrorByteCopy = e.into();
                                 match e.0 {
@@ -295,9 +301,11 @@ pub trait Utf8Methods: AsUtf8 {
             })
             .collect_trusted();
         ca.rename(utf8_ca.name());
-        match tz {
+        match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
-            Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz)),
+            (false, Some(tz)) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
+            #[cfg(feature = "timezones")]
+            (true, _) => Ok(ca.into_datetime(tu, Some("UTC".to_string()))),
             _ => Ok(ca.into_datetime(tu, None)),
         }
     }
@@ -311,7 +319,7 @@ pub trait Utf8Methods: AsUtf8 {
             None => return infer::to_date(utf8_ca),
         };
         let cache = cache && utf8_ca.len() > 50;
-        let fmt = strptime::compile_fmt(fmt);
+        let fmt = strptime::compile_fmt(fmt)?;
         let mut cache_map = PlHashMap::new();
 
         // we can use the fast parser
@@ -386,7 +394,6 @@ pub trait Utf8Methods: AsUtf8 {
         tu: TimeUnit,
         cache: bool,
         tz_aware: bool,
-        _utc: bool,
         tz: Option<&TimeZone>,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
@@ -394,7 +401,7 @@ pub trait Utf8Methods: AsUtf8 {
             Some(fmt) => fmt,
             None => return infer::to_datetime(utf8_ca, tu, tz),
         };
-        let fmt = strptime::compile_fmt(fmt);
+        let fmt = strptime::compile_fmt(fmt)?;
         let cache = cache && utf8_ca.len() > 50;
 
         let func = match tu {
@@ -406,30 +413,13 @@ pub trait Utf8Methods: AsUtf8 {
         if tz_aware {
             #[cfg(feature = "timezones")]
             {
-                use chrono::DateTime;
                 use polars_arrow::export::hashbrown::hash_map::Entry;
                 let mut cache_map = PlHashMap::new();
-                let mut tz = None;
 
-                let mut convert = |s: &str| {
+                let convert = |s: &str| {
                     DateTime::parse_from_str(s, &fmt)
                         .ok()
-                        .map(|dt| {
-                            if !_utc {
-                                if let Some(tz_found) = tz {
-                                    polars_ensure!(
-                                        tz_found == dt.timezone(),
-                                        ComputeError: "different timezones found during 'strptime' \
-                                        operation (you might want to use `utc=True` and then set \
-                                        the time zone after parsing"
-                                );
-                                } else {
-                                    tz = Some(dt.timezone());
-                                }
-                            }
-                            Ok(func(dt.naive_utc()))
-                        })
-                        .transpose()
+                        .map(|dt| func(dt.naive_utc()))
                 };
 
                 let mut ca: Int64Chunked = utf8_ca
@@ -440,14 +430,14 @@ pub trait Utf8Methods: AsUtf8 {
                                 let out = if cache {
                                     match cache_map.entry(s) {
                                         Entry::Vacant(entry) => {
-                                            let value = convert(s)?;
+                                            let value = convert(s);
                                             entry.insert(value);
                                             value
                                         }
                                         Entry::Occupied(val) => *val.get(),
                                     }
                                 } else {
-                                    convert(s)?
+                                    convert(s)
                                 };
                                 Ok(out)
                             })
@@ -457,12 +447,7 @@ pub trait Utf8Methods: AsUtf8 {
                     .collect::<PolarsResult<_>>()?;
 
                 ca.rename(utf8_ca.name());
-                if !_utc {
-                    let tz = tz.map(|of| format!("{of}"));
-                    Ok(ca.into_datetime(tu, tz))
-                } else {
-                    Ok(ca.into_datetime(tu, Some("UTC".to_string())))
-                }
+                Ok(ca.into_datetime(tu, Some("UTC".to_string())))
             }
             #[cfg(not(feature = "timezones"))]
             {
@@ -531,7 +516,7 @@ pub trait Utf8Methods: AsUtf8 {
             ca.rename(utf8_ca.name());
             match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz)),
+                Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
                 _ => Ok(ca.into_datetime(tu, None)),
             }
         }

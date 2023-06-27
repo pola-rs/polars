@@ -2,11 +2,11 @@
 use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use polars_arrow::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use polars_arrow::prelude::*;
-use polars_utils::{flatten, HashSingle};
 
 use super::*;
 use crate::config::verbose;
 use crate::utils::_split_offsets;
+use crate::utils::flatten::flatten_par;
 
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupsProxy {
@@ -29,38 +29,19 @@ where
     T::Native: Hash + Eq + Send + AsU64,
     Option<T::Native>: AsU64,
 {
-    // set group size hint
-    #[cfg(feature = "dtype-categorical")]
-    let group_size_hint = if let DataType::Categorical(Some(m)) = ca.dtype() {
-        ca.len() / m.len()
-    } else {
-        0
-    };
-    #[cfg(not(feature = "dtype-categorical"))]
-    let group_size_hint = 0;
-
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = _set_partition_size() as u64;
 
         // use the arrays as iterators
-        if ca.chunks.len() == 1 {
-            if !ca.has_validity() {
-                let keys = vec![ca.cont_slice().unwrap()];
-                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-            } else {
-                let keys = ca
-                    .downcast_iter()
-                    .map(|arr| arr.into_iter().map(|x| x.copied()).collect::<Vec<_>>())
-                    .collect::<Vec<_>>();
-                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-            }
-            // use the polars-iterators
-        } else if !ca.has_validity() {
-            let keys = vec![ca.into_no_null_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+        if ca.null_count() == 0 {
+            let keys = ca
+                .downcast_iter()
+                .map(|arr| arr.values().as_slice())
+                .collect::<Vec<_>>();
+            groupby_threaded_slice(keys, n_partitions, sorted)
         } else {
-            let keys = vec![ca.into_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+            let keys = ca.downcast_iter().collect::<Vec<_>>();
+            groupby_threaded_iter(&keys, n_partitions, sorted)
         }
     } else if !ca.has_validity() {
         groupby(ca.into_no_null_iter(), sorted)
@@ -138,11 +119,18 @@ where
                     })
                 })
                 .collect::<Vec<_>>();
-            flatten(&groups, None)
+            flatten_par(&groups)
         } else {
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
         };
         groups
+    }
+}
+
+#[cfg(all(feature = "dtype-categorical", feature = "performant"))]
+impl IntoGroupsProxy for CategoricalChunked {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        Ok(self.group_tuples_perfect(multithreaded, sorted))
     }
 }
 
@@ -153,12 +141,10 @@ where
 {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         // sorted path
-        if self.is_sorted_ascending_flag()
-            || self.is_sorted_descending_flag() && self.chunks().len() == 1
-        {
+        if self.is_sorted_ascending_flag() || self.is_sorted_descending_flag() {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
             return Ok(GroupsProxy::Slice {
-                groups: self.create_groups_from_sorted(multithreaded),
+                groups: self.rechunk().create_groups_from_sorted(multithreaded),
                 rolling: false,
             });
         }
@@ -269,7 +255,7 @@ impl IntoGroupsProxy for BinaryChunked {
                         ca.into_iter()
                             .map(|opt_b| {
                                 let hash = match opt_b {
-                                    Some(s) => hb.hash_single(s),
+                                    Some(s) => hb.hash_one(s),
                                     None => null_h,
                                 };
                                 // Safety:
@@ -284,13 +270,14 @@ impl IntoGroupsProxy for BinaryChunked {
                     })
                     .collect::<Vec<_>>()
             });
-            groupby_threaded_num(byte_hashes, 0, n_partitions as u64, sorted)
+            let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
+            groupby_threaded_slice(byte_hashes, n_partitions as u64, sorted)
         } else {
             let byte_hashes = self
                 .into_iter()
                 .map(|opt_b| {
                     let hash = match opt_b {
-                        Some(s) => hb.hash_single(s),
+                        Some(s) => hb.hash_one(s),
                         None => null_h,
                     };
                     BytesHash::new(opt_b, hash)
@@ -322,7 +309,7 @@ impl IntoGroupsProxy for ListChunked {
                 for arr in ca.downcast_iter() {
                     out.extend(numeric_list_bytes_iter(arr)?.map(|opt_bytes| {
                         let hash = match opt_bytes {
-                            Some(s) => hb.hash_single(s),
+                            Some(s) => hb.hash_one(s),
                             None => null_h,
                         };
 
@@ -350,9 +337,9 @@ impl IntoGroupsProxy for ListChunked {
                             arr_to_hashes(&ca)
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
-                    Ok(groupby_threaded_num(
+                    let bytes_hashes = bytes_hashes.iter().collect::<Vec<_>>();
+                    Ok(groupby_threaded_slice(
                         bytes_hashes,
-                        0,
                         n_partitions as u64,
                         sorted,
                     ))
@@ -367,6 +354,19 @@ impl IntoGroupsProxy for ListChunked {
         {
             panic!("activate 'groupby_list' feature")
         }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl IntoGroupsProxy for ArrayChunked {
+    #[allow(clippy::needless_lifetimes)]
+    #[allow(unused_variables)]
+    fn group_tuples<'a>(
+        &'a self,
+        _multithreaded: bool,
+        _sorted: bool,
+    ) -> PolarsResult<GroupsProxy> {
+        todo!("grouping FixedSizeList not yet supported")
     }
 }
 

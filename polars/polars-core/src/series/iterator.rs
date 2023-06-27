@@ -59,7 +59,6 @@ impl FromIterator<String> for Series {
 
 pub type SeriesPhysIter<'a> = Box<dyn ExactSizeIterator<Item = AnyValue<'a>> + 'a>;
 
-#[cfg(any(feature = "rows", feature = "dtype-struct"))]
 impl Series {
     /// iterate over [`Series`] as [`AnyValue`].
     ///

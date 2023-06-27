@@ -9,6 +9,7 @@ This page gives an overview of all public polars expressions.
    :hidden:
 
    aggregation
+   array
    binary
    boolean
    categories
@@ -19,6 +20,7 @@ This page gives an overview of all public polars expressions.
    modify_select
    meta
    miscellaneous
+   operators
    string
    struct
    temporal

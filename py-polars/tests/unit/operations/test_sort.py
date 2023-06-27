@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_sort_dates_multiples() -> None:
@@ -54,10 +54,10 @@ def test_sort_by() -> None:
     out = df.select(pl.col("a").sort_by("b", "c"))
     assert out["a"].to_list() == [3, 1, 2, 5, 4]
 
-    out = df.select(pl.col("a").sort_by(by, descending=[False]))
+    out = df.select(pl.col("a").sort_by(by, descending=False))
     assert out["a"].to_list() == [3, 1, 2, 5, 4]
 
-    out = df.select(pl.col("a").sort_by(by, descending=[True]))
+    out = df.select(pl.col("a").sort_by(by, descending=True))
     assert out["a"].to_list() == [4, 5, 2, 1, 3]
 
     out = df.select(pl.col("a").sort_by(by, descending=[True, False]))
@@ -209,6 +209,29 @@ def test_sorted_flag() -> None:
     assert s.flags["SORTED_ASC"]
     assert s.reverse().flags["SORTED_DESC"]
     assert pl.Series([b"a"]).set_sorted().flags["SORTED_ASC"]
+    assert (
+        pl.Series([date(2020, 1, 1), date(2020, 1, 2)])
+        .set_sorted()
+        .cast(pl.Datetime)
+        .flags["SORTED_ASC"]
+    )
+
+    # empty
+    q = pl.LazyFrame(
+        schema={
+            "store_id": pl.UInt16,
+            "item_id": pl.UInt32,
+            "timestamp": pl.Datetime,
+        }
+    ).sort("timestamp")
+
+    assert q.collect()["timestamp"].flags["SORTED_ASC"]
+    assert q.collect(streaming=True)["timestamp"].flags["SORTED_ASC"]
+
+    # top-k/bottom-k
+    df = pl.DataFrame({"foo": [56, 2, 3]})
+    assert df.top_k(2, by="foo")["foo"].flags["SORTED_DESC"]
+    assert df.bottom_k(2, by="foo")["foo"].flags["SORTED_ASC"]
 
     # ensure we don't panic for these types
     # struct
@@ -251,14 +274,40 @@ def test_arg_sort_rank_nans() -> None:
 
 
 def test_top_k() -> None:
-    s = pl.Series([3, 1, 2, 5, 8])
+    # expression
+    s = pl.Series("a", [3, 8, 1, 5, 2])
 
-    assert s.top_k(3).to_list() == [8, 5, 3]
-    assert s.top_k(4, descending=True).to_list() == [1, 2, 3, 5]
+    assert_series_equal(s.top_k(3), pl.Series("a", [8, 5, 3]))
+    assert_series_equal(s.bottom_k(4), pl.Series("a", [1, 2, 3, 5]))
 
     # 5886
-    df = pl.DataFrame({"test": [4, 3, 2, 1]})
-    assert_frame_equal(df.select(pl.col("test").top_k(10)), df)
+    df = pl.DataFrame({"test": [2, 4, 1, 3]})
+    assert_frame_equal(
+        df.select(pl.col("test").top_k(10)),
+        pl.DataFrame({"test": [4, 3, 2, 1]}),
+    )
+
+    # dataframe
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 2, 2],
+            "b": [3, 2, 1, 4, 3, 2],
+        }
+    )
+
+    assert_frame_equal(
+        df.top_k(3, by=["a", "b"]),
+        pl.DataFrame({"a": [4, 3, 2], "b": [4, 1, 3]}),
+    )
+
+    assert_frame_equal(
+        df.top_k(3, by=["a", "b"], descending=True),
+        pl.DataFrame({"a": [1, 2, 2], "b": [3, 2, 2]}),
+    )
+    assert_frame_equal(
+        df.bottom_k(4, by=["a", "b"], descending=True),
+        pl.DataFrame({"a": [4, 3, 2, 2], "b": [4, 1, 3, 2]}),
+    )
 
 
 def test_sorted_flag_unset_by_arithmetic_4937() -> None:
@@ -315,7 +364,7 @@ def test_sort_slice_fast_path_5245() -> None:
 def test_explicit_list_agg_sort_in_groupby() -> None:
     df = pl.DataFrame({"A": ["a", "a", "a", "b", "b", "a"], "B": [1, 2, 3, 4, 5, 6]})
 
-    # this was col().list().sort() before we changed the logic
+    # this was col().implode().sort() before we changed the logic
     result = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
     expected = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
     assert_frame_equal(result, expected)
@@ -376,13 +425,13 @@ def test_sort_by_in_over_5499() -> None:
 
 def test_merge_sorted() -> None:
     df_a = (
-        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo")
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True)
         .to_frame("range")
         .with_row_count()
     )
 
     df_b = (
-        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo")
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo", eager=True)
         .to_frame("range")
         .with_row_count()
         .with_columns(pl.col("row_nr") * 10)
@@ -443,7 +492,8 @@ def test_sort_args() -> None:
     assert_frame_equal(result, expected)
 
     # Mixed
-    result = df.sort(["a"], "b")
+    with pytest.deprecated_call():
+        result = df.sort(["a"], "b")
     assert_frame_equal(result, expected)
 
     # nulls_last
@@ -451,7 +501,7 @@ def test_sort_args() -> None:
     assert_frame_equal(result, df)
 
 
-def test_sort_type_coersion_6892() -> None:
+def test_sort_type_coercion_6892() -> None:
     df = pl.DataFrame({"a": [2, 1], "b": [2, 3]})
     assert df.lazy().sort(pl.col("a") // 2).collect().to_dict(False) == {
         "a": [1, 2],
@@ -494,7 +544,7 @@ def test_sort_row_fmt() -> None:
 
 @pytest.mark.slow()
 def test_streaming_sort_multiple_columns(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = get_str_ints_df(1000)
 
@@ -529,3 +579,129 @@ def test_sort_by_logical() -> None:
     assert df.groupby("name").agg([pl.col("num").sort_by(["dt1", "dt2"])]).sort(
         "name"
     ).to_dict(False) == {"name": ["a", "b"], "num": [[3, 1], [4]]}
+
+
+def test_limit_larger_than_sort() -> None:
+    assert pl.LazyFrame({"a": [1]}).sort("a").limit(30).collect().to_dict(False) == {
+        "a": [1]
+    }
+
+
+def test_sort_by_struct() -> None:
+    df = pl.Series([{"a": 300}, {"a": 20}, {"a": 55}]).to_frame("st").with_row_count()
+    assert df.sort("st").to_dict(False) == {
+        "row_nr": [1, 2, 0],
+        "st": [{"a": 20}, {"a": 55}, {"a": 300}],
+    }
+
+
+def test_sort_descending() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result = df.sort(["a", "b"], descending=True)
+    expected = pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4]})
+    assert_frame_equal(result, expected)
+    result = df.sort(["a", "b"], descending=[True, True])
+    assert_frame_equal(result, expected)
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
+    ):
+        df.sort(["a", "b"], descending=[True])
+
+
+def test_top_k_descending() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result = df.top_k(1, by=["a", "b"], descending=True)
+    expected = pl.DataFrame({"a": [1], "b": [4]})
+    assert_frame_equal(result, expected)
+    result = df.top_k(1, by=["a", "b"], descending=[True, True])
+    assert_frame_equal(result, expected)
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
+    ):
+        df.top_k(1, by=["a", "b"], descending=[True])
+
+
+def test_sort_by_descending() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result = df.select(pl.col("a").sort_by(["a", "b"], descending=True))
+    expected = pl.DataFrame({"a": [3, 2, 1]})
+    assert_frame_equal(result, expected)
+    result = df.select(pl.col("a").sort_by(["a", "b"], descending=[True, True]))
+    assert_frame_equal(result, expected)
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
+    ):
+        df.select(pl.col("a").sort_by(["a", "b"], descending=[True]))
+
+
+def test_arg_sort_by_descending() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result = df.select(pl.arg_sort_by(["a", "b"], descending=True))
+    expected = pl.DataFrame({"a": [2, 1, 0]}).select(pl.col("a").cast(pl.UInt32))
+    assert_frame_equal(result, expected)
+    result = df.select(pl.arg_sort_by(["a", "b"], descending=[True, True]))
+    assert_frame_equal(result, expected)
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(1\) does not match the length of `exprs` \(2\)",
+    ):
+        df.select(pl.arg_sort_by(["a", "b"], descending=[True]))
+
+
+def test_arg_sort_struct() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [100, 300, 100, 200, 200, 100, 300, 200, 400, 400],
+            "b": [5, 5, 6, 7, 8, 1, 1, 2, 2, 3],
+        }
+    )
+    assert df.select(pl.struct("a", "b").arg_sort()).to_series().to_list() == [
+        5,
+        0,
+        2,
+        7,
+        3,
+        4,
+        6,
+        1,
+        8,
+        9,
+    ]
+
+
+def test_sort_top_k_fast_path() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, None],
+            "b": [6.0, 5.0, 4.0],
+            "c": ["a", "c", "b"],
+        }
+    )
+    # this triggers fast path as head is equal to n-rows
+    assert df.lazy().sort("b").head(3).collect().to_dict(False) == {
+        "a": [None, 2, 1],
+        "b": [4.0, 5.0, 6.0],
+        "c": ["b", "c", "a"],
+    }
+
+
+def test_sorted_flag_groupby_dynamic() -> None:
+    df = pl.DataFrame({"ts": [date(2020, 1, 1), date(2020, 1, 2)], "val": [1, 2]})
+    assert (
+        (
+            df.groupby_dynamic(pl.col("ts").set_sorted(), every="1d").agg(
+                pl.col("val").sum()
+            )
+        )
+        .to_series()
+        .flags["SORTED_ASC"]
+    )
+
+
+def test_top_k_9385() -> None:
+    assert pl.LazyFrame({"b": [True, False]}).sort(["b"]).slice(0, 1).collect()[
+        "b"
+    ].to_list() == [False]

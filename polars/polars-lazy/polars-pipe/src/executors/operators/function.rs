@@ -5,8 +5,8 @@ use polars_core::utils::_split_offsets;
 use polars_core::POOL;
 use polars_plan::prelude::*;
 
-use crate::determine_chunk_size;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
+use crate::pipeline::determine_chunk_size;
 
 #[derive(Clone)]
 pub struct FunctionOperator {
@@ -54,7 +54,7 @@ impl FunctionOperator {
 impl Operator for FunctionOperator {
     fn execute(
         &mut self,
-        _context: &PExecutionContext,
+        context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
         if self.function.expands_rows() {
@@ -62,7 +62,7 @@ impl Operator for FunctionOperator {
             // ideal chunk size we want to have
             // we cannot rely on input chunk size as that can increase due to multiple explode calls
             // for instance.
-            let chunk_size_ambition = determine_chunk_size(input_height, self.n_threads)?;
+            let chunk_size_ambition = determine_chunk_size(chunk.data.width(), self.n_threads)?;
 
             if self.offsets.is_empty() {
                 let n = input_height / self.chunk_size;
@@ -87,7 +87,13 @@ impl Operator for FunctionOperator {
                 else if output.height() * 4 > chunk.data.height()
                     || output.height() > chunk_size_ambition * 2
                 {
-                    self.chunk_size /= 2
+                    let new_chunk_size = self.chunk_size / 2;
+
+                    if context.verbose && new_chunk_size < 5 {
+                        eprintln!("chunk size in 'function operation' shrank to {new_chunk_size} and has been set to 5 as lower limit")
+                    }
+                    // ensure it is never 0
+                    self.chunk_size = std::cmp::max(new_chunk_size, 5);
                 };
                 let output = chunk.with_data(output);
                 if self.offsets.is_empty() {

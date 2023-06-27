@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from functools import reduce
 from operator import or_
-from typing import Callable, TypeVar
+from typing import TYPE_CHECKING, Callable, TypeVar
 from warnings import warn
 
-from polars.internals import DataFrame, Expr, LazyFrame, Series
+import polars._reexport as pl
+from polars.utils.various import find_stacklevel
+
+if TYPE_CHECKING:
+    from polars import DataFrame, Expr, LazyFrame, Series
 
 __all__ = [
     "register_expr_namespace",
@@ -19,7 +23,7 @@ _reserved_namespaces: set[str] = reduce(
     or_,
     (
         cls._accessors  # type: ignore[attr-defined]
-        for cls in (DataFrame, Expr, LazyFrame, Series)
+        for cls in (pl.DataFrame, pl.Expr, pl.LazyFrame, pl.Series)
     ),
 )
 
@@ -55,7 +59,7 @@ def _create_namespace(
             warn(
                 f"Overriding existing custom namespace {name!r} (on {cls.__name__})",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=find_stacklevel(),
             )
 
         setattr(cls, name, NameSpace(name, ns_class))
@@ -93,12 +97,10 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     >>>
     >>> df = pl.DataFrame([1.4, 24.3, 55.0, 64.001], schema=["n"])
     >>> df.select(
-    ...     [
-    ...         pl.col("n"),
-    ...         pl.col("n").pow_n.next(p=2).alias("next_pow2"),
-    ...         pl.col("n").pow_n.previous(p=2).alias("prev_pow2"),
-    ...         pl.col("n").pow_n.nearest(p=2).alias("nearest_pow2"),
-    ...     ]
+    ...     pl.col("n"),
+    ...     pl.col("n").pow_n.next(p=2).alias("next_pow2"),
+    ...     pl.col("n").pow_n.previous(p=2).alias("prev_pow2"),
+    ...     pl.col("n").pow_n.nearest(p=2).alias("nearest_pow2"),
     ... )
     shape: (4, 4)
     ┌────────┬───────────┬───────────┬──────────────┐
@@ -119,7 +121,7 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     register_series_namespace: Register functionality on a Series.
 
     """
-    return _create_namespace(name, Expr)
+    return _create_namespace(name, pl.Expr)
 
 
 def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
@@ -219,7 +221,7 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     register_series_namespace: Register functionality on a Series.
 
     """
-    return _create_namespace(name, DataFrame)
+    return _create_namespace(name, pl.DataFrame)
 
 
 def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
@@ -294,7 +296,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ yy  ┆ 5   ┆ 6   ┆ 7   │
     │ yz  ┆ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┴─────┘
-    >>> [ldf.collect() for ldf in ldf.types.split_by_column_dtypes()]
+    >>> pl.collect_all(ldf.types.split_by_column_dtypes())
     [shape: (4, 1)
     ┌─────┐
     │ a1  │
@@ -324,7 +326,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     register_series_namespace: Register functionality on a Series.
 
     """
-    return _create_namespace(name, LazyFrame)
+    return _create_namespace(name, pl.LazyFrame)
 
 
 def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
@@ -379,4 +381,4 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     register_lazyframe_namespace: Register functionality on a LazyFrame.
 
     """
-    return _create_namespace(name, Series)
+    return _create_namespace(name, pl.Series)

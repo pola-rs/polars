@@ -6,6 +6,7 @@ use polars_utils::IdxSize;
 
 use crate::datatypes::IdxCa;
 use crate::error::PolarsResult;
+use crate::prelude::explode::ExplodeByOffsets;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::*;
@@ -19,7 +20,7 @@ impl Series {
 
 #[derive(Clone)]
 pub struct NullChunked {
-    name: Arc<str>,
+    pub(crate) name: Arc<str>,
     length: IdxSize,
     // we still need chunks as many series consumers expect
     // chunks to be there
@@ -27,7 +28,7 @@ pub struct NullChunked {
 }
 
 impl NullChunked {
-    fn new(name: Arc<str>, len: usize) -> Self {
+    pub(crate) fn new(name: Arc<str>, len: usize) -> Self {
         Self {
             name,
             length: len as IdxSize,
@@ -41,12 +42,23 @@ impl NullChunked {
 impl PrivateSeriesNumeric for NullChunked {}
 
 impl PrivateSeries for NullChunked {
+    fn compute_len(&mut self) {
+        // no-op
+    }
     fn _field(&self) -> Cow<Field> {
         Cow::Owned(Field::new(self.name(), DataType::Null))
     }
 
     fn _dtype(&self) -> &DataType {
         &DataType::Null
+    }
+
+    #[cfg(feature = "zip_with")]
+    fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> PolarsResult<Series> {
+        Ok(self.clone().into_series())
+    }
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        ExplodeByOffsets::explode_by_offsets(self, offsets)
     }
 }
 
@@ -101,16 +113,12 @@ impl SeriesTrait for NullChunked {
         self.length as usize
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        NullChunked::new(self.name.clone(), self.len() / n).into_series()
-    }
-
     fn has_validity(&self) -> bool {
         true
     }
 
     fn rechunk(&self) -> Series {
-        self.clone().into_series()
+        NullChunked::new(self.name.clone(), self.len()).into_series()
     }
 
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
@@ -157,12 +165,20 @@ impl SeriesTrait for NullChunked {
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        *self = NullChunked::new(self.name.clone(), self.len() + other.len());
+        polars_ensure!(other.dtype() == &DataType::Null, ComputeError: "expected null dtype");
+        // we don't create a new null array to keep probability of aligned chunks higher
+        self.chunks.extend(other.chunks().iter().cloned());
+        self.length += other.len() as IdxSize;
         Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-        self.append(other)
+        *self = NullChunked::new(self.name.clone(), self.len() + other.len());
+        Ok(())
+    }
+
+    fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
+        Arc::new(self.clone())
     }
 }
 

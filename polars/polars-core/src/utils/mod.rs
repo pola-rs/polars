@@ -1,10 +1,11 @@
+pub mod flatten;
 pub(crate) mod series;
 mod supertype;
-
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 use arrow::bitmap::Bitmap;
+use flatten::*;
 use num_traits::{One, Zero};
 pub use polars_arrow::utils::{TrustMyLength, *};
 use rayon::prelude::*;
@@ -13,7 +14,6 @@ use smartstring::alias::String as SmartString;
 pub use supertype::*;
 pub use {arrow, rayon};
 
-#[cfg(feature = "private")]
 pub use crate::chunked_array::ops::sort::arg_sort_no_nulls;
 use crate::prelude::*;
 use crate::POOL;
@@ -30,12 +30,15 @@ impl<T> Deref for Wrap<T> {
 
 pub fn _set_partition_size() -> usize {
     let mut n_partitions = POOL.current_num_threads();
-    // set n_partitions to closes 2^n above the no of threads.
+    if n_partitions == 1 {
+        return 1;
+    }
+    // set n_partitions to closest 2^n size
     loop {
         if n_partitions.is_power_of_two() {
             break;
         } else {
-            n_partitions += 1;
+            n_partitions -= 1;
         }
     }
     n_partitions
@@ -105,7 +108,6 @@ macro_rules! split_array {
     }};
 }
 
-#[cfg(feature = "private")]
 pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> PolarsResult<Vec<ChunkedArray<T>>>
 where
     T: PolarsDataType,
@@ -136,57 +138,21 @@ pub fn _split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
     }
 }
 
-#[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
-fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
-    df.iter_chunks_physical().flat_map(|chunk| {
-        let df = DataFrame::new_no_checks(
-            df.iter()
-                .zip(chunk.into_arrays())
-                .map(|(s, arr)| {
-                    // Safety:
-                    // datatypes are correct
-                    let mut out = unsafe {
-                        Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
-                    };
-                    out.set_sorted_flag(s.is_sorted_flag());
-                    out
-                })
-                .collect(),
-        );
-        if df.height() == 0 {
-            None
-        } else {
-            Some(df)
-        }
-    })
-}
-
-pub fn flatten_series(s: &Series) -> Vec<Series> {
-    let name = s.name();
-    let dtype = s.dtype();
-    unsafe {
-        s.chunks()
-            .iter()
-            .map(|arr| Series::from_chunks_and_dtype_unchecked(name, vec![arr.clone()], dtype))
-            .collect()
-    }
-}
-
 pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     let total_len = df.height();
-    let chunk_size = std::cmp::min(total_len / n, 3);
+    let chunk_size = std::cmp::max(total_len / n, 3);
 
     if df.n_chunks() == n
         && df.get_columns()[0]
             .chunk_lengths()
             .all(|len| len.abs_diff(chunk_size) < 100)
     {
-        return Ok(flatten_df(df).collect());
+        return Ok(flatten_df_iter(df).collect());
     }
 
     let mut out = Vec::with_capacity(n);
@@ -194,7 +160,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
     for i in 0..n {
         let offset = i * chunk_size;
         let len = if i == (n - 1) {
-            total_len - offset
+            total_len.saturating_sub(offset)
         } else {
             chunk_size
         };
@@ -202,7 +168,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
         if df.n_chunks() > 1 {
             // we add every chunk as separate dataframe. This make sure that every partition
             // deals with it.
-            out.extend(flatten_df(&df))
+            out.extend(flatten_df_iter(&df))
         } else {
             out.push(df)
         }
@@ -211,7 +177,6 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
     Ok(out)
 }
 
-#[cfg(feature = "private")]
 #[doc(hidden)]
 /// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
 pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
@@ -219,7 +184,7 @@ pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
         return Ok(vec![df.clone()]);
     }
     // make sure that chunks are aligned.
-    df.rechunk();
+    df.align_chunks();
     split_df_as_ref(df, n)
 }
 
@@ -229,7 +194,6 @@ pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
 }
 
 #[inline]
-#[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
     let abs_offset = offset.unsigned_abs() as usize;
@@ -554,7 +518,6 @@ macro_rules! df {
     }
 }
 
-#[cfg(feature = "private")]
 pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
     use TimeUnit::*;
     match (tu_l, tu_r) {
@@ -635,40 +598,6 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> PolarsResult<Dat
     Ok(acc_df)
 }
 
-/// Simple wrapper to parallelize functions that can be divided over threads aggregated and
-/// finally aggregated in the main thread. This can be done for sum, min, max, etc.
-#[cfg(feature = "private")]
-pub fn parallel_op_series<F>(
-    f: F,
-    s: Series,
-    n_threads: Option<usize>,
-) -> PolarsResult<Option<Series>>
-where
-    F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
-{
-    let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
-    let splits = _split_offsets(s.len(), n_threads);
-
-    let chunks = POOL.install(|| {
-        splits
-            .into_par_iter()
-            .map(|(offset, len)| {
-                let s = s.slice(offset as i64, len);
-                f(s)
-            })
-            .collect::<PolarsResult<Vec<_>>>()
-    })?;
-
-    let mut iter = chunks.into_iter();
-    let first = iter.next().unwrap();
-    let out = iter.fold(first, |mut acc, s| {
-        acc.append(&s).unwrap();
-        acc
-    });
-
-    f(out).map(Some)
-}
-
 pub fn align_chunks_binary<'a, T, B>(
     left: &'a ChunkedArray<T>,
     right: &'a ChunkedArray<B>,
@@ -726,7 +655,7 @@ where
 
 #[allow(clippy::type_complexity)]
 #[cfg(feature = "zip_with")]
-pub(crate) fn align_chunks_ternary<'a, A, B, C>(
+pub fn align_chunks_ternary<'a, A, B, C>(
     a: &'a ChunkedArray<A>,
     b: &'a ChunkedArray<B>,
     c: &'a ChunkedArray<C>,

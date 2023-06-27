@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pyarrow as pa
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -32,7 +33,9 @@ def test_groupby_flatten_list() -> None:
 
 def test_groupby_flatten_string() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": ["foo", "bar", "baz"]})
-    result = df.groupby("group", maintain_order=True).agg(pl.col("values").flatten())
+    result = df.groupby("group", maintain_order=True).agg(
+        pl.col("values").str.explode()
+    )
 
     expected = pl.DataFrame(
         {
@@ -122,22 +125,22 @@ def test_explode_correct_for_slice() -> None:
 
 def test_sliced_null_explode() -> None:
     s = pl.Series("", [[1], [2], [3], [4], [], [6]])
-    assert s.slice(2, 4).arr.explode().to_list() == [3, 4, None, 6]
-    assert s.slice(2, 2).arr.explode().to_list() == [3, 4]
+    assert s.slice(2, 4).list.explode().to_list() == [3, 4, None, 6]
+    assert s.slice(2, 2).list.explode().to_list() == [3, 4]
     assert pl.Series("", [[1], [2], None, [4], [], [6]]).slice(
         2, 4
-    ).arr.explode().to_list() == [None, 4, None, 6]
+    ).list.explode().to_list() == [None, 4, None, 6]
 
     s = pl.Series("", [["a"], ["b"], ["c"], ["d"], [], ["e"]])
-    assert s.slice(2, 4).arr.explode().to_list() == ["c", "d", None, "e"]
-    assert s.slice(2, 2).arr.explode().to_list() == ["c", "d"]
+    assert s.slice(2, 4).list.explode().to_list() == ["c", "d", None, "e"]
+    assert s.slice(2, 2).list.explode().to_list() == ["c", "d"]
     assert pl.Series("", [["a"], ["b"], None, ["d"], [], ["e"]]).slice(
         2, 4
-    ).arr.explode().to_list() == [None, "d", None, "e"]
+    ).list.explode().to_list() == [None, "d", None, "e"]
 
     s = pl.Series("", [[False], [False], [True], [False], [], [True]])
-    assert s.slice(2, 2).arr.explode().to_list() == [True, False]
-    assert s.slice(2, 4).arr.explode().to_list() == [True, False, None, True]
+    assert s.slice(2, 2).list.explode().to_list() == [True, False]
+    assert s.slice(2, 4).list.explode().to_list() == [True, False, None, True]
 
 
 def test_utf8_explode() -> None:
@@ -228,7 +231,7 @@ def test_explode_inner_lists_3985() -> None:
     assert (
         df.groupby("id")
         .agg(pl.col("categories"))
-        .with_columns(pl.col("categories").arr.eval(pl.element().arr.explode()))
+        .with_columns(pl.col("categories").list.eval(pl.element().list.explode()))
     ).collect().to_dict(False) == {"id": [1], "categories": [["a", "b", "a", "c"]]}
 
 
@@ -244,7 +247,7 @@ def test_list_struct_explode_6905() -> None:
             ]
         },
         schema={"group": pl.List(pl.Struct([pl.Field("params", pl.List(pl.Int32))]))},
-    )["group"].arr.explode().to_list() == [
+    )["group"].list.explode().to_list() == [
         {"params": None},
         {"params": [1]},
         {"params": []},
@@ -254,8 +257,59 @@ def test_list_struct_explode_6905() -> None:
 def test_explode_binary() -> None:
     assert pl.Series([[1, 2], [3]]).cast(
         pl.List(pl.Binary)
-    ).arr.explode().to_list() == [
+    ).list.explode().to_list() == [
         b"1",
         b"2",
         b"3",
     ]
+
+
+def test_explode_null_list() -> None:
+    assert pl.Series([["a"], None], dtype=pl.List(pl.Utf8))[
+        1:2
+    ].list.min().to_list() == [None]
+
+
+def test_explode_invalid_element_count() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": [["X", "Y", "Z"], ["F", "G"], ["P"]],
+            "col2": [["A", "B", "C"], ["C"], ["D", "E"]],
+        }
+    ).with_row_count()
+    with pytest.raises(
+        pl.ShapeError, match=r"exploded columns must have matching element counts"
+    ):
+        df.explode(["col1", "col2"])
+
+
+def test_logical_explode() -> None:
+    out = (
+        pl.DataFrame(
+            {"cats": ["Value1", "Value2", "Value1"]},
+            schema_overrides={"cats": pl.Categorical},
+        )
+        .groupby(1)
+        .agg(pl.struct("cats"))
+        .explode("cats")
+        .unnest("cats")
+    )
+    assert out["cats"].dtype == pl.Categorical
+    assert out["cats"].to_list() == ["Value1", "Value2", "Value1"]
+
+
+def test_explode_inner_null() -> None:
+    expected = pl.DataFrame({"A": [None, None]}, schema={"A": pl.Null})
+    out = pl.DataFrame({"A": [[], []]}, schema={"A": pl.List(pl.Null)}).explode("A")
+    assert_frame_equal(out, expected)
+
+
+def test_explode_array() -> None:
+    out = pl.DataFrame(
+        {"a": [[1, 2], [2, 3]], "b": [1, 2]},
+        schema_overrides={"a": pl.Array(2, inner=pl.Int64)},
+    ).explode("a")
+
+    expected = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1, 1, 2, 2]})
+
+    assert_frame_equal(out, expected)

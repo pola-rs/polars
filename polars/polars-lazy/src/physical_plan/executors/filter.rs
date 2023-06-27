@@ -3,11 +3,21 @@ use super::*;
 pub struct FilterExec {
     pub(crate) predicate: Arc<dyn PhysicalExpr>,
     pub(crate) input: Box<dyn Executor>,
+    // if the predicate contains a window function
+    has_window: bool,
 }
 
 impl FilterExec {
-    pub fn new(predicate: Arc<dyn PhysicalExpr>, input: Box<dyn Executor>) -> Self {
-        Self { predicate, input }
+    pub fn new(
+        predicate: Arc<dyn PhysicalExpr>,
+        input: Box<dyn Executor>,
+        has_window: bool,
+    ) -> Self {
+        Self {
+            predicate,
+            input,
+            has_window,
+        }
     }
 }
 
@@ -20,6 +30,10 @@ impl Executor for FilterExec {
             }
         }
         let df = self.input.execute(state)?;
+
+        if self.has_window {
+            state.insert_has_window_function_flag()
+        }
         let s = self.predicate.evaluate(&df, state)?;
         let mask = s.bool().map_err(|_| {
             polars_err!(

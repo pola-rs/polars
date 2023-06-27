@@ -30,10 +30,11 @@ impl DateChunked {
         Int32Chunked::from_vec(name, unit).into()
     }
 
-    /// Format Date with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
+    /// Convert from Date into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    pub fn to_string(&self, format: &str) -> Utf8Chunked {
         let date = NaiveDate::from_ymd_opt(2001, 1, 1).unwrap();
-        let fmted = format!("{}", date.format(fmt));
+        let fmted = format!("{}", date.format(format));
 
         let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
             let mut buf = String::new();
@@ -45,7 +46,7 @@ impl DateChunked {
                     None => mutarr.push_null(),
                     Some(v) => {
                         buf.clear();
-                        let datefmt = date32_to_date(*v).format(fmt);
+                        let datefmt = date32_to_date(*v).format(format);
                         write!(buf, "{datefmt}").unwrap();
                         mutarr.push(Some(&buf))
                     }
@@ -57,6 +58,14 @@ impl DateChunked {
         });
         ca.rename(self.name());
         ca
+    }
+
+    /// Convert from Date into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    ///
+    /// Alias for `to_string`.
+    pub fn strftime(&self, format: &str) -> Utf8Chunked {
+        self.to_string(format)
     }
 
     /// Construct a new [`DateChunked`] from an iterator over optional [`NaiveDate`].

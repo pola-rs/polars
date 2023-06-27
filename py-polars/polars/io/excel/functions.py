@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, overload
+from typing import TYPE_CHECKING, Any, BinaryIO, NoReturn, overload
 
-from polars.internals import DataFrame
 from polars.io.csv.functions import read_csv
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
     import sys
     from io import BytesIO
+
+    from polars import DataFrame
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -22,11 +22,53 @@ if TYPE_CHECKING:
 @overload
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
-    sheet_id: Literal[None],
-    sheet_name: Literal[None],
-    xlsx2csv_options: dict[str, Any] | None,
-    read_csv_options: dict[str, Any] | None,
-    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
+    *,
+    sheet_id: None = ...,
+    sheet_name: str,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = ...,
+) -> DataFrame:
+    ...
+
+
+@overload
+def read_excel(
+    source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
+    sheet_id: None = ...,
+    sheet_name: None = ...,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = ...,
+) -> DataFrame:
+    ...
+
+
+@overload
+def read_excel(
+    source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
+    sheet_id: int,
+    sheet_name: str,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = ...,
+) -> NoReturn:
+    ...
+
+
+# mypy wants the return value for Literal[0] to
+# overlap with the return value for other integers.
+@overload  # type: ignore[misc]
+def read_excel(
+    source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
+    sheet_id: Literal[0],
+    sheet_name: None = ...,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = ...,
 ) -> dict[str, DataFrame]:
     ...
 
@@ -34,32 +76,20 @@ def read_excel(
 @overload
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
-    sheet_id: Literal[None],
-    sheet_name: str,
-    xlsx2csv_options: dict[str, Any] | None = None,
-    read_csv_options: dict[str, Any] | None = None,
-    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
-) -> DataFrame:
-    ...
-
-
-@overload
-def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
     sheet_id: int,
-    sheet_name: Literal[None],
-    xlsx2csv_options: dict[str, Any] | None = None,
-    read_csv_options: dict[str, Any] | None = None,
-    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
+    sheet_name: None = ...,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = ...,
 ) -> DataFrame:
     ...
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source")
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
-    sheet_id: int | None = 0,
+    *,
+    sheet_id: int | None = None,
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
@@ -78,9 +108,10 @@ def read_excel(
         By file-like object, we refer to objects with a ``read()`` method, such as a
         file handler (e.g. via builtin ``open`` function) or ``BytesIO``.
     sheet_id
-        Sheet number to convert (0 for all sheets).
+        Sheet number to convert (``0`` for all sheets). Defaults to `1` if neither this
+        nor `sheet_name` are specified.
     sheet_name
-        Sheet name to convert.
+        Sheet name to convert. Cannot be used in conjunction with `sheet_id`.
     xlsx2csv_options
         Extra options passed to ``xlsx2csv.Xlsx2csv()``.
         e.g.: ``{"skip_empty_lines": True}``
@@ -157,10 +188,10 @@ def read_excel(
                 "openpyxl is not installed. Please run `pip install openpyxl`."
             ) from None
         parser = openpyxl.load_workbook(source, read_only=True)
-        sheets = [{"index": i, "name": sheet.title} for i, sheet in enumerate(parser)]
+        sheets = [
+            {"index": i + 1, "name": sheet.title} for i, sheet in enumerate(parser)
+        ]
         reader_fn = _read_excel_sheet_openpyxl
-        # setup good defaults for the sheet id
-        engine_sheet_id = sheet_id
     elif engine == "xlsx2csv" or engine is None:  # default
         try:
             import xlsx2csv
@@ -172,18 +203,21 @@ def read_excel(
         parser = xlsx2csv.Xlsx2csv(source, **xlsx2csv_options)
         sheets = parser.workbook.sheets
         reader_fn = _read_excel_sheet_xlsx2csv
-        # setup good defaults for the sheet id
-        engine_sheet_id = 1 if sheet_id == 0 else sheet_id
     else:
-        raise NotImplementedError(f"Cannot find the {engine} engine")
-
-    if sheet_id is None and sheet_name is None:
-        ret_val = {
+        raise NotImplementedError(f"Cannot find the engine `{engine}`")
+    if sheet_name is None and sheet_id is None:
+        ret_val = reader_fn(parser, 1, None, read_csv_options)
+    elif sheet_name is None and ((sheet_id is not None) and (sheet_id > 0)):
+        ret_val = reader_fn(parser, sheet_id, None, read_csv_options)
+    elif sheet_name is None and ((sheet_id is not None) and (sheet_id == 0)):
+        return {
             sheet["name"]: reader_fn(parser, sheet["index"], None, read_csv_options)
             for sheet in sheets
         }
+    elif sheet_name is not None and sheet_id is None:
+        ret_val = reader_fn(parser, None, sheet_name, read_csv_options)
     else:
-        ret_val = reader_fn(parser, engine_sheet_id, sheet_name, read_csv_options)
+        raise ValueError("Cannot specify both `sheet_name` and `sheet_id`")
 
     if engine == "openpyxl":
         # close iterator
@@ -197,11 +231,14 @@ def _read_excel_sheet_openpyxl(
     sheet_name: str | None,
     _: dict[str, Any] | None,
 ) -> DataFrame:
+    # import here to avoid circular imports
+    from polars import DataFrame
+
     # read requested sheet if provided on kwargs, otherwise read active sheet
     if sheet_name is not None:
         ws = parser[sheet_name]
     elif sheet_id is not None:
-        ws = parser.worksheets[sheet_id]
+        ws = parser.worksheets[sheet_id - 1]
     else:
         ws = parser.active
 

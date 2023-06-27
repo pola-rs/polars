@@ -9,7 +9,7 @@ use crate::frame::LazyFileListReader;
 use crate::prelude::*;
 
 #[derive(Clone)]
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 pub struct LazyCsvReader<'a> {
     path: PathBuf,
     delimiter: u8,
@@ -34,7 +34,7 @@ pub struct LazyCsvReader<'a> {
     try_parse_dates: bool,
 }
 
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 impl<'a> LazyCsvReader<'a> {
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
@@ -308,6 +308,6 @@ impl LazyFileListReader for LazyCsvReader<'_> {
 
     fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {
         // set to false, as the csv parser has full thread utilization
-        concat_impl(&lfs, self.rechunk(), false, true)
+        concat_impl(&lfs, self.rechunk(), false, true, false)
     }
 }

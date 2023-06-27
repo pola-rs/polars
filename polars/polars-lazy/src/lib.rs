@@ -8,7 +8,7 @@
 //!
 //! # Lazy DSL
 //!
-//! The lazy API of polars can be used as long we operation on one or multiple DataFrame(s) and
+//! The lazy API of polars can be used as long we operate on one or multiple DataFrame(s) and
 //! Series of the same length as the DataFrame. To get started we call the [lazy](crate::frame::IntoLazy::lazy)
 //! method. This returns a [LazyFrame](crate::frame::LazyFrame) exposing the lazy API.
 //!
@@ -182,6 +182,7 @@
 //!      )
 //! }
 //! ```
+#![allow(ambiguous_glob_reexports)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 extern crate core;
 

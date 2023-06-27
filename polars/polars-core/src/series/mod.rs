@@ -11,7 +11,6 @@ mod into;
 pub(crate) mod iterator;
 pub mod ops;
 mod series_trait;
-#[cfg(feature = "private")]
 pub mod unstable;
 
 use std::borrow::Cow;
@@ -21,6 +20,7 @@ use std::sync::Arc;
 
 use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
+use arrow::offset::Offsets;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
@@ -159,11 +159,21 @@ impl Series {
     }
 
     pub fn clear(&self) -> Series {
+        // only the inner of objects know their type
+        // so use this hack
+        #[cfg(feature = "object")]
+        if matches!(self.dtype(), DataType::Object(_)) {
+            return if self.is_empty() {
+                self.clone()
+            } else {
+                let av = self.get(0).unwrap();
+                Series::new(self.name(), [av]).slice(0, 0)
+            };
+        }
         Series::new_empty(self.name(), self.dtype())
     }
 
     #[doc(hidden)]
-    #[cfg(feature = "private")]
     pub fn _get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
         if Arc::weak_count(&self.0) + Arc::strong_count(&self.0) != 1 {
             self.0 = self.0.clone_inner();
@@ -173,7 +183,7 @@ impl Series {
 
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
-    pub(crate) unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
         let chunks = ca.chunks() as *const Vec<ArrayRef> as *mut Vec<ArrayRef>;
@@ -255,11 +265,24 @@ impl Series {
     /// This can lead to invalid memory access in downstream code.
     pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
         match self.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {
+                let ca = self.struct_().unwrap();
+                ca.cast_unchecked(dtype)
+            }
+            DataType::List(_) => {
+                let ca = self.list().unwrap();
+                ca.cast_unchecked(dtype)
+            }
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                     let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
                         ca.cast_unchecked(dtype)
                 })
+            }
+            DataType::Binary => {
+                let ca = self.binary().unwrap();
+                ca.cast_unchecked(dtype)
             }
             _ => self.cast(dtype),
         }
@@ -321,12 +344,13 @@ impl Series {
             .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
 
-    /// Explode a list or utf8 Series. This expands every item to a new row..
+    /// Explode a list Series. This expands every item to a new row..
     pub fn explode(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::List(_) => self.list().unwrap().explode(),
-            DataType::Utf8 => self.utf8().unwrap().explode(),
-            _ => polars_bail!(opq = explode, self.dtype()),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => self.array().unwrap().explode(),
+            _ => Ok(self.clone()),
         }
     }
 
@@ -335,6 +359,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), false, self.len())),
             _ => polars_bail!(opq = is_nan, self.dtype()),
         }
     }
@@ -344,15 +369,17 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), true, self.len())),
             _ => polars_bail!(opq = is_not_nan, self.dtype()),
         }
     }
 
-    /// Check if float value is finite
+    /// Check if numeric value is finite
     pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), true, self.len())),
             _ => polars_bail!(opq = is_finite, self.dtype()),
         }
     }
@@ -362,6 +389,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
+            dt if dt.is_numeric() => Ok(BooleanChunked::full(self.name(), false, self.len())),
             _ => polars_bail!(opq = is_infinite, self.dtype()),
         }
     }
@@ -381,6 +409,7 @@ impl Series {
     /// * Datetime-> Int64
     /// * Time -> Int64
     /// * Categorical -> UInt32
+    /// * List(inner) -> List(physical of inner)
     ///
     pub fn to_physical_repr(&self) -> Cow<Series> {
         use DataType::*;
@@ -389,6 +418,21 @@ impl Series {
             Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => Cow::Owned(self.cast(&UInt32).unwrap()),
+            List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
+            #[cfg(feature = "dtype-struct")]
+            Struct(_) => {
+                let arr = self.struct_().unwrap();
+                let fields = arr
+                    .fields()
+                    .iter()
+                    .map(|s| s.to_physical_repr().into_owned())
+                    .collect::<Vec<_>>();
+                Cow::Owned(
+                    StructChunked::new(self.name(), &fields)
+                        .unwrap()
+                        .into_series(),
+                )
+            }
             _ => Cow::Borrowed(self),
         }
     }
@@ -532,7 +576,7 @@ impl Series {
         if self.is_empty()
             && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
         {
-            return Series::new("", [0])
+            return Series::new(self.name(), [0])
                 .cast(self.dtype())
                 .unwrap()
                 .sum_as_series();
@@ -605,6 +649,12 @@ impl Series {
                 Float64 => {
                     let ca = self.f64().unwrap();
                     ca.cumsum(reverse).into_series()
+                }
+                #[cfg(feature = "dtype-duration")]
+                Duration(tu) => {
+                    let ca = self.to_physical_repr();
+                    let ca = ca.i64().unwrap();
+                    ca.cumsum(reverse).cast(&Duration(*tu)).unwrap()
                 }
                 dt => panic!("cumsum not supported for dtype: {dt:?}"),
             }
@@ -695,16 +745,23 @@ impl Series {
     }
 
     #[cfg(feature = "rank")]
-    pub fn rank(&self, options: RankOptions) -> Series {
-        rank(self, options.method, options.descending)
+    pub fn rank(&self, options: RankOptions, seed: Option<u64>) -> Series {
+        rank(self, options.method, options.descending, seed)
     }
 
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         let null_count = self.null_count();
         let len = self.len();
-        if null_count == len {
-            return Ok(Series::full_null(self.name(), len, dtype));
+
+        match self.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {}
+            _ => {
+                if null_count == len {
+                    return Ok(Series::full_null(self.name(), len, dtype));
+                }
+            }
         }
         let s = self.0.cast(dtype)?;
         if null_count != s.null_count() {
@@ -825,10 +882,9 @@ impl Series {
             Float64 => a.f64().unwrap().abs().into_series(),
             dt => polars_bail!(opq = abs, dt),
         };
-        Ok(out)
+        out.cast(self.dtype())
     }
 
-    #[cfg(feature = "private")]
     // used for formatting
     pub fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
         let out = match self.0.get(index)? {
@@ -935,6 +991,22 @@ impl Series {
 
         size
     }
+
+    /// Packs every element into a list
+    pub fn as_list(&self) -> ListChunked {
+        let s = self.rechunk();
+        let values = s.to_arrow(0);
+        let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
+        let offsets = unsafe { Offsets::new_unchecked(offsets) };
+
+        let new_arr = LargeListArray::new(
+            DataType::List(Box::new(s.dtype().clone())).to_arrow(),
+            offsets.into(),
+            values,
+            None,
+        );
+        unsafe { ListChunked::from_chunks(s.name(), vec![Box::new(new_arr)]) }
+    }
 }
 
 impl Deref for Series {
@@ -962,17 +1034,23 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        if &T::get_dtype() == self.dtype() ||
-            // needed because we want to get ref of List no matter what the inner type is.
-            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
-        {
-            unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
-        } else {
-            panic!(
-                "implementation error, cannot get ref {:?} from {:?}",
-                T::get_dtype(),
-                self.dtype()
-            )
+        match T::get_dtype() {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(None, None) => panic!("impl error"),
+            _ => {
+                if &T::get_dtype() == self.dtype() ||
+                    // needed because we want to get ref of List no matter what the inner type is.
+                    (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
+                {
+                    unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
+                } else {
+                    panic!(
+                        "implementation error, cannot get ref {:?} from {:?}",
+                        T::get_dtype(),
+                        self.dtype()
+                    );
+                }
+            }
         }
     }
 }
@@ -1033,7 +1111,7 @@ mod test {
     }
     #[test]
     fn new_series_from_arrow_primitive_array() {
-        let array = UInt32Array::from_slice(&[1, 2, 3, 4, 5]);
+        let array = UInt32Array::from_slice([1, 2, 3, 4, 5]);
         let array_ref: ArrayRef = Box::new(array);
 
         let _ = Series::try_from(("foo", array_ref)).unwrap();

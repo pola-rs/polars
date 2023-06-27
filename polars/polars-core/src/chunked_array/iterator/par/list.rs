@@ -27,6 +27,7 @@ impl ListChunked {
     }
 
     // Get an indexed parallel iterator over the [`Series`] in this [`ListChunked`].
+    // Also might be faster as it doesn't use `flat_map`.
     pub fn par_iter_indexed(&mut self) -> impl IndexedParallelIterator<Item = Option<Series>> + '_ {
         *self = self.rechunk();
         let arr = self.downcast_iter().next().unwrap();

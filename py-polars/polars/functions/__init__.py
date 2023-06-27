@@ -1,41 +1,39 @@
-from polars.functions.eager import (
-    align_frames,
-    concat,
-    cut,
-    date_range,
-    get_dummies,
-    ones,
-    zeros,
+from polars.functions.as_datatype import (
+    concat_list,
+    concat_str,
+    duration,
+    format,
+    struct,
 )
+from polars.functions.as_datatype import date_ as date
+from polars.functions.as_datatype import datetime_ as datetime
+from polars.functions.as_datatype import time_ as time
+from polars.functions.eager import align_frames, concat
 from polars.functions.lazy import (
     all,
     any,
     apply,
-    arange,
+    approx_unique,
     arg_sort_by,
     arg_where,
-    argsort_by,
     avg,
     coalesce,
     col,
     collect_all,
-    concat_list,
-    concat_str,
     corr,
     count,
     cov,
     cumfold,
     cumreduce,
     cumsum,
-    duration,
     element,
     exclude,
     first,
     fold,
-    format,
     from_epoch,
     groups,
     head,
+    implode,
     last,
     lit,
     map,
@@ -44,34 +42,32 @@ from polars.functions.lazy import (
     median,
     min,
     n_unique,
-    pearson_corr,
     quantile,
     reduce,
-    repeat,
+    rolling_corr,
+    rolling_cov,
     select,
-    spearman_rank_corr,
+    sql_expr,
     std,
-    struct,
     sum,
     tail,
     var,
 )
-from polars.functions.lazy import date_ as date
-from polars.functions.lazy import datetime_ as datetime
-from polars.functions.lazy import list_ as list
+from polars.functions.range import arange, date_range, time_range
+from polars.functions.repeat import ones, repeat, zeros
 from polars.functions.whenthen import when
 
 __all__ = [
     # polars.functions.eager
     "align_frames",
+    "approx_unique",
     "arg_where",
     "concat",
-    "cut",
     "date_range",
     "element",
-    "get_dummies",
     "ones",
     "repeat",
+    "time_range",
     "zeros",
     # polars.functions.lazy
     "all",
@@ -79,7 +75,6 @@ __all__ = [
     "apply",
     "arange",
     "arg_sort_by",
-    "argsort_by",
     "avg",
     "coalesce",
     "col",
@@ -102,8 +97,8 @@ __all__ = [
     "from_epoch",
     "groups",
     "head",
+    "implode",
     "last",
-    "list",  # named list_, see import above
     "lit",
     "map",
     "max",
@@ -111,16 +106,18 @@ __all__ = [
     "median",
     "min",
     "n_unique",
-    "pearson_corr",
     "quantile",
     "reduce",
+    "rolling_corr",
+    "rolling_cov",
     "select",
-    "spearman_rank_corr",
     "std",
     "struct",
     "sum",
     "tail",
+    "time",
     "var",
     # polars.functions.whenthen
     "when",
+    "sql_expr",
 ]

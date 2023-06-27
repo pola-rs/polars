@@ -1,26 +1,27 @@
 use std::cmp::Ordering;
 use std::ops::Mul;
 
-use chrono::{
-    Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone as TimeZoneTrait, Timelike, Weekday,
-};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
+use polars_arrow::error::polars_err;
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
+use polars_arrow::time_zone::Tz;
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
-    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, PolarsResult,
+    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
+    PolarsResult,
 };
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::calendar::{
-    is_leap_year, last_day_of_month, NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE,
-    NS_SECOND, NS_WEEK,
+    NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK,
 };
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime, unlocalize_datetime};
+use crate::windows::calendar::{is_leap_year, last_day_of_month};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -37,6 +38,9 @@ pub struct Duration {
     pub(crate) negative: bool,
     // indicates if an integer string was passed. e.g. "2i"
     pub parsed_int: bool,
+    // indicates if an offset to a non-existent date (e.g. 2022-02-29)
+    // should saturate (to 2022-02-28) as opposed to erroring
+    pub(crate) saturating: bool,
 }
 
 impl PartialOrd<Self> for Duration {
@@ -61,24 +65,48 @@ impl Duration {
             nsecs: fixed_slots.abs(),
             negative: fixed_slots < 0,
             parsed_int: true,
+            saturating: false,
         }
     }
 
-    /// 1ns // 1 nanosecond
-    /// 1us // 1 microsecond
-    /// 1ms // 1 millisecond
-    /// 1s  // 1 second
-    /// 1m  // 1 minute
-    /// 1h  // 1 hour
-    /// 1d  // 1 day
-    /// 1w  // 1 week
-    /// 1mo // 1 calendar month
-    /// 1y  // 1 calendar year
-    /// 1i  // 1 index value (only for {Int32, Int64} dtypes
+    /// Parse a string into a `Duration`
     ///
-    /// 3d12h4m25s // 3 days, 12 hours, 4 minutes, and 25 seconds
+    /// Strings are composed of a sequence of number-unit pairs, such as `5d` (5 days). A string may begin with a minus
+    /// sign, in which case it is interpreted as a negative duration. Some examples:
     ///
-    /// # Panics if given str is incorrect
+    /// * `"1y"`: 1 year
+    /// * `"-1w2d"`: negative 1 week, 2 days (i.e. -9 days)
+    /// * `"3d12h4m25s"`: 3 days, 12 hours, 4 minutes, and 25 seconds
+    ///
+    /// Aside from a leading minus sign, strings may not contain any characters other than numbers and letters
+    /// (including whitespace).
+    ///
+    /// The available units, in ascending order of magnitude, are as follows:
+    ///
+    /// * `ns`: nanosecond
+    /// * `us`: microsecond
+    /// * `ms`: millisecond
+    /// * `s`:  second
+    /// * `m`:  minute
+    /// * `h`:  hour
+    /// * `d`:  day
+    /// * `w`:  week
+    /// * `mo`: calendar month
+    /// * `q`: calendar quarter
+    /// * `y`:  calendar year
+    /// * `i`:  index value (only for {Int32, Int64} dtypes)
+    ///
+    /// Suffix with `"_saturating"` to indicate that dates too large for
+    /// their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+    /// instead of erroring.
+    ///
+    /// By "calendar day", we mean the corresponding time on the next
+    /// day (which may not be 24 hours, depending on daylight savings).
+    /// Similarly for "calendar week", "calendar month", "calendar quarter",
+    /// and "calendar year".
+    ///
+    /// # Panics
+    /// If the given str is invalid for any reason.
     pub fn parse(duration: &str) -> Self {
         let num_minus_signs = duration.matches('-').count();
         if num_minus_signs > 1 {
@@ -92,8 +120,14 @@ impl Duration {
         let mut weeks = 0;
         let mut days = 0;
         let mut months = 0;
-        let mut iter = duration.char_indices();
         let negative = duration.starts_with('-');
+        let (saturating, mut iter) = match duration.ends_with("_saturating") {
+            true => (
+                true,
+                duration[..duration.len() - "_saturating".len()].char_indices(),
+            ),
+            false => (false, duration.char_indices()),
+        };
         let mut start = 0;
 
         // skip the '-' char
@@ -140,14 +174,17 @@ impl Duration {
                     "h" => nsecs += n * NS_HOUR,
                     "d" => days += n,
                     "w" => weeks += n,
-                    "mo" => months += n,
+                    "mo" => {
+                        months += n
+                    }
+                    "q" => months += n * 3,
                     "y" => months += n * 12,
                     // we will read indexes as nanoseconds
                     "i" => {
                         nsecs += n;
                         parsed_int = true;
                     }
-                    unit => panic!("unit: '{unit}' not supported. Available units are: 'ns', 'us', 'ms', 's', 'm', 'h', 'd', 'w', 'mo', 'y', 'i'"),
+                    unit => panic!("unit: '{unit}' not supported. Available units are: 'ns', 'us', 'ms', 's', 'm', 'h', 'd', 'w', 'q', 'mo', 'y', 'i'"),
                 }
                 unit.clear();
             }
@@ -159,6 +196,7 @@ impl Duration {
             months: months.abs(),
             negative,
             parsed_int,
+            saturating,
         }
     }
 
@@ -225,6 +263,7 @@ impl Duration {
             nsecs,
             negative,
             parsed_int: false,
+            saturating: false,
         }
     }
 
@@ -238,6 +277,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
+            saturating: false,
         }
     }
 
@@ -251,6 +291,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
+            saturating: false,
         }
     }
 
@@ -264,6 +305,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
+            saturating: false,
         }
     }
 
@@ -302,7 +344,6 @@ impl Duration {
     }
 
     /// Estimated duration of the window duration. Not a very good one if months != 0.
-    #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_ns(&self) -> i64 {
         self.months * 28 * 24 * 3600 * NANOSECONDS
@@ -311,25 +352,85 @@ impl Duration {
             + self.nsecs
     }
 
-    #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_us(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MICROSECONDS
             + (self.weeks * NS_WEEK + self.nsecs + self.days * NS_DAY) / 1000
     }
 
-    #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_ms(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MILLISECONDS
             + (self.weeks * NS_WEEK + self.nsecs + self.days * NS_DAY) / 1_000_000
     }
 
+    #[doc(hidden)]
+    fn add_month(
+        ts: NaiveDateTime,
+        n_months: i64,
+        negative: bool,
+        saturating: bool,
+    ) -> PolarsResult<NaiveDateTime> {
+        let mut months = n_months;
+        if negative {
+            months = -months;
+        }
+
+        // Retrieve the current date and increment the values
+        // based on the number of months
+        let mut year = ts.year();
+        let mut month = ts.month() as i32;
+        let mut day = ts.day();
+        year += (months / 12) as i32;
+        month += (months % 12) as i32;
+
+        // if the month overflowed or underflowed, adjust the year
+        // accordingly. Because we add the modulo for the months
+        // the year will only adjust by one
+        if month > 12 {
+            year += 1;
+            month -= 12;
+        } else if month <= 0 {
+            year -= 1;
+            month += 12;
+        }
+
+        if saturating {
+            // Normalize the day if we are past the end of the month.
+            let mut last_day_of_month = last_day_of_month(month);
+            if month == (chrono::Month::February.number_from_month() as i32) && is_leap_year(year) {
+                last_day_of_month += 1;
+            }
+
+            if day > last_day_of_month {
+                day = last_day_of_month
+            }
+        }
+
+        // Retrieve the original time and construct a data
+        // with the new year, month and day
+        let hour = ts.hour();
+        let minute = ts.minute();
+        let sec = ts.second();
+        let nsec = ts.nanosecond();
+        new_datetime(year, month as u32, day, hour, minute, sec, nsec).ok_or(
+            polars_err!(
+                ComputeError: format!(
+                    "cannot advance '{}' by {} month(s). \
+                        If you were trying to get the last day of each month, you may want to try `.dt.month_end` \
+                        or append \"_saturating\" to your duration string.",
+                        ts,
+                        if negative {-n_months} else {n_months}
+                )
+            ),
+        )
+    }
+
     #[inline]
     pub fn truncate_impl<F, G, J>(
         &self,
         t: i64,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&Tz>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
@@ -340,7 +441,7 @@ impl Duration {
         J: Fn(NaiveDateTime) -> i64,
     {
         match (self.months, self.weeks, self.days, self.nsecs) {
-            (0, 0, 0, 0) => panic!("duration may not be zero"),
+            (0, 0, 0, 0) => polars_bail!(ComputeError: "duration cannot be zero"),
             // truncate by ns/us/ms
             (0, 0, 0, _) => {
                 let t = match tz {
@@ -426,20 +527,24 @@ impl Duration {
                 // recreate a new time from the year and month combination
                 let (year, month) = ((total / 12), ((total % 12) + 1) as u32);
 
-                let dt = new_datetime(year, month, 1, 0, 0, 0, 0);
+                let dt = new_datetime(year, month, 1, 0, 0, 0, 0).ok_or(polars_err!(
+                    ComputeError: format!("date '{}-{}-1' does not exist", year, month)
+                ))?;
                 match tz {
                     #[cfg(feature = "timezones")]
                     Some(tz) => Ok(datetime_to_timestamp(localize_datetime(dt, tz)?)),
                     _ => Ok(datetime_to_timestamp(dt)),
                 }
             }
-            _ => panic!("duration may not mix month, weeks and nanosecond units"),
+            _ => {
+                polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units")
+            }
         }
     }
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -451,7 +556,7 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn truncate_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -463,7 +568,7 @@ impl Duration {
 
     // Truncate the given ms timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -476,7 +581,7 @@ impl Duration {
     fn add_impl_month_week_or_day<F, G, J>(
         &self,
         t: i64,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&Tz>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
@@ -490,52 +595,12 @@ impl Duration {
         let mut new_t = t;
 
         if d.months > 0 {
-            let mut months = d.months;
-            if d.negative {
-                months = -months;
-            }
-
-            // Retrieve the current date and increment the values
-            // based on the number of months
             let ts = match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
                 _ => timestamp_to_datetime(t),
             };
-            let mut year = ts.year();
-            let mut month = ts.month() as i32;
-            let mut day = ts.day();
-            year += (months / 12) as i32;
-            month += (months % 12) as i32;
-
-            // if the month overflowed or underflowed, adjust the year
-            // accordingly. Because we add the modulo for the months
-            // the year will only adjust by one
-            if month > 12 {
-                year += 1;
-                month -= 12;
-            } else if month <= 0 {
-                year -= 1;
-                month += 12;
-            }
-
-            // Normalize the day if we are past the end of the month.
-            let mut last_day_of_month = last_day_of_month(month);
-            if month == (chrono::Month::February.number_from_month() as i32) && is_leap_year(year) {
-                last_day_of_month += 1;
-            }
-
-            if day > last_day_of_month {
-                day = last_day_of_month
-            }
-
-            // Retrieve the original time and construct a data
-            // with the new year, month and day
-            let hour = ts.hour();
-            let minute = ts.minute();
-            let sec = ts.second();
-            let nsec = ts.nanosecond();
-            let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec);
+            let dt = Self::add_month(ts, d.months, d.negative, d.saturating)?;
             new_t = match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz)?),
@@ -576,7 +641,7 @@ impl Duration {
         Ok(new_t)
     }
 
-    pub fn add_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -589,7 +654,7 @@ impl Duration {
         Ok(new_t? + nsecs)
     }
 
-    pub fn add_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn add_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -602,7 +667,7 @@ impl Duration {
         Ok(new_t? + nsecs / 1_000)
     }
 
-    pub fn add_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn add_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -640,11 +705,10 @@ fn new_datetime(
     min: u32,
     sec: u32,
     nano: u32,
-) -> NaiveDateTime {
-    let date = NaiveDate::from_ymd_opt(year, month, days).unwrap();
-    let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano).unwrap();
-
-    NaiveDateTime::new(date, time)
+) -> Option<NaiveDateTime> {
+    let date = NaiveDate::from_ymd_opt(year, month, days)?;
+    let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano)?;
+    Some(NaiveDateTime::new(date, time))
 }
 
 #[cfg(test)]
@@ -670,7 +734,6 @@ mod test {
 
     #[test]
     fn test_add_ns() {
-        use crate::NO_TIMEZONE;
         let t = 1;
         let seven_days = Duration::parse("7d");
         let one_week = Duration::parse("1w");
@@ -678,8 +741,8 @@ mod test {
         // add_ns can only error if a time zone is passed, so it's
         // safe to unwrap here
         assert_eq!(
-            seven_days.add_ns(t, NO_TIMEZONE).unwrap(),
-            one_week.add_ns(t, NO_TIMEZONE).unwrap()
+            seven_days.add_ns(t, None).unwrap(),
+            one_week.add_ns(t, None).unwrap()
         );
 
         let seven_days_negative = Duration::parse("-7d");
@@ -688,8 +751,8 @@ mod test {
         // add_ns can only error if a time zone is passed, so it's
         // safe to unwrap here
         assert_eq!(
-            seven_days_negative.add_ns(t, NO_TIMEZONE).unwrap(),
-            one_week_negative.add_ns(t, NO_TIMEZONE).unwrap()
+            seven_days_negative.add_ns(t, None).unwrap(),
+            one_week_negative.add_ns(t, None).unwrap()
         );
     }
 }

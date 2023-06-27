@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import numpy as np
 
 import polars as pl
@@ -75,3 +77,40 @@ def test_empty_sort() -> None:
 def test_object_to_dicts() -> None:
     df = pl.DataFrame({"d": [{"a": 1, "b": 2, "c": 3}]}, schema={"d": pl.Object})
     assert df.to_dicts() == [{"d": {"a": 1, "b": 2, "c": 3}}]
+
+
+def test_object_concat() -> None:
+    df1 = pl.DataFrame(
+        {"a": [1, 2, 3]},
+        schema={"a": pl.Object},
+    )
+
+    df2 = pl.DataFrame(
+        {"a": [1, 4, 3]},
+        schema={"a": pl.Object},
+    )
+
+    catted = pl.concat([df1, df2])
+    assert catted.shape == (6, 1)
+    assert catted.dtypes == [pl.Object]
+    assert catted.to_dict(False) == {"a": [1, 2, 3, 1, 4, 3]}
+
+
+def test_object_row_construction() -> None:
+    data = [
+        [uuid4()],
+        [uuid4()],
+        [uuid4()],
+    ]
+    df = pl.DataFrame(
+        data,
+        orient="row",
+    )
+    assert df.dtypes == [pl.Object]
+    assert df["column_0"].to_list() == [value[0] for value in data]
+
+
+def test_object_apply_to_struct() -> None:
+    s = pl.Series([0, 1, 2], dtype=pl.Object)
+    out = s.apply(lambda x: {"a": str(x), "b": x})
+    assert out.dtype == pl.Struct([pl.Field("a", pl.Utf8), pl.Field("b", pl.Int64)])

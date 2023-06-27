@@ -228,7 +228,7 @@ mod test {
     use std::convert::TryFrom;
 
     use super::*;
-    use crate::{reset_string_cache, toggle_string_cache, SINGLE_LOCK};
+    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
 
     #[test]
     fn test_categorical_round_trip() -> PolarsResult<()> {
@@ -259,7 +259,7 @@ mod test {
     fn test_append_categorical() {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
-        toggle_string_cache(true);
+        enable_string_cache(true);
 
         let mut s1 = Series::new("1", vec!["a", "b", "c"])
             .cast(&DataType::Categorical(None))
@@ -293,9 +293,9 @@ mod test {
     fn test_categorical_flow() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
-        toggle_string_cache(false);
+        enable_string_cache(false);
 
-        // tests several things that may loose the dtype information
+        // tests several things that may lose the dtype information
         let s = Series::new("a", vec!["a", "b", "c"]).cast(&DataType::Categorical(None))?;
 
         assert_eq!(

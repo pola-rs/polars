@@ -1,43 +1,47 @@
 from __future__ import annotations
 
 import os
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
 import pytest
 
 import polars as pl
+from polars.config import _get_float_fmt
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
 def _environ() -> Iterator[None]:
-    """Fixture to restore the environment variables/state after the test."""
-    with pl.StringCache(), pl.Config():
+    """Fixture to restore the environment after/during tests."""
+    with pl.StringCache(), pl.Config(restore_defaults=True):
         yield
 
 
 def test_ascii_tables() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
 
+    ascii_table_repr = (
+        "shape: (3, 3)\n"
+        "+-----+-----+-----+\n"
+        "| a   | b   | c   |\n"
+        "| --- | --- | --- |\n"
+        "| i64 | i64 | i64 |\n"
+        "+=================+\n"
+        "| 1   | 4   | 7   |\n"
+        "| 2   | 5   | 8   |\n"
+        "| 3   | 6   | 9   |\n"
+        "+-----+-----+-----+"
+    )
     # note: expect to render ascii only within the given scope
-    with pl.Config() as cfg:
-        cfg.set_ascii_tables(True)
-        assert (
-            str(df) == "shape: (3, 3)\n"
-            "+-----+-----+-----+\n"
-            "| a   | b   | c   |\n"
-            "| --- | --- | --- |\n"
-            "| i64 | i64 | i64 |\n"
-            "+=================+\n"
-            "| 1   | 4   | 7   |\n"
-            "| 2   | 5   | 8   |\n"
-            "| 3   | 6   | 9   |\n"
-            "+-----+-----+-----+"
-        )
+    with pl.Config(set_ascii_tables=True):
+        assert repr(df) == ascii_table_repr
 
     # confirm back to utf8 default after scope-exit
     assert (
-        str(df) == "shape: (3, 3)\n"
+        repr(df) == "shape: (3, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -48,6 +52,12 @@ def test_ascii_tables() -> None:
         "│ 3   ┆ 6   ┆ 9   │\n"
         "└─────┴─────┴─────┘"
     )
+
+    @pl.Config(set_ascii_tables=True)
+    def ascii_table() -> str:
+        return repr(df)
+
+    assert ascii_table() == ascii_table_repr
 
 
 def test_hide_header_elements() -> None:
@@ -162,7 +172,7 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 5   ┆ 9   │\n"
-        "│ …   ┆ …   ┆ …   │\n"
+        "│ 2   ┆ 6   ┆ 10  │\n"
         "│ 3   ┆ 7   ┆ 11  │\n"
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
@@ -198,7 +208,7 @@ def test_set_tbl_rows() -> None:
         "[\n"
         "\t1\n"
         "\t2\n"
-        "\t…\n"
+        "\t3\n"
         "\t4\n"
         "\t5\n"
         "]"
@@ -277,8 +287,7 @@ def test_set_tbl_formats() -> None:
     )
 
     pl.Config().set_tbl_formatting("ASCII_BORDERS_ONLY_CONDENSED")
-    with pl.Config() as cfg:
-        cfg.set_tbl_hide_dtype_separator(True)
+    with pl.Config(tbl_hide_dtype_separator=True):
         assert str(df) == (
             "shape: (3, 3)\n"
             "+-----------------+\n"
@@ -292,8 +301,10 @@ def test_set_tbl_formats() -> None:
         )
 
     # temporarily scope "nothing" style, with no data types
-    with pl.Config() as cfg:
-        cfg.set_tbl_formatting("NOTHING").set_tbl_hide_column_data_types(True)
+    with pl.Config(
+        tbl_formatting="NOTHING",
+        tbl_hide_column_data_types=True,
+    ):
         assert str(df) == (
             "shape: (3, 3)\n"
             " foo  bar  ham \n"
@@ -385,12 +396,87 @@ def test_shape_below_table_and_inlined_dtype() -> None:
     )
 
 
+def test_shape_format_for_big_numbers() -> None:
+    df = pl.DataFrame({"a": range(1, 1001), "b": range(1001, 1001 + 1000)})
+
+    pl.Config.set_tbl_column_data_type_inline(True).set_tbl_dataframe_shape_below(True)
+    pl.Config.set_tbl_formatting("UTF8_FULL", rounded_corners=True)
+    assert (
+        str(df) == ""
+        "╭─────────┬─────────╮\n"
+        "│ a (i64) ┆ b (i64) │\n"
+        "╞═════════╪═════════╡\n"
+        "│ 1       ┆ 1001    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 2       ┆ 1002    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 3       ┆ 1003    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 4       ┆ 1004    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 997     ┆ 1997    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 998     ┆ 1998    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 999     ┆ 1999    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 1000    ┆ 2000    │\n"
+        "╰─────────┴─────────╯\n"
+        "shape: (1_000, 2)"
+    )
+
+    pl.Config.set_tbl_column_data_type_inline(True).set_tbl_dataframe_shape_below(False)
+    assert (
+        str(df) == "shape: (1_000, 2)\n"
+        "╭─────────┬─────────╮\n"
+        "│ a (i64) ┆ b (i64) │\n"
+        "╞═════════╪═════════╡\n"
+        "│ 1       ┆ 1001    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 2       ┆ 1002    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 3       ┆ 1003    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 4       ┆ 1004    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 997     ┆ 1997    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 998     ┆ 1998    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 999     ┆ 1999    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 1000    ┆ 2000    │\n"
+        "╰─────────┴─────────╯"
+    )
+
+    pl.Config.set_tbl_rows(0)
+    ser = pl.Series("ser", range(1000))
+    assert str(ser) == "shape: (1_000,)\n" "Series: 'ser' [i64]\n" "[\n" "\t…\n" "]"
+
+    pl.Config.set_tbl_rows(1)
+    pl.Config.set_tbl_cols(1)
+    df = pl.DataFrame({str(col_num): 1 for col_num in range(1000)})
+
+    assert (
+        str(df) == "shape: (1, 1_000)\n"
+        "╭─────────┬───╮\n"
+        "│ 0 (i64) ┆ … │\n"
+        "╞═════════╪═══╡\n"
+        "│ 1       ┆ … │\n"
+        "╰─────────┴───╯"
+    )
+
+
 def test_string_cache() -> None:
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
 
     # ensure cache is off when casting to categorical; the join will fail
-    pl.toggle_string_cache(False)
+    pl.enable_string_cache(False)
     assert pl.using_string_cache() is False
 
     df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
@@ -399,7 +485,7 @@ def test_string_cache() -> None:
         _ = df1a.join(df2a, on="a", how="inner")
 
     # now turn on the cache
-    pl.toggle_string_cache(True)
+    pl.enable_string_cache(True)
     assert pl.using_string_cache() is True
 
     df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
@@ -412,36 +498,43 @@ def test_string_cache() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_config_load_save() -> None:
-    # set some config options...
-    pl.Config.set_tbl_cols(12)
-    pl.Config.set_verbose(True)
-    assert os.environ.get("POLARS_VERBOSE") == "1"
+@pytest.mark.write_disk()
+def test_config_load_save(tmp_path: Path) -> None:
+    for file in (None, tmp_path / "polars.config"):
+        # set some config options...
+        pl.Config.set_tbl_cols(12)
+        pl.Config.set_verbose(True)
+        pl.Config.set_fmt_float("full")
+        assert os.environ.get("POLARS_VERBOSE") == "1"
 
-    cfg = pl.Config.save()
-    assert isinstance(cfg, str)
-    assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
+        cfg = pl.Config.save(file)
+        assert isinstance(cfg, str)
+        assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
 
-    # ...modify the same options...
-    pl.Config.set_tbl_cols(10)
-    pl.Config.set_verbose(False)
-    assert os.environ.get("POLARS_VERBOSE") == "0"
+        # ...modify the same options...
+        pl.Config.set_tbl_cols(10)
+        pl.Config.set_verbose(False)
+        assert os.environ.get("POLARS_VERBOSE") == "0"
 
-    # ...load back from config...
-    pl.Config.load(cfg)
+        # ...load back from config...
+        if file is not None:
+            assert os.path.isfile(cfg)
+        pl.Config.load(cfg)
 
-    # ...and confirm the saved options were set.
-    assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
-    assert os.environ.get("POLARS_VERBOSE") == "1"
+        # ...and confirm the saved options were set.
+        assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
+        assert os.environ.get("POLARS_VERBOSE") == "1"
+        assert _get_float_fmt() == "full"
 
-    # restore all default options (unsets from env)
-    pl.Config.restore_defaults()
-    for e in ("POLARS_FMT_MAX_COLS", "POLARS_VERBOSE"):
-        assert e not in pl.Config.state(if_set=True)
-        assert e in pl.Config.state()
+        # restore all default options (unsets from env)
+        pl.Config.restore_defaults()
+        for e in ("POLARS_FMT_MAX_COLS", "POLARS_VERBOSE"):
+            assert e not in pl.Config.state(if_set=True)
+            assert e in pl.Config.state()
 
-    assert os.environ.get("POLARS_FMT_MAX_COLS") is None
-    assert os.environ.get("POLARS_VERBOSE") is None
+        assert os.environ.get("POLARS_FMT_MAX_COLS") is None
+        assert os.environ.get("POLARS_VERBOSE") is None
+        assert _get_float_fmt() == "mixed"
 
 
 def test_config_scope() -> None:

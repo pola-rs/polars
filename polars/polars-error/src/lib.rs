@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::ops::Deref;
 use std::{env, io};
@@ -93,6 +94,10 @@ impl PolarsError {
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
         }
     }
+}
+
+pub fn map_err<E: Error>(error: E) -> PolarsError {
+    PolarsError::ComputeError(format!("{error}").into())
 }
 
 #[macro_export]
@@ -195,6 +200,20 @@ macro_rules! polars_ensure {
 #[must_use]
 pub fn to_compute_err(err: impl Display) -> PolarsError {
     PolarsError::ComputeError(err.to_string().into())
+}
+
+#[macro_export]
+macro_rules! feature_gated {
+    ($feature:expr, $content:expr) => {{
+        #[cfg(feature = $feature)]
+        {
+            $content
+        }
+        #[cfg(not(feature = $feature))]
+        {
+            panic!("activate '{}' feature", $feature)
+        }
+    }};
 }
 
 // Not public, referenced by macros only.

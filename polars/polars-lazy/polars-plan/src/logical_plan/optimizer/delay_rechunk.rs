@@ -32,8 +32,6 @@ impl OptimizationRule for DelayRechunk {
 
                 use ALogicalPlan::*;
                 let mut input_node = None;
-                let mut union_parent = None;
-                let mut previous_node = *input;
                 for (node, lp) in (&*lp_arena).iter(*input) {
                     match lp {
                         // we get the input node
@@ -42,7 +40,7 @@ impl OptimizationRule for DelayRechunk {
                             input_node = Some(node);
                             break;
                         }
-                        #[cfg(feature = "csv-file")]
+                        #[cfg(feature = "csv")]
                         CsvScan { .. } => {
                             input_node = Some(node);
                             break;
@@ -52,17 +50,19 @@ impl OptimizationRule for DelayRechunk {
                             input_node = Some(node);
                             break;
                         }
-                        Union { .. } => union_parent = Some(previous_node),
+                        Union { .. } => {
+                            input_node = Some(node);
+                            break;
+                        }
                         // don't delay rechunk if there is a join first
                         Join { .. } => break,
                         _ => {}
                     }
-                    previous_node = node;
                 }
 
                 if let Some(node) = input_node {
                     match lp_arena.get_mut(node) {
-                        #[cfg(feature = "csv-file")]
+                        #[cfg(feature = "csv")]
                         CsvScan { options, .. } => {
                             options.rechunk = false;
                         }
@@ -72,20 +72,12 @@ impl OptimizationRule for DelayRechunk {
                         IpcScan { options, .. } => {
                             options.rechunk = false;
                         }
+                        Union { options, .. } => {
+                            options.rechunk = false;
+                        }
                         _ => unreachable!(),
                     }
                 };
-                if let Some(parent_node) = union_parent {
-                    // remove the rechunk function
-                    if let MapFunction {
-                        input,
-                        function: FunctionNode::Rechunk,
-                        ..
-                    } = lp_arena.get(parent_node)
-                    {
-                        lp_arena.swap(*input, parent_node)
-                    }
-                }
 
                 None
             }

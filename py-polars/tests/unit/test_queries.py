@@ -61,7 +61,7 @@ def test_repeat_expansion_in_groupby() -> None:
         .agg(pl.repeat(1, pl.count()).cumsum())
         .to_dict(False)
     )
-    assert out == {"g": [1, 2, 3], "literal": [[1], [1, 2], [1, 2, 3]]}
+    assert out == {"g": [1, 2, 3], "repeat": [[1], [1, 2], [1, 2, 3]]}
 
 
 def test_agg_after_head() -> None:
@@ -309,7 +309,7 @@ def test_when_then_edge_cases_3994() -> None:
         .groupby(["id"])
         .agg(pl.col("type"))
         .with_columns(
-            pl.when(pl.col("type").arr.lengths() == 0)
+            pl.when(pl.col("type").list.lengths() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
             .keep_name()
@@ -323,7 +323,7 @@ def test_when_then_edge_cases_3994() -> None:
         .groupby(["id"])
         .agg(pl.col("type"))
         .with_columns(
-            pl.when(pl.col("type").arr.lengths() == 0)
+            pl.when(pl.col("type").list.lengths() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
             .keep_name()

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import internals as pli
+from polars.utils._wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from polars.expr.expr import Expr
+    from polars import Expr
     from polars.type_aliases import CategoricalOrdering
 
 
@@ -54,4 +54,4 @@ class ExprCatNameSpace:
         └──────┴──────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.cat_set_ordering(ordering))
+        return wrap_expr(self._pyexpr.cat_set_ordering(ordering))

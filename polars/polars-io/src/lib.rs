@@ -1,11 +1,12 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
+#![allow(ambiguous_glob_reexports)]
 
 #[cfg(feature = "avro")]
 pub mod avro;
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 mod cloud;
-#[cfg(any(feature = "csv-file", feature = "json"))]
+#[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;
 #[cfg(feature = "parquet")]
 pub mod export;
@@ -14,12 +15,12 @@ pub mod ipc;
 #[cfg(feature = "json")]
 pub mod json;
 #[cfg(feature = "json")]
-pub mod ndjson_core;
-#[cfg(feature = "async")]
+pub mod ndjson;
+#[cfg(feature = "cloud")]
 pub use crate::cloud::glob as async_glob;
 
 #[cfg(any(
-    feature = "csv-file",
+    feature = "csv",
     feature = "parquet",
     feature = "ipc",
     feature = "json"
@@ -28,19 +29,16 @@ pub mod mmap;
 mod options;
 #[cfg(feature = "parquet")]
 pub mod parquet;
-#[cfg(feature = "private")]
 pub mod predicates;
-#[cfg(not(feature = "private"))]
-pub(crate) mod predicates;
 pub mod prelude;
-#[cfg(all(test, feature = "csv-file"))]
+#[cfg(all(test, feature = "csv"))]
 mod tests;
 pub(crate) mod utils;
 
 #[cfg(feature = "partition")]
 pub mod partition;
 
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 #[allow(unused)] // remove when updating to rust nightly >= 1.61
@@ -60,7 +58,7 @@ use crate::predicates::PhysicalIoExpr;
 
 pub trait SerReader<R>
 where
-    R: Read + Seek,
+    R: Read,
 {
     /// Create a new instance of the `[SerReader]`
     fn new(reader: R) -> Self;

@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-#[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "csv", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use polars_utils::arena::{Arena, Node};
 
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 use crate::logical_plan::CsvParserOptions;
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
@@ -43,7 +43,7 @@ pub enum ALogicalPlan {
         input: Node,
         predicate: Node,
     },
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     CsvScan {
         path: PathBuf,
         file_info: FileInfo,
@@ -163,7 +163,7 @@ impl ALogicalPlan {
         match self {
             #[cfg(feature = "python")]
             PythonScan { options, .. } => &options.schema,
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "parquet")]
             ParquetScan { file_info, .. } => &file_info.schema,
@@ -182,7 +182,7 @@ impl ALogicalPlan {
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
             Selection { .. } => "selection",
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan { .. } => "csv_scan",
             #[cfg(feature = "ipc")]
             IpcScan { .. } => "ipc_scan",
@@ -236,7 +236,7 @@ impl ALogicalPlan {
                 ..
             } => output_schema.as_ref().unwrap_or(&file_info.schema),
             Selection { input, .. } => return arena.get(*input).schema(arena),
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 file_info,
                 output_schema,
@@ -402,7 +402,7 @@ impl ALogicalPlan {
                     cloud_options: cloud_options.clone(),
                 }
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 path,
                 file_info,
@@ -511,7 +511,7 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan { predicate, .. } => {
                 if let Some(node) = predicate {
                     container.push(*node)
@@ -587,7 +587,7 @@ impl ALogicalPlan {
             ParquetScan { .. } => return,
             #[cfg(feature = "ipc")]
             IpcScan { .. } => return,
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan { .. } => return,
             DataFrameScan { .. } => return,
             AnonymousScan { .. } => return,
@@ -605,7 +605,8 @@ impl ALogicalPlan {
     /// panics if more than one input
     #[cfg(any(
         all(feature = "strings", feature = "concat_str"),
-        feature = "streaming"
+        feature = "streaming",
+        feature = "fused"
     ))]
     pub(crate) fn get_input(&self) -> Option<Node> {
         let mut inputs = [None, None];

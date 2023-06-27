@@ -36,8 +36,8 @@ pub fn pivot<I0, S0, I1, S1, I2, S2>(
     values: I0,
     index: I1,
     columns: I2,
-    agg_expr: Expr,
     sort_columns: bool,
+    agg_expr: Option<Expr>,
     // used as separator/delimiter in generated column names.
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
@@ -50,14 +50,17 @@ where
     S2: AsRef<str>,
 {
     // make sure that the root column is replaced
-    let expr = prepare_eval_expr(agg_expr);
+    let agg_expr = agg_expr.map(|agg_expr| {
+        let expr = prepare_eval_expr(agg_expr);
+        PivotAgg::Expr(Arc::new(PivotExpr(expr)))
+    });
     polars_ops::pivot::pivot(
         df,
         values,
         index,
         columns,
-        PivotAgg::Expr(Arc::new(PivotExpr(expr))),
         sort_columns,
+        agg_expr,
         separator,
     )
 }
@@ -67,8 +70,8 @@ pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
     values: I0,
     index: I1,
     columns: I2,
-    agg_expr: Expr,
     sort_columns: bool,
+    agg_expr: Option<Expr>,
     // used as separator/delimiter in generated column names.
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
@@ -81,14 +84,17 @@ where
     S2: AsRef<str>,
 {
     // make sure that the root column is replaced
-    let expr = prepare_eval_expr(agg_expr);
+    let agg_expr = agg_expr.map(|agg_expr| {
+        let expr = prepare_eval_expr(agg_expr);
+        PivotAgg::Expr(Arc::new(PivotExpr(expr)))
+    });
     polars_ops::pivot::pivot_stable(
         df,
         values,
         index,
         columns,
-        PivotAgg::Expr(Arc::new(PivotExpr(expr))),
         sort_columns,
+        agg_expr,
         separator,
     )
 }

@@ -1,6 +1,8 @@
 #[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
+use chrono_tz::Tz;
+use polars_core::frame::hash_join::JoinArgs;
 use polars_core::prelude::*;
+use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
 
 use crate::prelude::*;
@@ -25,13 +27,21 @@ pub trait PolarsUpsample {
     /// - 1s    (1 second)
     /// - 1m    (1 minute)
     /// - 1h    (1 hour)
-    /// - 1d    (1 day)
-    /// - 1w    (1 week)
+    /// - 1d    (1 calendar day)
+    /// - 1w    (1 calendar week)
     /// - 1mo   (1 calendar month)
+    /// - 1q    (1 calendar quarter)
     /// - 1y    (1 calendar year)
     /// - 1i    (1 index count)
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    /// Suffix with `"_saturating"` to saturate dates with days too
+    /// large for their month to the last day of the month (e.g.
+    /// 2022-02-29 to 2022-02-28).
+    /// By "calendar day", we mean the corresponding time on the next
+    /// day (which may not be 24 hours, depending on daylight savings).
+    /// Similarly for "calendar week", "calendar month", "calendar quarter",
+    /// and "calendar year".
     fn upsample<I: IntoVec<String>>(
         &self,
         by: I,
@@ -57,13 +67,21 @@ pub trait PolarsUpsample {
     /// - 1s    (1 second)
     /// - 1m    (1 minute)
     /// - 1h    (1 hour)
-    /// - 1d    (1 day)
-    /// - 1w    (1 week)
+    /// - 1d    (1 calendar day)
+    /// - 1w    (1 calendar week)
     /// - 1mo   (1 calendar month)
+    /// - 1q    (1 calendar quarter)
     /// - 1y    (1 calendar year)
     /// - 1i    (1 index count)
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    /// Suffix with `"_saturating"` to saturate dates with days too
+    /// large for their month to the last day of the month (e.g.
+    /// 2022-02-29 to 2022-02-28).
+    /// By "calendar day", we mean the corresponding time on the next
+    /// day (which may not be 24 hours, depending on daylight savings).
+    /// Similarly for "calendar week", "calendar month", "calendar quarter",
+    /// and "calendar year".
     fn upsample_stable<I: IntoVec<String>>(
         &self,
         by: I,
@@ -106,6 +124,7 @@ fn upsample_impl(
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
+    ensure_sorted_arg(s, "upsample")?;
     if matches!(s.dtype(), DataType::Date) {
         let mut df = source.clone();
         df.try_apply(index_column, |s| {
@@ -152,25 +171,16 @@ fn upsample_single_impl(
                 (Some(first), Some(last)) => {
                     let (first, last) = match tz {
                         #[cfg(feature = "timezones")]
-                        Some(tz) => match tz.parse::<chrono_tz::Tz>() {
-                            Ok(tz) => (
-                                unlocalize_timestamp(first, *tu, tz),
-                                unlocalize_timestamp(last, *tu, tz),
-                            ),
-                            Err(_) => match parse_offset(tz) {
-                                Ok(tz) => (
-                                    unlocalize_timestamp(first, *tu, tz),
-                                    unlocalize_timestamp(last, *tu, tz),
-                                ),
-                                Err(_) => unreachable!(),
-                            },
-                        },
+                        Some(tz) => (
+                            unlocalize_timestamp(first, *tu, tz.parse::<Tz>().unwrap()),
+                            unlocalize_timestamp(last, *tu, tz.parse::<Tz>().unwrap()),
+                        ),
                         _ => (first, last),
                     };
                     let first = match tu {
-                        TimeUnit::Nanoseconds => offset.add_ns(first, NO_TIMEZONE)?,
-                        TimeUnit::Microseconds => offset.add_us(first, NO_TIMEZONE)?,
-                        TimeUnit::Milliseconds => offset.add_ms(first, NO_TIMEZONE)?,
+                        TimeUnit::Nanoseconds => offset.add_ns(first, None)?,
+                        TimeUnit::Microseconds => offset.add_us(first, None)?,
+                        TimeUnit::Milliseconds => offset.add_ms(first, None)?,
                     };
                     let range = date_range_impl(
                         index_col_name,
@@ -187,8 +197,7 @@ fn upsample_single_impl(
                         source,
                         &[index_col_name],
                         &[index_col_name],
-                        JoinType::Left,
-                        None,
+                        JoinArgs::new(JoinType::Left),
                     )
                 }
                 _ => polars_bail!(

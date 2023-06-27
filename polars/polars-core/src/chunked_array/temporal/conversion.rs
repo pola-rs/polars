@@ -35,19 +35,16 @@ impl From<&AnyValue<'_>> for NaiveTime {
 }
 
 // Used by lazy for literal conversion
-#[cfg(feature = "private")]
 pub fn datetime_to_timestamp_ns(v: NaiveDateTime) -> i64 {
     v.timestamp_nanos()
 }
 
 // Used by lazy for literal conversion
-#[cfg(feature = "private")]
 pub fn datetime_to_timestamp_ms(v: NaiveDateTime) -> i64 {
     v.timestamp_millis()
 }
 
 // Used by lazy for literal conversion
-#[cfg(feature = "private")]
 pub fn datetime_to_timestamp_us(v: NaiveDateTime) -> i64 {
     let us = v.timestamp() * 1_000_000;
     us + v.timestamp_subsec_micros() as i64

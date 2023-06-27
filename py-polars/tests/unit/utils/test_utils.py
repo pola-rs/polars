@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -14,7 +15,7 @@ from polars.utils.convert import (
     _timedelta_to_pl_duration,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.decorators import deprecate_nonkeyword_arguments
+from polars.utils.decorators import deprecate_nonkeyword_arguments, redirect
 from polars.utils.various import parse_version
 
 if TYPE_CHECKING:
@@ -22,15 +23,17 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.parametrize(
-    ("dt", "tu", "expected"),
+    ("dt", "time_unit", "expected"),
     [
         (datetime(2121, 1, 1), "ns", 4765132800000000000),
         (datetime(2121, 1, 1), "us", 4765132800000000),
         (datetime(2121, 1, 1), "ms", 4765132800000),
     ],
 )
-def test_datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit, expected: int) -> None:
-    out = _datetime_to_pl_timestamp(dt, tu)
+def test_datetime_to_pl_timestamp(
+    dt: datetime, time_unit: TimeUnit, expected: int
+) -> None:
+    out = _datetime_to_pl_timestamp(dt, time_unit)
     assert out == expected
 
 
@@ -60,7 +63,7 @@ def test_timedelta_to_pl_timedelta() -> None:
     assert out == 86_400_000_000
     out = _timedelta_to_pl_timedelta(timedelta(days=1), "ms")
     assert out == 86_400_000
-    out = _timedelta_to_pl_timedelta(timedelta(days=1), tu=None)
+    out = _timedelta_to_pl_timedelta(timedelta(days=1), time_unit=None)
     assert out == 86_400_000_000
 
 
@@ -134,3 +137,24 @@ def test_deprecate_nonkeyword_arguments_method_warning() -> None:
     )
     with pytest.deprecated_call(match=msg):
         Foo().bar("qux", "quox")
+
+
+def test_redirect() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+
+        # one-to-one redirection
+        @redirect({"foo": "bar"})
+        class DemoClass1:
+            def bar(self, upper: bool = False) -> str:
+                return "BAZ" if upper else "baz"
+
+        assert DemoClass1().foo() == "baz"  # type: ignore[attr-defined]
+
+        # redirection with **kwargs
+        @redirect({"foo": ("bar", {"upper": True})})
+        class DemoClass2:
+            def bar(self, upper: bool = False) -> str:
+                return "BAZ" if upper else "baz"
+
+        assert DemoClass2().foo() == "BAZ"  # type: ignore[attr-defined]

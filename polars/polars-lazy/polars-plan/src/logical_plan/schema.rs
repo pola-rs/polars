@@ -23,7 +23,7 @@ impl LogicalPlan {
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
             AnonymousScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             Selection { input, .. } => input.schema(),
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
             LocalProjection { schema, .. } => Ok(Cow::Borrowed(schema)),
@@ -112,8 +112,8 @@ pub fn set_estimated_row_counts(
                 let mut sum_output = (None, 0);
                 for input in &inputs {
                     let mut out = set_estimated_row_counts(*input, lp_arena, expr_arena, 0);
-                    if options.slice {
-                        apply_slice(&mut out, Some((0, options.slice_len as usize)))
+                    if let Some((_offset, len)) = options.slice {
+                        apply_slice(&mut out, Some((0, len)))
                     }
                     // todo! deal with known as well
                     let out = estimate_sizes(out.0, out.1, out.2);
@@ -143,7 +143,7 @@ pub fn set_estimated_row_counts(
                     set_estimated_row_counts(input_right, lp_arena, expr_arena, 0);
                 options.rows_right = estimate_sizes(known_size, estimated_size, filter_count_right);
 
-                let mut out = match options.how {
+                let mut out = match options.args.how {
                     JoinType::Left => {
                         let (known_size, estimated_size) = options.rows_left;
                         (known_size, estimated_size, filter_count_left)
@@ -168,7 +168,7 @@ pub fn set_estimated_row_counts(
                         }
                     }
                 };
-                apply_slice(&mut out, options.slice);
+                apply_slice(&mut out, options.args.slice);
                 lp_arena.replace(
                     root,
                     Join {
@@ -189,7 +189,7 @@ pub fn set_estimated_row_counts(
             let len = df.height();
             (Some(len), len, _filter_count)
         }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         CsvScan { file_info, .. } => {
             let (known_size, estimated_size) = file_info.row_estimation;
             (known_size, estimated_size, _filter_count)
@@ -227,7 +227,7 @@ pub(crate) fn det_join_schema(
     right_on: &[Expr],
     options: &JoinOptions,
 ) -> PolarsResult<SchemaRef> {
-    match options.how {
+    match options.args.how {
         // semi and anti joins are just filtering operations
         // the schema will never change.
         #[cfg(feature = "semi_anti_join")]
@@ -257,7 +257,7 @@ pub(crate) fn det_join_schema(
             // so the columns that are joined on, may have different
             // values so if the right has a different name, it is added to the schema
             #[cfg(feature = "asof_join")]
-            if let JoinType::AsOf(_) = &options.how {
+            if let JoinType::AsOf(_) = &options.args.how {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
                     let field_left =
                         left_on.to_field_amortized(schema_left, Context::Default, &mut arena)?;
@@ -267,8 +267,7 @@ pub(crate) fn det_join_schema(
                         if schema_left.contains(&field_right.name) {
                             use polars_core::frame::hash_join::_join_suffix_name;
                             new_schema.with_column(
-                                _join_suffix_name(&field_right.name, options.suffix.as_ref())
-                                    .into(),
+                                _join_suffix_name(&field_right.name, options.args.suffix()).into(),
                                 field_right.dtype,
                             );
                         } else {
@@ -288,7 +287,7 @@ pub(crate) fn det_join_schema(
                 if !right_names.contains(name.as_str()) {
                     if names.contains(name.as_str()) {
                         #[cfg(feature = "asof_join")]
-                        if let JoinType::AsOf(asof_options) = &options.how {
+                        if let JoinType::AsOf(asof_options) = &options.args.how {
                             if let (Some(left_by), Some(right_by)) =
                                 (&asof_options.left_by, &asof_options.right_by)
                             {
@@ -301,7 +300,7 @@ pub(crate) fn det_join_schema(
                             }
                         }
 
-                        let new_name = format_smartstring!("{}{}", name, options.suffix.as_ref());
+                        let new_name = format_smartstring!("{}{}", name, options.args.suffix());
                         new_schema.with_column(new_name, dtype.clone());
                     } else {
                         new_schema.with_column(name.clone(), dtype.clone());

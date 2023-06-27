@@ -8,7 +8,7 @@ use std::ops::Add;
 use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
-use num_traits::{Float, ToPrimitive};
+use num_traits::{Float, ToPrimitive, Zero};
 use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 pub use quantile::*;
 pub use var::*;
@@ -39,18 +39,15 @@ pub trait ChunkAggSeries {
     }
 }
 
-fn sum_float_unaligned_slice<T: NumericNative>(values: &[T]) -> Option<T> {
-    Some(values.iter().copied().sum())
+fn sum_float_unaligned_slice<T: NumericNative>(values: &[T]) -> T {
+    values.iter().copied().sum()
 }
 
-fn sum_float_unaligned<T: NumericNative>(array: &PrimitiveArray<T>) -> Option<T> {
-    if array.len() == 0 {
-        return Some(T::zero());
+fn sum_float_unaligned<T: NumericNative>(array: &PrimitiveArray<T>) -> T {
+    if array.len() == 0 || array.null_count() == array.len() {
+        return T::zero();
     }
-    if array.null_count() == array.len() {
-        return None;
-    }
-    Some(array.into_iter().flatten().copied().sum())
+    array.into_iter().flatten().copied().sum()
 }
 
 /// Floating point arithmetic is non-associative.
@@ -62,7 +59,7 @@ fn sum_float_unaligned<T: NumericNative>(array: &PrimitiveArray<T>) -> Option<T>
 /// The SIMD chunks have a certain alignment and depending of the start of the buffer
 /// head and tail may have different sizes, making a sum non-deterministic for the same
 /// values but different memory locations
-fn stable_sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> Option<T>
+fn stable_sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> T
 where
     T: NumericNative + NativeType,
     <T as Simd>::Simd: Add<Output = <T as Simd>::Simd>
@@ -75,14 +72,14 @@ where
         let (a, _, _) = <T as Simd>::Simd::align(values);
         // we only choose SIMD path if buffer is aligned to SIMD
         if a.is_empty() {
-            compute::aggregate::sum_primitive(array)
+            compute::aggregate::sum_primitive(array).unwrap_or(T::zero())
         } else if array.null_count() == 0 {
             sum_float_unaligned_slice(values)
         } else {
             sum_float_unaligned(array)
         }
     } else {
-        compute::aggregate::sum_primitive(array)
+        compute::aggregate::sum_primitive(array).unwrap_or(T::zero())
     }
 }
 
@@ -94,19 +91,15 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
 {
     fn sum(&self) -> Option<T::Native> {
-        self.downcast_iter()
-            .map(stable_sum)
-            .fold(None, |acc, v| match v {
-                Some(v) => match acc {
-                    None => Some(v),
-                    Some(acc) => Some(acc + v),
-                },
-                None => acc,
-            })
+        Some(
+            self.downcast_iter()
+                .map(stable_sum)
+                .fold(T::Native::zero(), |acc, v| acc + v),
+        )
     }
 
     fn min(&self) -> Option<T::Native> {
-        match self.is_sorted_flag2() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.first_non_null().and_then(|idx| {
                     // Safety:
@@ -135,7 +128,7 @@ where
     }
 
     fn max(&self) -> Option<T::Native> {
-        match self.is_sorted_flag2() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.last_non_null().and_then(|idx| {
                     // Safety:
@@ -164,6 +157,9 @@ where
     }
 
     fn mean(&self) -> Option<f64> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
         match self.dtype() {
             DataType::Float64 => {
                 let len = (self.len() - self.null_count()) as f64;
@@ -172,34 +168,47 @@ where
             _ => {
                 let null_count = self.null_count();
                 let len = self.len();
-                if null_count == len {
-                    None
-                } else {
-                    let mut acc = 0.0;
-                    let len = (len - null_count) as f64;
+                match null_count {
+                    nc if nc == len => None,
+                    #[cfg(feature = "simd")]
+                    _ => {
+                        // TODO: investigate if we need a stable mean
+                        // because of SIMD memory locations and associativity.
+                        // similar to sum
+                        let mut sum = 0.0;
+                        for arr in self.downcast_iter() {
+                            sum += polars_arrow::kernels::agg_mean::sum_as_f64(arr);
+                        }
+                        Some(sum / (len - null_count) as f64)
+                    }
+                    #[cfg(not(feature = "simd"))]
+                    _ => {
+                        let mut acc = 0.0;
+                        let len = (len - null_count) as f64;
 
-                    for arr in self.downcast_iter() {
-                        if arr.null_count() > 0 {
-                            for v in arr.into_iter().flatten() {
-                                // safety
-                                // all these types can be coerced to f64
-                                unsafe {
-                                    let val = v.to_f64().unwrap_unchecked();
-                                    acc += val
+                        for arr in self.downcast_iter() {
+                            if arr.null_count() > 0 {
+                                for v in arr.into_iter().flatten() {
+                                    // safety
+                                    // all these types can be coerced to f64
+                                    unsafe {
+                                        let val = v.to_f64().unwrap_unchecked();
+                                        acc += val
+                                    }
                                 }
-                            }
-                        } else {
-                            for v in arr.values().as_slice() {
-                                // safety
-                                // all these types can be coerced to f64
-                                unsafe {
-                                    let val = v.to_f64().unwrap_unchecked();
-                                    acc += val
+                            } else {
+                                for v in arr.values().as_slice() {
+                                    // safety
+                                    // all these types can be coerced to f64
+                                    unsafe {
+                                        let val = v.to_f64().unwrap_unchecked();
+                                        acc += val
+                                    }
                                 }
                             }
                         }
+                        Some(acc / len)
                     }
-                    Some(acc / len)
                 }
             }
         }
@@ -207,47 +216,59 @@ where
 }
 
 /// Booleans are casted to 1 or 0.
-impl ChunkAgg<IdxSize> for BooleanChunked {
+impl BooleanChunked {
     /// Returns `None` if the array is empty or only contains null values.
-    fn sum(&self) -> Option<IdxSize> {
-        if self.is_empty() {
-            None
+    pub fn sum(&self) -> Option<IdxSize> {
+        Some(if self.is_empty() {
+            0
         } else {
-            Some(
-                self.downcast_iter()
-                    .map(|arr| match arr.validity() {
-                        Some(validity) => {
-                            (arr.len() - (validity & arr.values()).unset_bits()) as IdxSize
-                        }
-                        None => (arr.len() - arr.values().unset_bits()) as IdxSize,
-                    })
-                    .sum(),
-            )
-        }
+            self.downcast_iter()
+                .map(|arr| match arr.validity() {
+                    Some(validity) => {
+                        (arr.len() - (validity & arr.values()).unset_bits()) as IdxSize
+                    }
+                    None => (arr.len() - arr.values().unset_bits()) as IdxSize,
+                })
+                .sum()
+        })
     }
 
-    fn min(&self) -> Option<IdxSize> {
-        if self.is_empty() {
+    pub fn min(&self) -> Option<bool> {
+        let nc = self.null_count();
+        let len = self.len();
+        if self.is_empty() || nc == len {
             return None;
         }
-        if self.all() {
-            Some(1)
+        if nc == 0 {
+            if self.all() {
+                Some(true)
+            } else {
+                Some(false)
+            }
         } else {
-            Some(0)
+            // we can unwrap as we already checked empty and all null above
+            if (self.sum().unwrap() + nc as IdxSize) == len as IdxSize {
+                Some(true)
+            } else {
+                Some(false)
+            }
         }
     }
 
-    fn max(&self) -> Option<IdxSize> {
-        if self.is_empty() {
+    pub fn max(&self) -> Option<bool> {
+        if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
         if self.any() {
-            Some(1)
+            Some(true)
         } else {
-            Some(0)
+            Some(false)
         }
     }
-    fn mean(&self) -> Option<f64> {
+    pub fn mean(&self) -> Option<f64> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
         self.sum()
             .map(|sum| sum as f64 / (self.len() - self.null_count()) as f64)
     }
@@ -405,28 +426,22 @@ impl QuantileAggSeries for Float64Chunked {
 
 impl ChunkAggSeries for BooleanChunked {
     fn sum_as_series(&self) -> Series {
-        let v = ChunkAgg::sum(self);
-        let mut ca: IdxCa = [v].iter().copied().collect();
-        ca.rename(self.name());
-        ca.into_series()
+        let v = self.sum();
+        Series::new(self.name(), [v])
     }
     fn max_as_series(&self) -> Series {
-        let v = ChunkAgg::max(self);
-        let mut ca: IdxCa = [v].iter().copied().collect();
-        ca.rename(self.name());
-        ca.into_series()
+        let v = self.max();
+        Series::new(self.name(), [v])
     }
     fn min_as_series(&self) -> Series {
-        let v = ChunkAgg::min(self);
-        let mut ca: IdxCa = [v].iter().copied().collect();
-        ca.rename(self.name());
-        ca.into_series()
+        let v = self.min();
+        Series::new(self.name(), [v])
     }
 }
 
 impl Utf8Chunked {
     pub(crate) fn max_str(&self) -> Option<&str> {
-        match self.is_sorted_flag2() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => self.get(self.len() - 1),
             IsSorted::Descending => self.get(0),
             IsSorted::Not => self
@@ -436,7 +451,7 @@ impl Utf8Chunked {
         }
     }
     pub(crate) fn min_str(&self) -> Option<&str> {
-        match self.is_sorted_flag2() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => self.get(0),
             IsSorted::Descending => self.get(self.len() - 1),
             IsSorted::Not => self
@@ -492,6 +507,22 @@ impl ChunkAggSeries for ListChunked {
     }
     fn min_as_series(&self) -> Series {
         ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ChunkAggSeries for ArrayChunked {
+    fn sum_as_series(&self) -> Series {
+        ArrayChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype(), self.width())
+            .into_series()
+    }
+    fn max_as_series(&self) -> Series {
+        ArrayChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype(), self.width())
+            .into_series()
+    }
+    fn min_as_series(&self) -> Series {
+        ArrayChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype(), self.width())
+            .into_series()
     }
 }
 
@@ -569,34 +600,10 @@ mod test {
         let ca = Float32Chunked::from_slice(
             "",
             &[
-                0.166189,
-                0.166559,
-                0.168517,
-                0.169393,
-                0.175272,
-                0.23316699999999999,
-                0.238787,
-                0.266562,
-                0.26903,
-                0.285792,
-                0.292801,
-                0.29342899999999994,
-                0.30170600000000003,
-                0.308534,
-                0.331489,
-                0.346095,
-                0.36764399999999997,
-                0.36993899999999996,
-                0.37207399999999996,
-                0.41014000000000006,
-                0.415789,
-                0.421781,
-                0.4277250000000001,
-                0.46536299999999997,
-                0.500208,
-                2.6217269999999995,
-                2.803311,
-                3.868526,
+                0.166189, 0.166559, 0.168517, 0.169393, 0.175272, 0.233167, 0.238787, 0.266562,
+                0.26903, 0.285792, 0.292801, 0.293429, 0.301706, 0.308534, 0.331489, 0.346095,
+                0.367644, 0.369939, 0.372074, 0.41014, 0.415789, 0.421781, 0.427725, 0.465363,
+                0.500208, 2.621727, 2.803311, 3.868526,
             ],
         );
         assert!((ca.median().unwrap() - 0.3200115).abs() < 0.0001)
@@ -877,34 +884,10 @@ mod test {
         let ca = Float32Chunked::from_slice(
             "",
             &[
-                0.166189,
-                0.166559,
-                0.168517,
-                0.169393,
-                0.175272,
-                0.23316699999999999,
-                0.238787,
-                0.266562,
-                0.26903,
-                0.285792,
-                0.292801,
-                0.29342899999999994,
-                0.30170600000000003,
-                0.308534,
-                0.331489,
-                0.346095,
-                0.36764399999999997,
-                0.36993899999999996,
-                0.37207399999999996,
-                0.41014000000000006,
-                0.415789,
-                0.421781,
-                0.4277250000000001,
-                0.46536299999999997,
-                0.500208,
-                2.6217269999999995,
-                2.803311,
-                3.868526,
+                0.166189, 0.166559, 0.168517, 0.169393, 0.175272, 0.233167, 0.238787, 0.266562,
+                0.26903, 0.285792, 0.292801, 0.293429, 0.301706, 0.308534, 0.331489, 0.346095,
+                0.367644, 0.369939, 0.372074, 0.41014, 0.415789, 0.421781, 0.427725, 0.465363,
+                0.500208, 2.621727, 2.803311, 3.868526,
             ],
         );
 

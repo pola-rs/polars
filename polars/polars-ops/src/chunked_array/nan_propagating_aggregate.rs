@@ -136,12 +136,13 @@ where
                     None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _>(
                         values,
                         offset_iter,
+                        None,
                     ),
                     Some(validity) => _rolling_apply_agg_window_nulls::<
                         rolling::nulls::MaxWindow<_>,
                         _,
                         _,
-                    >(values, validity, offset_iter),
+                    >(values, validity, offset_iter, None),
                 };
                 ChunkedArray::from_chunks("", vec![arr]).into_series()
             } else {
@@ -207,12 +208,13 @@ where
                     None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _>(
                         values,
                         offset_iter,
+                        None,
                     ),
                     Some(validity) => _rolling_apply_agg_window_nulls::<
                         rolling::nulls::MinWindow<_>,
                         _,
                         _,
-                    >(values, validity, offset_iter),
+                    >(values, validity, offset_iter, None),
                 };
                 ChunkedArray::from_chunks("", vec![arr]).into_series()
             } else {

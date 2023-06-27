@@ -9,7 +9,7 @@
 //! expression into powerful aggregations and column selections. All expressions are evaluated
 //! in parallel and your queries are optimized just in time.
 //!
-//! ```rust no_run
+//! ```no_run
 //! use polars::prelude::*;
 //! # fn example() -> PolarsResult<()> {
 //!
@@ -18,20 +18,20 @@
 //!     .agg([
 //!         // expressions can be combined into powerful aggregations
 //!         col("foo")
-//!             .sort_by([col("ham").rank(Default::default())], [false])
+//!             .sort_by([col("ham").rank(Default::default(), None)], [false])
 //!             .last()
 //!             .alias("last_foo_ranked_by_ham"),
 //!         // every expression runs in parallel
 //!         col("foo").cummin(false).alias("cumulative_min_per_group"),
 //!         // every expression runs in parallel
-//!         col("foo").reverse().list().alias("reverse_group"),
+//!         col("foo").reverse().implode().alias("reverse_group"),
 //!     ]);
 //!
 //! let lf2 = LazyFrame::scan_parquet("myfile_2.parquet", Default::default())?
 //!     .select([col("ham"), col("spam")]);
 //!
 //! let df = lf1
-//!     .join(lf2, [col("reverse")], [col("foo")], JoinType::Left)
+//!     .join(lf2, [col("reverse")], [col("foo")], JoinArgs::new(JoinType::Left))
 //!     // now we finally materialize the result.
 //!     .collect()?;
 //! # Ok(())
@@ -133,7 +133,7 @@
 //! (Note that within an expression there may be more parallelization going on).
 //!
 //! Understanding polars expressions is most important when starting with the polars library. Read more
-//! about them in the [User Guide](https://pola-rs.github.io/polars-book/user-guide/dsl/intro.html).
+//! about them in the [User Guide](https://pola-rs.github.io/polars-book/user-guide/concepts/expressions).
 //! Though the examples given there are in python. The expressions API is almost identical and the
 //! the read should certainly be valuable to rust users as well.
 //!
@@ -195,7 +195,7 @@
 //!     - `parquet` - Read Apache Parquet format
 //!     - `json` - JSON serialization
 //!     - `ipc` - Arrow's IPC format serialization
-//!     - `decompress` - Automatically infer compression of csv-files and decompress them.
+//!     - `decompress` - Automatically infer compression of csvs and decompress them.
 //!                      Supported compressions:
 //!                         * zip
 //!                         * gzip
@@ -230,7 +230,7 @@
 //!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
 //!     - `cum_agg` - cumsum, cummin, cummax aggregation.
 //!     - `rolling_window` - rolling window functions, like rolling_mean
-//!     - `interpolate` [interpolate None values](crate::chunked_array::ops::Interpolate)
+//!     - `interpolate` [interpolate None values](polars_ops::chunked_array::interpolate)
 //!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
 //!     - `list` - List utils.
 //!         - `list_take` take sublist by multiple indices
@@ -305,6 +305,7 @@
 //! #[global_allocator]
 //! static GLOBAL: MiMalloc = MiMalloc;
 //! ```
+//!
 //! ```ignore
 //! use jemallocator::Jemalloc;
 //!
@@ -317,34 +318,31 @@
 //! outperforms Mimalloc on all tasks and is therefor the default Linux allocator used for the Python bindings.
 //!
 //! #### Cargo.toml
-//! ```ignore
+//! ```toml
 //! [dependencies]
 //! mimalloc = { version = "*", default-features = false }
 //! ```
+//!
 //! ## Config with ENV vars
 //!
-//! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL_CONDENSED):
-//!     
-//!                                    ASCII_FULL
-//!                                    ASCII_FULL_CONDENSED
-//!                                    ASCII_NO_BORDERS
-//!                                    ASCII_BORDERS_ONLY
-//!                                    ASCII_BORDERS_ONLY_CONDENSED
-//!                                    ASCII_HORIZONTAL_ONLY
-//!                                    ASCII_MARKDOWN
-//!                                    UTF8_FULL
-//!                                    UTF8_FULL_CONDENSED
-//!                                    UTF8_NO_BORDERS
-//!                                    UTF8_BORDERS_ONLY
-//!                                    UTF8_HORIZONTAL_ONLY
-//!                                    NOTHING
-//!                                     
-//!                                    These options are defined by comfy-table which provides examples for each at:
-//!                                    https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs
+//! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL_CONDENSED). These options are defined by comfy-table which provides examples for each at <https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs>
+//!   * `ASCII_FULL`
+//!   * `ASCII_FULL_CONDENSED`
+//!   * `ASCII_NO_BORDERS`
+//!   * `ASCII_BORDERS_ONLY`
+//!   * `ASCII_BORDERS_ONLY_CONDENSED`
+//!   * `ASCII_HORIZONTAL_ONLY`
+//!   * `ASCII_MARKDOWN`
+//!   * `UTF8_FULL`
+//!   * `UTF8_FULL_CONDENSED`
+//!   * `UTF8_NO_BORDERS`
+//!   * `UTF8_BORDERS_ONLY`
+//!   * `UTF8_HORIZONTAL_ONLY`
+//!   * `NOTHING`
 //! * `POLARS_FMT_TABLE_CELL_ALIGNMENT` -> define cell alignment using any of the following options (default = LEFT):
-//!                                    LEFT
-//!                                    CENTER
-//!                                    RIGHT
+//!   * `LEFT`
+//!   * `CENTER`
+//!   * `RIGHT`
 //! * `POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW` -> print shape information below the table.
 //! * `POLARS_FMT_TABLE_HIDE_COLUMN_NAMES` -> hide table column names.
 //! * `POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES` -> hide data types for columns.
@@ -353,15 +351,13 @@
 //! * `POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE` -> put column data type on the same line as the column name.
 //! * `POLARS_FMT_TABLE_ROUNDED_CORNERS` -> apply rounded corners to UTF8-styled tables.
 //! * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
-//! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
+//! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames, `-1` to show all.
 //! * `POLARS_FMT_STR_LEN` -> maximum number of characters printed per string value.
 //! * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
 //! * `POLARS_MAX_THREADS` -> maximum number of threads used to initialize thread pool (on startup).
 //! * `POLARS_VERBOSE` -> print logging info to stderr.
 //! * `POLARS_NO_PARTITION` -> polars may choose to partition the groupby operation, based on data
 //!                            cardinality. Setting this env var will turn partitioned groupby's off.
-//! * `POLARS_PARTITION_SAMPLE_FRAC` -> how large chunk of the dataset to sample to determine cardinality,
-//!                                     defaults to `0.001`.
 //! * `POLARS_PARTITION_UNIQUE_COUNT` -> at which (estimated) key count a partitioned groupby should run.
 //!                                          defaults to `1000`, any higher cardinality will run default groupby.
 //! * `POLARS_FORCE_PARTITION` -> force partitioned groupby if the keys and aggregations allow it.
@@ -375,6 +371,7 @@
 //! ## User Guide
 //! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars-book/).
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![allow(ambiguous_glob_reexports)]
 pub mod docs;
 pub mod export;
 pub mod prelude;
@@ -386,7 +383,7 @@ pub use polars_core::{
     series, testing,
 };
 #[cfg(feature = "dtype-categorical")]
-pub use polars_core::{toggle_string_cache, using_string_cache};
+pub use polars_core::{enable_string_cache, using_string_cache};
 #[cfg(feature = "polars-io")]
 pub use polars_io as io;
 #[cfg(feature = "lazy")]

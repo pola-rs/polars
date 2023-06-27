@@ -121,12 +121,12 @@
 //!
 //! ## Dictionary Encoding
 //!
-//! [`RowConverter`] needs to support converting dictionary encoded arrays with unsorted, and
+//! [`RowsEncoded`] needs to support converting dictionary encoded arrays with unsorted, and
 //! potentially distinct dictionaries. One simple mechanism to avoid this would be to reverse
 //! the dictionary encoding, and encode the array values directly, however, this would lose
 //! the benefits of dictionary encoding to reduce memory and CPU consumption.
 //!
-//! As such the [`RowConverter`] creates an order-preserving mapping
+//! As such the [`RowsEncoded`] creates an order-preserving mapping
 //! for each dictionary encoded column, which allows new dictionary
 //! values to be added whilst preserving the sort order.
 //!
@@ -266,13 +266,20 @@
 //! [COBS]: https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing
 //! [byte stuffing]: https://en.wikipedia.org/wiki/High-Level_Data_Link_Control#Asynchronous_framing
 
+extern crate core;
+
+pub mod decode;
 pub mod encode;
-mod encodings;
+pub(crate) mod fixed;
 mod row;
 mod utils;
+pub(crate) mod variable;
 
 use arrow::array::*;
 pub type ArrayRef = Box<dyn Array>;
 
-pub use encode::convert_columns;
+pub use encode::{
+    convert_columns, convert_columns_amortized, convert_columns_amortized_no_order,
+    convert_columns_no_order,
+};
 pub use row::{RowsEncoded, SortField};

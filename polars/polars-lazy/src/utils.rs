@@ -12,7 +12,7 @@ pub(crate) fn agg_source_paths(
     lp_arena.iter(root_lp).for_each(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan { path, .. } => {
                 paths.insert(path.clone());
             }

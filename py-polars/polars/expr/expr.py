@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import contextlib
 import math
+import operator
 import os
 import random
-import warnings
-from datetime import date, datetime, time, timedelta
+from datetime import timedelta
+from functools import partial, reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -17,19 +18,23 @@ from typing import (
     Sequence,
     Set,
     TypeVar,
-    cast,
 )
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    Categorical,
     Struct,
     UInt32,
+    Utf8,
     is_polars_dtype,
     py_type_to_dtype,
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
+from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
 from polars.expr.datetime import ExprDateTimeNameSpace
@@ -37,22 +42,26 @@ from polars.expr.list import ExprListNameSpace
 from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
-from polars.functions.whenthen import WhenThen, WhenThenThen
+from polars.utils._parse_expr_input import (
+    parse_as_expression,
+    parse_as_list_of_expressions,
+)
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.decorators import deprecated_alias, warn_closed_future_change
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
+    from polars.polars import reduce as pyreduce
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyExpr
 
 if TYPE_CHECKING:
     import sys
 
-    from polars.dataframe.frame import DataFrame
-    from polars.lazyframe.frame import LazyFrame
-    from polars.polars import PyExpr
-    from polars.series.series import Series
+    from polars import DataFrame, LazyFrame, Series
     from polars.type_aliases import (
         ApplyStrategy,
         ClosedInterval,
@@ -65,6 +74,7 @@ if TYPE_CHECKING:
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
+        WindowMappingStrategy,
     )
 
     if sys.version_info >= (3, 11):
@@ -79,100 +89,11 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
 
-def selection_to_pyexpr_list(
-    exprs: IntoExpr | Iterable[IntoExpr],
-    structify: bool = False,
-) -> list[PyExpr]:
-    if exprs is None:
-        return []
-
-    if isinstance(
-        exprs, (str, Expr, pli.Series, WhenThen, WhenThenThen)
-    ) or not isinstance(exprs, Iterable):
-        return [
-            expr_to_lit_or_expr(exprs, str_to_lit=False, structify=structify)._pyexpr,
-        ]
-
-    return [
-        expr_to_lit_or_expr(e, str_to_lit=False, structify=structify)._pyexpr
-        for e in exprs  # type: ignore[union-attr]
-    ]
-
-
-def expr_output_name(expr: Expr) -> str | None:
-    try:
-        return expr.meta.output_name()
-    except Exception:
-        return None
-
-
-def expr_to_lit_or_expr(
-    expr: IntoExpr | Iterable[IntoExpr],
-    str_to_lit: bool = True,
-    structify: bool = False,
-    name: str | None = None,
-) -> Expr:
-    """
-    Convert args to expressions.
-
-    Parameters
-    ----------
-    expr
-        Any argument.
-    str_to_lit
-        If True string argument `"foo"` will be converted to `lit("foo")`.
-        If False it will be converted to `col("foo")`.
-    structify
-        If the final unaliased expression has multiple output names,
-        automatically convert it to struct.
-    name
-        Apply the given name as an alias to the resulting expression.
-
-    Returns
-    -------
-    Expr
-
-    """
-    if isinstance(expr, Expr):
-        pass
-    elif isinstance(expr, str) and not str_to_lit:
-        expr = F.col(expr)
-    elif (
-        isinstance(expr, (int, float, str, pli.Series, datetime, date, time, timedelta))
-        or expr is None
-    ):
-        expr = F.lit(expr)
-        structify = False
-    elif isinstance(expr, list):
-        expr = F.lit(pli.Series("", [expr]))
-        structify = False
-    elif isinstance(expr, (WhenThen, WhenThenThen)):
-        expr = expr.otherwise(None)  # implicitly add the null branch.
-    else:
-        raise TypeError(
-            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
-            " pl.lit or pl.col"
-        )
-
-    if structify:
-        unaliased_expr = expr.meta.undo_aliases()
-        if unaliased_expr.meta.has_multiple_outputs():
-            expr_name = expr_output_name(expr)
-            expr = F.struct(expr if expr_name is None else unaliased_expr)
-            name = name or expr_name
-
-    return expr if name is None else expr.alias(name)
-
-
-def wrap_expr(pyexpr: PyExpr) -> Expr:
-    return Expr._from_pyexpr(pyexpr)
-
-
 class Expr:
     """Expressions that can be used in various contexts."""
 
     _pyexpr: PyExpr = None
-    _accessors: set[str] = {"arr", "cat", "dt", "meta", "str", "bin", "struct"}
+    _accessors: set[str] = {"arr", "cat", "dt", "list", "meta", "str", "bin", "struct"}
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Self:
@@ -204,50 +125,21 @@ class Expr:
     def __abs__(self) -> Self:
         return self.abs()
 
-    def __invert__(self) -> Self:
-        return self.is_not()
-
-    def __xor__(self, other: Expr) -> Self:
-        return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
-
-    def __rxor__(self, other: Expr) -> Self:
-        return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
-
-    def __and__(self, other: Expr) -> Self:
-        return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
-
-    def __rand__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
-
-    def __or__(self, other: Expr) -> Self:
-        return self._from_pyexpr(self._pyexpr._or(self._to_pyexpr(other)))
-
-    def __ror__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other)._or(self._pyexpr))
-
+    # operators
     def __add__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr + self._to_pyexpr(other))
 
     def __radd__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) + self._pyexpr)
 
-    def __sub__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr - self._to_pyexpr(other))
+    def __and__(self, other: Expr | int) -> Self:
+        return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
 
-    def __rsub__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) - self._pyexpr)
+    def __rand__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
 
-    def __mul__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr * self._to_pyexpr(other))
-
-    def __rmul__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
-
-    def __truediv__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr / self._to_pyexpr(other))
-
-    def __rtruediv__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) / self._pyexpr)
+    def __eq__(self, other: Any) -> Self:  # type: ignore[override]
+        return self._from_pyexpr(self._pyexpr.eq(self._to_expr(other)._pyexpr))
 
     def __floordiv__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr // self._to_pyexpr(other))
@@ -255,76 +147,73 @@ class Expr:
     def __rfloordiv__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) // self._pyexpr)
 
+    def __ge__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr.gt_eq(self._to_expr(other)._pyexpr))
+
+    def __gt__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
+
+    def __invert__(self) -> Self:
+        return self.is_not()
+
+    def __le__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr.lt_eq(self._to_expr(other)._pyexpr))
+
+    def __lt__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr.lt(self._to_expr(other)._pyexpr))
+
     def __mod__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr % self._to_pyexpr(other))
 
     def __rmod__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) % self._pyexpr)
 
-    def __pow__(self, power: int | float | Series | Expr) -> Self:
-        return self.pow(power)
+    def __mul__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr * self._to_pyexpr(other))
 
-    def __rpow__(self, base: int | float | Expr) -> Expr:
-        return pli.expr_to_lit_or_expr(base) ** self
-
-    def __ge__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.gt_eq(self._to_expr(other)._pyexpr))
-
-    def __le__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.lt_eq(self._to_expr(other)._pyexpr))
-
-    def __eq__(self, other: Any) -> Self:  # type: ignore[override]
-        return self._from_pyexpr(self._pyexpr.eq(self._to_expr(other)._pyexpr))
+    def __rmul__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
 
     def __ne__(self, other: Any) -> Self:  # type: ignore[override]
         return self._from_pyexpr(self._pyexpr.neq(self._to_expr(other)._pyexpr))
 
-    def __lt__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.lt(self._to_expr(other)._pyexpr))
-
-    def __gt__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
-
-    def ge(self, other: Any) -> Self:
-        return self.__ge__(other)
-
-    def le(self, other: Any) -> Self:
-        return self.__le__(other)
-
-    def eq(self, other: Any) -> Self:
-        return self.__eq__(other)
-
-    def ne(self, other: Any) -> Self:
-        return self.__ne__(other)
-
-    def lt(self, other: Any) -> Self:
-        return self.__lt__(other)
-
-    def gt(self, other: Any) -> Self:
-        return self.__gt__(other)
-
     def __neg__(self) -> Expr:
         return F.lit(0) - self
+
+    def __or__(self, other: Expr | int) -> Self:
+        return self._from_pyexpr(self._pyexpr._or(self._to_pyexpr(other)))
+
+    def __ror__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._to_pyexpr(other)._or(self._pyexpr))
 
     def __pos__(self) -> Expr:
         return F.lit(0) + self
 
-    def __array_ufunc__(
-        self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
-    ) -> Self:
-        """Numpy universal functions."""
-        num_expr = sum(isinstance(inp, Expr) for inp in inputs)
-        if num_expr > 1:
-            raise ValueError(
-                f"Numpy ufunc can only be used with one expression, {num_expr} given. Use `pl.reduce` to call numpy functions over multiple expressions."
-            )
+    def __pow__(self, power: int | float | Series | Expr) -> Self:
+        return self.pow(power)
 
-        def function(s: Series) -> Series:  # pragma: no cover
-            args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
-            return ufunc(*args, **kwargs)
+    def __rpow__(self, base: int | float | Expr) -> Expr:
+        return self._from_pyexpr(parse_as_expression(base)) ** self
 
-        return self.map(function)
+    def __sub__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr - self._to_pyexpr(other))
 
+    def __rsub__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._to_pyexpr(other) - self._pyexpr)
+
+    def __truediv__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr / self._to_pyexpr(other))
+
+    def __rtruediv__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._to_pyexpr(other) / self._pyexpr)
+
+    def __xor__(self, other: Expr) -> Self:
+        return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
+
+    def __rxor__(self, other: Expr) -> Self:
+        return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
+
+    # state
     def __getstate__(self) -> Any:
         return self._pyexpr.__getstate__()
 
@@ -332,6 +221,41 @@ class Expr:
         # init with a dummy
         self._pyexpr = F.lit(0)._pyexpr
         self._pyexpr.__setstate__(state)
+
+    def __array_ufunc__(
+        self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
+    ) -> Self:
+        """Numpy universal functions."""
+        num_expr = sum(isinstance(inp, Expr) for inp in inputs)
+        if num_expr > 1:
+            if num_expr < len(inputs):
+                raise ValueError(
+                    "Numpy ufunc with more than one expression can only be used if all non-expression inputs are provided as keyword arguments only"
+                )
+
+            exprs = parse_as_list_of_expressions(inputs)
+            return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
+
+        def function(s: Series) -> Series:  # pragma: no cover
+            args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
+            return ufunc(*args, **kwargs)
+
+        return self.map(function)
+
+    @classmethod
+    def from_json(cls, value: str) -> Self:
+        """
+        Read an expression from a JSON encoded string to construct an Expression.
+
+        Parameters
+        ----------
+        value
+            JSON encoded string value
+
+        """
+        expr = cls.__new__(cls)
+        expr._pyexpr = PyExpr.meta_read_json(value)
+        return expr
 
     def to_physical(self) -> Self:
         """
@@ -342,7 +266,9 @@ class Expr:
         - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
-        - Other data types will be left unchanged.
+        - ``List(inner)`` -> ``List(physical of inner)``
+
+        Other data types will be left unchanged.
 
         Examples
         --------
@@ -534,6 +460,12 @@ class Expr:
         name
             New name.
 
+        See Also
+        --------
+        map_alias
+        prefix
+        suffix
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -554,10 +486,8 @@ class Expr:
         │ 3   ┆ null │
         └─────┴──────┘
         >>> df.select(
-        ...     [
-        ...         pl.col("a").alias("bar"),
-        ...         pl.col("b").alias("foo"),
-        ...     ]
+        ...     pl.col("a").alias("bar"),
+        ...     pl.col("b").alias("foo"),
         ... )
         shape: (3, 2)
         ┌─────┬──────┐
@@ -724,7 +654,7 @@ class Expr:
         "DuplicateError: Column with name: 'literal' has more than one occurrences"
         errors.
 
-        >>> df.select([(pl.lit(10) / pl.all()).keep_name()])
+        >>> df.select((pl.lit(10) / pl.all()).keep_name())
         shape: (2, 2)
         ┌──────┬──────────┐
         │ a    ┆ b        │
@@ -744,7 +674,7 @@ class Expr:
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> T:
-        r"""
+        r'''
         Offers a structured way to apply a sequence of user-defined functions (UDFs).
 
         Parameters
@@ -759,28 +689,50 @@ class Expr:
 
         Examples
         --------
-        >>> def extract_number(expr):
+        >>> def extract_number(expr: pl.Expr) -> pl.Expr:
+        ...     """Extract the digits from a string."""
         ...     return expr.str.extract(r"\d+", 0).cast(pl.Int64)
-        ...
-        >>> df = pl.DataFrame({"a": ["a: 1", "b: 2", "c: 3"]})
-        >>> df.with_columns(pl.col("a").pipe(extract_number))
-        shape: (3, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 1   │
-        │ 2   │
-        │ 3   │
-        └─────┘
+        >>>
+        >>> def scale_negative_even(expr: pl.Expr, *, n: int = 1) -> pl.Expr:
+        ...     """Set even numbers negative, and scale by a user-supplied value."""
+        ...     expr = pl.when(expr % 2 == 0).then(-expr).otherwise(expr)
+        ...     return expr * n
+        >>>
+        >>> df = pl.DataFrame({"val": ["a: 1", "b: 2", "c: 3", "d: 4"]})
+        >>> df.with_columns(
+        ...     udfs=(
+        ...         pl.col("val").pipe(extract_number).pipe(scale_negative_even, n=5)
+        ...     ),
+        ... )
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ val  ┆ udfs │
+        │ ---  ┆ ---  │
+        │ str  ┆ i64  │
+        ╞══════╪══════╡
+        │ a: 1 ┆ 5    │
+        │ b: 2 ┆ -10  │
+        │ c: 3 ┆ 15   │
+        │ d: 4 ┆ -20  │
+        └──────┴──────┘
 
-        """
+        '''
         return function(self, *args, **kwargs)
 
     def prefix(self, prefix: str) -> Self:
         """
         Add a prefix to the root column name of the expression.
+
+        Parameters
+        ----------
+        prefix
+            Prefix to add to root column name.
+
+        See Also
+        --------
+        alias
+        map_alias
+        suffix
 
         Examples
         --------
@@ -806,10 +758,8 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle │
         └─────┴────────┴─────┴────────┘
         >>> df.select(
-        ...     [
-        ...         pl.all(),
-        ...         pl.all().reverse().prefix("reverse_"),
-        ...     ]
+        ...     pl.all(),
+        ...     pl.all().reverse().prefix("reverse_"),
         ... )
         shape: (5, 8)
         ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
@@ -831,6 +781,17 @@ class Expr:
         """
         Add a suffix to the root column name of the expression.
 
+        Parameters
+        ----------
+        suffix
+            Suffix to add to root column name.
+
+        See Also
+        --------
+        alias
+        map_alias
+        prefix
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -855,10 +816,8 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle │
         └─────┴────────┴─────┴────────┘
         >>> df.select(
-        ...     [
-        ...         pl.all(),
-        ...         pl.all().reverse().suffix("_reverse"),
-        ...     ]
+        ...     pl.all(),
+        ...     pl.all().reverse().suffix("_reverse"),
         ... )
         shape: (5, 8)
         ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
@@ -876,7 +835,6 @@ class Expr:
         """  # noqa: W505
         return self._from_pyexpr(self._pyexpr.suffix(suffix))
 
-    @deprecated_alias(f="function")
     def map_alias(self, function: Callable[[str], str]) -> Self:
         """
         Rename the output of an expression by mapping a function over the root name.
@@ -886,6 +844,12 @@ class Expr:
         function
             Function that maps root name to new name.
 
+        See Also
+        --------
+        alias
+        prefix
+        suffix
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -894,18 +858,23 @@ class Expr:
         ...         "B": [3, 4],
         ...     }
         ... )
-        >>> df.select(
-        ...     pl.all().reverse().map_alias(lambda colName: colName + "_reverse")
+
+        >>> df.select(pl.all().reverse().suffix("_reverse")).with_columns(
+        ...     pl.all().map_alias(
+        ...         # Remove "_reverse" suffix and convert to lower case.
+        ...         lambda col_name: col_name.rsplit("_reverse", 1)[0].lower()
+        ...     )
         ... )
-        shape: (2, 2)
-        ┌───────────┬───────────┐
-        │ A_reverse ┆ B_reverse │
-        │ ---       ┆ ---       │
-        │ i64       ┆ i64       │
-        ╞═══════════╪═══════════╡
-        │ 2         ┆ 4         │
-        │ 1         ┆ 3         │
-        └───────────┴───────────┘
+        shape: (2, 4)
+        ┌───────────┬───────────┬─────┬─────┐
+        │ A_reverse ┆ B_reverse ┆ a   ┆ b   │
+        │ ---       ┆ ---       ┆ --- ┆ --- │
+        │ i64       ┆ i64       ┆ i64 ┆ i64 │
+        ╞═══════════╪═══════════╪═════╪═════╡
+        │ 2         ┆ 4         ┆ 2   ┆ 4   │
+        │ 1         ┆ 3         ┆ 1   ┆ 3   │
+        └───────────┴───────────┴─────┴─────┘
+
 
         """
         return self._from_pyexpr(self._pyexpr.map_alias(function))
@@ -1175,6 +1144,9 @@ class Expr:
         """
         Count the number of values in this expression.
 
+        .. warning::
+            `null` is deemed a value in this context.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
@@ -1256,7 +1228,7 @@ class Expr:
             length = F.lit(length)
         return self._from_pyexpr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
-    def append(self, other: Expr, upcast: bool = True) -> Self:
+    def append(self, other: Expr, *, upcast: bool = True) -> Self:
         """
         Append expressions.
 
@@ -1289,8 +1261,8 @@ class Expr:
         └─────┴──────┘
 
         """
-        other = expr_to_lit_or_expr(other)
-        return self._from_pyexpr(self._pyexpr.append(other._pyexpr, upcast))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr.append(other, upcast))
 
     def rechunk(self) -> Self:
         """
@@ -1304,18 +1276,18 @@ class Expr:
 
         >>> df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk())
         shape: (6, 1)
-        ┌─────────┐
-        │ literal │
-        │ ---     │
-        │ i64     │
-        ╞═════════╡
-        │ null    │
-        │ null    │
-        │ null    │
-        │ 1       │
-        │ 1       │
-        │ 2       │
-        └─────────┘
+        ┌────────┐
+        │ repeat │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ null   │
+        │ null   │
+        │ null   │
+        │ 1      │
+        │ 1      │
+        │ 2      │
+        └────────┘
 
         """
         return self._from_pyexpr(self._pyexpr.rechunk())
@@ -1384,7 +1356,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.drop_nans())
 
-    def cumsum(self, reverse: bool = False) -> Self:
+    def cumsum(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -1450,7 +1422,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cumsum(reverse))
 
-    def cumprod(self, reverse: bool = False) -> Self:
+    def cumprod(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative product computed at every element.
 
@@ -1488,7 +1460,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cumprod(reverse))
 
-    def cummin(self, reverse: bool = False) -> Self:
+    def cummin(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -1521,7 +1493,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cummin(reverse))
 
-    def cummax(self, reverse: bool = False) -> Self:
+    def cummax(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -1582,7 +1554,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cummax(reverse))
 
-    def cumcount(self, reverse: bool = False) -> Self:
+    def cumcount(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative count computed at every element.
 
@@ -1667,7 +1639,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.ceil())
 
-    def round(self, decimals: int) -> Self:
+    def round(self, decimals: int = 0) -> Self:
         """
         Round underlying floating point data by `decimals` digits.
 
@@ -1723,8 +1695,8 @@ class Expr:
         └─────┘
 
         """
-        other = expr_to_lit_or_expr(other, str_to_lit=False)
-        return self._from_pyexpr(self._pyexpr.dot(other._pyexpr))
+        other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr.dot(other))
 
     def mode(self) -> Self:
         """
@@ -1754,7 +1726,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.mode())
 
-    def cast(self, dtype: PolarsDataType | type[Any], strict: bool = True) -> Self:
+    def cast(self, dtype: PolarsDataType | type[Any], *, strict: bool = True) -> Self:
         """
         Cast between data types.
 
@@ -1795,9 +1767,7 @@ class Expr:
         dtype = py_type_to_dtype(dtype)
         return self._from_pyexpr(self._pyexpr.cast(dtype, strict))
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments()
-    def sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Sort this column.
 
@@ -1861,7 +1831,6 @@ class Expr:
         ...     {
         ...         "group": ["one", "one", "one", "two", "two", "two"],
         ...         "value": [1, 98, 2, 3, 99, 4],
-        ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
         >>> df.groupby("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
@@ -1878,12 +1847,9 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    @deprecated_alias(reverse="descending")
-    def top_k(self, k: int = 5, descending: bool = False) -> Self:
+    def top_k(self, k: int = 5) -> Self:
         r"""
         Return the `k` largest elements.
-
-        If 'descending=True` the smallest elements will be given.
 
         This has time complexity:
 
@@ -1893,8 +1859,10 @@ class Expr:
         ----------
         k
             Number of elements to return.
-        descending
-            Return the smallest elements.
+
+        See Also
+        --------
+        bottom_k
 
         Examples
         --------
@@ -1906,7 +1874,7 @@ class Expr:
         >>> df.select(
         ...     [
         ...         pl.col("value").top_k().alias("top_k"),
-        ...         pl.col("value").top_k(descending=True).alias("bottom_k"),
+        ...         pl.col("value").bottom_k().alias("bottom_k"),
         ...     ]
         ... )
         shape: (5, 2)
@@ -1923,11 +1891,55 @@ class Expr:
         └───────┴──────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.top_k(k, descending))
+        return self._from_pyexpr(self._pyexpr.top_k(k))
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments()
-    def arg_sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
+    def bottom_k(self, k: int = 5) -> Self:
+        r"""
+        Return the `k` smallest elements.
+
+        This has time complexity:
+
+        .. math:: O(n + k \\log{}n - \frac{k}{2})
+
+        Parameters
+        ----------
+        k
+            Number of elements to return.
+
+        See Also
+        --------
+        top_k
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "value": [1, 98, 2, 3, 99, 4],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("value").top_k().alias("top_k"),
+        ...         pl.col("value").bottom_k().alias("bottom_k"),
+        ...     ]
+        ... )
+        shape: (5, 2)
+        ┌───────┬──────────┐
+        │ top_k ┆ bottom_k │
+        │ ---   ┆ ---      │
+        │ i64   ┆ i64      │
+        ╞═══════╪══════════╡
+        │ 99    ┆ 1        │
+        │ 98    ┆ 2        │
+        │ 4     ┆ 3        │
+        │ 3     ┆ 4        │
+        │ 2     ┆ 98       │
+        └───────┴──────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.bottom_k(k))
+
+    def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Get the index values that would sort this column.
 
@@ -2054,10 +2066,9 @@ class Expr:
         └──────┴───────┴─────┘
 
         """
-        element = expr_to_lit_or_expr(element, str_to_lit=False)
-        return self._from_pyexpr(self._pyexpr.search_sorted(element._pyexpr, side))
+        element = parse_as_expression(element)
+        return self._from_pyexpr(self._pyexpr.search_sorted(element, side))
 
-    @deprecated_alias(reverse="descending")
     def sort_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
@@ -2165,12 +2176,30 @@ class Expr:
         │ b     ┆ [2, 4]    │
         └───────┴───────────┘
 
+        Take a single row from each group where a column attains its minimal value
+        within that group.
+
+        >>> df.groupby("group").agg(
+        ...     pl.all().sort_by("value2").first()
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (2, 3)
+        ┌───────┬────────┬────────┐
+        │ group ┆ value1 ┆ value2 |
+        │ ---   ┆ ---    ┆ ---    │
+        │ str   ┆ i64    ┆ i64    |
+        ╞═══════╪════════╪════════╡
+        │ a     ┆ 3      ┆ 7      |
+        │ b     ┆ 2      ┆ 5      |
+        └───────┴────────┴────────┘
+
         """
+        by = parse_as_list_of_expressions(by, *more_by)
         if isinstance(descending, bool):
             descending = [descending]
-        by = selection_to_pyexpr_list(by)
-        if more_by:
-            by.extend(pli.selection_to_pyexpr_list(more_by))
+        elif len(by) != len(descending):
+            raise ValueError(
+                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            )
         return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
 
     def take(
@@ -2218,11 +2247,10 @@ class Expr:
         if isinstance(indices, list) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
-            indices = cast("np.ndarray[Any, Any]", indices)
-            indices_lit = F.lit(pli.Series("", indices, dtype=UInt32))
+            indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))._pyexpr
         else:
-            indices_lit = pli.expr_to_lit_or_expr(indices, str_to_lit=False)
-        return self._from_pyexpr(self._pyexpr.take(indices_lit._pyexpr))
+            indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
+        return self._from_pyexpr(self._pyexpr.take(indices_lit))
 
     def shift(self, periods: int = 1) -> Self:
         """
@@ -2254,23 +2282,24 @@ class Expr:
 
     def shift_and_fill(
         self,
-        periods: int,
-        fill_value: int | float | bool | str | Expr | list[Any],
+        fill_value: IntoExpr,
+        *,
+        periods: int = 1,
     ) -> Self:
         """
         Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
         fill_value
             Fill None values with the result of this expression.
+        periods
+            Number of places to shift (may be negative).
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.select(pl.col("foo").shift_and_fill(1, "a"))
+        >>> df.select(pl.col("foo").shift_and_fill("a", periods=1))
         shape: (4, 1)
         ┌─────┐
         │ foo │
@@ -2284,10 +2313,8 @@ class Expr:
         └─────┘
 
         """
-        fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
-        return self._from_pyexpr(
-            self._pyexpr.shift_and_fill(periods, fill_value._pyexpr)
-        )
+        fill_value = parse_as_expression(fill_value, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.shift_and_fill(periods, fill_value))
 
     def fill_null(
         self,
@@ -2299,6 +2326,7 @@ class Expr:
         Fill null values using the specified value or strategy.
 
         To interpolate over null values see interpolate.
+        See the examples below to fill nulls with an expression.
 
         Parameters
         ----------
@@ -2318,38 +2346,60 @@ class Expr:
         ...         "b": [4, None, 6],
         ...     }
         ... )
-        >>> df.fill_null(strategy="zero")
+        >>> df.with_columns(pl.col("b").fill_null(strategy="zero"))
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ i64  ┆ i64 │
+        ╞══════╪═════╡
+        │ 1    ┆ 4   │
+        │ 2    ┆ 0   │
+        │ null ┆ 6   │
+        └──────┴─────┘
+        >>> df.with_columns(pl.col("b").fill_null(99))
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ i64  ┆ i64 │
+        ╞══════╪═════╡
+        │ 1    ┆ 4   │
+        │ 2    ┆ 99  │
+        │ null ┆ 6   │
+        └──────┴─────┘
+        >>> df.with_columns(pl.col("b").fill_null(strategy="forward"))
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ i64  ┆ i64 │
+        ╞══════╪═════╡
+        │ 1    ┆ 4   │
+        │ 2    ┆ 4   │
+        │ null ┆ 6   │
+        └──────┴─────┘
+        >>> df.with_columns(pl.col("b").fill_null(pl.col("b").median()))
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ i64  ┆ f64 │
+        ╞══════╪═════╡
+        │ 1    ┆ 4.0 │
+        │ 2    ┆ 5.0 │
+        │ null ┆ 6.0 │
+        └──────┴─────┘
+        >>> df.with_columns(pl.all().fill_null(pl.all().median()))
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
-        │ i64 ┆ i64 │
+        │ f64 ┆ f64 │
         ╞═════╪═════╡
-        │ 1   ┆ 4   │
-        │ 2   ┆ 0   │
-        │ 0   ┆ 6   │
-        └─────┴─────┘
-        >>> df.fill_null(99)
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 4   │
-        │ 2   ┆ 99  │
-        │ 99  ┆ 6   │
-        └─────┴─────┘
-        >>> df.fill_null(strategy="forward")
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 4   │
-        │ 2   ┆ 4   │
-        │ 2   ┆ 6   │
+        │ 1.0 ┆ 4.0 │
+        │ 2.0 ┆ 5.0 │
+        │ 1.5 ┆ 6.0 │
         └─────┴─────┘
 
         """
@@ -2364,14 +2414,14 @@ class Expr:
             )
 
         if value is not None:
-            value = expr_to_lit_or_expr(value, str_to_lit=True)
-            return self._from_pyexpr(self._pyexpr.fill_null(value._pyexpr))
+            value = parse_as_expression(value, str_as_lit=True)
+            return self._from_pyexpr(self._pyexpr.fill_null(value))
         else:
             return self._from_pyexpr(
                 self._pyexpr.fill_null_with_strategy(strategy, limit)
             )
 
-    def fill_nan(self, fill_value: int | float | Expr | None) -> Self:
+    def fill_nan(self, value: int | float | Expr | None) -> Self:
         """
         Fill floating point NaN value with a fill value.
 
@@ -2383,21 +2433,21 @@ class Expr:
         ...         "b": [4.0, float("nan"), 6],
         ...     }
         ... )
-        >>> df.fill_nan("zero")
+        >>> df.with_columns(pl.col("b").fill_nan(0))
         shape: (3, 2)
-        ┌──────┬──────┐
-        │ a    ┆ b    │
-        │ ---  ┆ ---  │
-        │ str  ┆ str  │
-        ╞══════╪══════╡
-        │ 1.0  ┆ 4.0  │
-        │ null ┆ zero │
-        │ zero ┆ 6.0  │
-        └──────┴──────┘
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ f64  ┆ f64 │
+        ╞══════╪═════╡
+        │ 1.0  ┆ 4.0 │
+        │ null ┆ 0.0 │
+        │ NaN  ┆ 6.0 │
+        └──────┴─────┘
 
         """
-        fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
-        return self._from_pyexpr(self._pyexpr.fill_nan(fill_value._pyexpr))
+        fill_value = parse_as_expression(value, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.fill_nan(fill_value))
 
     def forward_fill(self, limit: int | None = None) -> Self:
         """
@@ -2446,19 +2496,31 @@ class Expr:
         ...     {
         ...         "a": [1, 2, None],
         ...         "b": [4, None, 6],
+        ...         "c": [None, None, 2],
         ...     }
         ... )
         >>> df.select(pl.all().backward_fill())
-        shape: (3, 2)
-        ┌──────┬─────┐
-        │ a    ┆ b   │
-        │ ---  ┆ --- │
-        │ i64  ┆ i64 │
-        ╞══════╪═════╡
-        │ 1    ┆ 4   │
-        │ 2    ┆ 6   │
-        │ null ┆ 6   │
-        └──────┴─────┘
+        shape: (3, 3)
+        ┌──────┬─────┬─────┐
+        │ a    ┆ b   ┆ c   │
+        │ ---  ┆ --- ┆ --- │
+        │ i64  ┆ i64 ┆ i64 │
+        ╞══════╪═════╪═════╡
+        │ 1    ┆ 4   ┆ 2   │
+        │ 2    ┆ 6   ┆ 2   │
+        │ null ┆ 6   ┆ 2   │
+        └──────┴─────┴─────┘
+        >>> df.select(pl.all().backward_fill(limit=1))
+        shape: (3, 3)
+        ┌──────┬─────┬──────┐
+        │ a    ┆ b   ┆ c    │
+        │ ---  ┆ --- ┆ ---  │
+        │ i64  ┆ i64 ┆ i64  │
+        ╞══════╪═════╪══════╡
+        │ 1    ┆ 4   ┆ null │
+        │ 2    ┆ 6   ┆ 2    │
+        │ null ┆ 6   ┆ 2    │
+        └──────┴─────┴──────┘
 
         """
         return self._from_pyexpr(self._pyexpr.backward_fill(limit))
@@ -2506,7 +2568,9 @@ class Expr:
         Parameters
         ----------
         ddof
-            Degrees of freedom.
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
 
         Examples
         --------
@@ -2531,7 +2595,9 @@ class Expr:
         Parameters
         ----------
         ddof
-            Degrees of freedom.
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
 
         Examples
         --------
@@ -2740,6 +2806,28 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.n_unique())
 
+    def approx_unique(self) -> Self:
+        """
+        Approx count unique values.
+
+        This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df.select(pl.col("a").approx_unique())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 2   │
+        └─────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.approx_unique())
+
     def null_count(self) -> Self:
         """
         Count null values.
@@ -2802,7 +2890,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_unique())
 
-    def unique(self, maintain_order: bool = False) -> Self:
+    def unique(self, *, maintain_order: bool = False) -> Self:
         """
         Get unique values of this expression.
 
@@ -2880,7 +2968,12 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.last())
 
-    def over(self, expr: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Self:
+    def over(
+        self,
+        expr: IntoExpr | Iterable[IntoExpr],
+        *more_exprs: IntoExpr,
+        mapping_strategy: WindowMappingStrategy = "group_to_rows",
+    ) -> Self:
         """
         Compute expressions over the given groups.
 
@@ -2898,6 +2991,17 @@ class Expr:
             column names.
         *more_exprs
             Additional columns to group by, specified as positional arguments.
+        mapping_strategy: {'group_to_rows', 'join', 'explode'}
+            - group_to_rows
+                If the aggregation results in multiple values, assign them back to their
+                position in the DataFrame. This can only be done if the group yields
+                the same elements before aggregation as after.
+            - join
+                Join the groups as 'List<group_dtype>' to the row positions.
+                warning: this can be memory intensive.
+            - explode
+                Don't do any mapping, but simply flatten the group.
+                This only makes sense if the input data is sorted.
 
         Examples
         --------
@@ -2973,10 +3077,8 @@ class Expr:
         └─────┴─────┴─────┴───────┘
 
         """
-        exprs = selection_to_pyexpr_list(expr)
-        if more_exprs:
-            exprs.extend(selection_to_pyexpr_list(more_exprs))
-        return self._from_pyexpr(self._pyexpr.over(exprs))
+        exprs = parse_as_list_of_expressions(expr, *more_exprs)
+        return self._from_pyexpr(self._pyexpr.over(exprs, mapping_strategy))
 
     def is_unique(self) -> Self:
         """
@@ -3119,8 +3221,8 @@ class Expr:
         └─────┘
 
         """
-        quantile = expr_to_lit_or_expr(quantile, str_to_lit=False)
-        return self._from_pyexpr(self._pyexpr.quantile(quantile._pyexpr, interpolation))
+        quantile = parse_as_expression(quantile)
+        return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
     def filter(self, predicate: Expr) -> Self:
         """
@@ -3199,12 +3301,11 @@ class Expr:
         """
         return self.filter(predicate)
 
-    @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def map(
         self,
         function: Callable[[Series], Series | Any],
         return_dtype: PolarsDataType | None = None,
+        *,
         agg_list: bool = False,
     ) -> Self:
         """
@@ -3216,7 +3317,7 @@ class Expr:
         expression with a third-party library.
 
         Read more in `the book
-        <https://pola-rs.github.io/polars-book/user-guide/dsl/custom_functions.html>`_.
+        <https://pola-rs.github.io/polars-book/user-guide/expressions/user-defined-functions>`_.
 
         Parameters
         ----------
@@ -3226,6 +3327,15 @@ class Expr:
             Dtype of the output Series.
         agg_list
             Aggregate list
+
+        Warnings
+        --------
+        If ``return_dtype`` is not provided, this may lead to unexpected results.
+        We allow this, but it is considered a bug in the user's query.
+
+        See Also
+        --------
+        map_dict
 
         Examples
         --------
@@ -3250,15 +3360,13 @@ class Expr:
             return_dtype = py_type_to_dtype(return_dtype)
         return self._from_pyexpr(self._pyexpr.map(function, return_dtype, agg_list))
 
-    @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def apply(
         self,
         function: Callable[[Series], Series] | Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
+        *,
         skip_nulls: bool = True,
         pass_name: bool = False,
-        *,
         strategy: ApplyStrategy = "thread_local",
     ) -> Self:
         """
@@ -3273,6 +3381,31 @@ class Expr:
             Expects `f` to be of type Callable[[Series], Series].
             Applies a python function over each group.
 
+        Parameters
+        ----------
+        function
+            Lambda/ function to apply.
+        return_dtype
+            Dtype of the output Series.
+            If not set, the dtype will be
+            ``polars.Unknown``.
+        skip_nulls
+            Don't apply the function over values
+            that contain nulls. This is faster.
+        pass_name
+            Pass the Series name to the custom function
+            This is more expensive.
+        strategy : {'thread_local', 'threading'}
+            This functionality is in `alpha` stage. This may be removed
+            /changed without it being considered a breaking change.
+
+            - 'thread_local': run the python function on a single thread.
+            - 'threading': run the python function on separate threads. Use with
+                        care as this can slow performance. This might only speed up
+                        your code if the amount of work per element is significant
+                        and the python function releases the GIL (e.g. via calling
+                        a c function)
+
         Notes
         -----
         * Using ``apply`` is strongly discouraged as you will be effectively running
@@ -3283,30 +3416,10 @@ class Expr:
           once for a given input, consider applying an ``@lru_cache`` decorator to it.
           With suitable data you may achieve order-of-magnitude speedups (or more).
 
-        Parameters
-        ----------
-        function
-            Lambda/ function to apply.
-        return_dtype
-            Dtype of the output Series.
-            If not set, polars will assume that
-            the dtype remains unchanged.
-        skip_nulls
-            Don't apply the function over values
-            that contain nulls. This is faster.
-        pass_name
-            Pass the Series name to the custom function
-            This is more expensive.
-        strategy : {'thread_local', 'threading'}
-            This functionality is in `alpha` stage. This may be removed
-            /changed without it being considdered a breaking change.
-
-            - 'thread_local': run the python function on a single thread.
-            - 'threading': run the python function on separate threads. Use with
-                        care as this can slow performance. This might only speed up
-                        your code if the amount of work per element is significant
-                        and the python function releases the GIL (e.g. via calling
-                        a c function)
+        Warnings
+        --------
+        If ``return_dtype`` is not provided, this may lead to unexpected results.
+        We allow this, but it is considered a bug in the user's query.
 
         Examples
         --------
@@ -3368,8 +3481,7 @@ class Expr:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
                 def inner(s: Series) -> Series:  # pragma: no cover
-                    s.rename(x.name, in_place=True)
-                    return function(s)
+                    return function(s.alias(x.name))
 
                 return x.apply(inner, return_dtype=return_dtype, skip_nulls=skip_nulls)
 
@@ -3450,13 +3562,9 @@ class Expr:
 
     def explode(self) -> Self:
         """
-        Explode a list or utf8 Series.
+        Explode a list Series.
 
         This means that every item is expanded to a new row.
-
-        .. deprecated:: 0.15.16
-            `Expr.explode` will be removed in favour of `Expr.arr.explode` and
-            `Expr.str.explode`.
 
         Returns
         -------
@@ -3467,15 +3575,57 @@ class Expr:
         ExprListNameSpace.explode : Explode a list column.
         ExprStringNameSpace.explode : Explode a string column.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group": ["a", "b"],
+        ...         "values": [
+        ...             [1, 2],
+        ...             [3, 4],
+        ...         ],
+        ...     }
+        ... )
+        >>> df.select(pl.col("values").explode())
+        shape: (4, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        │ 2      │
+        │ 3      │
+        │ 4      │
+        └────────┘
+
         """
-        warnings.warn(
-            "`Series/Expr.explode()` is deprecated in favor of the identical method"
-            " under the list and string namespaces. Use `.arr.explode()` or"
-            " `.str.explode()` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return self._from_pyexpr(self._pyexpr.explode())
+
+    def implode(self) -> Self:
+        """
+        Aggregate values into a list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": [4, 5, 6],
+        ...     }
+        ... )
+        >>> df.select(pl.all().implode())
+        shape: (1, 2)
+        ┌───────────┬───────────┐
+        │ a         ┆ b         │
+        │ ---       ┆ ---       │
+        │ list[i64] ┆ list[i64] │
+        ╞═══════════╪═══════════╡
+        │ [1, 2, 3] ┆ [4, 5, 6] │
+        └───────────┴───────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.implode())
 
     def take_every(self, n: int) -> Self:
         """
@@ -3499,7 +3649,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.take_every(n))
 
-    def head(self, n: int = 10) -> Self:
+    def head(self, n: int | Expr = 10) -> Self:
         """
         Get the first `n` rows.
 
@@ -3524,9 +3674,9 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.head(n))
+        return self.slice(0, n)
 
-    def tail(self, n: int = 10) -> Self:
+    def tail(self, n: int | Expr = 10) -> Self:
         """
         Get the last `n` rows.
 
@@ -3551,45 +3701,718 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.tail(n))
+        offset = -self._from_pyexpr(parse_as_expression(n))
+        return self.slice(offset, n)
 
-    def limit(self, n: int = 10) -> Self:
+    def limit(self, n: int | Expr = 10) -> Self:
         """
-        Get the first `n` rows.
-
-        Alias for :func:`Expr.head`.
+        Get the first `n` rows (alias for :func:`Expr.head`).
 
         Parameters
         ----------
         n
             Number of rows to return.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
+        >>> df.limit(3)
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
         """
         return self.head(n)
 
-    def pow(self, exponent: int | float | Series | Expr) -> Self:
+    def and_(self, *others: Any) -> Self:
         """
-        Raise expression to the power of exponent.
+        Method equivalent of logical "and" operator ``expr & other & ...``.
+
+        Parameters
+        ----------
+        *others
+            One or more logical boolean expressions to evaluate/combine.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.select(pl.col("foo").pow(3))
-        shape: (4, 1)
-        ┌──────┐
-        │ foo  │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ 1.0  │
-        │ 8.0  │
-        │ 27.0 │
-        │ 64.0 │
-        └──────┘
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5, 6, 7, 4, 8],
+        ...         "y": [1.5, 2.5, 1.0, 4.0, -5.75],
+        ...         "z": [-9, 2, -1, 4, 8],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     (pl.col("x") >= pl.col("z"))
+        ...     .and_(
+        ...         pl.col("y") >= pl.col("z"),
+        ...         pl.col("y") == pl.col("y"),
+        ...         pl.col("z") <= pl.col("x"),
+        ...         pl.col("y") != pl.col("x"),
+        ...     )
+        ...     .alias("all")
+        ... )
+        shape: (5, 1)
+        ┌───────┐
+        │ all   │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ true  │
+        │ true  │
+        │ false │
+        │ false │
+        └───────┘
 
         """
-        exponent = expr_to_lit_or_expr(exponent)
-        return self._from_pyexpr(self._pyexpr.pow(exponent._pyexpr))
+        return reduce(operator.and_, (self,) + others)
+
+    def or_(self, *others: Any) -> Self:
+        """
+        Method equivalent of logical "or" operator ``expr | other | ...``.
+
+        Parameters
+        ----------
+        *others
+            One or more logical boolean expressions to evaluate/combine.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5, 6, 7, 4, 8],
+        ...         "y": [1.5, 2.5, 1.0, 4.0, -5.75],
+        ...         "z": [-9, 2, -1, 4, 8],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     (pl.col("x") == pl.col("y"))
+        ...     .or_(
+        ...         pl.col("x") == pl.col("y"),
+        ...         pl.col("y") == pl.col("z"),
+        ...         pl.col("y").cast(int) == pl.col("z"),
+        ...     )
+        ...     .alias("any")
+        ... )
+        shape: (5, 1)
+        ┌───────┐
+        │ any   │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ false │
+        │ true  │
+        │ false │
+        │ true  │
+        │ false │
+        └───────┘
+
+        """
+        return reduce(operator.or_, (self,) + others)
+
+    def eq(self, other: Any) -> Self:
+        """
+        Method equivalent of equality operator ``expr == other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 4.0],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").eq(pl.col("y")).alias("x == y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x == y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 1.0 ┆ 2.0 ┆ false  │
+        │ 2.0 ┆ 2.0 ┆ true   │
+        │ NaN ┆ NaN ┆ false  │
+        │ 4.0 ┆ 4.0 ┆ true   │
+        └─────┴─────┴────────┘
+
+        """
+        return self.__eq__(other)
+
+    def eq_missing(self, other: Any) -> Self:
+        """
+        Method equivalent of equality operator ``expr == other`` where `None` == None`.
+
+        This differs from default ``eq`` where null values are propagated.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 4.0, None, None],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0, 5.0, None],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").eq_missing(pl.col("y")).alias("x == y"),
+        ... )
+        shape: (6, 3)
+        ┌──────┬──────┬────────┐
+        │ x    ┆ y    ┆ x == y │
+        │ ---  ┆ ---  ┆ ---    │
+        │ f64  ┆ f64  ┆ bool   │
+        ╞══════╪══════╪════════╡
+        │ 1.0  ┆ 2.0  ┆ false  │
+        │ 2.0  ┆ 2.0  ┆ true   │
+        │ NaN  ┆ NaN  ┆ false  │
+        │ 4.0  ┆ 4.0  ┆ true   │
+        │ null ┆ 5.0  ┆ false  │
+        │ null ┆ null ┆ true   │
+        └──────┴──────┴────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.eq_missing(self._to_expr(other)._pyexpr))
+
+    def ge(self, other: Any) -> Self:
+        """
+        Method equivalent of "greater than or equal" operator ``expr >= other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5.0, 4.0, float("nan"), 2.0],
+        ...         "y": [5.0, 3.0, float("nan"), 1.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").ge(pl.col("y")).alias("x >= y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x >= y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 5.0 ┆ 5.0 ┆ true   │
+        │ 4.0 ┆ 3.0 ┆ true   │
+        │ NaN ┆ NaN ┆ false  │
+        │ 2.0 ┆ 1.0 ┆ true   │
+        └─────┴─────┴────────┘
+
+        """
+        return self.__ge__(other)
+
+    def gt(self, other: Any) -> Self:
+        """
+        Method equivalent of "greater than" operator ``expr > other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5.0, 4.0, float("nan"), 2.0],
+        ...         "y": [5.0, 3.0, float("nan"), 1.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").gt(pl.col("y")).alias("x > y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬───────┐
+        │ x   ┆ y   ┆ x > y │
+        │ --- ┆ --- ┆ ---   │
+        │ f64 ┆ f64 ┆ bool  │
+        ╞═════╪═════╪═══════╡
+        │ 5.0 ┆ 5.0 ┆ false │
+        │ 4.0 ┆ 3.0 ┆ true  │
+        │ NaN ┆ NaN ┆ false │
+        │ 2.0 ┆ 1.0 ┆ true  │
+        └─────┴─────┴───────┘
+
+        """
+        return self.__gt__(other)
+
+    def le(self, other: Any) -> Self:
+        """
+        Method equivalent of "less than or equal" operator ``expr <= other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5.0, 4.0, float("nan"), 0.5],
+        ...         "y": [5.0, 3.5, float("nan"), 2.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").le(pl.col("y")).alias("x <= y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x <= y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 5.0 ┆ 5.0 ┆ true   │
+        │ 4.0 ┆ 3.5 ┆ false  │
+        │ NaN ┆ NaN ┆ false  │
+        │ 0.5 ┆ 2.0 ┆ true   │
+        └─────┴─────┴────────┘
+
+        """
+        return self.__le__(other)
+
+    def lt(self, other: Any) -> Self:
+        """
+        Method equivalent of "less than" operator ``expr < other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 3.0],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").lt(pl.col("y")).alias("x < y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬───────┐
+        │ x   ┆ y   ┆ x < y │
+        │ --- ┆ --- ┆ ---   │
+        │ f64 ┆ f64 ┆ bool  │
+        ╞═════╪═════╪═══════╡
+        │ 1.0 ┆ 2.0 ┆ true  │
+        │ 2.0 ┆ 2.0 ┆ false │
+        │ NaN ┆ NaN ┆ false │
+        │ 3.0 ┆ 4.0 ┆ true  │
+        └─────┴─────┴───────┘
+
+        """
+        return self.__lt__(other)
+
+    def ne(self, other: Any) -> Self:
+        """
+        Method equivalent of inequality operator ``expr != other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 4.0],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").ne(pl.col("y")).alias("x != y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x != y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 1.0 ┆ 2.0 ┆ true   │
+        │ 2.0 ┆ 2.0 ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
+        │ 4.0 ┆ 4.0 ┆ false  │
+        └─────┴─────┴────────┘
+
+        """
+        return self.__ne__(other)
+
+    def ne_missing(self, other: Any) -> Self:
+        """
+        Method equivalent of equality operator ``expr != other`` where `None` == None`.
+
+        This differs from default ``ne`` where null values are propagated.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 4.0, None, None],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0, 5.0, None],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").ne_missing(pl.col("y")).alias("x != y"),
+        ... )
+        shape: (6, 3)
+        ┌──────┬──────┬────────┐
+        │ x    ┆ y    ┆ x != y │
+        │ ---  ┆ ---  ┆ ---    │
+        │ f64  ┆ f64  ┆ bool   │
+        ╞══════╪══════╪════════╡
+        │ 1.0  ┆ 2.0  ┆ true   │
+        │ 2.0  ┆ 2.0  ┆ false  │
+        │ NaN  ┆ NaN  ┆ true   │
+        │ 4.0  ┆ 4.0  ┆ false  │
+        │ null ┆ 5.0  ┆ true   │
+        │ null ┆ null ┆ false  │
+        └──────┴──────┴────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.neq_missing(self._to_expr(other)._pyexpr))
+
+    def add(self, other: Any) -> Self:
+        """
+        Method equivalent of addition operator ``expr + other``.
+
+        Parameters
+        ----------
+        other
+            numeric or string value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+        >>> df.with_columns(
+        ...     pl.col("x").add(2).alias("x+int"),
+        ...     pl.col("x").add(pl.col("x").cumprod()).alias("x+expr"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬───────┬────────┐
+        │ x   ┆ x+int ┆ x+expr │
+        │ --- ┆ ---   ┆ ---    │
+        │ i64 ┆ i64   ┆ i64    │
+        ╞═════╪═══════╪════════╡
+        │ 1   ┆ 3     ┆ 2      │
+        │ 2   ┆ 4     ┆ 4      │
+        │ 3   ┆ 5     ┆ 9      │
+        │ 4   ┆ 6     ┆ 28     │
+        │ 5   ┆ 7     ┆ 125    │
+        └─────┴───────┴────────┘
+
+        >>> df = pl.DataFrame(
+        ...     {"x": ["a", "d", "g"], "y": ["b", "e", "h"], "z": ["c", "f", "i"]}
+        ... )
+        >>> df.with_columns(pl.col("x").add(pl.col("y")).add(pl.col("z")).alias("xyz"))
+        shape: (3, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ x   ┆ y   ┆ z   ┆ xyz │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ str ┆ str ┆ str ┆ str │
+        ╞═════╪═════╪═════╪═════╡
+        │ a   ┆ b   ┆ c   ┆ abc │
+        │ d   ┆ e   ┆ f   ┆ def │
+        │ g   ┆ h   ┆ i   ┆ ghi │
+        └─────┴─────┴─────┴─────┘
+
+        """
+        return self.__add__(other)
+
+    def floordiv(self, other: Any) -> Self:
+        """
+        Method equivalent of integer division operator ``expr // other``.
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+        >>> df.with_columns(
+        ...     pl.col("x").truediv(2).alias("x/2"),
+        ...     pl.col("x").floordiv(2).alias("x//2"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬─────┬──────┐
+        │ x   ┆ x/2 ┆ x//2 │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ f64 ┆ i64  │
+        ╞═════╪═════╪══════╡
+        │ 1   ┆ 0.5 ┆ 0    │
+        │ 2   ┆ 1.0 ┆ 1    │
+        │ 3   ┆ 1.5 ┆ 1    │
+        │ 4   ┆ 2.0 ┆ 2    │
+        │ 5   ┆ 2.5 ┆ 2    │
+        └─────┴─────┴──────┘
+
+        See Also
+        --------
+        truediv
+
+        """
+        return self.__floordiv__(other)
+
+    def mod(self, other: Any) -> Self:
+        """
+        Method equivalent of modulus operator ``expr % other``.
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+        >>> df.with_columns(pl.col("x").mod(2).alias("x%2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x%2 │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 1   │
+        │ 2   ┆ 0   │
+        │ 3   ┆ 1   │
+        │ 4   ┆ 0   │
+        └─────┴─────┘
+
+        """
+        return self.__mod__(other)
+
+    def mul(self, other: Any) -> Self:
+        """
+        Method equivalent of multiplication operator ``expr * other``.
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 4, 8, 16]})
+        >>> df.with_columns(
+        ...     pl.col("x").mul(2).alias("x*2"),
+        ...     pl.col("x").mul(pl.col("x").log(2)).alias("x * xlog2"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬─────┬───────────┐
+        │ x   ┆ x*2 ┆ x * xlog2 │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ f64       │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ 2   ┆ 0.0       │
+        │ 2   ┆ 4   ┆ 2.0       │
+        │ 4   ┆ 8   ┆ 8.0       │
+        │ 8   ┆ 16  ┆ 24.0      │
+        │ 16  ┆ 32  ┆ 64.0      │
+        └─────┴─────┴───────────┘
+
+        """
+        return self.__mul__(other)
+
+    def sub(self, other: Any) -> Self:
+        """
+        Method equivalent of subtraction operator ``expr - other``.
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+        >>> df.with_columns(
+        ...     pl.col("x").sub(2).alias("x-2"),
+        ...     pl.col("x").sub(pl.col("x").cumsum()).alias("x-expr"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ x-2 ┆ x-expr │
+        │ --- ┆ --- ┆ ---    │
+        │ i64 ┆ i64 ┆ i64    │
+        ╞═════╪═════╪════════╡
+        │ 0   ┆ -2  ┆ 0      │
+        │ 1   ┆ -1  ┆ 0      │
+        │ 2   ┆ 0   ┆ -1     │
+        │ 3   ┆ 1   ┆ -3     │
+        │ 4   ┆ 2   ┆ -6     │
+        └─────┴─────┴────────┘
+
+        """
+        return self.__sub__(other)
+
+    def truediv(self, other: Any) -> Self:
+        """
+        Method equivalent of float division operator ``expr / other``.
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        Notes
+        -----
+        Zero-division behaviour follows IEEE-754:
+
+        0/0: Invalid operation - mathematically undefined, returns NaN.
+        n/0: On finite operands gives an exact infinite result, eg: ±infinity.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"x": [-2, -1, 0, 1, 2], "y": [0.5, 0.0, 0.0, -4.0, -0.5]}
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").truediv(2).alias("x/2"),
+        ...     pl.col("x").truediv(pl.col("y")).alias("x/y"),
+        ... )
+        shape: (5, 4)
+        ┌─────┬──────┬──────┬───────┐
+        │ x   ┆ y    ┆ x/2  ┆ x/y   │
+        │ --- ┆ ---  ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ f64  ┆ f64   │
+        ╞═════╪══════╪══════╪═══════╡
+        │ -2  ┆ 0.5  ┆ -1.0 ┆ -4.0  │
+        │ -1  ┆ 0.0  ┆ -0.5 ┆ -inf  │
+        │ 0   ┆ 0.0  ┆ 0.0  ┆ NaN   │
+        │ 1   ┆ -4.0 ┆ 0.5  ┆ -0.25 │
+        │ 2   ┆ -0.5 ┆ 1.0  ┆ -4.0  │
+        └─────┴──────┴──────┴───────┘
+
+        See Also
+        --------
+        floordiv
+
+        """
+        return self.__truediv__(other)
+
+    def pow(self, exponent: int | float | Series | Expr) -> Self:
+        """
+        Method equivalent of exponentiation operator ``expr ** exponent``.
+
+        Parameters
+        ----------
+        exponent
+            Numeric literal or expression exponent value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 4, 8]})
+        >>> df.with_columns(
+        ...     pl.col("x").pow(3).alias("cube"),
+        ...     pl.col("x").pow(pl.col("x").log(2)).alias("x ** xlog2"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬───────┬────────────┐
+        │ x   ┆ cube  ┆ x ** xlog2 │
+        │ --- ┆ ---   ┆ ---        │
+        │ i64 ┆ f64   ┆ f64        │
+        ╞═════╪═══════╪════════════╡
+        │ 1   ┆ 1.0   ┆ 1.0        │
+        │ 2   ┆ 8.0   ┆ 2.0        │
+        │ 4   ┆ 64.0  ┆ 16.0       │
+        │ 8   ┆ 512.0 ┆ 512.0      │
+        └─────┴───────┴────────────┘
+
+        """
+        exponent = parse_as_expression(exponent)
+        return self._from_pyexpr(self._pyexpr.pow(exponent))
+
+    def xor(self, other: Any) -> Self:
+        """
+        Method equivalent of logical exclusive-or operator ``expr ^ other``.
+
+        Parameters
+        ----------
+        other
+            Integer or boolean value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"x": [True, False, True, False], "y": [True, True, False, False]}
+        ... )
+        >>> df.with_columns(pl.col("x").xor(pl.col("y")).alias("x ^ y"))
+        shape: (4, 3)
+        ┌───────┬───────┬───────┐
+        │ x     ┆ y     ┆ x ^ y │
+        │ ---   ┆ ---   ┆ ---   │
+        │ bool  ┆ bool  ┆ bool  │
+        ╞═══════╪═══════╪═══════╡
+        │ true  ┆ true  ┆ false │
+        │ false ┆ true  ┆ true  │
+        │ true  ┆ false ┆ true  │
+        │ false ┆ false ┆ false │
+        └───────┴───────┴───────┘
+
+        >>> def binary_string(n: int) -> str:
+        ...     return bin(n)[2:].zfill(8)
+        >>>
+        >>> df = pl.DataFrame(
+        ...     data={"x": [10, 8, 250, 66], "y": [1, 2, 3, 4]},
+        ...     schema={"x": pl.UInt8, "y": pl.UInt8},
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").apply(binary_string).alias("bin_x"),
+        ...     pl.col("y").apply(binary_string).alias("bin_y"),
+        ...     pl.col("x").xor(pl.col("y")).alias("xor_xy"),
+        ...     pl.col("x").xor(pl.col("y")).apply(binary_string).alias("bin_xor_xy"),
+        ... )
+        shape: (4, 6)
+        ┌─────┬─────┬──────────┬──────────┬────────┬────────────┐
+        │ x   ┆ y   ┆ bin_x    ┆ bin_y    ┆ xor_xy ┆ bin_xor_xy │
+        │ --- ┆ --- ┆ ---      ┆ ---      ┆ ---    ┆ ---        │
+        │ u8  ┆ u8  ┆ str      ┆ str      ┆ u8     ┆ str        │
+        ╞═════╪═════╪══════════╪══════════╪════════╪════════════╡
+        │ 10  ┆ 1   ┆ 00001010 ┆ 00000001 ┆ 11     ┆ 00001011   │
+        │ 8   ┆ 2   ┆ 00001000 ┆ 00000010 ┆ 10     ┆ 00001010   │
+        │ 250 ┆ 3   ┆ 11111010 ┆ 00000011 ┆ 249    ┆ 11111001   │
+        │ 66  ┆ 4   ┆ 01000010 ┆ 00000100 ┆ 70     ┆ 01000110   │
+        └─────┴─────┴──────────┴──────────┴────────┴────────────┘
+
+        """
+        return self.__xor__(other)
 
     def is_in(self, other: Expr | Collection[Any] | Series) -> Self:
         """
@@ -3624,13 +4447,14 @@ class Expr:
         """
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
-                other = sorted(other)
-            other = F.lit(None) if len(other) == 0 else F.lit(pli.Series(other))
+                other = list(other)
+            other = F.lit(None) if len(other) == 0 else F.lit(pl.Series(other))
+            other = other._pyexpr
         else:
-            other = expr_to_lit_or_expr(other, str_to_lit=False)
-        return self._from_pyexpr(self._pyexpr.is_in(other._pyexpr))
+            other = parse_as_expression(other)
+        return self._from_pyexpr(self._pyexpr.is_in(other))
 
-    def repeat_by(self, by: Expr | str) -> Self:
+    def repeat_by(self, by: pl.Series | Expr | str | int) -> Self:
         """
         Repeat the elements in this Series as specified in the given expression.
 
@@ -3668,13 +4492,13 @@ class Expr:
         └─────────────────┘
 
         """
-        by = expr_to_lit_or_expr(by, False)
-        return self._from_pyexpr(self._pyexpr.repeat_by(by._pyexpr))
+        by = parse_as_expression(by)
+        return self._from_pyexpr(self._pyexpr.repeat_by(by))
 
     def is_between(
         self,
-        start: Expr | datetime | date | time | int | float | str,
-        end: Expr | datetime | date | time | int | float | str,
+        lower_bound: IntoExpr,
+        upper_bound: IntoExpr,
         closed: ClosedInterval = "both",
     ) -> Self:
         """
@@ -3682,10 +4506,12 @@ class Expr:
 
         Parameters
         ----------
-        start
-            Lower bound value (can be an expression or literal).
-        end
-            Upper bound value (can be an expression or literal).
+        lower_bound
+            Lower bound value. Accepts expression input. Strings are parsed as column
+            names, other non-expression inputs are parsed as literals.
+        upper_bound
+            Upper bound value. Accepts expression input. Strings are parsed as column
+            names, other non-expression inputs are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
 
@@ -3752,17 +4578,17 @@ class Expr:
         └─────┴────────────┘
 
         """
-        start = expr_to_lit_or_expr(start, str_to_lit=False)
-        end = expr_to_lit_or_expr(end, str_to_lit=False)
+        lower_bound = self._from_pyexpr(parse_as_expression(lower_bound))
+        upper_bound = self._from_pyexpr(parse_as_expression(upper_bound))
 
         if closed == "none":
-            return (self > start) & (self < end)
+            return (self > lower_bound) & (self < upper_bound)
         elif closed == "both":
-            return (self >= start) & (self <= end)
+            return (self >= lower_bound) & (self <= upper_bound)
         elif closed == "right":
-            return (self > start) & (self <= end)
+            return (self > lower_bound) & (self <= upper_bound)
         elif closed == "left":
-            return (self >= start) & (self < end)
+            return (self >= lower_bound) & (self < upper_bound)
         else:
             raise ValueError(
                 "closed must be one of {'left', 'right', 'both', 'none'},"
@@ -3819,7 +4645,7 @@ class Expr:
         k3 = seed_3 if seed_3 is not None else seed
         return self._from_pyexpr(self._pyexpr.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, signed: bool = True) -> Self:
+    def reinterpret(self, *, signed: bool = True) -> Self:
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
 
@@ -3950,11 +4776,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.interpolate(method))
 
+    @warn_closed_future_change()
     def rolling_min(
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -3966,11 +4794,25 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        means the windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        With `closed="right"`, the left endpoint is not included and the right
+        endpoint is included.
+
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by a timedelta or the following string language:
+            The length of the window. Can be a fixed integer size, or a dynamic
+            temporal size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3978,11 +4820,21 @@ class Expr:
             - 1s    (1 second)
             - 1m    (1 minute)
             - 1h    (1 hour)
-            - 1d    (1 day)
-            - 1w    (1 week)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
+
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -3995,11 +4847,12 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -4015,24 +4868,109 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_min(window_size=2),
-        ...     ]
+        >>> df.with_columns(
+        ...     rolling_min=pl.col("A").rolling_min(window_size=2),
         ... )
-        shape: (6, 1)
-        ┌──────┐
-        │ A    │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ null │
-        │ 1.0  │
-        │ 2.0  │
-        │ 3.0  │
-        │ 4.0  │
-        │ 5.0  │
-        └──────┘
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_min │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 1.0         │
+        │ 3.0 ┆ 2.0         │
+        │ 4.0 ┆ 3.0         │
+        │ 5.0 ┆ 4.0         │
+        │ 6.0 ┆ 5.0         │
+        └─────┴─────────────┘
+
+        Specify weights to multiply the values in the window with:
+
+        >>> df.with_columns(
+        ...     rolling_min=pl.col("A").rolling_min(
+        ...         window_size=2, weights=[0.25, 0.75]
+        ...     ),
+        ... )
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_min │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 0.25        │
+        │ 3.0 ┆ 0.5         │
+        │ 4.0 ┆ 0.75        │
+        │ 5.0 ┆ 1.0         │
+        │ 6.0 ┆ 1.25        │
+        └─────┴─────────────┘
+
+        Center the values in the window
+
+        >>> df.with_columns(
+        ...     rolling_min=pl.col("A").rolling_min(window_size=3, center=True),
+        ... )
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_min │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 1.0         │
+        │ 3.0 ┆ 2.0         │
+        │ 4.0 ┆ 3.0         │
+        │ 5.0 ┆ 4.0         │
+        │ 6.0 ┆ null        │
+        └─────┴─────────────┘
+
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌────────┬─────────────────────┐
+        │ row_nr ┆ date                │
+        │ ---    ┆ ---                 │
+        │ u32    ┆ datetime[μs]        │
+        ╞════════╪═════════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 │
+        │ 1      ┆ 2001-01-01 01:00:00 │
+        │ 2      ┆ 2001-01-01 02:00:00 │
+        │ 3      ┆ 2001-01-01 03:00:00 │
+        │ …      ┆ …                   │
+        │ 21     ┆ 2001-01-01 21:00:00 │
+        │ 22     ┆ 2001-01-01 22:00:00 │
+        │ 23     ┆ 2001-01-01 23:00:00 │
+        │ 24     ┆ 2001-01-02 00:00:00 │
+        └────────┴─────────────────────┘
+        >>> df_temporal.with_columns(
+        ...     rolling_row_min=pl.col("row_nr").rolling_min(
+        ...         window_size="2h", by="date"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌────────┬─────────────────────┬─────────────────┐
+        │ row_nr ┆ date                ┆ rolling_row_min │
+        │ ---    ┆ ---                 ┆ ---             │
+        │ u32    ┆ datetime[μs]        ┆ u32             │
+        ╞════════╪═════════════════════╪═════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0               │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 0               │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 1               │
+        │ …      ┆ …                   ┆ …               │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 19              │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 20              │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 21              │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 22              │
+        └────────┴─────────────────────┴─────────────────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -4044,11 +4982,13 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_max(
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4059,6 +4999,20 @@ class Expr:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        means the windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        With `closed="right"`, the left endpoint is not included and the right
+        endpoint is included.
 
         Parameters
         ----------
@@ -4072,11 +5026,21 @@ class Expr:
             - 1s    (1 second)
             - 1m    (1 minute)
             - 1h    (1 hour)
-            - 1d    (1 day)
-            - 1w    (1 week)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
+
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -4089,11 +5053,12 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal, for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -4109,24 +5074,136 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_max(window_size=2),
-        ...     ]
+        >>> df.with_columns(
+        ...     rolling_max=pl.col("A").rolling_max(window_size=2),
         ... )
-        shape: (6, 1)
-        ┌──────┐
-        │ A    │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ null │
-        │ 2.0  │
-        │ 3.0  │
-        │ 4.0  │
-        │ 5.0  │
-        │ 6.0  │
-        └──────┘
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_max │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 2.0         │
+        │ 3.0 ┆ 3.0         │
+        │ 4.0 ┆ 4.0         │
+        │ 5.0 ┆ 5.0         │
+        │ 6.0 ┆ 6.0         │
+        └─────┴─────────────┘
+
+        Specify weights to multiply the values in the window with:
+
+        >>> df.with_columns(
+        ...     rolling_max=pl.col("A").rolling_max(
+        ...         window_size=2, weights=[0.25, 0.75]
+        ...     ),
+        ... )
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_max │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 1.5         │
+        │ 3.0 ┆ 2.25        │
+        │ 4.0 ┆ 3.0         │
+        │ 5.0 ┆ 3.75        │
+        │ 6.0 ┆ 4.5         │
+        └─────┴─────────────┘
+
+        Center the values in the window
+
+        >>> df.with_columns(
+        ...     rolling_max=pl.col("A").rolling_max(window_size=3, center=True),
+        ... )
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_max │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 3.0         │
+        │ 3.0 ┆ 4.0         │
+        │ 4.0 ┆ 5.0         │
+        │ 5.0 ┆ 6.0         │
+        │ 6.0 ┆ null        │
+        └─────┴─────────────┘
+
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌────────┬─────────────────────┐
+        │ row_nr ┆ date                │
+        │ ---    ┆ ---                 │
+        │ u32    ┆ datetime[μs]        │
+        ╞════════╪═════════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 │
+        │ 1      ┆ 2001-01-01 01:00:00 │
+        │ 2      ┆ 2001-01-01 02:00:00 │
+        │ 3      ┆ 2001-01-01 03:00:00 │
+        │ …      ┆ …                   │
+        │ 21     ┆ 2001-01-01 21:00:00 │
+        │ 22     ┆ 2001-01-01 22:00:00 │
+        │ 23     ┆ 2001-01-01 23:00:00 │
+        │ 24     ┆ 2001-01-02 00:00:00 │
+        └────────┴─────────────────────┘
+
+        Compute the rolling max with the default left closure of temporal windows
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_max=pl.col("row_nr").rolling_max(
+        ...         window_size="2h", by="date"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌────────┬─────────────────────┬─────────────────┐
+        │ row_nr ┆ date                ┆ rolling_row_max │
+        │ ---    ┆ ---                 ┆ ---             │
+        │ u32    ┆ datetime[μs]        ┆ u32             │
+        ╞════════╪═════════════════════╪═════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0               │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1               │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 2               │
+        │ …      ┆ …                   ┆ …               │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 20              │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 21              │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 22              │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 23              │
+        └────────┴─────────────────────┴─────────────────┘
+
+        Compute the rolling max with the closure of windows on both sides
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_max=pl.col("row_nr").rolling_max(
+        ...         window_size="2h", by="date", closed="both"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌────────┬─────────────────────┬─────────────────┐
+        │ row_nr ┆ date                ┆ rolling_row_max │
+        │ ---    ┆ ---                 ┆ ---             │
+        │ u32    ┆ datetime[μs]        ┆ u32             │
+        ╞════════╪═════════════════════╪═════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 2               │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 3               │
+        │ …      ┆ …                   ┆ …               │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 21              │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 22              │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 23              │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 24              │
+        └────────┴─────────────────────┴─────────────────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -4138,11 +5215,13 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_mean(
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4153,6 +5232,20 @@ class Expr:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        means the windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        With `closed="right"`, the left endpoint is not included and the right
+        endpoint is included.
 
         Parameters
         ----------
@@ -4166,11 +5259,21 @@ class Expr:
             - 1s    (1 second)
             - 1m    (1 minute)
             - 1h    (1 hour)
-            - 1d    (1 day)
-            - 1w    (1 week)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
+
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -4183,11 +5286,12 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -4202,25 +5306,137 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_mean(window_size=2),
-        ...     ]
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> df.with_columns(
+        ...     rolling_mean=pl.col("A").rolling_mean(window_size=2),
         ... )
-        shape: (6, 1)
-        ┌──────┐
-        │ A    │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ null │
-        │ 4.5  │
-        │ 7.0  │
-        │ 4.0  │
-        │ 9.0  │
-        │ 13.0 │
-        └──────┘
+        shape: (6, 2)
+        ┌─────┬──────────────┐
+        │ A   ┆ rolling_mean │
+        │ --- ┆ ---          │
+        │ f64 ┆ f64          │
+        ╞═════╪══════════════╡
+        │ 1.0 ┆ null         │
+        │ 2.0 ┆ 1.5          │
+        │ 3.0 ┆ 2.5          │
+        │ 4.0 ┆ 3.5          │
+        │ 5.0 ┆ 4.5          │
+        │ 6.0 ┆ 5.5          │
+        └─────┴──────────────┘
+
+        Specify weights to multiply the values in the window with:
+
+        >>> df.with_columns(
+        ...     rolling_mean=pl.col("A").rolling_mean(
+        ...         window_size=2, weights=[0.25, 0.75]
+        ...     ),
+        ... )
+        shape: (6, 2)
+        ┌─────┬──────────────┐
+        │ A   ┆ rolling_mean │
+        │ --- ┆ ---          │
+        │ f64 ┆ f64          │
+        ╞═════╪══════════════╡
+        │ 1.0 ┆ null         │
+        │ 2.0 ┆ 1.75         │
+        │ 3.0 ┆ 2.75         │
+        │ 4.0 ┆ 3.75         │
+        │ 5.0 ┆ 4.75         │
+        │ 6.0 ┆ 5.75         │
+        └─────┴──────────────┘
+
+        Center the values in the window
+
+        >>> df.with_columns(
+        ...     rolling_mean=pl.col("A").rolling_mean(window_size=3, center=True),
+        ... )
+        shape: (6, 2)
+        ┌─────┬──────────────┐
+        │ A   ┆ rolling_mean │
+        │ --- ┆ ---          │
+        │ f64 ┆ f64          │
+        ╞═════╪══════════════╡
+        │ 1.0 ┆ null         │
+        │ 2.0 ┆ 2.0          │
+        │ 3.0 ┆ 3.0          │
+        │ 4.0 ┆ 4.0          │
+        │ 5.0 ┆ 5.0          │
+        │ 6.0 ┆ null         │
+        └─────┴──────────────┘
+
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌────────┬─────────────────────┐
+        │ row_nr ┆ date                │
+        │ ---    ┆ ---                 │
+        │ u32    ┆ datetime[μs]        │
+        ╞════════╪═════════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 │
+        │ 1      ┆ 2001-01-01 01:00:00 │
+        │ 2      ┆ 2001-01-01 02:00:00 │
+        │ 3      ┆ 2001-01-01 03:00:00 │
+        │ …      ┆ …                   │
+        │ 21     ┆ 2001-01-01 21:00:00 │
+        │ 22     ┆ 2001-01-01 22:00:00 │
+        │ 23     ┆ 2001-01-01 23:00:00 │
+        │ 24     ┆ 2001-01-02 00:00:00 │
+        └────────┴─────────────────────┘
+
+        Compute the rolling mean with the default left closure of temporal windows
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_mean=pl.col("row_nr").rolling_mean(
+        ...         window_size="2h", by="date"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌────────┬─────────────────────┬──────────────────┐
+        │ row_nr ┆ date                ┆ rolling_row_mean │
+        │ ---    ┆ ---                 ┆ ---              │
+        │ u32    ┆ datetime[μs]        ┆ f64              │
+        ╞════════╪═════════════════════╪══════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ null             │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.0              │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 0.5              │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 1.5              │
+        │ …      ┆ …                   ┆ …                │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 19.5             │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 20.5             │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 21.5             │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 22.5             │
+        └────────┴─────────────────────┴──────────────────┘
+
+        Compute the rolling mean with the closure of windows on both sides
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_mean=pl.col("row_nr").rolling_mean(
+        ...         window_size="2h", by="date", closed="both"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌────────┬─────────────────────┬──────────────────┐
+        │ row_nr ┆ date                ┆ rolling_row_mean │
+        │ ---    ┆ ---                 ┆ ---              │
+        │ u32    ┆ datetime[μs]        ┆ f64              │
+        ╞════════╪═════════════════════╪══════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0.0              │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.5              │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1.0              │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 2.0              │
+        │ …      ┆ …                   ┆ …                │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 20.0             │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 21.0             │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 22.0             │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 23.0             │
+        └────────┴─────────────────────┴──────────────────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -4232,11 +5448,13 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_sum(
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4247,6 +5465,20 @@ class Expr:
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
+
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        means the windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        With `closed="right"`, the left endpoint is not included and the right
+        endpoint is included.
 
         Parameters
         ----------
@@ -4260,11 +5492,21 @@ class Expr:
             - 1s    (1 second)
             - 1m    (1 minute)
             - 1h    (1 hour)
-            - 1d    (1 day)
-            - 1w    (1 week)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
+
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -4277,11 +5519,12 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -4297,24 +5540,136 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_sum(window_size=2),
-        ...     ]
+        >>> df.with_columns(
+        ...     rolling_sum=pl.col("A").rolling_sum(window_size=2),
         ... )
-        shape: (6, 1)
-        ┌──────┐
-        │ A    │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ null │
-        │ 3.0  │
-        │ 5.0  │
-        │ 7.0  │
-        │ 9.0  │
-        │ 11.0 │
-        └──────┘
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_sum │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 3.0         │
+        │ 3.0 ┆ 5.0         │
+        │ 4.0 ┆ 7.0         │
+        │ 5.0 ┆ 9.0         │
+        │ 6.0 ┆ 11.0        │
+        └─────┴─────────────┘
+
+        Specify weights to multiply the values in the window with:
+
+        >>> df.with_columns(
+        ...     rolling_sum=pl.col("A").rolling_sum(
+        ...         window_size=2, weights=[0.25, 0.75]
+        ...     ),
+        ... )
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_sum │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 1.75        │
+        │ 3.0 ┆ 2.75        │
+        │ 4.0 ┆ 3.75        │
+        │ 5.0 ┆ 4.75        │
+        │ 6.0 ┆ 5.75        │
+        └─────┴─────────────┘
+
+        Center the values in the window
+
+        >>> df.with_columns(
+        ...     rolling_sum=pl.col("A").rolling_sum(window_size=3, center=True),
+        ... )
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_sum │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 6.0         │
+        │ 3.0 ┆ 9.0         │
+        │ 4.0 ┆ 12.0        │
+        │ 5.0 ┆ 15.0        │
+        │ 6.0 ┆ null        │
+        └─────┴─────────────┘
+
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌────────┬─────────────────────┐
+        │ row_nr ┆ date                │
+        │ ---    ┆ ---                 │
+        │ u32    ┆ datetime[μs]        │
+        ╞════════╪═════════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 │
+        │ 1      ┆ 2001-01-01 01:00:00 │
+        │ 2      ┆ 2001-01-01 02:00:00 │
+        │ 3      ┆ 2001-01-01 03:00:00 │
+        │ …      ┆ …                   │
+        │ 21     ┆ 2001-01-01 21:00:00 │
+        │ 22     ┆ 2001-01-01 22:00:00 │
+        │ 23     ┆ 2001-01-01 23:00:00 │
+        │ 24     ┆ 2001-01-02 00:00:00 │
+        └────────┴─────────────────────┘
+
+        Compute the rolling sum with the default left closure of temporal windows
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_sum=pl.col("row_nr").rolling_sum(
+        ...         window_size="2h", by="date"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌────────┬─────────────────────┬─────────────────┐
+        │ row_nr ┆ date                ┆ rolling_row_sum │
+        │ ---    ┆ ---                 ┆ ---             │
+        │ u32    ┆ datetime[μs]        ┆ u32             │
+        ╞════════╪═════════════════════╪═════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0               │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1               │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 3               │
+        │ …      ┆ …                   ┆ …               │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 39              │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 41              │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 43              │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 45              │
+        └────────┴─────────────────────┴─────────────────┘
+
+        Compute the rolling sum with the closure of windows on both sides
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_sum=pl.col("row_nr").rolling_sum(
+        ...         window_size="2h", by="date", closed="both"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌────────┬─────────────────────┬─────────────────┐
+        │ row_nr ┆ date                ┆ rolling_row_sum │
+        │ ---    ┆ ---                 ┆ ---             │
+        │ u32    ┆ datetime[μs]        ┆ u32             │
+        ╞════════╪═════════════════════╪═════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0               │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 1               │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 3               │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 6               │
+        │ …      ┆ …                   ┆ …               │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 60              │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 63              │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 66              │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 69              │
+        └────────┴─────────────────────┴─────────────────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -4326,14 +5681,17 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_std(
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        ddof: int = 1,
     ) -> Self:
         """
         Compute a rolling standard deviation.
@@ -4342,6 +5700,20 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"` means
+        the windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        With `closed="right"`, the left endpoint is not included and the right
+        endpoint is included.
+
         Parameters
         ----------
         window_size
@@ -4354,11 +5726,21 @@ class Expr:
             - 1s    (1 second)
             - 1m    (1 minute)
             - 1h    (1 hour)
-            - 1d    (1 day)
-            - 1w    (1 week)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
+
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -4371,11 +5753,14 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Warnings
         --------
@@ -4390,25 +5775,137 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_std(window_size=3),
-        ...     ]
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> df.with_columns(
+        ...     rolling_std=pl.col("A").rolling_std(window_size=2),
         ... )
-        shape: (6, 1)
-        ┌──────────┐
-        │ A        │
-        │ ---      │
-        │ f64      │
-        ╞══════════╡
-        │ null     │
-        │ null     │
-        │ 1.0      │
-        │ 1.0      │
-        │ 1.527525 │
-        │ 2.0      │
-        └──────────┘
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_std │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 0.707107    │
+        │ 3.0 ┆ 0.707107    │
+        │ 4.0 ┆ 0.707107    │
+        │ 5.0 ┆ 0.707107    │
+        │ 6.0 ┆ 0.707107    │
+        └─────┴─────────────┘
+
+        Specify weights to multiply the values in the window with:
+
+        >>> df.with_columns(
+        ...     rolling_std=pl.col("A").rolling_std(
+        ...         window_size=2, weights=[0.25, 0.75]
+        ...     ),
+        ... )
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_std │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 0.883883    │
+        │ 3.0 ┆ 1.237437    │
+        │ 4.0 ┆ 1.59099     │
+        │ 5.0 ┆ 1.944544    │
+        │ 6.0 ┆ 2.298097    │
+        └─────┴─────────────┘
+
+        Center the values in the window
+
+        >>> df.with_columns(
+        ...     rolling_std=pl.col("A").rolling_std(window_size=3, center=True),
+        ... )
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_std │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 1.0         │
+        │ 3.0 ┆ 1.0         │
+        │ 4.0 ┆ 1.0         │
+        │ 5.0 ┆ 1.0         │
+        │ 6.0 ┆ null        │
+        └─────┴─────────────┘
+
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌────────┬─────────────────────┐
+        │ row_nr ┆ date                │
+        │ ---    ┆ ---                 │
+        │ u32    ┆ datetime[μs]        │
+        ╞════════╪═════════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 │
+        │ 1      ┆ 2001-01-01 01:00:00 │
+        │ 2      ┆ 2001-01-01 02:00:00 │
+        │ 3      ┆ 2001-01-01 03:00:00 │
+        │ …      ┆ …                   │
+        │ 21     ┆ 2001-01-01 21:00:00 │
+        │ 22     ┆ 2001-01-01 22:00:00 │
+        │ 23     ┆ 2001-01-01 23:00:00 │
+        │ 24     ┆ 2001-01-02 00:00:00 │
+        └────────┴─────────────────────┘
+
+        Compute the rolling std with the default left closure of temporal windows
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_std=pl.col("row_nr").rolling_std(
+        ...         window_size="2h", by="date"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌────────┬─────────────────────┬─────────────────┐
+        │ row_nr ┆ date                ┆ rolling_row_std │
+        │ ---    ┆ ---                 ┆ ---             │
+        │ u32    ┆ datetime[μs]        ┆ f64             │
+        ╞════════╪═════════════════════╪═════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.0             │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 0.707107        │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 0.707107        │
+        │ …      ┆ …                   ┆ …               │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 0.707107        │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 0.707107        │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 0.707107        │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 0.707107        │
+        └────────┴─────────────────────┴─────────────────┘
+
+        Compute the rolling std with the closure of windows on both sides
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_std=pl.col("row_nr").rolling_std(
+        ...         window_size="2h", by="date", closed="both"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌────────┬─────────────────────┬─────────────────┐
+        │ row_nr ┆ date                ┆ rolling_row_std │
+        │ ---    ┆ ---                 ┆ ---             │
+        │ u32    ┆ datetime[μs]        ┆ f64             │
+        ╞════════╪═════════════════════╪═════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0.0             │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1.0             │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 1.0             │
+        │ …      ┆ …                   ┆ …               │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 1.0             │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 1.0             │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 1.0             │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 1.0             │
+        └────────┴─────────────────────┴─────────────────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -4416,18 +5913,21 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_std(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, ddof
             )
         )
 
+    @warn_closed_future_change()
     def rolling_var(
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        ddof: int = 1,
     ) -> Self:
         """
         Compute a rolling variance.
@@ -4436,6 +5936,20 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        means the windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        With `closed="right"`, the left endpoint is not included and the right
+        endpoint is included.
+
         Parameters
         ----------
         window_size
@@ -4448,11 +5962,21 @@ class Expr:
             - 1s    (1 second)
             - 1m    (1 minute)
             - 1h    (1 hour)
-            - 1d    (1 day)
-            - 1w    (1 week)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
+
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -4465,11 +5989,14 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
         Warnings
         --------
@@ -4484,25 +6011,137 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_var(window_size=3),
-        ...     ]
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> df.with_columns(
+        ...     rolling_var=pl.col("A").rolling_var(window_size=2),
         ... )
-        shape: (6, 1)
-        ┌──────────┐
-        │ A        │
-        │ ---      │
-        │ f64      │
-        ╞══════════╡
-        │ null     │
-        │ null     │
-        │ 1.0      │
-        │ 1.0      │
-        │ 2.333333 │
-        │ 4.0      │
-        └──────────┘
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_var │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 0.5         │
+        │ 3.0 ┆ 0.5         │
+        │ 4.0 ┆ 0.5         │
+        │ 5.0 ┆ 0.5         │
+        │ 6.0 ┆ 0.5         │
+        └─────┴─────────────┘
+
+        Specify weights to multiply the values in the window with:
+
+        >>> df.with_columns(
+        ...     rolling_var=pl.col("A").rolling_var(
+        ...         window_size=2, weights=[0.25, 0.75]
+        ...     ),
+        ... )
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_var │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 0.78125     │
+        │ 3.0 ┆ 1.53125     │
+        │ 4.0 ┆ 2.53125     │
+        │ 5.0 ┆ 3.78125     │
+        │ 6.0 ┆ 5.28125     │
+        └─────┴─────────────┘
+
+        Center the values in the window
+
+        >>> df.with_columns(
+        ...     rolling_var=pl.col("A").rolling_var(window_size=3, center=True),
+        ... )
+        shape: (6, 2)
+        ┌─────┬─────────────┐
+        │ A   ┆ rolling_var │
+        │ --- ┆ ---         │
+        │ f64 ┆ f64         │
+        ╞═════╪═════════════╡
+        │ 1.0 ┆ null        │
+        │ 2.0 ┆ 1.0         │
+        │ 3.0 ┆ 1.0         │
+        │ 4.0 ┆ 1.0         │
+        │ 5.0 ┆ 1.0         │
+        │ 6.0 ┆ null        │
+        └─────┴─────────────┘
+
+        Create a DataFrame with a datetime column and a row number column
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df_temporal = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ... ).with_row_count()
+        >>> df_temporal
+        shape: (25, 2)
+        ┌────────┬─────────────────────┐
+        │ row_nr ┆ date                │
+        │ ---    ┆ ---                 │
+        │ u32    ┆ datetime[μs]        │
+        ╞════════╪═════════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 │
+        │ 1      ┆ 2001-01-01 01:00:00 │
+        │ 2      ┆ 2001-01-01 02:00:00 │
+        │ 3      ┆ 2001-01-01 03:00:00 │
+        │ …      ┆ …                   │
+        │ 21     ┆ 2001-01-01 21:00:00 │
+        │ 22     ┆ 2001-01-01 22:00:00 │
+        │ 23     ┆ 2001-01-01 23:00:00 │
+        │ 24     ┆ 2001-01-02 00:00:00 │
+        └────────┴─────────────────────┘
+
+        Compute the rolling var with the default left closure of temporal windows
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_var=pl.col("row_nr").rolling_var(
+        ...         window_size="2h", by="date"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌────────┬─────────────────────┬─────────────────┐
+        │ row_nr ┆ date                ┆ rolling_row_var │
+        │ ---    ┆ ---                 ┆ ---             │
+        │ u32    ┆ datetime[μs]        ┆ f64             │
+        ╞════════╪═════════════════════╪═════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ null            │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.0             │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 0.5             │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 0.5             │
+        │ …      ┆ …                   ┆ …               │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 0.5             │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 0.5             │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 0.5             │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 0.5             │
+        └────────┴─────────────────────┴─────────────────┘
+
+        Compute the rolling var with the closure of windows on both sides
+
+        >>> df_temporal.with_columns(
+        ...     rolling_row_var=pl.col("row_nr").rolling_var(
+        ...         window_size="2h", by="date", closed="both"
+        ...     )
+        ... )
+        shape: (25, 3)
+        ┌────────┬─────────────────────┬─────────────────┐
+        │ row_nr ┆ date                ┆ rolling_row_var │
+        │ ---    ┆ ---                 ┆ ---             │
+        │ u32    ┆ datetime[μs]        ┆ f64             │
+        ╞════════╪═════════════════════╪═════════════════╡
+        │ 0      ┆ 2001-01-01 00:00:00 ┆ 0.0             │
+        │ 1      ┆ 2001-01-01 01:00:00 ┆ 0.5             │
+        │ 2      ┆ 2001-01-01 02:00:00 ┆ 1.0             │
+        │ 3      ┆ 2001-01-01 03:00:00 ┆ 1.0             │
+        │ …      ┆ …                   ┆ …               │
+        │ 21     ┆ 2001-01-01 21:00:00 ┆ 1.0             │
+        │ 22     ┆ 2001-01-01 22:00:00 ┆ 1.0             │
+        │ 23     ┆ 2001-01-01 23:00:00 ┆ 1.0             │
+        │ 24     ┆ 2001-01-02 00:00:00 ┆ 1.0             │
+        └────────┴─────────────────────┴─────────────────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -4510,21 +6149,43 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_var(
-                window_size, weights, min_periods, center, by, closed
+                window_size,
+                weights,
+                min_periods,
+                center,
+                by,
+                closed,
+                ddof,
             )
         )
 
+    @warn_closed_future_change()
     def rolling_median(
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
     ) -> Self:
         """
         Compute a rolling median.
+
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"` means
+        the windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        With `closed="right"`, the left endpoint is not included and the right
+        endpoint is included.
 
         Parameters
         ----------
@@ -4538,11 +6199,21 @@ class Expr:
             - 1s    (1 second)
             - 1m    (1 minute)
             - 1h    (1 hour)
-            - 1d    (1 day)
-            - 1w    (1 week)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
+
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -4555,11 +6226,12 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -4574,25 +6246,63 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_median(window_size=3),
-        ...     ]
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> df.with_columns(
+        ...     rolling_median=pl.col("A").rolling_median(window_size=2),
         ... )
-        shape: (6, 1)
-        ┌──────┐
-        │ A    │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ null │
-        │ null │
-        │ 2.0  │
-        │ 3.0  │
-        │ 4.0  │
-        │ 6.0  │
-        └──────┘
+        shape: (6, 2)
+        ┌─────┬────────────────┐
+        │ A   ┆ rolling_median │
+        │ --- ┆ ---            │
+        │ f64 ┆ f64            │
+        ╞═════╪════════════════╡
+        │ 1.0 ┆ null           │
+        │ 2.0 ┆ 1.5            │
+        │ 3.0 ┆ 2.5            │
+        │ 4.0 ┆ 3.5            │
+        │ 5.0 ┆ 4.5            │
+        │ 6.0 ┆ 5.5            │
+        └─────┴────────────────┘
+
+        Specify weights to multiply the values in the window with:
+
+        >>> df.with_columns(
+        ...     rolling_median=pl.col("A").rolling_median(
+        ...         window_size=2, weights=[0.25, 0.75]
+        ...     ),
+        ... )
+        shape: (6, 2)
+        ┌─────┬────────────────┐
+        │ A   ┆ rolling_median │
+        │ --- ┆ ---            │
+        │ f64 ┆ f64            │
+        ╞═════╪════════════════╡
+        │ 1.0 ┆ null           │
+        │ 2.0 ┆ 0.875          │
+        │ 3.0 ┆ 1.375          │
+        │ 4.0 ┆ 1.875          │
+        │ 5.0 ┆ 2.375          │
+        │ 6.0 ┆ 2.875          │
+        └─────┴────────────────┘
+
+        Center the values in the window
+
+        >>> df.with_columns(
+        ...     rolling_median=pl.col("A").rolling_median(window_size=3, center=True),
+        ... )
+        shape: (6, 2)
+        ┌─────┬────────────────┐
+        │ A   ┆ rolling_median │
+        │ --- ┆ ---            │
+        │ f64 ┆ f64            │
+        ╞═════╪════════════════╡
+        │ 1.0 ┆ null           │
+        │ 2.0 ┆ 2.0            │
+        │ 3.0 ┆ 3.0            │
+        │ 4.0 ┆ 4.0            │
+        │ 5.0 ┆ 5.0            │
+        │ 6.0 ┆ null           │
+        └─────┴────────────────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -4604,6 +6314,7 @@ class Expr:
             )
         )
 
+    @warn_closed_future_change()
     def rolling_quantile(
         self,
         quantile: float,
@@ -4611,12 +6322,27 @@ class Expr:
         window_size: int | timedelta | str = 2,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
     ) -> Self:
         """
         Compute a rolling quantile.
+
+        If ``by`` has not been specified (the default), the window at a given row will
+        include the row itself, and the `window_size - 1` elements before it.
+
+        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        means the windows will be:
+
+            - [t_0 - window_size, t_0)
+            - [t_1 - window_size, t_1)
+            - ...
+            - [t_n - window_size, t_n)
+
+        With `closed="right"`, the left endpoint is not included and the right
+        endpoint is included.
 
         Parameters
         ----------
@@ -4625,8 +6351,8 @@ class Expr:
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
             Interpolation method.
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by a timedelta or the following string language:
+            The length of the window. Can be a fixed integer size, or a dynamic
+            temporal size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4634,28 +6360,39 @@ class Expr:
             - 1s    (1 second)
             - 1m    (1 minute)
             - 1h    (1 hour)
-            - 1d    (1 day)
-            - 1w    (1 week)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
+
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
+            An optional slice with the same length as the window that will be
+            multiplied elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype `{Date, Datetime}`
+            be of dtype Datetime.
         closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
+            Define which sides of the temporal interval are closed (inclusive); only
+            applicable if `by` has been set.
 
         Warnings
         --------
@@ -4670,25 +6407,67 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_quantile(quantile=0.33, window_size=3),
-        ...     ]
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> df.with_columns(
+        ...     rolling_quantile=pl.col("A").rolling_quantile(
+        ...         quantile=0.25, window_size=4
+        ...     ),
         ... )
-        shape: (6, 1)
-        ┌──────┐
-        │ A    │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ null │
-        │ null │
-        │ 1.0  │
-        │ 2.0  │
-        │ 3.0  │
-        │ 4.0  │
-        └──────┘
+        shape: (6, 2)
+        ┌─────┬──────────────────┐
+        │ A   ┆ rolling_quantile │
+        │ --- ┆ ---              │
+        │ f64 ┆ f64              │
+        ╞═════╪══════════════════╡
+        │ 1.0 ┆ null             │
+        │ 2.0 ┆ null             │
+        │ 3.0 ┆ null             │
+        │ 4.0 ┆ 2.0              │
+        │ 5.0 ┆ 3.0              │
+        │ 6.0 ┆ 4.0              │
+        └─────┴──────────────────┘
+
+        Specify weights to multiply the values in the window with:
+
+        >>> df.with_columns(
+        ...     rolling_quantile=pl.col("A").rolling_quantile(
+        ...         quantile=0.25, window_size=4, weights=[0.2, 0.4, 0.4, 0.2]
+        ...     ),
+        ... )
+        shape: (6, 2)
+        ┌─────┬──────────────────┐
+        │ A   ┆ rolling_quantile │
+        │ --- ┆ ---              │
+        │ f64 ┆ f64              │
+        ╞═════╪══════════════════╡
+        │ 1.0 ┆ null             │
+        │ 2.0 ┆ null             │
+        │ 3.0 ┆ null             │
+        │ 4.0 ┆ 0.8              │
+        │ 5.0 ┆ 1.0              │
+        │ 6.0 ┆ 1.2              │
+        └─────┴──────────────────┘
+
+        Center the values in the window
+
+        >>> df.with_columns(
+        ...     rolling_quantile=pl.col("A").rolling_quantile(
+        ...         quantile=0.2, window_size=5, center=True
+        ...     ),
+        ... )
+        shape: (6, 2)
+        ┌─────┬──────────────────┐
+        │ A   ┆ rolling_quantile │
+        │ --- ┆ ---              │
+        │ f64 ┆ f64              │
+        ╞═════╪══════════════════╡
+        │ 1.0 ┆ null             │
+        │ 2.0 ┆ null             │
+        │ 3.0 ┆ 2.0              │
+        │ 4.0 ┆ 3.0              │
+        │ 5.0 ┆ null             │
+        │ 6.0 ┆ null             │
+        └─────┴──────────────────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -4713,6 +6492,7 @@ class Expr:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Self:
         """
@@ -4726,6 +6506,9 @@ class Expr:
             * rolling_max
             * rolling_mean
             * rolling_sum
+
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -4776,9 +6559,12 @@ class Expr:
             )
         )
 
-    def rolling_skew(self, window_size: int, bias: bool = True) -> Self:
+    def rolling_skew(self, window_size: int, *, bias: bool = True) -> Self:
         """
         Compute a rolling skew.
+
+        The window at a given row includes the row itself and the
+        `window_size - 1` elements before it.
 
         Parameters
         ----------
@@ -4786,6 +6572,27 @@ class Expr:
             Integer size of the rolling window.
         bias
             If False, the calculations are corrected for statistical bias.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 4, 2, 9]})
+        >>> df.select(pl.col("a").rolling_skew(3))
+        shape: (4, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        │ null     │
+        │ 0.381802 │
+        │ 0.47033  │
+        └──────────┘
+
+        Note how the values match the following:
+
+        >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
+        (0.38180177416060584, 0.47033046033698594)
 
         """
         return self._from_pyexpr(self._pyexpr.rolling_skew(window_size, bias))
@@ -4819,57 +6626,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.abs())
 
-    @deprecated_alias(reverse="descending")
-    def argsort(self, descending: bool = False, nulls_last: bool = False) -> Self:
-        """
-        Get the index values that would sort this column.
-
-        Alias for :func:`Expr.arg_sort`.
-
-        .. deprecated:: 0.16.5
-            `Expr.argsort` will be removed in favour of `Expr.arg_sort`.
-
-        Parameters
-        ----------
-        descending
-            Sort in descending order.
-        nulls_last
-            Place null values last instead of first.
-
-        Returns
-        -------
-        Expr
-            Series of dtype UInt32.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [20, 10, 30],
-        ...     }
-        ... )
-        >>> df.select(pl.col("a").argsort())
-        shape: (3, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ u32 │
-        ╞═════╡
-        │ 1   │
-        │ 0   │
-        │ 2   │
-        └─────┘
-
-        """
-        warnings.warn(
-            "`Expr.argsort()` is deprecated in favor of `Expr.arg_sort()`",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.arg_sort(descending, nulls_last)
-
-    @deprecated_alias(reverse="descending")
-    def rank(self, method: RankMethod = "average", descending: bool = False) -> Self:
+    def rank(
+        self,
+        method: RankMethod = "average",
+        *,
+        descending: bool = False,
+        seed: int | None = None,
+    ) -> Self:
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -4895,6 +6658,8 @@ class Expr:
               on the order that the values occur in the Series.
         descending
             Rank in descending order.
+        seed
+            If `method="random"`, use this as seed.
 
         Examples
         --------
@@ -4932,8 +6697,25 @@ class Expr:
         │ 5   │
         └─────┘
 
+        Use 'rank' with 'over' to rank within groups:
+
+        >>> df = pl.DataFrame({"a": [1, 1, 2, 2, 2], "b": [6, 7, 5, 14, 11]})
+        >>> df.with_columns(pl.col("b").rank().over("a").alias("rank"))
+        shape: (5, 3)
+        ┌─────┬─────┬──────┐
+        │ a   ┆ b   ┆ rank │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ i64 ┆ f32  │
+        ╞═════╪═════╪══════╡
+        │ 1   ┆ 6   ┆ 1.0  │
+        │ 1   ┆ 7   ┆ 2.0  │
+        │ 2   ┆ 5   ┆ 1.0  │
+        │ 2   ┆ 14  ┆ 3.0  │
+        │ 2   ┆ 11  ┆ 2.0  │
+        └─────┴─────┴──────┘
+
         """
-        return self._from_pyexpr(self._pyexpr.rank(method, descending))
+        return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Self:
         """
@@ -5030,7 +6812,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.pct_change(n))
 
-    def skew(self, bias: bool = True) -> Self:
+    def skew(self, *, bias: bool = True) -> Self:
         r"""
         Compute the sample skewness of a data set.
 
@@ -5084,7 +6866,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.skew(bias))
 
-    def kurtosis(self, fisher: bool = True, bias: bool = True) -> Self:
+    def kurtosis(self, *, fisher: bool = True, bias: bool = True) -> Self:
         """
         Compute the kurtosis (Fisher or Pearson) of a dataset.
 
@@ -5120,7 +6902,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.kurtosis(fisher, bias))
 
-    def clip(self, min_val: int | float, max_val: int | float) -> Self:
+    def clip(self, lower_bound: int | float, upper_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
@@ -5131,10 +6913,10 @@ class Expr:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
-        max_val
-            Maximum value.
+        lower_bound
+            Lower bound.
+        upper_bound
+            Upper bound.
 
         Examples
         --------
@@ -5153,9 +6935,9 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip(min_val, max_val))
+        return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
 
-    def clip_min(self, min_val: int | float) -> Self:
+    def clip_min(self, lower_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -5166,8 +6948,8 @@ class Expr:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
+        lower_bound
+            Lower bound.
 
         Examples
         --------
@@ -5186,9 +6968,9 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip_min(min_val))
+        return self._from_pyexpr(self._pyexpr.clip_min(lower_bound))
 
-    def clip_max(self, max_val: int | float) -> Self:
+    def clip_max(self, upper_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
@@ -5199,8 +6981,8 @@ class Expr:
 
         Parameters
         ----------
-        max_val
-            Maximum value.
+        upper_bound
+            Upper bound.
 
         Examples
         --------
@@ -5219,7 +7001,7 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip_max(max_val))
+        return self._from_pyexpr(self._pyexpr.clip_max(upper_bound))
 
     def lower_bound(self) -> Self:
         """
@@ -5587,13 +7369,76 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arctanh())
 
-    def reshape(self, dims: tuple[int, ...]) -> Self:
+    def degrees(self) -> Self:
+        """
+        Convert from radians to degrees.
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        --------
+        >>> import math
+        >>> df = pl.DataFrame({"a": [x * math.pi for x in range(-4, 5)]})
+        >>> df.select(pl.col("a").degrees())
+        shape: (9, 1)
+        ┌────────┐
+        │ a      │
+        │ ---    │
+        │ f64    │
+        ╞════════╡
+        │ -720.0 │
+        │ -540.0 │
+        │ -360.0 │
+        │ -180.0 │
+        │ 0.0    │
+        │ 180.0  │
+        │ 360.0  │
+        │ 540.0  │
+        │ 720.0  │
+        └────────┘
+        """
+        return self._from_pyexpr(self._pyexpr.degrees())
+
+    def radians(self) -> Self:
+        """
+        Convert from degrees to radians.
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-720, -540, -360, -180, 0, 180, 360, 540, 720]})
+        >>> df.select(pl.col("a").radians())
+        shape: (9, 1)
+        ┌────────────┐
+        │ a          │
+        │ ---        │
+        │ f64        │
+        ╞════════════╡
+        │ -12.566371 │
+        │ -9.424778  │
+        │ -6.283185  │
+        │ -3.141593  │
+        │ 0.0        │
+        │ 3.141593   │
+        │ 6.283185   │
+        │ 9.424778   │
+        │ 12.566371  │
+        └────────────┘
+        """
+        return self._from_pyexpr(self._pyexpr.radians())
+
+    def reshape(self, dimensions: tuple[int, ...]) -> Self:
         """
         Reshape this Expr to a flat Series or a Series of Lists.
 
         Parameters
         ----------
-        dims
+        dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
 
@@ -5603,10 +7448,6 @@ class Expr:
             If a single dimension is given, results in a flat Series of shape (len,).
             If a multiple dimensions are given, results in a Series of Lists with shape
             (rows, cols).
-
-        See Also
-        --------
-        ExprListNameSpace.explode : Explode a list column.
 
         Examples
         --------
@@ -5623,8 +7464,12 @@ class Expr:
         │ [7, 8, 9] │
         └───────────┘
 
+        See Also
+        --------
+        ExprListNameSpace.explode : Explode a list column.
+
         """
-        return self._from_pyexpr(self._pyexpr.reshape(dims))
+        return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
     def shuffle(self, seed: int | None = None) -> Self:
         """
@@ -5656,10 +7501,12 @@ class Expr:
             seed = random.randint(0, 10000)
         return self._from_pyexpr(self._pyexpr.shuffle(seed))
 
+    @deprecated_alias(frac="fraction")
     def sample(
         self,
         n: int | None = None,
-        frac: float | None = None,
+        *,
+        fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -5670,9 +7517,9 @@ class Expr:
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
-            `frac` is None.
-        frac
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
@@ -5685,7 +7532,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").sample(frac=1.0, with_replacement=True, seed=1))
+        >>> df.select(pl.col("a").sample(fraction=1.0, with_replacement=True, seed=1))
         shape: (3, 1)
         ┌─────┐
         │ a   │
@@ -5698,15 +7545,15 @@ class Expr:
         └─────┘
 
         """
-        if n is not None and frac is not None:
-            raise ValueError("cannot specify both `n` and `frac`")
+        if n is not None and fraction is not None:
+            raise ValueError("cannot specify both `n` and `fraction`")
 
         if seed is None:
             seed = random.randint(0, 10000)
 
-        if frac is not None:
+        if fraction is not None:
             return self._from_pyexpr(
-                self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
+                self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
             )
 
         if n is None:
@@ -5721,6 +7568,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         min_periods: int = 1,
         ignore_nulls: bool = True,
@@ -5809,6 +7657,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -5900,6 +7749,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -6020,7 +7870,7 @@ class Expr:
 
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
-    def value_counts(self, multithreaded: bool = False, sort: bool = False) -> Self:
+    def value_counts(self, *, multithreaded: bool = False, sort: bool = False) -> Self:
         """
         Count all unique values and create a struct mapping value to count.
 
@@ -6122,7 +7972,31 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.log(base))
 
-    def entropy(self, base: float = math.e, normalize: bool = True) -> Self:
+    def log1p(self) -> Self:
+        """
+        Compute the natural logarithm of each element plus one.
+
+        This computes `log(1 + x)` but is more numerically stable for `x` close to zero.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").log1p())
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.693147 │
+        │ 1.098612 │
+        │ 1.386294 │
+        └──────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.log1p())
+
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> Self:
         """
         Computes the entropy.
 
@@ -6161,7 +8035,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.entropy(base, normalize))
 
     def cumulative_eval(
-        self, expr: Expr, min_periods: int = 1, parallel: bool = False
+        self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
     ) -> Self:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -6213,8 +8087,7 @@ class Expr:
             self._pyexpr.cumulative_eval(expr._pyexpr, min_periods, parallel)
         )
 
-    @deprecated_alias(reverse="descending")
-    def set_sorted(self, descending: bool = False) -> Self:
+    def set_sorted(self, *, descending: bool = False) -> Self:
         """
         Flags the expression as 'sorted'.
 
@@ -6245,34 +8118,6 @@ class Expr:
 
         """
         return self._from_pyexpr(self._pyexpr.set_sorted_flag(descending))
-
-    # Keep the `list` and `str` methods below at the end of the definition of Expr,
-    # as to not confuse mypy with the type annotation `str` and `list`
-
-    def list(self) -> Self:
-        """
-        Aggregate to list.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": [4, 5, 6],
-        ...     }
-        ... )
-        >>> df.select(pl.all().list())
-        shape: (1, 2)
-        ┌───────────┬───────────┐
-        │ a         ┆ b         │
-        │ ---       ┆ ---       │
-        │ list[i64] ┆ list[i64] │
-        ╞═══════════╪═══════════╡
-        │ [1, 2, 3] ┆ [4, 5, 6] │
-        └───────────┴───────────┘
-
-        """
-        return self._from_pyexpr(self._pyexpr.list())
 
     def shrink_dtype(self) -> Self:
         """
@@ -6309,11 +8154,22 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
+    def cache(self) -> Self:
+        """
+        Cache this expression so that it only is executed once per context.
+
+        This can actually hurt performance and can have a lot of contention.
+        It is advised not to use it until actually benchmarked on your problem.
+
+        """
+        return self._from_pyexpr(self._pyexpr.cache())
+
     def map_dict(
         self,
         remapping: dict[Any, Any],
         *,
         default: Any = None,
+        return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
         Replace values in column according to remapping dictionary.
@@ -6328,6 +8184,12 @@ class Expr:
         default
             Value to use when the remapping dict does not contain the lookup value.
             Use ``pl.first()``, to keep the original value.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
+
+        See Also
+        --------
+        map
 
         Examples
         --------
@@ -6449,48 +8311,147 @@ class Expr:
         │ 3      ┆ Germany       │
         └────────┴───────────────┘
 
+        Override return dtype:
+
+        >>> df.with_columns(
+        ...     pl.col("row_nr")
+        ...     .map_dict({1: 7, 3: 4}, default=3, return_dtype=pl.UInt8)
+        ...     .alias("remapped")
+        ... )
+        shape: (4, 3)
+        ┌────────┬──────────────┬──────────┐
+        │ row_nr ┆ country_code ┆ remapped │
+        │ ---    ┆ ---          ┆ ---      │
+        │ u32    ┆ str          ┆ u8       │
+        ╞════════╪══════════════╪══════════╡
+        │ 0      ┆ FR           ┆ 3        │
+        │ 1      ┆ null         ┆ 7        │
+        │ 2      ┆ ES           ┆ 3        │
+        │ 3      ┆ DE           ┆ 4        │
+        └────────┴──────────────┴──────────┘
+
         """
 
-        def _remap_key_series(
-            remap_key_column: str,
-            remapping: dict[Any, Any],
-            input_dtype: PolarsDataType,
+        def _remap_key_or_value_series(
+            name: str,
+            values: Iterable[Any],
+            dtype: PolarsDataType | None,
+            dtype_if_empty: PolarsDataType | None,
+            dtype_keys: PolarsDataType | None,
+            is_keys: bool,
         ) -> Series:
             """
-            Convert remapping dict key values to `Series` with `input_dtype`.
+            Convert remapping keys or remapping values to `Series` with `dtype`.
 
-            Try to convert the remapping dict key values to `Series` with the same dtype
-            as the column from which the values are being replaced and make sure that
-            no keys are accidentally lost (replaced by nulls) during the conversion.
+            Try to convert the remapping keys or remapping values to `Series` with
+            the specified dtype and check that none of the values are accidentally
+            lost (replaced by nulls) during the conversion.
+
+            Parameters
+            ----------
+            name
+                Name of the keys or values series.
+            values
+                Values for the series: `remapping.keys()` or `remapping.values()`.
+            dtype
+                User specified dtype. If None,
+            dtype_if_empty
+                If no dtype is specified and values contains None, an empty list,
+                or a list with only None values, set the Polars dtype of the Series
+                data.
+            dtype_keys
+                If user set dtype is None, try to see if Series for remapping.values()
+                can be converted to same dtype as the remapping.keys() Series dtype.
+            is_keys
+                If values contains keys or values from remapping dict.
 
             """
             try:
-                remap_key_s = pli.Series(
-                    remap_key_column,
-                    list(remapping.keys()),
-                    dtype=input_dtype,
-                    strict=True,
-                )
-                if input_dtype != remap_key_s.dtype:
-                    raise ValueError(
-                        f"Remapping keys could not be converted to {input_dtype}: found {remap_key_s.dtype}"
+                if dtype is None:
+                    # If no dtype was set, which should only happen when:
+                    #     values = remapping.values()
+                    # create a Series from those values and infer the dtype.
+                    s = pl.Series(
+                        name,
+                        values,
+                        dtype=None,
+                        dtype_if_empty=dtype_if_empty,
+                        strict=True,
                     )
 
-            except TypeError as exc:
-                raise ValueError(
-                    f"Remapping keys could not be converted to {input_dtype}: {str(exc)}"
-                ) from exc
+                    if dtype_keys is not None:
+                        if s.dtype == dtype_keys:
+                            # Values Series has same dtype as keys Series.
+                            dtype = s.dtype
+                        elif (
+                            (s.dtype in INTEGER_DTYPES and dtype_keys in INTEGER_DTYPES)
+                            or (s.dtype in FLOAT_DTYPES and dtype_keys in FLOAT_DTYPES)
+                            or (s.dtype == Utf8 and dtype_keys == Categorical)
+                        ):
+                            # Values Series and keys Series are of similar dtypes,
+                            # that we can assume that the user wants the values Series
+                            # of the same dtype as the key Series.
+                            dtype = dtype_keys
+                            s = pl.Series(
+                                name,
+                                values,
+                                dtype=dtype_keys,
+                                dtype_if_empty=dtype_if_empty,
+                                strict=True,
+                            )
+                            if dtype != s.dtype:
+                                raise ValueError(
+                                    f"Remapping values for map_dict could not be converted to {dtype}: found {s.dtype}"
+                                )
+                else:
+                    # dtype was set, which should always be the case when:
+                    #     values = remapping.keys()
+                    # and in cases where the user set the output dtype when:
+                    #     values = remapping.values()
+                    s = pl.Series(
+                        name,
+                        values,
+                        dtype=dtype,
+                        dtype_if_empty=dtype_if_empty,
+                        strict=True,
+                    )
+                    if dtype != s.dtype:
+                        raise ValueError(
+                            f"Remapping {'keys' if is_keys else 'values'} for map_dict could not be converted to {dtype}: found {s.dtype}"
+                        )
 
-            if remap_key_s.null_count() == 0:  # noqa: SIM114
-                pass
-            elif remap_key_s.null_count() == 1 and None in remapping:
-                pass
+            except OverflowError as exc:
+                if is_keys:
+                    raise ValueError(
+                        f"Remapping keys for map_dict could not be converted to {dtype}: {str(exc)}"
+                    ) from exc
+                else:
+                    raise ValueError(
+                        f"Choose a more suitable output dtype for map_dict as remapping value could not be converted to {dtype}: {str(exc)}"
+                    ) from exc
+
+            if is_keys:
+                # values = remapping.keys()
+                if s.null_count() == 0:  # noqa: SIM114
+                    pass
+                elif s.null_count() == 1 and None in remapping:
+                    pass
+                else:
+                    raise ValueError(
+                        f"Remapping keys for map_dict could not be converted to {dtype} without losing values in the conversion."
+                    )
             else:
-                raise ValueError(
-                    f"Remapping keys could not be converted to {input_dtype} without losing values in the conversion."
-                )
+                # values = remapping.values()
+                if s.null_count() == 0:  # noqa: SIM114
+                    pass
+                elif s.len() - s.null_count() == len(list(filter(None, values))):
+                    pass
+                else:
+                    raise ValueError(
+                        f"Remapping values for map_dict could not be converted to {dtype} without losing values in the conversion."
+                    )
 
-            return remap_key_s
+            return s
 
         # Use two functions to save unneeded work.
         # This factors out allocations and branches.
@@ -6507,18 +8468,54 @@ class Expr:
             remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
             is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
 
-            remap_key_s = _remap_key_series(remap_key_column, remapping, input_dtype)
+            # Set output dtype:
+            #  - to dtype, if specified.
+            #  - to same dtype as expression specified as default value.
+            #  - to None, if dtype was not specified and default was not an expression.
+            return_dtype_ = (
+                df.lazy().select(default).dtypes[0]
+                if return_dtype is None and isinstance(default, Expr)
+                else return_dtype
+            )
+
+            remap_key_s = _remap_key_or_value_series(
+                name=remap_key_column,
+                values=remapping.keys(),
+                dtype=input_dtype,
+                dtype_if_empty=input_dtype,
+                dtype_keys=input_dtype,
+                is_keys=True,
+            )
+
+            if return_dtype_:
+                # Create remap value Series with specified output dtype.
+                remap_value_s = pl.Series(
+                    remap_value_column,
+                    remapping.values(),
+                    dtype=return_dtype_,
+                    dtype_if_empty=input_dtype,
+                )
+            else:
+                # Create remap value Series with same output dtype as remap key Series,
+                # if possible (if both are integers, both are floats or remap value
+                # Series is pl.Utf8 and remap key Series is pl.Categorical).
+                remap_value_s = _remap_key_or_value_series(
+                    name=remap_value_column,
+                    values=remapping.values(),
+                    dtype=None,
+                    dtype_if_empty=input_dtype,
+                    dtype_keys=input_dtype,
+                    is_keys=False,
+                )
 
             return (
                 (
                     df.lazy()
                     .join(
-                        pli.DataFrame(
+                        pl.DataFrame(
                             [
                                 remap_key_s,
-                                pli.Series(
-                                    remap_value_column, list(remapping.values())
-                                ),
+                                remap_value_s,
                             ]
                         )
                         .lazy()
@@ -6545,19 +8542,45 @@ class Expr:
             remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
             is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
 
-            remap_key_s = _remap_key_series(remap_key_column, remapping, input_dtype)
+            remap_key_s = _remap_key_or_value_series(
+                name=remap_key_column,
+                values=list(remapping.keys()),
+                dtype=input_dtype,
+                dtype_if_empty=input_dtype,
+                dtype_keys=input_dtype,
+                is_keys=True,
+            )
+
+            if return_dtype:
+                # Create remap value Series with specified output dtype.
+                remap_value_s = pl.Series(
+                    remap_value_column,
+                    remapping.values(),
+                    dtype=return_dtype,
+                    dtype_if_empty=input_dtype,
+                )
+            else:
+                # Create remap value Series with same output dtype as remap key Series,
+                # if possible (if both are integers, both are floats or remap value
+                # Series is pl.Utf8 and remap key Series is pl.Categorical).
+                remap_value_s = _remap_key_or_value_series(
+                    name=remap_value_column,
+                    values=remapping.values(),
+                    dtype=None,
+                    dtype_if_empty=input_dtype,
+                    dtype_keys=input_dtype,
+                    is_keys=False,
+                )
 
             return (
                 (
                     s.to_frame()
                     .lazy()
                     .join(
-                        pli.DataFrame(
+                        pl.DataFrame(
                             [
                                 remap_key_s,
-                                pli.Series(
-                                    remap_value_column, list(remapping.values())
-                                ),
+                                remap_value_s,
                             ]
                         )
                         .lazy()
@@ -6575,14 +8598,13 @@ class Expr:
         return self.map(func)
 
     @property
-    def arr(self) -> ExprListNameSpace:
+    def bin(self) -> ExprBinaryNameSpace:
         """
-        Create an object namespace of all list related methods.
+        Create an object namespace of all binary related methods.
 
         See the individual method pages for full details
-
         """
-        return ExprListNameSpace(self)
+        return ExprBinaryNameSpace(self)
 
     @property
     def cat(self) -> ExprCatNameSpace:
@@ -6614,6 +8636,29 @@ class Expr:
     def dt(self) -> ExprDateTimeNameSpace:
         """Create an object namespace of all datetime related methods."""
         return ExprDateTimeNameSpace(self)
+
+    # Keep the `list` and `str` properties below at the end of the definition of Expr,
+    # as to not confuse mypy with the type annotation `str` and `list`
+
+    @property
+    def list(self) -> ExprListNameSpace:
+        """
+        Create an object namespace of all list related methods.
+
+        See the individual method pages for full details
+
+        """
+        return ExprListNameSpace(self)
+
+    @property
+    def arr(self) -> ExprArrayNameSpace:
+        """
+        Create an object namespace of all array related methods.
+
+        See the individual method pages for full details
+
+        """
+        return ExprArrayNameSpace(self)
 
     @property
     def meta(self) -> ExprMetaNameSpace:
@@ -6648,15 +8693,6 @@ class Expr:
 
         """
         return ExprStringNameSpace(self)
-
-    @property
-    def bin(self) -> ExprBinaryNameSpace:
-        """
-        Create an object namespace of all binary related methods.
-
-        See the individual method pages for full details
-        """
-        return ExprBinaryNameSpace(self)
 
     @property
     def struct(self) -> ExprStructNameSpace:
@@ -6734,6 +8770,9 @@ def _prepare_rolling_window_args(
     min_periods: int | None = None,
 ) -> tuple[str, int]:
     if isinstance(window_size, int):
+        if window_size < 1:
+            raise ValueError("'window_size' should be positive")
+
         if min_periods is None:
             min_periods = window_size
         window_size = f"{window_size}i"

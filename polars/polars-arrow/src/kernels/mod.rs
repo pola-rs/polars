@@ -2,6 +2,10 @@ use std::iter::Enumerate;
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitChunks;
+#[cfg(feature = "simd")]
+pub mod agg_mean;
+#[cfg(feature = "dtype-array")]
+pub mod comparison;
 pub mod concatenate;
 pub mod ewm;
 pub mod float;
@@ -17,6 +21,7 @@ pub mod string;
 pub mod take_agg;
 #[cfg(feature = "timezones")]
 mod time;
+
 #[cfg(feature = "timezones")]
 pub use time::replace_timezone;
 
@@ -277,26 +282,21 @@ mod test {
 
     #[test]
     fn test_binary_masked_slice_iter() {
-        let mask = BooleanArray::from_slice(&[false, false, true, true, true, false, false]);
+        let mask = BooleanArray::from_slice([false, false, true, true, true, false, false]);
 
         let out = BinaryMaskedSliceIterator::new(&mask)
-            .into_iter()
             .map(|(_, _, b)| b)
             .collect::<Vec<_>>();
         assert_eq!(out, &[false, true, false]);
-        let out = BinaryMaskedSliceIterator::new(&mask)
-            .into_iter()
-            .collect::<Vec<_>>();
+        let out = BinaryMaskedSliceIterator::new(&mask).collect::<Vec<_>>();
         assert_eq!(out, &[(0, 2, false), (2, 5, true), (5, 7, false)]);
-        let mask = BooleanArray::from_slice(&[true, true, false, true]);
+        let mask = BooleanArray::from_slice([true, true, false, true]);
         let out = BinaryMaskedSliceIterator::new(&mask)
-            .into_iter()
             .map(|(_, _, b)| b)
             .collect::<Vec<_>>();
         assert_eq!(out, &[true, false, true]);
-        let mask = BooleanArray::from_slice(&[true, true, false, true, true]);
+        let mask = BooleanArray::from_slice([true, true, false, true, true]);
         let out = BinaryMaskedSliceIterator::new(&mask)
-            .into_iter()
             .map(|(_, _, b)| b)
             .collect::<Vec<_>>();
         assert_eq!(out, &[true, false, true]);
@@ -304,10 +304,8 @@ mod test {
 
     #[test]
     fn test_binary_slice_mask_iter_with_false() {
-        let mask = BooleanArray::from_slice(&[false, false]);
-        let out = BinaryMaskedSliceIterator::new(&mask)
-            .into_iter()
-            .collect::<Vec<_>>();
+        let mask = BooleanArray::from_slice([false, false]);
+        let out = BinaryMaskedSliceIterator::new(&mask).collect::<Vec<_>>();
         assert_eq!(out, &[(0, 2, false)]);
     }
 }

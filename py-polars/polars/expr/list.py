@@ -1,26 +1,31 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils._parse_expr_input import parse_as_expression
+from polars.utils._wrap import wrap_expr
+from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
-    from polars.expr import Expr
-    from polars.type_aliases import NullBehavior, ToStructStrategy
+    from polars import Expr, Series
+    from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
 
 
 class ExprListNameSpace:
     """Namespace for list related expressions."""
 
-    _accessor = "arr"
+    _accessor = "list"
 
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
+
+    def __getitem__(self, item: int) -> Expr:
+        return self.get(item)
 
     def lengths(self) -> Expr:
         """
@@ -29,7 +34,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2], "bar": [["a", "b"], ["c"]]})
-        >>> df.select(pl.col("bar").arr.lengths())
+        >>> df.select(pl.col("bar").list.lengths())
         shape: (2, 1)
         ┌─────┐
         │ bar │
@@ -41,7 +46,7 @@ class ExprListNameSpace:
         └─────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.arr_lengths())
+        return wrap_expr(self._pyexpr.list_lengths())
 
     def sum(self) -> Expr:
         """
@@ -50,7 +55,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
-        >>> df.select(pl.col("values").arr.sum())
+        >>> df.select(pl.col("values").list.sum())
         shape: (2, 1)
         ┌────────┐
         │ values │
@@ -62,7 +67,7 @@ class ExprListNameSpace:
         └────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_sum())
+        return wrap_expr(self._pyexpr.list_sum())
 
     def max(self) -> Expr:
         """
@@ -71,7 +76,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
-        >>> df.select(pl.col("values").arr.max())
+        >>> df.select(pl.col("values").list.max())
         shape: (2, 1)
         ┌────────┐
         │ values │
@@ -83,7 +88,7 @@ class ExprListNameSpace:
         └────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_max())
+        return wrap_expr(self._pyexpr.list_max())
 
     def min(self) -> Expr:
         """
@@ -92,7 +97,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
-        >>> df.select(pl.col("values").arr.min())
+        >>> df.select(pl.col("values").list.min())
         shape: (2, 1)
         ┌────────┐
         │ values │
@@ -104,7 +109,7 @@ class ExprListNameSpace:
         └────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_min())
+        return wrap_expr(self._pyexpr.list_min())
 
     def mean(self) -> Expr:
         """
@@ -113,7 +118,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
-        >>> df.select(pl.col("values").arr.mean())
+        >>> df.select(pl.col("values").list.mean())
         shape: (2, 1)
         ┌────────┐
         │ values │
@@ -125,11 +130,9 @@ class ExprListNameSpace:
         └────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_mean())
+        return wrap_expr(self._pyexpr.list_mean())
 
-    @deprecate_nonkeyword_arguments()
-    @deprecated_alias(reverse="descending")
-    def sort(self, descending: bool = False) -> Expr:
+    def sort(self, *, descending: bool = False) -> Expr:
         """
         Sort the arrays in this column.
 
@@ -145,7 +148,7 @@ class ExprListNameSpace:
         ...         "a": [[3, 2, 1], [9, 1, 2]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.sort())
+        >>> df.select(pl.col("a").list.sort())
         shape: (2, 1)
         ┌───────────┐
         │ a         │
@@ -155,7 +158,7 @@ class ExprListNameSpace:
         │ [1, 2, 3] │
         │ [1, 2, 9] │
         └───────────┘
-        >>> df.select(pl.col("a").arr.sort(reverse=True))
+        >>> df.select(pl.col("a").list.sort(descending=True))
         shape: (2, 1)
         ┌───────────┐
         │ a         │
@@ -167,7 +170,7 @@ class ExprListNameSpace:
         └───────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_sort(descending))
+        return wrap_expr(self._pyexpr.list_sort(descending))
 
     def reverse(self) -> Expr:
         """
@@ -180,7 +183,7 @@ class ExprListNameSpace:
         ...         "a": [[3, 2, 1], [9, 1, 2]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.reverse())
+        >>> df.select(pl.col("a").list.reverse())
         shape: (2, 1)
         ┌───────────┐
         │ a         │
@@ -192,11 +195,16 @@ class ExprListNameSpace:
         └───────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_reverse())
+        return wrap_expr(self._pyexpr.list_reverse())
 
-    def unique(self) -> Expr:
+    def unique(self, *, maintain_order: bool = False) -> Expr:
         """
         Get the unique/distinct values in the list.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -205,7 +213,7 @@ class ExprListNameSpace:
         ...         "a": [[1, 1, 2]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.unique())
+        >>> df.select(pl.col("a").list.unique())
         shape: (1, 1)
         ┌───────────┐
         │ a         │
@@ -216,11 +224,9 @@ class ExprListNameSpace:
         └───────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_unique())
+        return wrap_expr(self._pyexpr.list_unique(maintain_order))
 
-    def concat(
-        self, other: list[Expr | str] | Expr | str | pli.Series | list[Any]
-    ) -> Expr:
+    def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -237,7 +243,7 @@ class ExprListNameSpace:
         ...         "b": [["b", "c"], ["y", "z"]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.concat("b"))
+        >>> df.select(pl.col("a").list.concat("b"))
         shape: (2, 1)
         ┌─────────────────┐
         │ a               │
@@ -250,14 +256,14 @@ class ExprListNameSpace:
 
         """
         if isinstance(other, list) and (
-            not isinstance(other[0], (pli.Expr, str, pli.Series))
+            not isinstance(other[0], (pl.Expr, str, pl.Series))
         ):
-            return self.concat(pli.Series([other]))
+            return self.concat(pl.Series([other]))
 
-        other_list: list[Expr | str | pli.Series]
+        other_list: list[Expr | str | Series]
         other_list = [other] if not isinstance(other, list) else copy.copy(other)  # type: ignore[arg-type]
 
-        other_list.insert(0, pli.wrap_expr(self._pyexpr))
+        other_list.insert(0, wrap_expr(self._pyexpr))
         return F.concat_list(other_list)
 
     def get(self, index: int | Expr | str) -> Expr:
@@ -276,7 +282,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.get(0))
+        >>> df.select(pl.col("foo").list.get(0))
         shape: (3, 1)
         ┌──────┐
         │ foo  │
@@ -289,12 +295,13 @@ class ExprListNameSpace:
         └──────┘
 
         """
-        index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
-        return pli.wrap_expr(self._pyexpr.lst_get(index))
+        index = parse_as_expression(index)
+        return wrap_expr(self._pyexpr.list_get(index))
 
     def take(
         self,
-        index: Expr | pli.Series | list[int] | list[list[int]],
+        index: Expr | Series | list[int] | list[list[int]],
+        *,
         null_on_oob: bool = False,
     ) -> Expr:
         """
@@ -315,12 +322,9 @@ class ExprListNameSpace:
 
         """
         if isinstance(index, list):
-            index = pli.Series(index)
-        index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
-        return pli.wrap_expr(self._pyexpr.lst_take(index, null_on_oob))
-
-    def __getitem__(self, item: int) -> Expr:
-        return self.get(item)
+            index = pl.Series(index)
+        index = parse_as_expression(index)
+        return wrap_expr(self._pyexpr.list_take(index, null_on_oob))
 
     def first(self) -> Expr:
         """
@@ -329,7 +333,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.first())
+        >>> df.select(pl.col("foo").list.first())
         shape: (3, 1)
         ┌──────┐
         │ foo  │
@@ -351,7 +355,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.last())
+        >>> df.select(pl.col("foo").list.last())
         shape: (3, 1)
         ┌──────┐
         │ foo  │
@@ -384,7 +388,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.contains(1))
+        >>> df.select(pl.col("foo").list.contains(1))
         shape: (3, 1)
         ┌───────┐
         │ foo   │
@@ -397,9 +401,8 @@ class ExprListNameSpace:
         └───────┘
 
         """
-        return pli.wrap_expr(
-            self._pyexpr.arr_contains(pli.expr_to_lit_or_expr(item)._pyexpr)
-        )
+        item = parse_as_expression(item, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_contains(item))
 
     def join(self, separator: str) -> Expr:
         """
@@ -419,7 +422,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"s": [["a", "b", "c"], ["x", "y"]]})
-        >>> df.select(pl.col("s").arr.join(" "))
+        >>> df.select(pl.col("s").list.join(" "))
         shape: (2, 1)
         ┌───────┐
         │ s     │
@@ -431,7 +434,7 @@ class ExprListNameSpace:
         └───────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_join(separator))
+        return wrap_expr(self._pyexpr.list_join(separator))
 
     def arg_min(self) -> Expr:
         """
@@ -448,7 +451,7 @@ class ExprListNameSpace:
         ...         "a": [[1, 2], [2, 1]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.arg_min())
+        >>> df.select(pl.col("a").list.arg_min())
         shape: (2, 1)
         ┌─────┐
         │ a   │
@@ -460,7 +463,7 @@ class ExprListNameSpace:
         └─────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_arg_min())
+        return wrap_expr(self._pyexpr.list_arg_min())
 
     def arg_max(self) -> Expr:
         """
@@ -477,7 +480,7 @@ class ExprListNameSpace:
         ...         "a": [[1, 2], [2, 1]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.arg_max())
+        >>> df.select(pl.col("a").list.arg_max())
         shape: (2, 1)
         ┌─────┐
         │ a   │
@@ -489,7 +492,7 @@ class ExprListNameSpace:
         └─────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_arg_max())
+        return wrap_expr(self._pyexpr.list_arg_max())
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
@@ -505,7 +508,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"n": [[1, 2, 3, 4], [10, 2, 1]]})
-        >>> df.select(pl.col("n").arr.diff())
+        >>> df.select(pl.col("n").list.diff())
         shape: (2, 1)
         ┌────────────────┐
         │ n              │
@@ -516,7 +519,7 @@ class ExprListNameSpace:
         │ [null, -8, -1] │
         └────────────────┘
 
-        >>> df.select(pl.col("n").arr.diff(n=2))
+        >>> df.select(pl.col("n").list.diff(n=2))
         shape: (2, 1)
         ┌───────────────────┐
         │ n                 │
@@ -527,7 +530,7 @@ class ExprListNameSpace:
         │ [null, null, -9]  │
         └───────────────────┘
 
-        >>> df.select(pl.col("n").arr.diff(n=2, null_behavior="drop"))
+        >>> df.select(pl.col("n").list.diff(n=2, null_behavior="drop"))
         shape: (2, 1)
         ┌───────────┐
         │ n         │
@@ -539,7 +542,7 @@ class ExprListNameSpace:
         └───────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_diff(n, null_behavior))
+        return wrap_expr(self._pyexpr.list_diff(n, null_behavior))
 
     def shift(self, periods: int = 1) -> Expr:
         """
@@ -553,7 +556,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.shift()
+        >>> s.list.shift()
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -562,7 +565,7 @@ class ExprListNameSpace:
         ]
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_shift(periods))
+        return wrap_expr(self._pyexpr.list_shift(periods))
 
     def slice(
         self, offset: int | str | Expr, length: int | str | Expr | None = None
@@ -581,7 +584,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.slice(1, 2)
+        >>> s.list.slice(1, 2)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -590,9 +593,9 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = pli.expr_to_lit_or_expr(offset, str_to_lit=False)._pyexpr
-        length = pli.expr_to_lit_or_expr(length, str_to_lit=False)._pyexpr
-        return pli.wrap_expr(self._pyexpr.lst_slice(offset, length))
+        offset = parse_as_expression(offset)
+        length = parse_as_expression(length)
+        return wrap_expr(self._pyexpr.list_slice(offset, length))
 
     def head(self, n: int | str | Expr = 5) -> Expr:
         """
@@ -606,7 +609,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.head(2)
+        >>> s.list.head(2)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -629,7 +632,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.tail(2)
+        >>> s.list.tail(2)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -638,8 +641,8 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = -pli.expr_to_lit_or_expr(n, str_to_lit=False)
-        return self.slice(offset, n)
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.list_tail(n))
 
     def explode(self) -> Expr:
         """
@@ -656,7 +659,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
-        >>> df.select(pl.col("a").arr.explode())
+        >>> df.select(pl.col("a").list.explode())
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -672,11 +675,9 @@ class ExprListNameSpace:
         └─────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.explode())
+        return wrap_expr(self._pyexpr.explode())
 
-    def count_match(
-        self, element: float | str | bool | int | date | datetime | time | Expr
-    ) -> Expr:
+    def count_match(self, element: IntoExpr) -> Expr:
         """
         Count how often the value produced by ``element`` occurs.
 
@@ -688,7 +689,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"listcol": [[0], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
-        >>> df.select(pl.col("listcol").arr.count_match(2).alias("number_of_twos"))
+        >>> df.select(pl.col("listcol").list.count_match(2).alias("number_of_twos"))
         shape: (5, 1)
         ┌────────────────┐
         │ number_of_twos │
@@ -703,14 +704,14 @@ class ExprListNameSpace:
         └────────────────┘
 
         """
-        return pli.wrap_expr(
-            self._pyexpr.lst_count_match(pli.expr_to_lit_or_expr(element)._pyexpr)
-        )
+        element = parse_as_expression(element, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_count_match(element))
 
+    @deprecated_alias(name_generator="fields")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
-        name_generator: Callable[[int], str] | None = None,
+        fields: Sequence[str] | Callable[[int], str] | None = None,
         upper_bound: int = 0,
     ) -> Expr:
         """
@@ -720,47 +721,70 @@ class ExprListNameSpace:
         ----------
         n_field_strategy : {'first_non_null', 'max_width'}
             Strategy to determine the number of fields of the struct.
-        name_generator
-            A custom function that can be used to generate the field names.
-            Default field names are `field_0, field_1 .. field_n`
+
+            * "first_non_null": set number of fields equal to the length of the
+              first non zero-length sublist.
+            * "max_width": set number of fields as max length of all sublists.
+
+        fields
+            If the name and number of the desired fields is known in advance
+            a list of field names can be given, which will be assigned by index.
+            Otherwise, to dynamically assign field names, a custom function can be
+            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
         upper_bound
-            A polars `LazyFrame` needs to know the schema at all time.
-            The caller therefore must provide an `upper_bound` of
-            struct fields that will be set.
-            If this is incorrectly downstream operation may fail.
-            For instance an `all().sum()` expression will look in
-            the current schema to determine which columns to select.
-            It is adviced to set this value in a lazy query.
+            A polars ``LazyFrame`` needs to know the schema at all times, so the
+            caller must provide an upper bound of the number of struct fields that
+            will be created; if set incorrectly, subsequent operations may fail.
+            (For example, an ``all().sum()`` expression will look in the current
+            schema to determine which columns to select).
+
+            When operating on a ``DataFrame``, the schema does not need to be
+            tracked or pre-determined, as the result will be eagerly evaluated,
+            so you can leave this parameter unset.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-        >>> df.select([pl.col("a").arr.to_struct()])
+        Convert list to struct with default field name assignment:
+
+        >>> df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
+        >>> df.select(pl.col("n").list.to_struct())
         shape: (2, 1)
         ┌────────────┐
-        │ a          │
+        │ n          │
         │ ---        │
         │ struct[3]  │
         ╞════════════╡
-        │ {1,2,3}    │
-        │ {1,2,null} │
+        │ {0,1,2}    │
+        │ {0,1,null} │
         └────────────┘
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").arr.to_struct(
-        ...             name_generator=lambda idx: f"col_name_{idx}"
-        ...         )
-        ...     ]
-        ... ).to_series().to_list()
-        [{'col_name_0': 1, 'col_name_1': 2, 'col_name_2': 3},
-        {'col_name_0': 1, 'col_name_1': 2, 'col_name_2': None}]
+
+        Convert list to struct with field name assignment by function/index:
+
+        >>> df.select(pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}")).rows(
+        ...     named=True
+        ... )
+        [{'n': {'n0': 0, 'n1': 1, 'n2': 2}}, {'n': {'n0': 0, 'n1': 1, 'n2': None}}]
+
+        Convert list to struct with field name assignment by index from a list of names:
+
+        >>> df.select(pl.col("n").list.to_struct(fields=["one", "two", "three"])).rows(
+        ...     named=True
+        ... )
+        [{'n': {'one': 0, 'two': 1, 'three': 2}},
+        {'n': {'one': 0, 'two': 1, 'three': None}}]
 
         """
-        return pli.wrap_expr(
-            self._pyexpr.lst_to_struct(n_field_strategy, name_generator, upper_bound)
+        if isinstance(fields, Sequence):
+            field_names = list(fields)
+
+            def fields(idx: int) -> str:
+                return field_names[idx]
+
+        return wrap_expr(
+            self._pyexpr.list_to_struct(n_field_strategy, fields, upper_bound)
         )
 
-    def eval(self, expr: Expr, parallel: bool = False) -> Expr:
+    def eval(self, expr: Expr, *, parallel: bool = False) -> Expr:
         """
         Run any polars expression against the lists' elements.
 
@@ -780,7 +804,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
         >>> df.with_columns(
-        ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
+        ...     pl.concat_list(["a", "b"]).list.eval(pl.element().rank()).alias("rank")
         ... )
         shape: (3, 3)
         ┌─────┬─────┬────────────┐
@@ -794,4 +818,4 @@ class ExprListNameSpace:
         └─────┴─────┴────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_eval(expr._pyexpr, parallel))
+        return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))

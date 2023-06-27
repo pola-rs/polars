@@ -106,7 +106,7 @@
 //!
 //! ## Groupby
 //!
-//! This example is from the polars [user guide](https://pola-rs.github.io/polars-book/user-guide/howcani/df/groupby.html).
+//! This example is from the polars [user guide](https://pola-rs.github.io/polars-book/user-guide/concepts/contexts/#groupby-aggregation).
 //!
 //! ```
 //! use polars::prelude::*;
@@ -145,7 +145,7 @@
 //! let lf_a = df_a.clone().lazy();
 //! let lf_b = df_b.clone().lazy();
 //!
-//! let joined = lf_a.join(lf_b, vec![col("a")], vec![col("foo")], JoinType::Outer).collect()?;
+//! let joined = lf_a.join(lf_b, vec![col("a")], vec![col("foo")], JoinArgs::new(JoinType::Outer)).collect()?;
 //! // joined:
 //!
 //! // ╭─────┬─────┬─────┬──────┬─────────╮
@@ -241,7 +241,7 @@
 //! that you need to pass the values to an external function you do not control. The snippet below
 //! shows how we use the `Struct` datatype to be able to apply a function over multiple inputs.
 //!
-//! ```
+//! ```ignore
 //! use polars::prelude::*;
 //! fn my_black_box_function(a: f32, b: f32) -> f32 {
 //!     // do something
@@ -254,7 +254,7 @@
 //!         "b" => [3.0, 5.1, 0.3]
 //!     ]?
 //!     .lazy()
-//!     .select([concat_lst(["col_a", "col_b"]).map(
+//!     .select([concat_list(["col_a", "col_b"]).map(
 //!         |s| {
 //!             let ca = s.struct_()?;
 //!

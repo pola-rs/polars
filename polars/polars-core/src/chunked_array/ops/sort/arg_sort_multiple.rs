@@ -3,6 +3,8 @@ use polars_row::{convert_columns, RowsEncoded, SortField};
 use polars_utils::iter::EnumerateIdxTrait;
 
 use super::*;
+#[cfg(feature = "dtype-struct")]
+use crate::utils::_split_offsets;
 use crate::POOL;
 
 pub(crate) fn args_validate<T: PolarsDataType>(
@@ -23,11 +25,12 @@ pub(crate) fn args_validate<T: PolarsDataType>(
 
 pub(crate) fn arg_sort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
     mut vals: Vec<(IdxSize, T)>,
-    other: &[Series],
-    descending: &[bool],
+    options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
-    assert_eq!(descending.len() - 1, other.len());
-    let compare_inner: Vec<_> = other
+    let descending = &options.descending;
+    debug_assert_eq!(descending.len() - 1, options.other.len());
+    let compare_inner: Vec<_> = options
+        .other
         .iter()
         .map(|s| s.into_partial_ord_inner())
         .collect_trusted();
@@ -62,7 +65,7 @@ pub(crate) fn arg_sort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
 }
 
 pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
-    let by = convert_sort_column_multi_sort(by, true)?;
+    let by = convert_sort_column_multi_sort(by)?;
     let by = by.rechunk();
 
     let out = match by.dtype() {
@@ -80,6 +83,28 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
     Ok(out)
 }
 
+#[cfg(feature = "dtype-struct")]
+pub(crate) fn encode_rows_vertical(by: &[Series]) -> PolarsResult<BinaryChunked> {
+    let n_threads = POOL.current_num_threads();
+    let len = by[0].len();
+    let splits = _split_offsets(len, n_threads);
+    let descending = vec![false; by.len()];
+
+    let chunks = splits
+        .into_par_iter()
+        .map(|(offset, len)| {
+            let sliced = by
+                .iter()
+                .map(|s| s.slice(offset as i64, len))
+                .collect::<Vec<_>>();
+            let rows = _get_rows_encoded(&sliced, &descending, false)?;
+            Ok(Box::new(rows.into_array()) as ArrayRef)
+        })
+        .collect::<PolarsResult<_>>()?;
+
+    unsafe { Ok(BinaryChunked::from_chunks("", chunks)) }
+}
+
 pub fn _get_rows_encoded(
     by: &[Series],
     descending: &[bool],
@@ -91,13 +116,36 @@ pub fn _get_rows_encoded(
     for (by, descending) in by.iter().zip(descending) {
         let arr = _get_rows_encoded_compat_array(by)?;
 
-        cols.push(arr);
-        fields.push(SortField {
+        let sort_field = SortField {
             descending: *descending,
             nulls_last,
-        })
+        };
+        match arr.data_type() {
+            // flatten the struct fields
+            ArrowDataType::Struct(_) => {
+                let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                for arr in arr.values() {
+                    cols.push(arr.clone() as ArrayRef);
+                    fields.push(sort_field.clone())
+                }
+            }
+            _ => {
+                cols.push(arr);
+                fields.push(sort_field)
+            }
+        }
     }
     Ok(convert_columns(&cols, &fields))
+}
+
+pub fn _get_rows_encoded_ca(
+    name: &str,
+    by: &[Series],
+    descending: &[bool],
+    nulls_last: bool,
+) -> PolarsResult<BinaryChunked> {
+    _get_rows_encoded(by, descending, nulls_last)
+        .map(|rows| unsafe { BinaryChunked::from_chunks(name, vec![Box::new(rows.into_array())]) })
 }
 
 pub(crate) fn argsort_multiple_row_fmt(

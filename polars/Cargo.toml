@@ -12,16 +12,16 @@ description = "DataFrame Library based on Apache Arrow"
 [features]
 sql = ["polars-sql"]
 rows = ["polars-core/rows"]
-simd = ["polars-core/simd", "polars-io/simd"]
+simd = ["polars-core/simd", "polars-io/simd", "polars-ops/simd"]
 avx512 = ["polars-core/avx512"]
-nightly = ["polars-core/nightly", "polars-ops/nightly", "simd"]
+nightly = ["polars-core/nightly", "polars-ops/nightly", "simd", "polars-lazy/nightly"]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy/temporal", "polars-io/temporal", "polars-time"]
 random = ["polars-core/random", "polars-lazy/random"]
 default = [
   "docs",
   "zip_with",
-  "csv-file",
+  "csv",
   "temporal",
   "fmt",
   "dtype-slim",
@@ -30,7 +30,7 @@ ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
 serde = ["polars-core/serde"]
 serde-lazy = ["polars-core/serde-lazy", "polars-lazy/serde", "polars-time/serde", "polars-io/serde", "polars-ops/serde"]
-parquet = ["polars-io", "polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
+parquet = ["polars-io", "polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet", "polars-sql/parquet"]
 async = ["polars-lazy/async"]
 aws = ["async", "polars-io/aws"]
 azure = ["async", "polars-io/azure"]
@@ -43,13 +43,13 @@ lazy = ["polars-core/lazy", "polars-lazy", "polars-lazy/compile"]
 strings = ["polars-core/strings", "polars-lazy/strings", "polars-ops/strings"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
-object = ["polars-core/object", "polars-lazy/object"]
+object = ["polars-core/object", "polars-lazy/object", "polars-io/object"]
 
 # support for arrows json parsing
-json = ["polars-io", "polars-io/json", "polars-lazy/json"]
+json = ["polars-io", "polars-io/json", "polars-lazy/json", "polars-sql/json"]
 
 # support for arrows ipc file parsing
-ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc"]
+ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc", "polars-sql/ipc"]
 
 # support for arrows streaming ipc file parsing
 ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy/ipc"]
@@ -58,7 +58,7 @@ ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy/ipc"]
 avro = ["polars-io", "polars-io/avro"]
 
 # support for arrows csv file parsing
-csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
+csv = ["polars-io", "polars-io/csv", "polars-lazy/csv", "polars-sql/csv"]
 
 # slower builds
 performant = [
@@ -70,6 +70,7 @@ performant = [
   "cse",
   "polars-ops/performant",
   "streaming",
+  "fused",
 ]
 
 # Dataframe formatting.
@@ -80,6 +81,7 @@ fmt_no_tty = ["polars-core/fmt_no_tty"]
 sort_multiple = ["polars-core/sort_multiple"]
 
 # extra operations
+approx_unique = ["polars-lazy/approx_unique", "polars-ops/approx_unique"]
 is_in = ["polars-core/is_in", "polars-lazy/is_in"]
 zip_with = ["polars-core/zip_with"]
 round_series = ["polars-core/round_series", "polars-lazy/round_series", "polars-ops/round_series"]
@@ -90,7 +92,7 @@ is_unique = ["polars-lazy/is_unique", "polars-ops/is_unique"]
 is_last = ["polars-core/is_last"]
 asof_join = ["polars-core/asof_join", "polars-lazy/asof_join", "polars-ops/asof_join"]
 cross_join = ["polars-core/cross_join", "polars-lazy/cross_join", "polars-ops/cross_join"]
-dot_product = ["polars-core/dot_product", "polars-lazy/dot_product"]
+dot_product = ["polars-core/dot_product"]
 concat_str = ["polars-core/concat_str", "polars-lazy/concat_str"]
 row_hash = ["polars-core/row_hash", "polars-lazy/row_hash"]
 reinterpret = ["polars-core/reinterpret"]
@@ -98,7 +100,12 @@ decompress = ["polars-io/decompress"]
 decompress-fast = ["polars-io/decompress-fast"]
 mode = ["polars-core/mode", "polars-lazy/mode"]
 take_opt_iter = ["polars-core/take_opt_iter"]
-extract_jsonpath = ["polars-core/strings", "polars-ops/extract_jsonpath", "polars-ops/strings"]
+extract_jsonpath = [
+  "polars-core/strings",
+  "polars-ops/extract_jsonpath",
+  "polars-ops/strings",
+  "polars-lazy/extract_jsonpath",
+]
 string_encoding = ["polars-ops/string_encoding", "polars-core/strings"]
 binary_encoding = ["polars-ops/binary_encoding"]
 groupby_list = ["polars-core/groupby_list"]
@@ -150,14 +157,14 @@ cse = ["polars-lazy/cse"]
 propagate_nans = ["polars-lazy/propagate_nans"]
 coalesce = ["polars-lazy/coalesce"]
 streaming = ["polars-lazy/streaming"]
+fused = ["polars-ops/fused", "polars-lazy/fused"]
 
 test = [
   "lazy",
-  "private",
   "rolling_window",
   "rank",
   "round_series",
-  "csv-file",
+  "csv",
   "dtype-categorical",
   "cum_agg",
   "fmt",
@@ -169,15 +176,13 @@ test = [
   "json",
 ]
 
-# don't use this
-private = ["polars-lazy/private", "polars-core/private", "polars-time/private"]
-
 # all opt-in datatypes
 dtype-full = [
   "dtype-date",
   "dtype-datetime",
   "dtype-duration",
   "dtype-time",
+  "dtype-array",
   "dtype-i8",
   "dtype-i16",
   "dtype-decimal",
@@ -218,9 +223,19 @@ dtype-duration = [
   "polars-ops/dtype-duration",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time/dtype-time", "polars-ops/dtype-time"]
+dtype-array = [
+  "polars-core/dtype-array",
+  "polars-lazy/dtype-array",
+  "polars-ops/dtype-array",
+]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8", "polars-ops/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16", "polars-ops/dtype-i16"]
-dtype-decimal = ["polars-core/dtype-decimal", "polars-lazy/dtype-decimal", "polars-ops/dtype-decimal"]
+dtype-decimal = [
+  "polars-core/dtype-decimal",
+  "polars-lazy/dtype-decimal",
+  "polars-ops/dtype-decimal",
+  "polars-io/dtype-decimal",
+]
 dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8", "polars-ops/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16", "polars-ops/dtype-u16"]
 dtype-categorical = [
@@ -237,14 +252,13 @@ dtype-struct = [
 ]
 
 docs-selection = [
-  "csv-file",
+  "csv",
   "json",
   "parquet",
   "ipc",
   "ipc_streaming",
   "dtype-full",
   "is_in",
-  "sort_multiple",
   "rows",
   "docs",
   "strings",
@@ -294,13 +308,13 @@ bench = [
 ]
 
 [dependencies]
-polars-algo = { version = "0.27.2", path = "./polars-algo", optional = true }
-polars-core = { version = "0.27.2", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.27.2", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.27.2", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
-polars-ops = { version = "0.27.2", path = "./polars-ops" }
-polars-sql = { version = "0.2", path = "./polars-sql", default-features = false, optional = true }
-polars-time = { version = "0.27.2", path = "./polars-time", default-features = false, optional = true }
+polars-algo = { version = "0.30.0", path = "./polars-algo", optional = true }
+polars-core = { version = "0.30.0", path = "./polars-core", features = ["docs"], default-features = false }
+polars-io = { version = "0.30.0", path = "./polars-io", features = [], default-features = false, optional = true }
+polars-lazy = { version = "0.30.0", path = "./polars-lazy", features = [], default-features = false, optional = true }
+polars-ops = { version = "0.30.0", path = "./polars-ops" }
+polars-sql = { version = "0.30.0", path = "./polars-sql", default-features = false, optional = true }
+polars-time = { version = "0.30.0", path = "./polars-time", default-features = false, optional = true }
 
 # enable js feature for getrandom to work in wasm
 [target.'cfg(target_family = "wasm")'.dependencies.getrandom]

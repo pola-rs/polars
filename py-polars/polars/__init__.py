@@ -1,4 +1,16 @@
+import contextlib
 import os
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    # ensure the object constructor is known by polars
+    # we set this once on import
+
+    # we also set other function pointers needed
+    # on the rust side. This function is highly
+    # unsafe and should only be called once.
+    from polars.polars import __register_startup_deps
+
+    __register_startup_deps()
 
 from polars import api
 from polars.config import Config
@@ -10,13 +22,9 @@ from polars.convert import (
     from_numpy,
     from_pandas,
     from_records,
+    from_repr,
 )
-
-# TODO remove need for wrap_df
-from polars.dataframe import (
-    DataFrame,
-    wrap_df,  # noqa: F401
-)
+from polars.dataframe import DataFrame
 from polars.datatypes import (
     DATETIME_DTYPES,
     DURATION_DTYPES,
@@ -24,6 +32,7 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
+    Array,
     Binary,
     Boolean,
     Categorical,
@@ -53,39 +62,33 @@ from polars.datatypes import (
 )
 from polars.exceptions import (
     ArrowError,
+    ChronoFormatWarning,
     ColumnNotFoundError,
     ComputeError,
     DuplicateError,
     InvalidOperationError,
     NoDataError,
-    PanicException,
+    PolarsPanicError,
     SchemaError,
     SchemaFieldNotFoundError,
     ShapeError,
     StructFieldNotFoundError,
 )
-from polars.expr.expr import Expr
-from polars.functions.eager import (
+from polars.expr import Expr
+from polars.functions import (
     align_frames,
-    concat,
-    cut,
-    date_range,
-    get_dummies,
-    ones,
-    zeros,
-)
-from polars.functions.lazy import (
     all,
     any,
     apply,
+    approx_unique,
     arange,
     arg_sort_by,
     arg_where,
-    argsort_by,
     avg,
     coalesce,
     col,
     collect_all,
+    concat,
     concat_list,
     concat_str,
     corr,
@@ -94,6 +97,9 @@ from polars.functions.lazy import (
     cumfold,
     cumreduce,
     cumsum,
+    date,
+    date_range,
+    datetime,
     duration,
     element,
     exclude,
@@ -103,6 +109,7 @@ from polars.functions.lazy import (
     from_epoch,
     groups,
     head,
+    implode,
     last,
     lit,
     map,
@@ -111,22 +118,24 @@ from polars.functions.lazy import (
     median,
     min,
     n_unique,
-    pearson_corr,
+    ones,
     quantile,
     reduce,
     repeat,
+    rolling_corr,
+    rolling_cov,
     select,
-    spearman_rank_corr,
+    sql_expr,
     std,
     struct,
     sum,
     tail,
+    time,
+    time_range,
     var,
+    when,
+    zeros,
 )
-from polars.functions.lazy import date_ as date
-from polars.functions.lazy import datetime_ as datetime
-from polars.functions.lazy import list_ as list
-from polars.functions.whenthen import when
 from polars.io import (
     read_avro,
     read_csv,
@@ -140,7 +149,6 @@ from polars.io import (
     read_ndjson,
     read_parquet,
     read_parquet_schema,
-    read_sql,
     scan_csv,
     scan_delta,
     scan_ds,
@@ -150,12 +158,14 @@ from polars.io import (
     scan_pyarrow_dataset,
 )
 from polars.lazyframe import LazyFrame
-
-# TODO: remove need for wrap_s
-from polars.series import wrap_s  # noqa: F401
-from polars.series.series import Series
+from polars.series import Series
 from polars.sql import SQLContext
-from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
+from polars.string_cache import (
+    StringCache,
+    enable_string_cache,
+    toggle_string_cache,
+    using_string_cache,
+)
 from polars.type_aliases import PolarsDataType
 from polars.utils import (
     build_info,
@@ -164,6 +174,9 @@ from polars.utils import (
     show_versions,
     threadpool_size,
 )
+
+# TODO: remove need for importing wrap utils at top level
+from polars.utils._wrap import wrap_df, wrap_s  # noqa: F401
 from polars.utils.polars_version import get_polars_version as _get_polars_version
 
 __version__: str = _get_polars_version()
@@ -176,10 +189,11 @@ __all__ = [
     "ArrowError",
     "ColumnNotFoundError",
     "ComputeError",
+    "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
     "NoDataError",
-    "PanicException",
+    "PolarsPanicError",
     "SchemaError",
     "SchemaFieldNotFoundError",
     "ShapeError",
@@ -190,6 +204,7 @@ __all__ = [
     "LazyFrame",
     "Series",
     # polars.datatypes
+    "Array",
     "Binary",
     "Boolean",
     "Categorical",
@@ -238,7 +253,6 @@ __all__ = [
     "read_ndjson",
     "read_parquet",
     "read_parquet_schema",
-    "read_sql",
     "scan_csv",
     "scan_delta",
     "scan_ds",
@@ -248,6 +262,7 @@ __all__ = [
     "scan_pyarrow_dataset",
     # polars.stringcache
     "StringCache",
+    "enable_string_cache",
     "toggle_string_cache",
     "using_string_cache",
     # polars.config
@@ -258,12 +273,11 @@ __all__ = [
     "align_frames",
     "arg_where",
     "concat",
-    "cut",
     "date_range",
     "element",
-    "get_dummies",
     "ones",
     "repeat",
+    "time_range",
     "zeros",
     # polars.functions.lazy
     "all",
@@ -271,7 +285,6 @@ __all__ = [
     "apply",
     "arange",
     "arg_sort_by",
-    "argsort_by",
     "avg",
     "coalesce",
     "col",
@@ -294,8 +307,8 @@ __all__ = [
     "from_epoch",
     "groups",
     "head",
+    "implode",
     "last",
-    "list",  # named list_, see import above
     "lit",
     "map",
     "max",
@@ -303,15 +316,17 @@ __all__ = [
     "median",
     "min",
     "n_unique",
-    "pearson_corr",
+    "approx_unique",
     "quantile",
     "reduce",
+    "rolling_corr",
+    "rolling_cov",
     "select",
-    "spearman_rank_corr",
     "std",
     "struct",
     "sum",
     "tail",
+    "time",  # named time_, see import above
     "var",
     # polars.convert
     "from_arrow",
@@ -321,6 +336,7 @@ __all__ = [
     "from_numpy",
     "from_pandas",
     "from_records",
+    "from_repr",
     # polars.sql
     "SQLContext",
     # polars.utils
@@ -329,6 +345,9 @@ __all__ = [
     "get_index_type",
     "show_versions",
     "threadpool_size",
+    # selectors
+    "selectors",
+    "sql_expr",
 ]
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"

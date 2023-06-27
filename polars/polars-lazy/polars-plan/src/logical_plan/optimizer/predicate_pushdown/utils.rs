@@ -76,6 +76,34 @@ pub(super) fn predicate_at_scan(
     }
 }
 
+fn shifts_elements(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let matches = |e: &AExpr| {
+        matches!(
+            e,
+            AExpr::Function {
+                function: FunctionExpr::Shift(_) | FunctionExpr::ShiftAndFill { .. },
+                ..
+            }
+        )
+    };
+    has_aexpr(node, expr_arena, matches)
+}
+
+pub(super) fn predicate_is_sort_boundary(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let matches = |e: &AExpr| match e {
+        AExpr::Window { function, .. } => shifts_elements(*function, expr_arena),
+        AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
+            // this check for functions that are
+            // group sensitive and doesn't auto-explode (e.g. is a reduction/aggregation
+            // like sum, min, etc).
+            // function that match this are `cumsum`, `shift`, `sort`, etc.
+            options.is_groups_sensitive() && !options.auto_explode
+        }
+        _ => false,
+    };
+    has_aexpr(node, expr_arena, matches)
+}
+
 // this checks if a predicate from a node upstream can pass
 // the predicate in this filter
 // Cases where this cannot be the case:

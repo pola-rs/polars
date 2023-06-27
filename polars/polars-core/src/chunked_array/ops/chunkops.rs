@@ -1,6 +1,6 @@
 #[cfg(feature = "object")]
 use arrow::array::Array;
-use arrow::compute::concatenate;
+use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 
 use super::*;
 #[cfg(feature = "object")]
@@ -93,17 +93,14 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             }
             _ => {
                 fn inner_rechunk(chunks: &[ArrayRef]) -> Vec<ArrayRef> {
-                    vec![concatenate::concatenate(
-                        chunks.iter().map(|a| &**a).collect::<Vec<_>>().as_slice(),
-                    )
-                    .unwrap()]
+                    vec![concatenate_owned_unchecked(chunks).unwrap()]
                 }
 
                 if self.chunks.len() == 1 {
                     self.clone()
                 } else {
                     let chunks = inner_rechunk(&self.chunks);
-                    self.copy_with_chunks(chunks, true, true)
+                    unsafe { self.copy_with_chunks(chunks, true, true) }
                 }
             }
         }
@@ -117,7 +114,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     #[inline]
     pub fn slice(&self, offset: i64, length: usize) -> Self {
         let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-        let mut out = self.copy_with_chunks(chunks, true, true);
+        let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
         out.length = len as IdxSize;
         out
     }

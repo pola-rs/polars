@@ -22,12 +22,11 @@ def test_read_excel(excel_file_path: Path) -> None:
     df = pl.read_excel(excel_file_path, sheet_name="Sheet1", sheet_id=None)
 
     expected = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
-
     assert_frame_equal(df, expected)
 
 
 def test_read_excel_all_sheets(excel_file_path: Path) -> None:
-    df = pl.read_excel(excel_file_path, sheet_id=None)  # type: ignore[call-overload]
+    df = pl.read_excel(excel_file_path, sheet_id=0)
 
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
@@ -37,9 +36,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
 
 
 def test_read_excel_all_sheets_openpyxl(excel_file_path: Path) -> None:
-    df = pl.read_excel(  # type: ignore[call-overload]
-        excel_file_path, sheet_id=None, engine="openpyxl"
-    )
+    df = pl.read_excel(excel_file_path, sheet_id=0, engine="openpyxl")
 
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
@@ -64,7 +61,7 @@ def test_basic_datatypes_openpyxl_read_excel() -> None:
     # we use openpyxl because type inference is better
     df_by_default = pl.read_excel(xls, engine="openpyxl")  # type: ignore[call-overload]
     df_by_sheet_id = pl.read_excel(  # type: ignore[call-overload]
-        xls, sheet_id=0, engine="openpyxl"
+        xls, sheet_id=1, engine="openpyxl"
     )
     df_by_sheet_name = pl.read_excel(  # type: ignore[call-overload]
         xls, sheet_name="Sheet1", engine="openpyxl"
@@ -92,9 +89,16 @@ def test_unsupported_engine() -> None:
         pl.read_excel(None, engine="foo")  # type: ignore[call-overload]
 
 
+def test_read_excel_all_sheets_with_sheet_name(excel_file_path: Path) -> None:
+    with pytest.raises(
+        ValueError, match="Cannot specify both `sheet_name` and `sheet_id`"
+    ):
+        pl.read_excel(excel_file_path, sheet_id=1, sheet_name="Sheet1")
+
+
 # the parameters don't change the data, only the formatting, so we expect
 # the same result each time. however, it's important to validate that the
-# parameter permutations don't raise exceptions, or interfere wth the
+# parameter permutations don't raise exceptions, or interfere with the
 # values written to the worksheet, so test multiple variations.
 @pytest.mark.parametrize(
     "write_params",
@@ -108,7 +112,7 @@ def test_unsupported_engine() -> None:
             "column_totals": True,
             "float_precision": 0,
         },
-        # slightly customised formatting
+        # slightly customised formatting, with some formulas
         {
             "position": (0, 0),
             "table_style": {
@@ -116,10 +120,25 @@ def test_unsupported_engine() -> None:
                 "first_column": True,
             },
             "conditional_formats": {"val": "data_bar"},
-            "column_formats": {"val": "#,##0.000;[White]-#,##0.000"},
+            "column_formats": {
+                "val": "#,##0.000;[White]-#,##0.000",
+                ("day", "month", "year"): {"align": "left", "num_format": "0"},
+            },
             "column_widths": {"val": 100},
             "row_heights": {0: 35},
+            "formulas": {
+                # string: formula added to the end of the table (but before row_totals)
+                "day": "=DAY([@dtm])",
+                "month": "=MONTH([@dtm])",
+                "year": {
+                    # dict: full control over formula positioning/dtype
+                    "formula": "=YEAR([@dtm])",
+                    "insert_after": "month",
+                    "return_type": pl.Int16,
+                },
+            },
             "column_totals": True,
+            "row_totals": True,
         },
         # heavily customised formatting/definition
         {
@@ -164,11 +183,10 @@ def test_unsupported_engine() -> None:
                 pl.FLOAT_DTYPES: '_(£* #,##0.00_);_(£* (#,##0.00);_(£* "-"??_);_(@_)',
                 pl.Date: "dd-mm-yyyy",
             },
-            "column_formats": {
-                "dtm": {"font_color": "#31869c", "bg_color": "#b7dee8"},
-            },
+            "column_formats": {"dtm": {"font_color": "#31869c", "bg_color": "#b7dee8"}},
             "column_totals": {"val": "average", "dtm": "min"},
             "column_widths": {("str", "val"): 60, "dtm": 80},
+            "row_totals": {"tot": True},
             "hidden_columns": ["str"],
             "hide_gridlines": True,
             "has_header": False,
@@ -197,13 +215,31 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
     _wb = df.write_excel(workbook=xls, worksheet="data", **write_params)
 
     # ...and read it back again:
-    xldf = pl.read_excel(  # type: ignore[call-overload]
+    xldf = pl.read_excel(
         xls,
         sheet_name="data",
         read_csv_options=header_opts,
-    )[:3].with_columns(pl.col("dtm").str.strptime(pl.Date, fmt_strptime))
-
+    )[:3]
+    xldf = xldf.select(xldf.columns[:3]).with_columns(
+        pl.col("dtm").str.strptime(pl.Date, fmt_strptime)
+    )
     assert_frame_equal(df, xldf)
+
+
+def test_excel_compound_types() -> None:
+    df = pl.DataFrame(
+        {"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]}
+    ).select("x", pl.struct(["y", "z"]))
+
+    xls = BytesIO()
+    df.write_excel(xls, worksheet="data")
+
+    xldf = pl.read_excel(xls, sheet_name="data")
+    assert xldf.rows() == [
+        ("[1, 2]", "{'y': 'a', 'z': 9}"),
+        ("[3, 4]", "{'y': 'b', 'z': 8}"),
+        ("[5, 6]", "{'y': 'c', 'z': 7}"),
+    ]
 
 
 def test_excel_sparklines() -> None:
@@ -229,6 +265,7 @@ def test_excel_sparklines() -> None:
             worksheet="frame_data",
             table_style="Table Style Light 2",
             dtype_formats={pl.INTEGER_DTYPES: "#,##0_);(#,##0)"},
+            column_formats={("h1", "h2"): "#,##0_);(#,##0)"},
             sparklines={
                 "trend": ["q1", "q2", "q3", "q4"],
                 "+/-": {
@@ -238,39 +275,43 @@ def test_excel_sparklines() -> None:
                 },
             },
             conditional_formats={
-                ("q1", "q2", "q3", "q4"): {
+                ("q1", "q2", "q3", "q4", "h1", "h2"): {
                     "type": "2_color_scale",
                     "min_color": "#95b3d7",
                     "max_color": "#ffffff",
                 }
             },
-            column_widths={("q1", "q2", "q3", "q4"): 40},
+            column_widths={("q1", "q2", "q3", "q4", "h1", "h2"): 40},
+            row_totals={
+                "h1": ("q1", "q2"),
+                "h2": ("q3", "q4"),
+            },
             hide_gridlines=True,
             row_heights=35,
             sheet_zoom=125,
         )
 
     tables = {tbl["name"] for tbl in wb.get_worksheet_by_name("frame_data").tables}
-    assert "PolarsFrameTable0" in tables
+    assert "Frame0" in tables
 
-    xldf = pl.read_excel(xls, sheet_name="frame_data")  # type: ignore[call-overload]
-    # ┌──────┬──────┬─────┬─────┬─────┬─────┬───────┐
-    # │ id   ┆ +/-  ┆ q1  ┆ q2  ┆ q3  ┆ q4  ┆ trend │
-    # │ ---  ┆ ---  ┆ --- ┆ --- ┆ --- ┆ --- ┆ ---   │
-    # │ str  ┆ str  ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆ str   │
-    # ╞══════╪══════╪═════╪═════╪═════╪═════╪═══════╡
-    # │ aaa  ┆ null ┆ 100 ┆ 30  ┆ -50 ┆ 75  ┆ null  │
-    # │ bbb  ┆ null ┆ 55  ┆ -10 ┆ 0   ┆ 55  ┆ null  │
-    # │ ccc  ┆ null ┆ -20 ┆ 15  ┆ 40  ┆ 25  ┆ null  │
-    # │ ddd  ┆ null ┆ 0   ┆ 60  ┆ 80  ┆ -10 ┆ null  │
-    # │ eee  ┆ null ┆ 35  ┆ 20  ┆ 80  ┆ -55 ┆ null  │
-    # └──────┴──────┴─────┴─────┴─────┴─────┴───────┘
+    xldf = pl.read_excel(xls, sheet_name="frame_data")
+    # ┌─────┬──────┬─────┬─────┬─────┬─────┬───────┬─────┬─────┐
+    # │ id  ┆ +/-  ┆ q1  ┆ q2  ┆ q3  ┆ q4  ┆ trend ┆ h1  ┆ h2  │
+    # │ --- ┆ ---  ┆ --- ┆ --- ┆ --- ┆ --- ┆ ---   ┆ --- ┆ --- │
+    # │ str ┆ str  ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆ str   ┆ i64 ┆ i64 │
+    # ╞═════╪══════╪═════╪═════╪═════╪═════╪═══════╪═════╪═════╡
+    # │ aaa ┆ null ┆ 100 ┆ 30  ┆ -50 ┆ 75  ┆ null  ┆ 0   ┆ 0   │
+    # │ bbb ┆ null ┆ 55  ┆ -10 ┆ 0   ┆ 55  ┆ null  ┆ 0   ┆ 0   │
+    # │ ccc ┆ null ┆ -20 ┆ 15  ┆ 40  ┆ 25  ┆ null  ┆ 0   ┆ 0   │
+    # │ ddd ┆ null ┆ 0   ┆ 60  ┆ 80  ┆ -10 ┆ null  ┆ 0   ┆ 0   │
+    # │ eee ┆ null ┆ 35  ┆ 20  ┆ 80  ┆ -55 ┆ null  ┆ 0   ┆ 0   │
+    # └─────┴──────┴─────┴─────┴─────┴─────┴───────┴─────┴─────┘
 
     for sparkline_col in ("+/-", "trend"):
         assert set(xldf[sparkline_col]) == {None}
 
-    assert xldf.columns == ["id", "+/-", "q1", "q2", "q3", "q4", "trend"]
-    assert_frame_equal(df, xldf.drop("+/-", "trend"))
+    assert xldf.columns == ["id", "+/-", "q1", "q2", "q3", "q4", "trend", "h1", "h2"]
+    assert_frame_equal(df, xldf.drop("+/-", "trend", "h1", "h2"))
 
 
 def test_excel_write_multiple_tables() -> None:
@@ -308,5 +349,5 @@ def test_excel_write_multiple_tables() -> None:
         table_names.update(
             tbl["name"] for tbl in wb.get_worksheet_by_name(sheet).tables
         )
-    assert table_names == {f"PolarsFrameTable{n}" for n in range(4)}
-    assert pl.read_excel(xls, sheet_name="sheet3").rows() == [(None, None, None)]  # type: ignore[call-overload]
+    assert table_names == {f"Frame{n}" for n in range(4)}
+    assert pl.read_excel(xls, sheet_name="sheet3").rows() == []

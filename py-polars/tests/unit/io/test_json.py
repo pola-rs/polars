@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import io
-import tempfile
-from pathlib import Path
+import json
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.mark.parametrize("buf", [io.BytesIO(), io.StringIO()])
@@ -19,11 +22,12 @@ def test_to_from_buffer(df: pl.DataFrame, buf: io.IOBase) -> None:
 
 
 @pytest.mark.write_disk()
-def test_to_from_file(df: pl.DataFrame) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.json"
-        df.write_json(file_path)
-        out = pl.read_json(file_path)
+def test_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    file_path = tmp_path / "small.json"
+    df.write_json(file_path)
+    out = pl.read_json(file_path)
 
     assert_frame_equal_local_categoricals(df, out)
 
@@ -114,3 +118,23 @@ def test_write_json_categoricals() -> None:
         df.write_json(row_oriented=True, file=None)
         == '[{"column":"test1"},{"column":"test2"},{"column":"test3"},{"column":"test4"}]'
     )
+
+
+def test_json_supertype_infer() -> None:
+    json_string = """[
+{"c":[{"b": [], "a": "1"}]},
+{"c":[{"b":[]}]},
+{"c":[{"b":["1"], "a": "1"}]}]
+"""
+    python_infer = pl.from_records(json.loads(json_string))
+    polars_infer = pl.read_json(io.StringIO(json_string))
+    assert_frame_equal(python_infer, polars_infer)
+
+
+def test_json_sliced_list_serialization() -> None:
+    data = {"col1": [0, 2], "col2": [[3, 4, 5], [6, 7, 8]]}
+    df = pl.DataFrame(data)
+    f = io.BytesIO()
+    sliced_df = df[1, :]
+    sliced_df.write_ndjson(f)
+    assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'

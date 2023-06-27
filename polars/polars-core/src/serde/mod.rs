@@ -1,70 +1,11 @@
-use serde::{Deserialize, Serialize};
-
-use crate::prelude::*;
-
 pub mod chunked_array;
+mod df;
 pub mod series;
-
-/// Intermediate enum. Needed because [crate::datatypes::DataType] has
-/// a &static str and thus requires Deserialize<&static>
-#[derive(Serialize, Deserialize, Debug)]
-enum DeDataType<'a> {
-    Boolean,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Float32,
-    Float64,
-    Utf8,
-    Binary,
-    Date,
-    Datetime(TimeUnit, Option<TimeZone>),
-    Duration(TimeUnit),
-    Time,
-    List,
-    Object(&'a str),
-    Null,
-    Categorical,
-    Struct,
-}
-
-impl From<&DataType> for DeDataType<'_> {
-    fn from(dt: &DataType) -> Self {
-        match dt {
-            DataType::Int32 => DeDataType::Int32,
-            DataType::UInt32 => DeDataType::UInt32,
-            DataType::Int64 => DeDataType::Int64,
-            DataType::UInt64 => DeDataType::UInt64,
-            DataType::Date => DeDataType::Date,
-            DataType::Datetime(tu, tz) => DeDataType::Datetime(*tu, tz.clone()),
-            DataType::Duration(tu) => DeDataType::Duration(*tu),
-            DataType::Time => DeDataType::Time,
-            DataType::Float32 => DeDataType::Float32,
-            DataType::Float64 => DeDataType::Float64,
-            DataType::Utf8 => DeDataType::Utf8,
-            DataType::Boolean => DeDataType::Boolean,
-            DataType::Null => DeDataType::Null,
-            DataType::List(_) => DeDataType::List,
-            DataType::Binary => DeDataType::Binary,
-            #[cfg(feature = "object")]
-            DataType::Object(s) => DeDataType::Object(s),
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => DeDataType::Struct,
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => DeDataType::Categorical,
-            _ => unimplemented!(),
-        }
-    }
-}
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_serde() -> PolarsResult<()> {
@@ -177,9 +118,8 @@ mod test {
         )));
         let row_3 = AnyValue::Null;
 
-        let s =
-            Series::from_any_values_and_dtype("item", &vec![row_1, row_2, row_3], &dtype, false)
-                .unwrap();
+        let s = Series::from_any_values_and_dtype("item", &[row_1, row_2, row_3], &dtype, false)
+            .unwrap();
         let df = DataFrame::new(vec![s]).unwrap();
 
         let df_str = serde_json::to_string(&df).unwrap();

@@ -48,7 +48,17 @@ pub(crate) fn next_line_position(
             }
             count += 1;
         }
-        count == expected_fields
+
+        // if the latest field is missing
+        // e.g.:
+        // a,b,c
+        // vala,valb,
+        // SplitFields returns a count that is 1 less
+        // There fore we accept:
+        // expected == count
+        // and
+        // expected == count - 1
+        expected_fields.wrapping_sub(count) <= 1
     }
 
     // we check 3 subsequent lines for `accept_line` before we accept
@@ -139,17 +149,8 @@ where
 ///     'field_1,field_2'
 /// and not with
 ///     '\nfield_1,field_1'
-pub(crate) fn skip_header(input: &[u8], eol_char: u8) -> (&[u8], usize) {
-    match next_line_position_naive(input, eol_char) {
-        Some(mut pos) => {
-            if input[pos] == eol_char {
-                pos += 1;
-            }
-            (&input[pos..], pos)
-        }
-        // no lines in the file, so skipping the header is skipping all.
-        None => (&[], input.len()),
-    }
+pub(crate) fn skip_header(input: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
+    skip_this_line(input, quote, eol_char)
 }
 
 /// Remove whitespace from the start of buffer.
@@ -457,7 +458,7 @@ pub(super) fn parse_lines<'a>(
                                 .map_err(|_| {
                                     let bytes_offset = offset + field.as_ptr() as usize - start;
                                     let unparsable = String::from_utf8_lossy(field);
-                                    let column_name = schema.get_index(idx as usize).unwrap().0;
+                                    let column_name = schema.get_at_index(idx as usize).unwrap().0;
                                     polars_err!(
                                         ComputeError:
                                         "Could not parse `{}` as dtype `{}` at column '{}' (column number {}).\n\

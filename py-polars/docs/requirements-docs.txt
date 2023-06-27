@@ -4,19 +4,21 @@ numpy
 pandas
 pyarrow
 
-hypothesis==6.68.2
+hypothesis==6.75.1
 
-autodocsumm==0.2.9
+autodocsumm==0.2.10
 commonmark==0.9.1
+livereload==2.6.3
 numpydoc==1.5.0
-pydata-sphinx-theme==0.13.0
-sphinx-autosummary-accessors==2022.4.0
+pydata-sphinx-theme==0.13.3
+sphinx==6.2.1
+sphinx-autosummary-accessors==2023.4.0
 sphinx-copybutton==0.5.1
-sphinx-design==0.3.0
-sphinx==5.3.0
-sphinxcontrib-applehelp==1.0.2
+sphinx-design==0.4.1
+sphinx-favicon==1.0.1
+sphinxcontrib-applehelp==1.0.4
 sphinxcontrib-devhelp==1.0.2
-sphinxcontrib-htmlhelp==2.0.0
+sphinxcontrib-htmlhelp==2.0.1
 sphinxcontrib-jsmath==1.0.1
 sphinxcontrib-napoleon==0.7
 sphinxcontrib-qthelp==1.0.3

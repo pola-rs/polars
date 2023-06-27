@@ -10,7 +10,7 @@ from polars.dependencies import html
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from polars.internals import DataFrame
+    from polars import DataFrame
 
 
 class Tag:
@@ -88,7 +88,7 @@ class HTMLFormatter:
                         if c == -1:
                             self.elements.append("&hellip;")
                         else:
-                            self.elements.append(columns[c])
+                            self.elements.append(html.escape(columns[c]))
             with Tag(self.elements, "tr"):
                 dtypes = self.df._df.dtype_strings()
                 for c in self.col_idx:
@@ -110,18 +110,19 @@ class HTMLFormatter:
                                 self.elements.append("&hellip;")
                             else:
                                 series = self.df[:, c]
-
                                 self.elements.append(
                                     html.escape(series._s.get_fmt(r, str_lengths))
                                 )
 
     def write(self, inner: str) -> None:
+        """Append a raw string to the inner HTML."""
         self.elements.append(inner)
 
     def render(self) -> list[str]:
-        shape: tuple[int, ...] = self.df.shape
-        if self.series:
-            shape = shape[:1]
+        """Return the lines needed to render a HTML table."""
+        # format frame/series shape with '_' thousand-separators
+        s = self.df.shape
+        shape = f"({s[0]:_},)" if self.series else f"({s[0]:_}, {s[1]:_})"
 
         self.elements.append(f"<small>shape: {shape}</small>")
         with Tag(

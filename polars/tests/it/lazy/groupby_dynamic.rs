@@ -41,15 +41,16 @@ fn test_groupby_dynamic_week_bounds() -> PolarsResult<()> {
     let out = df
         .lazy()
         .groupby_dynamic(
+            col("dt"),
             [],
             DynamicGroupOptions {
-                index_column: "dt".into(),
                 every: Duration::parse("1w"),
                 period: Duration::parse("1w"),
                 offset: Duration::parse("0w"),
                 closed_window: ClosedWindow::Left,
                 truncate: false,
                 include_boundaries: true,
+                start_by: StartBy::DataPoint,
                 ..Default::default()
             },
         )

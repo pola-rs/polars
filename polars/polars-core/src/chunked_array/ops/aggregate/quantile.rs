@@ -317,6 +317,8 @@ impl Float32Chunked {
 
 impl ChunkQuantile<String> for Utf8Chunked {}
 impl ChunkQuantile<Series> for ListChunked {}
+#[cfg(feature = "dtype-array")]
+impl ChunkQuantile<Series> for ArrayChunked {}
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkQuantile<Series> for ObjectChunked<T> {}
 impl ChunkQuantile<bool> for BooleanChunked {}

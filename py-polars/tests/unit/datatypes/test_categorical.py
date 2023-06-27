@@ -1,53 +1,54 @@
 from __future__ import annotations
 
 import io
+import typing
 from typing import Any
 
 import pytest
 
 import polars as pl
+from polars import StringCache
 from polars.testing import assert_frame_equal
 
 
+@StringCache()
 def test_categorical_outer_join() -> None:
-    with pl.StringCache():
-        df1 = pl.DataFrame(
-            [
-                pl.Series("key1", [42]),
-                pl.Series("key2", ["bar"], dtype=pl.Categorical),
-                pl.Series("val1", [1]),
-            ]
-        ).lazy()
+    df1 = pl.DataFrame(
+        [
+            pl.Series("key1", [42]),
+            pl.Series("key2", ["bar"], dtype=pl.Categorical),
+            pl.Series("val1", [1]),
+        ]
+    ).lazy()
 
-        df2 = pl.DataFrame(
-            [
-                pl.Series("key1", [42]),
-                pl.Series("key2", ["bar"], dtype=pl.Categorical),
-                pl.Series("val2", [2]),
-            ]
-        ).lazy()
+    df2 = pl.DataFrame(
+        [
+            pl.Series("key1", [42]),
+            pl.Series("key2", ["bar"], dtype=pl.Categorical),
+            pl.Series("val2", [2]),
+        ]
+    ).lazy()
 
-        expected = pl.DataFrame(
-            {"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]},
-            schema_overrides={"key2": pl.Categorical},
-        )
+    expected = pl.DataFrame(
+        {"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]},
+        schema_overrides={"key2": pl.Categorical},
+    )
 
     out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
     assert_frame_equal(out, expected)
 
-    with pl.StringCache():
-        dfa = pl.DataFrame(
-            [
-                pl.Series("key", ["foo", "bar"], dtype=pl.Categorical),
-                pl.Series("val1", [3, 1]),
-            ]
-        )
-        dfb = pl.DataFrame(
-            [
-                pl.Series("key", ["bar", "baz"], dtype=pl.Categorical),
-                pl.Series("val2", [6, 8]),
-            ]
-        )
+    dfa = pl.DataFrame(
+        [
+            pl.Series("key", ["foo", "bar"], dtype=pl.Categorical),
+            pl.Series("val1", [3, 1]),
+        ]
+    )
+    dfb = pl.DataFrame(
+        [
+            pl.Series("key", ["bar", "baz"], dtype=pl.Categorical),
+            pl.Series("val2", [6, 8]),
+        ]
+    )
 
     df = dfa.join(dfb, on="key", how="outer")
     # the cast is important to test the rev map
@@ -97,38 +98,38 @@ def test_categorical_describe_3487() -> None:
     df.describe()
 
 
+@StringCache()
 def test_categorical_is_in_list() -> None:
     # this requires type coercion to cast.
     # we should not cast within the function as this would be expensive within a groupby
     # context that would be a cast per group
-    with pl.StringCache():
-        df = pl.DataFrame(
-            {"a": [1, 2, 3, 1, 2], "b": ["a", "b", "c", "d", "e"]}
-        ).with_columns(pl.col("b").cast(pl.Categorical))
+    df = pl.DataFrame(
+        {"a": [1, 2, 3, 1, 2], "b": ["a", "b", "c", "d", "e"]}
+    ).with_columns(pl.col("b").cast(pl.Categorical))
 
-        cat_list = ("a", "b", "c")
-        assert df.filter(pl.col("b").is_in(cat_list)).to_dict(False) == {
-            "a": [1, 2, 3],
-            "b": ["a", "b", "c"],
-        }
+    cat_list = ("a", "b", "c")
+    assert df.filter(pl.col("b").is_in(cat_list)).to_dict(False) == {
+        "a": [1, 2, 3],
+        "b": ["a", "b", "c"],
+    }
 
 
+@StringCache()
 def test_unset_sorted_on_append() -> None:
-    with pl.StringCache():
-        df1 = pl.DataFrame(
-            [
-                pl.Series("key", ["a", "b", "a", "b"], dtype=pl.Categorical),
-                pl.Series("val", [1, 2, 3, 4]),
-            ]
-        ).sort("key")
-        df2 = pl.DataFrame(
-            [
-                pl.Series("key", ["a", "b", "a", "b"], dtype=pl.Categorical),
-                pl.Series("val", [5, 6, 7, 8]),
-            ]
-        ).sort("key")
-        df = pl.concat([df1, df2], rechunk=False)
-        assert df.groupby("key").count()["count"].to_list() == [4, 4]
+    df1 = pl.DataFrame(
+        [
+            pl.Series("key", ["a", "b", "a", "b"], dtype=pl.Categorical),
+            pl.Series("val", [1, 2, 3, 4]),
+        ]
+    ).sort("key")
+    df2 = pl.DataFrame(
+        [
+            pl.Series("key", ["a", "b", "a", "b"], dtype=pl.Categorical),
+            pl.Series("val", [5, 6, 7, 8]),
+        ]
+    ).sort("key")
+    df = pl.concat([df1, df2], rechunk=False)
+    assert df.groupby("key").count()["count"].to_list() == [4, 4]
 
 
 def test_categorical_error_on_local_cmp() -> None:
@@ -159,29 +160,29 @@ def test_shift_and_fill() -> None:
         [pl.col("a").cast(pl.Categorical)]
     )
 
-    s = df.with_columns(pl.col("a").shift_and_fill(1, "c"))["a"]
+    s = df.with_columns(pl.col("a").shift_and_fill("c", periods=1))["a"]
     assert s.dtype == pl.Categorical
     assert s.to_list() == ["c", "a"]
 
 
+@StringCache()
 def test_merge_lit_under_global_cache_4491() -> None:
-    with pl.StringCache():
-        df = pl.DataFrame(
-            [
-                pl.Series("label", ["foo", "bar"], dtype=pl.Categorical),
-                pl.Series("value", [3, 9]),
-            ]
-        )
-        assert df.with_columns(
-            pl.when(pl.col("value") > 5)
-            .then(pl.col("label"))
-            .otherwise(pl.lit(None, pl.Categorical))
-        ).to_dict(False) == {"label": [None, "bar"], "value": [3, 9]}
+    df = pl.DataFrame(
+        [
+            pl.Series("label", ["foo", "bar"], dtype=pl.Categorical),
+            pl.Series("value", [3, 9]),
+        ]
+    )
+    assert df.with_columns(
+        pl.when(pl.col("value") > 5)
+        .then(pl.col("label"))
+        .otherwise(pl.lit(None, pl.Categorical))
+    ).to_dict(False) == {"label": [None, "bar"], "value": [3, 9]}
 
 
 def test_nested_cache_composition() -> None:
     # very artificial example/test, but validates the behaviour
-    # of  ested StringCache scopes, which we want to play well
+    # of nested StringCache scopes, which we want to play well
     # with each other when composing more complex pipelines.
 
     assert pl.using_string_cache() is False
@@ -189,7 +190,7 @@ def test_nested_cache_composition() -> None:
     # function representing a composable stage of a pipeline; it implements
     # an inner scope for the case where it is called by itself, but when
     # called as part of a larger series of ops it should not invalidate
-    # the string cache (the outermost scope should be respected).
+    # the string cache (eg: the outermost scope should be respected).
     def create_lazy(data: dict) -> pl.LazyFrame:  # type: ignore[type-arg]
         with pl.StringCache():
             df = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
@@ -210,15 +211,6 @@ def test_nested_cache_composition() -> None:
 
     # no other scope active; NOW we expect the cache to have been invalidated
     assert pl.using_string_cache() is False
-
-
-def test_categorical_list_concat_4762() -> None:
-    df = pl.DataFrame({"x": "a"})
-    expected = {"x": [["a", "a"]]}
-
-    q = df.lazy().select([pl.concat_list([pl.col("x").cast(pl.Categorical)] * 2)])
-    with pl.StringCache():
-        assert q.collect().to_dict(False) == expected
 
 
 def test_categorical_max_null_5437() -> None:
@@ -250,7 +242,7 @@ def test_cast_inner_categorical() -> None:
     with pytest.raises(
         pl.ComputeError, match=r"casting to categorical not allowed in `arr.eval`"
     ):
-        pl.Series("foo", [["a", "b"], ["a", "b"]]).arr.eval(
+        pl.Series("foo", [["a", "b"], ["a", "b"]]).list.eval(
             pl.element().cast(pl.Categorical)
         )
 
@@ -259,7 +251,7 @@ def test_cast_inner_categorical() -> None:
 def test_stringcache() -> None:
     N = 1_500
     with pl.StringCache():
-        # create a reasonable sized columns so the categorical map is reallocated
+        # create a large enough column that the categorical map is reallocated
         df = pl.DataFrame({"cats": pl.arange(0, N, eager=True)}).select(
             [pl.col("cats").cast(pl.Utf8).cast(pl.Categorical)]
         )
@@ -268,17 +260,17 @@ def test_stringcache() -> None:
         }
 
 
+@StringCache()
 def test_categorical_sort_order(monkeypatch: Any) -> None:
-    with pl.StringCache():
-        # create the categorical ordering first
-        pl.Series(["foo", "bar", "baz"], dtype=pl.Categorical)
-        df = pl.DataFrame(
-            {
-                "n": [0, 0, 0],
-                # use same categories in different order
-                "x": pl.Series(["baz", "bar", "foo"], dtype=pl.Categorical),
-            }
-        )
+    # create the categorical ordering first
+    pl.Series(["foo", "bar", "baz"], dtype=pl.Categorical)
+    df = pl.DataFrame(
+        {
+            "n": [0, 0, 0],
+            # use same categories in different order
+            "x": pl.Series(["baz", "bar", "foo"], dtype=pl.Categorical),
+        }
+    )
 
     assert df.sort(["n", "x"])["x"].to_list() == ["foo", "bar", "baz"]
     assert df.with_columns(pl.col("x").cat.set_ordering("lexical")).sort(["n", "x"])[
@@ -313,10 +305,100 @@ def test_err_on_categorical_asof_join_by_arg() -> None:
         pl.ComputeError,
         match=r"joins/or comparisons on categoricals can only happen if they were created under the same global string cache",
     ):
-        df1.join_asof(df2, on="time", by="cat")
+        df1.join_asof(df2, on=pl.col("time").set_sorted(), by="cat")
 
 
 def test_categorical_list_get_item() -> None:
     out = pl.Series([["a"]]).cast(pl.List(pl.Categorical)).item()
     assert isinstance(out, pl.Series)
     assert out.dtype == pl.Categorical
+
+
+def test_nested_categorical_aggregation_7848() -> None:
+    # a double categorical aggregation
+    assert pl.DataFrame(
+        {
+            "group": [1, 1, 2, 2, 2, 3, 3],
+            "letter": ["a", "b", "c", "d", "e", "f", "g"],
+        }
+    ).with_columns([pl.col("letter").cast(pl.Categorical)]).groupby(
+        maintain_order=True, by=["group"]
+    ).all().with_columns(
+        [pl.col("letter").list.lengths().alias("c_group")]
+    ).groupby(
+        by=["c_group"], maintain_order=True
+    ).agg(
+        pl.col("letter")
+    ).to_dict(
+        False
+    ) == {
+        "c_group": [2, 3],
+        "letter": [[["a", "b"], ["f", "g"]], [["c", "d", "e"]]],
+    }
+
+
+def test_nested_categorical_cast() -> None:
+    values = [["x"], ["y"], ["x"]]
+    dtype = pl.List(pl.Categorical)
+    s = pl.Series(values).cast(dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == values
+
+
+def test_struct_categorical_nesting() -> None:
+    # this triggers a lot of materialization
+    df = pl.DataFrame(
+        {"cats": ["Value1", "Value2", "Value1"]},
+        schema_overrides={"cats": pl.Categorical},
+    )
+    s = df.select(pl.struct(pl.col("cats")))["cats"].implode()
+    assert s.dtype == pl.List(pl.Struct([pl.Field("cats", pl.Categorical)]))
+    # triggers recursive conversion
+    assert s.to_list() == [[{"cats": "Value1"}, {"cats": "Value2"}, {"cats": "Value1"}]]
+    # triggers different recursive conversion
+    assert len(s.to_arrow()) == 1
+
+
+def test_categorical_fill_null_existing_category() -> None:
+    # ensure physical types align
+    assert pl.DataFrame(
+        {"col": ["a", None, "a"]}, schema={"col": pl.Categorical}
+    ).fill_null("a").with_columns(pl.col("col").to_physical().alias("code")).to_dict(
+        False
+    ) == {
+        "col": ["a", "a", "a"],
+        "code": [0, 0, 0],
+    }
+
+
+@StringCache()
+def test_categorical_fill_null_stringcache() -> None:
+    df = pl.LazyFrame(
+        {"index": [1, 2, 3], "cat": ["a", "b", None]},
+        schema={"index": pl.Int64(), "cat": pl.Categorical()},
+    )
+    a = df.select(pl.col("cat").fill_null("hi")).collect()
+
+    assert a.to_dict(False) == {"cat": ["a", "b", "hi"]}
+    assert a.dtypes == [pl.Categorical]
+
+
+@typing.no_type_check
+def test_fast_unique_flag_from_arrow() -> None:
+    df = pl.DataFrame(
+        {
+            "colB": ["1", "2", "3", "4", "5", "5", "5", "5"],
+        }
+    ).with_columns([pl.col("colB").cast(pl.Categorical)])
+
+    filtered = df.to_arrow().filter([True, False, True, True, False, True, True, True])
+    assert pl.from_arrow(filtered).select(pl.col("colB").n_unique()).item() == 4
+
+
+def test_construct_with_null() -> None:
+    # Example from https://github.com/pola-rs/polars/issues/7188
+    df = pl.from_dicts([{"A": None}, {"A": "foo"}], schema={"A": pl.Categorical})
+    assert df.to_series().to_list() == [None, "foo"]
+
+    s = pl.Series([{"struct_A": None}], dtype=pl.Struct({"struct_A": pl.Categorical}))
+    assert s.to_list() == [{"struct_A": None}]

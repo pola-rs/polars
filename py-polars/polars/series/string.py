@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 from polars import functions as F
-from polars import internals as pli
 from polars.series.utils import expr_dispatch
+from polars.utils._wrap import wrap_s
+from polars.utils.decorators import deprecated_alias
+from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
-    from polars.expr import Expr
+    from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.series import Series
-    from polars.type_aliases import PolarsDataType, PolarsTemporalType, TransferEncoding
+    from polars.type_aliases import (
+        PolarsDataType,
+        PolarsTemporalType,
+        TimeUnit,
+        TransferEncoding,
+    )
 
 
 @expr_dispatch
@@ -22,57 +29,208 @@ class StringNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
-    def strptime(
+    def to_date(
         self,
-        datatype: PolarsTemporalType,
-        fmt: str | None = None,
+        format: str | None = None,
+        *,
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        tz_aware: bool = False,
-        utc: bool = False,
     ) -> Series:
         """
-        Parse a Series of dtype Utf8 to a Date/Datetime Series.
+        Convert a Utf8 column into a Date column.
 
         Parameters
         ----------
-        datatype
-            Date, Datetime or Time.
-        fmt
-            Format to use, refer to the
-            `chrono strftime documentation
+        format
+            Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: ``"%y-%m-%d"``.
+            for the full specification. Example: ``"%Y-%m-%d"``.
+            If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
         exact
-            - If True, require an exact format match.
-            - If False, allow the format to match anywhere in the target string.
+            Require an exact format match. If False, allow the format to match anywhere
+            in the target string.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
-            Use a cache of unique, converted dates to apply the datetime conversion.
-        tz_aware
-            Parse timezone aware datetimes. This may be automatically toggled by the
-            'fmt' given.
+            Use a cache of unique, converted dates to apply the conversion.
+
+        Examples
+        --------
+        >>> s = pl.Series(["2020/01/01", "2020/02/01", "2020/03/01"])
+        >>> s.str.to_date()
+        shape: (3,)
+        Series: '' [date]
+        [
+                2020-01-01
+                2020-02-01
+                2020-03-01
+        ]
+
+        """
+
+    def to_datetime(
+        self,
+        format: str | None = None,
+        *,
+        time_unit: TimeUnit | None = None,
+        time_zone: str | None = None,
+        strict: bool = True,
+        exact: bool = True,
+        cache: bool = True,
+        utc: bool | None = None,
+    ) -> Series:
+        """
+        Convert a Utf8 column into a Datetime column.
+
+        Parameters
+        ----------
+        format
+            Format to use for conversion. Refer to the `chrono crate documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            If set to None (default), the format is inferred from the data.
+        time_unit : {None, 'us', 'ns', 'ms'}
+            Unit of time for the resulting Datetime column. If set to None (default),
+            the time unit is inferred from the format string if given, eg:
+            ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional second component is
+            found, the default is ``"us"``.
+        time_zone
+            Time zone for the resulting Datetime column.
+        strict
+            Raise an error if any conversion fails.
+        exact
+            Require an exact format match. If False, allow the format to match anywhere
+            in the target string.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
+        cache
+            Use a cache of unique, converted datetimes to apply the conversion.
         utc
-            Parse timezone aware datetimes as UTC. This may be useful if you have data
+            Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
 
-        Returns
-        -------
-        A Date / Datetime / Time Series
+            .. deprecated:: 0.18.0
+                This is now a no-op, you can safely remove it.
+                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                and offset-aware strings are converted to
+                ``pl.Datetime(time_unit, "UTC")``.
+
+        Examples
+        --------
+        >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
+        >>> s.str.to_datetime("%Y-%m-%d %H:%M%#z")
+        shape: (2,)
+        Series: '' [datetime[μs, UTC]]
+        [
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
+        ]
+        """
+
+    def to_time(
+        self,
+        format: str | None = None,
+        *,
+        strict: bool = True,
+        cache: bool = True,
+    ) -> Series:
+        """
+        Convert a Utf8 column into a Time column.
+
+        Parameters
+        ----------
+        format
+            Format to use for conversion. Refer to the `chrono crate documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for the full specification. Example: ``"%H:%M:%S"``.
+            If set to None (default), the format is inferred from the data.
+        strict
+            Raise an error if any conversion fails.
+        cache
+            Use a cache of unique, converted times to apply the conversion.
+
+        Examples
+        --------
+        >>> s = pl.Series(["01:00", "02:00", "03:00"])
+        >>> s.str.to_time("%H:%M")
+        shape: (3,)
+        Series: '' [time]
+        [
+                01:00:00
+                02:00:00
+                03:00:00
+        ]
+
+        """
+
+    @deprecated_alias(datatype="dtype", fmt="format")
+    def strptime(
+        self,
+        dtype: PolarsTemporalType,
+        format: str | None = None,
+        *,
+        strict: bool = True,
+        exact: bool = True,
+        cache: bool = True,
+        utc: bool | None = None,
+    ) -> Series:
+        """
+        Convert a Utf8 column into a Date/Datetime/Time column.
+
+        Parameters
+        ----------
+        dtype
+            The data type to convert to. Can be either Date, Datetime, or Time.
+        format
+            Format to use for conversion. Refer to the `chrono crate documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            If set to None (default), the format is inferred from the data.
+        strict
+            Raise an error if any conversion fails.
+        exact
+            Require an exact format match. If False, allow the format to match anywhere
+            in the target string. Conversion to the Time type is always exact.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
+        cache
+            Use a cache of unique, converted dates to apply the datetime conversion.
+        utc
+            Parse time zone aware datetimes as UTC. This may be useful if you have data
+            with mixed offsets.
+
+            .. deprecated:: 0.18.0
+                This is now a no-op, you can safely remove it.
+                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                and offset-aware strings are converted to
+                ``pl.Datetime(time_unit, "UTC")``.
+
+        Notes
+        -----
+        When converting to a Datetime type, the time unit is inferred from the format
+        string if given, eg: ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional
+        second component is found, the default is ``"us"``.
 
         Examples
         --------
         Dealing with a consistent format:
 
-        >>> ts = ["2020-01-01 01:00Z", "2020-01-01 02:00Z"]
-        >>> pl.Series(ts).str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
+        >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
+        >>> s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
 
         Dealing with different formats.
@@ -86,28 +244,79 @@ class StringNameSpace:
         ...         "Sun Jul  8 00:34:60 2001",
         ...     ],
         ... )
-        >>> (
-        ...     s.to_frame().with_columns(
-        ...         pl.col("date")
-        ...         .str.strptime(pl.Date, "%F", strict=False)
-        ...         .fill_null(
-        ...             pl.col("date").str.strptime(pl.Date, "%F %T", strict=False)
-        ...         )
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
+        >>> s.to_frame().select(
+        ...     pl.coalesce(
+        ...         pl.col("date").str.strptime(pl.Date, "%F", strict=False),
+        ...         pl.col("date").str.strptime(pl.Date, "%F %T", strict=False),
+        ...         pl.col("date").str.strptime(pl.Date, "%D", strict=False),
+        ...         pl.col("date").str.strptime(pl.Date, "%c", strict=False),
         ...     )
+        ... ).to_series()
+        shape: (4,)
+        Series: 'date' [date]
+        [
+                2021-04-22
+                2022-01-04
+                2022-01-31
+                2001-07-08
+        ]
+        """
+        if utc is not None:
+            warnings.warn(
+                "The `utc` argument is now a no-op and has no effect. "
+                "You can safely remove it. "
+                "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
+                "and offset-aware strings are converted to "
+                '``pl.Datetime(time_unit, "UTC")``.',
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
+        s = wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(
+                F.col(s.name).str.strptime(
+                    dtype,
+                    format,
+                    strict=strict,
+                    exact=exact,
+                    cache=cache,
+                )
+            )
+            .to_series()
+        )
+
+    def to_decimal(
+        self,
+        inference_length: int = 100,
+    ) -> Series:
+        """
+        Convert a Utf8 column into a Decimal column.
+
+        This method infers the needed parameters ``precision`` and ``scale``.
+
+        Parameters
+        ----------
+        inference_length
+            Number of elements to parse to determine the `precision` and `scale`
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     ["40.12", "3420.13", "120134.19", "3212.98", "12.90", "143.09", "143.9"]
         ... )
-        shape: (4, 1)
-        ┌────────────┐
-        │ date       │
-        │ ---        │
-        │ date       │
-        ╞════════════╡
-        │ 2021-04-22 │
-        │ 2022-01-04 │
-        │ 2022-01-31 │
-        │ 2001-07-08 │
-        └────────────┘
+        >>> s.str.to_decimal()
+        shape: (7,)
+        Series: '' [decimal[2]]
+        [
+            40.12
+            3420.13
+            120134.19
+            3212.98
+            12.9
+            143.09
+            143.9
+        ]
 
         """
 
@@ -188,7 +397,7 @@ class StringNameSpace:
         """
 
     def contains(
-        self, pattern: str | Expr, literal: bool = False, strict: bool = True
+        self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Series:
         """
         Check if strings in Series contain a substring that matches a regex.
@@ -196,12 +405,34 @@ class StringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern.
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         literal
-            Treat pattern as a literal string.
+            Treat ``pattern`` as a literal string, not as a regular expression.
         strict
-            Raise an error if the underlying pattern is not a valid regex expression,
+            Raise an error if the underlying pattern is not a valid regex,
             otherwise mask out with a null value.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with
+        flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        Default (case-sensitive) match:
+
+        >>> s = pl.Series("s", ["AAA", "aAa", "aaa"])
+        >>> s.str.contains("AA").to_list()
+        [True, False, False]
+
+        Case-insensitive match, using an inline flag:
+
+        >>> s = pl.Series("s", ["AAA", "aAa", "aaa"])
+        >>> s.str.contains("(?i)AA").to_list()
+        [True, True, True]
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Returns
         -------
@@ -231,13 +462,13 @@ class StringNameSpace:
 
         """
 
-    def ends_with(self, sub: str | Expr) -> Series:
+    def ends_with(self, suffix: str | Expr) -> Series:
         """
         Check if string values end with a substring.
 
         Parameters
         ----------
-        sub
+        suffix
             Suffix substring.
 
         Examples
@@ -259,13 +490,13 @@ class StringNameSpace:
 
         """
 
-    def starts_with(self, sub: str | Expr) -> Series:
+    def starts_with(self, prefix: str | Expr) -> Series:
         """
         Check if string values start with a substring.
 
         Parameters
         ----------
-        sub
+        prefix
             Prefix substring.
 
         Examples
@@ -328,7 +559,9 @@ class StringNameSpace:
 
         """
 
-    def json_extract(self, dtype: PolarsDataType | None = None) -> Series:
+    def json_extract(
+        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+    ) -> Series:
         """
         Parse string values as JSON.
 
@@ -339,6 +572,9 @@ class StringNameSpace:
         dtype
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
+        infer_schema_length
+            How many rows to parse to determine the schema.
+            If ``None`` all rows are used.
 
         Examples
         --------
@@ -404,11 +640,36 @@ class StringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
             Group 0 mean the whole pattern, first group begin at index 1
             Default to the first capture group
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as multi-line matching)
+        with flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> s = pl.Series(
+        ...     name="lines",
+        ...     values=[
+        ...         "I Like\nThose\nOdds",
+        ...         "This is\nThe Way",
+        ...     ],
+        ... )
+        >>> s.str.extract(r"(?m)^(T\w+)", 1).alias("matches")
+        shape: (2,)
+        Series: 'matches' [str]
+        [
+            "Those"
+            "This"
+        ]
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Returns
         -------
@@ -416,50 +677,84 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [
-        ...             "http://vote.com/ballon_dor?candidate=messi&ref=polars",
-        ...             "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
-        ...             "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
-        ...         ]
-        ...     }
+        >>> s = pl.Series(
+        ...     name="url",
+        ...     values=[
+        ...         "http://vote.com/ballon_dor?ref=polars&candidate=messi",
+        ...         "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
+        ...         "http://vote.com/ballon_dor?error=404&ref=unknown",
+        ...     ],
         ... )
-        >>> df.select([pl.col("a").str.extract(r"candidate=(\w+)", 1)])
-        shape: (3, 1)
-        ┌─────────┐
-        │ a       │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ messi   │
-        │ null    │
-        │ ronaldo │
-        └─────────┘
+        >>> s.str.extract(r"candidate=(\w+)", 1).alias("candidate")
+        shape: (3,)
+        Series: 'candidate' [str]
+        [
+            "messi"
+            "ronaldo"
+            null
+        ]
 
         """
 
     def extract_all(self, pattern: str | Series) -> Series:
-        r"""
-        Extracts all matches for the given regex pattern.
+        r'''
+        Extract all matches for the given regex pattern.
 
-        Extract each successive non-overlapping regex match in an individual string as
-        an array
+        Extract each successive non-overlapping regex match in an individual string
+        as a list. Extracted matches contain ``null`` if the original value is null
+        or the regex did not capture anything.
 
         Parameters
         ----------
         pattern
-            A valid regex pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as "verbose" mode and/or
+        case-sensitive matching) with flags, use the inline ``(?iLmsuxU)`` syntax.
+        For example:
+
+        >>> s = pl.Series(
+        ...     name="email",
+        ...     values=[
+        ...         "real.email@spam.com",
+        ...         "some_account@somewhere.net",
+        ...         "abc.def.ghi.jkl@uvw.xyz.co.uk",
+        ...     ],
+        ... )
+        >>> # extract name/domain parts from email, using verbose regex
+        >>> s.str.extract_all(
+        ...     r"""(?xi)   # activate 'verbose' and 'case-insensitive' flags
+        ...       [         # (start character group)
+        ...         A-Z     # letters
+        ...         0-9     # digits
+        ...         ._%+\-  # special chars
+        ...       ]         # (end character group)
+        ...       +         # 'one or more' quantifier
+        ...     """
+        ... ).alias("email_parts")
+        shape: (3,)
+        Series: 'email_parts' [list[str]]
+        [
+            ["real.email", "spam.com"]
+            ["some_account", "somewhere.net"]
+            ["abc.def.ghi.jkl", "uvw.xyz.co.uk"]
+        ]
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Returns
         -------
-        List[Utf8] array. Contain null if original value is null or regex capture
-        nothing.
+        List[Utf8]
 
         Examples
         --------
         >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
-        >>> s.str.extract_all(r"(\d+)")
+        >>> s.str.extract_all(r"\d+")
         shape: (2,)
         Series: 'foo' [list[str]]
         [
@@ -467,7 +762,7 @@ class StringNameSpace:
             ["678", "910"]
         ]
 
-        """
+        '''
 
     def count_match(self, pattern: str) -> Series:
         r"""
@@ -476,7 +771,8 @@ class StringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
 
         Returns
         -------
@@ -496,7 +792,7 @@ class StringNameSpace:
 
         """
 
-    def split(self, by: str, inclusive: bool = False) -> Series:
+    def split(self, by: str, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
 
@@ -513,7 +809,7 @@ class StringNameSpace:
 
         """
 
-    def split_exact(self, by: str, n: int, inclusive: bool = False) -> Series:
+    def split_exact(self, by: str, n: int, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring using ``n`` splits.
 
@@ -628,11 +924,11 @@ class StringNameSpace:
         Struct of Utf8 type
 
         """
-        s = pli.wrap_s(self._s)
+        s = wrap_s(self._s)
         return s.to_frame().select(F.col(s.name).str.splitn(by, n)).to_series()
 
     def replace(
-        self, pattern: str, value: str, literal: bool = False, *, n: int = 1
+        self, pattern: str, value: str, *, literal: bool = False, n: int = 1
     ) -> Series:
         r"""
         Replace first matching regex/literal substring with a new string value.
@@ -640,13 +936,41 @@ class StringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern.
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         value
-            Substring to replace.
+            String that will replace the matched substring.
         literal
-             Treat pattern as a literal string.
+            Treat pattern as a literal string.
         n
-            Number of matches to replace
+            Number of matches to replace.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with flags,
+        use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> s = pl.Series(
+        ...     name="weather",
+        ...     values=[
+        ...         "Foggy",
+        ...         "Rainy",
+        ...         "Sunny",
+        ...     ],
+        ... )
+        >>> # apply case-insensitive string replacement
+        >>> s.str.replace(r"(?i)foggy|rainy", "Sunny")
+        shape: (3,)
+        Series: 'weather' [str]
+        [
+            "Sunny"
+            "Sunny"
+            "Sunny"
+        ]
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         See Also
         --------
@@ -665,18 +989,19 @@ class StringNameSpace:
 
         """
 
-    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Series:
+    def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
         """
         Replace all matching regex/literal substrings with a new string value.
 
         Parameters
         ----------
         pattern
-            A valid regex pattern.
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         value
-            Substring to replace.
+            String that will replace the matches.
         literal
-             Treat pattern as a literal string.
+            Treat pattern as a literal string.
 
         See Also
         --------
@@ -695,13 +1020,13 @@ class StringNameSpace:
 
         """
 
-    def strip(self, matches: str | None = None) -> Series:
+    def strip(self, characters: str | None = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -718,25 +1043,26 @@ class StringNameSpace:
         ]
 
         Characters can be stripped by passing a string as argument. Note that whitespace
-        will not be stripped automatically when doing so.
+        will not be stripped automatically when doing so, unless that whitespace is
+        also included in the string.
 
-        >>> s.str.strip("od\t")
+        >>> s.str.strip("o ")
         shape: (2,)
         Series: '' [str]
         [
-                " hello "
-                "worl"
+            "hell"
+            "	world"
         ]
 
         """
 
-    def lstrip(self, matches: str | None = None) -> Series:
+    def lstrip(self, characters: str | None = None) -> Series:
         r"""
         Remove leading characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -765,13 +1091,13 @@ class StringNameSpace:
 
         """
 
-    def rstrip(self, matches: str | None = None) -> Series:
+    def rstrip(self, characters: str | None = None) -> Series:
         r"""
         Remove trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -790,12 +1116,12 @@ class StringNameSpace:
         Characters can be stripped by passing a string as argument. Note that whitespace
         will not be stripped automatically when doing so.
 
-        >>> s.str.rstrip("wod\t")
+        >>> s.str.rstrip("orld\t")
         shape: (2,)
         Series: '' [str]
         [
-                " hello "
-                "worl"
+            " hello "
+            "w"
         ]
 
         """
@@ -818,18 +1144,18 @@ class StringNameSpace:
 
         """
 
-    def ljust(self, width: int, fillchar: str = " ") -> Series:
+    def ljust(self, width: int, fill_char: str = " ") -> Series:
         """
         Return the string left justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``. The original string is
+        Padding is done using the specified ``fill_char``. The original string is
         returned if ``width`` is less than or equal to``len(s)``.
 
         Parameters
         ----------
         width
             Justify left to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples
@@ -847,18 +1173,18 @@ class StringNameSpace:
 
         """
 
-    def rjust(self, width: int, fillchar: str = " ") -> Series:
+    def rjust(self, width: int, fill_char: str = " ") -> Series:
         """
         Return the string right justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``. The original string is
+        Padding is done using the specified ``fill_char``. The original string is
         returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
             Justify right to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples
@@ -877,10 +1203,55 @@ class StringNameSpace:
         """
 
     def to_lowercase(self) -> Series:
-        """Modify the strings to their lowercase equivalent."""
+        """
+        Modify the strings to their lowercase equivalent.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", ["CAT", "DOG"])
+        >>> s.str.to_lowercase()
+        shape: (2,)
+        Series: 'foo' [str]
+        [
+            "cat"
+            "dog"
+        ]
+
+        """
 
     def to_uppercase(self) -> Series:
-        """Modify the strings to their uppercase equivalent."""
+        """
+        Modify the strings to their uppercase equivalent.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", ["cat", "dog"])
+        >>> s.str.to_uppercase()
+        shape: (2,)
+        Series: 'foo' [str]
+        [
+            "CAT"
+            "DOG"
+        ]
+
+        """
+
+    def to_titlecase(self) -> Series:
+        """
+        Modify the strings to their titlecase equivalent.
+
+        Examples
+        --------
+        >>> s = pl.Series("sing", ["welcome to my world", "THERE'S NO TURNING BACK"])
+        >>> s.str.to_titlecase()
+        shape: (2,)
+        Series: 'sing' [str]
+        [
+            "Welcome To My …
+            "There's No Tur…
+        ]
+
+        """
 
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
@@ -951,7 +1322,7 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int = 2, strict: bool = True) -> Series:
+    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Series:
         r"""
         Parse integers with base radix from strings.
 
@@ -964,7 +1335,7 @@ class StringNameSpace:
             Default: 2
 
         strict
-            Bool, Defult=True will raise any ParseError or overflow as ComputeError.
+            Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
 
         Returns
@@ -974,7 +1345,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
-        >>> s.str.parse_int(2, False)
+        >>> s.str.parse_int(2, strict=False)
         shape: (4,)
         Series: 'bin' [i32]
         [

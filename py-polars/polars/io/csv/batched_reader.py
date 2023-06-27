@@ -4,12 +4,12 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
-from polars import internals as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
     py_type_to_dtype,
 )
 from polars.io.csv._utils import _update_columns
+from polars.utils._wrap import wrap_df
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
@@ -21,7 +21,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyBatchedCsv
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
+    from polars import DataFrame
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
@@ -133,8 +133,8 @@ class BatchedCsvReader:
         if batches is not None:
             if self.new_columns:
                 return [
-                    _update_columns(pli.wrap_df(df), self.new_columns) for df in batches
+                    _update_columns(wrap_df(df), self.new_columns) for df in batches
                 ]
             else:
-                return [pli.wrap_df(df) for df in batches]
+                return [wrap_df(df) for df in batches]
         return None

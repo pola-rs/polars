@@ -14,6 +14,7 @@ use polars_core::utils::{try_get_supertype, CustomIterTools};
 
 use super::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
+use crate::chunked_array::list::sum_mean::sum_with_nulls;
 use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
 use crate::series::ArgAgg;
 
@@ -118,115 +119,29 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     fn lst_sum(&self) -> Series {
-        fn inner(ca: &ListChunked, inner_dtype: &DataType) -> Series {
-            use DataType::*;
-            // TODO: add fast path for smaller ints?
-            let mut out = match inner_dtype {
-                Boolean => {
-                    let out: IdxCa = ca
-                        .amortized_iter()
-                        .map(|s| s.and_then(|s| s.as_ref().sum()))
-                        .collect();
-                    out.into_series()
-                }
-                UInt32 => {
-                    let out: UInt32Chunked = ca
-                        .amortized_iter()
-                        .map(|s| s.and_then(|s| s.as_ref().sum()))
-                        .collect();
-                    out.into_series()
-                }
-                UInt64 => {
-                    let out: UInt64Chunked = ca
-                        .amortized_iter()
-                        .map(|s| s.and_then(|s| s.as_ref().sum()))
-                        .collect();
-                    out.into_series()
-                }
-                Int32 => {
-                    let out: Int32Chunked = ca
-                        .amortized_iter()
-                        .map(|s| s.and_then(|s| s.as_ref().sum()))
-                        .collect();
-                    out.into_series()
-                }
-                Int64 => {
-                    let out: Int64Chunked = ca
-                        .amortized_iter()
-                        .map(|s| s.and_then(|s| s.as_ref().sum()))
-                        .collect();
-                    out.into_series()
-                }
-                Float32 => {
-                    let out: Float32Chunked = ca
-                        .amortized_iter()
-                        .map(|s| s.and_then(|s| s.as_ref().sum()))
-                        .collect();
-                    out.into_series()
-                }
-                Float64 => {
-                    let out: Float64Chunked = ca
-                        .amortized_iter()
-                        .map(|s| s.and_then(|s| s.as_ref().sum()))
-                        .collect();
-                    out.into_series()
-                }
-                // slowest sum_as_series path
-                _ => ca
-                    .apply_amortized(|s| s.as_ref().sum_as_series())
-                    .explode()
-                    .unwrap()
-                    .into_series(),
-            };
-            out.rename(ca.name());
-            out
-        }
-
         let ca = self.as_list();
 
         if has_inner_nulls(ca) {
-            return inner(ca, &ca.inner_dtype());
+            return sum_with_nulls(ca, &ca.inner_dtype());
         };
 
         match ca.inner_dtype() {
             DataType::Boolean => count_boolean_bits(ca).into_series(),
             dt if dt.is_numeric() => sum_list_numerical(ca, &dt),
-            dt => inner(ca, &dt),
+            dt => sum_with_nulls(ca, &dt),
         }
     }
 
     fn lst_mean(&self) -> Series {
-        fn inner(ca: &ListChunked) -> Series {
-            let mut out: Float64Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().mean()))
-                .collect();
-
-            out.rename(ca.name());
-            out.into_series()
-        }
-        use DataType::*;
-
         let ca = self.as_list();
 
         if has_inner_nulls(ca) {
-            return match ca.inner_dtype() {
-                Float32 => {
-                    let mut out: Float32Chunked = ca
-                        .amortized_iter()
-                        .map(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as f32)))
-                        .collect();
-
-                    out.rename(ca.name());
-                    out.into_series()
-                }
-                _ => inner(ca),
-            };
+            return sum_mean::mean_with_nulls(ca);
         };
 
         match ca.inner_dtype() {
             dt if dt.is_numeric() => mean_list_numerical(ca, &dt),
-            _ => inner(ca),
+            _ => sum_mean::mean_with_nulls(ca),
         }
     }
 
@@ -245,6 +160,11 @@ pub trait ListNameSpaceImpl: AsList {
     fn lst_unique(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         ca.try_apply_amortized(|s| s.as_ref().unique())
+    }
+
+    fn lst_unique_stable(&self) -> PolarsResult<ListChunked> {
+        let ca = self.as_list();
+        ca.try_apply_amortized(|s| s.as_ref().unique_stable())
     }
 
     fn lst_arg_min(&self) -> IdxCa {
@@ -268,9 +188,9 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     #[cfg(feature = "diff")]
-    fn lst_diff(&self, n: usize, null_behavior: NullBehavior) -> ListChunked {
+    fn lst_diff(&self, n: i64, null_behavior: NullBehavior) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().diff(n, null_behavior))
+        ca.try_apply_amortized(|s| s.as_ref().diff(n, null_behavior))
     }
 
     fn lst_shift(&self, periods: i64) -> ListChunked {
@@ -637,3 +557,5 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
     );
     Ok(out)
 }
+
+// TODO: implement the above for ArrayChunked as well?

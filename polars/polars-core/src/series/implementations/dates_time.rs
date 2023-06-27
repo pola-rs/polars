@@ -17,7 +17,6 @@ use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::ops::ToBitRepr;
 use crate::chunked_array::AsSinglePtr;
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::*;
 use crate::prelude::*;
@@ -154,21 +153,15 @@ macro_rules! impl_dyn_series {
             fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
                 self.0.group_tuples(multithreaded, sorted)
             }
-            #[cfg(feature = "sort_multiple")]
-            fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-                self.0.deref().arg_sort_multiple(by, descending)
+
+            fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+                self.0.deref().arg_sort_multiple(options)
             }
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
             fn is_sorted_flag(&self) -> IsSorted {
-                if self.0.is_sorted_ascending_flag() {
-                    IsSorted::Ascending
-                } else if self.0.is_sorted_descending_flag() {
-                    IsSorted::Descending
-                } else {
-                    IsSorted::Not
-                }
+                self.0.is_sorted_flag()
             }
 
             fn rename(&mut self, name: &str) {
@@ -251,10 +244,6 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            fn take_every(&self, n: usize) -> Series {
-                self.0.take_every(n).$into_logical().into_series()
-            }
-
             unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
                 ChunkTake::take_unchecked(self.0.deref(), iter.into())
                     .$into_logical()
@@ -267,7 +256,7 @@ macro_rules! impl_dyn_series {
                 if self.0.is_sorted_ascending_flag()
                     && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
                 {
-                    out.set_sorted_flag(idx.is_sorted_flag2())
+                    out.set_sorted_flag(idx.is_sorted_flag())
                 }
 
                 Ok(out.$into_logical().into_series())
@@ -308,7 +297,15 @@ macro_rules! impl_dyn_series {
                         .into_series()
                         .date()
                         .unwrap()
-                        .strftime("%Y-%m-%d")
+                        .to_string("%Y-%m-%d")
+                        .into_series()),
+                    (DataType::Time, DataType::Utf8) => Ok(self
+                        .0
+                        .clone()
+                        .into_series()
+                        .time()
+                        .unwrap()
+                        .to_string("%T")
                         .into_series()),
                     #[cfg(feature = "dtype-datetime")]
                     (DataType::Time, DataType::Datetime(_, _)) => {
@@ -316,6 +313,12 @@ macro_rules! impl_dyn_series {
                             ComputeError:
                             "cannot cast `Time` to `Datetime`; consider using 'dt.combine'"
                         );
+                    }
+                    #[cfg(feature = "dtype-datetime")]
+                    (DataType::Date, DataType::Datetime(_, _)) => {
+                        let mut out = self.0.cast(data_type)?;
+                        out.set_sorted_flag(self.0.is_sorted_flag());
+                        Ok(out)
                     }
                     _ => self.0.cast(data_type),
                 }
@@ -326,7 +329,6 @@ macro_rules! impl_dyn_series {
             }
 
             #[inline]
-            #[cfg(feature = "private")]
             unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
                 self.0.get_any_value_unchecked(index)
             }
@@ -420,10 +422,6 @@ macro_rules! impl_dyn_series {
                     .into())
             }
 
-            fn fmt_list(&self) -> String {
-                FmtList::fmt_list(&self.0)
-            }
-
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
             }
@@ -440,24 +438,24 @@ macro_rules! impl_dyn_series {
                 self.0.is_in(other)
             }
             #[cfg(feature = "repeat_by")]
-            fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+            fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
                 match self.0.dtype() {
-                    DataType::Date => self
+                    DataType::Date => Ok(self
                         .0
-                        .repeat_by(by)
+                        .repeat_by(by)?
                         .cast(&DataType::List(Box::new(DataType::Date)))
                         .unwrap()
                         .list()
                         .unwrap()
-                        .clone(),
-                    DataType::Time => self
+                        .clone()),
+                    DataType::Time => Ok(self
                         .0
-                        .repeat_by(by)
+                        .repeat_by(by)?
                         .cast(&DataType::List(Box::new(DataType::Time)))
                         .unwrap()
                         .list()
                         .unwrap()
-                        .clone(),
+                        .clone()),
                     _ => unreachable!(),
                 }
             }

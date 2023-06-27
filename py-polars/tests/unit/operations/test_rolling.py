@@ -6,6 +6,9 @@ from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
+from numpy import nan
+
+from polars.exceptions import ComputeError
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -54,15 +57,109 @@ def test_rolling_kernels_and_groupby_rolling(
             pl.col("values").rolling_std(period, by="dt", closed=closed).alias("std"),
         ]
     )
-    out2 = example_df.groupby_rolling("dt", period=period, closed=closed).agg(
-        [
-            pl.col("values").sum().alias("sum"),
-            pl.col("values").var().alias("var"),
-            pl.col("values").mean().alias("mean"),
-            pl.col("values").std().alias("std"),
-        ]
+    out2 = (
+        example_df.set_sorted("dt")
+        .groupby_rolling("dt", period=period, closed=closed)
+        .agg(
+            [
+                pl.col("values").sum().alias("sum"),
+                pl.col("values").var().alias("var"),
+                pl.col("values").mean().alias("mean"),
+                pl.col("values").std().alias("std"),
+            ]
+        )
     )
     assert_frame_equal(out1, out2)
+
+
+@pytest.mark.parametrize(
+    ("offset", "closed", "expected_values"),
+    [
+        pytest.param(
+            "-1d",
+            "left",
+            [[1], [1, 2], [2, 3], [3, 4]],
+            id="partial lookbehind, left",
+        ),
+        pytest.param(
+            "-1d",
+            "right",
+            [[1, 2], [2, 3], [3, 4], [4]],
+            id="partial lookbehind, right",
+        ),
+        pytest.param(
+            "-1d",
+            "both",
+            [[1, 2], [1, 2, 3], [2, 3, 4], [3, 4]],
+            id="partial lookbehind, both",
+        ),
+        pytest.param(
+            "-1d",
+            "none",
+            [[1], [2], [3], [4]],
+            id="partial lookbehind, none",
+        ),
+        pytest.param(
+            "-2d",
+            "left",
+            [[], [1], [1, 2], [2, 3]],
+            id="full lookbehind, left",
+        ),
+        pytest.param(
+            "-3d",
+            "left",
+            [[], [], [1], [1, 2]],
+            id="full lookbehind, offset > period, left",
+        ),
+        pytest.param(
+            "-3d",
+            "right",
+            [[], [1], [1, 2], [2, 3]],
+            id="full lookbehind, right",
+        ),
+        pytest.param(
+            "-3d",
+            "both",
+            [[], [1], [1, 2], [1, 2, 3]],
+            id="full lookbehind, both",
+        ),
+        pytest.param(
+            "-2d",
+            "none",
+            [[], [1], [2], [3]],
+            id="full lookbehind, none",
+        ),
+        pytest.param(
+            "-3d",
+            "none",
+            [[], [], [1], [2]],
+            id="full lookbehind, offset > period, none",
+        ),
+    ],
+)
+def test_rolling_negative_offset(
+    offset: str, closed: ClosedInterval, expected_values: list[list[int]]
+) -> None:
+    df = pl.DataFrame(
+        {
+            "ts": pl.date_range(
+                datetime(2021, 1, 1), datetime(2021, 1, 4), "1d", eager=True
+            ),
+            "value": [1, 2, 3, 4],
+        }
+    )
+    result = df.groupby_rolling("ts", period="2d", offset=offset, closed=closed).agg(
+        pl.col("value")
+    )
+    expected = pl.DataFrame(
+        {
+            "ts": pl.date_range(
+                datetime(2021, 1, 1), datetime(2021, 1, 4), "1d", eager=True
+            ),
+            "value": expected_values,
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_rolling_skew() -> None:
@@ -92,7 +189,7 @@ def test_rolling_skew() -> None:
     )
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central", "+01:00"])
+@pytest.mark.parametrize("time_zone", [None, "US/Central"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values"),
     [
@@ -108,10 +205,12 @@ def test_rolling_crossing_dst(
     time_zone: str | None, rolling_fn: str, expected_values: list[int | None | float]
 ) -> None:
     ts = pl.date_range(
-        datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC"
+        datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC", eager=True
     ).dt.replace_time_zone(time_zone)
     df = pl.DataFrame({"ts": ts, "value": [1, 2, 3, 4, 5, 6]})
-    result = df.with_columns(getattr(pl.col("value"), rolling_fn)("1d", by="ts"))
+    result = df.with_columns(
+        getattr(pl.col("value"), rolling_fn)("1d", by="ts", closed="left")
+    )
     expected = pl.DataFrame({"ts": ts, "value": expected_values})
     assert_frame_equal(result, expected)
 
@@ -167,95 +266,82 @@ def test_rolling_extrema() -> None:
 
 def test_rolling_groupby_extrema() -> None:
     # ensure we hit different branches so create
-    # two dfs, but ensure that one does not have a sorted flag
 
-    # descending order
-    not_sorted_flag = pl.DataFrame({"col1": [6, 5, 4, 3, 2, 1, 0]}).with_columns(
-        pl.col("col1").reverse().alias("row_nr")
-    )
-    assert not not_sorted_flag["col1"].flags["SORTED_DESC"]
-
-    sorted_flag = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "col1": pl.arange(0, 7, eager=True).reverse(),
         }
     ).with_columns(pl.col("col1").reverse().alias("row_nr"))
 
-    for df in [sorted_flag, not_sorted_flag]:
-        assert (
-            df.groupby_rolling(
-                index_column="row_nr",
-                period="3i",
-            )
-            .agg(
-                [
-                    pl.col("col1").suffix("_list"),
-                    pl.col("col1").min().suffix("_min"),
-                    pl.col("col1").max().suffix("_max"),
-                    pl.col("col1").first().alias("col1_first"),
-                    pl.col("col1").last().alias("col1_last"),
-                ]
-            )
-            .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
-        ).to_dict(False) == {
-            "col1_list": [
-                [6],
-                [6, 5],
-                [6, 5, 4],
-                [5, 4, 3],
-                [4, 3, 2],
-                [3, 2, 1],
-                [2, 1, 0],
-            ],
-            "col1_min": [6, 5, 4, 3, 2, 1, 0],
-            "col1_max": [6, 6, 6, 5, 4, 3, 2],
-            "col1_first": [6, 6, 6, 5, 4, 3, 2],
-            "col1_last": [6, 5, 4, 3, 2, 1, 0],
-        }
+    assert (
+        df.groupby_rolling(
+            index_column="row_nr",
+            period="3i",
+        )
+        .agg(
+            [
+                pl.col("col1").suffix("_list"),
+                pl.col("col1").min().suffix("_min"),
+                pl.col("col1").max().suffix("_max"),
+                pl.col("col1").first().alias("col1_first"),
+                pl.col("col1").last().alias("col1_last"),
+            ]
+        )
+        .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
+    ).to_dict(False) == {
+        "col1_list": [
+            [6],
+            [6, 5],
+            [6, 5, 4],
+            [5, 4, 3],
+            [4, 3, 2],
+            [3, 2, 1],
+            [2, 1, 0],
+        ],
+        "col1_min": [6, 5, 4, 3, 2, 1, 0],
+        "col1_max": [6, 6, 6, 5, 4, 3, 2],
+        "col1_first": [6, 6, 6, 5, 4, 3, 2],
+        "col1_last": [6, 5, 4, 3, 2, 1, 0],
+    }
 
     # ascending order
 
-    sorted_df = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "col1": pl.arange(0, 7, eager=True),
         }
     ).with_columns(pl.col("col1").alias("row_nr"))
 
-    not_sorted_df = pl.DataFrame({"col1": [0, 1, 2, 3, 4, 5, 6]}).with_columns(
-        pl.col("col1").alias("row_nr")
-    )
-
-    for df in [sorted_df, not_sorted_df]:
-        assert (
-            df.groupby_rolling(
-                index_column="row_nr",
-                period="3i",
-            )
-            .agg(
-                [
-                    pl.col("col1").suffix("_list"),
-                    pl.col("col1").min().suffix("_min"),
-                    pl.col("col1").max().suffix("_max"),
-                    pl.col("col1").first().alias("col1_first"),
-                    pl.col("col1").last().alias("col1_last"),
-                ]
-            )
-            .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
-        ).to_dict(False) == {
-            "col1_list": [
-                [0],
-                [0, 1],
-                [0, 1, 2],
-                [1, 2, 3],
-                [2, 3, 4],
-                [3, 4, 5],
-                [4, 5, 6],
-            ],
-            "col1_min": [0, 0, 0, 1, 2, 3, 4],
-            "col1_max": [0, 1, 2, 3, 4, 5, 6],
-            "col1_first": [0, 0, 0, 1, 2, 3, 4],
-            "col1_last": [0, 1, 2, 3, 4, 5, 6],
-        }
+    assert (
+        df.groupby_rolling(
+            index_column="row_nr",
+            period="3i",
+        )
+        .agg(
+            [
+                pl.col("col1").suffix("_list"),
+                pl.col("col1").min().suffix("_min"),
+                pl.col("col1").max().suffix("_max"),
+                pl.col("col1").first().alias("col1_first"),
+                pl.col("col1").last().alias("col1_last"),
+            ]
+        )
+        .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
+    ).to_dict(False) == {
+        "col1_list": [
+            [0],
+            [0, 1],
+            [0, 1, 2],
+            [1, 2, 3],
+            [2, 3, 4],
+            [3, 4, 5],
+            [4, 5, 6],
+        ],
+        "col1_min": [0, 0, 0, 1, 2, 3, 4],
+        "col1_max": [0, 1, 2, 3, 4, 5, 6],
+        "col1_first": [0, 0, 0, 1, 2, 3, 4],
+        "col1_last": [0, 1, 2, 3, 4, 5, 6],
+    }
 
     # shuffled data.
     df = pl.DataFrame(
@@ -303,7 +389,7 @@ def test_rolling_slice_pushdown() -> None:
         )
         .agg(
             [
-                (pl.col("c") - pl.col("c").shift_and_fill(1, fill_value=0))
+                (pl.col("c") - pl.col("c").shift_and_fill(fill_value=0, periods=1))
                 .sum()
                 .alias("c")
             ]
@@ -327,7 +413,7 @@ def test_groupby_dynamic_slice_pushdown() -> None:
         )
         .agg(
             [
-                (pl.col("c") - pl.col("c").shift_and_fill(1, fill_value=0))
+                (pl.col("c") - pl.col("c").shift_and_fill(fill_value=0, periods=1))
                 .sum()
                 .alias("c")
             ]
@@ -348,7 +434,7 @@ def test_overlapping_groups_4628() -> None:
         }
     )
     assert (
-        df.groupby_rolling(index_column="index", period="3i").agg(
+        df.groupby_rolling(index_column=pl.col("index").set_sorted(), period="3i").agg(
             [
                 pl.col("val").diff(n=1).alias("val.diff"),
                 (pl.col("val") - pl.col("val").shift(1)).alias("val - val.shift"),
@@ -399,19 +485,19 @@ def test_rolling_skew_lagging_null_5179() -> None:
 
 def test_rolling_var_numerical_stability_5197() -> None:
     s = pl.Series([*[1.2] * 4, *[3.3] * 7])
-    assert s.to_frame("a").with_columns(pl.col("a").rolling_var(5))[:, 0].to_list() == [
-        None,
-        None,
-        None,
-        None,
-        0.882,
-        1.3229999999999997,
-        1.3229999999999997,
-        0.8819999999999983,
-        0.0,
-        0.0,
-        0.0,
-    ]
+    res = s.to_frame("a").with_columns(pl.col("a").rolling_var(5))[:, 0].to_list()
+    assert res[4:] == pytest.approx(
+        [
+            0.882,
+            1.3229999999999997,
+            1.3229999999999997,
+            0.8819999999999983,
+            0.0,
+            0.0,
+            0.0,
+        ]
+    )
+    assert res[:4] == [None] * 4
 
 
 @typing.no_type_check
@@ -423,9 +509,11 @@ def test_dynamic_groupby_timezone_awareness() -> None:
                 datetime(2020, 1, 10),
                 timedelta(days=1),
                 time_unit="ns",
-                name="datetime",
-            ).dt.replace_time_zone("UTC"),
-            pl.Series("value", pl.arange(1, 11, eager=True)),
+                eager=True,
+            )
+            .alias("datetime")
+            .dt.replace_time_zone("UTC"),
+            pl.arange(1, 11, eager=True).alias("value"),
         )
     )
 
@@ -447,7 +535,7 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
     # start by datapoint
     start = datetime(2022, 12, 16, tzinfo=tzinfo)
     stop = datetime(2022, 12, 16, hour=3, tzinfo=tzinfo)
-    df = pl.DataFrame({"date": pl.date_range(start, stop, "30m")})
+    df = pl.DataFrame({"date": pl.date_range(start, stop, "30m", eager=True)})
 
     assert df.groupby_dynamic(
         "date",
@@ -483,22 +571,23 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         "count": [2, 1, 1, 1, 1, 1],
     }
 
-    # start by week
+    # start by monday
     start = datetime(2022, 1, 1, tzinfo=tzinfo)
     stop = datetime(2022, 1, 12, 7, tzinfo=tzinfo)
 
-    df = pl.DataFrame({"date": pl.date_range(start, stop, "12h")}).with_columns(
-        pl.col("date").dt.weekday().alias("day")
-    )
+    df = pl.DataFrame(
+        {"date": pl.date_range(start, stop, "12h", eager=True)}
+    ).with_columns(pl.col("date").dt.weekday().alias("day"))
 
-    assert df.groupby_dynamic(
+    result = df.groupby_dynamic(
         "date",
         every="1w",
         period="3d",
         include_boundaries=True,
         start_by="monday",
         truncate=False,
-    ).agg([pl.count(), pl.col("day").first().alias("data_day")]).to_dict(False) == {
+    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
+    assert result.to_dict(False) == {
         "_lower_boundary": [
             datetime(2022, 1, 3, 0, 0, tzinfo=tzinfo),
             datetime(2022, 1, 10, 0, 0, tzinfo=tzinfo),
@@ -513,6 +602,31 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         ],
         "count": [6, 5],
         "data_day": [1, 1],
+    }
+    # start by saturday
+    result = df.groupby_dynamic(
+        "date",
+        every="1w",
+        period="3d",
+        include_boundaries=True,
+        start_by="saturday",
+        truncate=False,
+    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
+    assert result.to_dict(False) == {
+        "_lower_boundary": [
+            datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
+        ],
+        "_upper_boundary": [
+            datetime(2022, 1, 4, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 11, 0, 0, tzinfo=tzinfo),
+        ],
+        "date": [
+            datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
+        ],
+        "count": [6, 6],
+        "data_day": [6, 6],
     }
 
 
@@ -531,7 +645,7 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
             "label": ["a", "b", "a", "a", "b", "a", "b"],
             "value": [1, 2, 3, 4, 5, 6, 7],
         }
-    ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
+    ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d").set_sorted())
 
     result = df.groupby_dynamic(
         "date", every="1w", offset="1d", by="label", start_by="monday"
@@ -564,7 +678,7 @@ def test_groupby_rolling_iter() -> None:
             "a": [1, 2, 2],
             "b": [4, 5, 6],
         }
-    )
+    ).set_sorted("date")
 
     # Without 'by' argument
     result1 = [
@@ -591,6 +705,30 @@ def test_groupby_rolling_iter() -> None:
     assert result2 == expected2
 
 
+def test_groupby_rolling_negative_period() -> None:
+    df = pl.DataFrame({"ts": [datetime(2020, 1, 1)], "value": [1]}).with_columns(
+        pl.col("ts").set_sorted()
+    )
+    with pytest.raises(
+        ComputeError, match="rolling window period should be strictly positive"
+    ):
+        df.groupby_rolling("ts", period="-1d", offset="-1d").agg(pl.col("value"))
+    with pytest.raises(
+        ComputeError, match="rolling window period should be strictly positive"
+    ):
+        df.lazy().groupby_rolling("ts", period="-1d", offset="-1d").agg(
+            pl.col("value")
+        ).collect()
+    with pytest.raises(ComputeError, match="window size should be strictly positive"):
+        df.select(
+            pl.col("value").rolling_min(by="ts", window_size="-1d", closed="left")
+        )
+    with pytest.raises(ComputeError, match="window size should be strictly positive"):
+        df.lazy().select(
+            pl.col("value").rolling_min(by="ts", window_size="-1d", closed="left")
+        ).collect()
+
+
 def test_rolling_skew_window_offset() -> None:
     assert (pl.arange(0, 20, eager=True) ** 2).rolling_skew(20)[
         -1
@@ -614,3 +752,58 @@ def test_rolling_kernels_groupby_dynamic_7548() -> None:
         "max_value": [2, 3, 3, 3],
         "sum_value": [3, 6, 5, 3],
     }
+
+
+def test_rolling_cov_corr() -> None:
+    df = pl.DataFrame({"x": [3, 3, 3, 5, 8], "y": [3, 4, 4, 4, 8]})
+
+    res = df.select(
+        [
+            pl.rolling_cov("x", "y", window_size=3).alias("cov"),
+            pl.rolling_corr("x", "y", window_size=3).alias("corr"),
+        ]
+    ).to_dict(False)
+    assert res["cov"][2:] == pytest.approx([0.0, 0.0, 5.333333333333336])
+    assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok=True)
+    assert res["cov"][:2] == [None] * 2
+    assert res["corr"][:2] == [None] * 2
+
+
+def test_rolling_window_size_9160() -> None:
+    assert pl.Series([1, 5]).rolling_apply(
+        lambda x: sum(x), window_size=2, min_periods=1
+    ).to_list() == [1, 6]
+    assert pl.Series([1]).rolling_apply(
+        lambda x: sum(x), window_size=2, min_periods=1
+    ).to_list() == [1]
+
+
+def test_rolling_empty_window_9406() -> None:
+    datecol = pl.Series(
+        "d",
+        [datetime(2019, 1, x) for x in [16, 17, 18, 22, 23]],
+        dtype=pl.Datetime(time_unit="us", time_zone=None),
+    )
+    rawdata = pl.Series("x", [1.1, 1.2, 1.3, 1.15, 1.25], dtype=pl.Float64)
+    rmin = pl.Series("x", [None, 1.1, 1.1, None, 1.15], dtype=pl.Float64)
+    rmax = pl.Series("x", [None, 1.1, 1.2, None, 1.15], dtype=pl.Float64)
+    df = pl.DataFrame([datecol, rawdata])
+
+    assert_frame_equal(
+        pl.DataFrame([datecol, rmax]),
+        df.select(
+            [
+                pl.col("d"),
+                pl.col("x").rolling_max(by="d", window_size="3d", closed="left"),
+            ]
+        ),
+    )
+    assert_frame_equal(
+        pl.DataFrame([datecol, rmin]),
+        df.select(
+            [
+                pl.col("d"),
+                pl.col("x").rolling_min(by="d", window_size="3d", closed="left"),
+            ]
+        ),
+    )

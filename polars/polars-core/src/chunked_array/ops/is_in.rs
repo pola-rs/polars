@@ -1,7 +1,5 @@
 use std::hash::Hash;
 
-use hashbrown::hash_set::HashSet;
-
 use crate::prelude::*;
 use crate::utils::{try_get_supertype, CustomIterTools};
 
@@ -10,7 +8,7 @@ where
     T: PolarsNumericType,
     P: Eq + Hash + Copy,
 {
-    let mut set = HashSet::with_capacity(other.len());
+    let mut set = PlHashSet::with_capacity(other.len());
 
     let other = ca.unpack_series_matching_type(other)?;
     other.downcast_iter().for_each(|iter| {
@@ -83,8 +81,8 @@ where
             }
             _ => {
                 // first make sure that the types are equal
-                let st = try_get_supertype(self.dtype(), other.dtype())?;
                 if self.dtype() != other.dtype() {
+                    let st = try_get_supertype(self.dtype(), other.dtype())?;
                     let left = self.cast(&st)?;
                     let right = other.cast(&st)?;
                     return left.is_in(&right);
@@ -164,56 +162,16 @@ impl IsIn for Utf8Chunked {
                     unreachable!()
                 }
             }
-            DataType::List(dt) if DataType::Utf8 == **dt => {
-                let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
-                    let value = self.get(0);
-                    other
-                        .list()?
-                        .amortized_iter()
-                        .map(|opt_s| {
-                            opt_s.map(|s| {
-                                let ca = s.as_ref().unpack::<Utf8Type>().unwrap();
-                                ca.into_iter().any(|a| a == value)
-                            }) == Some(true)
-                        })
-                        .collect_trusted()
-                } else {
-                    self.into_iter()
-                        .zip(other.list()?.amortized_iter())
-                        .map(|(value, series)| match (value, series) {
-                            (val, Some(series)) => {
-                                let ca = series.as_ref().unpack::<Utf8Type>().unwrap();
-                                ca.into_iter().any(|a| a == val)
-                            }
-                            _ => false,
-                        })
-                        .collect_trusted()
-                };
-                ca.rename(self.name());
-                Ok(ca)
-            }
-            DataType::Utf8 => {
-                let mut set = HashSet::with_capacity(other.len());
-
-                let other = other.utf8()?;
-                other.downcast_iter().for_each(|iter| {
-                    iter.into_iter().for_each(|opt_val| {
-                        set.insert(opt_val);
-                    })
-                });
-                let mut ca: BooleanChunked = self
-                    .into_iter()
-                    .map(|opt_val| set.contains(&opt_val))
-                    .collect_trusted();
-                ca.rename(self.name());
-                Ok(ca)
-            }
+            DataType::List(dt) if DataType::Utf8 == **dt => self.as_binary().is_in(
+                &other
+                    .cast(&DataType::List(Box::new(DataType::Binary)))
+                    .unwrap(),
+            ),
+            DataType::Utf8 => self
+                .as_binary()
+                .is_in(&other.cast(&DataType::Binary).unwrap()),
             _ => polars_bail!(opq = is_in, self.dtype(), other.dtype()),
         }
-        .map(|mut ca| {
-            ca.rename(self.name());
-            ca
-        })
     }
 }
 
@@ -249,7 +207,7 @@ impl IsIn for BinaryChunked {
                 Ok(ca)
             }
             DataType::Binary => {
-                let mut set = HashSet::with_capacity(other.len());
+                let mut set = PlHashSet::with_capacity(other.len());
 
                 let other = other.binary()?;
                 other.downcast_iter().for_each(|iter| {
@@ -361,6 +319,7 @@ impl IsIn for StructChunked {
                 Ok(ca)
             }
             _ => {
+                let other = other.cast(&other.dtype().to_physical()).unwrap();
                 let other = other.struct_()?;
 
                 polars_ensure!(
@@ -369,22 +328,54 @@ impl IsIn for StructChunked {
                     self.fields().len(), other.fields().len()
                 );
 
-                let out = self
-                    .fields()
-                    .iter()
-                    .zip(other.fields())
-                    .map(|(lhs, rhs)| lhs.is_in(rhs))
-                    .collect::<PolarsResult<Vec<_>>>()?;
+                // first make sure that the types are equal
+                let self_dtypes: Vec<_> = self.fields().iter().map(|f| f.dtype()).collect();
+                let other_dtypes: Vec<_> = other.fields().iter().map(|f| f.dtype()).collect();
+                if self_dtypes != other_dtypes {
+                    let self_names = self.fields().iter().map(|f| f.name());
+                    let other_names = other.fields().iter().map(|f| f.name());
+                    let supertypes = self_dtypes
+                        .iter()
+                        .zip(other_dtypes.iter())
+                        .map(|(dt1, dt2)| try_get_supertype(dt1, dt2))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let self_supertype_fields = self_names
+                        .zip(supertypes.iter())
+                        .map(|(name, st)| Field::new(name, st.clone()))
+                        .collect();
+                    let self_super = self.cast(&DataType::Struct(self_supertype_fields))?;
+                    let other_supertype_fields = other_names
+                        .zip(supertypes.iter())
+                        .map(|(name, st)| Field::new(name, st.clone()))
+                        .collect();
+                    let other_super = other.cast(&DataType::Struct(other_supertype_fields))?;
+                    return self_super.is_in(&other_super);
+                }
 
-                let out = out.into_iter().reduce(|acc, val| {
-                    // all false
-                    if !acc.any() {
-                        acc
-                    } else {
-                        acc & val
-                    }
+                let mut anyvalues = Vec::with_capacity(other.len() * other.fields().len());
+                // Safety:
+                // the iterator is unsafe as the lifetime is tied to the iterator
+                // so we copy to an owned buffer first
+                other.into_iter().for_each(|val| {
+                    anyvalues.extend_from_slice(val);
                 });
-                out.ok_or_else(|| polars_err!(ComputeError: "no fields in struct"))
+
+                // then we fill the set
+                let mut set = PlHashSet::with_capacity(other.len());
+                for key in anyvalues.chunks_exact(other.fields().len()) {
+                    set.insert(key);
+                }
+                // physical self
+                let self_ca = self.cast(&self.dtype().to_physical()).unwrap();
+                let self_ca = self_ca.struct_().unwrap();
+
+                // and then we check for membership
+                let mut ca: BooleanChunked = self_ca
+                    .into_iter()
+                    .map(|vals| set.contains(&vals))
+                    .collect();
+                ca.rename(self.name());
+                Ok(ca)
             }
         }
     }

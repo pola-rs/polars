@@ -1,6 +1,7 @@
 use std::any::Any;
 
 use super::*;
+use crate::hashing::series_to_hashes;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
@@ -63,15 +64,23 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
             .unwrap();
         Ok(gb.take_groups())
     }
+
+    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+        series_to_hashes(self.0.fields(), Some(random_state), buf)?;
+        Ok(())
+    }
+
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        for field in self.0.fields() {
+            field.vec_hash_combine(build_hasher.clone(), hashes)?;
+        }
+        Ok(())
+    }
 }
 
 impl SeriesTrait for SeriesWrap<StructChunked> {
     fn rename(&mut self, name: &str) {
         self.0.rename(name)
-    }
-
-    fn take_every(&self, n: usize) -> Series {
-        self.0.apply_fields(|s| s.take_every(n)).into_series()
     }
 
     fn has_validity(&self) -> bool {
@@ -262,46 +271,17 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     /// Count the null values.
     fn null_count(&self) -> usize {
-        if self
-            .0
-            .fields()
-            .iter()
-            .map(|s| s.null_count())
-            .sum::<usize>()
-            > 0
-        {
-            let mut null_count = 0;
-
-            let chunks_lens = self.0.fields()[0].chunks().len();
-
-            for i in 0..chunks_lens {
-                // If all fields are null we count it as null
-                // so we bitand every chunk
-                let mut validity_agg = None;
-
-                for s in self.0.fields() {
-                    let arr = &s.chunks()[i];
-
-                    match (&validity_agg, arr.validity()) {
-                        (Some(agg), Some(validity)) => validity_agg = Some(validity.bitand(agg)),
-                        (None, Some(validity)) => validity_agg = Some(validity.clone()),
-                        _ => {}
-                    }
-                    if let Some(validity) = &validity_agg {
-                        null_count += validity.unset_bits()
-                    }
-                }
-            }
-
-            null_count
-        } else {
-            0
-        }
+        self.0.null_count()
     }
 
     /// Get unique values in the Series.
     fn unique(&self) -> PolarsResult<Series> {
-        let groups = self.group_tuples(true, false);
+        // this can called in aggregation, so this fast path can be worth a lot
+        if self.len() < 2 {
+            return Ok(self.0.clone().into_series());
+        }
+        let main_thread = POOL.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, false);
         // safety:
         // groups are in bounds
         Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
@@ -309,13 +289,28 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     /// Get unique values in the Series.
     fn n_unique(&self) -> PolarsResult<usize> {
-        let groups = self.group_tuples(true, false)?;
-        Ok(groups.len())
+        // this can called in aggregation, so this fast path can be worth a lot
+        match self.len() {
+            0 => Ok(0),
+            1 => Ok(1),
+            _ => {
+                // TODO! try row encoding
+                let main_thread = POOL.current_thread_index().is_none();
+                let groups = self.group_tuples(main_thread, false)?;
+                Ok(groups.len())
+            }
+        }
     }
 
     /// Get first indexes of unique values.
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        let groups = self.group_tuples(true, false)?;
+        // this can called in aggregation, so this fast path can be worth a lot
+        if self.len() == 1 {
+            return Ok(IdxCa::new_vec(self.name(), vec![0 as IdxSize]));
+        }
+        // TODO! try row encoding
+        let main_thread = POOL.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, false)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name(), first))
     }
@@ -351,10 +346,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.is_in(other)
     }
 
-    fn fmt_list(&self) -> String {
-        self.0.fmt_list()
-    }
-
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
@@ -381,5 +372,9 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             )
             .unwrap();
         StructChunked::new_unchecked(self.name(), &out.columns).into_series()
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.0.arg_sort(options)
     }
 }

@@ -3,18 +3,19 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use bitflags::bitflags;
+use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::frame::groupby::GroupsProxy;
-use polars_core::frame::hash_join::JoinOptIds;
+use polars_core::frame::hash_join::ChunkJoinOptIds;
 use polars_core::prelude::*;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
 use polars_plan::logical_plan::FileFingerPrint;
 
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 use super::file_cache::FileCache;
 use crate::physical_plan::node_timer::NodeTimer;
 
-pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, JoinOptIds>>>;
+pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
 pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
 
 bitflags! {
@@ -24,13 +25,11 @@ bitflags! {
         const VERBOSE = 0x01;
         /// Indicates that window expression's [`GroupTuples`] may be cached.
         const CACHE_WINDOW_EXPR = 0x02;
-        /// A `sort()` in a window function is one level flatter
-        /// Assume we have column a : i32
-        /// than a sort in a groupby. A groupby sorts the groups and returns array: list[i32]
-        /// whereas a window function returns array: i32
-        /// So a `sort().list()` in a groupby returns: list[list[i32]]
-        /// whereas in a window function would return: list[i32]
-        const FINALIZE_WINDOW_AS_LIST = 0x04;
+        /// Indicates the expression has a window function
+        const HAS_WINDOW = 0x04;
+        /// If set, the expression is evaluated in the
+        /// streaming engine.
+        const IN_STREAMING = 0x08;
     }
 }
 
@@ -63,9 +62,11 @@ impl From<u8> for StateFlags {
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<Mutex<PlHashMap<usize, DataFrame>>>,
+    df_cache: Arc<Mutex<PlHashMap<usize, Arc<OnceCell<DataFrame>>>>>,
+    #[allow(clippy::type_complexity)]
+    pub(crate) expr_cache: Option<Arc<Mutex<PlHashMap<usize, Arc<OnceCell<Series>>>>>>,
     // cache file reads until all branches got there file, then we delete it
-    #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+    #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
     pub(crate) file_cache: FileCache,
     pub(super) schema_cache: RwLock<Option<SchemaRef>>,
     /// Used by Window Expression to prevent redundant grouping
@@ -110,7 +111,8 @@ impl ExecutionState {
     pub(super) fn split(&self) -> Self {
         Self {
             df_cache: self.df_cache.clone(),
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            expr_cache: self.expr_cache.clone(),
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
             file_cache: self.file_cache.clone(),
             schema_cache: Default::default(),
             group_tuples: Default::default(),
@@ -126,7 +128,8 @@ impl ExecutionState {
     pub(super) fn clone(&self) -> Self {
         Self {
             df_cache: self.df_cache.clone(),
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            expr_cache: self.expr_cache.clone(),
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
             file_cache: self.file_cache.clone(),
             schema_cache: self.schema_cache.read().unwrap().clone().into(),
             group_tuples: self.group_tuples.clone(),
@@ -138,16 +141,17 @@ impl ExecutionState {
         }
     }
 
-    #[cfg(not(any(feature = "parquet", feature = "csv-file", feature = "ipc")))]
+    #[cfg(not(any(feature = "parquet", feature = "csv", feature = "ipc")))]
     pub(crate) fn with_finger_prints(_finger_prints: Option<usize>) -> Self {
         Self::new()
     }
-    #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+    #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
     pub(crate) fn with_finger_prints(finger_prints: Option<Vec<FileFingerPrint>>) -> Self {
         Self {
             df_cache: Arc::new(Mutex::new(PlHashMap::default())),
+            expr_cache: None,
             schema_cache: Default::default(),
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
             file_cache: FileCache::new(finger_prints),
             group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
@@ -165,8 +169,9 @@ impl ExecutionState {
         }
         Self {
             df_cache: Default::default(),
+            expr_cache: None,
             schema_cache: Default::default(),
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
             file_cache: FileCache::new(None),
             group_tuples: Default::default(),
             join_tuples: Default::default(),
@@ -193,20 +198,26 @@ impl ExecutionState {
         lock.clone()
     }
 
-    /// Check if we have DataFrame in cache
-    pub(crate) fn cache_hit(&self, key: &usize) -> Option<DataFrame> {
-        let guard = self.df_cache.lock().unwrap();
-        guard.get(key).cloned()
+    pub(crate) fn get_df_cache(&self, key: usize) -> Arc<OnceCell<DataFrame>> {
+        let mut guard = self.df_cache.lock().unwrap();
+        guard
+            .entry(key)
+            .or_insert_with(|| Arc::new(OnceCell::new()))
+            .clone()
     }
 
-    /// Store DataFrame in cache.
-    pub(crate) fn store_cache(&self, key: usize, df: DataFrame) {
-        let mut guard = self.df_cache.lock().unwrap();
-        guard.insert(key, df);
+    pub(crate) fn get_expr_cache(&self, key: usize) -> Option<Arc<OnceCell<Series>>> {
+        self.expr_cache.as_ref().map(|cache| {
+            let mut guard = cache.lock().unwrap();
+            guard
+                .entry(key)
+                .or_insert_with(|| Arc::new(OnceCell::new()))
+                .clone()
+        })
     }
 
     /// Clear the cache used by the Window expressions
-    pub(crate) fn clear_expr_cache(&self) {
+    pub(crate) fn clear_window_expr_cache(&self) {
         {
             let mut lock = self.group_tuples.lock().unwrap();
             lock.clear();
@@ -227,25 +238,16 @@ impl ExecutionState {
         flags.contains(StateFlags::CACHE_WINDOW_EXPR)
     }
 
+    /// Indicates that window expression's [`GroupTuples`] may be cached.
+    pub(super) fn has_window(&self) -> bool {
+        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        flags.contains(StateFlags::HAS_WINDOW)
+    }
+
     /// More verbose logging
     pub(super) fn verbose(&self) -> bool {
         let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
         flags.contains(StateFlags::VERBOSE)
-    }
-
-    pub(super) fn set_finalize_window_as_list(&self) {
-        self.set_flags(&|mut flags| {
-            flags |= StateFlags::FINALIZE_WINDOW_AS_LIST;
-            flags
-        })
-    }
-
-    pub(super) fn unset_finalize_window_as_list(&self) -> bool {
-        let mut flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
-        let is_set = flags.contains(StateFlags::FINALIZE_WINDOW_AS_LIST);
-        flags.remove(StateFlags::FINALIZE_WINDOW_AS_LIST);
-        self.flags.store(flags.as_u8(), Ordering::Relaxed);
-        is_set
     }
 
     pub(super) fn remove_cache_window_flag(&mut self) {
@@ -260,6 +262,27 @@ impl ExecutionState {
             flags.insert(StateFlags::CACHE_WINDOW_EXPR);
             flags
         });
+    }
+    // this will trigger some conservative
+    pub(super) fn insert_has_window_function_flag(&mut self) {
+        self.set_flags(&|mut flags| {
+            flags.insert(StateFlags::HAS_WINDOW);
+            flags
+        });
+    }
+
+    #[cfg(feature = "streaming")]
+    pub(super) fn set_in_streaming_engine(&mut self) {
+        self.set_flags(&|mut flags| {
+            flags.insert(StateFlags::IN_STREAMING);
+            flags
+        });
+    }
+
+    #[cfg(feature = "streaming")]
+    pub(super) fn in_streaming_engine(&self) -> bool {
+        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        flags.contains(StateFlags::IN_STREAMING)
     }
 }
 

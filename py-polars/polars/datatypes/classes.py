@@ -1,17 +1,39 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Sequence
 
 import polars.datatypes
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
-
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
+
+
+class classinstmethod(classmethod):  # type: ignore[type-arg]
+    """Decorator that allows a method to be called from the class OR instance."""
+
+    def __get__(self, instance: Any, type_: type) -> Any:  # type: ignore[override]
+        get = super().__get__ if instance is None else self.__func__.__get__
+        return get(instance, type_)
+
+
+class classproperty:
+    """Equivalent to @property, but works on a class (doesn't require an instance)."""
+
+    def __init__(self, method: Callable[..., Any] | None = None) -> None:
+        self.fget = method
+
+    def __get__(self, instance: Any, cls: type | None = None) -> Any:
+        return self.fget(cls)  # type: ignore[misc]
+
+    def getter(self, method: Callable[..., Any]) -> Any:
+        self.fget = method
+        return self
 
 
 class DataTypeClass(type):
@@ -25,6 +47,18 @@ class DataTypeClass(type):
 
     def base_type(cls) -> PolarsDataType:
         return cls
+
+    @classproperty
+    def is_nested(self) -> bool:
+        return False
+
+    @classmethod
+    def is_(cls, other: PolarsDataType) -> bool:
+        return cls == other and hash(cls) == hash(other)
+
+    @classmethod
+    def is_not(cls, other: PolarsDataType) -> bool:
+        return not cls.is_(other)
 
 
 class DataType(metaclass=DataTypeClass):
@@ -59,6 +93,56 @@ class DataType(metaclass=DataTypeClass):
         """
         return cls
 
+    @classproperty
+    def is_nested(self) -> bool:
+        return False
+
+    @classinstmethod  # type: ignore[arg-type]
+    def is_(self, other: PolarsDataType) -> bool:
+        """
+        Check if this DataType is the same as another DataType.
+
+        This is a stricter check than ``self == other``, as it enforces an exact
+        match of all dtype attributes for nested and/or uninitialised dtypes.
+
+        Parameters
+        ----------
+        other
+            the other polars dtype to compare with.
+
+        Examples
+        --------
+        >>> pl.List == pl.List(pl.Int32)
+        True
+        >>> pl.List.is_(pl.List(pl.Int32))
+        False
+
+        """
+        return self == other and hash(self) == hash(other)
+
+    @classinstmethod  # type: ignore[arg-type]
+    def is_not(self, other: PolarsDataType) -> bool:
+        """
+        Check if this DataType is NOT the same as another DataType.
+
+        This is a stricter check than ``self != other``, as it enforces an exact
+        match of all dtype attributes for nested and/or uninitialised dtypes.
+
+        Parameters
+        ----------
+        other
+            the other polars dtype to compare with.
+
+        Examples
+        --------
+        >>> pl.List != pl.List(pl.Int32)
+        False
+        >>> pl.List.is_not(pl.List(pl.Int32))
+        True
+
+        """
+        return not self.is_(other)
+
 
 def _custom_reconstruct(
     cls: type[Any], base: type[Any], state: Any
@@ -71,6 +155,25 @@ def _custom_reconstruct(
     else:
         obj = object.__new__(cls)
     return obj
+
+
+class DataTypeGroup(frozenset):  # type: ignore[type-arg]
+    _match_base_type: bool
+
+    def __new__(cls, items: Any, *, match_base_type: bool = True) -> DataTypeGroup:
+        for it in items:
+            if not isinstance(it, (DataType, DataTypeClass)):
+                raise TypeError(
+                    f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
+                )
+        dtype_group = super().__new__(cls, items)
+        dtype_group._match_base_type = match_base_type
+        return dtype_group
+
+    def __contains__(self, item: Any) -> bool:
+        if self._match_base_type and isinstance(item, (DataType, DataTypeClass)):
+            item = item.base_type()
+        return super().__contains__(item)
 
 
 class NumericType(DataType):
@@ -95,6 +198,10 @@ class TemporalType(DataType):
 
 class NestedType(DataType):
     """Base class for nested data types."""
+
+    @classproperty
+    def is_nested(self) -> bool:
+        return True
 
 
 class Int8(IntegralType):
@@ -147,7 +254,7 @@ class Decimal(FractionalType):
     precision: int | None
     scale: int
 
-    def __init__(self, precision: int | None, scale: int):
+    def __init__(self, scale: int, precision: int | None = None):
         self.precision = precision
         self.scale = scale
 
@@ -166,7 +273,7 @@ class Decimal(FractionalType):
             return False
 
     def __hash__(self) -> int:
-        return hash((Decimal, self.precision, self.scale))
+        return hash((self.__class__, self.precision, self.scale))
 
 
 class Boolean(DataType):
@@ -192,46 +299,60 @@ class Time(TemporalType):
 class Datetime(TemporalType):
     """Calendar date and time type."""
 
-    tu: TimeUnit | None = None
-    tz: str | None = None
+    time_unit: TimeUnit | None = None
+    time_zone: str | None = None
 
-    def __init__(self, time_unit: TimeUnit | None = "us", time_zone: str | None = None):
+    def __init__(
+        self, time_unit: TimeUnit | None = "us", time_zone: str | timezone | None = None
+    ):
         """
         Calendar date and time type.
 
         Parameters
         ----------
         time_unit : {'us', 'ns', 'ms'}
-            Time unit.
+            Unit of time.
         time_zone
-            Timezone string as defined in zoneinfo (run
+            Time zone string as defined in zoneinfo (run
             ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
 
         """
-        self.tu = time_unit or "us"
-        self.tz = time_zone
+        if isinstance(time_zone, timezone):
+            time_zone = str(time_zone)
+
+        self.time_unit = time_unit or "us"
+        self.time_zone = time_zone
+
+        if self.time_unit not in ("ms", "us", "ns"):
+            raise ValueError(
+                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
+            )
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Datetime):
             return True
         elif isinstance(other, Datetime):
-            return self.tu == other.tu and self.tz == other.tz
+            return (
+                self.time_unit == other.time_unit and self.time_zone == other.time_zone
+            )
         else:
             return False
 
     def __hash__(self) -> int:
-        return hash((Datetime, self.tu))
+        return hash((self.__class__, self.time_unit, self.time_zone))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}(tu={self.tu!r}, tz={self.tz!r})"
+        return (
+            f"{class_name}(time_unit={self.time_unit!r}, time_zone={self.time_zone!r})"
+        )
 
 
 class Duration(TemporalType):
     """Time duration/delta type."""
 
-    tu: TimeUnit | None = None
+    time_unit: TimeUnit | None = None
 
     def __init__(self, time_unit: TimeUnit = "us"):
         """
@@ -240,26 +361,30 @@ class Duration(TemporalType):
         Parameters
         ----------
         time_unit : {'us', 'ns', 'ms'}
-            Time unit.
+            Unit of time.
 
         """
-        self.tu = time_unit
+        self.time_unit = time_unit
+        if self.time_unit not in ("ms", "us", "ns"):
+            raise ValueError(
+                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
+            )
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Duration):
             return True
         elif isinstance(other, Duration):
-            return self.tu == other.tu
+            return self.time_unit == other.time_unit
         else:
             return False
 
     def __hash__(self) -> int:
-        return hash((Duration, self.tu))
+        return hash((self.__class__, self.time_unit))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}(tu={self.tu!r})"
+        return f"{class_name}(time_unit={self.time_unit!r})"
 
 
 class Categorical(DataType):
@@ -283,25 +408,41 @@ class List(NestedType):
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
         """
-        Nested list/array type.
+        Nested list/array type with variable length of inner lists.
 
         Parameters
         ----------
         inner
             The `DataType` of values within the list
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "integer_lists": [[1, 2], [3, 4]],
+        ...         "float_lists": [[1.0, 2.0], [3.0, 4.0]],
+        ...     }
+        ... )
+        >>> df
+        shape: (2, 2)
+        ┌───────────────┬─────────────┐
+        │ integer_lists ┆ float_lists │
+        │ ---           ┆ ---         │
+        │ list[i64]     ┆ list[f64]   │
+        ╞═══════════════╪═════════════╡
+        │ [1, 2]        ┆ [1.0, 2.0]  │
+        │ [3, 4]        ┆ [3.0, 4.0]  │
+        └───────────────┴─────────────┘
+
         """
         self.inner = polars.datatypes.py_type_to_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
-        # The comparison allows comparing objects to classes
-        # and specific inner types to none specific.
-        # if one of the arguments is not specific about its inner type
-        # we infer it as being equal.
-        # List[i64] == List[i64] == True
-        # List[i64] == List == True
-        # List[i64] == List[None] == True
-        # List[i64] == List[f32] == False
+        # This equality check allows comparison of type classes and type instances.
+        # If a parent type is not specific about its inner type, we infer it as equal:
+        # > list[i64] == list[i64] -> True
+        # > list[i64] == list[f32] -> False
+        # > list[i64] == list      -> True
 
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, List):
@@ -315,7 +456,65 @@ class List(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash((List, self.inner))
+        return hash((self.__class__, self.inner))
+
+    def __repr__(self) -> str:
+        class_name = self.__class__.__name__
+        return f"{class_name}({self.inner!r})"
+
+
+class Array(NestedType):
+    inner: PolarsDataType | None = None
+    width: int
+
+    def __init__(self, width: int, inner: PolarsDataType | PythonDataType = Null):
+        """
+        Nested list/array type with fixed length of inner arrays.
+
+        Parameters
+        ----------
+        width
+            The fixed size length of the inner arrays.
+        inner
+            The `DataType` of values within the inner arrays
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     "a", [[1, 2], [4, 3]], dtype=pl.Array(width=2, inner=pl.Int64)
+        ... )
+        >>> s
+        shape: (2,)
+        Series: 'a' [array[i64, 2]]
+        [
+                [1, 2]
+                [4, 3]
+        ]
+
+        """
+        self.width = width
+        self.inner = polars.datatypes.py_type_to_dtype(inner)
+
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        # This equality check allows comparison of type classes and type instances.
+        # If a parent type is not specific about its inner type, we infer it as equal:
+        # > fixed-size-list[i64] == fixed-size-list[i64] -> True
+        # > fixed-size-list[i64] == fixed-size-list[f32] -> False
+        # > fixed-size-list[i64] == fixed-size-list      -> True
+
+        # allow comparing object instances to class
+        if type(other) is DataTypeClass and issubclass(other, Array):
+            return True
+        if isinstance(other, Array):
+            if self.inner is None or other.inner is None:
+                return True
+            else:
+                return self.inner == other.inner
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.inner))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
@@ -341,6 +540,9 @@ class Field:
     def __eq__(self, other: Field) -> bool:  # type: ignore[override]
         return (self.name == other.name) & (self.dtype == other.dtype)
 
+    def __hash__(self) -> int:
+        return hash((self.name, self.dtype))
+
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
         return f"{class_name}({self.name!r}, {self.dtype})"
@@ -355,6 +557,20 @@ class Struct(NestedType):
         ----------
         fields
             The sequence of fields that make up the struct
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     "struct_series",
+        ...     [{"a": [1], "b": [2], "c": [3]}, {"a": [4], "b": [5], "c": [6]}],
+        ... )
+        >>> s
+        shape: (2,)
+        Series: 'struct_series' [struct[3]]
+        [
+                {[1],[2],[3]}
+                {[4],[5],[6]}
+        ]
 
         """
         if isinstance(fields, Mapping):
@@ -377,7 +593,7 @@ class Struct(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash(Struct)
+        return hash((self.__class__, tuple(self.fields)))
 
     def __iter__(self) -> Iterator[tuple[str, PolarsDataType]]:
         for fld in self.fields or []:

@@ -30,14 +30,14 @@ impl Series {
     /// Convert the values of this Series to a ListChunked with a length of 1,
     /// So a Series of:
     /// `[1, 2, 3]` becomes `[[1, 2, 3]]`
-    pub fn to_list(&self) -> PolarsResult<ListChunked> {
+    pub fn implode(&self) -> PolarsResult<ListChunked> {
         let s = self.rechunk();
         let values = s.array_ref(0);
 
         let offsets = vec![0i64, values.len() as i64];
         let inner_type = self.dtype();
 
-        let data_type = ListArray::<i64>::default_datatype(inner_type.to_physical().to_arrow());
+        let data_type = ListArray::<i64>::default_datatype(values.data_type().clone());
 
         // Safety:
         // offsets are correct;
@@ -52,9 +52,7 @@ impl Series {
         let name = self.name();
 
         let mut ca = unsafe { ListChunked::from_chunks(name, vec![Box::new(arr)]) };
-        if self.dtype() != &self.dtype().to_physical() {
-            ca.to_logical(inner_type.clone())
-        }
+        ca.to_physical(inner_type.clone());
         ca.set_fast_explode();
 
         Ok(ca)
@@ -146,7 +144,7 @@ mod test {
         builder.append_series(&s);
         let expected = builder.finish();
 
-        let out = s.to_list()?;
+        let out = s.implode()?;
         assert!(expected.into_series().series_equal(&out.into_series()));
 
         Ok(())

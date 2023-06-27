@@ -33,10 +33,8 @@ def test_when_then_implicit_none() -> None:
     )
 
     assert df.select(
-        [
-            pl.when(pl.col("points") > 7).then("Foo"),
-            pl.when(pl.col("points") > 7).then("Foo").alias("bar"),
-        ]
+        pl.when(pl.col("points") > 7).then("Foo"),
+        pl.when(pl.col("points") > 7).then("Foo").alias("bar"),
     ).to_dict(False) == {
         "literal": ["Foo", "Foo", "Foo", None, None, None],
         "bar": ["Foo", "Foo", "Foo", None, None, None],
@@ -44,32 +42,40 @@ def test_when_then_implicit_none() -> None:
 
 
 def test_predicate_null_block_asof_join() -> None:
-    left = pl.DataFrame(
-        {
-            "id": [1, 2, 3, 4],
-            "timestamp": [
-                datetime(2022, 1, 1, 10, 0),
-                datetime(2022, 1, 1, 10, 1),
-                datetime(2022, 1, 1, 10, 2),
-                datetime(2022, 1, 1, 10, 3),
-            ],
-        }
-    ).lazy()
+    left = (
+        pl.DataFrame(
+            {
+                "id": [1, 2, 3, 4],
+                "timestamp": [
+                    datetime(2022, 1, 1, 10, 0),
+                    datetime(2022, 1, 1, 10, 1),
+                    datetime(2022, 1, 1, 10, 2),
+                    datetime(2022, 1, 1, 10, 3),
+                ],
+            }
+        )
+        .lazy()
+        .set_sorted("timestamp")
+    )
 
-    right = pl.DataFrame(
-        {
-            "id": [1, 2, 3] * 2,
-            "timestamp": [
-                datetime(2022, 1, 1, 9, 59, 50),
-                datetime(2022, 1, 1, 10, 0, 50),
-                datetime(2022, 1, 1, 10, 1, 50),
-                datetime(2022, 1, 1, 8, 0, 0),
-                datetime(2022, 1, 1, 8, 0, 0),
-                datetime(2022, 1, 1, 8, 0, 0),
-            ],
-            "value": ["a", "b", "c"] * 2,
-        }
-    ).lazy()
+    right = (
+        pl.DataFrame(
+            {
+                "id": [1, 2, 3] * 2,
+                "timestamp": [
+                    datetime(2022, 1, 1, 9, 59, 50),
+                    datetime(2022, 1, 1, 10, 0, 50),
+                    datetime(2022, 1, 1, 10, 1, 50),
+                    datetime(2022, 1, 1, 8, 0, 0),
+                    datetime(2022, 1, 1, 8, 0, 0),
+                    datetime(2022, 1, 1, 8, 0, 0),
+                ],
+                "value": ["a", "b", "c"] * 2,
+            }
+        )
+        .lazy()
+        .set_sorted("timestamp")
+    )
 
     assert left.join_asof(right, by="id", on="timestamp").filter(
         pl.col("value").is_not_null()
@@ -108,7 +114,7 @@ def test_predicate_strptime_6558() -> None:
     assert (
         pl.DataFrame({"date": ["2022-01-03", "2020-01-04", "2021-02-03", "2019-01-04"]})
         .lazy()
-        .select(pl.col("date").str.strptime(pl.Date, fmt="%F"))
+        .select(pl.col("date").str.strptime(pl.Date, format="%F"))
         .filter((pl.col("date").dt.year() == 2022) & (pl.col("date").dt.month() == 1))
         .collect()
     ).to_dict(False) == {"date": [date(2022, 1, 3)]}
@@ -124,8 +130,8 @@ def test_predicate_arr_first_6573() -> None:
 
     assert (
         df.lazy()
-        .with_columns(pl.col("a").list())
-        .with_columns(pl.col("a").arr.first())
+        .with_columns(pl.col("a").implode())
+        .with_columns(pl.col("a").list.first())
         .filter(pl.col("a") == pl.col("b"))
         .collect()
     ).to_dict(False) == {"a": [1], "b": [1]}
@@ -138,3 +144,24 @@ def test_fast_path_comparisons() -> None:
     assert (s >= 25).series_equal(s.set_sorted() >= 25)
     assert (s < 25).series_equal(s.set_sorted() < 25)
     assert (s <= 25).series_equal(s.set_sorted() <= 25)
+
+
+def test_predicate_pushdown_block_8661() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 1, 2, 2, 2, 2],
+            "t": [1, 2, 3, 4, 4, 3, 2, 1],
+            "x": [10, 20, 30, 40, 10, 20, 30, 40],
+        }
+    )
+    assert df.lazy().sort(["g", "t"]).filter(
+        (pl.col("x").shift() > 20).over("g")
+    ).collect().to_dict(False) == {"g": [1, 2, 2], "t": [4, 2, 3], "x": [40, 30, 20]}
+
+
+def test_predicate_pushdown_cumsum_9566() -> None:
+    df = pl.DataFrame({"A": range(10), "B": ["b"] * 5 + ["a"] * 5})
+
+    q = df.lazy().sort(["B", "A"]).filter(pl.col("A").is_in([8, 2]).cumsum() == 1)
+
+    assert q.collect()["A"].to_list() == [8, 9, 0, 1]

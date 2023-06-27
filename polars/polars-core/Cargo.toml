@@ -10,14 +10,14 @@ description = "Core of the Polars DataFrame library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-simd = ["arrow/simd"]
+simd = ["arrow/simd", "polars-arrow/simd"]
 nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "polars-arrow/nightly"]
 avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "private"]
-lazy = ["sort_multiple"]
+default = ["docs", "temporal"]
+lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 # more fast paths, slower compilation
@@ -37,8 +37,6 @@ sort_multiple = []
 # create from row values
 # and include pivot operation
 rows = []
-# dont use this
-private = []
 
 # operations
 is_in = []
@@ -78,7 +76,6 @@ semi_anti_join = []
 chunked_ids = []
 describe = []
 timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
-
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 
 # opt-in datatypes for Series
@@ -86,9 +83,10 @@ dtype-date = ["temporal"]
 dtype-datetime = ["temporal"]
 dtype-duration = ["temporal"]
 dtype-time = ["temporal"]
+dtype-array = ["polars-arrow/dtype-array"]
 dtype-i8 = []
 dtype-i16 = []
-dtype-decimal = ["dep:itoap"]
+dtype-decimal = ["dep:itoap", "polars-arrow/dtype-decimal"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
@@ -100,12 +98,12 @@ parquet = ["arrow/io_parquet"]
 bigidx = ["polars-arrow/bigidx"]
 python = []
 
+serde = ["dep:serde", "smartstring/serde"]
 serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
 
 docs-selection = [
   "ndarray",
   "is_in",
-  "sort_multiple",
   "rows",
   "docs",
   "strings",
@@ -156,17 +154,18 @@ bitflags.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
 chrono-tz = { version = "0.8", optional = true }
 comfy-table = { version = "6.1.4", optional = true, default_features = false }
+either.workspace = true
 hashbrown.workspace = true
-indexmap = { version = "1", features = ["std"] }
-itoap = { version = "1", optional = true }
+indexmap.workspace = true
+itoap = { version = "1", optional = true, features = ["simd"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num-traits.workspace = true
-object_store = { version = "0.5.3", default-features = false, optional = true }
+object_store = { version = "0.6.0", default-features = false, optional = true }
 once_cell.workspace = true
-polars-arrow = { version = "0.27.2", path = "../polars-arrow", features = ["compute"] }
-polars-error = { version = "0.27.2", path = "../polars-error" }
-polars-row = { version = "0.27.2", path = "../polars-row" }
-polars-utils = { version = "0.27.2", path = "../polars-utils" }
+polars-arrow = { version = "0.30.0", path = "../polars-arrow", features = ["compute"] }
+polars-error = { version = "0.30.0", path = "../polars-error" }
+polars-row = { version = "0.30.0", path = "../polars-row" }
+polars-utils = { version = "0.30.0", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon.workspace = true

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arrow::io::parquet::read;
 use arrow::io::parquet::write::FileMetaData;
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
@@ -11,9 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use super::read_impl::FetchRowGroupsFromMmapReader;
 use crate::mmap::MmapBytesReader;
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 use crate::parquet::async_impl::ParquetObjectStore;
 use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
@@ -77,7 +77,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         )
         .map(|mut df| {
             if rechunk {
-                df.rechunk();
+                df.align_chunks();
             };
             df
         })
@@ -125,8 +125,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     /// [`Schema`] of the file.
     pub fn schema(&mut self) -> PolarsResult<Schema> {
         let metadata = self.get_metadata()?;
-        let schema = read::infer_schema(metadata)?;
-        Ok(schema.fields.iter().into())
+        Ok(Schema::from_iter(&read::infer_schema(metadata)?.fields))
     }
 
     /// Use statistics in the parquet to determine if pages
@@ -210,7 +209,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
         )
         .map(|mut df| {
             if self.rechunk {
-                df.rechunk();
+                df.as_single_chunk_par();
             }
             df
         })
@@ -219,7 +218,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
 
 /// A Parquet reader on top of the async object_store API. Only the batch reader is implemented since
 /// parquet files on cloud storage tend to be big and slow to access.
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 pub struct ParquetAsyncReader {
     reader: ParquetObjectStore,
     rechunk: bool,
@@ -230,7 +229,7 @@ pub struct ParquetAsyncReader {
     use_statistics: bool,
 }
 
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 impl ParquetAsyncReader {
     pub fn from_uri(
         uri: &str,

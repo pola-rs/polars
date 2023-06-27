@@ -9,21 +9,7 @@ use polars_core::export::num::{NumCast, ToPrimitive};
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
-
-fn sum_slice<T, S>(values: &[T]) -> S
-where
-    T: NativeType + ToPrimitive,
-    S: NumCast + std::iter::Sum,
-{
-    values
-        .iter()
-        .copied()
-        .map(|t| unsafe {
-            let s: S = NumCast::from(t).unwrap_unchecked_release();
-            s
-        })
-        .sum()
-}
+use crate::chunked_array::sum::sum_slice;
 
 fn sum_between_offsets<T, S>(values: &[T], offset: &[i64]) -> Vec<S>
 where
@@ -82,6 +68,70 @@ pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Ser
         .collect::<Vec<_>>();
 
     Series::try_from((ca.name(), chunks)).unwrap()
+}
+
+pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Series {
+    use DataType::*;
+    // TODO: add fast path for smaller ints?
+    let mut out = match inner_dtype {
+        Boolean => {
+            let out: IdxCa = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .collect();
+            out.into_series()
+        }
+        UInt32 => {
+            let out: UInt32Chunked = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .collect();
+            out.into_series()
+        }
+        UInt64 => {
+            let out: UInt64Chunked = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .collect();
+            out.into_series()
+        }
+        Int32 => {
+            let out: Int32Chunked = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .collect();
+            out.into_series()
+        }
+        Int64 => {
+            let out: Int64Chunked = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .collect();
+            out.into_series()
+        }
+        Float32 => {
+            let out: Float32Chunked = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .collect();
+            out.into_series()
+        }
+        Float64 => {
+            let out: Float64Chunked = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .collect();
+            out.into_series()
+        }
+        // slowest sum_as_series path
+        _ => ca
+            .apply_amortized(|s| s.as_ref().sum_as_series())
+            .explode()
+            .unwrap()
+            .into_series(),
+    };
+    out.rename(ca.name());
+    out
 }
 
 fn mean_between_offsets<T, S>(values: &[T], offset: &[i64]) -> Vec<S>
@@ -143,4 +193,27 @@ pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Se
         .collect::<Vec<_>>();
 
     Series::try_from((ca.name(), chunks)).unwrap()
+}
+
+pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
+    return match ca.inner_dtype() {
+        DataType::Float32 => {
+            let mut out: Float32Chunked = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as f32)))
+                .collect();
+
+            out.rename(ca.name());
+            out.into_series()
+        }
+        _ => {
+            let mut out: Float64Chunked = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().mean()))
+                .collect();
+
+            out.rename(ca.name());
+            out.into_series()
+        }
+    };
 }

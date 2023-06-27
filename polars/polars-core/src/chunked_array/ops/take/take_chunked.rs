@@ -167,6 +167,44 @@ impl TakeChunked for ListChunked {
         ca
     }
 }
+
+#[cfg(feature = "dtype-array")]
+impl TakeChunked for ArrayChunked {
+    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
+        let arrs = self.downcast_iter().collect::<Vec<_>>();
+        let iter = by.iter().map(|[chunk_idx, array_idx]| {
+            let arr = arrs.get_unchecked(*chunk_idx as usize);
+            arr.get_unchecked(*array_idx as usize)
+        });
+        let mut ca = Self::from_iter_and_args(
+            iter,
+            self.width(),
+            by.len(),
+            Some(self.inner_dtype()),
+            self.name(),
+        );
+        ca.set_sorted_flag(sorted);
+        ca
+    }
+
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
+        let arrs = self.downcast_iter().collect::<Vec<_>>();
+        let iter = by.iter().map(|opt_idx| {
+            opt_idx.and_then(|[chunk_idx, array_idx]| {
+                let arr = arrs.get_unchecked(chunk_idx as usize);
+                arr.get_unchecked(array_idx as usize)
+            })
+        });
+
+        Self::from_iter_and_args(
+            iter,
+            self.width(),
+            by.len(),
+            Some(self.inner_dtype()),
+            self.name(),
+        )
+    }
+}
 #[cfg(feature = "object")]
 impl<T: PolarsObject> TakeChunked for ObjectChunked<T> {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {

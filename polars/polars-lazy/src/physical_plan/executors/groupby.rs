@@ -62,6 +62,7 @@ pub(super) fn groupby_helper(
         groups = sliced_groups.as_deref().unwrap();
     }
 
+    state.expr_cache = Some(Default::default());
     let (mut columns, agg_columns) = POOL.install(|| {
         let get_columns = || gb.keys_sliced(slice);
 
@@ -78,6 +79,7 @@ pub(super) fn groupby_helper(
         rayon::join(get_columns, get_agg)
     });
     let agg_columns = agg_columns?;
+    state.expr_cache = None;
 
     columns.extend_from_slice(&agg_columns);
     DataFrame::new(columns)

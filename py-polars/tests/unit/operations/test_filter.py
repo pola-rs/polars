@@ -32,18 +32,20 @@ def test_melt_values_predicate_pushdown() -> None:
 def test_filter_is_in_4572() -> None:
     df = pl.DataFrame({"id": [1, 2, 1, 2], "k": ["a"] * 2 + ["b"] * 2})
     expected = (
-        df.groupby("id").agg(pl.col("k").filter(pl.col("k") == "a").list()).sort("id")
+        df.groupby("id")
+        .agg(pl.col("k").filter(pl.col("k") == "a").implode())
+        .sort("id")
     )
     result = (
         df.groupby("id")
-        .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).list())
+        .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).implode())
         .sort("id")
     )
     assert_frame_equal(result, expected)
     result = (
         df.sort("id")
         .groupby("id")
-        .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).list())
+        .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).implode())
     )
     assert_frame_equal(result, expected)
 
@@ -69,14 +71,6 @@ def test_filter_aggregation_any() -> None:
         "group": [1, 2],
         "any": [[False, True, True], [True]],
         "filtered": [[3, 4], [2]],
-    }
-
-
-def test_is_in_bool() -> None:
-    bool_value_to_filter_on = [True, None]
-    df = pl.DataFrame({"A": [True, False, None]})
-    assert df.filter(pl.col("A").is_in(bool_value_to_filter_on)).to_dict(False) == {
-        "A": [True, False]
     }
 
 

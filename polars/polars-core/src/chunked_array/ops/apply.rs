@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use polars_arrow::array::PolarsArray;
-use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::trusted_len::TrustedLenPush;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -71,17 +71,25 @@ where
             // make sure we have a single ref count coming in.
             drop(arr);
 
-            match owned_arr.into_mut() {
-                Left(immutable) => Box::new(arrow::compute::arity::unary(
-                    &immutable,
+            let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
+                Box::new(arrow::compute::arity::unary(
+                    arr,
                     f,
                     S::get_dtype().to_arrow(),
-                )),
-                Right(mut mutable) => {
-                    let vals = mutable.values_mut_slice();
-                    vals.iter_mut().for_each(|v| *v = f(*v));
-                    let a: PrimitiveArray<_> = mutable.into();
-                    Box::new(a) as ArrayRef
+                ))
+            };
+
+            if owned_arr.values().is_sliced() {
+                compute_immutable(&owned_arr)
+            } else {
+                match owned_arr.into_mut() {
+                    Left(immutable) => compute_immutable(&immutable),
+                    Right(mut mutable) => {
+                        let vals = mutable.values_mut_slice();
+                        vals.iter_mut().for_each(|v| *v = f(*v));
+                        let a: PrimitiveArray<_> = mutable.into();
+                        Box::new(a) as ArrayRef
+                    }
                 }
             }
         })
@@ -377,6 +385,25 @@ impl Utf8Chunked {
             })
             .collect();
         unsafe { Utf8Chunked::from_chunks(self.name(), chunks) }
+    }
+}
+
+impl BinaryChunked {
+    pub fn apply_mut<'a, F>(&'a self, mut f: F) -> Self
+    where
+        F: FnMut(&'a [u8]) -> &'a [u8],
+    {
+        use polars_arrow::array::utf8::BinaryFromIter;
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let iter = arr.values_iter().map(&mut f);
+                let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
+                let new = BinaryArray::<i64>::from_values_iter(iter, arr.len(), value_size);
+                Box::new(new.with_validity(arr.validity().cloned())) as ArrayRef
+            })
+            .collect();
+        unsafe { BinaryChunked::from_chunks(self.name(), chunks) }
     }
 }
 

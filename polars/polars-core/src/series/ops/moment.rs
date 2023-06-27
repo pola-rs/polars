@@ -20,6 +20,8 @@ fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> PolarsResult
             let a_zero_mean = s.cast(&DataType::Float64)? - mean;
 
             let mut s = if n_list.pop().unwrap() == 1 {
+                // TODO remove: false positive
+                #[allow(clippy::redundant_clone)]
                 a_zero_mean.clone()
             } else {
                 &a_zero_mean * &a_zero_mean
