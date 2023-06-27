@@ -198,8 +198,10 @@ impl Series {
                 let mut tz = tz.clone();
                 if tz.as_deref() == Some("") {
                     tz = None;
+                } else if tz.as_deref() == Some("+00:00") {
+                    // arrow2 make infer the schema of parquet files with tz = "+00:00" as UTC
+                    tz = Some("UTC".to_string());
                 }
-                // we still drop timezone for now
                 let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_datetime(tu.into(), tz)
