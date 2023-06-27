@@ -159,3 +159,25 @@ fn test_drop_table() {
     let res = ctx.execute("SELECT * FROM df");
     assert!(res.is_err());
 }
+
+#[test]
+fn iss_9560_join_as() {
+    let df1 = df! {"id"=> [1, 2, 3, 4], "ano"=> [2, 3, 4, 5]}.unwrap();
+    let df2 = df! {"id"=> [1, 2, 3, 4], "ano"=> [2, 3, 4, 5]}.unwrap();
+    let mut ctx = SQLContext::new();
+    ctx.register("df1", df1.lazy());
+    ctx.register("df2", df2.lazy());
+    let sql = r#"
+        SELECT * FROM df1 AS t1 JOIN df2 AS t2 ON t1.id = t2.id
+    "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+
+    let expected = df! {
+        "id" => [1, 2, 3, 4],
+        "ano" => [2, 3, 4, 5],
+        "ano_right" => [2, 3, 4, 5],
+    }
+    .unwrap();
+
+    assert!(actual.frame_equal(&expected));
+}
