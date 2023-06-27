@@ -1591,7 +1591,7 @@ class Series:
         *,
         maintain_order: bool = False,
         series: bool = False,
-        left_closed: bool = False
+        left_closed: bool = False,
     ) -> DataFrame | Series:
         """
         Bin values into discrete values.
@@ -1610,7 +1610,7 @@ class Series:
         maintain_order
             Keep the order of the original `Series`. Only used if series == False
         series
-            If True, return the results as a series of categories and don't sort the data
+            If True, return the a categorical series in the data's original order
         left_closed
             Whether intervals should be [) instead of (]
 
@@ -1641,11 +1641,7 @@ class Series:
 
         """
         if series:
-            return self._from_pyseries(self._s.scut(
-                bins,
-                labels,
-                left_closed
-            ))
+            return self._from_pyseries(self._s.scut(bins, labels, left_closed))
         return wrap_df(
             self._s.cut(
                 Series(break_point_label, bins, dtype=Float64)._s,
@@ -1666,7 +1662,7 @@ class Series:
         maintain_order: bool = False,
         series: bool = False,
         left_closed: bool = False,
-        allow_duplicates: bool = False
+        allow_duplicates: bool = False,
     ) -> DataFrame | Series:
         """
         Bin values into discrete values based on their quantiles.
@@ -1686,12 +1682,13 @@ class Series:
         maintain_order
             Keep the order of the original `Series`.
         series
-            If True, return the results as a series of categories and don't sort the data
+            If True, return the a categorical series in the data's original order
         left_closed
             Whether intervals should be [) instead of (]
         allow_duplicates
-            If True, the resulting quantile breaks don't have to be unique, and duplicates will be
-            dropped. This can result in fewer bins than expected with more values per bin
+            If True, the resulting quantile breaks don't have to be unique. This can
+            happen even with unique probs depending on the data. Duplicates will be
+            dropped, resulting in fewer bins.
 
         Returns
         -------
@@ -1724,12 +1721,14 @@ class Series:
 
         """
         if series:
-            return self._from_pyseries(self._s.qscut(
-                quantiles,
-                labels,
-                left_closed,
-                allow_duplicates,
-            ))
+            return self._from_pyseries(
+                self._s.sqcut(
+                    quantiles,
+                    labels,
+                    left_closed,
+                    allow_duplicates,
+                )
+            )
         return wrap_df(
             self._s.qcut(
                 Series(quantiles, dtype=Float64)._s,

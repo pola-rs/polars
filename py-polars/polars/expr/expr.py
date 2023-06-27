@@ -3224,12 +3224,25 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
-    def cut(self, breaks: list[float], labels: list[str] | None = None, left_closed: bool = False) -> Self:
+    def cut(
+        self,
+        breaks: list[float],
+        labels: list[str] | None = None,
+        left_closed: bool = False,
+    ) -> Self:
         return self._from_pyexpr(self._pyexpr.cut(breaks, labels, left_closed))
-    
-    def qcut(self, probs: list[float], labels: list[str] | None = None, left_closed: bool = False, allow_duplicates: bool = False) -> Self:
-        return self._from_pyexpr(self._pyexpr.qcut(probs, labels, left_closed, allow_duplicates))
-        
+
+    def qcut(
+        self,
+        probs: list[float],
+        labels: list[str] | None = None,
+        left_closed: bool = False,
+        allow_duplicates: bool = False,
+    ) -> Self:
+        return self._from_pyexpr(
+            self._pyexpr.qcut(probs, labels, left_closed, allow_duplicates)
+        )
+
     def filter(self, predicate: Expr) -> Self:
         """
         Filter a single column.

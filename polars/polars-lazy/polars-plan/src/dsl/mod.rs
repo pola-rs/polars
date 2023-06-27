@@ -1461,19 +1461,28 @@ impl Expr {
         )
         .with_fmt("rank")
     }
-    
+
     pub fn cut(self, breaks: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool) -> Expr {
         self.apply(
             move |s| s.cut(breaks.clone(), labels.clone(), left_closed).map(Some),
-            GetOutput::from_type(DataType::Categorical(None))
+            GetOutput::from_type(DataType::Categorical(None)),
         )
         .with_fmt("cut")
     }
 
-    pub fn qcut(self, probs: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool, allow_duplicates: bool) -> Expr {
+    pub fn qcut(
+        self,
+        probs: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+    ) -> Expr {
         self.apply(
-            move |s| s.qcut(probs.clone(), labels.clone(), left_closed, allow_duplicates).map(Some),
-            GetOutput::from_type(DataType::Categorical(None))
+            move |s| {
+                s.qcut(probs.clone(), labels.clone(), left_closed, allow_duplicates)
+                    .map(Some)
+            },
+            GetOutput::from_type(DataType::Categorical(None)),
         )
         .with_fmt("cut")
     }

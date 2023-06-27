@@ -1,6 +1,6 @@
-use crate::prelude::*;
 use std::iter::once;
 
+use crate::prelude::*;
 
 impl Series {
     pub fn cut(
@@ -24,11 +24,17 @@ impl Series {
             Some(ll) => {
                 polars_ensure!(ll.len() == sorted_breaks.len() + 1, ShapeMismatch: "Provide nbreaks + 1 labels");
                 ll
-            },
+            }
             None => (once(&f64::NEG_INFINITY).chain(sorted_breaks.iter()))
                 .zip(sorted_breaks.iter().chain(once(&f64::INFINITY)))
-                .map(|v| if left_closed { format!("[{}, {})", v.0, v.1) } else { format!("({}, {}]", v.0, v.1) })
-                .collect::<Vec<String>>()
+                .map(|v| {
+                    if left_closed {
+                        format!("[{}, {})", v.0, v.1)
+                    } else {
+                        format!("({}, {}]", v.0, v.1)
+                    }
+                })
+                .collect::<Vec<String>>(),
         };
 
         let cl: Vec<&str> = cutlabs.iter().map(String::as_str).collect();
@@ -60,7 +66,11 @@ impl Series {
     ) -> PolarsResult<Series> {
         let s = self.sort(false);
         let s = s.f64()?;
-        let f = |&p| s.quantile(p, QuantileInterpolOptions::Linear).unwrap().unwrap();
+        let f = |&p| {
+            s.quantile(p, QuantileInterpolOptions::Linear)
+                .unwrap()
+                .unwrap()
+        };
         let mut qbreaks: Vec<_> = probs.iter().map(f).collect();
         qbreaks.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 
@@ -74,11 +84,13 @@ impl Series {
                     polars_ensure!(ll.len() == qbreaks.len() + 1,
                         ShapeMismatch: "Wrong number of labels");
                     let blen = ll.len();
-                    Some(ll
-                        .into_iter()
-                        .enumerate()
-                        .filter(|(i, _)| *i == 0 || *i == blen || qbreaks[*i] != qbreaks[i - 1])
-                        .unzip::<_, _, Vec<_>, Vec<_>>().1)
+                    Some(
+                        ll.into_iter()
+                            .enumerate()
+                            .filter(|(i, _)| *i == 0 || *i == blen || qbreaks[*i] != qbreaks[i - 1])
+                            .unzip::<_, _, Vec<_>, Vec<_>>()
+                            .1,
+                    )
                 }
             };
             qbreaks.dedup();
