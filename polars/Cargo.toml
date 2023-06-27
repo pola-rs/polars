@@ -46,7 +46,7 @@ strings = ["polars-core/strings", "polars-lazy/strings", "polars-ops/strings"]
 object = ["polars-core/object", "polars-lazy/object", "polars-io/object"]
 
 # support for arrows json parsing
-json = ["polars-io", "polars-io/json", "polars-lazy/json", "polars-sql/json"]
+json = ["polars-io", "polars-io/json", "polars-lazy/json", "polars-sql/json", "dtype-struct"]
 
 # support for arrows ipc file parsing
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc", "polars-sql/ipc"]
