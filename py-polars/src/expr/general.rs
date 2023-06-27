@@ -177,6 +177,12 @@ impl PyExpr {
             .quantile(quantile.inner, interpolation.0)
             .into()
     }
+    fn cut(&self, breaks: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool) -> Self {
+        self.clone()
+            .inner
+            .cut(breaks, labels, left_closed)
+            .into()
+    }
     fn agg_groups(&self) -> Self {
         self.clone().inner.agg_groups().into()
     }

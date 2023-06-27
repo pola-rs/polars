@@ -3224,6 +3224,9 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
+    def cut(self, breaks: list[float], labels: list[str] | None = None, left_closed: bool = False) -> Self:
+        return self._from_pyexpr(self._pyexpr.cut(breaks, labels, left_closed = left_closed))
+        
     def filter(self, predicate: Expr) -> Self:
         """
         Filter a single column.

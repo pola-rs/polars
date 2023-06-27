@@ -1590,7 +1590,9 @@ class Series:
         category_label: str = "category",
         *,
         maintain_order: bool = False,
-    ) -> DataFrame:
+        series: bool = False,
+        left_closed: bool = False
+    ) -> DataFrame | Series:
         """
         Bin values into discrete values.
 
@@ -1634,6 +1636,12 @@ class Series:
         └──────┴─────────────┴──────────────┘
 
         """
+        if series:
+            return self._from_pyseries(self._s.scut(
+                bins,
+                labels,
+                left_closed
+            ))
         return wrap_df(
             self._s.cut(
                 Series(break_point_label, bins, dtype=Float64)._s,

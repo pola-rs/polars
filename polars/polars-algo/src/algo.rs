@@ -1,7 +1,4 @@
-use std::iter::once;
-
 use polars_core::error::PolarsResult as Result;
-use polars_core::export::num::NumCast;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_lazy::prelude::*;
@@ -147,56 +144,6 @@ pub fn qcut(
     }
 }
 
-
-pub fn scut(
-    s: &Series,
-    breaks: &Series,
-    labels: Option<Vec<&str>>,
-    left_closed: bool,
-) -> PolarsResult<Series> {
-
-
-    polars_ensure!(breaks.len() > 0, ShapeMismatch: "Breaks are empty");
-    polars_ensure!(breaks.n_unique()? == breaks.len(), Duplicate: "Breaks are not unique");
-
-    let sorted_breaks_vec = breaks
-        .cast(&DataType::Float64)
-        .expect("Breaks must be numeric")
-        .sort(false)
-        .f64()?
-        .to_vec_null_aware()
-        .expect_left("Breaks can't be null");
-    let sorted_breaks = sorted_breaks_vec.as_slice();
-
-    polars_ensure!(sorted_breaks[0] > f64::NEG_INFINITY, ComputeError: "Don't include -inf in breaks");
-    polars_ensure!(sorted_breaks[breaks.len() - 1] < f64::INFINITY, ComputeError: "Don't include inf in breaks");
-
-    let defaultlabs = (once(&f64::NEG_INFINITY).chain(sorted_breaks))
-        .zip(sorted_breaks.iter().chain(once(&f64::INFINITY)))
-        .map(|v| if left_closed { format!("[{}, {})", v.0, v.1) } else { format!("({}, {}]", v.0, v.1) })
-        .collect::<Vec<String>>();
-
-    let cutlabs = match labels {
-        Some(ll) => {
-            polars_ensure!(ll.len() == breaks.len() + 1, ShapeMismatch: "Provide nbreaks + 1 labels");
-            ll
-        },
-        None => {
-            defaultlabs.iter().map(String::as_str).collect()
-        },
-    };
-    
-    let mut bld = CategoricalChunkedBuilder::new("", s.len());
-    let s_flt = s.cast(&DataType::Float64)?;
-    let bin_iter = s_flt
-        .f64()?
-        .into_iter()
-        .map(|opt_x| {
-            opt_x.map(|x| cutlabs[sorted_breaks.partition_point(|&v| v <= x)])
-        });
-    bld.drain_iter(bin_iter);
-    Ok(bld.finish().into_series())
-}
 
 pub fn cut(
     s: &Series,

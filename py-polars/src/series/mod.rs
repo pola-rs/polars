@@ -685,6 +685,22 @@ impl PySeries {
         Ok(out.into())
     }
 
+    #[pyo3(signature = (breaks, labels, left_closed))]
+    fn scut(
+        &self,
+        breaks: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+    ) -> PyResult<Self> {
+        let out = self.series.cut(
+            breaks,
+            labels,
+            left_closed,
+        )
+        .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
     #[pyo3(signature = (quantiles, labels, break_point_label, category_label, maintain_order))]
     fn qcut(
         &self,
