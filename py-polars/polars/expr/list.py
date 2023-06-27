@@ -28,9 +28,57 @@ class ExprListNameSpace:
         return self.get(item)
 
     def all(self) -> Expr:
+        """
+        Evaluate whether all boolean values in a list are true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.all())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ false │
+        │ null  │
+        └───────┘
+
+        """
         return wrap_expr(self._pyexpr.list_all())
 
     def any(self) -> Expr:
+        """
+        Evaluate whether any boolean value in a list is true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.any())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ null  │
+        └───────┘
+
+        """
         return wrap_expr(self._pyexpr.list_any())
 
     def lengths(self) -> Expr:
