@@ -8,25 +8,15 @@ impl Series {
         left_closed: bool,
     ) -> PolarsResult<Series> {
         polars_ensure!(breaks.len() > 0, ShapeMismatch: "Breaks are empty");
-        //polars_ensure!(breaks.n_unique()? == breaks.len(), Duplicate: "Breaks are not unique");
 
         // Breaks must be sorted to cut inputs properly.
         let mut breaks = breaks.clone();
         let sorted_breaks = breaks.as_mut_slice();
-            // .cast(&DataType::Float64)
-            // .expect("Breaks must be numeric")
-            // .sort(false)
-            // .f64()?
-            // .to_vec_null_aware()
-            // .expect_left("Breaks can't be null");
         sorted_breaks.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
         polars_ensure!(sorted_breaks.windows(2).all(|x| x[0] != x[1]), Duplicate: "Breaks are not unique");
 
         polars_ensure!(sorted_breaks[0] > f64::NEG_INFINITY, ComputeError: "Don't include -inf in breaks");
         polars_ensure!(sorted_breaks[sorted_breaks.len() - 1] < f64::INFINITY, ComputeError: "Don't include inf in breaks");
-
-        // If we're creating labels, &strs are expected, but something has to own the Strings
-        //let defaultlabs = 
 
         let cutlabs = match labels {
             Some(ll) => {
