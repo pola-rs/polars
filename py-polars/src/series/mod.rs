@@ -701,6 +701,24 @@ impl PySeries {
         Ok(out.into())
     }
 
+    #[pyo3(signature = (breaks, labels, left_closed, allow_duplicates))]
+    fn sqcut(
+        &self,
+        probs: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool
+    ) -> PyResult<Self> {
+        let out = self.series.qcut(
+            probs,
+            labels,
+            left_closed,
+            allow_duplicates,
+        )
+        .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
     #[pyo3(signature = (quantiles, labels, break_point_label, category_label, maintain_order))]
     fn qcut(
         &self,

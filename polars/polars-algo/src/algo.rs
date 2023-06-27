@@ -144,7 +144,6 @@ pub fn qcut(
     }
 }
 
-
 pub fn cut(
     s: &Series,
     mut bins: Series,

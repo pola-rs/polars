@@ -1604,15 +1604,19 @@ class Series:
             Labels to assign to the bins. If given the length of labels must be
             len(bins) + 1.
         break_point_label
-            Name given to the breakpoint column.
+            Name given to the breakpoint column. Only used if series == False
         category_label
-            Name given to the category column.
+            Name given to the category column. Only used if series == False
         maintain_order
-            Keep the order of the original `Series`.
+            Keep the order of the original `Series`. Only used if series == False
+        series
+            If True, return the results as a series of categories and don't sort the data
+        left_closed
+            Whether intervals should be [) instead of (]
 
         Returns
         -------
-        DataFrame
+        DataFrame or Series
 
         Examples
         --------
@@ -1660,7 +1664,10 @@ class Series:
         break_point_label: str = "break_point",
         category_label: str = "category",
         maintain_order: bool = False,
-    ) -> DataFrame:
+        series: bool = False,
+        left_closed: bool = False,
+        allow_duplicates: bool = False
+    ) -> DataFrame | Series:
         """
         Bin values into discrete values based on their quantiles.
 
@@ -1678,10 +1685,17 @@ class Series:
             Name given to the category column.
         maintain_order
             Keep the order of the original `Series`.
+        series
+            If True, return the results as a series of categories and don't sort the data
+        left_closed
+            Whether intervals should be [) instead of (]
+        allow_duplicates
+            If True, the resulting quantile breaks don't have to be unique, and duplicates will be
+            dropped. This can result in fewer bins than expected with more values per bin
 
         Returns
         -------
-        DataFrame
+        DataFrame or Series
 
         Warnings
         --------
@@ -1709,6 +1723,13 @@ class Series:
         └──────┴─────────────┴───────────────┘
 
         """
+        if series:
+            return self._from_pyseries(self._s.qscut(
+                quantiles,
+                labels,
+                left_closed,
+                allow_duplicates,
+            ))
         return wrap_df(
             self._s.qcut(
                 Series(quantiles, dtype=Float64)._s,

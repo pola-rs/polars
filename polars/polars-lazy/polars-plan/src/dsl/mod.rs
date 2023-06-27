@@ -1470,6 +1470,14 @@ impl Expr {
         .with_fmt("cut")
     }
 
+    pub fn qcut(self, probs: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool, allow_duplicates: bool) -> Expr {
+        self.apply(
+            move |s| s.qcut(probs.clone(), labels.clone(), left_closed, allow_duplicates).map(Some),
+            GetOutput::from_type(DataType::Categorical(None))
+        )
+        .with_fmt("cut")
+    }
+
     #[cfg(feature = "diff")]
     pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
         self.apply_private(FunctionExpr::Diff(n, null_behavior))

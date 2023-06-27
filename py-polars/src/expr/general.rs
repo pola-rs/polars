@@ -183,6 +183,12 @@ impl PyExpr {
             .cut(breaks, labels, left_closed)
             .into()
     }
+    fn cut(&self, probs: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool, allow_duplicates: bool) -> Self {
+        self.clone()
+            .inner
+            .qcut(breaks, labels, left_closed, allow_duplicates)
+            .into()
+    }
     fn agg_groups(&self) -> Self {
         self.clone().inner.agg_groups().into()
     }
