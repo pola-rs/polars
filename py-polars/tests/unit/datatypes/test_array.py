@@ -46,4 +46,6 @@ def test_array_in_groupby() -> None:
         ]
     )
 
-    assert next(iter(df.groupby("id")))[1]["list"].to_list() == [[1, 2]]
+    assert next(iter(df.groupby("id", maintain_order=True)))[0]["list"].to_list() == [
+        [1, 2]
+    ]
