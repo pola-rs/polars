@@ -219,16 +219,16 @@ impl ProjectionPushDown {
         let root_projections = aexpr_to_leaf_nodes(proj, expr_arena);
 
         for (name, root_projection) in names.into_iter().zip(root_projections) {
-            let not_in_left = names_left.insert(name.clone());
-            let not_in_right = names_right.insert(name.clone());
-            already_projected |= !not_in_left;
-            already_projected |= !not_in_right;
+            let was_not_in_left = names_left.insert(name.clone());
+            let was_not_in_right = names_right.insert(name.clone());
+            already_projected |= !was_not_in_left;
+            already_projected |= !was_not_in_right;
 
-            if check_input_node(root_projection, schema_left, expr_arena) && not_in_left {
+            if check_input_node(root_projection, schema_left, expr_arena) && was_not_in_left {
                 pushdown_left.push(proj);
                 pushed_at_least_one = true;
             }
-            if check_input_node(root_projection, schema_right, expr_arena) && not_in_right {
+            if check_input_node(root_projection, schema_right, expr_arena) && was_not_in_right {
                 pushdown_right.push(proj);
                 pushed_at_least_one = true;
             }

@@ -383,7 +383,7 @@ fn process_projection(
     }
     // did succeed pushdown at least in any of the two tables
     // if not already added locally we ensure we project local as well
-    else if add_local && !already_projected {
+    else if add_local && pushed_at_least_once {
         // always also do the projection locally, because the join columns may not be
         // included in the projection.
         // for instance:
