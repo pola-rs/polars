@@ -83,7 +83,7 @@ unsafe fn take_unchecked_primitive<T: NativeType>(
     for &i in idx {
         let start = i as usize * width;
         let end = start + width;
-        out.copy_from_slice(values.get_unchecked(start..end));
+        out.extend_from_slice(values.get_unchecked(start..end));
     }
 
     let validity = if list_values.null_count() > 0 {
