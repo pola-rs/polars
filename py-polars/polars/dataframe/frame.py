@@ -8205,7 +8205,7 @@ class DataFrame:
         See Also
         --------
         iter_rows : Row iterator over frame data (does not materialise all rows).
-        rows : Materialise all frame data as a list of rows.
+        rows : Materialise all frame data as a list of rows (potentially expensive).
         item: Return dataframe element as a scalar.
 
         """
@@ -8306,6 +8306,7 @@ class DataFrame:
         See Also
         --------
         iter_rows : Row iterator over frame data (does not materialise all rows).
+        rows_by_key : Materialises frame data as a key-indexed dictionary.
 
         """
         if named:
@@ -8326,11 +8327,17 @@ class DataFrame:
         """
         Returns DataFrame data as a keyed dictionary of python-native values.
 
+        Note that this method should not be used in place of native operations, due to
+        the high cost of materialising all frame data into a dictionary; it should be
+        used only when you need to move the values out into a Python data structure
+        or other object that cannot operate directly with Polars/Arrow.
+
         Parameters
         ----------
         key
             The column(s) to use as the key for the returned dictionary. If multiple
-            columns are specified, the key will be a tuple of those values.
+            columns are specified, the key will be a tuple of those values, otherwise
+            it will be a string.
         named
             Return dictionary rows instead of tuples, mapping column name to row value.
         include_key
@@ -8402,7 +8409,7 @@ class DataFrame:
 
         See Also
         --------
-        rows : Materialise all frame data as a list of rows.
+        rows : Materialise all frame data as a list of rows (potentially expensive).
         iter_rows : Row iterator over frame data (does not materialise all rows).
 
         """
@@ -8533,7 +8540,8 @@ class DataFrame:
 
         See Also
         --------
-        rows : Materialises all frame data as a list of rows.
+        rows : Materialises all frame data as a list of rows (potentially expensive).
+        rows_by_key : Materialises frame data as a key-indexed dictionary.
 
         """
         # load into the local namespace for a (minor) performance boost in the hot loops
