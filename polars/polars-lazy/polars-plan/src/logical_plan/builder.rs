@@ -24,6 +24,8 @@ use polars_io::{
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
+#[cfg(feature = "python")]
+use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
 use crate::utils;
 
@@ -701,6 +703,28 @@ impl LogicalPlanBuilder {
         LogicalPlan::MapFunction {
             input: Box::new(self.0),
             function,
+        }
+        .into()
+    }
+
+    #[cfg(feature = "python")]
+    pub fn map_python(
+        self,
+        function: PythonFunction,
+        optimizations: AllowedOptimizations,
+        schema: Option<SchemaRef>,
+        validate_output: bool,
+    ) -> Self {
+        LogicalPlan::MapFunction {
+            input: Box::new(self.0),
+            function: FunctionNode::OpaquePython {
+                function,
+                schema,
+                predicate_pd: optimizations.predicate_pushdown,
+                projection_pd: optimizations.projection_pushdown,
+                streamable: optimizations.streaming,
+                validate_output,
+            },
         }
         .into()
     }

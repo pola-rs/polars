@@ -4,6 +4,7 @@ use std::sync::Arc;
 use polars_arrow::error::PolarsResult;
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::Series;
 use pyo3::types::{PyBytes, PyModule};
 use pyo3::{PyErr, PyObject, Python};
@@ -15,7 +16,12 @@ use crate::constants::MAP_LIST_NAME;
 use crate::prelude::*;
 
 // Will be overwritten on python polar start up.
-pub static mut CALL_LAMBDA: Option<fn(s: Series, lambda: &PyObject) -> PolarsResult<Series>> = None;
+pub static mut CALL_SERIES_UDF_PYTHON: Option<
+    fn(s: Series, lambda: &PyObject) -> PolarsResult<Series>,
+> = None;
+pub static mut CALL_DF_UDF_PYTHON: Option<
+    fn(s: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame>,
+> = None;
 pub(super) const MAGIC_BYTE_MARK: &[u8] = "POLARS_PYTHON_UDF".as_bytes();
 
 #[derive(Clone, Debug)]
@@ -129,9 +135,16 @@ fn from_pyerr(e: PyErr) -> PolarsError {
     PolarsError::ComputeError(format!("error raised in python: {e}").into())
 }
 
+impl DataFrameUdf for PythonFunction {
+    fn call_udf(&self, df: DataFrame) -> PolarsResult<DataFrame> {
+        let func = unsafe { CALL_DF_UDF_PYTHON.unwrap() };
+        func(df, &self.0)
+    }
+}
+
 impl SeriesUdf for PythonUdfExpression {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
-        let func = unsafe { CALL_LAMBDA.unwrap() };
+        let func = unsafe { CALL_SERIES_UDF_PYTHON.unwrap() };
 
         let output_type = self.output_type.clone().unwrap_or(DataType::Unknown);
         let out = func(s[0].clone(), &self.python_function)?;
