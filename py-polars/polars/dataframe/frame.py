@@ -128,6 +128,7 @@ if TYPE_CHECKING:
         DbWriteMode,
         FillNullStrategy,
         FrameInitTypes,
+        IndexOrder,
         IntoExpr,
         IpcCompression,
         JoinStrategy,
@@ -1907,7 +1908,9 @@ class DataFrame:
         """
         return list(self.iter_rows(named=True))
 
-    def to_numpy(self, structured: bool = False) -> np.ndarray[Any, Any]:
+    def to_numpy(
+        self, structured: bool = False, *, order: IndexOrder = "fortran"
+    ) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
 
@@ -1918,6 +1921,14 @@ class DataFrame:
         structured
             Optionally return a structured array, with field names and
             dtypes that correspond to the DataFrame schema.
+        order
+            The index order of the returned NumPy array, either C-like or
+            Fortran-like. In general, using the Fortran-like index order is faster.
+            However, the C-like order might be more appropriate to use for downstream
+            applications to prevent cloning data, e.g. when reshaping into a
+            one-dimensional array. Note that this option only takes effect if
+            ``structured`` is set to ``False`` and the DataFrame dtypes allow for a
+            global dtype for all columns.
 
         Notes
         -----
@@ -1975,7 +1986,7 @@ class DataFrame:
             for idx, c in enumerate(self.columns):
                 out[c] = arrays[idx]
         else:
-            out = self._df.to_numpy()
+            out = self._df.to_numpy(order)
             if out is None:
                 return np.vstack(
                     [self.to_series(i).to_numpy() for i in range(self.width)]
@@ -3079,7 +3090,7 @@ class DataFrame:
 
             # do not remove this
             # needed below
-            import pyarrow.parquet  # noqa: F401
+            import pyarrow.parquet
 
             pa.parquet.write_table(
                 table=tbl,
