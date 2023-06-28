@@ -2217,9 +2217,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         index_column
             Column used to group based on the time window.
-            Often to type Date/Datetime
-            This column must be sorted in ascending order. If not the output will not
-            make sense.
+            Often of type Date/Datetime.
+            This column must be sorted in ascending order (or, if `by` is specified,
+            then it must be sorted in ascending order within each group).
 
             In case of a rolling groupby on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
@@ -2367,15 +2367,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         - "10i"     # length 10
 
         .. warning::
-            The index column must be sorted in ascending order.
+            The index column must be sorted in ascending order. If `by` is passed, then
+            the index column must be sorted in ascending order within each group.
 
         Parameters
         ----------
         index_column
             Column used to group based on the time window.
-            Often to type Date/Datetime
-            This column must be sorted in ascending order. If not the output will not
-            make sense.
+            Often of type Date/Datetime.
+            This column must be sorted in ascending order (or, if `by` is specified,
+            then it must be sorted in ascending order within each group).
 
             In case of a dynamic groupby on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
