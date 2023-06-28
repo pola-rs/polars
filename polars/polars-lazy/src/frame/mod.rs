@@ -1171,6 +1171,22 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    #[cfg(feature = "python")]
+    pub fn map_python(
+        self,
+        function: polars_plan::prelude::python_udf::PythonFunction,
+        optimizations: AllowedOptimizations,
+        schema: Option<SchemaRef>,
+        validate_output: bool,
+    ) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .map_python(function, optimizations, schema, validate_output)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     pub(crate) fn map_private(self, function: FunctionNode) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().map_private(function).build();
