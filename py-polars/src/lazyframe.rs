@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::BufWriter;
 use std::path::PathBuf;
@@ -10,7 +9,7 @@ use polars::lazy::frame::LazyCsvReader;
 use polars::lazy::frame::LazyJsonLineReader;
 use polars::lazy::frame::{AllowedOptimizations, LazyFrame};
 use polars::lazy::prelude::col;
-use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
+use polars::prelude::{ClosedWindow, CsvEncoding, Field, JoinType, Schema};
 use polars::time::*;
 use polars_core::cloud;
 use polars_core::frame::explode::MeltArgs;
@@ -27,7 +26,6 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::file::get_file_like;
 use crate::prelude::*;
-use crate::py_modules::POLARS;
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
 
 /// Extract CloudOptions from a Python object.
