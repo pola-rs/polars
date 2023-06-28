@@ -16,6 +16,8 @@ pub use count::*;
 #[cfg(not(feature = "list_count"))]
 use count::*;
 pub use namespace::*;
+#[cfg(feature = "list_sets")]
+pub use sets::*;
 #[cfg(feature = "list_to_struct")]
 pub use to_struct::*;
 

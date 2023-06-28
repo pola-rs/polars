@@ -433,6 +433,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "list_count")]
                     CountMatch => map_as_slice!(list::count_match),
                     Sum => map!(list::sum),
+                    #[cfg(feature = "list_sets")]
+                    SetOperation(s) => map_as_slice!(list::set_operation, s),
                 }
             }
             #[cfg(feature = "dtype-array")]

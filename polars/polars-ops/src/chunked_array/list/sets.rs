@@ -1,10 +1,16 @@
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
 use arrow::array::{ListArray, MutableArray, MutablePrimitiveArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
+use polars_arrow::utils::combine_validities_and;
 use polars_core::prelude::*;
+use polars_core::utils::align_chunks_binary;
+use polars_core::with_match_physical_integer_type;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 struct Intersection<'a, T, I: Iterator<Item = T>> {
     // iterator of the first set
@@ -55,7 +61,7 @@ fn set_operation<K, I, R>(
     a: I,
     b: I,
     out: &mut R,
-    set_type: SetType,
+    set_type: SetOperation,
 ) -> usize
 where
     K: Eq + Hash + Copy,
@@ -66,7 +72,7 @@ where
     let b = b.into_iter();
 
     match set_type {
-        SetType::Intersection => {
+        SetOperation::Intersection => {
             let (smaller, larger) = if a.size_hint().0 <= b.size_hint().0 {
                 (a, b)
             } else {
@@ -79,12 +85,12 @@ where
             };
             out.extend_buf(iter)
         }
-        SetType::Union => {
+        SetOperation::Union => {
             set.extend(a);
             set.extend(b);
             out.extend_buf(set.drain())
         }
-        SetType::Difference => {
+        SetOperation::Difference => {
             set.extend(a);
             for v in b {
                 set.remove(&v);
@@ -98,11 +104,23 @@ fn copied_opt<T: Copy>(v: Option<&T>) -> Option<T> {
     v.copied()
 }
 
-#[derive(Copy, Clone)]
-enum SetType {
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum SetOperation {
     Intersection,
     Union,
     Difference,
+}
+
+impl Display for SetOperation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            SetOperation::Intersection => "intersection",
+            SetOperation::Union => "union",
+            SetOperation::Difference => "difference",
+        };
+        write!(f, "{s}")
+    }
 }
 
 fn primitive<T>(
@@ -110,7 +128,7 @@ fn primitive<T>(
     b: &PrimitiveArray<T>,
     offsets_a: &[i64],
     offsets_b: &[i64],
-    set_type: SetType,
+    set_type: SetOperation,
     validity: Option<Bitmap>,
 ) -> ListArray<i64>
 where
@@ -158,7 +176,40 @@ where
     ListArray::new(dtype, offsets, values.boxed(), validity)
 }
 
-fn array_to_primitive(a: &ListArray<i64>, b: &ListArray<i64>, set_type: SetType) {
-    let offset_a = a.offsets().as_slice();
-    let offset_b = b.offsets().as_slice();
+fn array_set_operation(
+    a: &ListArray<i64>,
+    b: &ListArray<i64>,
+    set_type: SetOperation,
+) -> ListArray<i64> {
+    let offsets_a = a.offsets().as_slice();
+    let offsets_b = b.offsets().as_slice();
+
+    let values_a = a.values();
+    let values_b = b.values();
+    assert_eq!(values_a.data_type(), values_b.data_type());
+
+    let dtype = values_b.data_type();
+    let validity = combine_validities_and(a.validity(), b.validity());
+
+    with_match_physical_integer_type!(dtype.into(), |$T| {
+        let a = values_a.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+        let b = values_b.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+
+        primitive(&a, &b, offsets_a, offsets_b, set_type, validity)
+    })
+}
+
+pub fn list_set_operation(a: &ListChunked, b: &ListChunked, set_type: SetOperation) -> ListChunked {
+    let (a, b) = align_chunks_binary(a, b);
+
+    // no downcasting needed as lists
+    // already have logical types
+    let chunks = a
+        .downcast_iter()
+        .zip(b.downcast_iter())
+        .map(|(a, b)| array_set_operation(a, b, set_type).boxed())
+        .collect::<Vec<_>>();
+
+    // safety: dtypes are correct
+    unsafe { a.with_chunks(chunks) }
 }
