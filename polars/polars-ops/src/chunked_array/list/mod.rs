@@ -5,6 +5,8 @@ mod count;
 pub(crate) mod hash;
 mod min_max;
 mod namespace;
+#[cfg(feature = "list_sets")]
+mod sets;
 mod sum_mean;
 #[cfg(feature = "list_to_struct")]
 mod to_struct;
