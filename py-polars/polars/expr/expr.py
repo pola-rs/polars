@@ -380,7 +380,7 @@ class Expr:
         See Also
         --------
         Series.arg_true : Return indices where Series is True
-        pl.arg_where
+        polars.arg_where
 
         """
         return self._from_pyexpr(py_arg_where(self._pyexpr))
@@ -3572,8 +3572,8 @@ class Expr:
 
         See Also
         --------
-        ExprListNameSpace.explode : Explode a list column.
-        ExprStringNameSpace.explode : Explode a string column.
+        Expr.list.explode : Explode a list column.
+        Expr.str.explode : Explode a string column.
 
         Examples
         --------
@@ -7426,7 +7426,7 @@ class Expr:
 
         See Also
         --------
-        ExprListNameSpace.explode : Explode a list column.
+        Expr.list.explode : Explode a list column.
 
         """
         return self._from_pyexpr(self._pyexpr.reshape(dimensions))
