@@ -142,13 +142,14 @@ def test_pickle_small_integers() -> None:
     assert_frame_equal(pickle.loads(b), df)
 
 
+def df_times2(df: pl.DataFrame) -> pl.DataFrame:
+    return df.select(pl.all() * 2)
+
+
 def test_pickle_lazyframe_udf() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    def times2(df: pl.DataFrame) -> pl.DataFrame:
-        return df.select(pl.all() * 2)
-
-    q = df.lazy().map(times2)
+    q = df.lazy().map(df_times2)
     b = pickle.dumps(q)
 
     q = pickle.loads(b)
