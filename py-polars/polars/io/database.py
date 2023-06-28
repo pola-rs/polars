@@ -148,9 +148,15 @@ def _read_sql_adbc(query: str, connection_uri: str) -> DataFrame:
 
 def _open_adbc_connection(connection_uri: str) -> Any:
     driver_name = connection_uri.split(":", 1)[0].lower()
+
+    # note: existing URI driver prefixes currently map 1:1 with
+    # the adbc module suffix; update this map if that changes.
+    module_suffix_map: dict[str, str] = {}
     try:
-        import_module(f"adbc_driver_{driver_name}.dbapi")
-        adbc_driver = sys.modules[f"adbc_driver_{driver_name}.dbapi"]
+        module_suffix = module_suffix_map.get(driver_name, driver_name)
+        module_name = f"adbc_driver_{module_suffix}.dbapi"
+        import_module(module_name)
+        adbc_driver = sys.modules[module_name]
     except ImportError:
         raise ImportError(
             f"ADBC {driver_name} driver not detected; if ADBC supports this database, "
