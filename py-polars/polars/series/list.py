@@ -497,3 +497,33 @@ class ListNameSpace:
         └─────┴─────┴────────────┘
 
         """
+
+    def union(self, other: Series) -> Series:
+        """
+        Compute the SET UNION between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+        """  # noqa: W505.
+
+    def difference(self, other: Series) -> Series:
+        """
+        Compute the SET DIFFERENCE between the  elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+        """  # noqa: W505.
+
+    def intersection(self, other: Series) -> Series:
+        """
+        Compute the SET INTERSECTION between the  elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+        """  # noqa: W505.

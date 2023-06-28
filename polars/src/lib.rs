@@ -247,6 +247,7 @@
 //!     - `list_to_struct` - Convert `List` to `Struct` dtypes.
 //!     - `list_count` - Count elements in lists.
 //!     - `list_eval` - Apply expressions over list elements.
+//!     - `list_sets` - Compute UNION, INTERSECTION, and DIFFERENCE on list types.
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
 //!     - `arg_where` - Get indices where condition holds.
 //!     - `search_sorted` - Find indices where elements should be inserted to maintain order.

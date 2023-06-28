@@ -131,6 +131,7 @@ serde = [
   "polars-ops/serde",
 ]
 fused = ["polars-plan/fused", "polars-ops/fused"]
+list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 

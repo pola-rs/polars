@@ -103,6 +103,8 @@ impl FunctionExpr {
                     #[cfg(feature = "list_count")]
                     CountMatch => mapper.with_dtype(IDX_DTYPE),
                     Sum => mapper.nested_sum_type(),
+                    #[cfg(feature = "list_sets")]
+                    SetOperation(_) => mapper.with_same_dtype(),
                 }
             }
             #[cfg(feature = "dtype-array")]

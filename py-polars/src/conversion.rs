@@ -1285,6 +1285,23 @@ impl FromPyObject<'_> for Wrap<JoinValidation> {
     }
 }
 
+#[cfg(feature = "list_sets")]
+impl FromPyObject<'_> for Wrap<SetOperation> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "union" => SetOperation::Union,
+            "difference" => SetOperation::Difference,
+            "intersection" => SetOperation::Intersection,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "validate must be one of {{'union', 'difference', 'intersection'}}, got {v}",
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 pub(crate) fn parse_fill_null_strategy(
     strategy: &str,
     limit: FillNullLimit,
