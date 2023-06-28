@@ -3090,7 +3090,6 @@ class DataFrame:
 
             # do not remove this
             # needed below
-            import pyarrow.parquet
 
             pa.parquet.write_table(
                 table=tbl,
