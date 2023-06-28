@@ -886,7 +886,7 @@ class ExprListNameSpace:
 
         See Also
         --------
-        .list.diff: Calculates the n-th discrete difference of every sublist.
+        polars.Expr.list.diff: Calculates the n-th discrete difference of every sublist.
 
         """  # noqa: W505.
         other = parse_as_expression(other, str_as_lit=False)

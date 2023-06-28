@@ -548,7 +548,7 @@ class ListNameSpace:
 
         See Also
         --------
-        .list.diff: Calculates the n-th discrete difference of every sublist.
+        polars.Series.list.diff: Calculates the n-th discrete difference of every sublist.
 
         """  # noqa: W505.
 
