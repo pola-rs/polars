@@ -17,6 +17,7 @@ members = [
   "polars/polars-row",
   "polars/polars-json",
   "examples/read_csv",
+  "examples/read_json",
   "examples/read_parquet",
   "examples/read_parquet_cloud",
   "examples/string_filter",
