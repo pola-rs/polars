@@ -819,3 +819,39 @@ class ExprListNameSpace:
 
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
+
+    def union(self, other: Expr | IntoExpr) -> Expr:
+        """
+        Compute the SET UNION between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+        """  # noqa: W505.
+        other = parse_as_expression(other, str_as_lit=False)
+        return wrap_expr(self._pyexpr.list_set_operation(other, "union"))
+
+    def difference(self, other: Expr | IntoExpr) -> Expr:
+        """
+        Compute the SET DIFFERENCE between the  elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+        """  # noqa: W505.
+        other = parse_as_expression(other, str_as_lit=False)
+        return wrap_expr(self._pyexpr.list_set_operation(other, "difference"))
+
+    def intersection(self, other: Expr | IntoExpr) -> Expr:
+        """
+        Compute the SET INTERSECTION between the  elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+        """  # noqa: W505.
+        other = parse_as_expression(other, str_as_lit=False)
+        return wrap_expr(self._pyexpr.list_set_operation(other, "intersection"))

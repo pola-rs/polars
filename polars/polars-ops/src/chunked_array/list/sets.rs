@@ -1,7 +1,10 @@
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
-use arrow::array::{ListArray, MutableArray, MutablePrimitiveArray, PrimitiveArray};
+use arrow::array::{
+    BinaryArray, ListArray, MutableArray, MutableBinaryArray, MutablePrimitiveArray,
+    PrimitiveArray, Utf8Array,
+};
 use arrow::bitmap::Bitmap;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
@@ -16,7 +19,7 @@ struct Intersection<'a, T, I: Iterator<Item = T>> {
     // iterator of the first set
     iter: I,
     // the second set
-    other: &'a PlHashSet<T>,
+    other: &'a PlIndexSet<T>,
 }
 
 impl<'a, T, I> Iterator for Intersection<'a, T, I>
@@ -56,8 +59,15 @@ where
     }
 }
 
+impl<'a> MaterializeValues<Option<&'a [u8]>> for MutableBinaryArray<i64> {
+    fn extend_buf<I: Iterator<Item = Option<&'a [u8]>>>(&mut self, values: I) -> usize {
+        self.extend(values);
+        self.len()
+    }
+}
+
 fn set_operation<K, I, R>(
-    set: &mut PlHashSet<K>,
+    set: &mut PlIndexSet<K>,
     a: I,
     b: I,
     out: &mut R,
@@ -68,6 +78,7 @@ where
     I: IntoIterator<Item = K>,
     R: MaterializeValues<K>,
 {
+    set.clear();
     let a = a.into_iter();
     let b = b.into_iter();
 
@@ -88,14 +99,14 @@ where
         SetOperation::Union => {
             set.extend(a);
             set.extend(b);
-            out.extend_buf(set.drain())
+            out.extend_buf(set.drain(..))
         }
         SetOperation::Difference => {
             set.extend(a);
             for v in b {
                 set.remove(&v);
             }
-            out.extend_buf(set.drain())
+            out.extend_buf(set.drain(..))
         }
     }
 }
@@ -176,6 +187,71 @@ where
     ListArray::new(dtype, offsets, values.boxed(), validity)
 }
 
+fn binary(
+    a: &BinaryArray<i64>,
+    b: &BinaryArray<i64>,
+    offsets_a: &[i64],
+    offsets_b: &[i64],
+    set_type: SetOperation,
+    validity: Option<Bitmap>,
+    as_utf8: bool,
+) -> ListArray<i64> {
+    assert_eq!(offsets_a.len(), offsets_b.len());
+
+    let mut set = Default::default();
+
+    let mut values_out = MutableBinaryArray::with_capacity(std::cmp::max(
+        *offsets_a.last().unwrap(),
+        *offsets_b.last().unwrap(),
+    ) as usize);
+    let mut offsets = Vec::with_capacity(std::cmp::max(offsets_a.len(), offsets_b.len()));
+    offsets.push(0i64);
+
+    for i in 1..offsets_a.len() {
+        unsafe {
+            let start_a = *offsets_a.get_unchecked(i - 1) as usize;
+            let end_a = *offsets_a.get_unchecked(i) as usize;
+
+            let start_b = *offsets_b.get_unchecked(i - 1) as usize;
+            let end_b = *offsets_b.get_unchecked(i) as usize;
+
+            // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
+            let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
+            let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
+
+            let offset = set_operation(&mut set, a_iter, b_iter, &mut values_out, set_type);
+            offsets.push(offset as i64);
+        }
+    }
+    let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
+    let values: BinaryArray<i64> = values_out.into();
+
+    if as_utf8 {
+        let values = unsafe {
+            Utf8Array::<i64>::new_unchecked(
+                ArrowDataType::LargeUtf8,
+                values.offsets().clone(),
+                values.values().clone(),
+                values.validity().cloned(),
+            )
+        };
+        let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
+        ListArray::new(dtype, offsets, values.boxed(), validity)
+    } else {
+        let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
+        ListArray::new(dtype, offsets, values.boxed(), validity)
+    }
+}
+
+fn utf8_to_binary(arr: &Utf8Array<i64>) -> BinaryArray<i64> {
+    BinaryArray::<i64>::new(
+        ArrowDataType::LargeBinary,
+        arr.offsets().clone(),
+        arr.values().clone(),
+        arr.validity().cloned(),
+    )
+}
+
 fn array_set_operation(
     a: &ListArray<i64>,
     b: &ListArray<i64>,
@@ -191,12 +267,38 @@ fn array_set_operation(
     let dtype = values_b.data_type();
     let validity = combine_validities_and(a.validity(), b.validity());
 
-    with_match_physical_integer_type!(dtype.into(), |$T| {
-        let a = values_a.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-        let b = values_b.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+    match dtype {
+        ArrowDataType::LargeUtf8 => {
+            let a = values_a.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+            let b = values_b.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
 
-        primitive(&a, &b, offsets_a, offsets_b, set_type, validity)
-    })
+            let a = utf8_to_binary(a);
+            let b = utf8_to_binary(b);
+            binary(&a, &b, offsets_a, offsets_b, set_type, validity, true)
+        }
+        ArrowDataType::LargeBinary => {
+            let a = values_a
+                .as_any()
+                .downcast_ref::<BinaryArray<i64>>()
+                .unwrap();
+            let b = values_b
+                .as_any()
+                .downcast_ref::<BinaryArray<i64>>()
+                .unwrap();
+            binary(a, b, offsets_a, offsets_b, set_type, validity, false)
+        }
+        ArrowDataType::Boolean => {
+            todo!("boolean type not yet supported in list union operations")
+        }
+        _ => {
+            with_match_physical_integer_type!(dtype.into(), |$T| {
+                let a = values_a.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+                let b = values_b.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+
+                primitive(&a, &b, offsets_a, offsets_b, set_type, validity)
+            })
+        }
+    }
 }
 
 pub fn list_set_operation(a: &ListChunked, b: &ListChunked, set_type: SetOperation) -> ListChunked {
