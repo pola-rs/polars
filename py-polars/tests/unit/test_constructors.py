@@ -1015,6 +1015,14 @@ def test_from_dicts_schema() -> None:
             "c": [None, None, None],
         }
 
+    # provide data that resolves to an empty frame (ref: scalar
+    # expansion shortcut), with schema/override hints
+    schema = {"colx": pl.Utf8, "coly": pl.Int32}
+
+    for param in ("schema", "schema_overrides"):
+        df = pl.DataFrame({"colx": [], "coly": 0}, **{param: schema})  # type: ignore[arg-type]
+        assert df.schema == schema
+
 
 def test_nested_read_dict_4143() -> None:
     assert pl.from_dicts(

@@ -804,7 +804,13 @@ def dict_to_pydf(
         ]
 
     data_series = _handle_columns_arg(data_series, columns=column_names, from_dict=True)
-    return PyDataFrame(data_series)
+    pydf = PyDataFrame(data_series)
+
+    if schema_overrides and pydf.dtypes() != list(schema_overrides.values()):
+        pydf = _post_apply_columns(
+            pydf, column_names, schema_overrides=schema_overrides
+        )
+    return pydf
 
 
 def sequence_to_pydf(
