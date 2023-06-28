@@ -6,6 +6,35 @@ use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars_core::prelude::*;
 
+struct Intersection<'a, T, I: Iterator<Item = T>> {
+    // iterator of the first set
+    iter: I,
+    // the second set
+    other: &'a PlHashSet<T>,
+}
+
+impl<'a, T, I> Iterator for Intersection<'a, T, I>
+where
+    T: Eq + Hash,
+    I: Iterator<Item = T>,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        loop {
+            let elt = self.iter.next()?;
+            if self.other.contains(&elt) {
+                return Some(elt);
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (_, upper) = self.iter.size_hint();
+        (0, upper)
+    }
+}
+
 trait MaterializeValues<K> {
     // extends the iterator to the values and returns the current offset
     fn extend_buf<I: Iterator<Item = K>>(&mut self, values: I) -> usize;
@@ -22,8 +51,7 @@ where
 }
 
 fn set_operation<K, I, R>(
-    set_a: &mut PlHashSet<K>,
-    set_b: &mut PlHashSet<K>,
+    set: &mut PlHashSet<K>,
     a: I,
     b: I,
     out: &mut R,
@@ -34,23 +62,34 @@ where
     I: IntoIterator<Item = K>,
     R: MaterializeValues<K>,
 {
-    set_a.clear();
-    set_b.clear();
-    set_a.extend(a);
-    set_b.extend(b);
+    let a = a.into_iter();
+    let b = b.into_iter();
 
     match set_type {
         SetType::Intersection => {
-            let iter = set_a.intersection(set_b).copied();
+            let (smaller, larger) = if a.size_hint().0 <= b.size_hint().0 {
+                (a, b)
+            } else {
+                (b, a)
+            };
+            set.extend(smaller);
+            let iter = Intersection {
+                iter: larger,
+                other: set,
+            };
             out.extend_buf(iter)
         }
         SetType::Union => {
-            let iter = set_a.union(set_b).copied();
-            out.extend_buf(iter)
+            set.extend(a);
+            set.extend(b);
+            out.extend_buf(set.drain())
         }
         SetType::Difference => {
-            let iter = set_a.difference(set_b).copied();
-            out.extend_buf(iter)
+            set.extend(a);
+            for v in b {
+                set.remove(&v);
+            }
+            out.extend_buf(set.drain())
         }
     }
 }
@@ -79,8 +118,7 @@ where
 {
     assert_eq!(offsets_a.len(), offsets_b.len());
 
-    let mut set_a = Default::default();
-    let mut set_b = Default::default();
+    let mut set = Default::default();
 
     let mut values_out = MutablePrimitiveArray::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
@@ -109,14 +147,7 @@ where
                 .take(end_b - start_b)
                 .map(copied_opt);
 
-            let offset = set_operation(
-                &mut set_a,
-                &mut set_b,
-                a_iter,
-                b_iter,
-                &mut values_out,
-                set_type,
-            );
+            let offset = set_operation(&mut set, a_iter, b_iter, &mut values_out, set_type);
             offsets.push(offset as i64);
         }
     }
