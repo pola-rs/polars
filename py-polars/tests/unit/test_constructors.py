@@ -13,7 +13,7 @@ import pytest
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
-from polars.exceptions import TimeZoneAwareConstructorWarning
+from polars.exceptions import ShapeError, TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
@@ -958,6 +958,10 @@ def test_from_dicts_missing_columns() -> None:
     # missing columns in the schema; only load the declared keys
     data = [{"a": 1, "b": 2}]
     assert pl.from_dicts(data, schema=["a"]).to_dict(False) == {"a": [1]}
+
+    # invalid
+    with pytest.raises(ShapeError):
+        pl.from_dicts([{"a": 1, "b": 2}], schema=["xyz"])
 
 
 @no_type_check
