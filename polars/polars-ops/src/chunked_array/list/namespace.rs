@@ -145,26 +145,40 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
+    fn same_type(&self, out: ListChunked) -> ListChunked {
+        let ca = self.as_list();
+        let dtype = ca.dtype();
+        if out.dtype() != dtype {
+            out.cast(ca.dtype()).unwrap().list().unwrap().clone()
+        } else {
+            out
+        }
+    }
+
     #[must_use]
     fn lst_sort(&self, options: SortOptions) -> ListChunked {
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().sort_with(options))
+        let out = ca.apply_amortized(|s| s.as_ref().sort_with(options));
+        self.same_type(out)
     }
 
     #[must_use]
     fn lst_reverse(&self) -> ListChunked {
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().reverse())
+        let out = ca.apply_amortized(|s| s.as_ref().reverse());
+        self.same_type(out)
     }
 
     fn lst_unique(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        ca.try_apply_amortized(|s| s.as_ref().unique())
+        let out = ca.try_apply_amortized(|s| s.as_ref().unique())?;
+        Ok(self.same_type(out))
     }
 
     fn lst_unique_stable(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        ca.try_apply_amortized(|s| s.as_ref().unique_stable())
+        let out = ca.try_apply_amortized(|s| s.as_ref().unique_stable())?;
+        Ok(self.same_type(out))
     }
 
     fn lst_arg_min(&self) -> IdxCa {
@@ -195,12 +209,14 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_shift(&self, periods: i64) -> ListChunked {
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().shift(periods))
+        let out = ca.apply_amortized(|s| s.as_ref().shift(periods));
+        self.same_type(out)
     }
 
     fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().slice(offset, length))
+        let out = ca.apply_amortized(|s| s.as_ref().slice(offset, length));
+        self.same_type(out)
     }
 
     fn lst_lengths(&self) -> IdxCa {
