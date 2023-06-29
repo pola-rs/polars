@@ -1669,7 +1669,7 @@ class ExprStringNameSpace:
 
         Returns
         -------
-        Expr: Series of parsed integers in i32 format
+        Expr : Series of parsed integers in i32 format
 
         Examples
         --------
