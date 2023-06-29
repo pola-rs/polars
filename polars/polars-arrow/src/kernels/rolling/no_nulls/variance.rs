@@ -1,4 +1,5 @@
 use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
+use polars_error::polars_ensure;
 
 use super::mean::MeanWindow;
 use super::*;
@@ -154,41 +155,33 @@ where
         + Zero
         + Sub<Output = T>,
 {
-    match (center, weights) {
-        (true, None) => rolling_apply_agg_window::<VarWindow<_>, _, _>(
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
+    };
+    match weights {
+        None => rolling_apply_agg_window::<VarWindow<_>, _, _>(
             values,
             window_size,
             min_periods,
-            det_offsets_center,
+            offset_fn,
             params,
         ),
-        (false, None) => rolling_apply_agg_window::<VarWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            det_offsets,
-            params,
-        ),
-        (true, Some(weights)) => {
-            let weights = coerce_weights(weights);
+        Some(weights) => {
+            let mut wts = no_nulls::coerce_weights(weights);
+            let wsum = wts.iter().fold(T::zero(), |acc, x| acc + *x);
+            polars_ensure!(
+                wsum != T::zero(),
+                ComputeError: "Weighted mean is undefined if weights sum to 0"
+            );
+            wts.iter_mut().for_each(|w| *w = *w / wsum);
             super::rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
-                det_offsets_center,
+                offset_fn,
                 compute_var_weights,
-                &weights,
-            )
-        }
-        (false, Some(weights)) => {
-            let weights = coerce_weights(weights);
-            super::rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets,
-                compute_var_weights,
-                &weights,
+                &wts,
             )
         }
     }

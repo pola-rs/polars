@@ -112,20 +112,15 @@ fn compute_var_weights<T>(vals: &[T], weights: &[T]) -> T
 where
     T: Float + std::ops::AddAssign,
 {
-    let weighted_iter = vals.iter().zip(weights).map(|(x, y)| *x * *y);
+    // Assumes the weights have already been standardized to 1
+    let (wssq, wmean) = vals
+        .iter()
+        .zip(weights)
+        .fold((T::zero(), T::zero()), |(wssq, wsum), (&v, &w)| {
+            (wssq + v * v * w, wsum + v * w)
+        });
 
-    let mut sum = T::zero();
-    let mut sum_of_squares = T::zero();
-
-    for val in weighted_iter {
-        sum += val;
-        sum_of_squares += val * val;
-    }
-    let count = NumCast::from(vals.len()).unwrap();
-
-    let mean = sum / count;
-    // apply Bessel's correction
-    ((sum_of_squares / count) - mean * mean) / (count - T::one()) * count
+    wssq - wmean * wmean
 }
 
 pub(crate) fn compute_sum_weights<T>(values: &[T], weights: &[T]) -> T
