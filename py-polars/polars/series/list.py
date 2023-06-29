@@ -506,24 +506,73 @@ class ListNameSpace:
         ----------
         other
             Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
+        >>> a.list.union(b)  # doctest: +IGNORE_RESULT
+        shape: (4,)
+        Series: '' [list[i64]]
+        [
+                [1, 2, 3, 4]
+                [3]
+                [null, 3, 4]
+                [5, 6, 7, 8]
+        ]
+
         """  # noqa: W505.
 
     def difference(self, other: Series) -> Series:
         """
-        Compute the SET DIFFERENCE between the  elements in this list and the elements of ``other``.
+        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
 
         Parameters
         ----------
         other
             Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
+        >>> a.list.difference(b)
+        shape: (4,)
+        Series: '' [list[i64]]
+        [
+                [1]
+                []
+                []
+                [5, 7]
+        ]
+
+        See Also
+        --------
+        polars.Series.list.diff: Calculates the n-th discrete difference of every sublist.
+
         """  # noqa: W505.
 
     def intersection(self, other: Series) -> Series:
         """
-        Compute the SET INTERSECTION between the  elements in this list and the elements of ``other``.
+        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
 
         Parameters
         ----------
         other
             Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
+        >>> a.list.intersection(b)
+        shape: (4,)
+        Series: '' [list[i64]]
+        [
+                [2, 3]
+                []
+                [3, null]
+                [6]
+        ]
+
         """  # noqa: W505.
