@@ -6264,7 +6264,7 @@ class Expr:
         │ 6.0 ┆ 5.5            │
         └─────┴────────────────┘
 
-        Specify weights to multiply the values in the window with:
+        Specify weights for the values in each window:
 
         >>> df.with_columns(
         ...     rolling_median=pl.col("A").rolling_median(
@@ -6278,11 +6278,11 @@ class Expr:
         │ f64 ┆ f64            │
         ╞═════╪════════════════╡
         │ 1.0 ┆ null           │
-        │ 2.0 ┆ 0.875          │
-        │ 3.0 ┆ 1.375          │
-        │ 4.0 ┆ 1.875          │
-        │ 5.0 ┆ 2.375          │
-        │ 6.0 ┆ 2.875          │
+        │ 2.0 ┆ 1.5            │
+        │ 3.0 ┆ 2.5            │
+        │ 4.0 ┆ 3.5            │
+        │ 5.0 ┆ 4.5            │
+        │ 6.0 ┆ 5.5            │
         └─────┴────────────────┘
 
         Center the values in the window
@@ -6427,7 +6427,7 @@ class Expr:
         │ 6.0 ┆ 4.0              │
         └─────┴──────────────────┘
 
-        Specify weights to multiply the values in the window with:
+        Specify weights for the values in each window:
 
         >>> df.with_columns(
         ...     rolling_quantile=pl.col("A").rolling_quantile(
@@ -6443,9 +6443,30 @@ class Expr:
         │ 1.0 ┆ null             │
         │ 2.0 ┆ null             │
         │ 3.0 ┆ null             │
-        │ 4.0 ┆ 0.8              │
-        │ 5.0 ┆ 1.0              │
-        │ 6.0 ┆ 1.2              │
+        │ 4.0 ┆ 2.0              │
+        │ 5.0 ┆ 3.0              │
+        │ 6.0 ┆ 4.0              │
+        └─────┴──────────────────┘
+        
+        Specify weights and interpolation method
+        
+        >>> df.with_columns(
+        ...     rolling_quantile=pl.col("A").rolling_quantile(
+        ...         quantile=0.25, window_size=4, weights=[0.2, 0.4, 0.4, 0.2], interpolation='linear'
+        ...     ),
+        ... )
+        shape: (6, 2)
+        ┌─────┬──────────────────┐
+        │ A   ┆ rolling_quantile │
+        │ --- ┆ ---              │
+        │ f64 ┆ f64              │
+        ╞═════╪══════════════════╡
+        │ 1.0 ┆ null             │
+        │ 2.0 ┆ null             │
+        │ 3.0 ┆ null             │
+        │ 4.0 ┆ 1.625            │
+        │ 5.0 ┆ 2.625            │
+        │ 6.0 ┆ 3.625            │
         └─────┴──────────────────┘
 
         Center the values in the window

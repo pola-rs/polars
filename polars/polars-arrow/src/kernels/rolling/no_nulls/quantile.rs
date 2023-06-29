@@ -267,11 +267,10 @@ where
     // odd but it's the equivalent of taking h = p * (n - 1) + 1 if your data is indexed from 1.
     let h: f64 = p * (wsum - buf[0].1) + buf[0].1;
     for &(v, w) in buf.iter().filter(|(_, w)| *w != 0.0) {
-        vk = v; // We need the "next" value if we break.
         if s > h {
             break;
         }
-        (s_old, v_old) = (s, v);
+        (s_old, v_old, vk) = (s, vk, v);
         s += w;
     }
     match (h == s_old, interp) {
