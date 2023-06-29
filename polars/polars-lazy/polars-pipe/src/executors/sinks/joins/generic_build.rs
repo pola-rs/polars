@@ -142,8 +142,7 @@ impl GenericBuild {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<&BinaryArray<i64>> {
-        self.join_columns.clear();
-
+        debug_assert!(self.join_columns.is_empty());
         for phys_e in self.join_columns_left.iter() {
             let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let arr = s.to_physical_repr().rechunk().array_ref(0).clone();
@@ -206,6 +205,11 @@ impl Sink for GenericBuild {
 
             current_df_idx += 1;
         }
+
+        // clear memory
+        self.hashes.clear();
+        self.join_columns.clear();
+
         self.chunks.push(chunk);
         Ok(SinkResult::CanHaveMoreInput)
     }
