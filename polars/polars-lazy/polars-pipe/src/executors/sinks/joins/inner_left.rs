@@ -119,7 +119,7 @@ impl GenericJoinProbe {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<BinaryArray<i64>> {
-        self.join_columns.clear();
+        debug_assert!(self.join_columns.is_empty());
 
         let determine_idx = !self.swapped_or_left && self.join_column_idx.is_none();
         let mut names = vec![];
@@ -221,6 +221,10 @@ impl GenericJoinProbe {
             },
         };
 
+        // clear memory
+        self.join_columns.clear();
+        self.hashes.clear();
+
         Ok(OperatorResult::Finished(chunk.with_data(out)))
     }
 
@@ -299,6 +303,10 @@ impl GenericJoinProbe {
                 a
             }
         };
+
+        // clear memory
+        self.join_columns.clear();
+        self.hashes.clear();
 
         Ok(OperatorResult::Finished(chunk.with_data(out)))
     }
