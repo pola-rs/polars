@@ -601,3 +601,28 @@ def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
             2124,
         ],
     }
+
+
+@pytest.mark.write_disk()
+@pytest.mark.slow()
+@typing.no_type_check
+def test_streaming_generic_left_and_inner_join_from_disk() -> None:
+    # by loading from disk, we get different chunks
+    n = 300_000
+    k = 100
+
+    d0 = {f"x{i}": np.random.random(n) for i in range(k)}
+    d0.update({"id": np.arange(n)})
+
+    df0 = pl.DataFrame(d0)
+    df1 = df0.clone().select(pl.all().shuffle(111))
+
+    df0.write_parquet("/tmp/df0.parquet")
+    df1.write_parquet("/tmp/df1.parquet")
+
+    lf0 = pl.scan_parquet("/tmp/df0.parquet")
+    lf1 = pl.scan_parquet("/tmp/df1.parquet").select(pl.all().suffix("_r"))
+
+    for how in ["left", "inner"]:
+        q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
+        assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
