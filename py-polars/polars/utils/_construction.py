@@ -13,6 +13,7 @@ from typing import (
     Callable,
     Generator,
     Iterable,
+    Iterator,
     Mapping,
     MutableMapping,
     Sequence,
@@ -264,7 +265,7 @@ def iterable_to_pyseries(
     chunk_size: int = 1_000_000,
 ) -> PySeries:
     """Construct a PySeries from an iterable/generator."""
-    if not isinstance(values, Generator):
+    if not isinstance(values, (Generator, Iterator)):
         values = iter(values)
 
     def to_series_chunk(values: list[Any], dtype: PolarsDataType | None) -> Series:
@@ -683,6 +684,23 @@ def _unpack_schema(
     )
 
 
+def _expand_dict_data(
+    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    dtypes: SchemaDict,
+) -> Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series]:
+    """
+    Expand any unsized generators/iterators.
+
+    (Note that `range` is sized, and will take a fast-path on Series init).
+    """
+    expanded_data = {}
+    for name, val in data.items():
+        expanded_data[name] = (
+            pl.Series(name, val, dtypes.get(name)) if _is_generator(val) else val
+        )
+    return expanded_data
+
+
 def _expand_dict_scalars(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     schema_overrides: SchemaDict | None = None,
@@ -693,6 +711,7 @@ def _expand_dict_scalars(
     updated_data = {}
     if data:
         dtypes = schema_overrides or {}
+        data = _expand_dict_data(data, dtypes)
         array_len = max((arrlen(val) or 0) for val in data.values())
         if array_len > 0:
             for name, val in data.items():
@@ -804,7 +823,13 @@ def dict_to_pydf(
         ]
 
     data_series = _handle_columns_arg(data_series, columns=column_names, from_dict=True)
-    return PyDataFrame(data_series)
+    pydf = PyDataFrame(data_series)
+
+    if schema_overrides and pydf.dtypes() != list(schema_overrides.values()):
+        pydf = _post_apply_columns(
+            pydf, column_names, schema_overrides=schema_overrides
+        )
+    return pydf
 
 
 def sequence_to_pydf(
@@ -1036,9 +1061,9 @@ def _sequence_of_dict_to_pydf(
     )
     pydf = PyDataFrame.read_dicts(data, infer_schema_length, dicts_schema)
 
-    if column_names and set(column_names).intersection(pydf.columns()):
-        column_names = []
-    if column_names or schema_overrides:
+    if not schema_overrides and set(pydf.columns()) == set(column_names):
+        pass
+    elif column_names or schema_overrides:
         pydf = _post_apply_columns(
             pydf,
             columns=column_names,

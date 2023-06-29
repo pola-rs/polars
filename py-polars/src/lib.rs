@@ -27,6 +27,8 @@ pub mod lazyframe;
 pub mod lazygroupby;
 #[cfg(feature = "object")]
 mod object;
+#[cfg(feature = "object")]
+mod on_startup;
 pub mod prelude;
 pub(crate) mod py_modules;
 pub mod series;
@@ -39,7 +41,7 @@ use jemallocator::Jemalloc;
 #[cfg(any(not(target_os = "linux"), use_mimalloc))]
 use mimalloc::MiMalloc;
 #[cfg(feature = "object")]
-pub use object::__register_startup_deps;
+pub use on_startup::__register_startup_deps;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;

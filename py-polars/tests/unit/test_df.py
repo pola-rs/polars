@@ -25,7 +25,7 @@ from polars.testing.parametric import columns
 from polars.utils._construction import iterable_to_pydf
 
 if TYPE_CHECKING:
-    from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
+    from polars.type_aliases import IndexOrder, JoinStrategy, UniqueKeepStrategy
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -454,6 +454,17 @@ def test_from_dict_with_scalars() -> None:
     assert dfx[:5].rows() == dfx[5:10].rows()
     assert dfx[-10:-5].rows() == dfx[-5:].rows()
     assert dfx.row(n_range // 2, named=True) == mixed_dtype_data
+
+    # misc generators/iterables
+    df9 = pl.DataFrame(
+        {
+            "a": iter([0, 1, 2]),
+            "b": (2, 1, 0).__iter__(),
+            "c": (v for v in (0, 0, 0)),
+            "d": "x",
+        }
+    )
+    assert df9.rows() == [(0, 2, 0, "x"), (1, 1, 0, "x"), (2, 0, 0, "x")]
 
 
 def test_dataframe_membership_operator() -> None:
@@ -1432,20 +1443,25 @@ def test_assign() -> None:
     assert list(df["a"]) == [2, 4, 6]
 
 
-def test_to_numpy() -> None:
+@pytest.mark.parametrize(
+    ("order", "f_contiguous", "c_contiguous"),
+    [("fortran", True, False), ("c", False, True)],
+)
+def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
 
-    out_array = df.to_numpy()
+    out_array = df.to_numpy(order=order)
     expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
     assert_array_equal(out_array, expected_array)
-    assert out_array.flags["F_CONTIGUOUS"] is True
+    assert out_array.flags["F_CONTIGUOUS"] == f_contiguous
+    assert out_array.flags["C_CONTIGUOUS"] == c_contiguous
 
-    structured_array = df.to_numpy(structured=True)
+    structured_array = df.to_numpy(structured=True, order=order)
     expected_array = np.array(
         [(1, 1.0), (2, 2.0), (3, 3.0)], dtype=[("a", "<i8"), ("b", "<f8")]
     )
     assert_array_equal(structured_array, expected_array)
-    assert structured_array.flags["F_CONTIGUOUS"] is True
+    assert structured_array.flags["F_CONTIGUOUS"]
 
 
 def test_to_numpy_structured() -> None:
@@ -3688,14 +3704,11 @@ def test_rolling_apply() -> None:
     roll_app_std = s.rolling_apply(
         function=lambda s: s.std(),
         window_size=4,
-        weights=[1.0, 2.0, 3.0, 0.1],
         min_periods=3,
         center=False,
     )
 
-    roll_std = s.rolling_std(
-        window_size=4, weights=[1.0, 2.0, 3.0, 0.1], min_periods=3, center=False
-    )
+    roll_std = s.rolling_std(window_size=4, min_periods=3, center=False)
 
     assert (roll_app_std - roll_std).abs().sum() < 0.0001
 

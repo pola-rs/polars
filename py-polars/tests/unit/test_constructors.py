@@ -13,7 +13,7 @@ import pytest
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
-from polars.exceptions import TimeZoneAwareConstructorWarning
+from polars.exceptions import ShapeError, TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
@@ -948,12 +948,20 @@ def test_u64_lit_5031() -> None:
 
 
 def test_from_dicts_missing_columns() -> None:
+    # missing columns from some of the data dicts
     data = [
         {"a": 1},
         {"b": 2},
     ]
-
     assert pl.from_dicts(data).to_dict(False) == {"a": [1, None], "b": [None, 2]}
+
+    # missing columns in the schema; only load the declared keys
+    data = [{"a": 1, "b": 2}]
+    assert pl.from_dicts(data, schema=["a"]).to_dict(False) == {"a": [1]}
+
+    # invalid
+    with pytest.raises(ShapeError):
+        pl.from_dicts([{"a": 1, "b": 2}], schema=["xyz"])
 
 
 @no_type_check
@@ -1014,6 +1022,14 @@ def test_from_dicts_schema() -> None:
             "b": [4, 5, 6],
             "c": [None, None, None],
         }
+
+    # provide data that resolves to an empty frame (ref: scalar
+    # expansion shortcut), with schema/override hints
+    schema = {"colx": pl.Utf8, "coly": pl.Int32}
+
+    for param in ("schema", "schema_overrides"):
+        df = pl.DataFrame({"colx": [], "coly": 0}, **{param: schema})  # type: ignore[arg-type]
+        assert df.schema == schema
 
 
 def test_nested_read_dict_4143() -> None:

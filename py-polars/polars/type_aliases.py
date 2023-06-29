@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
     from polars.functions.whenthen import WhenThen, WhenThenThen
+    from polars.selectors import _selector_proxy_
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -73,6 +74,9 @@ PythonLiteral: TypeAlias = Union[
 IntoExpr: TypeAlias = Union[PolarsExprType, PythonLiteral, "Series", None]
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
+# selector type
+SelectorType: TypeAlias = "_selector_proxy_"
+
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
@@ -82,6 +86,7 @@ FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
 FloatFmt: TypeAlias = Literal["full", "mixed"]
+IndexOrder: TypeAlias = Literal["c", "fortran"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]

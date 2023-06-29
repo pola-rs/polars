@@ -47,7 +47,7 @@ pub(super) fn process_semi_anti_join(
         for proj in acc_projections {
             let add_local = process_alias(proj, &mut local_projection, expr_arena, true);
 
-            proj_pd.join_push_down(
+            let _ = proj_pd.join_push_down(
                 &schema_left,
                 &schema_right,
                 proj,

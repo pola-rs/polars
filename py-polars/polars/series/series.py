@@ -2930,8 +2930,8 @@ class Series:
 
         See Also
         --------
-        ListNameSpace.explode : Explode a list column.
-        StringNameSpace.explode : Explode a string column.
+        Series.list.explode : Explode a list column.
+        Series.str.explode : Explode a string column.
 
         """
 
@@ -5583,7 +5583,7 @@ class Series:
 
         See Also
         --------
-        ListNameSpace.explode : Explode a list column.
+        Series.list.explode : Explode a list column.
 
         Examples
         --------

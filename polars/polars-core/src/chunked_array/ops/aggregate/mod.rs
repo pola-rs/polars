@@ -8,7 +8,7 @@ use std::ops::Add;
 use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
-use num_traits::{Float, ToPrimitive};
+use num_traits::{Float, ToPrimitive, Zero};
 use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 pub use quantile::*;
 pub use var::*;
@@ -39,18 +39,15 @@ pub trait ChunkAggSeries {
     }
 }
 
-fn sum_float_unaligned_slice<T: NumericNative>(values: &[T]) -> Option<T> {
-    Some(values.iter().copied().sum())
+fn sum_float_unaligned_slice<T: NumericNative>(values: &[T]) -> T {
+    values.iter().copied().sum()
 }
 
-fn sum_float_unaligned<T: NumericNative>(array: &PrimitiveArray<T>) -> Option<T> {
-    if array.len() == 0 {
-        return Some(T::zero());
+fn sum_float_unaligned<T: NumericNative>(array: &PrimitiveArray<T>) -> T {
+    if array.len() == 0 || array.null_count() == array.len() {
+        return T::zero();
     }
-    if array.null_count() == array.len() {
-        return None;
-    }
-    Some(array.into_iter().flatten().copied().sum())
+    array.into_iter().flatten().copied().sum()
 }
 
 /// Floating point arithmetic is non-associative.
@@ -62,7 +59,7 @@ fn sum_float_unaligned<T: NumericNative>(array: &PrimitiveArray<T>) -> Option<T>
 /// The SIMD chunks have a certain alignment and depending of the start of the buffer
 /// head and tail may have different sizes, making a sum non-deterministic for the same
 /// values but different memory locations
-fn stable_sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> Option<T>
+fn stable_sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> T
 where
     T: NumericNative + NativeType,
     <T as Simd>::Simd: Add<Output = <T as Simd>::Simd>
@@ -75,14 +72,14 @@ where
         let (a, _, _) = <T as Simd>::Simd::align(values);
         // we only choose SIMD path if buffer is aligned to SIMD
         if a.is_empty() {
-            compute::aggregate::sum_primitive(array)
+            compute::aggregate::sum_primitive(array).unwrap_or(T::zero())
         } else if array.null_count() == 0 {
             sum_float_unaligned_slice(values)
         } else {
             sum_float_unaligned(array)
         }
     } else {
-        compute::aggregate::sum_primitive(array)
+        compute::aggregate::sum_primitive(array).unwrap_or(T::zero())
     }
 }
 
@@ -94,15 +91,11 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
 {
     fn sum(&self) -> Option<T::Native> {
-        self.downcast_iter()
-            .map(stable_sum)
-            .fold(None, |acc, v| match v {
-                Some(v) => match acc {
-                    None => Some(v),
-                    Some(acc) => Some(acc + v),
-                },
-                None => acc,
-            })
+        Some(
+            self.downcast_iter()
+                .map(stable_sum)
+                .fold(T::Native::zero(), |acc, v| acc + v),
+        )
     }
 
     fn min(&self) -> Option<T::Native> {
@@ -164,6 +157,9 @@ where
     }
 
     fn mean(&self) -> Option<f64> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
         match self.dtype() {
             DataType::Float64 => {
                 let len = (self.len() - self.null_count()) as f64;
@@ -223,20 +219,18 @@ where
 impl BooleanChunked {
     /// Returns `None` if the array is empty or only contains null values.
     pub fn sum(&self) -> Option<IdxSize> {
-        if self.is_empty() {
-            None
+        Some(if self.is_empty() {
+            0
         } else {
-            Some(
-                self.downcast_iter()
-                    .map(|arr| match arr.validity() {
-                        Some(validity) => {
-                            (arr.len() - (validity & arr.values()).unset_bits()) as IdxSize
-                        }
-                        None => (arr.len() - arr.values().unset_bits()) as IdxSize,
-                    })
-                    .sum(),
-            )
-        }
+            self.downcast_iter()
+                .map(|arr| match arr.validity() {
+                    Some(validity) => {
+                        (arr.len() - (validity & arr.values()).unset_bits()) as IdxSize
+                    }
+                    None => (arr.len() - arr.values().unset_bits()) as IdxSize,
+                })
+                .sum()
+        })
     }
 
     pub fn min(&self) -> Option<bool> {
@@ -272,6 +266,9 @@ impl BooleanChunked {
         }
     }
     pub fn mean(&self) -> Option<f64> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
         self.sum()
             .map(|sum| sum as f64 / (self.len() - self.null_count()) as f64)
     }

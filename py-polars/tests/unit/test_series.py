@@ -371,16 +371,6 @@ def test_arithmetic(s: pl.Series) -> None:
         +a
 
 
-def test_arithmetic_empty() -> None:
-    series = pl.Series("a", [])
-    assert series.sum() == 0
-
-
-def test_arithmetic_null() -> None:
-    series = pl.Series("a", [None])
-    assert series.sum() is None
-
-
 def test_power() -> None:
     a = pl.Series([1, 2], dtype=Int64)
     b = pl.Series([None, 2.0], dtype=Float64)

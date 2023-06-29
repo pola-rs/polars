@@ -130,7 +130,6 @@ def _read_sql_connectorx(
         partition_num=partition_num,
         protocol=protocol,
     )
-
     return from_arrow(tbl)  # type: ignore[return-value]
 
 
@@ -146,21 +145,23 @@ def _read_sql_adbc(query: str, connection_uri: str) -> DataFrame:
 def _open_adbc_connection(connection_uri: str) -> Any:
     if connection_uri.startswith("sqlite"):
         try:
-            import adbc_driver_sqlite.dbapi as adbc  # type: ignore[import]
+            import adbc_driver_sqlite.dbapi as adbc_sqlite
         except ImportError:
             raise ImportError(
                 "ADBC sqlite driver not detected. Please run `pip install "
                 "adbc_driver_sqlite pyarrow`."
             ) from None
         connection_uri = connection_uri.replace(r"sqlite:///", "")
+        return adbc_sqlite.connect(connection_uri)
+
     elif connection_uri.startswith("postgres"):
         try:
-            import adbc_driver_postgresql.dbapi as adbc  # type: ignore[import]
+            import adbc_driver_postgresql.dbapi as adbc_postgres
         except ImportError:
             raise ImportError(
                 "ADBC postgresql driver not detected. Please run `pip install "
                 "adbc_driver_postgresql pyarrow`."
             ) from None
-    else:
-        raise ValueError("ADBC does not currently support this database.")
-    return adbc.connect(connection_uri)
+        return adbc_postgres.connect(connection_uri)
+
+    raise ValueError("ADBC does not currently support this database.")
