@@ -1,14 +1,12 @@
 use std::fmt::Debug;
 
 use num_traits::ToPrimitive;
-
 use polars_error::polars_ensure;
 
+use super::QuantileInterpolOptions::*;
 use super::*;
 use crate::index::IdxSize;
 use crate::trusted_len::TrustedLen;
-
-use super::QuantileInterpolOptions::*;
 
 // used by agg_quantile
 pub fn rolling_quantile_by_iter<T, O>(
@@ -196,7 +194,7 @@ where
                 wsum != 0.0,
                 ComputeError: "Weighted quantile is undefined if weights sum to 0"
             );
-            Ok(rolling_apply_convolve_quantile(
+            Ok(rolling_apply_weighted_quantile(
                 values,
                 quantile,
                 interpolation,
@@ -248,34 +246,55 @@ where
 }
 
 #[inline]
-fn compute_wq<T>(buf: &Vec<(T, f64)>, p: f64, wsum: f64, interp: QuantileInterpolOptions) -> T 
+fn compute_wq<T>(buf: &Vec<(T, f64)>, p: f64, wsum: f64, interp: QuantileInterpolOptions) -> T
 where
-    T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero + IsFloat + PartialOrd,
+    T: Debug
+        + NativeType
+        + Mul<Output = T>
+        + Sub<Output = T>
+        + NumCast
+        + ToPrimitive
+        + Zero
+        + IsFloat
+        + PartialOrd,
 {
+    // There are a few ways to compute a weighted quantile but no "canonical" way.
+    // This is mostly taken from the Julia implementation which was readable and reasonable
+    // https://juliastats.org/StatsBase.jl/stable/scalarstats/#Quantile-and-Related-Functions-1
     let (mut s, mut s_old, mut vk, mut v_old) = (0.0, 0.0, T::zero(), T::zero());
+
+    // Once the cumulative weight crosses h, we've found our ind{ex/ices}. The definition may look
+    // odd but it's the equivalent of taking h = p * (n - 1) + 1 if your data is indexed from 1.
     let h: f64 = p * (wsum - buf[0].1) + buf[0].1;
-    for &(v, w) in buf.iter() {
-        vk = v;
-        if w == 0.0 {
-            continue;
-        } else if s > h {
+    for &(v, w) in buf.iter().filter(|(_, w)| *w != 0.0) {
+        vk = v; // We need the "next" value if we break.
+        if s > h {
             break;
         }
         (s_old, v_old) = (s, v);
         s += w;
     }
     match (h == s_old, interp) {
-        (true, _) => v_old,
+        (true, _) => v_old, // If we hit the break exactly interpolation shouldn't matter
         (_, Lower) => v_old,
         (_, Higher) => vk,
-        (_, Nearest) => if s - h > h - s_old { v_old } else { vk },
+        (_, Nearest) => {
+            if s - h > h - s_old {
+                v_old
+            } else {
+                vk
+            }
+        }
         (_, Midpoint) => (vk + v_old) * NumCast::from(0.5).unwrap(),
-        (_, Linear) => v_old + <T as NumCast>::from((h - s_old) / (s - s_old)).unwrap() * (vk - v_old)
+        // This is seemingly the canonical way to do it.
+        (_, Linear) => {
+            v_old + <T as NumCast>::from((h - s_old) / (s - s_old)).unwrap() * (vk - v_old)
+        }
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn rolling_apply_convolve_quantile<T, Fo>(
+fn rolling_apply_weighted_quantile<T, Fo>(
     values: &[T],
     p: f64,
     interpolation: QuantileInterpolOptions,
@@ -287,7 +306,15 @@ fn rolling_apply_convolve_quantile<T, Fo>(
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero + IsFloat + PartialOrd,
+    T: Debug
+        + NativeType
+        + Mul<Output = T>
+        + Sub<Output = T>
+        + NumCast
+        + ToPrimitive
+        + Zero
+        + IsFloat
+        + PartialOrd,
 {
     assert_eq!(weights.len(), window_size);
     let mut buf = vec![(T::zero(), 0.0); window_size];
@@ -297,7 +324,10 @@ where
             let (start, end) = det_offsets_fn(idx, window_size, len);
             let vals = unsafe { values.get_unchecked(start..end) };
 
-            buf.iter_mut().zip(vals.iter().zip(weights)).for_each(|(b, (v, w))| *b = (*v, *w));
+            // Sorting is not ideal, see https://github.com/tobiasschoch/wquantile for something faster
+            buf.iter_mut()
+                .zip(vals.iter().zip(weights))
+                .for_each(|(b, (v, w))| *b = (*v, *w));
             buf.sort_unstable_by(|&a, &b| compare_fn_nan_max(&a.0, &b.0));
             compute_wq(&buf, p, wsum, interpolation)
         })
@@ -328,7 +358,8 @@ mod test {
             2,
             false,
             None,
-        ).unwrap();
+        )
+        .unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(1.5), Some(2.5), Some(3.5)]);
@@ -341,7 +372,8 @@ mod test {
             1,
             false,
             None,
-        ).unwrap();
+        )
+        .unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.5), Some(3.5)]);
@@ -354,7 +386,8 @@ mod test {
             1,
             false,
             None,
-        ).unwrap();
+        )
+        .unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.0), Some(2.5)]);
@@ -367,7 +400,8 @@ mod test {
             1,
             true,
             None,
-        ).unwrap();
+        )
+        .unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.5), Some(2.0), Some(2.5), Some(3.0)]);
@@ -380,7 +414,8 @@ mod test {
             4,
             true,
             None,
-        ).unwrap();
+        )
+        .unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, Some(2.5), None]);

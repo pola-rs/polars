@@ -119,7 +119,8 @@ where
                 options.min_periods,
                 options.center,
                 options.weights.as_deref(),
-            ).unwrap(),
+            )
+            .unwrap(),
             _ => rolling::nulls::rolling_quantile(
                 arr,
                 quantile,
