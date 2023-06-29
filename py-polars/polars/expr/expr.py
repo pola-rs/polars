@@ -4952,7 +4952,7 @@ class Expr:
         └────────┴─────────────────────┘
         >>> df_temporal.with_columns(
         ...     rolling_row_min=pl.col("row_nr").rolling_min(
-        ...         window_size="2h", by="date", closed = "left"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5161,7 +5161,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_max=pl.col("row_nr").rolling_max(
-        ...         window_size="2h", by="date", closed = "left"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5394,7 +5394,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_mean=pl.col("row_nr").rolling_mean(
-        ...         window_size="2h", by="date", closed = "left"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5511,8 +5511,8 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length as the window that determines the
-            relative contribution of each value in a window to the output.
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
@@ -5627,7 +5627,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_sum=pl.col("row_nr").rolling_sum(
-        ...         window_size="2h", by="date", closed = "left"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5859,7 +5859,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_std=pl.col("row_nr").rolling_std(
-        ...         window_size="2h", by="date", closed = "left"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5973,8 +5973,8 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
+            An optional slice with the same length as the window that determines the
+            relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
@@ -6091,7 +6091,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_var=pl.col("row_nr").rolling_var(
-        ...         window_size="2h", by="date", closed = "left"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
