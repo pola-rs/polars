@@ -25,7 +25,7 @@ from polars.testing.parametric import columns
 from polars.utils._construction import iterable_to_pydf
 
 if TYPE_CHECKING:
-    from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
+    from polars.type_aliases import IndexOrder, JoinStrategy, UniqueKeepStrategy
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -1443,20 +1443,26 @@ def test_assign() -> None:
     assert list(df["a"]) == [2, 4, 6]
 
 
-def test_to_numpy() -> None:
+@pytest.mark.parametrize(
+    ("order", "f_contiguous", "c_contiguous"),
+    [("fortran", True, False), ("c", False, True)],
+)
+def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
 
-    out_array = df.to_numpy()
+    out_array = df.to_numpy(order=order)
     expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
     assert_array_equal(out_array, expected_array)
-    assert out_array.flags["F_CONTIGUOUS"] is True
+    assert out_array.flags["F_CONTIGUOUS"] == f_contiguous
+    assert out_array.flags["C_CONTIGUOUS"] == c_contiguous
 
-    structured_array = df.to_numpy(structured=True)
+    structured_array = df.to_numpy(structured=True, order=order)
     expected_array = np.array(
         [(1, 1.0), (2, 2.0), (3, 3.0)], dtype=[("a", "<i8"), ("b", "<f8")]
     )
     assert_array_equal(structured_array, expected_array)
-    assert structured_array.flags["F_CONTIGUOUS"] is True
+    assert structured_array.flags["F_CONTIGUOUS"]
+    assert out_array.flags["F_CONTIGUOUS"]
 
 
 def test_to_numpy_structured() -> None:

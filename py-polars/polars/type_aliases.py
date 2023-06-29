@@ -86,6 +86,7 @@ FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
 FloatFmt: TypeAlias = Literal["full", "mixed"]
+IndexOrder: TypeAlias = Literal["c", "fortran"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]

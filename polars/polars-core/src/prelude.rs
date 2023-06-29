@@ -17,6 +17,8 @@ pub use crate::chunked_array::builder::{
 pub use crate::chunked_array::iterator::PolarsIterator;
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::*;
+#[cfg(feature = "ndarray")]
+pub use crate::chunked_array::ndarray::IndexOrder;
 #[cfg(feature = "object")]
 pub use crate::chunked_array::object::PolarsObject;
 pub use crate::chunked_array::ops::aggregate::*;

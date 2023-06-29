@@ -19,7 +19,7 @@ pub mod float;
 pub mod iterator;
 pub mod kernels;
 #[cfg(feature = "ndarray")]
-mod ndarray;
+pub(crate) mod ndarray;
 
 #[cfg(feature = "dtype-array")]
 pub(crate) mod array;
