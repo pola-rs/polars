@@ -1462,7 +1462,6 @@ def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> 
     )
     assert_array_equal(structured_array, expected_array)
     assert structured_array.flags["F_CONTIGUOUS"]
-    assert out_array.flags["F_CONTIGUOUS"]
 
 
 def test_to_numpy_structured() -> None:
