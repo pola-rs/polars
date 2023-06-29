@@ -455,6 +455,17 @@ def test_from_dict_with_scalars() -> None:
     assert dfx[-10:-5].rows() == dfx[-5:].rows()
     assert dfx.row(n_range // 2, named=True) == mixed_dtype_data
 
+    # misc generators/iterables
+    df9 = pl.DataFrame(
+        {
+            "a": iter([0, 1, 2]),
+            "b": (2, 1, 0).__iter__(),
+            "c": (v for v in (0, 0, 0)),
+            "d": "x",
+        }
+    )
+    assert df9.rows() == [(0, 2, 0, "x"), (1, 1, 0, "x"), (2, 0, 0, "x")]
+
 
 def test_dataframe_membership_operator() -> None:
     # cf. issue #4032
