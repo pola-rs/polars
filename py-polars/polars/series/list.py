@@ -560,7 +560,7 @@ class ListNameSpace:
         ----------
         other
             Right hand side of the set operation.
-            
+
         Examples
         --------
         >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
