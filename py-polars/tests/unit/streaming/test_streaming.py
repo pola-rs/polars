@@ -1,6 +1,7 @@
 import time
 import typing
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -606,9 +607,12 @@ def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
 @pytest.mark.write_disk()
 @pytest.mark.slow()
 @typing.no_type_check
-def test_streaming_generic_left_and_inner_join_from_disk() -> None:
+def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    p0 = tmp_path / "df0.parquet"
+    p1 = tmp_path / "df1.parquet"
     # by loading from disk, we get different chunks
-    n = 300_000
+    n = 200_000
     k = 100
 
     d0 = {f"x{i}": np.random.random(n) for i in range(k)}
@@ -617,11 +621,11 @@ def test_streaming_generic_left_and_inner_join_from_disk() -> None:
     df0 = pl.DataFrame(d0)
     df1 = df0.clone().select(pl.all().shuffle(111))
 
-    df0.write_parquet("/tmp/df0.parquet")
-    df1.write_parquet("/tmp/df1.parquet")
+    df0.write_parquet(p0)
+    df1.write_parquet(p1)
 
-    lf0 = pl.scan_parquet("/tmp/df0.parquet")
-    lf1 = pl.scan_parquet("/tmp/df1.parquet").select(pl.all().suffix("_r"))
+    lf0 = pl.scan_parquet(p0)
+    lf1 = pl.scan_parquet(p1).select(pl.all().suffix("_r"))
 
     for how in ["left", "inner"]:
         q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
