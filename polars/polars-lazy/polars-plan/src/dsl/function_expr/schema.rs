@@ -105,6 +105,8 @@ impl FunctionExpr {
                     Sum => mapper.nested_sum_type(),
                     #[cfg(feature = "list_sets")]
                     SetOperation(_) => mapper.with_same_dtype(),
+                    Any => mapper.with_dtype(DataType::Boolean),
+                    All => mapper.with_dtype(DataType::Boolean),
                 }
             }
             #[cfg(feature = "dtype-array")]

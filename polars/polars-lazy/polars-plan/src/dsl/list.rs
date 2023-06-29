@@ -16,19 +16,13 @@ pub struct ListNameSpace(pub Expr);
 impl ListNameSpace {
     pub fn any(self) -> Expr {
         self.0
-            .map(
-                |s| Ok(Some(s.list()?.lst_any().into_series())),
-                GetOutput::from_type(DataType::Boolean),
-            )
+            .map_private(FunctionExpr::ListExpr(ListFunction::Any))
             .with_fmt("list.any")
     }
 
     pub fn all(self) -> Expr {
         self.0
-            .map(
-                |s| Ok(Some(s.list()?.lst_all().into_series())),
-                GetOutput::from_type(DataType::Boolean),
-            )
+            .map_private(FunctionExpr::ListExpr(ListFunction::All))
             .with_fmt("list.all")
     }
 

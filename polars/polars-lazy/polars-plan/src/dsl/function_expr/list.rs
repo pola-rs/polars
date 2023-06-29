@@ -18,6 +18,8 @@ pub enum ListFunction {
     Sum,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
+    Any,
+    All,
 }
 
 impl Display for ListFunction {
@@ -37,6 +39,8 @@ impl Display for ListFunction {
             Sum => "sum",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "{s}"),
+            Any => "any",
+            All => "all",
         };
         write!(f, "{name}")
     }
@@ -252,4 +256,10 @@ pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResul
     let s1 = &s[1];
 
     Ok(list_set_operation(s0.list()?, s1.list()?, set_type).into_series())
+pub(super) fn lst_any(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_any())
+}
+
+pub(super) fn lst_all(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_all())
 }
