@@ -201,7 +201,7 @@ where
                 window_size,
                 min_periods,
                 offset_fn,
-                &weights,
+                weights,
                 wsum,
             ))
         }
@@ -246,7 +246,7 @@ where
 }
 
 #[inline]
-fn compute_wq<T>(buf: &Vec<(T, f64)>, p: f64, wsum: f64, interp: QuantileInterpolOptions) -> T
+fn compute_wq<T>(buf: &[(T, f64)], p: f64, wsum: f64, interp: QuantileInterpolOptions) -> T
 where
     T: Debug
         + NativeType
