@@ -6447,12 +6447,15 @@ class Expr:
         │ 5.0 ┆ 3.0              │
         │ 6.0 ┆ 4.0              │
         └─────┴──────────────────┘
-        
+
         Specify weights and interpolation method
-        
+
         >>> df.with_columns(
         ...     rolling_quantile=pl.col("A").rolling_quantile(
-        ...         quantile=0.25, window_size=4, weights=[0.2, 0.4, 0.4, 0.2], interpolation='linear'
+        ...         quantile=0.25,
+        ...         window_size=4,
+        ...         weights=[0.2, 0.4, 0.4, 0.2],
+        ...         interpolation="linear",
         ...     ),
         ... )
         shape: (6, 2)
