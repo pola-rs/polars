@@ -2,9 +2,13 @@ use std::fmt::Debug;
 
 use num_traits::ToPrimitive;
 
+use polars_error::polars_ensure;
+
 use super::*;
 use crate::index::IdxSize;
 use crate::trusted_len::TrustedLen;
+
+use super::QuantileInterpolOptions::*;
 
 // used by agg_quantile
 pub fn rolling_quantile_by_iter<T, O>(
@@ -139,7 +143,7 @@ where
         + Zero
         + IsFloat,
 {
-    Ok(rolling_quantile(
+    rolling_quantile(
         values,
         0.5,
         QuantileInterpolOptions::Linear,
@@ -147,7 +151,7 @@ where
         min_periods,
         center,
         weights,
-    ))
+    )
 }
 
 pub fn rolling_quantile<T>(
@@ -158,7 +162,7 @@ pub fn rolling_quantile<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     T: NativeType
         + std::iter::Sum<T>
@@ -172,45 +176,37 @@ where
         + Zero
         + IsFloat,
 {
-    match (center, weights) {
-        (true, None) => rolling_apply_quantile(
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
+    };
+    match weights {
+        None => Ok(rolling_apply_quantile(
             values,
             quantile,
             interpolation,
             window_size,
             min_periods,
-            det_offsets_center,
+            offset_fn,
             compute_quantile2,
-        ),
-        (false, None) => rolling_apply_quantile(
-            values,
-            quantile,
-            interpolation,
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_quantile2,
-        ),
-        (true, Some(weights)) => rolling_apply_convolve_quantile(
-            values,
-            quantile,
-            interpolation,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_quantile2,
-            weights,
-        ),
-        (false, Some(weights)) => rolling_apply_convolve_quantile(
-            values,
-            quantile,
-            interpolation,
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_quantile2,
-            weights,
-        ),
+        )),
+        Some(weights) => {
+            let wsum = weights.iter().sum();
+            polars_ensure!(
+                wsum != 0.0,
+                ComputeError: "Weighted quantile is undefined if weights sum to 0"
+            );
+            Ok(rolling_apply_convolve_quantile(
+                values,
+                quantile,
+                interpolation,
+                window_size,
+                min_periods,
+                offset_fn,
+                &weights,
+                wsum,
+            ))
+        }
     }
 }
 
@@ -251,35 +247,59 @@ where
     ))
 }
 
+#[inline]
+fn compute_wq<T>(buf: &Vec<(T, f64)>, p: f64, wsum: f64, interp: QuantileInterpolOptions) -> T 
+where
+    T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero + IsFloat + PartialOrd,
+{
+    let (mut s, mut s_old, mut vk, mut v_old) = (0.0, 0.0, T::zero(), T::zero());
+    let h: f64 = p * (wsum - buf[0].1) + buf[0].1;
+    for &(v, w) in buf.iter() {
+        vk = v;
+        if w == 0.0 {
+            continue;
+        } else if s > h {
+            break;
+        }
+        (s_old, v_old) = (s, v);
+        s += w;
+    }
+    match (h == s_old, interp) {
+        (true, _) => v_old,
+        (_, Lower) => v_old,
+        (_, Higher) => vk,
+        (_, Nearest) => if s - h > h - s_old { v_old } else { vk },
+        (_, Midpoint) => (vk + v_old) * NumCast::from(0.5).unwrap(),
+        (_, Linear) => v_old + <T as NumCast>::from((h - s_old) / (s - s_old)).unwrap() * (vk - v_old)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
-fn rolling_apply_convolve_quantile<T, Fo, Fa>(
+fn rolling_apply_convolve_quantile<T, Fo>(
     values: &[T],
-    quantile: f64,
+    p: f64,
     interpolation: QuantileInterpolOptions,
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
-    aggregator: Fa,
     weights: &[f64],
+    wsum: f64,
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Fa: Fn(&[T], f64, QuantileInterpolOptions) -> T,
-    T: Debug + NativeType + Mul<Output = T> + NumCast + ToPrimitive + Zero + IsFloat + PartialOrd,
+    T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero + IsFloat + PartialOrd,
 {
     assert_eq!(weights.len(), window_size);
-    let mut buf = vec![T::zero(); window_size];
+    let mut buf = vec![(T::zero(), 0.0); window_size];
     let len = values.len();
     let out = (0..len)
         .map(|idx| {
             let (start, end) = det_offsets_fn(idx, window_size, len);
             let vals = unsafe { values.get_unchecked(start..end) };
-            buf.iter_mut()
-                .zip(vals.iter().zip(weights))
-                .for_each(|(b, (v, w))| *b = *v * NumCast::from(*w).unwrap());
 
-            sort_buf(&mut buf);
-            aggregator(&buf, quantile, interpolation)
+            buf.iter_mut().zip(vals.iter().zip(weights)).for_each(|(b, (v, w))| *b = (*v, *w));
+            buf.sort_unstable_by(|&a, &b| compare_fn_nan_max(&a.0, &b.0));
+            compute_wq(&buf, p, wsum, interpolation)
         })
         .collect_trusted::<Vec<T>>();
 
@@ -308,7 +328,7 @@ mod test {
             2,
             false,
             None,
-        );
+        ).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(1.5), Some(2.5), Some(3.5)]);
@@ -321,7 +341,7 @@ mod test {
             1,
             false,
             None,
-        );
+        ).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.5), Some(3.5)]);
@@ -334,7 +354,7 @@ mod test {
             1,
             false,
             None,
-        );
+        ).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.0), Some(2.5)]);
@@ -347,7 +367,7 @@ mod test {
             1,
             true,
             None,
-        );
+        ).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.5), Some(2.0), Some(2.5), Some(3.0)]);
@@ -360,7 +380,7 @@ mod test {
             4,
             true,
             None,
-        );
+        ).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, Some(2.5), None]);
@@ -382,7 +402,7 @@ mod test {
             let out1 = rolling_min(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-            let out2 = rolling_quantile(values, 0.0, interpol, 2, 2, false, None);
+            let out2 = rolling_quantile(values, 0.0, interpol, 2, 2, false, None).unwrap();
             let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);
@@ -390,7 +410,7 @@ mod test {
             let out1 = rolling_max(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-            let out2 = rolling_quantile(values, 1.0, interpol, 2, 2, false, None);
+            let out2 = rolling_quantile(values, 1.0, interpol, 2, 2, false, None).unwrap();
             let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);
