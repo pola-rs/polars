@@ -78,3 +78,12 @@ def test_empty_groupby_apply_err() -> None:
         pl.ComputeError, match=r"cannot groupby \+ apply on empty 'DataFrame'"
     ):
         df.groupby("x").apply(lambda x: x)
+
+
+def test_empty_list_namespace_output_9585() -> None:
+    dtype = pl.List(pl.Utf8)
+    names = ["sort", "unique", "head", "tail", "shift", "reverse"]
+    df = pl.DataFrame([[None]], schema={"A": dtype})
+    assert df.select(
+        [eval(f"pl.col('A').list.{name}().suffix(f'_{name}')") for name in names]
+    ).dtypes == [dtype] * len(names)
