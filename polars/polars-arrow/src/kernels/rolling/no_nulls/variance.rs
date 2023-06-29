@@ -168,11 +168,13 @@ where
             params,
         ),
         Some(weights) => {
+            // Validate and standardize the weights like we do for the mean. This definition is fine
+            // because frequency weights and unbiasing don't make sense for rolling operations.
             let mut wts = no_nulls::coerce_weights(weights);
             let wsum = wts.iter().fold(T::zero(), |acc, x| acc + *x);
             polars_ensure!(
                 wsum != T::zero(),
-                ComputeError: "Weighted mean is undefined if weights sum to 0"
+                ComputeError: "Weighted variance is undefined if weights sum to 0"
             );
             wts.iter_mut().for_each(|w| *w = *w / wsum);
             super::rolling_apply_weights(
