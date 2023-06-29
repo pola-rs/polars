@@ -3692,9 +3692,7 @@ def test_rolling_apply() -> None:
         center=False,
     )
 
-    roll_std = s.rolling_std(
-        window_size=4, min_periods=3, center=False
-    )
+    roll_std = s.rolling_std(window_size=4, min_periods=3, center=False)
 
     assert (roll_app_std - roll_std).abs().sum() < 0.0001
 
