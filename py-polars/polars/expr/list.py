@@ -837,7 +837,9 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("a").list.union("b").alias("union"))  # doctest: +IGNORE_RESULT
+        >>> df.with_columns(
+        ...     pl.col("a").list.union("b").alias("union")
+        ... )  # doctest: +IGNORE_RESULT
         shape: (4, 3)
         ┌───────────┬──────────────┬───────────────┐
         │ a         ┆ b            ┆ union         │
