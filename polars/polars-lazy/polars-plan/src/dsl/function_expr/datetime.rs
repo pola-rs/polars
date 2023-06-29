@@ -32,6 +32,8 @@ pub enum TemporalFunction {
     MonthStart,
     #[cfg(feature = "date_offset")]
     MonthEnd,
+    #[cfg(feature = "timezones")]
+    DSTOffset,
     Round(String, String),
     #[cfg(feature = "timezones")]
     CastTimezone(Option<TimeZone>, Option<bool>),
@@ -77,6 +79,8 @@ impl Display for TemporalFunction {
             MonthStart => "month_start",
             #[cfg(feature = "date_offset")]
             MonthEnd => "month_end",
+            #[cfg(feature = "timezones")]
+            DSTOffset => "dst_offset",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
             CastTimezone(_, _) => "replace_timezone",
@@ -252,6 +256,23 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
         DataType::Date => s.date().unwrap().month_end(None)?.into_series(),
         dt => polars_bail!(opq = month_end, got = dt, expected = "date/datetime"),
     })
+}
+
+#[cfg(feature = "timezones")]
+pub(super) fn dst_offset(s: &Series) -> PolarsResult<Series> {
+    match s.dtype() {
+        DataType::Datetime(_, Some(tz)) => {
+            let tz = tz
+                .parse::<Tz>()
+                .expect("Time zone has already been validated");
+            Ok(s.datetime().unwrap().dst_offset(&tz).into_series())
+        }
+        dt => polars_bail!(
+            opq = dst_offset,
+            got = dt,
+            expected = "time-zone-aware datetime"
+        ),
+    }
 }
 
 pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Series> {

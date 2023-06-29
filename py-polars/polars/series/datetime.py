@@ -1829,7 +1829,7 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Date/Datetime expression
+        Date/Datetime series
 
         Notes
         -----
@@ -1859,7 +1859,7 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Date/Datetime expression
+        Date/Datetime series.
 
         Notes
         -----
@@ -1880,5 +1880,37 @@ class DateTimeNameSpace:
                 2000-02-29 02:00:00
                 2000-03-31 02:00:00
                 2000-04-30 02:00:00
+        ]
+        """
+
+    def dst_offset(self) -> Series:
+        """
+        Additional offset currently in effect (typically due to daylight saving time).
+
+        Returns
+        -------
+        Duration Series
+
+        Examples
+        --------
+        >>> ser = pl.date_range(
+        ...     datetime(2020, 10, 25),
+        ...     datetime(2020, 10, 26),
+        ...     time_zone="Europe/London",
+        ...     eager=True,
+        ... )
+        >>> ser
+        shape: (2,)
+        Series: 'date' [datetime[μs, Europe/London]]
+        [
+                2020-10-25 00:00:00 BST
+                2020-10-26 00:00:00 GMT
+        ]
+        >>> ser.dt.dst_offset().rename("dst_offset")
+        shape: (2,)
+        Series: 'dst_offset' [duration[ms]]
+        [
+                1h
+                0ms
         ]
         """

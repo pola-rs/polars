@@ -52,6 +52,8 @@ impl FunctionExpr {
                     MonthStart => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "date_offset")]
                     MonthEnd => mapper.with_same_dtype().unwrap().dtype,
+                    #[cfg(feature = "timezones")]
+                    DSTOffset => DataType::Duration(TimeUnit::Milliseconds),
                     Round(..) => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "timezones")]
                     CastTimezone(tz, _use_earliest) => {
