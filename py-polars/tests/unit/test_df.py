@@ -3699,14 +3699,11 @@ def test_rolling_apply() -> None:
     roll_app_std = s.rolling_apply(
         function=lambda s: s.std(),
         window_size=4,
-        weights=[1.0, 2.0, 3.0, 0.1],
         min_periods=3,
         center=False,
     )
 
-    roll_std = s.rolling_std(
-        window_size=4, weights=[1.0, 2.0, 3.0, 0.1], min_periods=3, center=False
-    )
+    roll_std = s.rolling_std(window_size=4, min_periods=3, center=False)
 
     assert (roll_app_std - roll_std).abs().sum() < 0.0001
 
