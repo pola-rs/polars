@@ -113,6 +113,10 @@ where
     T: Float + std::ops::AddAssign,
 {
     // Assumes the weights have already been standardized to 1
+    debug_assert!(
+        weights.iter().fold(T::zero(), |acc, x| acc + *x) == T::one(),
+        "Rolling weighted variance Weights don't sum to 1"
+    );
     let (wssq, wmean) = vals
         .iter()
         .zip(weights)
