@@ -30,6 +30,7 @@ pub(crate) mod projection;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;
+pub(crate) mod visitor;
 
 pub use aexpr::*;
 pub use alp::*;
