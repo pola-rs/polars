@@ -1983,6 +1983,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "ts": [datetime(2020, 10, 25), datetime(2020, 10, 26)],

@@ -1893,6 +1893,7 @@ class DateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> ser = pl.date_range(
         ...     datetime(2020, 10, 25),
         ...     datetime(2020, 10, 26),
