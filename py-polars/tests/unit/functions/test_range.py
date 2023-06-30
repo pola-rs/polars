@@ -290,12 +290,7 @@ def test_date_range_single_row_lazy_7110() -> None:
 
 
 def test_date_range_invalid_time_zone() -> None:
-    with pytest.raises(
-        pl.ComputeError, match="unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        DeprecationWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(pl.ComputeError, match="unable to parse time zone: 'foo'"):
         pl.date_range(
             datetime(2001, 1, 1),
             datetime(2001, 1, 3),

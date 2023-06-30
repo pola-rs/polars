@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import warnings
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
@@ -11,18 +10,12 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars import Expr
     from polars.type_aliases import EpochTimeUnit, TimeUnit
-
-TIME_ZONE_DEPRECATION_MESSAGE = (
-    "In a future version of polars, time zones other than those in `zoneinfo.available_timezones()` "
-    "will no longer be supported. Please use one of them instead."
-)
 
 
 class ExprDateTimeNameSpace:
@@ -1374,14 +1367,6 @@ class ExprDateTimeNameSpace:
         │ 2020-05-01 00:00:00 UTC ┆ 2020-05-01 01:00:00 BST     │
         └─────────────────────────┴─────────────────────────────┘
         """
-        from polars.dependencies import zoneinfo
-
-        if time_zone not in zoneinfo.available_timezones():
-            warnings.warn(
-                TIME_ZONE_DEPRECATION_MESSAGE,
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
-            )
         return wrap_expr(self._pyexpr.dt_convert_time_zone(time_zone))
 
     def replace_time_zone(
@@ -1479,14 +1464,6 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴───────┴───────────────────────────────┘
 
         """
-        from polars.dependencies import zoneinfo
-
-        if time_zone is not None and time_zone not in zoneinfo.available_timezones():
-            warnings.warn(
-                TIME_ZONE_DEPRECATION_MESSAGE,
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
-            )
         return wrap_expr(self._pyexpr.dt_replace_time_zone(time_zone, use_earliest))
 
     def days(self) -> Expr:

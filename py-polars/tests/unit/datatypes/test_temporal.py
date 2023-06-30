@@ -1920,12 +1920,7 @@ def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
 
 
 def test_strptime_with_invalid_tz() -> None:
-    with pytest.raises(
-        ComputeError, match="unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        FutureWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
     with pytest.raises(
         ComputeError,
@@ -1963,12 +1958,7 @@ def test_strptime_unguessable_format() -> None:
 
 def test_convert_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.raises(
-        ComputeError, match="unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        FutureWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
 

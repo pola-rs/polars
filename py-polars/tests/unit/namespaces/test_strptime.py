@@ -443,12 +443,7 @@ def test_invalid_date_parsing_4898() -> None:
 
 def test_strptime_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime("%Y-%m-%d %H:%M:%S%z")
-    with pytest.raises(
-        ComputeError, match=r"unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        DeprecationWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(ComputeError, match=r"unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("foo")
 
 
