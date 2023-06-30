@@ -284,7 +284,7 @@ def test_init_pydantic_2x() -> None:
         event: Literal["leave", "enter"] = Field("enter")
         time_on_page: int = Field(0, serialization_alias="top")
 
-    if sys.version_info > (3, 7):
+    if sys.version_info >= (3, 8):
         data_json = """
         [{
             "user_id": "x",
