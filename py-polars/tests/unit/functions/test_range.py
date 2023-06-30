@@ -78,15 +78,15 @@ def test_int_range() -> None:
 @pytest.mark.parametrize(
     ("start", "end", "expected"),
     [
-        ("a", "b", pl.Series("int", [[1, 2], [2, 3]])),
-        (-1, "a", pl.Series("int", [[-1, 0], [-1, 0, 1]])),
-        ("b", 4, pl.Series("int", [[3], []])),
+        ("a", "b", pl.Series("int_range", [[1, 2], [2, 3]])),
+        (-1, "a", pl.Series("int_range", [[-1, 0], [-1, 0, 1]])),
+        ("b", 4, pl.Series("int_range", [[3], []])),
     ],
 )
 def test_int_ranges(start: Any, end: Any, expected: pl.Series) -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
 
-    result = df.select(pl.int_range(start, end))
+    result = df.select(pl.int_ranges(start, end))
     assert_series_equal(result.to_series(), expected)
 
 

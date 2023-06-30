@@ -70,123 +70,130 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
     let literal_start = has_lit(&start);
     let literal_end = has_lit(&end);
 
-    if (literal_start || literal_end) && !any_column_no_agg {
-        let f = move |sa: Series, sb: Series| {
-            polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
-
-            match sa.dtype() {
-                dt if dt == &IDX_DTYPE => {
-                    let start = sa
-                        .idx()?
-                        .get(0)
-                        .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
-                    let sb = sb.cast(&IDX_DTYPE)?;
-                    let end = sb
-                        .idx()?
-                        .get(0)
-                        .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
-                    #[cfg(feature = "bigidx")]
-                    {
-                        arange_impl::<UInt64Type>(start, end, step)
-                    }
-                    #[cfg(not(feature = "bigidx"))]
-                    {
-                        arange_impl::<UInt32Type>(start, end, step)
-                    }
-                }
-                _ => {
-                    let sa = sa.cast(&DataType::Int64)?;
-                    let sb = sb.cast(&DataType::Int64)?;
-                    let start = sa
-                        .i64()?
-                        .get(0)
-                        .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
-                    let end = sb
-                        .i64()?
-                        .get(0)
-                        .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
-                    arange_impl::<Int64Type>(start, end, step)
-                }
-            }
-        };
-        apply_binary(
-            start,
-            end,
-            f,
-            GetOutput::map_field(|input| {
-                let dtype = if input.data_type() == &IDX_DTYPE {
-                    IDX_DTYPE
-                } else {
-                    DataType::Int64
-                };
-                Field::new(output_name, dtype)
-            }),
-        )
-        .alias(output_name)
+    let result = if (literal_start || literal_end) && !any_column_no_agg {
+        int_range(start, end, step)
     } else {
-        let f = move |sa: Series, sb: Series| {
-            polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
-            let mut sa = sa.cast(&DataType::Int64)?;
-            let mut sb = sb.cast(&DataType::Int64)?;
+        int_ranges(start, end, step)
+    };
 
-            if sa.len() != sb.len() {
-                if sa.len() == 1 {
-                    sa = sa.new_from_index(0, sb.len())
-                } else if sb.len() == 1 {
-                    sb = sb.new_from_index(0, sa.len())
-                } else {
-                    polars_bail!(
-                        ComputeError:
-                        "lengths of `start`: {} and `end`: {} arguments `\
-                        cannot be matched in the `arange` expression",
-                        sa.len(), sb.len()
-                    );
-                }
+    result.alias(output_name)
+}
+
+#[cfg(feature = "arange")]
+pub fn int_range(start: Expr, end: Expr, step: i64) -> Expr {
+    let output_name = "int";
+
+    let f = move |sa: Series, sb: Series| {
+        polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
+
+        match sa.dtype() {
+            dt if dt == &IDX_DTYPE => {
+                let start = sa
+                    .idx()?
+                    .get(0)
+                    .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+                let sb = sb.cast(&IDX_DTYPE)?;
+                let end = sb
+                    .idx()?
+                    .get(0)
+                    .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+
+                arange_impl::<IdxType>(start, end, step)
             }
-
-            let start = sa.i64()?;
-            let end = sb.i64()?;
-            let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-                output_name,
-                start.len(),
-                start.len() * 3,
-                DataType::Int64,
-            );
-
-            for (opt_start, opt_end) in start.into_iter().zip(end.into_iter()) {
-                match (opt_start, opt_end) {
-                    (Some(start_v), Some(end_v)) => match step {
-                        1 => {
-                            builder.append_iter_values(start_v..end_v);
-                        }
-                        2.. => {
-                            builder.append_iter_values((start_v..end_v).step_by(step as usize));
-                        }
-                        _ => {
-                            polars_ensure!(start_v > end_v, InvalidOperation: "range must be decreasing if 'step' is negative");
-                            builder.append_iter_values(
-                                (end_v..=start_v)
-                                    .rev()
-                                    .step_by(step.unsigned_abs() as usize),
-                            )
-                        }
-                    },
-                    _ => builder.append_null(),
-                }
+            _ => {
+                let sa = sa.cast(&DataType::Int64)?;
+                let sb = sb.cast(&DataType::Int64)?;
+                let start = sa
+                    .i64()?
+                    .get(0)
+                    .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+                let end = sb
+                    .i64()?
+                    .get(0)
+                    .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+                arange_impl::<Int64Type>(start, end, step)
             }
+        }
+    };
+    apply_binary(
+        start,
+        end,
+        f,
+        GetOutput::map_field(|input| {
+            let dtype = if input.data_type() == &IDX_DTYPE {
+                IDX_DTYPE
+            } else {
+                DataType::Int64
+            };
+            Field::new(output_name, dtype)
+        }),
+    )
+}
 
-            Ok(Some(builder.finish().into_series()))
-        };
-        apply_binary(
-            start,
-            end,
-            f,
-            GetOutput::map_field(|_| {
-                Field::new(output_name, DataType::List(DataType::Int64.into()))
-            }),
-        )
-        .alias(output_name)
-    }
+#[cfg(feature = "arange")]
+pub fn int_ranges(start: Expr, end: Expr, step: i64) -> Expr {
+    let output_name = "int_range";
+
+    let f = move |sa: Series, sb: Series| {
+        polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
+
+        let mut sa = sa.cast(&DataType::Int64)?;
+        let mut sb = sb.cast(&DataType::Int64)?;
+
+        if sa.len() != sb.len() {
+            if sa.len() == 1 {
+                sa = sa.new_from_index(0, sb.len())
+            } else if sb.len() == 1 {
+                sb = sb.new_from_index(0, sa.len())
+            } else {
+                polars_bail!(
+                    ComputeError:
+                    "lengths of `start`: {} and `end`: {} arguments `\
+                    cannot be matched in the `arange` expression",
+                    sa.len(), sb.len()
+                );
+            }
+        }
+
+        let start = sa.i64()?;
+        let end = sb.i64()?;
+        let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
+            output_name,
+            start.len(),
+            start.len() * 3,
+            DataType::Int64,
+        );
+
+        for (opt_start, opt_end) in start.into_iter().zip(end.into_iter()) {
+            match (opt_start, opt_end) {
+                (Some(start_v), Some(end_v)) => match step {
+                    1 => {
+                        builder.append_iter_values(start_v..end_v);
+                    }
+                    2.. => {
+                        builder.append_iter_values((start_v..end_v).step_by(step as usize));
+                    }
+                    _ => {
+                        polars_ensure!(start_v > end_v, InvalidOperation: "range must be decreasing if 'step' is negative");
+                        builder.append_iter_values(
+                            (end_v..=start_v)
+                                .rev()
+                                .step_by(step.unsigned_abs() as usize),
+                        )
+                    }
+                },
+                _ => builder.append_null(),
+            }
+        }
+
+        Ok(Some(builder.finish().into_series()))
+    };
+    apply_binary(
+        start,
+        end,
+        f,
+        GetOutput::map_field(|_| Field::new(output_name, DataType::List(DataType::Int64.into()))),
+    )
 }
 
 pub trait Range<T> {
