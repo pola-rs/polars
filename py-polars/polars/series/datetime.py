@@ -1903,9 +1903,10 @@ class DateTimeNameSpace:
         --------
         >>> from datetime import datetime
         >>> ser = pl.date_range(
-        ...     datetime(2020, 10, 25),
-        ...     datetime(2020, 10, 26),
-        ...     time_zone="Europe/London",
+        ...     datetime(2011, 12, 29),
+        ...     datetime(2012, 1, 1),
+        ...     "2d",
+        ...     time_zone="Pacific/Apia",
         ...     eager=True,
         ... )
         >>> ser
