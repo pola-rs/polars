@@ -1,5 +1,7 @@
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+#[cfg(feature = "timezones")]
+use polars_time::dst_offset as dst_offset_fn;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -261,11 +263,11 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
 #[cfg(feature = "timezones")]
 pub(super) fn dst_offset(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
-        DataType::Datetime(_, Some(tz)) => {
+        DataType::Datetime(time_unit, Some(tz)) => {
             let tz = tz
                 .parse::<Tz>()
                 .expect("Time zone has already been validated");
-            Ok(s.datetime().unwrap().dst_offset(&tz).into_series())
+            Ok(dst_offset_fn(s.datetime().unwrap(), time_unit, &tz).into_series())
         }
         dt => polars_bail!(
             opq = dst_offset,
