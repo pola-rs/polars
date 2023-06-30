@@ -873,9 +873,7 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(
-        ...     difference=pl.col("a").list.difference("b"),
-        ... )
+        >>> df.with_columns(pl.col("a").list.difference("b").alias("difference"))
         shape: (4, 3)
         ┌───────────┬──────────────┬────────────┐
         │ a         ┆ b            ┆ difference │
