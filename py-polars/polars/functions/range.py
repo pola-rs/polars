@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, overload
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import Date, Int64
-from polars.expr.datetime import TIME_ZONE_DEPRECATION_MESSAGE
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_s
 from polars.utils.convert import (
@@ -348,15 +347,6 @@ def date_range(
     if name is not None:
         warnings.warn(
             "the `name` argument is deprecated. Use the `alias` method instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
-        )
-
-    from polars.dependencies import zoneinfo
-
-    if time_zone is not None and time_zone not in zoneinfo.available_timezones():
-        warnings.warn(
-            TIME_ZONE_DEPRECATION_MESSAGE,
             DeprecationWarning,
             stacklevel=find_stacklevel(),
         )
