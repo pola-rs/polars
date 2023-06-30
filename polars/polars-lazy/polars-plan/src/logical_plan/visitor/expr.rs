@@ -22,6 +22,10 @@ impl TreeNode for Expr {
         }
         Ok(VisitRecursion::Continue)
     }
+
+    fn map_children(self, op: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self> {
+        todo!()
+    }
 }
 
 pub(crate) struct AexprNode {
@@ -30,8 +34,18 @@ pub(crate) struct AexprNode {
 }
 
 impl AexprNode {
-    pub fn new(node: Node, arena: &mut Arena<AExpr>) -> Self {
+    /// # Safety
+    /// This will keep a pointer to `arena`. The caller must ensure it stays alive.
+    pub unsafe fn new(node: Node, arena: &mut Arena<AExpr>) -> Self {
         Self { node, arena }
+    }
+
+    /// Safe interface
+    pub fn with_context<F, T>(node: Node, arena: &mut Arena<AExpr>, mut op: F) -> T
+    where
+        F: FnMut(AexprNode) -> T,
+    {
+        unsafe { op(Self::new(node, arena)) }
     }
 
     pub fn node(&self) -> Node {
@@ -43,6 +57,15 @@ impl AexprNode {
         F: Fn(&'a Arena<AExpr>) -> T,
     {
         let arena = unsafe { &(*self.arena) };
+
+        op(arena)
+    }
+
+    pub fn with_arena_mut<'a, F, T>(&'a mut self, op: F) -> T
+        where
+            F: FnOnce(&'a mut Arena<AExpr>) -> T,
+    {
+        let arena = unsafe { &mut (*self.arena) };
 
         op(arena)
     }
@@ -77,5 +100,26 @@ impl TreeNode for AexprNode {
             }
         }
         Ok(VisitRecursion::Continue)
+    }
+
+    fn map_children(mut self, op: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self> {
+        let mut scratch = vec![];
+
+        let ae = self.to_aexpr();
+        ae.nodes(&mut scratch);
+
+        // rewrite the nodes
+        for node in &mut scratch {
+            let aenode = AexprNode {
+                node: *node,
+                arena: self.arena,
+            };
+            *node = op(aenode)?.node;
+        }
+
+        let ae = ae.clone().replace_inputs(&scratch);
+        let node = self.with_arena_mut(move |arena| arena.add(ae));
+        self.node = node;
+        Ok(self)
     }
 }

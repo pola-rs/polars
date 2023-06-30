@@ -197,21 +197,55 @@ impl AExpr {
             .map(|f| f.data_type().clone())
     }
 
-    pub(crate) fn replace_input(self, input: Node) -> Self {
+    pub(crate) fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
-        match self {
-            Alias(_, name) => Alias(input, name),
+        let input = match &mut self {
+            Column(_) | Literal(_) | Wildcard | Count | Nth(_) => return self,
+            Alias(input, _) => input,
             Cast {
-                expr: _,
-                data_type,
-                strict,
-            } => Cast {
-                expr: input,
-                data_type,
-                strict,
+                expr,
+                ..
+            } => expr,
+            Explode(input) | Slice {input, ..} | Cache {input, ..}=> input,
+            BinaryExpr { left, right, .. } => {
+                *left = inputs[0];
+                *right = inputs[1];
+                return self
+            }
+            Sort { expr, .. } |
+            Take {expr, ..}
+            => expr,
+            SortBy { expr, by, .. } => {
+                *expr = *inputs.last().unwrap();
+                by.clear();
+                by.extend_from_slice(&inputs[..inputs.len() - 1]);
+                return self
+            }
+            Filter { input, .. } => input,
+            Agg(a) => {
+                a.set_input(inputs[0]);
+                return self
             },
-            _ => todo!(),
-        }
+            Ternary { truthy, falsy, predicate } => {
+                *truthy = inputs[0];
+                *falsy = inputs[1];
+                *predicate = inputs[2];
+                return self
+            }
+            AnonymousFunction { input, .. } | Function {input, ..} => {
+                input.clear();
+                input.extend(inputs.iter().rev().copied());
+                return self
+            }
+            Window { function, partition_by, order_by, .. } => {
+                *function = inputs[0];
+                partition_by.extend_from_slice(&inputs[1..]);
+                assert!(order_by.is_none());
+                return self
+            }
+        };
+        *input = inputs[0];
+        self
     }
 
     pub(crate) fn get_input(&self) -> NodeInputs {
@@ -238,9 +272,11 @@ impl AExpr {
                 falsy,
                 predicate,
             } => Many(vec![*truthy, *falsy, *predicate]),
+            // we iterate in reverse order, so that the lhs is popped first and will be found
+            // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
             AnonymousFunction { input, .. } | Function { input, .. } => match input.len() {
                 1 => Single(input[0]),
-                _ => Many(input.clone()),
+                _ => Many(input.iter().copied().rev().collect()),
             },
             Window {
                 function,
@@ -290,6 +326,26 @@ impl AAggExpr {
             Var(input, _) => Single(*input),
             AggGroups(input) => Single(*input),
         }
+    }
+    pub fn set_input(&mut self, input: Node) {
+        use AAggExpr::*;
+        let node = match self {
+            Min { input, .. } => input,
+            Max { input, .. } => input,
+            Median(input) => input,
+            NUnique(input) => input,
+            First(input) => input,
+            Last(input) => input,
+            Mean(input) => input,
+            Implode(input) => input,
+            Quantile { expr, .. } => expr,
+            Sum(input) => input,
+            Count(input) => input,
+            Std(input, _) => input,
+            Var(input, _) => input,
+            AggGroups(input) => input,
+        };
+        *node = input;
     }
 }
 

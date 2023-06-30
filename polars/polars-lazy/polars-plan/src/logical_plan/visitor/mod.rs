@@ -19,6 +19,19 @@ pub enum VisitRecursion {
     Stop,
 }
 
+/// Controls how the [`TreeNode`] recursion should proceed for [`TreeNode::rewrite`].
+#[derive(Debug)]
+pub enum RewriteRecursion {
+    /// Continue the visit to this node tree.
+    Continue,
+    /// Keep recursive but skip applying op on the children
+    Skip,
+    /// Stop the visit to this node tree.
+    Stop,
+    /// Call `op` immediately and return
+    Mutate
+}
+
 // #[derive(Debug)]
 // pub enum RewriteRecursion {
 //     /// Continue rewrite this node tree.
