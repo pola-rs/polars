@@ -9,6 +9,7 @@ The following methods are available under the `expr.dt` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Expr.dt.base_utc_offset
     Expr.dt.cast_time_unit
     Expr.dt.replace_time_zone
     Expr.dt.combine
@@ -16,6 +17,7 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.datetime
     Expr.dt.day
     Expr.dt.days
+    Expr.dt.dst_offset
     Expr.dt.epoch
     Expr.dt.hour
     Expr.dt.hours
