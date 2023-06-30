@@ -86,6 +86,74 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
     all_columns = set(df.columns)
     assert set(df.select(~cs.datetime()).columns) == all_columns - {"opp"}
 
+    df = pl.DataFrame(
+        schema={
+            "d1": pl.Datetime("ns", "Asia/Tokyo"),
+            "d2": pl.Datetime("ns", "UTC"),
+            "d3": pl.Datetime("us", "UTC"),
+            "d4": pl.Datetime("us"),
+            "d5": pl.Datetime("ms"),
+        },
+    )
+    assert df.select(cs.datetime()).columns == ["d1", "d2", "d3", "d4", "d5"]
+    assert df.select(~cs.datetime()).schema == {}
+
+    assert df.select(cs.datetime(["ms", "ns"])).columns == ["d1", "d2", "d5"]
+    assert df.select(cs.datetime(["ms", "ns"], time_zone="*")).columns == ["d1", "d2"]
+
+    assert df.select(~cs.datetime(["ms", "ns"])).columns == ["d3", "d4"]
+    assert df.select(~cs.datetime(["ms", "ns"], time_zone="*")).columns == [
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(
+        cs.datetime(time_zone=["UTC", "Asia/Tokyo", "Europe/London"])
+    ).columns == ["d1", "d2", "d3"]
+
+    assert df.select(cs.datetime(time_zone="*")).columns == ["d1", "d2", "d3"]
+    assert df.select(cs.datetime("ns", time_zone="*")).columns == ["d1", "d2"]
+    assert df.select(cs.datetime(time_zone="UTC")).columns == ["d2", "d3"]
+    assert df.select(cs.datetime("us", time_zone="UTC")).columns == ["d3"]
+    assert df.select(cs.datetime(time_zone="Asia/Tokyo")).columns == ["d1"]
+    assert df.select(cs.datetime("us", time_zone="Asia/Tokyo")).columns == []
+    assert df.select(cs.datetime(time_zone=None)).columns == ["d4", "d5"]
+    assert df.select(cs.datetime("ns", time_zone=None)).columns == []
+
+    assert df.select(~cs.datetime(time_zone="*")).columns == ["d4", "d5"]
+    assert df.select(~cs.datetime("ns", time_zone="*")).columns == ["d3", "d4", "d5"]
+    assert df.select(~cs.datetime(time_zone="UTC")).columns == ["d1", "d4", "d5"]
+    assert df.select(~cs.datetime("us", time_zone="UTC")).columns == [
+        "d1",
+        "d2",
+        "d4",
+        "d5",
+    ]
+    assert df.select(~cs.datetime(time_zone="Asia/Tokyo")).columns == [
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(~cs.datetime("us", time_zone="Asia/Tokyo")).columns == [
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(~cs.datetime(time_zone=None)).columns == ["d1", "d2", "d3"]
+    assert df.select(~cs.datetime("ns", time_zone=None)).columns == [
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(cs.datetime("ns")).columns == ["d1", "d2"]
+    assert df.select(cs.datetime("us")).columns == ["d3", "d4"]
+    assert df.select(cs.datetime("ms")).columns == ["d5"]
+
 
 def test_selector_ends_with(df: pl.DataFrame) -> None:
     assert df.select(cs.ends_with("e")).columns == ["cde", "eee"]

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import re
+from datetime import timezone
 from typing import TYPE_CHECKING, Any, Collection, TypeVar
 
 from polars import Expr
 from polars import functions as F
 from polars.datatypes import (
-    DATETIME_DTYPES,
     FLOAT_DTYPES,
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
@@ -16,6 +16,7 @@ from polars.datatypes import (
     Utf8,
     is_polars_dtype,
 )
+from polars.utils import no_default
 
 if TYPE_CHECKING:
     import sys
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
     from polars.datatypes import PolarsDataType
     from polars.type_aliases import TimeUnit
+    from polars.utils import NoDefault
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -471,9 +473,23 @@ def contains(substring: str | Collection[str]) -> Expr:
     )
 
 
-def datetime(time_unit: TimeUnit | None = None) -> Expr:
+def datetime(
+    time_unit: TimeUnit | Collection[TimeUnit] | None = None,
+    time_zone: (
+        str | timezone | Collection[str | timezone | None] | NoDefault | None
+    ) = no_default,
+) -> Expr:
     """
-    Select all datetime columns.
+    Select all datetime columns, optionally filtering by timeunit/timezone.
+
+    Parameters
+    ----------
+    time_unit : {'us', 'ns', 'ms'}
+        Unit of time / precision.
+    time_zone
+        Time zone string, as defined in zoneinfo (to see valid strings run
+        ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
+        Can also set "*" to select Datetime columns that have any timezone.
 
     Examples
     --------
@@ -481,6 +497,10 @@ def datetime(time_unit: TimeUnit | None = None) -> Expr:
     >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
+    ...         "tstamp_utc": [
+    ...             datetime(2023, 4, 10, 12, 14, 16, 999666),
+    ...             datetime(2025, 8, 25, 14, 18, 22, 666333),
+    ...         ],
     ...         "tstamp": [
     ...             datetime(2000, 11, 20, 18, 12, 16, 600000),
     ...             datetime(2020, 10, 30, 10, 20, 25, 123000),
@@ -491,34 +511,79 @@ def datetime(time_unit: TimeUnit | None = None) -> Expr:
     ...         ],
     ...         "dt": [date(1999, 12, 31), date(2010, 7, 5)],
     ...     },
-    ...     schema_overrides={"tstamp": pl.Datetime("ns"), "dtime": pl.Datetime("ms")},
+    ...     schema_overrides={
+    ...         "tstamp_utc": pl.Datetime("ns", "UTC"),
+    ...         "tstamp": pl.Datetime("ns"),
+    ...     },
     ... )
 
     Select all datetime columns:
 
     >>> df.select(cs.datetime())
-    shape: (2, 2)
-    ┌─────────────────────────┬─────────────────────────┐
-    │ tstamp                  ┆ dtime                   │
-    │ ---                     ┆ ---                     │
-    │ datetime[ns]            ┆ datetime[ms]            │
-    ╞═════════════════════════╪═════════════════════════╡
-    │ 2000-11-20 18:12:16.600 ┆ 2010-10-10 10:25:30.987 │
-    │ 2020-10-30 10:20:25.123 ┆ 2024-12-31 20:30:45.400 │
-    └─────────────────────────┴─────────────────────────┘
+    shape: (2, 3)
+    ┌────────────────────────────────┬─────────────────────────┬────────────────────────────┐
+    │ tstamp_utc                     ┆ tstamp                  ┆ dtime                      │
+    │ ---                            ┆ ---                     ┆ ---                        │
+    │ datetime[ns, UTC]              ┆ datetime[ns]            ┆ datetime[μs]               │
+    ╞════════════════════════════════╪═════════════════════════╪════════════════════════════╡
+    │ 2023-04-10 12:14:16.999666 UTC ┆ 2000-11-20 18:12:16.600 ┆ 2010-10-10 10:25:30.987    │
+    │ 2025-08-25 14:18:22.666333 UTC ┆ 2020-10-30 10:20:25.123 ┆ 2024-12-31 20:30:45.400500 │
+    └────────────────────────────────┴─────────────────────────┴────────────────────────────┘
 
     Select all datetime columns that have 'ns' precision:
 
     >>> df.select(cs.datetime("ns"))
+    shape: (2, 2)
+    ┌────────────────────────────────┬─────────────────────────┐
+    │ tstamp_utc                     ┆ tstamp                  │
+    │ ---                            ┆ ---                     │
+    │ datetime[ns, UTC]              ┆ datetime[ns]            │
+    ╞════════════════════════════════╪═════════════════════════╡
+    │ 2023-04-10 12:14:16.999666 UTC ┆ 2000-11-20 18:12:16.600 │
+    │ 2025-08-25 14:18:22.666333 UTC ┆ 2020-10-30 10:20:25.123 │
+    └────────────────────────────────┴─────────────────────────┘
+
+    Select all datetime columns that have *any* timezone:
+
+    >>> df.select(cs.datetime(time_zone="*"))
+
     shape: (2, 1)
-    ┌─────────────────────────┐
-    │ tstamp                  │
-    │ ---                     │
-    │ datetime[ns]            │
-    ╞═════════════════════════╡
-    │ 2000-11-20 18:12:16.600 │
-    │ 2020-10-30 10:20:25.123 │
-    └─────────────────────────┘
+    ┌────────────────────────────────┐
+    │ tstamp_utc                     │
+    │ ---                            │
+    │ datetime[ns, UTC]              │
+    ╞════════════════════════════════╡
+    │ 2023-04-10 12:14:16.999666 UTC │
+    │ 2025-08-25 14:18:22.666333 UTC │
+    └────────────────────────────────┘
+
+    Select all datetime columns that have a *specific* timezone:
+
+    >>> df.select(cs.datetime(time_zone="UTC"))
+
+    shape: (2, 1)
+    ┌────────────────────────────────┐
+    │ tstamp_utc                     │
+    │ ---                            │
+    │ datetime[ns, UTC]              │
+    ╞════════════════════════════════╡
+    │ 2023-04-10 12:14:16.999666 UTC │
+    │ 2025-08-25 14:18:22.666333 UTC │
+    └────────────────────────────────┘
+
+    Select all datetime columns that do NOT have a timezone:
+
+    >>> df.select(cs.datetime(time_zone=None))
+
+    shape: (2, 2)
+    ┌─────────────────────────┬────────────────────────────┐
+    │ tstamp                  ┆ dtime                      │
+    │ ---                     ┆ ---                        │
+    │ datetime[ns]            ┆ datetime[μs]               │
+    ╞═════════════════════════╪════════════════════════════╡
+    │ 2000-11-20 18:12:16.600 ┆ 2010-10-10 10:25:30.987    │
+    │ 2020-10-30 10:20:25.123 ┆ 2024-12-31 20:30:45.400500 │
+    └─────────────────────────┴────────────────────────────┘
 
     Select all columns *except* for datetime columns:
 
@@ -533,12 +598,30 @@ def datetime(time_unit: TimeUnit | None = None) -> Expr:
     │ 2010-07-05 │
     └────────────┘
 
-    """
-    datetime_dtypes = DATETIME_DTYPES if not time_unit else Datetime(time_unit)
+    """  # noqa: W505
+    if time_unit:
+        time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
+    else:
+        time_unit = ["ms", "us", "ns"]
+
+    if time_zone is no_default:
+        time_zone = ["*", None]
+    elif time_zone is None:
+        time_zone = [None]
+    elif time_zone:
+        time_zone = (
+            [time_zone] if isinstance(time_zone, (str, timezone)) else list(time_zone)
+        )
+
+    datetime_dtypes = []
+    for tu in time_unit:
+        for tz in time_zone:  # type: ignore[union-attr]
+            datetime_dtypes.append(Datetime(tu, tz))
+
     return _selector_proxy_(
-        F.col(datetime_dtypes),  # type: ignore[arg-type]
+        F.col(datetime_dtypes),
         name="datetime",
-        parameters={"time_unit": time_unit},
+        parameters={"time_unit": time_unit, "time_zone": time_zone},
         raw_parameters=[datetime_dtypes],
     )
 
