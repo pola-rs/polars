@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import sys
 import textwrap
 import typing
 import zlib
@@ -1340,3 +1341,34 @@ def test_read_csv_n_rows_outside_heuristic() -> None:
 
     f.seek(0)
     assert pl.read_csv(f, n_rows=2048, has_header=False).shape == (2048, 4)
+
+
+def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    # The capsys fixture allows pytest to access stdout/stderr. See
+    # https://docs.pytest.org/en/7.1.x/how-to/capture-stdout-stderr.html
+    df = pl.DataFrame(
+        {
+            "numbers": [1, 2, 3],
+            "strings": ["test", "csv", "stdout"],
+            "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
+        }
+    )
+
+    # pytest hijacks sys.stdout and changes its type, which causes mypy failure
+    df.write_csv(sys.stdout)  # type: ignore[call-overload]
+    captured = capsys.readouterr()
+    assert captured.out == (
+        "numbers,strings,dates\n"
+        "1,test,2023-01-01\n"
+        "2,csv,2023-01-02\n"
+        "3,stdout,2023-01-03\n"
+    )
+
+    df.write_csv(sys.stderr)  # type: ignore[call-overload]
+    captured = capsys.readouterr()
+    assert captured.err == (
+        "numbers,strings,dates\n"
+        "1,test,2023-01-01\n"
+        "2,csv,2023-01-02\n"
+        "3,stdout,2023-01-03\n"
+    )
