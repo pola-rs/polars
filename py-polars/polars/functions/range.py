@@ -355,7 +355,11 @@ def date_range(
     elif " " in interval:
         interval = interval.replace(" ", "")
 
-    if not eager:
+    if (
+        not eager
+        or isinstance(start, (str, pl.Expr))
+        or isinstance(end, (str, pl.Expr))
+    ):
         start = parse_as_expression(start)
         end = parse_as_expression(end)
         expr = wrap_expr(plr.date_range_lazy(start, end, interval, closed, time_zone))
@@ -735,6 +739,8 @@ def time_range(
     default_end = time(23, 59, 59, 999999)
     if (
         not eager
+        or isinstance(start, (str, pl.Expr))
+        or isinstance(end, (str, pl.Expr))
     ):
         start_expr = (
             F.lit(default_start)._pyexpr
