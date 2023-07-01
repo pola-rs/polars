@@ -16,7 +16,6 @@ from polars.datatypes import (
     Utf8,
     is_polars_dtype,
 )
-from polars.utils import no_default
 
 if TYPE_CHECKING:
     import sys
@@ -24,7 +23,6 @@ if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
     from polars.datatypes import PolarsDataType
     from polars.type_aliases import TimeUnit
-    from polars.utils import NoDefault
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -475,21 +473,24 @@ def contains(substring: str | Collection[str]) -> Expr:
 
 def datetime(
     time_unit: TimeUnit | Collection[TimeUnit] | None = None,
-    time_zone: (
-        str | timezone | Collection[str | timezone | None] | NoDefault | None
-    ) = no_default,
+    time_zone: (str | timezone | Collection[str | timezone | None] | None) = (
+        "*",
+        None,
+    ),
 ) -> Expr:
     """
     Select all datetime columns, optionally filtering by timeunit/timezone.
 
     Parameters
     ----------
-    time_unit : {'us', 'ns', 'ms'}
-        Unit of time / precision.
+    time_unit
+        One (or more) of the allowed timeunit precision strings, "ms", "us", and "ns".
+        Omit to select columns with any valid timeunit.
     time_zone
-        Time zone string, as defined in zoneinfo (to see valid strings run
-        ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
-        Can also set "*" to select Datetime columns that have any timezone.
+        * One or more timezone strings, as defined in zoneinfo (to see valid options
+          run ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
+        * Set ``None`` to select Datetime columns that do not have a timezone.
+        * Set "*" to select Datetime columns that have *any* timezone.
 
     Examples
     --------
@@ -497,21 +498,26 @@ def datetime(
     >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
+    ...         "tstamp_tokyo": [
+    ...             datetime(1999, 7, 20, 20, 20, 16, 987654),
+    ...             datetime(2000, 5, 15, 21, 21, 21, 123465),
+    ...         ],
     ...         "tstamp_utc": [
-    ...             datetime(2023, 4, 10, 12, 14, 16, 999666),
-    ...             datetime(2025, 8, 25, 14, 18, 22, 666333),
+    ...             datetime(2023, 4, 10, 12, 14, 16, 999000),
+    ...             datetime(2025, 8, 25, 14, 18, 22, 666000),
     ...         ],
     ...         "tstamp": [
     ...             datetime(2000, 11, 20, 18, 12, 16, 600000),
     ...             datetime(2020, 10, 30, 10, 20, 25, 123000),
     ...         ],
     ...         "dtime": [
-    ...             datetime(2010, 10, 10, 10, 25, 30, 987000),
-    ...             datetime(2024, 12, 31, 20, 30, 45, 400500),
+    ...             datetime(2010, 10, 10, 10, 25, 30),
+    ...             datetime(2024, 12, 31, 20, 30, 45),
     ...         ],
     ...         "dt": [date(1999, 12, 31), date(2010, 7, 5)],
     ...     },
     ...     schema_overrides={
+    ...         "tstamp_tokyo": pl.Datetime("us", "Asia/Tokyo"),
     ...         "tstamp_utc": pl.Datetime("ns", "UTC"),
     ...         "tstamp": pl.Datetime("ns"),
     ...     },
@@ -520,70 +526,67 @@ def datetime(
     Select all datetime columns:
 
     >>> df.select(cs.datetime())
-    shape: (2, 3)
-    ┌────────────────────────────────┬─────────────────────────┬────────────────────────────┐
-    │ tstamp_utc                     ┆ tstamp                  ┆ dtime                      │
-    │ ---                            ┆ ---                     ┆ ---                        │
-    │ datetime[ns, UTC]              ┆ datetime[ns]            ┆ datetime[μs]               │
-    ╞════════════════════════════════╪═════════════════════════╪════════════════════════════╡
-    │ 2023-04-10 12:14:16.999666 UTC ┆ 2000-11-20 18:12:16.600 ┆ 2010-10-10 10:25:30.987    │
-    │ 2025-08-25 14:18:22.666333 UTC ┆ 2020-10-30 10:20:25.123 ┆ 2024-12-31 20:30:45.400500 │
-    └────────────────────────────────┴─────────────────────────┴────────────────────────────┘
+    shape: (2, 4)
+    ┌────────────────────────────────┬─────────────────────────────┬─────────────────────────┬─────────────────────┐
+    │ tstamp_tokyo                   ┆ tstamp_utc                  ┆ tstamp                  ┆ dtime               │
+    │ ---                            ┆ ---                         ┆ ---                     ┆ ---                 │
+    │ datetime[μs, Asia/Tokyo]       ┆ datetime[ns, UTC]           ┆ datetime[ns]            ┆ datetime[μs]        │
+    ╞════════════════════════════════╪═════════════════════════════╪═════════════════════════╪═════════════════════╡
+    │ 1999-07-21 05:20:16.987654 JST ┆ 2023-04-10 12:14:16.999 UTC ┆ 2000-11-20 18:12:16.600 ┆ 2010-10-10 10:25:30 │
+    │ 2000-05-16 06:21:21.123465 JST ┆ 2025-08-25 14:18:22.666 UTC ┆ 2020-10-30 10:20:25.123 ┆ 2024-12-31 20:30:45 │
+    └────────────────────────────────┴─────────────────────────────┴─────────────────────────┴─────────────────────┘
 
     Select all datetime columns that have 'ns' precision:
 
     >>> df.select(cs.datetime("ns"))
     shape: (2, 2)
-    ┌────────────────────────────────┬─────────────────────────┐
-    │ tstamp_utc                     ┆ tstamp                  │
-    │ ---                            ┆ ---                     │
-    │ datetime[ns, UTC]              ┆ datetime[ns]            │
-    ╞════════════════════════════════╪═════════════════════════╡
-    │ 2023-04-10 12:14:16.999666 UTC ┆ 2000-11-20 18:12:16.600 │
-    │ 2025-08-25 14:18:22.666333 UTC ┆ 2020-10-30 10:20:25.123 │
-    └────────────────────────────────┴─────────────────────────┘
+    ┌─────────────────────────────┬─────────────────────────┐
+    │ tstamp_utc                  ┆ tstamp                  │
+    │ ---                         ┆ ---                     │
+    │ datetime[ns, UTC]           ┆ datetime[ns]            │
+    ╞═════════════════════════════╪═════════════════════════╡
+    │ 2023-04-10 12:14:16.999 UTC ┆ 2000-11-20 18:12:16.600 │
+    │ 2025-08-25 14:18:22.666 UTC ┆ 2020-10-30 10:20:25.123 │
+    └─────────────────────────────┴─────────────────────────┘
 
     Select all datetime columns that have *any* timezone:
 
     >>> df.select(cs.datetime(time_zone="*"))
-
-    shape: (2, 1)
-    ┌────────────────────────────────┐
-    │ tstamp_utc                     │
-    │ ---                            │
-    │ datetime[ns, UTC]              │
-    ╞════════════════════════════════╡
-    │ 2023-04-10 12:14:16.999666 UTC │
-    │ 2025-08-25 14:18:22.666333 UTC │
-    └────────────────────────────────┘
+    shape: (2, 2)
+    ┌────────────────────────────────┬─────────────────────────────┐
+    │ tstamp_tokyo                   ┆ tstamp_utc                  │
+    │ ---                            ┆ ---                         │
+    │ datetime[μs, Asia/Tokyo]       ┆ datetime[ns, UTC]           │
+    ╞════════════════════════════════╪═════════════════════════════╡
+    │ 1999-07-21 05:20:16.987654 JST ┆ 2023-04-10 12:14:16.999 UTC │
+    │ 2000-05-16 06:21:21.123465 JST ┆ 2025-08-25 14:18:22.666 UTC │
+    └────────────────────────────────┴─────────────────────────────┘
 
     Select all datetime columns that have a *specific* timezone:
 
     >>> df.select(cs.datetime(time_zone="UTC"))
-
     shape: (2, 1)
-    ┌────────────────────────────────┐
-    │ tstamp_utc                     │
-    │ ---                            │
-    │ datetime[ns, UTC]              │
-    ╞════════════════════════════════╡
-    │ 2023-04-10 12:14:16.999666 UTC │
-    │ 2025-08-25 14:18:22.666333 UTC │
-    └────────────────────────────────┘
+    ┌─────────────────────────────┐
+    │ tstamp_utc                  │
+    │ ---                         │
+    │ datetime[ns, UTC]           │
+    ╞═════════════════════════════╡
+    │ 2023-04-10 12:14:16.999 UTC │
+    │ 2025-08-25 14:18:22.666 UTC │
+    └─────────────────────────────┘
 
-    Select all datetime columns that do NOT have a timezone:
+    Select all datetime columns that have NO timezone:
 
     >>> df.select(cs.datetime(time_zone=None))
-
     shape: (2, 2)
-    ┌─────────────────────────┬────────────────────────────┐
-    │ tstamp                  ┆ dtime                      │
-    │ ---                     ┆ ---                        │
-    │ datetime[ns]            ┆ datetime[μs]               │
-    ╞═════════════════════════╪════════════════════════════╡
-    │ 2000-11-20 18:12:16.600 ┆ 2010-10-10 10:25:30.987    │
-    │ 2020-10-30 10:20:25.123 ┆ 2024-12-31 20:30:45.400500 │
-    └─────────────────────────┴────────────────────────────┘
+    ┌─────────────────────────┬─────────────────────┐
+    │ tstamp                  ┆ dtime               │
+    │ ---                     ┆ ---                 │
+    │ datetime[ns]            ┆ datetime[μs]        │
+    ╞═════════════════════════╪═════════════════════╡
+    │ 2000-11-20 18:12:16.600 ┆ 2010-10-10 10:25:30 │
+    │ 2020-10-30 10:20:25.123 ┆ 2024-12-31 20:30:45 │
+    └─────────────────────────┴─────────────────────┘
 
     Select all columns *except* for datetime columns:
 
@@ -599,14 +602,12 @@ def datetime(
     └────────────┘
 
     """  # noqa: W505
-    if time_unit:
-        time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
-    else:
+    if not time_unit or time_unit == "*":
         time_unit = ["ms", "us", "ns"]
+    else:
+        time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
 
-    if time_zone is no_default:
-        time_zone = ["*", None]
-    elif time_zone is None:
+    if time_zone is None:
         time_zone = [None]
     elif time_zone:
         time_zone = (

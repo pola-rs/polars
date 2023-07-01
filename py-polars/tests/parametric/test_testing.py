@@ -22,6 +22,11 @@ from polars.testing.parametric import (
     series,
 )
 
+# TODO: add parametric strategy generator that supports timezones
+TEMPORAL_DTYPES_ = {
+    tp for tp in TEMPORAL_DTYPES if getattr(tp, "time_zone", None) != "*"
+}
+
 
 @given(df=dataframes(), lf=dataframes(lazy=True), srs=series())
 @settings(max_examples=5)
@@ -97,11 +102,11 @@ def test_strategy_frame_columns(lf: pl.LazyFrame) -> None:
 
 
 @given(
-    df=dataframes(allowed_dtypes=TEMPORAL_DTYPES, max_size=1, max_cols=5),
-    lf=dataframes(excluded_dtypes=TEMPORAL_DTYPES, max_size=1, max_cols=5, lazy=True),
+    df=dataframes(allowed_dtypes=TEMPORAL_DTYPES_, max_size=1, max_cols=5),
+    lf=dataframes(excluded_dtypes=TEMPORAL_DTYPES_, max_size=1, max_cols=5, lazy=True),
     s1=series(dtype=pl.Boolean, max_size=1),
-    s2=series(allowed_dtypes=TEMPORAL_DTYPES, max_size=1),
-    s3=series(excluded_dtypes=TEMPORAL_DTYPES, max_size=1),
+    s2=series(allowed_dtypes=TEMPORAL_DTYPES_, max_size=1),
+    s3=series(excluded_dtypes=TEMPORAL_DTYPES_, max_size=1),
 )
 @settings(max_examples=50)
 def test_strategy_dtypes(
