@@ -25,7 +25,7 @@ build: .venv  ## Compile and install Polars for development
 	# the form of "polars[pandas,...]". Pip incorrectly parses that as using the released
 	# polars version, rather than self referencing. So we avoid the all tag here.
 	# @unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --extras all,dev-test,dev-lint,dev-docs
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --extras pyarrow,pandas,fsspec,connectorx,adbc,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic,dev-test,dev-lint,dev-docs
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --extras pyarrow,pandas,fsspec,timezone,connectorx,adbc,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic,dev-test,dev-lint,dev-docs
 	
 
 .PHONY: build-release

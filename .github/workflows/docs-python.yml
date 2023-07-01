@@ -49,7 +49,7 @@ jobs:
       - name: Install Python dependencies
         working-directory: py-polars
         run: |
-          source activate
+          source $GITHUB_WORKSPACE/py-polars/.venv/Scripts/activate
           pip install maturin==1.0.1
           maturin develop --extras dev-docs
 

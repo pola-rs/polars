@@ -55,7 +55,7 @@ jobs:
         run: |
           source activate
           pip install maturin==1.0.1
-          maturin develop --extras dev-test,pyarrow,pandas,fsspec,connectorx,adbc,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic
+          maturin develop --extras dev-test,pyarrow,pandas,fsspec,timezone,connectorx,adbc,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic
 
       - name: Load benchmark data from cache
         id: cache-data
