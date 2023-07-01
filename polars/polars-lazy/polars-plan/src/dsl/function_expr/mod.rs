@@ -25,6 +25,8 @@ mod list;
 mod log;
 mod nan;
 mod pow;
+#[cfg(feature = "arange")]
+mod range;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
 mod rolling;
 #[cfg(feature = "round_series")]
@@ -67,6 +69,8 @@ pub use self::boolean::BooleanFunction;
 pub(crate) use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
+#[cfg(feature = "arange")]
+pub(super) use self::range::RangeFunction;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
@@ -93,6 +97,8 @@ pub enum FunctionExpr {
     BinaryExpr(BinaryFunction),
     #[cfg(feature = "temporal")]
     TemporalExpr(TemporalFunction),
+    #[cfg(feature = "arange")]
+    Range(RangeFunction),
     #[cfg(feature = "date_offset")]
     DateOffset(polars_time::Duration),
     #[cfg(feature = "trigonometry")]
@@ -209,6 +215,8 @@ impl Display for FunctionExpr {
             BinaryExpr(b) => return write!(f, "{b}"),
             #[cfg(feature = "temporal")]
             TemporalExpr(fun) => return write!(f, "{fun}"),
+            #[cfg(feature = "arange")]
+            Range(func) => return write!(f, "{func}"),
             #[cfg(feature = "date_offset")]
             DateOffset(_) => "dt.offset_by",
             #[cfg(feature = "trigonometry")]
@@ -391,6 +399,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             BinaryExpr(s) => s.into(),
             #[cfg(feature = "temporal")]
             TemporalExpr(func) => func.into(),
+            #[cfg(feature = "arange")]
+            Range(func) => func.into(),
 
             #[cfg(feature = "date_offset")]
             DateOffset(offset) => {
@@ -643,6 +653,23 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     closed,
                     None
                 )
+            }
+        }
+    }
+}
+
+impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: RangeFunction) -> Self {
+        use RangeFunction::*;
+        match func {
+            ARange { step } => {
+                map_as_slice!(range::arange, step)
+            }
+            IntRange { step } => {
+                map_as_slice!(range::int_range, step)
+            }
+            IntRanges { step } => {
+                map_as_slice!(range::int_ranges, step)
             }
         }
     }

@@ -85,6 +85,21 @@ impl FunctionExpr {
                 mapper.with_dtype(dtype)
             }
 
+            #[cfg(feature = "arange")]
+            Range(fun) => {
+                use RangeFunction::*;
+                let dtype = match fun {
+                    ARange { .. } => DataType::Int64, // This is not always correct
+                    IntRange { .. } => DataType::Int64,
+                    IntRanges { .. } => {
+                        return Ok(Field::new(
+                            "int_range",
+                            DataType::List(Box::new(DataType::Int64)),
+                        ));
+                    }
+                };
+                mapper.with_dtype(dtype)
+            }
             #[cfg(feature = "date_offset")]
             DateOffset(_) => mapper.with_same_dtype(),
             #[cfg(feature = "trigonometry")]
