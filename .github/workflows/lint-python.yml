@@ -25,6 +25,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
+
       - name: Set up Rust
         run: rustup show
 
@@ -64,6 +69,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
+
       - name: Set up Rust
         run: rustup show
 
@@ -77,7 +87,7 @@ jobs:
         run: |
           source activate
           pip install maturin==1.0.1
-          maturin develop --extras dev-test,dev-lint,pyarrow,pandas,fsspec,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic
+          maturin develop --extras dev-test,dev-lint,pyarrow,pandas,fsspec,connectorx,adbc,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic
 
       # Allow untyped calls for older Python versions
       - name: Run mypy

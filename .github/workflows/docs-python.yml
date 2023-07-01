@@ -32,6 +32,11 @@ jobs:
           cache: pip
           cache-dependency-path: py-polars/pyproject.toml
 
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
+
       - name: Set up Rust
         run: rustup show
 
