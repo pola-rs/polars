@@ -116,11 +116,9 @@ pub(super) fn temporal_range_dispatch(
     let stop = stop.get(0).unwrap().extract::<i64>().unwrap();
 
     let res = match dtype {
-        DataType::Date => {
-            date_range_impl("", start, stop, every, closed, tu, tz)?
-        }
+        DataType::Date => date_range_impl(name, start, stop, every, closed, tu, tz)?,
         DataType::Datetime(_, _) | DataType::Time => {
-            date_range_impl("", start, stop, every, closed, tu, tz)?
+            date_range_impl(name, start, stop, every, closed, tu, tz)?
         }
         _ => unimplemented!(),
     };

@@ -410,6 +410,7 @@ def date_range(
         dt_range = dt_range.alias(name)
     return dt_range
 
+
 def date_ranges(
     start: date | datetime | Expr | str,
     end: date | datetime | Expr | str,
@@ -584,6 +585,7 @@ def date_ranges(
     if name is not None:
         expr = expr.alias(name)
     return expr
+
 
 def _ensure_datetime(value: date | datetime) -> tuple[datetime, bool]:
     is_date_type = False
@@ -769,6 +771,7 @@ def time_range(
             tm_srs = tm_srs.alias(name)
         return tm_srs
 
+
 def time_ranges(
     start: time | Expr | str | None = None,
     end: time | Expr | str | None = None,
@@ -870,14 +873,10 @@ def time_ranges(
     default_start = time(0, 0, 0)
     default_end = time(23, 59, 59, 999999)
     start_expr = (
-        F.lit(default_start)._pyexpr
-        if start is None
-        else parse_as_expression(start)
+        F.lit(default_start)._pyexpr if start is None else parse_as_expression(start)
     )
 
-    end_expr = (
-        F.lit(default_end)._pyexpr if end is None else parse_as_expression(end)
-    )
+    end_expr = F.lit(default_end)._pyexpr if end is None else parse_as_expression(end)
 
     tm_expr = wrap_expr(plr.time_ranges_lazy(start_expr, end_expr, interval, closed))
     if name is not None:

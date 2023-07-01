@@ -276,6 +276,7 @@ __all__ = [
     "arg_where",
     "concat",
     "date_range",
+    "date_ranges",
     "element",
     "ones",
     "repeat",

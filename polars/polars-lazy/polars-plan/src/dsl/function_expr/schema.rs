@@ -73,7 +73,10 @@ impl FunctionExpr {
                         return Ok(Field::new("time", DataType::Time));
                     }
                     TimeRanges { .. } => {
-                        return Ok(Field::new("times", DataType::List(Box::new(DataType::Time))));
+                        return Ok(Field::new(
+                            "times",
+                            DataType::List(Box::new(DataType::Time)),
+                        ));
                     }
                     Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
                         DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),

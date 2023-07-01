@@ -194,9 +194,7 @@ def test_date_range_lazy_with_expressions(
 ) -> None:
     ldf = (
         pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
-        .with_columns(
-            pl.date_ranges(low, high, interval="678d").alias("dts")
-        )
+        .with_columns(pl.date_ranges(low, high, interval="678d").alias("dts"))
         .lazy()
     )
 
@@ -447,7 +445,7 @@ def test_date_range_name() -> None:
     result_lazy = pl.select(
         pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=False)
     ).to_series()
-    assert result_lazy.name != expected_name  # TODO
+    assert result_lazy.name == expected_name
 
 
 def test_time_range_lit() -> None:
@@ -506,9 +504,7 @@ def test_time_range_expr() -> None:
             "start": pl.time_range(interval="6h", eager=True),
             "stop": pl.time_range(start=time(2, 59), interval="5h59m", eager=True),
         }
-    ).with_columns(
-        intervals=pl.time_ranges("start", pl.col("stop"), interval="1h29m")
-    )
+    ).with_columns(intervals=pl.time_ranges("start", pl.col("stop"), interval="1h29m"))
     # shape: (4, 3)
     # ┌──────────┬──────────┬────────────────────────────────┐
     # │ start    ┆ stop     ┆ intervals                      │
@@ -534,7 +530,7 @@ def test_time_range_name() -> None:
     assert result_eager.name == expected_name
 
     result_lazy = pl.select(pl.time_range(time(10), time(12), eager=False)).to_series()
-    assert result_lazy.name != expected_name  # todo!
+    assert result_lazy.name == expected_name
 
 
 def test_deprecated_name_arg() -> None:
