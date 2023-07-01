@@ -9,10 +9,12 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
+    #[cfg(feature="list_any_all")]
     fn list_all(&self) -> Self {
         self.inner.clone().list().all().into()
     }
 
+    #[cfg(feature="list_any_all")]
     fn list_any(&self) -> Self {
         self.inner.clone().list().any().into()
     }
