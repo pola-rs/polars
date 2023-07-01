@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 from polars.utils.convert import get_zoneinfo as ZoneInfo
 
@@ -664,3 +665,31 @@ def test_time_ranges_schema(
         }
     )
     assert_frame_equal(result.collect(), expected)
+
+
+def test_date_range_too_long() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [date(2020, 1, 1), date(2020, 1, 2)],
+            "stop": [date(2020, 1, 2), date(2020, 1, 3)],
+        }
+    )
+    with pytest.raises(
+        ComputeError,
+        match="'start' and 'stop' both be of length 1 - perhaps you want to use 'date_ranges' or 'time_ranges' instead?",
+    ):
+        df.with_columns(pl.date_range(pl.col("start"), pl.col("stop")))
+
+
+def test_time_range_too_long() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [time(12, 30), time(13, 30)],
+            "stop": [time(12, 30), time(13, 30)],
+        }
+    )
+    with pytest.raises(
+        ComputeError,
+        match="'start' and 'stop' both be of length 1 - perhaps you want to use 'date_ranges' or 'time_ranges' instead?",
+    ):
+        df.with_columns(pl.time_range(pl.col("start"), pl.col("stop")))

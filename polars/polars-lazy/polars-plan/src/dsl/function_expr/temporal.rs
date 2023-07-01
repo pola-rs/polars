@@ -88,8 +88,8 @@ pub(super) fn temporal_range_dispatch(
     let stop = &s[1];
 
     polars_ensure!(
-        start.len() == stop.len(),
-        ComputeError: "'start' and 'stop' should have the same length",
+        start.len() == 1 && stop.len() == 1,
+        ComputeError: "'start' and 'stop' both be of length 1 - perhaps you want to use 'date_ranges' or 'time_ranges' instead?",
     );
     const TO_MS: i64 = SECONDS_IN_DAY * 1000;
 

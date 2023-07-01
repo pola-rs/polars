@@ -440,11 +440,13 @@ def date_ranges(
     Examples
     --------
     >>> from datetime import date
-    >>> df = pl.DataFrame({
-    ...    'start': [date(2020, 1, 1), date(2020, 2, 1)],
-    ...    'end': [date(2020, 1, 1), date(2020, 2, 2)]
-    ... })
-    >>> df.with_columns(pl.date_ranges('start', 'end'))
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [date(2020, 1, 1), date(2020, 2, 1)],
+    ...         "end": [date(2020, 1, 1), date(2020, 2, 2)],
+    ...     }
+    ... )
+    >>> df.with_columns(pl.date_ranges("start", "end"))
     shape: (2, 3)
     ┌────────────┬────────────┬──────────────────────────┐
     │ start      ┆ end        ┆ dates                    │
@@ -587,9 +589,7 @@ def time_range(
     ...         "start": pl.time_range(interval="6h", eager=True),
     ...         "stop": pl.time_range(start=time(2, 59), interval="5h59m", eager=True),
     ...     }
-    ... ).with_columns(
-    ...     intervals=pl.time_ranges("start", "stop", interval="1h29m")
-    ... )
+    ... ).with_columns(intervals=pl.time_ranges("start", "stop", interval="1h29m"))
     >>> lf.collect()
     shape: (4, 3)
     ┌──────────┬──────────┬────────────────────────────────┐
@@ -693,11 +693,10 @@ def time_ranges(
     Create a Series that starts at 14:00, with intervals of 3 hours and 15 mins:
 
     >>> from datetime import time
-    >>> df = pl.DataFrame({
-    ...    'start': [time(12, 30), time(13, 30)],
-    ...    'end': [time(12, 30), time(14, 30)]
-    ... })
-    >>> df.with_columns(pl.time_ranges('start', 'end'))
+    >>> df = pl.DataFrame(
+    ...     {"start": [time(12, 30), time(13, 30)], "end": [time(12, 30), time(14, 30)]}
+    ... )
+    >>> df.with_columns(pl.time_ranges("start", "end"))
     shape: (2, 3)
     ┌──────────┬──────────┬──────────────────────┐
     │ start    ┆ end      ┆ times                │
