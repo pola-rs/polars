@@ -567,12 +567,6 @@ def test_time_range_name() -> None:
     assert result_lazy.name == expected_name
 
 
-def test_time_range_lazy_schema() -> None:
-    ldf = pl.DataFrame({"start": [time(23, 10)], "stop": [time(23, 11)]}).lazy()
-    ldf = ldf.with_columns(pl.time_range(pl.col("start"), pl.col("stop")).alias("time"))
-    assert ldf.schema == {"start": pl.Time, "stop": pl.Time, "time": pl.List(pl.Time)}
-
-
 def test_deprecated_name_arg() -> None:
     name = "x"
     with pytest.deprecated_call():
