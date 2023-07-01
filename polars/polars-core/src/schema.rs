@@ -251,7 +251,7 @@ impl Schema {
     ///
     /// If `index` is inbounds, returns `Some((&mut name, &mut dtype))`, else `None`. See
     /// [`get_at_index`][Self::get_at_index] for an immutable version.
-    pub fn get_at_index_mut(&mut self, index: usize) -> Option<(&mut SmartString, &mut DataType)> {
+    pub fn get_at_index_mut(&mut self, index: usize) -> Option<(&SmartString, &mut DataType)> {
         self.inner.get_index_mut(index)
     }
 
