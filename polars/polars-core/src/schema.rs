@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
+use indexmap::map::MutableKeys;
 use indexmap::IndexMap;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
@@ -252,7 +253,7 @@ impl Schema {
     /// If `index` is inbounds, returns `Some((&mut name, &mut dtype))`, else `None`. See
     /// [`get_at_index`][Self::get_at_index] for an immutable version.
     pub fn get_at_index_mut(&mut self, index: usize) -> Option<(&mut SmartString, &mut DataType)> {
-        self.inner.get_index_mut(index)
+        self.inner.get_index_mut2(index)
     }
 
     /// Swap-remove a field by name and, if the field existed, return its dtype
