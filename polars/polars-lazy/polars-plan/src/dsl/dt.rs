@@ -249,6 +249,13 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthEnd))
     }
 
+    // Get the base offset from UTC
+    #[cfg(feature = "timezones")]
+    pub fn base_utc_offset(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::BaseUtcOffset))
+    }
+
     // Get the additional offset from UTC currently in effect (usually due to daylight saving time)
     #[cfg(feature = "timezones")]
     pub fn dst_offset(self) -> Expr {

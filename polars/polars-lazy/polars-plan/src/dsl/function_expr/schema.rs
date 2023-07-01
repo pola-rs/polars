@@ -53,6 +53,8 @@ impl FunctionExpr {
                     #[cfg(feature = "date_offset")]
                     MonthEnd => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "timezones")]
+                    BaseUtcOffset => DataType::Duration(TimeUnit::Milliseconds),
+                    #[cfg(feature = "timezones")]
                     DSTOffset => DataType::Duration(TimeUnit::Milliseconds),
                     Round(..) => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "timezones")]

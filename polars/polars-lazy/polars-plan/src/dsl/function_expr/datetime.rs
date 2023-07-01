@@ -1,6 +1,8 @@
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
+use polars_time::base_utc_offset as base_utc_offset_fn;
+#[cfg(feature = "timezones")]
 use polars_time::dst_offset as dst_offset_fn;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -34,6 +36,8 @@ pub enum TemporalFunction {
     MonthStart,
     #[cfg(feature = "date_offset")]
     MonthEnd,
+    #[cfg(feature = "timezones")]
+    BaseUtcOffset,
     #[cfg(feature = "timezones")]
     DSTOffset,
     Round(String, String),
@@ -81,6 +85,8 @@ impl Display for TemporalFunction {
             MonthStart => "month_start",
             #[cfg(feature = "date_offset")]
             MonthEnd => "month_end",
+            #[cfg(feature = "timezones")]
+            BaseUtcOffset => "base_utc_offset",
             #[cfg(feature = "timezones")]
             DSTOffset => "dst_offset",
             Round(..) => "round",
@@ -260,6 +266,22 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
     })
 }
 
+#[cfg(feature = "timezones")]
+pub(super) fn base_utc_offset(s: &Series) -> PolarsResult<Series> {
+    match s.dtype() {
+        DataType::Datetime(time_unit, Some(tz)) => {
+            let tz = tz
+                .parse::<Tz>()
+                .expect("Time zone has already been validated");
+            Ok(base_utc_offset_fn(s.datetime().unwrap(), time_unit, &tz).into_series())
+        }
+        dt => polars_bail!(
+            opq = base_utc_offset,
+            got = dt,
+            expected = "time-zone-aware datetime"
+        ),
+    }
+}
 #[cfg(feature = "timezones")]
 pub(super) fn dst_offset(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
