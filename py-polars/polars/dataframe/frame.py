@@ -3167,12 +3167,12 @@ class DataFrame:
                     "'sqlalchemy' not found. Install polars with 'pip install polars[sqlalchemy]'."
                 ) from exc
 
-            engine = create_engine(connection_uri)
+            engine_sa = create_engine(connection_uri)
 
             # this conversion to pandas as zero-copy
             # so we can utilize their sql utils for free
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
-                name=table_name, con=engine, if_exists=if_exists, index=False
+                name=table_name, con=engine_sa, if_exists=if_exists, index=False
             )
 
         else:
