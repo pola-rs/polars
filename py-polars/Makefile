@@ -23,7 +23,7 @@ requirements: .venv  ## Install/refresh all project requirements
 
 .PHONY: build
 build: .venv  ## Compile and install Polars for development
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --extras pyarrow,pandas,fsspec,timezone,connectorx,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake
 
 .PHONY: build-release
 build-release: .venv  ## Compile and install a faster Polars binary

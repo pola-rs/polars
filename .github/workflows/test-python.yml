@@ -61,7 +61,7 @@ jobs:
       - name: Install Polars
         run: |
           source activate
-          maturin develop
+          maturin develop --extras all
 
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
@@ -121,7 +121,7 @@ jobs:
         shell: bash
         run: |
           maturin build
-          pip install target/wheels/polars-*.whl
+          pip install target/wheels/polars-*.whl[all]
 
       - name: Run tests
         if: github.ref_name != 'main'
