@@ -225,7 +225,6 @@ def test_date_range_lazy_with_expressions(
             low,
             high,
             interval="1d",
-            eager=True,
         ).alias("dts")
     ).to_dict(
         False
@@ -248,7 +247,6 @@ def test_date_range_lazy_with_expressions(
             low,
             high,
             interval="1d",
-            eager=True,
         ).alias("dts")
     ).to_dict(
         False
