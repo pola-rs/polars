@@ -19,7 +19,6 @@ impl Display for RangeFunction {
     }
 }
 
-#[cfg(feature = "arange")]
 fn int_range_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Series>
 where
     T: PolarsNumericType,
@@ -55,7 +54,6 @@ where
 /// Create list entries that are range arrays
 /// - if `start` and `end` are a column, every element will expand into an array in a list column.
 /// - if `start` and `end` are literals the output will be of `Int64`.
-#[cfg(feature = "arange")]
 pub(super) fn arange(s: &[Series], step: i64) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
@@ -67,7 +65,6 @@ pub(super) fn arange(s: &[Series], step: i64) -> PolarsResult<Series> {
     }
 }
 
-#[cfg(feature = "arange")]
 pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
@@ -102,7 +99,6 @@ pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
     }
 }
 
-#[cfg(feature = "arange")]
 pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];

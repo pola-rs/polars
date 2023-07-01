@@ -658,6 +658,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     }
 }
 
+#[cfg(feature = "arange")]
 impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: RangeFunction) -> Self {
         use RangeFunction::*;
