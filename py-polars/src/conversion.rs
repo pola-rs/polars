@@ -1307,9 +1307,10 @@ impl FromPyObject<'_> for Wrap<SetOperation> {
             "union" => SetOperation::Union,
             "difference" => SetOperation::Difference,
             "intersection" => SetOperation::Intersection,
+            "symmetric_difference" => SetOperation::Difference,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "validate must be one of {{'union', 'difference', 'intersection'}}, got {v}",
+                    "validate must be one of {{'union', 'difference', 'intersection', 'symmetric_difference'}}, got {v}",
                 )))
             }
         };
