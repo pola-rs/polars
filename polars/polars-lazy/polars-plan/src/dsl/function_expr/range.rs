@@ -10,11 +10,11 @@ pub enum RangeFunction {
 
 impl Display for RangeFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use self::*;
+        use RangeFunction::*;
         match self {
-            RangeFunction::ARange { .. } => return write!(f, "arange"),
-            RangeFunction::IntRange { .. } => return write!(f, "int_range"),
-            RangeFunction::IntRanges { .. } => return write!(f, "int_ranges"),
+            ARange { .. } => write!(f, "arange"),
+            IntRange { .. } => write!(f, "int_range"),
+            IntRanges { .. } => write!(f, "int_ranges"),
         }
     }
 }

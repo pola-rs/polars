@@ -26,7 +26,13 @@ if TYPE_CHECKING:
     from datetime import date
 
     from polars import Expr, Series
-    from polars.type_aliases import ClosedInterval, IntoExpr, PolarsDataType, TimeUnit
+    from polars.type_aliases import (
+        ClosedInterval,
+        IntoExpr,
+        PolarsDataType,
+        PolarsIntegerType,
+        TimeUnit,
+    )
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -139,7 +145,46 @@ def arange(
     return result
 
 
-def int_range(start: int, end: int, step: int = 1) -> Expr:
+@overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    eager: Literal[False] = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    eager: Literal[True],
+) -> Series:
+    ...
+
+
+@overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    eager: bool,
+) -> Expr | Series:
+    ...
+
+
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = 1,
+    *,
+    eager: bool = False,
+) -> Expr | Series:
     """
     Generate a range of integers.
 
@@ -151,11 +196,55 @@ def int_range(start: int, end: int, step: int = 1) -> Expr:
         Upper bound of the range (exclusive).
     step
         Step size of the range.
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
 
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
-    return wrap_expr(plr.int_range(start, end, step).alias("int"))
+    result = wrap_expr(plr.int_range(start, end, step))
+
+    if eager:
+        return F.select(result).to_series()
+
+    return result
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: Literal[False] = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: Literal[True],
+) -> Series:
+    ...
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: bool,
+) -> Expr | Series:
+    ...
 
 
 def int_ranges(
@@ -163,8 +252,9 @@ def int_ranges(
     end: IntoExpr,
     step: int = 1,
     *,
-    dtype: PolarsDataType = Int64,
-) -> Expr:
+    dtype: PolarsIntegerType = Int64,
+    eager: bool = False,
+) -> Expr | Series:
     """
     Generate a range of integers for each row of the input columns.
 
@@ -178,14 +268,17 @@ def int_ranges(
         Step size of the range.
     dtype
         Integer data type of the ranges. Defaults to ``Int64``.
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
 
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
-    result = wrap_expr(plr.int_ranges(start, end, step).alias("int_range"))
+    result = wrap_expr(plr.int_ranges(start, end, step, dtype))
 
-    if dtype != Int64:
-        result = result.cast(pl.List(dtype))
+    if eager:
+        return F.select(result).to_series()
 
     return result
 

@@ -75,6 +75,12 @@ def test_int_range() -> None:
     assert_series_equal(pl.select(result).to_series(), expected)
 
 
+def test_int_range_eager() -> None:
+    result = pl.int_range(0, 3, eager=True)
+    expected = pl.Series("int", [0, 1, 2])
+    assert_series_equal(result, expected)
+
+
 @pytest.mark.parametrize(
     ("start", "end", "expected"),
     [
@@ -88,6 +94,14 @@ def test_int_ranges(start: Any, end: Any, expected: pl.Series) -> None:
 
     result = df.select(pl.int_ranges(start, end))
     assert_series_equal(result.to_series(), expected)
+
+
+def test_int_ranges_eager() -> None:
+    start = pl.Series([1, 2])
+    result = pl.int_ranges(start, 4, eager=True)
+
+    expected = pl.Series("int_range", [[1, 2, 3], [2, 3]])
+    assert_series_equal(result, expected)
 
 
 def test_date_range() -> None:
