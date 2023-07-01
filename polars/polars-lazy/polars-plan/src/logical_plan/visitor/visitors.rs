@@ -1,8 +1,8 @@
 use super::*;
 
-/// A visitable and rewritable tree node.
-/// Implemented for `[Expr]`.
-pub(crate) trait TreeNode: Sized {
+/// An implementor of this trait decides how and in which order its nodes get traversed
+/// Implemented for [`Expr`] and [`AexprNode`].
+pub(crate) trait TreeWalker: Sized {
     fn apply_children(
         &self,
         op: &mut dyn FnMut(&Self) -> PolarsResult<VisitRecursion>,
@@ -15,7 +15,7 @@ pub(crate) trait TreeNode: Sized {
 
     fn visit(
         &self,
-        visitor: &mut dyn TreeNodeVisitor<Node = Self>,
+        visitor: &mut dyn Visitor<Node = Self>,
     ) -> PolarsResult<VisitRecursion> {
         match visitor.pre_visit(self)? {
             VisitRecursion::Continue => {}
@@ -37,10 +37,10 @@ pub(crate) trait TreeNode: Sized {
     }
 
     fn rewrite(self,
-    rewriter: &mut dyn TreeNodeRewriter<Node=Self>
+    rewriter: &mut dyn RewritingVisitor<Node=Self>
     ) -> PolarsResult<Self> {
-        let need_mutate = match rewriter.pre_visit(&self)? {
-            RewriteRecursion::Mutate => return rewriter.mutate(self),
+        let mutate_this_node = match rewriter.pre_visit(&self)? {
+            RewriteRecursion::MutateAndStop => return rewriter.mutate(self),
             RewriteRecursion::Stop => return Ok(self),
             RewriteRecursion::Continue => true,
             RewriteRecursion::Skip => false,
@@ -48,7 +48,7 @@ pub(crate) trait TreeNode: Sized {
 
         let after_applied_children = self.map_children(&mut |node| node.rewrite(rewriter))?;
 
-        if need_mutate {
+        if mutate_this_node {
             rewriter.mutate(after_applied_children)
         } else {
             Ok(after_applied_children)
@@ -56,7 +56,7 @@ pub(crate) trait TreeNode: Sized {
     }
 }
 
-pub(crate) trait TreeNodeVisitor {
+pub(crate) trait Visitor {
     type Node;
 
     /// Invoked before any children of `node` are visited.
@@ -71,7 +71,7 @@ pub(crate) trait TreeNodeVisitor {
     }
 }
 
-pub(crate) trait TreeNodeRewriter {
+pub(crate) trait RewritingVisitor {
     type Node;
 
     /// Invoked before any children of `node` are visited.

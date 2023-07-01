@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
 use super::*;
-use crate::logical_plan::visitor::{TreeNode, VisitRecursion};
-use crate::prelude::visitor::{AexprNode, TreeNodeRewriter, TreeNodeVisitor};
+use crate::logical_plan::visitor::{RewriteRecursion, TreeWalker, VisitRecursion};
+use crate::prelude::visitor::{AexprNode, RewritingVisitor, Visitor};
 
 type Identifier = String;
 type SubExprMap = PlHashMap<Identifier, (Node, usize, DataType)>;
-type IdentifierArray = Vec<(usize, Identifier)>;
+type IdentifierArray = Vec<(usize, Identifier, Node)>;
 
 #[derive(Debug)]
 enum VisitRecord {
@@ -18,9 +18,10 @@ enum VisitRecord {
 
 struct ExprIdentifierVisitor<'a> {
     expr_set: &'a mut SubExprMap,
-    identifier_array: &'a mut Vec<(usize, Identifier)>,
+    identifier_array: &'a mut IdentifierArray,
     schema: &'a Schema,
-    node_count: usize,
+    // index in pre-visit traversal order
+    traversal_idx: usize,
     series_number: usize,
     visit_stack: Vec<VisitRecord>,
 }
@@ -35,7 +36,7 @@ impl ExprIdentifierVisitor<'_> {
             expr_set,
             identifier_array,
             schema,
-            node_count: 0,
+            traversal_idx: 0,
             series_number: 0,
             visit_stack: vec![],
         }
@@ -67,14 +68,16 @@ impl ExprIdentifierVisitor<'_> {
     }
 }
 
-impl TreeNodeVisitor for ExprIdentifierVisitor<'_> {
+impl Visitor for ExprIdentifierVisitor<'_> {
     type Node = AexprNode;
 
-    fn pre_visit(&mut self, _node: &Self::Node) -> PolarsResult<VisitRecursion> {
-        self.visit_stack.push(VisitRecord::Entered(self.node_count));
-        self.node_count += 1;
+    fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
+        self.visit_stack.push(VisitRecord::Entered(self.traversal_idx));
+        self.traversal_idx += 1;
+
+        // implement default placeholders
         self.identifier_array
-            .push((Default::default(), Default::default()));
+            .push((Default::default(), Default::default(), node.node()));
         Ok(VisitRecursion::Continue)
     }
     fn post_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
@@ -89,7 +92,7 @@ impl TreeNodeVisitor for ExprIdentifierVisitor<'_> {
         }
 
         let id = format!("{}{}", node.to_expr(), sub_expr_id);
-        self.identifier_array[idx] = (self.series_number, id.clone());
+        self.identifier_array[idx] = (self.series_number, id.clone(), node.node());
         self.visit_stack.push(VisitRecord::SubExprId(id.clone()));
 
         let dtype = node.with_arena(|arena| {
@@ -110,80 +113,154 @@ struct CommonSubExprRewriter<'a> {
     sub_expr_map: &'a SubExprMap,
     identifier_array: &'a IdentifierArray,
     /// keep track of the replaced identifiers
-    replaced_identifiers: &'a PlHashSet<Identifier>,
+    replaced_identifiers: &'a mut PlHashSet<Identifier>,
 
     max_series_number: usize,
-    /// current nodes index in `identifier_array`
-    current_idx: usize
+    /// index in traversal order in which `identifier_array`
+    /// was written. This is the index in `identifier_array`.
+    traversal_idx: usize,
+    traversal_idx_stack: Vec<usize>
 }
 
-// impl TreeNodeRewriter for CommonSubExprRewriter<'_> {
-//     type Node = AexprNode;
-//
-//     fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
-//         todo!()
-//     }
-//
-//     fn mut
-// }
-
-struct CommonSubExprElimination {
-    processed: PlHashSet<Node>,
-    sub_expr_map: SubExprMap,
-}
-
-fn process_expression(
-    node: Node,
-    expr_arena: &mut Arena<AExpr>,
-    sub_expr_map: &mut SubExprMap,
-    schema: &Schema,
-) -> PolarsResult<IdentifierArray> {
-    let mut id_array = vec![];
-    let mut visitor = ExprIdentifierVisitor::new(sub_expr_map, &mut id_array, schema);
-    AexprNode::with_context(node, expr_arena, |ae_node| ae_node.visit(&mut visitor))?;
-
-    Ok(id_array)
-}
-
-impl CommonSubExprElimination {
-    pub fn new() -> Self {
+impl<'a> CommonSubExprRewriter<'a> {
+    fn new(sub_expr_map: &'a mut SubExprMap,
+           identifier_array: &'a IdentifierArray,
+           replaced_identifiers: &'a mut PlHashSet<Identifier>) -> Self {
         Self {
-            processed: Default::default(),
-            sub_expr_map: Default::default(),
+            sub_expr_map,
+            identifier_array,
+            replaced_identifiers,
+            max_series_number: 0,
+            traversal_idx: 0,
+            traversal_idx_stack: vec![],
         }
     }
 }
 
-impl OptimizationRule for CommonSubExprElimination {
-    fn optimize_plan(
-        &mut self,
-        lp_arena: &mut Arena<ALogicalPlan>,
-        expr_arena: &mut Arena<AExpr>,
-        node: Node,
-    ) -> Option<ALogicalPlan> {
-        if !self.processed.insert(node) {
-            return None;
+impl RewritingVisitor for CommonSubExprRewriter<'_> {
+    type Node = AexprNode;
+
+    fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<RewriteRecursion> {
+        // println!("PRE_VISIT: {} -> {}", node.to_expr(), self.traversal_idx);
+        // if self.traversal_idx >= self.identifier_array.len() {
+        //     dbg!("STOP");
+        //     return Ok(RewriteRecursion::Stop)
+        // }
+
+        let id = &self.identifier_array[self.traversal_idx].1;
+        self.traversal_idx_stack.push(self.traversal_idx);
+        self.traversal_idx += 1;
+
+        // placeholder not overwritten, so we can skip this sub-expression
+        if id.is_empty() {
+            // // # [1]
+            // // this is correct, as the tree-walker will not visit children
+            // // so they will not be pushed on the stack and the next call
+            // // will be another pre-visit.
+            // self.traversal_idx += 1;
+            dbg!("STOP");
+            // return Ok(RewriteRecursion::Stop)
+            return Ok(RewriteRecursion::Continue)
         }
 
-        self.sub_expr_map.clear();
-        match lp_arena.get(node) {
-            ALogicalPlan::Projection {
-                expr,
-                input,
-                schema,
-            } => {
-                expr.into_iter().map(|node| {
-                    let array =
-                        process_expression(*node, expr_arena, &mut self.sub_expr_map, schema)
-                            .unwrap();
-                });
-
-                None
+        let (node, count, dt) = self.sub_expr_map.get(id).unwrap();
+            if *count > 1 {
+                dbg!("MUTATE AND STOP");
+                self.replaced_identifiers.insert(id.clone());
+                // rewrite this sub-expression, don't visit its children
+                // Ok(RewriteRecursion::MutateAndStop)
+                Ok(RewriteRecursion::Continue)
+            } else {
+                dbg!("continue");
+                // see comment under [1]
+                // Ok(RewriteRecursion::MutateAndStop)
+                // self.traversal_idx += 1;
+                Ok(RewriteRecursion::Continue)
             }
-            _ => None,
-        }
+    }
+
+    fn mutate(&mut self, node: Self::Node) -> PolarsResult<Self::Node> {
+        let idx = self.traversal_idx_stack.pop().unwrap();
+        // let idx = self.traversal_idx;
+        dbg!(idx);
+
+        let e = &self.identifier_array[idx].1;
+        let n = &self.identifier_array[idx].2;
+        dbg!(n, node.node());
+        assert_eq!(n.0, node.node().0);
+        // let e1 = node.with_arena(|ae| {
+        //     node_to_expr(*n, ae)
+        // });
+        // dbg!(&e1);
+        // dbg!(&e1, node.to_expr());
+        // assert_eq!(node.to_expr(), e1);
+
+        // self.traversal_idx += 1;
+        // println!("POST_VISIT: {} -> {} -> {}", node.to_expr(), idx, e);
+        self.traversal_idx += 1;
+
+
+        Ok(node)
     }
 }
+
+// struct CommonSubExprElimination {
+//     processed: PlHashSet<Node>,
+//     sub_expr_map: SubExprMap,
+// }
+//
+// fn process_expression(
+//     node: Node,
+//     expr_arena: &mut Arena<AExpr>,
+//     sub_expr_map: &mut SubExprMap,
+//     schema: &Schema,
+// ) -> PolarsResult<IdentifierArray> {
+//     let mut id_array = vec![];
+//     let mut visitor = ExprIdentifierVisitor::new(sub_expr_map, &mut id_array, schema);
+//     AexprNode::with_context(node, expr_arena, |ae_node| ae_node.visit(&mut visitor))?;
+//
+//     Ok(id_array)
+// }
+//
+// impl CommonSubExprElimination {
+//     pub fn new() -> Self {
+//         Self {
+//             processed: Default::default(),
+//             sub_expr_map: Default::default(),
+//         }
+//     }
+// }
+//
+// impl OptimizationRule for CommonSubExprElimination {
+//     fn optimize_plan(
+//         &mut self,
+//         lp_arena: &mut Arena<ALogicalPlan>,
+//         expr_arena: &mut Arena<AExpr>,
+//         node: Node,
+//     ) -> Option<ALogicalPlan> {
+//         if !self.processed.insert(node) {
+//             return None;
+//         }
+//
+//         self.sub_expr_map.clear();
+//         match lp_arena.get(node) {
+//             ALogicalPlan::Projection {
+//                 expr,
+//                 input,
+//                 schema,
+//             } => {
+//                 expr.into_iter().map(|node| {
+//                     let array =
+//                         process_expression(*node, expr_arena, &mut self.sub_expr_map, schema)
+//                             .unwrap();
+//                 });
+//
+//                 None
+//             }
+//             _ => None,
+//         }
+//     }
+// }
 
 #[cfg(test)]
 mod test {
@@ -206,10 +283,14 @@ mod test {
 
         for (id, pl) in visitor.expr_set {
             let e = node_to_expr(pl.0, &arena);
-            dbg!(e, pl.1);
+            // dbg!(e, pl.1);
         }
-    }
 
-    #[test]
-    fn test_foo2() {}
+        println!("REWRITING");
+
+
+        let mut replaced_ids = Default::default();
+        let mut rewriter = CommonSubExprRewriter::new(&mut expr_set, &mut id_array, &mut replaced_ids);
+        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.rewrite(&mut rewriter)).unwrap();
+    }
 }

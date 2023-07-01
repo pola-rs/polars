@@ -2,7 +2,7 @@ use super::*;
 use crate::prelude::*;
 use crate::push_expr;
 
-impl TreeNode for Expr {
+impl TreeWalker for Expr {
     fn apply_children<'a>(
         &'a self,
         op: &mut dyn FnMut(&Self) -> PolarsResult<VisitRecursion>,
@@ -52,7 +52,7 @@ impl AexprNode {
         self.node
     }
 
-    pub fn with_arena<'a, F, T>(&'a self, op: F) -> T
+    pub fn with_arena<'a, F, T>(&self, op: F) -> T
     where
         F: Fn(&'a Arena<AExpr>) -> T,
     {
@@ -61,7 +61,7 @@ impl AexprNode {
         op(arena)
     }
 
-    pub fn with_arena_mut<'a, F, T>(&'a mut self, op: F) -> T
+    pub fn with_arena_mut<'a, F, T>(&mut self, op: F) -> T
         where
             F: FnOnce(&'a mut Arena<AExpr>) -> T,
     {
@@ -79,7 +79,7 @@ impl AexprNode {
     }
 }
 
-impl TreeNode for AexprNode {
+impl TreeWalker for AexprNode {
     fn apply_children<'a>(
         &'a self,
         op: &mut dyn FnMut(&Self) -> PolarsResult<VisitRecursion>,
