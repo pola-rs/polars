@@ -154,6 +154,16 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
     assert df.select(cs.datetime("us")).columns == ["d3", "d4"]
     assert df.select(cs.datetime("ms")).columns == ["d5"]
 
+    # bonus check; significantly more verbose, but equivalent to a selector -
+    assert (
+        df.select(
+            pl.all().exclude(
+                pl.Datetime("ms", time_zone="*"), pl.Datetime("ns", time_zone="*")
+            )
+        ).columns
+        == df.select(~cs.datetime(["ms", "ns"], time_zone="*")).columns
+    )
+
 
 def test_selector_ends_with(df: pl.DataFrame) -> None:
     assert df.select(cs.ends_with("e")).columns == ["cde", "eee"]
