@@ -459,8 +459,6 @@ def test_time_range_lit() -> None:
                 eager=eager,
             ).alias("tm")
         )
-        # if not eager:
-        #     tm = tm.select(pl.col("tm").explode())
         assert tm["tm"].to_list() == [
             time(6, 47, 13, 333000),
             time(12, 32, 23, 666000),
@@ -474,8 +472,6 @@ def test_time_range_lit() -> None:
                 eager=eager,
             ).alias("tm")
         )
-        # if not eager:
-        #     tm = tm.select(pl.col("tm").explode())
         assert tm["tm"].to_list() == [
             time(0, 0),
             time(5, 45, 10, 333000),
@@ -554,23 +550,7 @@ def test_deprecated_name_arg() -> None:
         assert result_eager.name == name
 
 
-def test_date_range_schema() -> None:
-    df = pl.DataFrame(
-        {"start": [datetime(2020, 1, 1)], "end": [datetime(2020, 1, 2)]}
-    ).lazy()
-    result = df.with_columns(
-        pl.date_ranges(pl.col("start"), pl.col("end")).alias("date_range")
-    )
-    expected_schema = {
-        "start": pl.Datetime(time_unit="us", time_zone=None),
-        "end": pl.Datetime(time_unit="us", time_zone=None),
-        "date_range": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
-    }
-    assert result.schema == expected_schema
-    assert result.collect().schema == expected_schema
-
-
-def test_date_range_no_alias_schema_9037() -> None:
+def test_date_ranges_no_alias_schema_9037() -> None:
     df = pl.DataFrame(
         {"start": [datetime(2020, 1, 1)], "end": [datetime(2020, 1, 2)]}
     ).lazy()
@@ -584,19 +564,103 @@ def test_date_range_no_alias_schema_9037() -> None:
     assert result.collect().schema == expected_schema
 
 
-def test_time_range_schema() -> None:
-    df = pl.DataFrame({"start": [time(1)], "end": [time(1, 30)]}).lazy()
-    result = df.with_columns(
-        pl.time_ranges(pl.col("start"), pl.col("end")).alias("time_range")
-    )
-    expected_schema = {"start": pl.Time, "end": pl.Time, "time_range": pl.List(pl.Time)}
-    assert result.schema == expected_schema
-    assert result.collect().schema == expected_schema
-
-
-def test_time_range_no_alias_schema_9037() -> None:
+def test_time_ranges_no_alias_schema_9037() -> None:
     df = pl.DataFrame({"start": [time(1)], "end": [time(1, 30)]}).lazy()
     result = df.with_columns(pl.time_ranges(pl.col("start"), pl.col("end")))
     expected_schema = {"start": pl.Time, "end": pl.Time, "times": pl.List(pl.Time)}
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
+
+
+@pytest.mark.parametrize("eager", [True, False])
+@pytest.mark.parametrize(
+    "start",
+    [pl.lit(date(2020, 1, 1)), date(2020, 1, 1)],
+)
+@pytest.mark.parametrize(
+    "end",
+    [pl.lit(date(2020, 1, 2)), date(2020, 1, 2)],
+)
+def test_date_range_schema(
+    eager: bool, start: date | pl.Expr, end: date | pl.Expr
+) -> None:
+    df = pl.DataFrame().lazy()
+    result = df.with_columns(pl.date_range(start, end, eager=eager))
+    expected_schema = {"date": pl.Date}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+    expected = pl.DataFrame({"date": [date(2020, 1, 1), date(2020, 1, 2)]})
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("eager", [True, False])
+@pytest.mark.parametrize("start", [pl.lit(time(12, 30)), time(12, 30)])
+@pytest.mark.parametrize("end", [pl.lit(time(13, 30)), time(13, 30)])
+def test_time_range_schema(
+    eager: bool, start: time | pl.Expr, end: time | pl.Expr
+) -> None:
+    df = pl.DataFrame().lazy()
+    result = df.with_columns(pl.time_range(start, end, eager=eager))
+    expected_schema = {"time": pl.Time}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+    expected = pl.DataFrame({"time": [time(12, 30), time(13, 30)]})
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("eager", [True, False])
+@pytest.mark.parametrize(
+    "start",
+    [pl.col("start"), pl.lit(date(2020, 1, 1)), date(2020, 1, 1)],
+)
+@pytest.mark.parametrize(
+    "end",
+    [pl.col("end"), pl.lit(date(2020, 1, 2)), date(2020, 1, 2)],
+)
+def test_date_ranges_schema(
+    eager: bool, start: date | pl.Expr, end: date | pl.Expr
+) -> None:
+    df = pl.DataFrame(
+        {
+            "start": [date(2020, 1, 1)],
+            "end": [date(2020, 1, 2)],
+        }
+    ).lazy()
+    result = df.with_columns(pl.date_ranges(start, end))
+    expected_schema = {"start": pl.Date, "end": pl.Date, "dates": pl.List(pl.Date)}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+    expected = pl.DataFrame(
+        {
+            "start": [date(2020, 1, 1)],
+            "end": [date(2020, 1, 2)],
+            "dates": [[date(2020, 1, 1), date(2020, 1, 2)]],
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("eager", [True, False])
+@pytest.mark.parametrize("start", [pl.col("start"), pl.lit(time(12, 30)), time(12, 30)])
+@pytest.mark.parametrize("end", [pl.col("end"), pl.lit(time(13, 30)), time(13, 30)])
+def test_time_ranges_schema(
+    eager: bool, start: time | pl.Expr, end: time | pl.Expr
+) -> None:
+    df = pl.DataFrame(
+        {
+            "start": [time(12, 30)],
+            "end": [time(13, 30)],
+        }
+    ).lazy()
+    result = df.with_columns(pl.time_ranges(start, end))
+    expected_schema = {"start": pl.Time, "end": pl.Time, "times": pl.List(pl.Time)}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+    expected = pl.DataFrame(
+        {
+            "start": [time(12, 30)],
+            "end": [time(13, 30)],
+            "times": [[time(12, 30), time(13, 30)]],
+        }
+    )
+    assert_frame_equal(result.collect(), expected)

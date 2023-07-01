@@ -110,8 +110,6 @@ pub(super) fn temporal_range_dispatch(
         DataType::Time => (TimeUnit::Nanoseconds, None),
         _ => unimplemented!(),
     };
-    // let start = start.i64().unwrap();
-    // let stop = stop.i64().unwrap();
     let start = start.get(0).unwrap().extract::<i64>().unwrap();
     let stop = stop.get(0).unwrap().extract::<i64>().unwrap();
 
@@ -130,7 +128,6 @@ pub(super) fn temporal_ranges_dispatch(
     name: &str,
     every: Duration,
     closed: ClosedWindow,
-    _tz: Option<TimeZone>, // todo: respect _tz: https://github.com/pola-rs/polars/issues/8512
 ) -> PolarsResult<Series> {
     let start = &s[0];
     let stop = &s[1];

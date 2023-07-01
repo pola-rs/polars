@@ -417,7 +417,6 @@ def date_ranges(
     interval: str | timedelta = "1d",
     *,
     closed: ClosedInterval = "both",
-    time_zone: str | None = None,
     name: str | None = None,
 ) -> Series | Expr:
     """
@@ -443,8 +442,6 @@ def date_ranges(
         Define whether the temporal window interval is closed or not.
     time_unit : {None, 'ns', 'us', 'ms'}
         Set the time unit.
-    time_zone:
-        Optional timezone
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
@@ -581,7 +578,7 @@ def date_ranges(
 
     start = parse_as_expression(start)
     end = parse_as_expression(end)
-    expr = wrap_expr(plr.date_ranges_lazy(start, end, interval, closed, time_zone))
+    expr = wrap_expr(plr.date_ranges_lazy(start, end, interval, closed))
     if name is not None:
         expr = expr.alias(name)
     return expr

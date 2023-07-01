@@ -49,7 +49,6 @@ pub enum TemporalFunction {
     DateRanges {
         every: Duration,
         closed: ClosedWindow,
-        tz: Option<TimeZone>,
     },
     TimeRange {
         every: Duration,

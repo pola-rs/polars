@@ -633,14 +633,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     tz.clone()
                 )
             }
-            DateRanges { every, closed, tz } => {
-                map_as_slice!(
-                    temporal::temporal_ranges_dispatch,
-                    "dates",
-                    every,
-                    closed,
-                    tz.clone()
-                )
+            DateRanges { every, closed } => {
+                map_as_slice!(temporal::temporal_ranges_dispatch, "dates", every, closed)
             }
             TimeRange { every, closed } => {
                 map_as_slice!(
@@ -652,13 +646,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 )
             }
             TimeRanges { every, closed } => {
-                map_as_slice!(
-                    temporal::temporal_ranges_dispatch,
-                    "times",
-                    every,
-                    closed,
-                    None
-                )
+                map_as_slice!(temporal::temporal_ranges_dispatch, "times", every, closed)
             }
         }
     }

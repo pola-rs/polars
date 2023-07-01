@@ -239,20 +239,14 @@ pub fn date_range(
     }
 }
 
-/// Create a date range from a `start` and `stop` expression.
+/// Create a list of date ranges from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
-pub fn date_ranges(
-    start: Expr,
-    end: Expr,
-    every: Duration,
-    closed: ClosedWindow,
-    tz: Option<TimeZone>,
-) -> Expr {
+pub fn date_ranges(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
     let input = vec![start, end];
 
     Expr::Function {
         input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRanges { every, closed, tz }),
+        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRanges { every, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: true,
@@ -278,7 +272,7 @@ pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow)
         },
     }
 }
-/// Create a time range from a `start` and `stop` expression.
+/// Create a list of time ranges from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
 pub fn time_ranges(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
     let input = vec![start, end];
