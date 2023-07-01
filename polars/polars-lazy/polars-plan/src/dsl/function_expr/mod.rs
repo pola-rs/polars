@@ -651,6 +651,15 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     None
                 )
             }
+            TimeRanges { every, closed } => {
+                map_as_slice!(
+                    temporal::temporal_ranges_dispatch,
+                    "times",
+                    every,
+                    closed,
+                    None
+                )
+            }
         }
     }
 }

@@ -278,6 +278,22 @@ pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow)
         },
     }
 }
+/// Create a time range from a `start` and `stop` expression.
+#[cfg(feature = "temporal")]
+pub fn time_ranges(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
+    let input = vec![start, end];
+
+    Expr::Function {
+        input,
+        function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRanges { every, closed }),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: false,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
+}
 
 /// Create a column of length `n` containing `n` copies of the literal `value`. Generally you won't need this function,
 /// as `lit(value)` already represents a column containing only `value` whose length is automatically set to the correct

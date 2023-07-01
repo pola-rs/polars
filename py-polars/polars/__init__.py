@@ -133,6 +133,7 @@ from polars.functions import (
     tail,
     time,
     time_range,
+    time_ranges,
     var,
     when,
     zeros,
@@ -279,6 +280,7 @@ __all__ = [
     "ones",
     "repeat",
     "time_range",
+    "time_ranges",
     "zeros",
     # polars.functions.lazy
     "all",

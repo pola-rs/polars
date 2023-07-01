@@ -67,10 +67,13 @@ impl FunctionExpr {
                     }
                     DateRanges { .. } => {
                         let res = mapper.map_to_list_supertype()?;
-                        return Ok(Field::new("date", res.dtype));
+                        return Ok(Field::new("dates", res.dtype));
                     }
                     TimeRange { .. } => {
-                        return Ok(Field::new("time", DataType::List(Box::new(DataType::Time))));
+                        return Ok(Field::new("time", DataType::Time));
+                    }
+                    TimeRanges { .. } => {
+                        return Ok(Field::new("times", DataType::List(Box::new(DataType::Time))));
                     }
                     Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
                         DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),

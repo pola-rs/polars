@@ -735,8 +735,6 @@ def time_range(
     default_end = time(23, 59, 59, 999999)
     if (
         not eager
-        or isinstance(start, (str, pl.Expr))
-        or isinstance(end, (str, pl.Expr))
     ):
         start_expr = (
             F.lit(default_start)._pyexpr
@@ -764,3 +762,118 @@ def time_range(
         if name is not None:
             tm_srs = tm_srs.alias(name)
         return tm_srs
+
+def time_ranges(
+    start: time | Expr | str | None = None,
+    end: time | Expr | str | None = None,
+    interval: str | timedelta = "1h",
+    *,
+    closed: ClosedInterval = "both",
+    name: str | None = None,
+) -> Expr:
+    """
+    Create a range of type `Time`.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the time range, given as a time, Expr, or column name.
+        If omitted, will default to ``time(0,0,0,0)``.
+    end
+        Upper bound of the time range, given as a time, Expr, or column name.
+        If omitted, will default to ``time(23,59,59,999999)``.
+    interval
+        Interval of the range periods; can be a python timedelta object like
+        ``timedelta(minutes=10)`` or a polars duration string, such as ``1h30m25s``
+        (representing 1 hour, 30 minutes, and 25 seconds).
+    closed : {'both', 'left', 'right', 'none'}
+        Define whether the temporal window interval is closed or not.
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
+    name
+        Name of the output column.
+
+        .. deprecated:: 0.18.0
+            This argument is deprecated. Use the ``alias`` method instead.
+
+    Returns
+    -------
+    A Series of type `Time`.
+
+    Examples
+    --------
+    Create a Series that starts at 14:00, with intervals of 3 hours and 15 mins:
+
+    >>> from datetime import time
+    >>> pl.time_range(
+    ...     start=time(14, 0),
+    ...     interval=timedelta(hours=3, minutes=15),
+    ...     eager=True,
+    ... )
+    shape: (4,)
+    Series: 'time' [time]
+    [
+        14:00:00
+        17:15:00
+        20:30:00
+        23:45:00
+    ]
+
+    Generate a DataFrame with two columns made of eager ``time_range`` Series,
+    and create a third column using ``time_range`` in expression context:
+
+    >>> lf = pl.LazyFrame(
+    ...     {
+    ...         "start": pl.time_range(interval="6h", eager=True),
+    ...         "stop": pl.time_range(start=time(2, 59), interval="5h59m", eager=True),
+    ...     }
+    ... ).with_columns(
+    ...     intervals=pl.time_range("start", "stop", interval="1h29m", eager=False)
+    ... )
+    >>> lf.collect()
+    shape: (4, 3)
+    ┌──────────┬──────────┬────────────────────────────────┐
+    │ start    ┆ stop     ┆ intervals                      │
+    │ ---      ┆ ---      ┆ ---                            │
+    │ time     ┆ time     ┆ list[time]                     │
+    ╞══════════╪══════════╪════════════════════════════════╡
+    │ 00:00:00 ┆ 02:59:00 ┆ [00:00:00, 01:29:00, 02:58:00] │
+    │ 06:00:00 ┆ 08:58:00 ┆ [06:00:00, 07:29:00, 08:58:00] │
+    │ 12:00:00 ┆ 14:57:00 ┆ [12:00:00, 13:29:00]           │
+    │ 18:00:00 ┆ 20:56:00 ┆ [18:00:00, 19:29:00]           │
+    └──────────┴──────────┴────────────────────────────────┘
+
+    """
+    if name is not None:
+        warnings.warn(
+            "the `name` argument is deprecated. Use the `alias` method instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
+
+    if isinstance(interval, timedelta):
+        interval = _timedelta_to_pl_duration(interval)
+    elif " " in interval:
+        interval = interval.replace(" ", "").lower()
+
+    for unit in ("y", "mo", "w", "d"):
+        if unit in interval:
+            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+
+    default_start = time(0, 0, 0)
+    default_end = time(23, 59, 59, 999999)
+    start_expr = (
+        F.lit(default_start)._pyexpr
+        if start is None
+        else parse_as_expression(start)
+    )
+
+    end_expr = (
+        F.lit(default_end)._pyexpr if end is None else parse_as_expression(end)
+    )
+
+    tm_expr = wrap_expr(plr.time_ranges_lazy(start_expr, end_expr, interval, closed))
+    if name is not None:
+        tm_expr = tm_expr.alias(name)
+    return tm_expr

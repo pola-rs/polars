@@ -466,6 +466,18 @@ pub fn time_range_lazy(
     let every = Duration::parse(every);
     dsl::functions::time_range(start, end, every, closed.0).into()
 }
+#[pyfunction]
+pub fn time_ranges_lazy(
+    start: PyExpr,
+    end: PyExpr,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    dsl::functions::time_ranges(start, end, every, closed.0).into()
+}
 
 #[pyfunction]
 #[cfg(feature = "sql")]

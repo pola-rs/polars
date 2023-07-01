@@ -53,7 +53,7 @@ from polars.functions.lazy import (
     tail,
     var,
 )
-from polars.functions.range import arange, date_range, date_ranges, time_range
+from polars.functions.range import arange, date_range, date_ranges, time_range, time_ranges
 from polars.functions.repeat import ones, repeat, zeros
 from polars.functions.whenthen import when
 
@@ -68,6 +68,7 @@ __all__ = [
     "ones",
     "repeat",
     "time_range",
+    "time_ranges",
     "zeros",
     # polars.functions.lazy
     "all",

@@ -55,6 +55,10 @@ pub enum TemporalFunction {
         every: Duration,
         closed: ClosedWindow,
     },
+    TimeRanges {
+        every: Duration,
+        closed: ClosedWindow,
+    },
     Combine(TimeUnit),
 }
 
@@ -96,6 +100,7 @@ impl Display for TemporalFunction {
             DateRange { .. } => return write!(f, "date_range"),
             DateRanges { .. } => return write!(f, "date_ranges"),
             TimeRange { .. } => return write!(f, "time_range"),
+            TimeRanges { .. } => return write!(f, "time_ranges"),
             Combine(_) => "combine",
         };
         write!(f, "dt.{s}")

@@ -115,18 +115,16 @@ pub(super) fn temporal_range_dispatch(
     let start = start.get(0).unwrap().extract::<i64>().unwrap();
     let stop = stop.get(0).unwrap().extract::<i64>().unwrap();
 
-    match dtype {
+    let res = match dtype {
         DataType::Date => {
-            let rng = date_range_impl("", start, stop, every, closed, tu, tz)?;
-            let rng = rng.cast(&DataType::Date).unwrap();
-            Ok(rng.into_series())
+            date_range_impl("", start, stop, every, closed, tu, tz)?
         }
         DataType::Datetime(_, _) | DataType::Time => {
-            let rng = date_range_impl("", start, stop, every, closed, tu, tz)?;
-            Ok(rng.into_series())
+            date_range_impl("", start, stop, every, closed, tu, tz)?
         }
         _ => unimplemented!(),
-    }
+    };
+    Ok(res.cast(dtype).unwrap().into_series())
 }
 
 pub(super) fn temporal_ranges_dispatch(
