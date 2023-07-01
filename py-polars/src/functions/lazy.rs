@@ -199,6 +199,20 @@ pub fn date_range_lazy(
 }
 
 #[pyfunction]
+pub fn date_ranges_lazy(
+    start: PyExpr,
+    end: PyExpr,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    time_zone: Option<TimeZone>,
+) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    dsl::functions::date_ranges(start, end, every, closed.0, time_zone).into()
+}
+
+#[pyfunction]
 pub fn datetime(
     year: PyExpr,
     month: PyExpr,

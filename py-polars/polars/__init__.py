@@ -99,6 +99,7 @@ from polars.functions import (
     cumsum,
     date,
     date_range,
+    date_ranges,
     datetime,
     duration,
     element,

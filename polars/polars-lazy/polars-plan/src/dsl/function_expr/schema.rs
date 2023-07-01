@@ -62,6 +62,10 @@ impl FunctionExpr {
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return mapper.map_datetime_dtype_timezone(Some(tz)),
                     DateRange { .. } => {
+                        let res = mapper.map_to_supertype()?;
+                        return Ok(Field::new("date", res.dtype));
+                    }
+                    DateRanges { .. } => {
                         let res = mapper.map_to_list_supertype()?;
                         return Ok(Field::new("date", res.dtype));
                     }

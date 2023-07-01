@@ -110,6 +110,58 @@ pub(super) fn temporal_range_dispatch(
         DataType::Time => (TimeUnit::Nanoseconds, None),
         _ => unimplemented!(),
     };
+    // let start = start.i64().unwrap();
+    // let stop = stop.i64().unwrap();
+    let start = start.get(0).unwrap().extract::<i64>().unwrap();
+    let stop = stop.get(0).unwrap().extract::<i64>().unwrap();
+
+    match dtype {
+        DataType::Date => {
+            let rng = date_range_impl("", start, stop, every, closed, tu, tz)?;
+            let rng = rng.cast(&DataType::Date).unwrap();
+            Ok(rng.into_series())
+        }
+        DataType::Datetime(_, _) | DataType::Time => {
+            let rng = date_range_impl("", start, stop, every, closed, tu, tz)?;
+            Ok(rng.into_series())
+        }
+        _ => unimplemented!(),
+    }
+}
+
+pub(super) fn temporal_ranges_dispatch(
+    s: &[Series],
+    name: &str,
+    every: Duration,
+    closed: ClosedWindow,
+    _tz: Option<TimeZone>, // todo: respect _tz: https://github.com/pola-rs/polars/issues/8512
+) -> PolarsResult<Series> {
+    let start = &s[0];
+    let stop = &s[1];
+
+    polars_ensure!(
+        start.len() == stop.len(),
+        ComputeError: "'start' and 'stop' should have the same length",
+    );
+    const TO_MS: i64 = SECONDS_IN_DAY * 1000;
+
+    let rng_start = start.to_physical_repr();
+    let rng_stop = stop.to_physical_repr();
+    let dtype = start.dtype();
+
+    let mut start = rng_start.cast(&DataType::Int64)?;
+    let mut stop = rng_stop.cast(&DataType::Int64)?;
+
+    let (tu, tz) = match dtype {
+        DataType::Date => {
+            start = &start * TO_MS;
+            stop = &stop * TO_MS;
+            (TimeUnit::Milliseconds, None)
+        }
+        DataType::Datetime(tu, tz) => (*tu, tz.as_ref()),
+        DataType::Time => (TimeUnit::Nanoseconds, None),
+        _ => unimplemented!(),
+    };
     let start = start.i64().unwrap();
     let stop = stop.i64().unwrap();
 

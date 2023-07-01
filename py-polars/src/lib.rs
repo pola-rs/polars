@@ -125,6 +125,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::date_range_lazy))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::date_ranges_lazy))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::datetime))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::diag_concat_lf))
