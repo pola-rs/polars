@@ -615,6 +615,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "date_offset")]
             MonthEnd => map!(datetime::month_end),
             #[cfg(feature = "timezones")]
+            BaseUtcOffset => map!(datetime::base_utc_offset),
+            #[cfg(feature = "timezones")]
             DSTOffset => map!(datetime::dst_offset),
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]

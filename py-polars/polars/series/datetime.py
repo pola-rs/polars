@@ -1883,6 +1883,48 @@ class DateTimeNameSpace:
         ]
         """
 
+    def base_utc_offset(self) -> Series:
+        """
+        Base offset from UTC.
+
+        This is usually constant for all datetimes in a given time zone, but
+        may vary in the rare case that a country switches time zone, like
+        Samoa (Apia) did at the end of 2011.
+
+        Returns
+        -------
+        Duration Series
+
+        See Also
+        --------
+        Series.dt.dst_offset : Additional offset currently in effect.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> ser = pl.date_range(
+        ...     datetime(2011, 12, 29),
+        ...     datetime(2012, 1, 1),
+        ...     "2d",
+        ...     time_zone="Pacific/Apia",
+        ...     eager=True,
+        ... )
+        >>> ser
+        shape: (2,)
+        Series: 'date' [datetime[μs, Pacific/Apia]]
+        [
+                2011-12-29 00:00:00 -10
+                2011-12-31 00:00:00 +14
+        ]
+        >>> ser.dt.base_utc_offset().rename("base_utc_offset")
+        shape: (2,)
+        Series: 'base_utc_offset' [duration[ms]]
+        [
+                -11h
+                13h
+        ]
+        """
+
     def dst_offset(self) -> Series:
         """
         Additional offset currently in effect (typically due to daylight saving time).
@@ -1890,6 +1932,10 @@ class DateTimeNameSpace:
         Returns
         -------
         Duration Series
+
+        See Also
+        --------
+        Series.dt.base_utc_offset : Base offset from UTC.
 
         Examples
         --------
