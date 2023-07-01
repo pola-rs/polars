@@ -651,7 +651,7 @@ def dataframes(
                 coldefs = list(cols)
 
             # append any explicitly provided cols
-            coldefs.extend(include_cols or ())  # type: ignore[arg-type]
+            coldefs.extend(include_cols or ())
 
             # assign dataframe/series size
             series_size = (
