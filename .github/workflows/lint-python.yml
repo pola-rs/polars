@@ -75,7 +75,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install maturin==1.0.1
-          maturin develop --extras dev-test,all,dev-lint
+          maturin develop --extras dev-test,dev-lint,pyarrow,pandas,fsspec,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic
 
       # Allow untyped calls for older Python versions
       - name: Run mypy

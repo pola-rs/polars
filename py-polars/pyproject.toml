@@ -55,17 +55,14 @@ matplotlib = ["matplotlib"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
 pydantic = ["pydantic"]
+hypothesis = ["hypothesis==6.75.1"]
 adbc = ["adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'"]
 all = [
   "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,sqlalchemy,adbc,xlsxwriter,pydantic]",
 ]
 
 # The tags below are for development of Polars. We pin precise versions here, as we have full control on this
-dev-hypothesis = [
-  "hypothesis==6.75.1",
-]
 dev-test = [
-  "polars[dev-hypothesis]",
   "pytest==7.3.0",
   "pytest-cov==4.1.0",
   "pytest-xdist==3.3.1",
@@ -79,8 +76,6 @@ dev-lint = [
   "pandas-stubs==1.2.0.62",
 ]
 dev-docs = [
-  "polars[pyarrow,pandas,numpy]",
-  "polars[dev-hypothesis]",
   "autodocsumm==0.2.10",
   "commonmark==0.9.1",
   "livereload==2.6.3",

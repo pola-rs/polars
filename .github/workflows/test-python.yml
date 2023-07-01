@@ -59,7 +59,8 @@ jobs:
         run: |
           source activate
           pip install maturin==1.0.1
-          maturin develop --extras dev-test,all
+          # the list of tags should be in sync with the Makefile
+          maturin develop --extras dev-test,pyarrow,pandas,fsspec,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic
 
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
@@ -116,7 +117,7 @@ jobs:
         shell: bash
         run: |
           pip install maturin==1.0.1
-          maturin develop --extras dev-test,all
+          maturin develop --extras dev-test,pyarrow,pandas,fsspec,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic
 
       - name: Run tests
         if: github.ref_name != 'main'

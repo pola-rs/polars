@@ -54,7 +54,7 @@ jobs:
         working-directory: py-polars
         run: |
           pip install maturin==1.0.1
-          maturin develop --extras dev-test,all
+          maturin develop --extras dev-test,pyarrow,pandas,fsspec,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic
 
       - name: Load benchmark data from cache
         id: cache-data

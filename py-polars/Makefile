@@ -18,18 +18,22 @@ endif
 requirements: .venv  ## Install/refresh all project requirements
 	$(VENV_BIN)/python -m pip install --upgrade pip
 	$(VENV_BIN)/python -m pip install maturin==1.0.1
-	maturin develop --extras all,dev-test,dev-lint,dev-docs
 
 .PHONY: build
 build: .venv  ## Compile and install Polars for development
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
+	# NOTE: ideally, we can use the all tag available in pyproject.toml, but that has
+	# the form of "polars[pandas,...]". Pip incorrectly parses that as using the released
+	# polars version, rather than self referencing. So we avoid the all tag here.
+	# @unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --extras all,dev-test,dev-lint,dev-docs
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --extras pyarrow,pandas,fsspec,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic,dev-test,dev-lint,dev-docs
+	
 
 .PHONY: build-release
 build-release: .venv  ## Compile and install a faster Polars binary
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --release
 
 .PHONY: fmt
-fmt: .venv  ## Run autoformatting and linting
+fmt: .venv build ## Run autoformatting and linting
 	$(VENV_BIN)/ruff .
 	$(VENV_BIN)/black .
 	$(VENV_BIN)/blackdoc .
