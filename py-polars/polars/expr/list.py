@@ -927,3 +927,16 @@ class ExprListNameSpace:
         """  # noqa: W505.
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "intersection"))
+
+    def symmetric_difference(self, other: Expr | IntoExpr) -> Expr:
+        """
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        """  # noqa: W505.
+        other = parse_as_expression(other, str_as_lit=False)
+        return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))

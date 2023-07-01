@@ -346,4 +346,11 @@ impl ListNameSpace {
         let other = other.into();
         self.set_operation(other, SetOperation::Intersection)
     }
+
+    /// Return the SET SYMMETRIC DIFFERENCE between both list arrays.
+    #[cfg(feature = "list_sets")]
+    pub fn symmetric_difference<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+        self.set_operation(other, SetOperation::SymmetricDifference)
+    }
 }

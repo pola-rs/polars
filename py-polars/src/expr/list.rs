@@ -151,6 +151,7 @@ impl PyExpr {
             SetOperation::Intersection => e.intersection(other.inner),
             SetOperation::Difference => e.difference(other.inner),
             SetOperation::Union => e.union(other.inner),
+            SetOperation::SymmetricDifference => e.symmetric_difference(other.inner),
         }
         .into()
     }

@@ -51,6 +51,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocator-api2"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56fc6cf8dc8c4158eed8649f9b8b0ea1518eb62b544fe9490d66fa0b349eafe9"
+
+[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -717,6 +723,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
 dependencies = [
  "ahash",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c6201b9ff9fd90a5a3bac2e56a830d0caa509576f0e503818ee82c181b3437a"
+dependencies = [
+ "ahash",
+ "allocator-api2",
  "rayon",
 ]
 
@@ -1427,7 +1443,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "ethnum",
- "hashbrown 0.13.2",
+ "hashbrown 0.14.0",
  "multiversion",
  "num-traits",
  "polars-error",
@@ -1446,7 +1462,7 @@ dependencies = [
  "chrono-tz",
  "comfy-table",
  "either",
- "hashbrown 0.13.2",
+ "hashbrown 0.14.0",
  "indexmap",
  "itoap",
  "ndarray",
@@ -1519,7 +1535,7 @@ dependencies = [
  "ahash",
  "arrow2",
  "fallible-streaming-iterator",
- "hashbrown 0.13.2",
+ "hashbrown 0.14.0",
  "indexmap",
  "num-traits",
  "polars-arrow",
@@ -1559,6 +1575,7 @@ dependencies = [
  "base64",
  "either",
  "hex",
+ "indexmap",
  "jsonpath_lib",
  "memchr",
  "polars-arrow",
@@ -1577,7 +1594,7 @@ dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
  "enum_dispatch",
- "hashbrown 0.13.2",
+ "hashbrown 0.14.0",
  "num-traits",
  "polars-arrow",
  "polars-core",
@@ -1659,7 +1676,7 @@ name = "polars-utils"
 version = "0.30.0"
 dependencies = [
  "ahash",
- "hashbrown 0.13.2",
+ "hashbrown 0.14.0",
  "num-traits",
  "once_cell",
  "rayon",
