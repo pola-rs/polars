@@ -200,6 +200,21 @@ def int_range(
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
 
+    Returns
+    -------
+    Column of data type ``Int64``.
+
+    Examples
+    --------
+    >>> pl.int_range(0, 3, eager=True)
+    shape: (3,)
+    Series: 'int' [i64]
+    [
+            0
+            1
+            2
+    ]
+
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
@@ -271,6 +286,24 @@ def int_ranges(
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
+
+    Returns
+    -------
+    Column of data type ``List(dtype)``.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"start": [1, -1], "end": [3, 2]})
+    >>> df.with_columns(pl.int_ranges("start", "end"))
+    shape: (2, 3)
+    ┌───────┬─────┬────────────┐
+    │ start ┆ end ┆ int_range  │
+    │ ---   ┆ --- ┆ ---        │
+    │ i64   ┆ i64 ┆ list[i64]  │
+    ╞═══════╪═════╪════════════╡
+    │ 1     ┆ 3   ┆ [1, 2]     │
+    │ -1    ┆ 2   ┆ [-1, 0, 1] │
+    └───────┴─────┴────────────┘
 
     """
     start = parse_as_expression(start)

@@ -19,6 +19,7 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
 }
 
 #[cfg(feature = "arange")]
+/// Generate a range of integers.
 pub fn int_range(start: Expr, end: Expr, step: i64) -> Expr {
     let input = vec![start, end];
 
@@ -33,6 +34,7 @@ pub fn int_range(start: Expr, end: Expr, step: i64) -> Expr {
 }
 
 #[cfg(feature = "arange")]
+/// Generate a range of integers for each row of the input columns.
 pub fn int_ranges(start: Expr, end: Expr, step: i64) -> Expr {
     let input = vec![start, end];
 
