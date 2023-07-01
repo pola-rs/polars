@@ -171,7 +171,7 @@ class SQLContext(Generic[FrameType]):
 
     @overload
     def execute(
-        self: SQLContext[DataFrame], query: str, eager: Literal[None] | None = None
+        self: SQLContext[DataFrame], query: str, eager: None = ...
     ) -> DataFrame:
         ...
 
@@ -189,7 +189,7 @@ class SQLContext(Generic[FrameType]):
 
     @overload
     def execute(
-        self: SQLContext[LazyFrame], query: str, eager: Literal[None] | None = None
+        self: SQLContext[LazyFrame], query: str, eager: None = ...
     ) -> LazyFrame:
         ...
 
