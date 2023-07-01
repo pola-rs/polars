@@ -13,6 +13,8 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 
 use super::*;
+#[cfg(feature = "list_any_all")]
+use crate::chunked_array::list::any_all::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
 use crate::chunked_array::list::sum_mean::sum_with_nulls;
 use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
@@ -114,42 +116,16 @@ pub trait ListNameSpaceImpl: AsList {
         list_max_function(self.as_list())
     }
 
-    fn lst_all(&self) -> Series {
+    #[cfg(feature = "list_any_all")]
+    fn lst_all(&self) -> PolarsResult<Series> {
         let ca = self.as_list();
-        let mut out: BooleanChunked = ca
-            .amortized_iter()
-            .map(|opt_s| {
-                opt_s.map(|s| {
-                    let ca = s.as_ref().bool().unwrap();
-                    if ca.is_empty() {
-                        false
-                    } else {
-                        ca.into_iter().all(|opt_b| opt_b.unwrap_or(false))
-                    }
-                })
-            })
-            .collect_trusted();
-        out.rename(ca.name());
-        out.into_series()
+        list_all(ca)
     }
 
-    fn lst_any(&self) -> Series {
+    #[cfg(feature = "list_any_all")]
+    fn lst_any(&self) -> PolarsResult<Series> {
         let ca = self.as_list();
-        let mut out: BooleanChunked = ca
-            .amortized_iter()
-            .map(|opt_s| {
-                opt_s.map(|s| {
-                    let ca = s.as_ref().bool().unwrap();
-                    if ca.is_empty() {
-                        false
-                    } else {
-                        ca.into_iter().any(|opt_b| opt_b.unwrap_or(false))
-                    }
-                })
-            })
-            .collect_trusted();
-        out.rename(ca.name());
-        out.into_series()
+        list_any(ca)
     }
 
     fn lst_min(&self) -> Series {

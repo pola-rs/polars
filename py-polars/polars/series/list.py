@@ -24,6 +24,58 @@ class ListNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
+    def all(self) -> Expr:
+        """
+        Evaluate whether all boolean values in a list are true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.all())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ false │
+        │ null  │
+        └───────┘
+
+        """
+
+    def any(self) -> Expr:
+        """
+        Evaluate whether any boolean value in a list is true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.any())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ null  │
+        └───────┘
+
+        """
+
     def lengths(self) -> Series:
         """
         Get the length of the arrays as UInt32.

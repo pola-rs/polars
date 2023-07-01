@@ -14,15 +14,17 @@ use crate::prelude::*;
 pub struct ListNameSpace(pub Expr);
 
 impl ListNameSpace {
+    #[cfg(feature = "list_any_all")]
     pub fn any(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Any))
+            .apply_private(FunctionExpr::ListExpr(ListFunction::Any))
             .with_fmt("list.any")
     }
 
+    #[cfg(feature = "list_any_all")]
     pub fn all(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::All))
+            .apply_private(FunctionExpr::ListExpr(ListFunction::All))
             .with_fmt("list.all")
     }
 

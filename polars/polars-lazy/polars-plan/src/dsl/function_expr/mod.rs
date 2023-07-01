@@ -435,7 +435,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Sum => map!(list::sum),
                     #[cfg(feature = "list_sets")]
                     SetOperation(s) => map_as_slice!(list::set_operation, s),
+                    #[cfg(feature = "list_any_all")]
                     Any => map!(list::lst_any),
+                    #[cfg(feature = "list_any_all")]
                     All => map!(list::lst_all),
                 }
             }
