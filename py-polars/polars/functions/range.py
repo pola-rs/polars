@@ -229,7 +229,6 @@ def date_range(
         .. deprecated:: 0.18.0
             This argument is deprecated. Use the ``alias`` method instead.
 
-
     Notes
     -----
     1) If both ``start`` and ``end`` are passed as date types (not datetime), and the
@@ -330,22 +329,6 @@ def date_range(
         2022-02-01 00:00:00 EST
         2022-03-01 00:00:00 EST
     ]
-
-    Combine with ``month_end`` to get the last day of the month:
-
-    >>> (
-    ...     pl.date_range(
-    ...         datetime(2022, 1, 1), datetime(2022, 3, 1), "1mo", eager=True
-    ...     ).dt.month_end()
-    ... )
-    shape: (3,)
-    Series: 'date' [datetime[μs]]
-    [
-        2022-01-31 00:00:00
-        2022-02-28 00:00:00
-        2022-03-31 00:00:00
-    ]
-
     """
     if name is not None:
         warnings.warn(
@@ -421,7 +404,6 @@ def date_ranges(
     interval: str | timedelta = "1d",
     *,
     closed: ClosedInterval = "both",
-    name: str | None = None,
 ) -> Series | Expr:
     """
     Create a list of ranges of type `Datetime` (or `Date`).
@@ -481,8 +463,6 @@ def date_ranges(
     start = parse_as_expression(start)
     end = parse_as_expression(end)
     expr = wrap_expr(plr.date_ranges_lazy(start, end, interval, closed))
-    if name is not None:
-        expr = expr.alias(name)
     return expr
 
 
@@ -600,7 +580,7 @@ def time_range(
     ]
 
     Generate a DataFrame with two columns made of eager ``time_range`` Series,
-    and create a third column using ``time_range`` in expression context:
+    and create a third column using ``time_ranges`` in expression context:
 
     >>> lf = pl.LazyFrame(
     ...     {
@@ -608,7 +588,7 @@ def time_range(
     ...         "stop": pl.time_range(start=time(2, 59), interval="5h59m", eager=True),
     ...     }
     ... ).with_columns(
-    ...     intervals=pl.time_range("start", "stop", interval="1h29m", eager=False)
+    ...     intervals=pl.time_ranges("start", "stop", interval="1h29m")
     ... )
     >>> lf.collect()
     shape: (4, 3)
@@ -681,7 +661,6 @@ def time_ranges(
     interval: str | timedelta = "1h",
     *,
     closed: ClosedInterval = "both",
-    name: str | None = None,
 ) -> Expr:
     """
     Create a list of ranges of type `Time`.
@@ -700,11 +679,6 @@ def time_ranges(
         (representing 1 hour, 30 minutes, and 25 seconds).
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
-    name
-        Name of the output column.
-
-        .. deprecated:: 0.18.0
-            This argument is deprecated. Use the ``alias`` method instead.
 
     Returns
     -------
@@ -719,52 +693,21 @@ def time_ranges(
     Create a Series that starts at 14:00, with intervals of 3 hours and 15 mins:
 
     >>> from datetime import time
-    >>> pl.time_range(
-    ...     start=time(14, 0),
-    ...     interval=timedelta(hours=3, minutes=15),
-    ...     eager=True,
-    ... )
-    shape: (4,)
-    Series: 'time' [time]
-    [
-        14:00:00
-        17:15:00
-        20:30:00
-        23:45:00
-    ]
-
-    Generate a DataFrame with two columns made of eager ``time_range`` Series,
-    and create a third column using ``time_range`` in expression context:
-
-    >>> lf = pl.LazyFrame(
-    ...     {
-    ...         "start": pl.time_range(interval="6h", eager=True),
-    ...         "stop": pl.time_range(start=time(2, 59), interval="5h59m", eager=True),
-    ...     }
-    ... ).with_columns(
-    ...     intervals=pl.time_range("start", "stop", interval="1h29m", eager=False)
-    ... )
-    >>> lf.collect()
-    shape: (4, 3)
-    ┌──────────┬──────────┬────────────────────────────────┐
-    │ start    ┆ stop     ┆ intervals                      │
-    │ ---      ┆ ---      ┆ ---                            │
-    │ time     ┆ time     ┆ list[time]                     │
-    ╞══════════╪══════════╪════════════════════════════════╡
-    │ 00:00:00 ┆ 02:59:00 ┆ [00:00:00, 01:29:00, 02:58:00] │
-    │ 06:00:00 ┆ 08:58:00 ┆ [06:00:00, 07:29:00, 08:58:00] │
-    │ 12:00:00 ┆ 14:57:00 ┆ [12:00:00, 13:29:00]           │
-    │ 18:00:00 ┆ 20:56:00 ┆ [18:00:00, 19:29:00]           │
-    └──────────┴──────────┴────────────────────────────────┘
-
+    >>> df = pl.DataFrame({
+    ...    'start': [time(12, 30), time(13, 30)],
+    ...    'end': [time(12, 30), time(14, 30)]
+    ... })
+    >>> df.with_columns(pl.time_ranges('start', 'end'))
+    shape: (2, 3)
+    ┌──────────┬──────────┬──────────────────────┐
+    │ start    ┆ end      ┆ times                │
+    │ ---      ┆ ---      ┆ ---                  │
+    │ time     ┆ time     ┆ list[time]           │
+    ╞══════════╪══════════╪══════════════════════╡
+    │ 12:30:00 ┆ 12:30:00 ┆ [12:30:00]           │
+    │ 13:30:00 ┆ 14:30:00 ┆ [13:30:00, 14:30:00] │
+    └──────────┴──────────┴──────────────────────┘
     """
-    if name is not None:
-        warnings.warn(
-            "the `name` argument is deprecated. Use the `alias` method instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
-        )
-
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
     elif " " in interval:
@@ -783,6 +726,4 @@ def time_ranges(
     end_expr = F.lit(default_end)._pyexpr if end is None else parse_as_expression(end)
 
     tm_expr = wrap_expr(plr.time_ranges_lazy(start_expr, end_expr, interval, closed))
-    if name is not None:
-        tm_expr = tm_expr.alias(name)
     return tm_expr
