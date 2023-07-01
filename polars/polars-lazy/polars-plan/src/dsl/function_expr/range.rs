@@ -28,6 +28,7 @@ where
     std::ops::RangeInclusive<T::Native>: DoubleEndedIterator<Item = T::Native>,
 {
     let mut ca = match step {
+        0 => polars_bail!(InvalidOperation: "step must not be zero"),
         1 => ChunkedArray::<T>::from_iter_values("int", start..end),
         2.. => ChunkedArray::<T>::from_iter_values("int", (start..end).step_by(step as usize)),
         _ => {
@@ -67,8 +68,6 @@ pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
 
-    polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
-
     match start.dtype() {
         dt if dt == &IDX_DTYPE => {
             let start = start
@@ -105,8 +104,6 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
     let end = &s[1];
 
     let output_name = "int_range";
-
-    polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
 
     let mut start = start.cast(&DataType::Int64)?;
     let mut end = end.cast(&DataType::Int64)?;
