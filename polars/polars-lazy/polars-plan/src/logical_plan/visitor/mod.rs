@@ -3,12 +3,12 @@
 
 use polars_arrow::error::PolarsResult;
 mod expr;
-mod tree_node;
+mod visitors;
 
 pub(crate) use expr::*;
-pub(crate) use tree_node::*;
+pub(crate) use visitors::*;
 
-/// Controls how the [`TreeNode`] recursion should proceed for [`TreeNode::visit`].
+/// Controls how the [`TreeWalker`] recursion should proceed for [`TreeWalker::visit`].
 #[derive(Debug)]
 pub enum VisitRecursion {
     /// Continue the visit to this node tree.
@@ -19,40 +19,17 @@ pub enum VisitRecursion {
     Stop,
 }
 
-/// Controls how the [`TreeNode`] recursion should proceed for [`TreeNode::rewrite`].
+/// Controls how the [`TreeWalker`] recursion should proceed for [`TreeWalker::rewrite`].
 #[derive(Debug)]
 pub enum RewriteRecursion {
-    /// Continue the visit to this node tree.
+    /// Continue the visit to this node and children.
     Continue,
-    /// Keep recursive but skip applying op on the children
+    /// Don't mutate this node, continue visiting the children
     Skip,
-    /// Stop the visit to this node tree.
+    /// Stop and return.
+    /// This doesn't visit the children
     Stop,
     /// Call `op` immediately and return
-    Mutate
+    /// This doesn't visit the children
+    MutateAndStop
 }
-
-// #[derive(Debug)]
-// pub enum RewriteRecursion {
-//     /// Continue rewrite this node tree.
-//     Continue,
-//     /// Call 'op' immediately and return.
-//     Mutate,
-//     /// Do not rewrite the children of this node.
-//     Stop,
-//     /// Keep recursive but skip apply op on this node
-//     Skip,
-// }
-//
-// trait TreeNodeRewriter {
-//     type Node;
-//
-//     /// invoked before any children of node are visited.
-//     fn pre_visit(&mut self, _node: &Self::Node) -> PolarsResult<RewriteRecursion> {
-//         Ok(RewriteRecursion::Continue)
-//     }
-//
-//     /// invoked after all children of `node` are visited. It returns a potentially
-//     /// modified node.
-//     fn mutate(&mut self, node: Self::Node) -> PolarsResult<Self::Node>;
-// }
