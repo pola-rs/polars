@@ -27,24 +27,28 @@ where
     std::ops::Range<T::Native>: Iterator<Item = T::Native>,
     std::ops::RangeInclusive<T::Native>: DoubleEndedIterator<Item = T::Native>,
 {
+    let name = "int";
+
     let mut ca = match step {
         0 => polars_bail!(InvalidOperation: "step must not be zero"),
-        1 => ChunkedArray::<T>::from_iter_values("int", start..end),
-        2.. => ChunkedArray::<T>::from_iter_values("int", (start..end).step_by(step as usize)),
+        1 => ChunkedArray::<T>::from_iter_values(name, start..end),
+        2.. => ChunkedArray::<T>::from_iter_values(name, (start..end).step_by(step as usize)),
         _ => {
             polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
             ChunkedArray::<T>::from_iter_values(
-                "int",
+                name,
                 (end..=start).rev().step_by(step.unsigned_abs() as usize),
             )
         }
     };
+
     let is_sorted = if end < start {
         IsSorted::Descending
     } else {
         IsSorted::Ascending
     };
     ca.set_sorted_flag(is_sorted);
+
     Ok(ca.into_series())
 }
 
