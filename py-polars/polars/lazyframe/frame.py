@@ -11,6 +11,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    ClassVar,
     Collection,
     Iterable,
     NoReturn,
@@ -262,7 +263,7 @@ class LazyFrame:
     """
 
     _ldf: PyLazyFrame
-    _accessors: set[str] = set()
+    _accessors: ClassVar[set[str]] = set()
 
     def __init__(
         self,

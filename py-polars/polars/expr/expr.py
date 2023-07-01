@@ -11,6 +11,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    ClassVar,
     Collection,
     FrozenSet,
     Iterable,
@@ -93,7 +94,16 @@ class Expr:
     """Expressions that can be used in various contexts."""
 
     _pyexpr: PyExpr = None
-    _accessors: set[str] = {"arr", "cat", "dt", "list", "meta", "str", "bin", "struct"}
+    _accessors: ClassVar[set[str]] = {
+        "arr",
+        "cat",
+        "dt",
+        "list",
+        "meta",
+        "str",
+        "bin",
+        "struct",
+    }
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Self:

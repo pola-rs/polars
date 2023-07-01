@@ -31,9 +31,9 @@ build-release: .venv  ## Compile and install a faster Polars binary
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting and linting
+	$(VENV_BIN)/ruff .
 	$(VENV_BIN)/black .
 	$(VENV_BIN)/blackdoc .
-	$(VENV_BIN)/ruff .
 	$(VENV_BIN)/typos ..
 	$(VENV_BIN)/python scripts/check_stacklevels.py
 	cargo fmt --all
