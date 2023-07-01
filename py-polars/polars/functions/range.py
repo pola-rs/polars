@@ -141,8 +141,8 @@ def arange(
 
 @overload
 def date_range(
-    start: date | datetime | Expr | str,
-    end: date | datetime | Expr | str,
+    start: date | datetime | Expr,
+    end: date | datetime | Expr,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -156,8 +156,8 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | Expr | str,
-    end: date | datetime | Expr | str,
+    start: date | datetime | Expr,
+    end: date | datetime | Expr,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -171,8 +171,8 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | Expr | str,
-    end: date | datetime | Expr | str,
+    start: date | datetime | Expr,
+    end: date | datetime | Expr,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -185,8 +185,8 @@ def date_range(
 
 
 def date_range(
-    start: date | datetime | Expr | str,
-    end: date | datetime | Expr | str,
+    start: date | datetime | Expr,
+    end: date | datetime | Expr,
     interval: str | timedelta = "1d",
     *,
     closed: ClosedInterval = "both",
@@ -201,9 +201,9 @@ def date_range(
     Parameters
     ----------
     start
-        Lower bound of the date range, given as a date, datetime, Expr, or column name.
+        Lower bound of the date range, given as a date, datetime, or Expr.
     end
-        Upper bound of the date range, given as a date, datetime, Expr, or column name.
+        Upper bound of the date range, given as a date, datetime, or Expr.
     interval
         Interval of the range periods; can be a python timedelta object like
         ``timedelta(days=10)`` or a polars duration string, such as ``3d12h4m25s``
@@ -273,6 +273,10 @@ def date_range(
     Returns
     -------
     A Series of type `Datetime` or `Date`.
+
+    See Also
+    --------
+    polars.date_ranges : "horizontal" version of this function.
 
     Examples
     --------
@@ -420,7 +424,7 @@ def date_ranges(
     name: str | None = None,
 ) -> Series | Expr:
     """
-    Create a range of type `Datetime` (or `Date`).
+    Create a list of ranges of type `Datetime` (or `Date`).
 
     Parameters
     ----------
@@ -495,6 +499,10 @@ def date_ranges(
     Returns
     -------
     A Series of type `Datetime` or `Date`.
+
+    See Also
+    --------
+    polars.date_range : "vertical" version of this function.
 
     Examples
     --------
@@ -650,10 +658,10 @@ def time_range(
     Parameters
     ----------
     start
-        Lower bound of the time range, given as a time, Expr, or column name.
+        Lower bound of the time range, given as a time, or Expr.
         If omitted, will default to ``time(0,0,0,0)``.
     end
-        Upper bound of the time range, given as a time, Expr, or column name.
+        Upper bound of the time range, given as a time, or Expr.
         If omitted, will default to ``time(23,59,59,999999)``.
     interval
         Interval of the range periods; can be a python timedelta object like
@@ -673,6 +681,10 @@ def time_range(
     Returns
     -------
     A Series of type `Time`.
+
+    See Also
+    --------
+    polars.time_ranges : "horizontal" version of this function.
 
     Examples
     --------
@@ -778,7 +790,7 @@ def time_ranges(
     name: str | None = None,
 ) -> Expr:
     """
-    Create a range of type `Time`.
+    Create a list of ranges of type `Time`.
 
     Parameters
     ----------
@@ -794,9 +806,6 @@ def time_ranges(
         (representing 1 hour, 30 minutes, and 25 seconds).
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
-    eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
     name
         Name of the output column.
 
@@ -806,6 +815,10 @@ def time_ranges(
     Returns
     -------
     A Series of type `Time`.
+
+    See Also
+    --------
+    polars.time_range : "vertical" version of this function.
 
     Examples
     --------
