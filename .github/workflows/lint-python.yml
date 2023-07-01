@@ -36,6 +36,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
+          source activate
           pip install maturin==1.0.1
           maturin develop --extras dev-lint
 
@@ -74,6 +75,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          source activate
           pip install maturin==1.0.1
           maturin develop --extras dev-test,dev-lint,pyarrow,pandas,fsspec,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic
 

@@ -53,6 +53,7 @@ jobs:
       - name: Install Python dependencies
         working-directory: py-polars
         run: |
+          source activate
           pip install maturin==1.0.1
           maturin develop --extras dev-test,pyarrow,pandas,fsspec,numpy,hypothesis,xlsxwriter,xlsx2csv,deltalake,pydantic
 
