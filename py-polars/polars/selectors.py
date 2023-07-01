@@ -517,9 +517,9 @@ def datetime(
     ...         "dt": [date(1999, 12, 31), date(2010, 7, 5)],
     ...     },
     ...     schema_overrides={
-    ...         "tstamp_tokyo": pl.Datetime("us", "Asia/Tokyo"),
-    ...         "tstamp_utc": pl.Datetime("ns", "UTC"),
-    ...         "tstamp": pl.Datetime("ns"),
+    ...         "tstamp_tokyo": pl.Datetime("ns", "Asia/Tokyo"),
+    ...         "tstamp_utc": pl.Datetime("us", "UTC"),
+    ...         "dtime": pl.Datetime("ms"),
     ...     },
     ... )
 
@@ -530,20 +530,20 @@ def datetime(
     ┌────────────────────────────────┬─────────────────────────────┬─────────────────────────┬─────────────────────┐
     │ tstamp_tokyo                   ┆ tstamp_utc                  ┆ tstamp                  ┆ dtime               │
     │ ---                            ┆ ---                         ┆ ---                     ┆ ---                 │
-    │ datetime[μs, Asia/Tokyo]       ┆ datetime[ns, UTC]           ┆ datetime[ns]            ┆ datetime[μs]        │
+    │ datetime[ns, Asia/Tokyo]       ┆ datetime[μs, UTC]           ┆ datetime[μs]            ┆ datetime[ms]        │
     ╞════════════════════════════════╪═════════════════════════════╪═════════════════════════╪═════════════════════╡
     │ 1999-07-21 05:20:16.987654 JST ┆ 2023-04-10 12:14:16.999 UTC ┆ 2000-11-20 18:12:16.600 ┆ 2010-10-10 10:25:30 │
     │ 2000-05-16 06:21:21.123465 JST ┆ 2025-08-25 14:18:22.666 UTC ┆ 2020-10-30 10:20:25.123 ┆ 2024-12-31 20:30:45 │
     └────────────────────────────────┴─────────────────────────────┴─────────────────────────┴─────────────────────┘
 
-    Select all datetime columns that have 'ns' precision:
+    Select all datetime columns that have 'us' precision:
 
-    >>> df.select(cs.datetime("ns"))
+    >>> df.select(cs.datetime("us"))
     shape: (2, 2)
     ┌─────────────────────────────┬─────────────────────────┐
     │ tstamp_utc                  ┆ tstamp                  │
     │ ---                         ┆ ---                     │
-    │ datetime[ns, UTC]           ┆ datetime[ns]            │
+    │ datetime[μs, UTC]           ┆ datetime[μs]            │
     ╞═════════════════════════════╪═════════════════════════╡
     │ 2023-04-10 12:14:16.999 UTC ┆ 2000-11-20 18:12:16.600 │
     │ 2025-08-25 14:18:22.666 UTC ┆ 2020-10-30 10:20:25.123 │
@@ -556,7 +556,7 @@ def datetime(
     ┌────────────────────────────────┬─────────────────────────────┐
     │ tstamp_tokyo                   ┆ tstamp_utc                  │
     │ ---                            ┆ ---                         │
-    │ datetime[μs, Asia/Tokyo]       ┆ datetime[ns, UTC]           │
+    │ datetime[ns, Asia/Tokyo]       ┆ datetime[μs, UTC]           │
     ╞════════════════════════════════╪═════════════════════════════╡
     │ 1999-07-21 05:20:16.987654 JST ┆ 2023-04-10 12:14:16.999 UTC │
     │ 2000-05-16 06:21:21.123465 JST ┆ 2025-08-25 14:18:22.666 UTC │
@@ -569,7 +569,7 @@ def datetime(
     ┌─────────────────────────────┐
     │ tstamp_utc                  │
     │ ---                         │
-    │ datetime[ns, UTC]           │
+    │ datetime[μs, UTC]           │
     ╞═════════════════════════════╡
     │ 2023-04-10 12:14:16.999 UTC │
     │ 2025-08-25 14:18:22.666 UTC │
@@ -582,7 +582,7 @@ def datetime(
     ┌─────────────────────────┬─────────────────────┐
     │ tstamp                  ┆ dtime               │
     │ ---                     ┆ ---                 │
-    │ datetime[ns]            ┆ datetime[μs]        │
+    │ datetime[μs]            ┆ datetime[ms]        │
     ╞═════════════════════════╪═════════════════════╡
     │ 2000-11-20 18:12:16.600 ┆ 2010-10-10 10:25:30 │
     │ 2020-10-30 10:20:25.123 ┆ 2024-12-31 20:30:45 │
