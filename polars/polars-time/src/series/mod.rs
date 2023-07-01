@@ -187,7 +187,7 @@ pub trait TemporalMethods: AsSeries {
             dt => polars_bail!(opq = day, dt),
         }
     }
-    /// Returns the weekday number where monday = 0 and sunday = 6
+    /// Returns the ISO weekday number where monday = 1 and sunday = 7
     fn weekday(&self) -> PolarsResult<UInt32Chunked> {
         let s = self.as_series();
         match s.dtype() {

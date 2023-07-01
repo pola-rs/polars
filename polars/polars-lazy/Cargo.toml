@@ -31,7 +31,7 @@ rayon.workspace = true
 smartstring.workspace = true
 
 [features]
-nightly = ["polars-core/nightly", "polars-pipe/nightly"]
+nightly = ["polars-core/nightly", "polars-pipe/nightly", "polars-plan/nightly"]
 compile = ["polars-plan/compile"]
 streaming = ["chunked_ids", "polars-pipe/compile", "polars-plan/streaming"]
 default = ["compile"]
@@ -71,6 +71,7 @@ list_take = ["polars-ops/list_take", "polars-plan/list_take"]
 list_count = ["polars-ops/list_count", "polars-plan/list_count"]
 
 true_div = ["polars-plan/true_div"]
+extract_jsonpath = ["polars-plan/extract_jsonpath", "polars-ops/extract_jsonpath"]
 
 # operations
 approx_unique = ["polars-plan/approx_unique"]
@@ -130,6 +131,7 @@ serde = [
   "polars-ops/serde",
 ]
 fused = ["polars-plan/fused", "polars-ops/fused"]
+list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 

@@ -52,6 +52,10 @@ impl FunctionExpr {
                     MonthStart => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "date_offset")]
                     MonthEnd => mapper.with_same_dtype().unwrap().dtype,
+                    #[cfg(feature = "timezones")]
+                    BaseUtcOffset => DataType::Duration(TimeUnit::Milliseconds),
+                    #[cfg(feature = "timezones")]
+                    DSTOffset => DataType::Duration(TimeUnit::Milliseconds),
                     Round(..) => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "timezones")]
                     CastTimezone(tz, _use_earliest) => {
@@ -66,8 +70,10 @@ impl FunctionExpr {
                     } => {
                         // output dtype may change based on `tz`
                         return mapper.map_to_date_range_dtype(tz);
+                    },
+                    TimeRange { .. } => {
+                        return Ok(Field::new("time", DataType::List(Box::new(DataType::Time))));
                     }
-                    TimeRange { .. } => DataType::List(Box::new(DataType::Time)),
                     Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
                         DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),
                         DataType::Date => DataType::Datetime(*tu, None),
@@ -105,6 +111,8 @@ impl FunctionExpr {
                     #[cfg(feature = "list_count")]
                     CountMatch => mapper.with_dtype(IDX_DTYPE),
                     Sum => mapper.nested_sum_type(),
+                    #[cfg(feature = "list_sets")]
+                    SetOperation(_) => mapper.with_same_dtype(),
                 }
             }
             #[cfg(feature = "dtype-array")]
@@ -370,5 +378,11 @@ impl<'a> FieldsMapper<'a> {
             first.coerce(dt);
         }
         Ok(first)
+    }
+
+    #[cfg(feature = "extract_jsonpath")]
+    pub(super) fn with_opt_dtype(&self, dtype: Option<DataType>) -> PolarsResult<Field> {
+        let dtype = dtype.unwrap_or(DataType::Unknown);
+        self.with_dtype(dtype)
     }
 }

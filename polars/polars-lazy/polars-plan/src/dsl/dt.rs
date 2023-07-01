@@ -146,10 +146,10 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Week))
     }
 
-    /// Extract the week day from the underlying Date representation.
+    /// Extract the ISO week day from the underlying Date representation.
     /// Can be performed on Date and Datetime.
 
-    /// Returns the weekday number where monday = 0 and sunday = 6
+    /// Returns the weekday number where monday = 1 and sunday = 7
     pub fn weekday(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::WeekDay))
@@ -247,6 +247,20 @@ impl DateLikeNameSpace {
     pub fn month_end(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthEnd))
+    }
+
+    // Get the base offset from UTC
+    #[cfg(feature = "timezones")]
+    pub fn base_utc_offset(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::BaseUtcOffset))
+    }
+
+    // Get the additional offset from UTC currently in effect (usually due to daylight saving time)
+    #[cfg(feature = "timezones")]
+    pub fn dst_offset(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::DSTOffset))
     }
 
     pub fn round<S: AsRef<str>>(self, every: S, offset: S) -> Expr {

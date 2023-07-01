@@ -1,21 +1,89 @@
-use arrow::array::{Array, BinaryArray, BooleanArray, DictionaryArray, PrimitiveArray, Utf8Array};
+use arrow::array::{
+    Array, BinaryArray, BooleanArray, DictionaryArray, PrimitiveArray, StructArray, Utf8Array,
+};
+use arrow::compute::cast::cast;
 use arrow::datatypes::{DataType as ArrowDataType, DataType};
 use arrow::types::NativeType;
+use polars_utils::vec::PushUnchecked;
 
-use crate::encodings::fixed::FixedLengthEncoding;
+use crate::fixed::FixedLengthEncoding;
 use crate::row::{RowsEncoded, SortField};
 use crate::{with_match_arrow_primitive_type, ArrayRef};
 
 pub fn convert_columns(columns: &[ArrayRef], fields: &[SortField]) -> RowsEncoded {
-    assert_eq!(fields.len(), columns.len());
-
-    let mut rows = allocate_rows_buf(columns);
-    for (arr, field) in columns.iter().zip(fields.iter()) {
-        // Safety:
-        // we allocated rows with enough bytes.
-        unsafe { encode_array(&**arr, field, &mut rows) }
-    }
+    let mut rows = RowsEncoded::new(vec![], vec![]);
+    convert_columns_amortized(columns, fields, &mut rows);
     rows
+}
+
+pub fn convert_columns_no_order(columns: &[ArrayRef]) -> RowsEncoded {
+    let mut rows = RowsEncoded::new(vec![], vec![]);
+    convert_columns_amortized_no_order(columns, &mut rows);
+    rows
+}
+
+pub fn convert_columns_amortized_no_order(columns: &[ArrayRef], rows: &mut RowsEncoded) {
+    convert_columns_amortized(
+        columns,
+        std::iter::repeat(&SortField::default()).take(columns.len()),
+        rows,
+    );
+}
+
+pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
+    columns: &'a [ArrayRef],
+    fields: I,
+    rows: &mut RowsEncoded,
+) {
+    let fields = fields.into_iter();
+    assert_eq!(fields.size_hint().0, columns.len());
+    if columns
+        .iter()
+        .any(|arr| matches!(arr.data_type(), DataType::Struct(_) | DataType::LargeUtf8))
+    {
+        let mut flattened_columns = Vec::with_capacity(columns.len() * 5);
+        let mut flattened_fields = Vec::with_capacity(columns.len() * 5);
+
+        for (arr, field) in columns.iter().zip(fields) {
+            match arr.data_type() {
+                DataType::Struct(_) => {
+                    let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                    for arr in arr.values() {
+                        flattened_columns.push(arr.clone() as ArrayRef);
+                        flattened_fields.push(field.clone())
+                    }
+                }
+                DataType::LargeUtf8 => {
+                    flattened_columns.push(
+                        cast(arr.as_ref(), &DataType::LargeBinary, Default::default()).unwrap(),
+                    );
+                    flattened_fields.push(field.clone());
+                }
+                _ => {
+                    flattened_columns.push(arr.clone());
+                    flattened_fields.push(field.clone());
+                }
+            }
+        }
+        let values_size =
+            allocate_rows_buf(&flattened_columns, &mut rows.values, &mut rows.offsets);
+        for (arr, field) in flattened_columns.iter().zip(flattened_fields.iter()) {
+            // Safety:
+            // we allocated rows with enough bytes.
+            unsafe { encode_array(&**arr, field, rows) }
+        }
+        // safety: values are initialized
+        unsafe { rows.values.set_len(values_size) }
+    } else {
+        let values_size = allocate_rows_buf(columns, &mut rows.values, &mut rows.offsets);
+        for (arr, field) in columns.iter().zip(fields) {
+            // Safety:
+            // we allocated rows with enough bytes.
+            unsafe { encode_array(&**arr, field, rows) }
+        }
+        // safety: values are initialized
+        unsafe { rows.values.set_len(values_size) }
+    }
 }
 
 fn encode_primitive<T: NativeType + FixedLengthEncoding>(
@@ -24,9 +92,11 @@ fn encode_primitive<T: NativeType + FixedLengthEncoding>(
     out: &mut RowsEncoded,
 ) {
     if arr.null_count() == 0 {
-        crate::encodings::fixed::encode_slice(arr.values().as_slice(), out, field);
+        unsafe { crate::fixed::encode_slice(arr.values().as_slice(), out, field) };
     } else {
-        crate::encodings::fixed::encode_iter(arr.into_iter().map(|v| v.copied()), out, field);
+        unsafe {
+            crate::fixed::encode_iter(arr.into_iter().map(|v| v.copied()), out, field);
+        }
     }
 }
 
@@ -38,11 +108,11 @@ unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncod
     match array.data_type() {
         DataType::Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
-            crate::encodings::fixed::encode_iter(array.into_iter(), out, field);
+            crate::fixed::encode_iter(array.into_iter(), out, field);
         }
         DataType::LargeBinary => {
             let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-            crate::encodings::variable::encode_iter(array.into_iter(), out, field)
+            crate::variable::encode_iter(array.into_iter(), out, field)
         }
         DataType::LargeUtf8 => {
             panic!("should be cast to binary")
@@ -56,7 +126,7 @@ unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncod
                 .iter_typed::<Utf8Array<i64>>()
                 .unwrap()
                 .map(|opt_s| opt_s.map(|s| s.as_bytes()));
-            crate::encodings::variable::encode_iter(iter, out, field)
+            crate::variable::encode_iter(iter, out, field)
         }
         dt => {
             with_match_arrow_primitive_type!(dt, |$T| {
@@ -80,11 +150,18 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
         Int64 => i64::ENCODED_LEN,
         Float32 => f32::ENCODED_LEN,
         Float64 => f64::ENCODED_LEN,
-        _ => unimplemented!(),
+        Boolean => bool::ENCODED_LEN,
+        dt => unimplemented!("{dt:?}"),
     }
 }
 
-pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
+// Returns the length that the caller must set on the `values` buf  once the bytes
+// are initialized.
+pub fn allocate_rows_buf(
+    columns: &[ArrayRef],
+    values: &mut Vec<u8>,
+    offsets: &mut Vec<usize>,
+) -> usize {
     let has_variable = columns.iter().any(|arr| {
         matches!(
             arr.data_type(),
@@ -110,16 +187,32 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
             })
             .sum();
 
-        let mut lengths = vec![row_size_fixed; num_rows];
+        offsets.clear();
+        offsets.reserve(num_rows + 1);
+
+        // first write lengths to this buffer
+        let lengths = offsets;
 
         // for the variable length columns we must iterate to determine the length per row location
+        let mut processed_count = 0;
         for array in columns.iter() {
             match array.data_type() {
                 ArrowDataType::LargeBinary => {
                     let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-                    for (opt_val, row_length) in array.into_iter().zip(lengths.iter_mut()) {
-                        *row_length += crate::encodings::variable::encoded_len(opt_val)
+                    if processed_count == 0 {
+                        for opt_val in array.into_iter() {
+                            unsafe {
+                                lengths.push_unchecked(
+                                    row_size_fixed + crate::variable::encoded_len(opt_val),
+                                );
+                            }
+                        }
+                    } else {
+                        for (opt_val, row_length) in array.into_iter().zip(lengths.iter_mut()) {
+                            *row_length += crate::variable::encoded_len(opt_val)
+                        }
                     }
+                    processed_count += 1;
                 }
                 ArrowDataType::Dictionary(_, _, _) => {
                     let array = array
@@ -130,43 +223,53 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
                         .iter_typed::<Utf8Array<i64>>()
                         .unwrap()
                         .map(|opt_s| opt_s.map(|s| s.as_bytes()));
-                    for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                        *row_length += crate::encodings::variable::encoded_len(opt_val)
+                    if processed_count == 0 {
+                        for opt_val in iter {
+                            unsafe {
+                                lengths.push_unchecked(
+                                    row_size_fixed + crate::variable::encoded_len(opt_val),
+                                )
+                            }
+                        }
+                    } else {
+                        for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
+                            *row_length += crate::variable::encoded_len(opt_val)
+                        }
                     }
+                    processed_count += 1;
                 }
                 _ => {
                     // the rest is fixed
                 }
             }
         }
-        let mut offsets = Vec::with_capacity(num_rows + 1);
+        // now we use the lengths and the same buffer to determine the offsets
+        let offsets = lengths;
+        // we write lagged because the offsets will be written by the encoding column
         let mut current_offset = 0_usize;
-        offsets.push(current_offset);
+        let mut lagged_offset = 0_usize;
 
-        for length in lengths {
-            offsets.push(current_offset);
-            #[cfg(target_pointer_width = "64")]
-            {
-                // don't do overflow check, counting exabytes here.
-                current_offset += length;
-            }
-            #[cfg(not(target_pointer_width = "64"))]
-            {
-                current_offset = current_offset.checked_add(length).expect("overflow");
-            }
+        for length in offsets.iter_mut() {
+            let to_write = lagged_offset;
+            lagged_offset = current_offset;
+            current_offset += *length;
+
+            *length = to_write;
         }
+        // ensure we have len + 1 offsets
+        offsets.push(lagged_offset);
 
-        // todo! allocate uninit
-        let buf = vec![0u8; current_offset];
-        RowsEncoded::new(buf, offsets)
+        // Only reserve. The init will be done later
+        values.reserve(current_offset);
+        current_offset
     } else {
         let row_size: usize = columns
             .iter()
             .map(|arr| encoded_size(arr.data_type()))
             .sum();
         let n_bytes = num_rows * row_size;
-        // todo! allocate uninit
-        let buf = vec![0u8; n_bytes];
+        values.clear();
+        values.reserve(n_bytes);
 
         // note that offsets are shifted to the left
         // assume 2 fields with a len of 1
@@ -180,23 +283,37 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
         // and when the final field, field 2 is written
         // the offsets are correct:
         // 0, 2, 4, 6
-        let mut offsets = Vec::with_capacity(num_rows + 1);
+        offsets.clear();
+        offsets.reserve(num_rows + 1);
         let mut current_offset = 0;
         offsets.push(current_offset);
         for _ in 0..num_rows {
             offsets.push(current_offset);
             current_offset += row_size;
         }
-        RowsEncoded::new(buf, offsets)
+        n_bytes
     }
 }
 
 #[cfg(test)]
 mod test {
-    use arrow::array::Utf8Array;
+    use arrow::array::{Int32Array, Utf8Array};
 
     use super::*;
-    use crate::encodings::variable::{BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
+    use crate::variable::{BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
+
+    #[test]
+    fn test_fixed_and_variable_encode() {
+        let a = Int32Array::from_vec(vec![1, 2, 3]);
+        let b = Int32Array::from_vec(vec![213, 12, 12]);
+        let c = Utf8Array::<i64>::from_iter([Some("a"), Some(""), Some("meep")]);
+
+        let encoded = convert_columns_no_order(&[Box::new(a), Box::new(b), Box::new(c)]);
+        assert_eq!(encoded.offsets, &[0, 44, 55, 99,]);
+        assert_eq!(encoded.values.len(), 99);
+        assert!(encoded.values.ends_with(&[0, 0, 0, 4]));
+        assert!(encoded.values.starts_with(&[1, 128, 0, 0, 1, 1, 128]));
+    }
 
     #[test]
     fn test_str_encode() {

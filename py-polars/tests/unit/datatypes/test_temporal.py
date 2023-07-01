@@ -901,7 +901,9 @@ def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
         start_dt, end_dt, rule, time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
-    result = df.groupby_dynamic("time", every=rule).agg(pl.col("value").mean())
+    result = df.groupby_dynamic("time", every=rule, start_by="datapoint").agg(
+        pl.col("value").mean()
+    )
     expected = pl.DataFrame(
         {"time": date_range, "value": range(len(date_range))},
         schema_overrides={"value": pl.Float64},
@@ -1023,6 +1025,14 @@ def test_groupby_dynamic_monthly_crossing_dst() -> None:
         {"time": date_range, "value": range(len(date_range))},
         schema_overrides={"value": pl.Float64},
     )
+    assert_frame_equal(result, expected)
+
+
+def test_groupby_dynamic_2d_9333() -> None:
+    df = pl.DataFrame({"ts": [datetime(2000, 1, 1, 3)], "values": [10.0]})
+    df = df.with_columns(pl.col("ts").set_sorted())
+    result = df.groupby_dynamic("ts", every="2d").agg(pl.col("values"))
+    expected = pl.DataFrame({"ts": [datetime(1999, 12, 31, 0)], "values": [[10.0]]})
     assert_frame_equal(result, expected)
 
 
@@ -1910,16 +1920,11 @@ def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
 
 
 def test_strptime_with_invalid_tz() -> None:
-    with pytest.raises(
-        ComputeError, match="unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        FutureWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
     with pytest.raises(
         ComputeError,
-        match="cannot use strptime with both a tz-aware format and a tz-aware dtype",
+        match="Please either drop the time zone from the function call, or set it to UTC",
     ):
         pl.Series(["2020-01-01 03:00:00+01:00"]).str.strptime(
             pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z"
@@ -1953,12 +1958,7 @@ def test_strptime_unguessable_format() -> None:
 
 def test_convert_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.raises(
-        ComputeError, match="unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        FutureWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
 

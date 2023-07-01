@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import sys
 import textwrap
 import typing
 import zlib
@@ -776,6 +777,36 @@ def test_tz_aware_try_parse_dates() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("try_parse_dates", [True, False])
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_csv_overwrite_datetime_dtype(
+    try_parse_dates: bool, time_unit: TimeUnit
+) -> None:
+    data = """\
+    a
+    2020-1-1T00:00:00.123456789
+    2020-1-2T00:00:00.987654321
+    2020-1-3T00:00:00.132547698
+    """
+    result = pl.read_csv(
+        io.StringIO(data),
+        try_parse_dates=try_parse_dates,
+        dtypes={"a": pl.Datetime(time_unit)},
+    )
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [
+                    "2020-01-01T00:00:00.123456789",
+                    "2020-01-02T00:00:00.987654321",
+                    "2020-01-03T00:00:00.132547698",
+                ]
+            ).str.to_datetime(time_unit=time_unit)
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_csv_string_escaping() -> None:
     df = pl.DataFrame({"a": ["Free trip to A,B", '''Special rate "1.79"''']})
     f = io.BytesIO()
@@ -1310,3 +1341,34 @@ def test_read_csv_n_rows_outside_heuristic() -> None:
 
     f.seek(0)
     assert pl.read_csv(f, n_rows=2048, has_header=False).shape == (2048, 4)
+
+
+def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    # The capsys fixture allows pytest to access stdout/stderr. See
+    # https://docs.pytest.org/en/7.1.x/how-to/capture-stdout-stderr.html
+    df = pl.DataFrame(
+        {
+            "numbers": [1, 2, 3],
+            "strings": ["test", "csv", "stdout"],
+            "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
+        }
+    )
+
+    # pytest hijacks sys.stdout and changes its type, which causes mypy failure
+    df.write_csv(sys.stdout)  # type: ignore[call-overload]
+    captured = capsys.readouterr()
+    assert captured.out == (
+        "numbers,strings,dates\n"
+        "1,test,2023-01-01\n"
+        "2,csv,2023-01-02\n"
+        "3,stdout,2023-01-03\n"
+    )
+
+    df.write_csv(sys.stderr)  # type: ignore[call-overload]
+    captured = capsys.readouterr()
+    assert captured.err == (
+        "numbers,strings,dates\n"
+        "1,test,2023-01-01\n"
+        "2,csv,2023-01-02\n"
+        "3,stdout,2023-01-03\n"
+    )

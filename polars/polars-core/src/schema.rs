@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
+use crate::utils::try_get_supertype;
 
 /// A map from field/column name (`String`) to the type of that field/column (`DataType`)
 #[derive(Eq, Clone, Default)]
@@ -275,6 +276,16 @@ impl Schema {
         self.inner.shift_remove(name)
     }
 
+    /// Remove a field by name, preserving order, and, if the field existed, return its dtype
+    ///
+    /// If the field does not exist, the schema is not modified and `None` is returned.
+    ///
+    /// This method does a `shift_remove`, which preserves the order of the fields in the schema but **is O(n)**. For a
+    /// faster, but not order-preserving, method, use [`remove`][Self::remove].
+    pub fn shift_remove_index(&mut self, index: usize) -> Option<(SmartString, DataType)> {
+        self.inner.shift_remove_index(index)
+    }
+
     /// Whether the schema contains a field named `name`
     pub fn contains(&self, name: &str) -> bool {
         self.get(name).is_some()
@@ -366,6 +377,21 @@ impl Schema {
     /// For an owned version, use [`iter_fields`][Self::iter_fields], which clones the data to iterate owned `Field`s
     pub fn iter(&self) -> impl Iterator<Item = (&SmartString, &DataType)> + '_ {
         self.inner.iter()
+    }
+
+    /// Take another [`Schema`] and try to find the supertypes between them.
+    pub fn to_supertype(&mut self, other: &Schema) -> PolarsResult<bool> {
+        polars_ensure!(self.len() == other.len(), ComputeError: "schema lengths differ");
+
+        let mut changed = false;
+        for ((k, dt), (other_k, other_dt)) in self.inner.iter_mut().zip(other.iter()) {
+            polars_ensure!(k == other_k, ComputeError: "schema names differ: got {}, expected {}", k, other_k);
+
+            let st = try_get_supertype(dt, other_dt)?;
+            changed |= &st != dt;
+            *dt = st
+        }
+        Ok(changed)
     }
 }
 

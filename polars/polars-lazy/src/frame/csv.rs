@@ -308,6 +308,6 @@ impl LazyFileListReader for LazyCsvReader<'_> {
 
     fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {
         // set to false, as the csv parser has full thread utilization
-        concat_impl(&lfs, self.rechunk(), false, true)
+        concat_impl(&lfs, self.rechunk(), false, true, false)
     }
 }

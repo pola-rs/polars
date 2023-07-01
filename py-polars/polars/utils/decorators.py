@@ -41,6 +41,38 @@ def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T
     return deco
 
 
+def warn_closed_future_change() -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """
+    Warn that user should pass in 'closed' as default value will change.
+
+    Decorator for rolling function. Use as follows:
+
+    @warn_closed_future_change()
+    def myfunc():
+        ...
+    """
+
+    def deco(function: Callable[P, T]) -> Callable[P, T]:
+        @wraps(function)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            # we only warn if 'by' is passed in, otherwise 'closed' is not used
+            if (kwargs.get("by") is not None) and ("closed" not in kwargs):
+                warnings.warn(
+                    message=(
+                        "The default argument for closed, 'left', will be changed to 'right' in the future."
+                        "Fix this warning by explicitly passing in a value for closed"
+                    ),
+                    category=FutureWarning,
+                    stacklevel=find_stacklevel(),
+                )
+
+            return function(*args, **kwargs)
+
+        return wrapper
+
+    return deco
+
+
 def _rename_kwargs(
     func_name: str,
     kwargs: dict[str, object],

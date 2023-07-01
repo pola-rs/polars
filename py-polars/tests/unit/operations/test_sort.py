@@ -492,7 +492,8 @@ def test_sort_args() -> None:
     assert_frame_equal(result, expected)
 
     # Mixed
-    result = df.sort(["a"], "b")
+    with pytest.deprecated_call():
+        result = df.sort(["a"], "b")
     assert_frame_equal(result, expected)
 
     # nulls_last
@@ -698,3 +699,9 @@ def test_sorted_flag_groupby_dynamic() -> None:
         .to_series()
         .flags["SORTED_ASC"]
     )
+
+
+def test_top_k_9385() -> None:
+    assert pl.LazyFrame({"b": [True, False]}).sort(["b"]).slice(0, 1).collect()[
+        "b"
+    ].to_list() == [False]

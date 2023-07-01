@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from datetime import date, datetime
 from functools import reduce
 from inspect import signature
@@ -53,6 +54,20 @@ def test_lazy() -> None:
     # └──────────────┴───────┴─────┘
     assert len(profiling_info) == 2
     assert profiling_info[1].columns == ["node", "start", "end"]
+
+
+@pytest.mark.parametrize(
+    ("data", "repr_"),
+    [
+        ({}, "0 cols, {}"),
+        ({"a": [1]}, '1 col, {"a": Int64}'),
+        ({"a": [1], "b": ["B"]}, '2 cols, {"a": Int64, "b": Utf8}'),
+        ({"a": [1], "b": ["B"], "c": [0.0]}, '3 cols, {"a": Int64 … "c": Float64}'),
+    ],
+)
+def test_repr(data: dict[str, list[Any]], repr_: str) -> None:
+    ldf = pl.LazyFrame(data)
+    assert repr(ldf).startswith(f"<LazyFrame [{repr_}] at ")
 
 
 def test_lazyframe_membership_operator() -> None:
@@ -711,6 +726,27 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
     assert cast(float, out_single_val_variance[0, "var"]) == 0.0
 
 
+def test_rolling_closed_decorator() -> None:
+    # no warning if we do not use by
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _ = pl.col("a").rolling_min(2)
+
+    # if we pass in a by, but no closed, we expect a warning
+    with pytest.warns(FutureWarning):
+        _ = pl.col("a").rolling_min(2, by="b")
+
+    # if we pass in a by and a closed, we expect no warning
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _ = pl.col("a").rolling_min(2, by="b", closed="left")
+
+    # regardless of the value
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _ = pl.col("a").rolling_min(2, by="b", closed="right")
+
+
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     out = ldf.select(
@@ -977,6 +1013,25 @@ def test_spearman_corr() -> None:
     ).collect()["c"]
     assert np.isclose(out[0], 0.5)
     assert np.isclose(out[1], -1.0)
+
+
+def test_spearman_corr_ties() -> None:
+    """In Spearman correlation, ranks are computed using the average method ."""
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 3, 7, 4], "b": [4, 3, 2, 2, 4, 3, 1]})
+
+    result = df.select(
+        pl.corr("a", "b", method="spearman").alias("a1"),
+        pl.corr(pl.col("a").rank("min"), pl.col("b").rank("min")).alias("a2"),
+        pl.corr(pl.col("a").rank(), pl.col("b").rank()).alias("a3"),
+    )
+    expected = pl.DataFrame(
+        [
+            pl.Series("a1", [-0.19048483669757843], dtype=pl.Float32),
+            pl.Series("a2", [-0.17223653586587362], dtype=pl.Float64),
+            pl.Series("a3", [-0.19048483669757843], dtype=pl.Float32),
+        ]
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_pearson_corr() -> None:

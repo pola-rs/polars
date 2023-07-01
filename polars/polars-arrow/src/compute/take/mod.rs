@@ -12,7 +12,7 @@ use arrow::types::NativeType;
 
 use crate::bit_util::unset_bit_raw;
 use crate::prelude::*;
-use crate::trusted_len::{PushUnchecked, TrustedLen};
+use crate::trusted_len::{TrustedLen, TrustedLenPush};
 use crate::utils::{with_match_primitive_type, CustomIterTools};
 
 /// # Safety

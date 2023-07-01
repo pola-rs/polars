@@ -119,6 +119,34 @@ where
         out.compute_len();
         out
     }
+
+    /// Create a new ChunkedArray from self, where the chunks are replaced.
+    ///
+    /// # Safety
+    /// The caller must ensure the dtypes of the chunks are correct
+    pub(crate) unsafe fn from_chunks_and_metadata(
+        chunks: Vec<ArrayRef>,
+        field: Arc<Field>,
+        bit_settings: Settings,
+        keep_sorted: bool,
+        keep_fast_explode: bool,
+    ) -> Self {
+        let mut out = ChunkedArray {
+            field,
+            chunks,
+            phantom: PhantomData,
+            bit_settings,
+            length: 0,
+        };
+        out.compute_len();
+        if !keep_sorted {
+            out.set_sorted_flag(IsSorted::Not);
+        }
+        if !keep_fast_explode {
+            out.unset_fast_explode_list()
+        }
+        out
+    }
 }
 
 impl ListChunked {

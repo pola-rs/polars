@@ -1,6 +1,7 @@
 import time
 import typing
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -331,6 +332,18 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     assert "df -> projection -> ordered_sink" in err
 
 
+def test_streaming_ternary() -> None:
+    q = pl.LazyFrame({"a": [1, 2, 3]})
+
+    assert (
+        q.with_columns(
+            pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
+        )
+        .explain(streaming=True)
+        .startswith("--- PIPELINE")
+    )
+
+
 def test_streaming_unique(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.DataFrame({"a": [1, 2, 2, 2], "b": [3, 4, 4, 4], "c": [5, 6, 7, 7]})
@@ -500,3 +513,120 @@ def test_streaming_groupby_categorical_aggregate() -> None:
         ],
         "sum": ["a", "a", "b", "b", "c", "c", None, None],
     }
+
+
+def test_streaming_restart_non_streamable_groupby() -> None:
+    df = pl.DataFrame({"id": [1], "id2": [1], "id3": [1], "value": [1]})
+    res = (
+        df.lazy()
+        .join(df.lazy(), on=["id", "id2"], how="left")
+        .filter(
+            (pl.col("id3") > pl.col("id3_right"))
+            & (pl.col("id3") - pl.col("id3_right") < 30)
+        )
+        .groupby(["id2", "id3", "id3_right"])
+        .agg(
+            pl.col("value").apply(lambda x: x).sum() * pl.col("value").sum()
+        )  # non-streamable UDF + nested_agg
+    )
+
+    assert """--- PIPELINE""" in res.explain(streaming=True)
+
+
+def test_streaming_sortedness_propagation_9494() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "when": [date(2023, 5, 10), date(2023, 5, 20), date(2023, 6, 10)],
+                "what": [1, 2, 3],
+            }
+        )
+        .lazy()
+        .sort("when")
+        .groupby_dynamic("when", every="1mo")
+        .agg(pl.col("what").sum())
+        .collect(streaming=True)
+    ).to_dict(False) == {"when": [date(2023, 5, 1), date(2023, 6, 1)], "what": [3, 3]}
+
+
+@pytest.mark.write_disk()
+def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    np.random.seed(0)
+
+    num_rows = 1_00_000
+    num_columns = 2
+    num_tables = 10
+
+    # ensure we create many chunks
+    # this will ensure we create more files
+    # and that creates contention while dumping
+    q = pl.concat(
+        [
+            pl.DataFrame(
+                [
+                    pl.Series(np.random.randint(0, 10000, size=num_rows))
+                    for _ in range(num_columns)
+                ]
+            )
+            for _ in range(num_tables)
+        ],
+        rechunk=False,
+    ).lazy()
+    q = q.sort(q.columns)
+    df = q.collect(streaming=True)
+    assert df.shape == (1_000_000, 2)
+    assert df["column_0"].flags["SORTED_ASC"]
+    assert df.head(20).to_dict(False) == {
+        "column_0": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        "column_1": [
+            242,
+            245,
+            588,
+            618,
+            732,
+            902,
+            925,
+            945,
+            1009,
+            1161,
+            1352,
+            1365,
+            1451,
+            1581,
+            1778,
+            1836,
+            1976,
+            2091,
+            2120,
+            2124,
+        ],
+    }
+
+
+@pytest.mark.write_disk()
+@pytest.mark.slow()
+@typing.no_type_check
+def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    p0 = tmp_path / "df0.parquet"
+    p1 = tmp_path / "df1.parquet"
+    # by loading from disk, we get different chunks
+    n = 200_000
+    k = 100
+
+    d0 = {f"x{i}": np.random.random(n) for i in range(k)}
+    d0.update({"id": np.arange(n)})
+
+    df0 = pl.DataFrame(d0)
+    df1 = df0.clone().select(pl.all().shuffle(111))
+
+    df0.write_parquet(p0)
+    df1.write_parquet(p1)
+
+    lf0 = pl.scan_parquet(p0)
+    lf1 = pl.scan_parquet(p1).select(pl.all().suffix("_r"))
+
+    for how in ["left", "inner"]:
+        q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
+        assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))

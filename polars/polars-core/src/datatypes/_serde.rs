@@ -59,6 +59,10 @@ pub enum SerializableDataType {
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
+    #[cfg(feature = "dtype-categorical")]
+    Categorical,
+    #[cfg(feature = "object")]
+    Object(String),
 }
 
 impl From<&DataType> for SerializableDataType {
@@ -87,7 +91,11 @@ impl From<&DataType> for SerializableDataType {
             Unknown => Self::Unknown,
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
-            _ => todo!(),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_) => Self::Categorical,
+            #[cfg(feature = "object")]
+            Object(name) => Self::Object(name.to_string()),
+            dt => panic!("{dt:?} not supported"),
         }
     }
 }
@@ -117,6 +125,10 @@ impl From<SerializableDataType> for DataType {
             Unknown => Self::Unknown,
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical => Self::Categorical(None),
+            #[cfg(feature = "object")]
+            Object(_) => Self::Object("unknown"),
         }
     }
 }

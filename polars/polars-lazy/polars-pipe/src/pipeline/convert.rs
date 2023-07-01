@@ -138,7 +138,7 @@ where
                 FileType::Ipc(options) => {
                     Box::new(IpcSink::new(path, *options, input_schema.as_ref())?) as Box<dyn Sink>
                 }
-                FileType::Memory => Box::new(OrderedSink::new()),
+                FileType::Memory => Box::new(OrderedSink::new()) as Box<dyn Sink>,
             }
         }
         Join {
@@ -220,7 +220,7 @@ where
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let sort_sink = SortSinkMultiple::new(args.clone(), &input_schema, sort_idx);
+                let sort_sink = SortSinkMultiple::new(args.clone(), input_schema, sort_idx);
                 Box::new(sort_sink) as Box<dyn Sink>
             }
         }

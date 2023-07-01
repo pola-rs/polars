@@ -5,6 +5,8 @@ use arrow::compute::cast::CastOptions;
 
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
+#[cfg(feature = "timezones")]
+use crate::chunked_array::temporal::validate_time_zone;
 use crate::prelude::*;
 
 pub(crate) fn cast_chunks(
@@ -40,7 +42,14 @@ fn cast_impl_inner(
     use DataType::*;
     let out = match dtype {
         Date => out.into_date(),
-        Datetime(tu, tz) => out.into_datetime(*tu, tz.clone()),
+        Datetime(tu, tz) => match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => {
+                validate_time_zone(tz)?;
+                out.into_datetime(*tu, Some(tz.clone()))
+            }
+            _ => out.into_datetime(*tu, None),
+        },
         Duration(tu) => out.into_duration(*tu),
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
@@ -223,7 +232,8 @@ impl BinaryChunked {
             .downcast_iter()
             .map(|arr| Box::new(binary_to_utf8_unchecked(arr)) as ArrayRef)
             .collect();
-        Utf8Chunked::from_chunks(self.name(), chunks)
+        let field = Arc::new(Field::new(self.name(), DataType::Utf8));
+        Utf8Chunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
     }
 }
 
@@ -238,7 +248,10 @@ impl Utf8Chunked {
                 )) as ArrayRef
             })
             .collect();
-        unsafe { BinaryChunked::from_chunks(self.name(), chunks) }
+        let field = Arc::new(Field::new(self.name(), DataType::Binary));
+        unsafe {
+            BinaryChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
+        }
     }
 }
 

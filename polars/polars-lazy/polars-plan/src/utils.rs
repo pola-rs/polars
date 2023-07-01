@@ -97,6 +97,24 @@ pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr
         .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
 }
 
+pub(crate) fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> bool {
+    arena.iter(current_node).all(|(_node, e)| {
+        use AExpr::*;
+        match e {
+            AnonymousFunction { options, .. } | Function { options, .. } => {
+                !matches!(options.collect_groups, ApplyOptions::ApplyGroups)
+            }
+            Column(_)
+            | Alias(_, _)
+            | Literal(_)
+            | BinaryExpr { .. }
+            | Ternary { .. }
+            | Cast { .. } => true,
+            _ => false,
+        }
+    })
+}
+
 pub fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
 where
     F: Fn(&AExpr) -> bool,

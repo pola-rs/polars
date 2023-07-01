@@ -9,6 +9,7 @@ The following methods are available under the `Series.dt` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Series.dt.base_utc_offset
     Series.dt.cast_time_unit
     Series.dt.replace_time_zone
     Series.dt.combine
@@ -16,6 +17,7 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.datetime
     Series.dt.day
     Series.dt.days
+    Series.dt.dst_offset
     Series.dt.epoch
     Series.dt.hour
     Series.dt.hours

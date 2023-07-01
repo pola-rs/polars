@@ -71,7 +71,7 @@ fn test_streaming_glob() -> PolarsResult<()> {
 #[test]
 fn test_streaming_union_order() -> PolarsResult<()> {
     let q = get_csv_glob();
-    let q = concat([q.clone(), q], false, false)?;
+    let q = concat([q.clone(), q], Default::default())?;
     let q = q.select([col("sugars_g"), col("calories")]);
 
     assert_streaming_with_default(q, true, false);

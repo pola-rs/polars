@@ -1,6 +1,7 @@
 use polars_core::prelude::{polars_bail, polars_err, PolarsError, PolarsResult};
 use polars_lazy::dsl::Expr;
 use polars_plan::dsl::count;
+use polars_plan::logical_plan::LiteralValue;
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
     WindowSpec, WindowType,
@@ -24,6 +25,46 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ABS(column_1) from df;
     /// ```
     Abs,
+    /// SQL 'cos' function
+    /// ```sql
+    /// SELECT COS(column_1) from df;
+    /// ```
+    Cos,
+    /// SQL 'cot' function
+    /// ```sql
+    /// SELECT COT(column_1) from df;
+    /// ```
+    Cot,
+    /// SQL 'sin' function
+    /// ```sql
+    /// SELECT SIN(column_1) from df;
+    /// ```
+    Sin,
+    /// SQL 'tan' function
+    /// ```sql
+    /// SELECT TAN(column_1) from df;
+    /// ```
+    Tan,
+    /// SQL 'cosd' function
+    /// ```sql
+    /// SELECT COSD(column_1) from df;
+    /// ```
+    CosD,
+    /// SQL 'cotd' function
+    /// ```sql
+    /// SELECT COTD(column_1) from df;
+    /// ```
+    CotD,
+    /// SQL 'sind' function
+    /// ```sql
+    /// SELECT SIND(column_1) from df;
+    /// ```
+    SinD,
+    /// SQL 'tand' function
+    /// ```sql
+    /// SELECT TAND(column_1) from df;
+    /// ```
+    TanD,
     /// SQL 'acos' function
     /// ```sql
     /// SELECT ACOS(column_1) from df;
@@ -39,6 +80,21 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ATAN(column_1) from df;
     /// ```
     Atan,
+    /// SQL 'acosd' function
+    /// ```sql
+    /// SELECT ACOSD(column_1) from df;
+    /// ```
+    AcosD,
+    /// SQL 'asind' function
+    /// ```sql
+    /// SELECT ASIND(column_1) from df;
+    /// ```
+    AsinD,
+    /// SQL 'atand' function
+    /// ```sql
+    /// SELECT ATAND(column_1) from df;
+    /// ```
+    AtanD,
     /// SQL 'ceil' function
     /// ```sql
     /// SELECT CEIL(column_1) from df;
@@ -84,6 +140,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT POW(column_1, 2) from df;
     /// ```
     Pow,
+    /// SQL 'round' function
+    /// ```sql
+    /// SELECT ROUND(column_1, 3) from df;
+    /// ```
+    Round,
     // ----
     // String functions
     // ----
@@ -178,6 +239,16 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ARRAY_LENGTH(column_1) from df;
     /// ```
     ArrayLength,
+    /// SQL 'degrees' function
+    /// ```sql
+    /// SELECT DEGREES(column_1) from df;
+    /// ```
+    Degrees,
+    /// SQL 'RADIANS' function
+    /// ```sql
+    /// SELECT radians(column_1) from df;
+    /// ```
+    Radians,
     /// SQL 'array_lower' function
     /// Returns the minimum value in an array; equivalent to `array_min`
     /// ```sql
@@ -233,11 +304,13 @@ pub(crate) enum PolarsSqlFunctions {
     /// ```
     ArrayContains,
 }
+
 impl PolarsSqlFunctions {
     pub(crate) fn keywords() -> &'static [&'static str] {
         &[
             "abs",
             "acos",
+            "acosd",
             "array_contains",
             "array_get",
             "array_length",
@@ -248,11 +321,18 @@ impl PolarsSqlFunctions {
             "array_unique",
             "array_upper",
             "asin",
+            "asind",
             "atan",
+            "atand",
             "avg",
             "ceil",
             "ceiling",
+            "cos",
+            "cosd",
+            "cot",
+            "cotd",
             "count",
+            "degrees",
             "ends_with",
             "exp",
             "first",
@@ -270,10 +350,18 @@ impl PolarsSqlFunctions {
             "max",
             "min",
             "pow",
+            "radians",
+            "round",
             "rtrim",
+            "sin",
+            "sind",
             "starts_with",
             "stddev",
             "sum",
+            "tan",
+            "tan",
+            "tand",
+            "tand",
             "unnest",
             "upper",
             "variance",
@@ -290,9 +378,22 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             // Math functions
             // ----
             "abs" => Self::Abs,
+            "cos" => Self::Cos,
+            "cot" => Self::Cot,
+            "sin" => Self::Sin,
+            "tan" => Self::Tan,
+            "cosd" => Self::CosD,
+            "cotd" => Self::CotD,
+            "sind" => Self::SinD,
+            "tand" => Self::TanD,
             "acos" => Self::Acos,
             "asin" => Self::Asin,
             "atan" => Self::Atan,
+            "acosd" => Self::AcosD,
+            "asind" => Self::AsinD,
+            "atand" => Self::AtanD,
+            "degrees" => Self::Degrees,
+            "radians" => Self::Radians,
             "ceil" | "ceiling" => Self::Ceil,
             "exp" => Self::Exp,
             "floor" => Self::Floor,
@@ -302,6 +403,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "log1p" => Self::Log1p,
             "log2" => Self::Log2,
             "pow" => Self::Pow,
+            "round" => Self::Round,
             // ----
             // String functions
             // ----
@@ -353,9 +455,22 @@ impl SqlFunctionVisitor<'_> {
             // Math functions
             // ----
             Abs => self.visit_unary(Expr::abs),
+            Cos => self.visit_unary(Expr::cos),
+            Cot => self.visit_unary(Expr::cot),
+            Sin => self.visit_unary(Expr::sin),
+            Tan => self.visit_unary(Expr::tan),
+            CosD => self.visit_unary(|e| e.radians().cos()),
+            CotD => self.visit_unary(|e| e.radians().cot()),
+            SinD => self.visit_unary(|e| e.radians().sin()),
+            TanD => self.visit_unary(|e| e.radians().tan()),
             Acos => self.visit_unary(Expr::arccos),
             Asin => self.visit_unary(Expr::arcsin),
             Atan => self.visit_unary(Expr::arctan),
+            AcosD => self.visit_unary(|e| e.arccos().degrees()),
+            AsinD => self.visit_unary(|e| e.arcsin().degrees()),
+            AtanD => self.visit_unary(|e| e.arctan().degrees()),
+            Degrees => self.visit_unary(Expr::degrees),
+            Radians => self.visit_unary(Expr::radians),
             Ceil => self.visit_unary(Expr::ceil),
             Exp => self.visit_unary(Expr::exp),
             Floor => self.visit_unary(Expr::floor),
@@ -365,6 +480,20 @@ impl SqlFunctionVisitor<'_> {
             Log1p => self.visit_unary(Expr::log1p),
             Log2 => self.visit_unary(|e| e.log(2.0)),
             Pow => self.visit_binary::<Expr>(Expr::pow),
+            Round => match function.args.len() {
+                1 => self.visit_unary(|e| e.round(0)),
+                2 => self.try_visit_binary(|e, decimals| {
+                    Ok(e.round(match decimals {
+                        Expr::Literal(LiteralValue::Int64(n)) => n as u32,
+                        _ => {
+                            polars_bail!(InvalidOperation: "Invalid 'decimals' for Round: {}", function.args[1]);
+                        }
+                    }))
+                }),
+                _ => {
+                    polars_bail!(InvalidOperation:"Invalid number of arguments for Round: {}",function.args.len());
+                },
+            },
             // ----
             // String functions
             // ----
@@ -373,7 +502,7 @@ impl SqlFunctionVisitor<'_> {
             LTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().lstrip(None)),
                 2 => self.visit_binary(|e, s| e.str().lstrip(Some(s))),
-                _ => panic!(
+                _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for LTrim: {}",
                     function.args.len()
                 ),
@@ -381,7 +510,7 @@ impl SqlFunctionVisitor<'_> {
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().rstrip(None)),
                 2 => self.visit_binary(|e, s| e.str().rstrip(Some(s))),
-                _ => panic!(
+                _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for RTrim: {}",
                     function.args.len()
                 ),
@@ -475,66 +604,59 @@ impl SqlFunctionVisitor<'_> {
 
     fn visit_unary_no_window(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
         let function = self.func;
+
         let args = extract_args(function);
-        if let FunctionArgExpr::Expr(sql_expr) = args[0] {
-            // parse the inner sql expr -- e.g. SUM(a) -> a
-            let expr = parse_sql_expr(sql_expr, self.ctx)?;
-            // apply the function on the inner expr -- e.g. SUM(a) -> SUM
-            Ok(f(expr))
-        } else {
-            not_supported_error(function.name.0[0].value.as_str(), &args)
+        match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => {
+                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                // apply the function on the inner expr -- e.g. SUM(a) -> SUM
+                Ok(f(expr))
+            }
+            _ => self.not_supported_error(),
         }
     }
 
     fn visit_binary<Arg: FromSqlExpr>(&self, f: impl Fn(Expr, Arg) -> Expr) -> PolarsResult<Expr> {
+        self.try_visit_binary(|e, a| Ok(f(e, a)))
+    }
+
+    fn try_visit_binary<Arg: FromSqlExpr>(
+        &self,
+        f: impl Fn(Expr, Arg) -> PolarsResult<Expr>,
+    ) -> PolarsResult<Expr> {
         let function = self.func;
         let args = extract_args(function);
-        if let FunctionArgExpr::Expr(sql_expr) = args[0] {
-            let expr =
-                self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &function.over)?;
-            if let FunctionArgExpr::Expr(sql_expr) = args[1] {
-                let expr2 = Arg::from_sql_expr(sql_expr, self.ctx)?;
-                Ok(f(expr, expr2))
-            } else {
-                not_supported_error(function.name.0[0].value.as_str(), &args)
+        match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr), FunctionArgExpr::Expr(sql_expr2)] => {
+                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
+                f(expr, expr2)
             }
-        } else {
-            not_supported_error(function.name.0[0].value.as_str(), &args)
+            _ => self.not_supported_error(),
         }
     }
 
     fn visit_count(&self) -> PolarsResult<Expr> {
         let args = extract_args(self.func);
-        Ok(match (args.len(), self.func.distinct) {
+        match (self.func.distinct, args.as_slice()) {
             // count()
-            (0, false) => count(),
-            // count(distinct)
-            (0, true) => return not_supported_error("count", &args),
-            (1, false) => match args[0] {
-                // count(col)
-                FunctionArgExpr::Expr(sql_expr) => {
-                    let expr = self
-                        .apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
-                    expr.count()
-                }
-                // count(*)
-                FunctionArgExpr::Wildcard => count(),
-                // count(tbl.*) is not supported
-                _ => return not_supported_error("count", &args),
-            },
-            (1, true) => {
-                // count(distinct col)
-                if let FunctionArgExpr::Expr(sql_expr) = args[0] {
-                    let expr = self
-                        .apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
-                    expr.n_unique()
-                } else {
-                    // count(distinct *) or count(distinct tbl.*) is not supported
-                    return not_supported_error("count", &args);
-                }
+            (false, []) => Ok(count()),
+            // count(column_name)
+            (false, [FunctionArgExpr::Expr(sql_expr)]) => {
+                let expr =
+                    self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
+                Ok(expr.count())
             }
-            _ => return not_supported_error("count", &args),
-        })
+            // count(*)
+            (false, [FunctionArgExpr::Wildcard]) => Ok(count()),
+            // count(distinct column_name)
+            (true, [FunctionArgExpr::Expr(sql_expr)]) => {
+                let expr =
+                    self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
+                Ok(expr.n_unique())
+            }
+            _ => self.not_supported_error(),
+        }
     }
 
     fn apply_window_spec(
@@ -574,14 +696,14 @@ impl SqlFunctionVisitor<'_> {
             None => expr,
         })
     }
-}
 
-fn not_supported_error(function_name: &str, args: &Vec<&FunctionArgExpr>) -> PolarsResult<Expr> {
-    polars_bail!(
-        InvalidOperation:
-        "function `{}` with args {:?} is not supported in polars-sql",
-        function_name, args
-    );
+    fn not_supported_error(&self) -> PolarsResult<Expr> {
+        polars_bail!(
+            InvalidOperation:
+            "No function matches the given name and arguments: `{}`",
+            self.func.to_string()
+        );
+    }
 }
 
 fn extract_args(sql_function: &SQLFunction) -> Vec<&FunctionArgExpr> {

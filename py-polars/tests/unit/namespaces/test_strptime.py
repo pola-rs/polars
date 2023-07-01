@@ -269,11 +269,37 @@ def test_infer_tz_aware_with_utc(time_unit: TimeUnit) -> None:
 
 
 def test_infer_tz_aware_raises() -> None:
-    msg = "cannot parse tz-aware values with tz-aware dtype - please drop the time zone from the dtype"
+    msg = "Please either drop the time zone from the function call, or set it to UTC"
     with pytest.raises(ComputeError, match=msg):
         pl.Series(["2020-01-02T04:00:00+02:00"]).str.to_datetime(
             time_unit="us", time_zone="Europe/Vienna"
         )
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(
+            pl.Datetime("us", "UTC"), format="%Y-%m-%dT%H:%M:%S%z"
+        ),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(
+            pl.Datetime("us"), format="%Y-%m-%dT%H:%M:%S%z"
+        ),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(pl.Datetime("us", "UTC")),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(pl.Datetime("us")),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(
+            time_zone="UTC", format="%Y-%m-%dT%H:%M:%S%z"
+        ),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(
+            format="%Y-%m-%dT%H:%M:%S%z"
+        ),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(time_zone="UTC"),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(),
+    ],
+)
+def test_parsing_offset_aware_with_utc_dtype(result: pl.Series) -> None:
+    expected = pl.Series([datetime(2020, 1, 1, tzinfo=timezone.utc)])
+    assert_series_equal(result, expected)
 
 
 def test_datetime_strptime_patterns_consistent() -> None:
@@ -417,12 +443,7 @@ def test_invalid_date_parsing_4898() -> None:
 
 def test_strptime_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime("%Y-%m-%d %H:%M:%S%z")
-    with pytest.raises(
-        ComputeError, match=r"unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        DeprecationWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(ComputeError, match=r"unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("foo")
 
 

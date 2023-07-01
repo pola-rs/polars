@@ -182,8 +182,13 @@ impl AExpr {
                 }
             }
             AnonymousFunction {
-                output_type, input, ..
+                output_type,
+                input,
+                function,
+                ..
             } => {
+                let tmp = function.get_output();
+                let output_type = tmp.as_ref().unwrap_or(output_type);
                 let fields = input
                     .iter()
                     // default context because `col()` would return a list in aggregation context

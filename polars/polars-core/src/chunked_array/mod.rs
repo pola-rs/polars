@@ -19,7 +19,7 @@ pub mod float;
 pub mod iterator;
 pub mod kernels;
 #[cfg(feature = "ndarray")]
-mod ndarray;
+pub(crate) mod ndarray;
 
 #[cfg(feature = "dtype-array")]
 pub(crate) mod array;
@@ -315,27 +315,22 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Create a new ChunkedArray from self, where the chunks are replaced.
-    fn copy_with_chunks(
+    ///
+    /// # Safety
+    /// The caller must ensure the dtypes of the chunks are correct
+    unsafe fn copy_with_chunks(
         &self,
         chunks: Vec<ArrayRef>,
         keep_sorted: bool,
         keep_fast_explode: bool,
     ) -> Self {
-        let mut out = ChunkedArray {
-            field: self.field.clone(),
+        Self::from_chunks_and_metadata(
             chunks,
-            phantom: PhantomData,
-            bit_settings: self.bit_settings,
-            length: 0,
-        };
-        out.compute_len();
-        if !keep_sorted {
-            out.set_sorted_flag(IsSorted::Not);
-        }
-        if !keep_fast_explode {
-            out.unset_fast_explode_list()
-        }
-        out
+            self.field.clone(),
+            self.bit_settings,
+            keep_sorted,
+            keep_fast_explode,
+        )
     }
 
     /// Get data type of ChunkedArray.

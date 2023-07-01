@@ -1,6 +1,28 @@
+use std::mem::MaybeUninit;
+
+use arrow::array::{BooleanArray, PrimitiveArray};
+use arrow::bitmap::Bitmap;
+use arrow::datatypes::DataType;
+use arrow::types::NativeType;
 use polars_utils::slice::*;
 
 use crate::row::{RowsEncoded, SortField};
+
+pub(crate) trait FromSlice {
+    fn from_slice(slice: &[u8]) -> Self;
+    fn from_slice_inverted(slice: &[u8]) -> Self;
+}
+
+impl<const N: usize> FromSlice for [u8; N] {
+    #[inline]
+    fn from_slice(slice: &[u8]) -> Self {
+        slice.try_into().unwrap()
+    }
+
+    fn from_slice_inverted(_slice: &[u8]) -> Self {
+        todo!()
+    }
+}
 
 /// Encodes a value of a particular fixed width type into bytes
 pub trait FixedLengthEncoding: Copy {
@@ -119,12 +141,12 @@ fn encode_value<T: FixedLengthEncoding>(
     value: &T,
     offset: &mut usize,
     descending: bool,
-    buf: &mut [u8],
+    buf: &mut [MaybeUninit<u8>],
 ) {
     let end_offset = *offset + T::ENCODED_LEN;
     let dst = unsafe { buf.get_unchecked_release_mut(*offset..end_offset) };
     // set valid
-    dst[0] = 1;
+    dst[0] = MaybeUninit::new(1);
     let mut encoded = value.encode();
 
     // invert bits to reverse order
@@ -134,22 +156,24 @@ fn encode_value<T: FixedLengthEncoding>(
         }
     }
 
-    dst[1..].copy_from_slice(encoded.as_ref());
+    dst[1..].copy_from_slice(encoded.as_ref().as_uninit());
     *offset = end_offset;
 }
 
-pub(crate) fn encode_slice<T: FixedLengthEncoding>(
+pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     input: &[T],
     out: &mut RowsEncoded,
     field: &SortField,
 ) {
+    out.values.set_len(0);
+    let values = out.values.spare_capacity_mut();
     for (offset, value) in out.offsets.iter_mut().skip(1).zip(input) {
-        encode_value(value, offset, field.descending, &mut out.buf);
+        encode_value(value, offset, field.descending, values);
     }
 }
 
 #[inline]
-pub(super) fn null_sentinel(field: &SortField) -> u8 {
+pub(crate) fn get_null_sentinel(field: &SortField) -> u8 {
     if field.nulls_last {
         0xFF
     } else {
@@ -157,18 +181,102 @@ pub(super) fn null_sentinel(field: &SortField) -> u8 {
     }
 }
 
-pub(crate) fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
+pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
     input: I,
     out: &mut RowsEncoded,
     field: &SortField,
 ) {
+    out.values.set_len(0);
+    let values = out.values.spare_capacity_mut();
     for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
         if let Some(value) = opt_value {
-            encode_value(&value, offset, field.descending, &mut out.buf);
+            encode_value(&value, offset, field.descending, values);
         } else {
-            unsafe { *out.buf.get_unchecked_release_mut(*offset) = null_sentinel(field) };
+            unsafe {
+                *values.get_unchecked_release_mut(*offset) =
+                    MaybeUninit::new(get_null_sentinel(field))
+            };
             let end_offset = *offset + T::ENCODED_LEN;
             *offset = end_offset;
         }
     }
+}
+
+pub(super) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
+    rows: &mut [&[u8]],
+    field: &SortField,
+) -> PrimitiveArray<T>
+where
+    T::Encoded: FromSlice,
+{
+    let data_type: DataType = T::PRIMITIVE.into();
+    let mut has_nulls = false;
+    let null_sentinel = get_null_sentinel(field);
+
+    let values = rows
+        .iter()
+        .map(|row| {
+            has_nulls |= *row.get_unchecked_release(0) == null_sentinel;
+            // skip null sentinel
+            let start = 1;
+            let end = start + T::ENCODED_LEN - 1;
+            let slice = row.get_unchecked_release(start..end);
+            let bytes = T::Encoded::from_slice(slice);
+            T::decode(bytes)
+        })
+        .collect::<Vec<_>>();
+
+    let validity = if has_nulls {
+        let null_sentinel = get_null_sentinel(field);
+        Some(decode_nulls(rows, null_sentinel))
+    } else {
+        None
+    };
+
+    // validity byte and data length
+    let increment_len = T::ENCODED_LEN;
+
+    increment_row_counter(rows, increment_len);
+    PrimitiveArray::new(data_type, values.into(), validity)
+}
+
+pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> BooleanArray {
+    let mut has_nulls = false;
+    let null_sentinel = get_null_sentinel(field);
+
+    let values = rows
+        .iter()
+        .map(|row| {
+            has_nulls |= *row.get_unchecked_release(0) == null_sentinel;
+            // skip null sentinel
+            let start = 1;
+            let end = start + bool::ENCODED_LEN - 1;
+            let slice = row.get_unchecked_release(start..end);
+            let bytes = <bool as FixedLengthEncoding>::Encoded::from_slice(slice);
+            bool::decode(bytes)
+        })
+        .collect::<Bitmap>();
+
+    let validity = if has_nulls {
+        Some(decode_nulls(rows, null_sentinel))
+    } else {
+        None
+    };
+
+    // validity byte and data length
+    let increment_len = bool::ENCODED_LEN;
+
+    increment_row_counter(rows, increment_len);
+    BooleanArray::new(DataType::Boolean, values, validity)
+}
+unsafe fn increment_row_counter(rows: &mut [&[u8]], fixed_size: usize) {
+    for row in rows {
+        *row = row.get_unchecked_release(fixed_size..);
+    }
+}
+
+pub(super) unsafe fn decode_nulls(rows: &[&[u8]], null_sentinel: u8) -> Bitmap {
+    rows.iter()
+        .map(|row| *row.get_unchecked_release(0) != null_sentinel)
+        .collect()
 }

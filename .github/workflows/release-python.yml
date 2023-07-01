@@ -1,4 +1,4 @@
-name: Create Python release
+name: Release Python
 
 on:
   push:
@@ -6,9 +6,9 @@ on:
       - py-*
 
 env:
-  RUST_TOOLCHAIN: nightly-2023-06-01
+  RUST_TOOLCHAIN: nightly-2023-06-23
   PYTHON_VERSION: '3.7'
-  MATURIN_VERSION: '1.0.1'
+  MATURIN_VERSION: '1.1.0'
   MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
 
 defaults:

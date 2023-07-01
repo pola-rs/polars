@@ -25,7 +25,7 @@ from polars.testing.parametric import columns
 from polars.utils._construction import iterable_to_pydf
 
 if TYPE_CHECKING:
-    from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
+    from polars.type_aliases import IndexOrder, JoinStrategy, UniqueKeepStrategy
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -455,6 +455,17 @@ def test_from_dict_with_scalars() -> None:
     assert dfx[-10:-5].rows() == dfx[-5:].rows()
     assert dfx.row(n_range // 2, named=True) == mixed_dtype_data
 
+    # misc generators/iterables
+    df9 = pl.DataFrame(
+        {
+            "a": iter([0, 1, 2]),
+            "b": (2, 1, 0).__iter__(),
+            "c": (v for v in (0, 0, 0)),
+            "d": "x",
+        }
+    )
+    assert df9.rows() == [(0, 2, 0, "x"), (1, 1, 0, "x"), (2, 0, 0, "x")]
+
 
 def test_dataframe_membership_operator() -> None:
     # cf. issue #4032
@@ -818,14 +829,6 @@ def test_shift() -> None:
     assert_frame_equal(a, b)
 
 
-def test_to_dummies() -> None:
-    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
-    dummies = df.to_dummies()
-    assert dummies["A_a"].to_list() == [1, 0, 0]
-    assert dummies["A_b"].to_list() == [0, 1, 0]
-    assert dummies["A_c"].to_list() == [0, 0, 1]
-
-
 def test_custom_groupby() -> None:
     df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = df.groupby("b", maintain_order=True).agg(
@@ -877,9 +880,17 @@ def test_arg_where() -> None:
     assert_series_equal(pl.arg_where(s, eager=True).cast(int), pl.Series([0, 2]))
 
 
-def test_to_dummies2() -> None:
+def test_to_dummies() -> None:
+    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    dummies = df.to_dummies()
+
+    assert dummies["A_a"].to_list() == [1, 0, 0]
+    assert dummies["A_b"].to_list() == [0, 1, 0]
+    assert dummies["A_c"].to_list() == [0, 0, 1]
+
     df = pl.DataFrame({"a": [1, 2, 3]})
     res = df.to_dummies()
+
     expected = pl.DataFrame(
         {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]}
     ).with_columns(pl.all().cast(pl.UInt8))
@@ -904,6 +915,27 @@ def test_to_dummies2() -> None:
     assert pl.DataFrame({"x": pl.arange(0, 3, eager=True)}).to_dummies("x").to_dict(
         False
     ) == {"x_0": [1, 0, 0], "x_1": [0, 1, 0], "x_2": [0, 0, 1]}
+
+
+def test_to_dummies_drop_first() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [0, 1, 2],
+            "bar": [3, 4, 5],
+            "baz": ["x", "y", "z"],
+        }
+    )
+    dm = df.to_dummies()
+    dd = df.to_dummies(drop_first=True)
+
+    assert dd.columns == ["foo_1", "foo_2", "bar_4", "bar_5", "baz_y", "baz_z"]
+    assert set(dm.columns) - set(dd.columns) == {"foo_0", "bar_3", "baz_x"}
+    assert dm.select(dd.columns).frame_equal(dd)
+    assert dd.rows() == [
+        (0, 0, 0, 0, 0, 0),
+        (1, 0, 1, 0, 1, 0),
+        (0, 1, 0, 1, 0, 1),
+    ]
 
 
 def test_to_pandas(df: pl.DataFrame) -> None:
@@ -1411,20 +1443,25 @@ def test_assign() -> None:
     assert list(df["a"]) == [2, 4, 6]
 
 
-def test_to_numpy() -> None:
+@pytest.mark.parametrize(
+    ("order", "f_contiguous", "c_contiguous"),
+    [("fortran", True, False), ("c", False, True)],
+)
+def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
 
-    out_array = df.to_numpy()
+    out_array = df.to_numpy(order=order)
     expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
     assert_array_equal(out_array, expected_array)
-    assert out_array.flags["F_CONTIGUOUS"] is True
+    assert out_array.flags["F_CONTIGUOUS"] == f_contiguous
+    assert out_array.flags["C_CONTIGUOUS"] == c_contiguous
 
-    structured_array = df.to_numpy(structured=True)
+    structured_array = df.to_numpy(structured=True, order=order)
     expected_array = np.array(
         [(1, 1.0), (2, 2.0), (3, 3.0)], dtype=[("a", "<i8"), ("b", "<f8")]
     )
     assert_array_equal(structured_array, expected_array)
-    assert structured_array.flags["F_CONTIGUOUS"] is True
+    assert structured_array.flags["F_CONTIGUOUS"]
 
 
 def test_to_numpy_structured() -> None:
@@ -2545,9 +2582,22 @@ def test_getitem() -> None:
     # slice. Below an example of taking every second row
     assert_frame_equal(df[1::2], pl.DataFrame({"a": [2.0, 4.0], "b": [4, 6]}))
 
+    # slice, empty slice
+    assert df[:0].columns == ["a", "b"]
+    assert len(df[:0]) == 0
+
+    # make mypy happy
+    empty: list[int] = []
+
+    # empty list with column selector drops rows but keeps columns
+    assert_frame_equal(df[empty, :], df[:0])
+
+    # empty list without column select return empty frame
+    assert_frame_equal(df[empty], pl.DataFrame({}))
+
     # numpy array: assumed to be row indices if integers, or columns if strings
 
-    # numpy array: positive idxs.
+    # numpy array: positive idxs and empty idx
     for np_dtype in (
         np.int8,
         np.int16,
@@ -2564,6 +2614,7 @@ def test_getitem() -> None:
                 {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
             ),
         )
+        assert df[np.array([], dtype=np_dtype)].columns == ["a", "b"]
 
     # numpy array: positive and negative idxs.
     for np_dtype in (np.int8, np.int16, np.int32, np.int64):
@@ -2593,7 +2644,7 @@ def test_getitem() -> None:
     # pl.Series: strings for column selections.
     assert_frame_equal(df[pl.Series("", ["a", "b"])], df)
 
-    # pl.Series: positive idxs for row selection.
+    # pl.Series: positive idxs or empty idxs for row selection.
     for pl_dtype in (
         pl.Int8,
         pl.Int16,
@@ -2610,6 +2661,7 @@ def test_getitem() -> None:
                 {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
             ),
         )
+        assert df[pl.Series("", [], dtype=pl_dtype)].columns == ["a", "b"]
 
     # pl.Series: positive and negative idxs for row selection.
     for pl_dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64):
@@ -3652,14 +3704,11 @@ def test_rolling_apply() -> None:
     roll_app_std = s.rolling_apply(
         function=lambda s: s.std(),
         window_size=4,
-        weights=[1.0, 2.0, 3.0, 0.1],
         min_periods=3,
         center=False,
     )
 
-    roll_std = s.rolling_std(
-        window_size=4, weights=[1.0, 2.0, 3.0, 0.1], min_periods=3, center=False
-    )
+    roll_std = s.rolling_std(window_size=4, min_periods=3, center=False)
 
     assert (roll_app_std - roll_std).abs().sum() < 0.0001
 

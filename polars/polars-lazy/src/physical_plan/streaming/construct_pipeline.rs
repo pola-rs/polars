@@ -259,10 +259,11 @@ fn get_pipeline_node(
     ALogicalPlan::MapFunction {
         function: FunctionNode::Pipeline {
             function: Arc::new(move |_df: DataFrame| {
-                let state = ExecutionState::new();
+                let mut state = ExecutionState::new();
                 if state.verbose() {
                     eprintln!("RUN STREAMING PIPELINE")
                 }
+                state.set_in_streaming_engine();
                 let state = Box::new(state) as Box<dyn SExecutionContext>;
                 pipeline.execute(state)
             }),

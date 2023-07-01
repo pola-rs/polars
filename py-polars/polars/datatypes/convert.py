@@ -401,7 +401,7 @@ def py_type_to_dtype(
 
 
 def py_type_to_dtype(
-    data_type: Any, raise_unmatched: bool = True
+    data_type: Any, raise_unmatched: bool = True, allow_strings: bool = False
 ) -> PolarsDataType | None:
     """Convert a Python dtype (or type annotation) to a Polars dtype."""
     if isinstance(data_type, ForwardRef):
@@ -426,7 +426,7 @@ def py_type_to_dtype(
         if len(possible_types) == 1:
             data_type = possible_types[0]
 
-    elif isinstance(data_type, str):
+    elif allow_strings and isinstance(data_type, str):
         data_type = DataTypeMappings.REPR_TO_DTYPE.get(
             re.sub(r"^(?:dataclasses\.)?InitVar\[(.+)\]$", r"\1", data_type),
             data_type,

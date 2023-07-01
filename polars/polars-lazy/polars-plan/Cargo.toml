@@ -13,6 +13,7 @@ ahash.workspace = true
 arrow.workspace = true
 chrono = { version = "0.4", optional = true }
 chrono-tz = { version = "0.8", optional = true }
+ciborium = { version = "0.2", optional = true }
 futures = { version = "0.3.25", optional = true }
 once_cell.workspace = true
 polars-arrow = { version = "0.30.0", path = "../../polars-arrow" }
@@ -30,7 +31,7 @@ smartstring.workspace = true
 [features]
 # debugging utility
 debugging = []
-python = ["pyo3"]
+python = ["pyo3", "ciborium"]
 # make sure we don't compile unneeded things even though
 # this dependency gets activated
 compile = []
@@ -67,6 +68,8 @@ sign = []
 timezones = ["chrono-tz", "polars-time/timezones", "polars-core/timezones", "regex"]
 binary_encoding = ["polars-ops/binary_encoding"]
 true_div = []
+nightly = ["polars-utils/nightly", "polars-ops/nightly"]
+extract_jsonpath = []
 
 # operations
 approx_unique = ["polars-ops/approx_unique"]
@@ -115,6 +118,7 @@ cse = []
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
 fused = []
+list_sets = ["polars-ops/list_sets"]
 
 bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
 

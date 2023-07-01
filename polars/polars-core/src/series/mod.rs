@@ -419,6 +419,20 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => Cow::Owned(self.cast(&UInt32).unwrap()),
             List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
+            #[cfg(feature = "dtype-struct")]
+            Struct(_) => {
+                let arr = self.struct_().unwrap();
+                let fields = arr
+                    .fields()
+                    .iter()
+                    .map(|s| s.to_physical_repr().into_owned())
+                    .collect::<Vec<_>>();
+                Cow::Owned(
+                    StructChunked::new(self.name(), &fields)
+                        .unwrap()
+                        .into_series(),
+                )
+            }
             _ => Cow::Borrowed(self),
         }
     }

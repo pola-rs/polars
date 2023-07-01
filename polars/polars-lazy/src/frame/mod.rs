@@ -479,7 +479,7 @@ impl LazyFrame {
         if streaming {
             #[cfg(feature = "streaming")]
             {
-                insert_streaming_nodes(lp_top, lp_arena, expr_arena, scratch, _fmt)?;
+                insert_streaming_nodes(lp_top, lp_arena, expr_arena, scratch, _fmt, true)?;
             }
             #[cfg(not(feature = "streaming"))]
             {
@@ -1171,6 +1171,22 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    #[cfg(feature = "python")]
+    pub fn map_python(
+        self,
+        function: polars_plan::prelude::python_udf::PythonFunction,
+        optimizations: AllowedOptimizations,
+        schema: Option<SchemaRef>,
+        validate_output: bool,
+    ) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .map_python(function, optimizations, schema, validate_output)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     pub(crate) fn map_private(self, function: FunctionNode) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().map_private(function).build();
@@ -1265,7 +1281,14 @@ impl LazyFrame {
         // this trick allows us to reuse the `Union` architecture to get map over
         // two DataFrames
         let left = self.map_private(FunctionNode::Rechunk);
-        let q = concat(&[left, other], false, true)?;
+        let q = concat(
+            &[left, other],
+            UnionArgs {
+                rechunk: false,
+                parallel: true,
+                ..Default::default()
+            },
+        )?;
         Ok(q.map_private(FunctionNode::MergeSorted {
             column: Arc::from(key),
         }))

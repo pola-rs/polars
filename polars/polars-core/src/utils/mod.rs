@@ -317,6 +317,25 @@ macro_rules! with_match_physical_numeric_type {(
 })}
 
 #[macro_export]
+macro_rules! with_match_physical_integer_type {(
+    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    match $dtype {
+        Int8 => __with_ty__! { i8 },
+        Int16 => __with_ty__! { i16 },
+        Int32 => __with_ty__! { i32 },
+        Int64 => __with_ty__! { i64 },
+        UInt8 => __with_ty__! { u8 },
+        UInt16 => __with_ty__! { u16 },
+        UInt32 => __with_ty__! { u32 },
+        UInt64 => __with_ty__! { u64 },
+        _ => unimplemented!()
+    }
+})}
+
+#[macro_export]
 macro_rules! with_match_physical_numeric_polars_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({

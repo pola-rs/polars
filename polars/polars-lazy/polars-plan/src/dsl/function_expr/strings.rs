@@ -57,6 +57,8 @@ pub enum StringFunction {
     },
     Uppercase,
     Lowercase,
+    #[cfg(feature = "nightly")]
+    Titlecase,
     Strip(Option<String>),
     RStrip(Option<String>),
     LStrip(Option<String>),
@@ -66,6 +68,11 @@ pub enum StringFunction {
     Explode,
     #[cfg(feature = "dtype-decimal")]
     ToDecimal(usize),
+    #[cfg(feature = "extract_jsonpath")]
+    JsonExtract {
+        dtype: Option<DataType>,
+        infer_schema_len: Option<usize>,
+    },
 }
 
 impl StringFunction {
@@ -83,17 +90,21 @@ impl StringFunction {
             #[cfg(feature = "temporal")]
             Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "concat_str")]
-            ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
+            ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_same_dtype(),
             #[cfg(feature = "regex")]
-            Replace { .. } => mapper.with_dtype(DataType::Utf8),
+            Replace { .. } => mapper.with_same_dtype(),
             Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) | Slice(_, _) => {
-                mapper.with_dtype(DataType::Utf8)
+                mapper.with_same_dtype()
             }
+            #[cfg(feature = "nightly")]
+            Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "string_from_radix")]
             FromRadix { .. } => mapper.with_dtype(DataType::Int32),
             Explode => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonExtract { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
         }
     }
 }
@@ -124,6 +135,8 @@ impl Display for StringFunction {
             StringFunction::Replace { .. } => "replace",
             StringFunction::Uppercase => "uppercase",
             StringFunction::Lowercase => "lowercase",
+            #[cfg(feature = "nightly")]
+            StringFunction::Titlecase => "titlecase",
             StringFunction::Strip(_) => "strip",
             StringFunction::LStrip(_) => "lstrip",
             StringFunction::RStrip(_) => "rstrip",
@@ -133,6 +146,8 @@ impl Display for StringFunction {
             StringFunction::Explode => "explode",
             #[cfg(feature = "dtype-decimal")]
             StringFunction::ToDecimal(_) => "to_decimal",
+            #[cfg(feature = "extract_jsonpath")]
+            StringFunction::JsonExtract { .. } => "json_extract",
         };
 
         write!(f, "str.{s}")
@@ -147,6 +162,12 @@ pub(super) fn uppercase(s: &Series) -> PolarsResult<Series> {
 pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_lowercase().into_series())
+}
+
+#[cfg(feature = "nightly")]
+pub(super) fn titlecase(s: &Series) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.to_titlecase().into_series())
 }
 
 #[cfg(feature = "regex")]
@@ -406,12 +427,14 @@ fn to_datetime(
         Some(format) => TZ_AWARE_RE.is_match(format),
         _ => false,
     };
-    if let (Some(_), true) = (time_zone, tz_aware) {
-        polars_bail!(
-            ComputeError:
-            "cannot use strptime with both a tz-aware format and a tz-aware dtype, \
-            please drop time zone from the dtype"
-        )
+    if let (Some(tz), true) = (time_zone, tz_aware) {
+        if tz != "UTC" {
+            polars_bail!(
+                ComputeError:
+                "if using strftime/to_datetime with a time-zone-aware format, the output will be in UTC. Please either drop the time zone from the function call, or set it to UTC. \
+                If you are trying to convert the output to a different time zone, please use `convert_time_zone`."
+            )
+        }
     };
 
     let ca = s.utf8()?;
@@ -660,4 +683,14 @@ pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
 pub(super) fn to_decimal(s: &Series, infer_len: usize) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     ca.to_decimal(infer_len)
+}
+
+#[cfg(feature = "extract_jsonpath")]
+pub(super) fn json_extract(
+    s: &Series,
+    dtype: Option<DataType>,
+    infer_schema_len: Option<usize>,
+) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.json_extract(dtype, infer_schema_len)
 }

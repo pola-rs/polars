@@ -5,7 +5,7 @@ use now::DateTimeNow;
 use polars_arrow::export::arrow::temporal_conversions::*;
 use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
-use polars_core::utils::arrow::temporal_conversions::{timeunit_scale, SECONDS_IN_DAY};
+use polars_core::utils::arrow::temporal_conversions::timeunit_scale;
 
 use crate::prelude::*;
 
@@ -83,52 +83,21 @@ impl Window {
     /// returns the bounds for the earliest window bounds
     /// that contains the given time t.  For underlapping windows that
     /// do not contain time t, the window directly after time t will be returned.
-    ///
-    /// For `every` larger than `1day` we just take the given timestamp `t` as start as truncation
-    /// does not seems intuitive.
-    /// Below 1 day, it make sense to truncate to:
-    /// - days
-    /// - hours
-    /// - 15 minutes
-    /// - etc.
-    ///
-    /// But for 2w3d, it does not make sense to start it on a different lower bound, so we start at `t`
     pub fn get_earliest_bounds_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<Bounds> {
-        let start = if !self.every.months_only()
-            && self.every.duration_ns() > NANOSECONDS * SECONDS_IN_DAY
-        {
-            self.offset.add_ns(t, tz)?
-        } else {
-            // offset is translated in the truncate
-            self.truncate_ns(t, tz)?
-        };
-
+        let start = self.truncate_ns(t, tz)?;
         let stop = self.period.add_ns(start, tz)?;
 
         Ok(Bounds::new_checked(start, stop))
     }
 
     pub fn get_earliest_bounds_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<Bounds> {
-        let start = if !self.every.months_only()
-            && self.every.duration_us() > MICROSECONDS * SECONDS_IN_DAY
-        {
-            self.offset.add_us(t, tz)?
-        } else {
-            self.truncate_us(t, tz)?
-        };
+        let start = self.truncate_us(t, tz)?;
         let stop = self.period.add_us(start, tz)?;
         Ok(Bounds::new_checked(start, stop))
     }
 
     pub fn get_earliest_bounds_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<Bounds> {
-        let start = if !self.every.months_only()
-            && self.every.duration_ms() > MILLISECONDS * SECONDS_IN_DAY
-        {
-            self.offset.add_ms(t, tz)?
-        } else {
-            self.truncate_ms(t, tz)?
-        };
-
+        let start = self.truncate_ms(t, tz)?;
         let stop = self.period.add_ms(start, tz)?;
 
         Ok(Bounds::new_checked(start, stop))

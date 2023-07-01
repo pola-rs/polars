@@ -14,7 +14,7 @@ sql = ["polars-sql"]
 rows = ["polars-core/rows"]
 simd = ["polars-core/simd", "polars-io/simd", "polars-ops/simd"]
 avx512 = ["polars-core/avx512"]
-nightly = ["polars-core/nightly", "polars-ops/nightly", "simd"]
+nightly = ["polars-core/nightly", "polars-ops/nightly", "simd", "polars-lazy/nightly"]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy/temporal", "polars-io/temporal", "polars-time"]
 random = ["polars-core/random", "polars-lazy/random"]
@@ -46,7 +46,7 @@ strings = ["polars-core/strings", "polars-lazy/strings", "polars-ops/strings"]
 object = ["polars-core/object", "polars-lazy/object", "polars-io/object"]
 
 # support for arrows json parsing
-json = ["polars-io", "polars-io/json", "polars-lazy/json", "polars-sql/json"]
+json = ["polars-io", "polars-io/json", "polars-lazy/json", "polars-sql/json", "dtype-struct"]
 
 # support for arrows ipc file parsing
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc", "polars-sql/ipc"]
@@ -100,7 +100,12 @@ decompress = ["polars-io/decompress"]
 decompress-fast = ["polars-io/decompress-fast"]
 mode = ["polars-core/mode", "polars-lazy/mode"]
 take_opt_iter = ["polars-core/take_opt_iter"]
-extract_jsonpath = ["polars-core/strings", "polars-ops/extract_jsonpath", "polars-ops/strings"]
+extract_jsonpath = [
+  "polars-core/strings",
+  "polars-ops/extract_jsonpath",
+  "polars-ops/strings",
+  "polars-lazy/extract_jsonpath",
+]
 string_encoding = ["polars-ops/string_encoding", "polars-core/strings"]
 binary_encoding = ["polars-ops/binary_encoding"]
 groupby_list = ["polars-core/groupby_list"]
@@ -153,6 +158,7 @@ propagate_nans = ["polars-lazy/propagate_nans"]
 coalesce = ["polars-lazy/coalesce"]
 streaming = ["polars-lazy/streaming"]
 fused = ["polars-ops/fused", "polars-lazy/fused"]
+list_sets = ["polars-lazy/list_sets"]
 
 test = [
   "lazy",

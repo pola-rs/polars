@@ -143,4 +143,16 @@ impl PyExpr {
             e.list().unique().into()
         }
     }
+
+    #[cfg(feature = "list_sets")]
+    fn list_set_operation(&self, other: PyExpr, operation: Wrap<SetOperation>) -> Self {
+        let e = self.inner.clone().list();
+        match operation.0 {
+            SetOperation::Intersection => e.intersection(other.inner),
+            SetOperation::Difference => e.difference(other.inner),
+            SetOperation::Union => e.union(other.inner),
+            SetOperation::SymmetricDifference => e.symmetric_difference(other.inner),
+        }
+        .into()
+    }
 }

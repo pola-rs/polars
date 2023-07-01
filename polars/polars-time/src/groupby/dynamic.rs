@@ -129,6 +129,11 @@ impl Wrap<&DataFrame> {
         by: Vec<Series>,
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+        polars_ensure!(
+                        options.period.duration_ns()>0 && !options.period.negative,
+                        ComputeError:
+                        "rolling window period should be strictly positive",
+        );
         let time = self.0.column(&options.index_column)?.clone();
         if by.is_empty() {
             // if by is given, the column must be sorted in the 'by' arg, which we can not check now

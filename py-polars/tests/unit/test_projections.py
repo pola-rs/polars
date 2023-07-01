@@ -271,3 +271,23 @@ def test_distinct_projection_pd_7578() -> None:
         "bar": ["a", "b"],
         "count": [3, 2],
     }
+
+
+def test_join_suffix_collision_9562() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    other_df = pl.DataFrame(
+        {
+            "apple": ["x", "y", "z"],
+            "ham": ["a", "b", "d"],
+        }
+    )
+    df.join(other_df, on="ham")
+    assert df.lazy().join(
+        other_df.lazy(), how="inner", left_on="ham", right_on="ham", suffix="m"
+    ).select("ham").collect().to_dict(False) == {"ham": ["a", "b"]}

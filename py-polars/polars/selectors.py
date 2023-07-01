@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Collection
+from typing import TYPE_CHECKING, Any, Collection, TypeVar
 
 from polars import Expr
 from polars import functions as F
@@ -20,6 +20,7 @@ from polars.datatypes import (
 if TYPE_CHECKING:
     import sys
 
+    from polars import DataFrame, LazyFrame
     from polars.datatypes import PolarsDataType
     from polars.type_aliases import TimeUnit
 
@@ -27,6 +28,21 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
+
+
+SelectorType = TypeVar("SelectorType", bound="_selector_proxy_")
+
+
+def is_selector(obj: Any) -> bool:
+    """Return whether the given object is a selector."""
+    return isinstance(obj, _selector_proxy_)
+
+
+def selector_column_names(
+    frame: DataFrame | LazyFrame, selector: SelectorType
+) -> tuple[str, ...]:
+    """Return the column names that would be selected from the given frame."""
+    return tuple(frame.clear().select(selector).columns)
 
 
 class _selector_proxy_(Expr):
@@ -56,9 +72,14 @@ class _selector_proxy_(Expr):
 
     def __invert__(self) -> Self:
         """Invert the selector."""
+        if not hasattr(self, "_attrs"):
+            return ~self.as_expr()  # type: ignore[return-value]
+
         name = self._attrs["name"]
-        if name in ("first", "last", "sub", "and", "or"):
+        if name in ("sub", "and", "or"):
             raise ValueError(f"Cannot currently invert {name!r} selector")
+        elif name in ("first", "last"):
+            return all() - self  # type: ignore[return-value]
 
         params = self._attrs["params"] or {}
         raw_params = self._attrs["raw_params"] or []
@@ -81,45 +102,64 @@ class _selector_proxy_(Expr):
         )
 
     def __repr__(self) -> str:
-        params = self._attrs["params"]
-        not_ = "~" if self._inverted else ""
-        str_params = ",".join(f"{k}={v!r}" for k, v in (params or {}).items())
-        return f"{not_}cs.{self._attrs['name']}({str_params})"
+        if not hasattr(self, "_attrs"):
+            return re.sub(
+                r"<[\w.]+_selector_proxy_[\w ]+>", "<selector>", super().__repr__()
+            )
+        else:
+            selector_name, params = self._attrs["name"], self._attrs["params"]
+            set_ops = {"and": "&", "or": "|", "sub": "-"}
+            if selector_name in set_ops:
+                op = set_ops[selector_name]
+                return f" {op} ".join(repr(p) for p in params.values())
+            else:
+                not_ = "~" if self._inverted else ""
+                str_params = ",".join(
+                    (repr(v)[1:-1] if k.startswith("*") else f"{k}={v!r}")
+                    for k, v in (params or {}).items()
+                )
+                return f"{not_}cs.{selector_name}({str_params})"
 
     def __sub__(self, other: Any) -> Expr:  # type: ignore[override]
-        if isinstance(other, _selector_proxy_):
+        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
-                self.meta._as_selector().meta._selector_sub(other), name="sub"
+                self.meta._as_selector().meta._selector_sub(other),
+                parameters={"self": self, "other": other},
+                name="sub",
             )
         else:
             return self.as_expr().__sub__(other)
 
     def __and__(self, other: Any) -> Expr:  # type: ignore[override]
-        if isinstance(other, _selector_proxy_):
+        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
-                self.meta._as_selector().meta._selector_and(other), name="and"
+                self.meta._as_selector().meta._selector_and(other),
+                parameters={"self": self, "other": other},
+                name="and",
             )
         else:
             return self.as_expr().__and__(other)
 
     def __or__(self, other: Any) -> Expr:  # type: ignore[override]
-        if isinstance(other, _selector_proxy_):
+        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
-                self.meta._as_selector().meta._selector_add(other), name="or"
+                self.meta._as_selector().meta._selector_add(other),
+                parameters={"self": self, "other": other},
+                name="or",
             )
         else:
             return self.as_expr().__or__(other)
 
     def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
         # order of operation doesn't matter
-        if isinstance(other, _selector_proxy_):
+        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return self.__and__(other)
         else:
             return self.as_expr().__rand__(other)
 
     def __ror__(self, other: Any) -> Expr:  # type: ignore[override]
         # order of operation doesn't matter
-        if isinstance(other, _selector_proxy_):
+        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return self.__or__(other)
         else:
             return self.as_expr().__ror__(other)
@@ -129,7 +169,7 @@ class _selector_proxy_(Expr):
         Materialize the ``selector`` into a normal expression.
 
         This ensures that the operators ``|``, ``&``, ``~`` and ``-``
-        are applied on the data and not no the selector sets.
+        are applied on the data and not on the selector sets.
         """
         return Expr._from_pyexpr(self._pyexpr)
 
@@ -180,7 +220,7 @@ def all() -> Expr:
 
     Select all columns *except* for those matching the given dtypes:
 
-    >>> df.select(cs.all().exclude(pl.NUMERIC_DTYPES))
+    >>> df.select(cs.all() - cs.numeric())
     shape: (2, 1)
     ┌────────────┐
     │ dt         │
@@ -349,7 +389,7 @@ def by_name(*names: str | Collection[str]) -> Expr:
             TypeError(f"Invalid name: {nm!r}")
 
     return _selector_proxy_(
-        F.col(*all_names), name="by_name", parameters={"names": all_names}
+        F.col(*all_names), name="by_name", parameters={"*names": all_names}
     )
 
 
@@ -576,7 +616,7 @@ def ends_with(*suffix: str) -> Expr:
     return _selector_proxy_(
         F.col(raw_params),
         name="ends_with",
-        parameters={"suffix": escaped_suffix},
+        parameters={"*suffix": escaped_suffix},
         raw_parameters=[raw_params],
     )
 
@@ -974,7 +1014,7 @@ def starts_with(*prefix: str) -> Expr:
     return _selector_proxy_(
         F.col(raw_params),
         name="starts_with",
-        parameters={"prefix": prefix},
+        parameters={"*prefix": prefix},
         raw_parameters=[raw_params],
     )
 
@@ -1073,7 +1113,7 @@ def temporal() -> Expr:
 
     Match all temporal columns *except* for `Time` columns:
 
-    >>> df.select(cs.temporal().exclude(pl.Time))
+    >>> df.select(cs.temporal() - cs.by_dtype(pl.Time))
     shape: (2, 1)
     ┌────────────┐
     │ dt         │
@@ -1127,4 +1167,7 @@ __all__ = [
     "starts_with",
     "temporal",
     "string",
+    "is_selector",
+    "selector_column_names",
+    "SelectorType",
 ]

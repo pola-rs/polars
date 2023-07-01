@@ -573,9 +573,14 @@ fn test_flatten_unions() -> PolarsResult<()> {
     .unwrap()
     .lazy();
 
-    let lf2 = concat(&[lf.clone(), lf.clone()], false, true).unwrap();
-    let lf3 = concat(&[lf.clone(), lf.clone(), lf.clone()], false, true).unwrap();
-    let lf4 = concat(&[lf2.clone(), lf3], false, true).unwrap();
+    let args = UnionArgs {
+        rechunk: false,
+        parallel: true,
+        ..Default::default()
+    };
+    let lf2 = concat(&[lf.clone(), lf.clone()], args).unwrap();
+    let lf3 = concat(&[lf.clone(), lf.clone(), lf.clone()], args).unwrap();
+    let lf4 = concat(&[lf2.clone(), lf3], args).unwrap();
     let root = lf4.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     let lp = lp_arena.get(root);
     match lp {

@@ -8,17 +8,17 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
-use num_traits::{Bounded, Num, NumCast, ToPrimitive, Zero};
+use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::data_types::IsFloat;
 use polars_arrow::kernels::rolling;
 use polars_arrow::kernels::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, RollingAggWindowNoNulls, StdWindow, SumWindow, VarWindow,
+    MaxWindow, MeanWindow, MinWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
 use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
 use polars_arrow::kernels::rolling::{DynArgs, RollingVarParams};
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::trusted_len::TrustedLenPush;
 use rayon::prelude::*;
 
 #[cfg(feature = "object")]
@@ -783,13 +783,13 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<StdWindow<_>, _, _>(
+                        None => _rolling_apply_agg_window_no_nulls::<VarWindow<_>, _, _>(
                             values,
                             offset_iter,
                             Some(Arc::new(RollingVarParams { ddof })),
                         ),
                         Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::StdWindow<_>, _, _>(
+                            _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
                                 values,
                                 validity,
                                 offset_iter,
@@ -797,7 +797,10 @@ where
                             )
                         }
                     };
-                    ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
+
+                    let mut ca = ChunkedArray::<T>::from_chunks("", vec![arr]);
+                    ca.apply_mut(|v| v.powf(NumCast::from(0.5).unwrap()));
+                    ca.into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);

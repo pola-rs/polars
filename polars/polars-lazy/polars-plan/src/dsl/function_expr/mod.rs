@@ -433,6 +433,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "list_count")]
                     CountMatch => map_as_slice!(list::count_match),
                     Sum => map!(list::sum),
+                    #[cfg(feature = "list_sets")]
+                    SetOperation(s) => map_as_slice!(list::set_operation, s),
                 }
             }
             #[cfg(feature = "dtype-array")]
@@ -545,6 +547,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
             Uppercase => map!(strings::uppercase),
             Lowercase => map!(strings::lowercase),
+            #[cfg(feature = "nightly")]
+            Titlecase => map!(strings::titlecase),
             Strip(matches) => map!(strings::strip, matches.as_deref()),
             LStrip(matches) => map!(strings::lstrip, matches.as_deref()),
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
@@ -554,6 +558,11 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Explode => map!(strings::explode),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonExtract {
+                dtype,
+                infer_schema_len,
+            } => map!(strings::json_extract, dtype.clone(), infer_schema_len),
         }
     }
 }
@@ -605,6 +614,10 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             MonthStart => map!(datetime::month_start),
             #[cfg(feature = "date_offset")]
             MonthEnd => map!(datetime::month_end),
+            #[cfg(feature = "timezones")]
+            BaseUtcOffset => map!(datetime::base_utc_offset),
+            #[cfg(feature = "timezones")]
+            DSTOffset => map!(datetime::dst_offset),
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
             CastTimezone(tz, use_earliest) => {

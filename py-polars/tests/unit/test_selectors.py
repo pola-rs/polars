@@ -110,6 +110,10 @@ def test_selector_first_last(df: pl.DataFrame) -> None:
     assert df.select(cs.first()).columns == ["abc"]
     assert df.select(cs.last()).columns == ["qqR"]
 
+    all_columns = set(df.columns)
+    assert set(df.select(~cs.first()).columns) == (all_columns - {"abc"})
+    assert set(df.select(~cs.last()).columns) == (all_columns - {"qqR"})
+
 
 def test_selector_float(df: pl.DataFrame) -> None:
     assert df.select(cs.float()).schema == {
@@ -225,6 +229,15 @@ def test_selector_expansion() -> None:
     assert df.select(s).columns == ["b", "c"]
 
 
+def test_selector_repr() -> None:
+    assert repr(cs.all() - cs.first()) == "cs.all() - cs.first()"
+    assert repr(~cs.starts_with("a", "b")) == "~cs.starts_with('a', 'b')"
+    assert repr(cs.float() | cs.by_name("x")) == "cs.float() | cs.by_name('x')"
+    assert (
+        repr(cs.integer() & cs.matches("z")) == "cs.integer() & cs.matches(pattern='z')"
+    )
+
+
 def test_selector_sets(df: pl.DataFrame) -> None:
     # or
     assert df.select(cs.temporal() | cs.string() | cs.starts_with("e")).schema == {
@@ -272,3 +285,49 @@ def test_selector_dispatch_default_operator() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_selector_expr_dispatch() -> None:
+    df = pl.DataFrame(
+        data={
+            "colx": [float("inf"), -1, float("nan"), 25],
+            "coly": [1, float("-inf"), 10, float("nan")],
+        },
+        schema={"colx": pl.Float64, "coly": pl.Float32},
+    )
+    expected = pl.DataFrame(
+        data={
+            "colx": [0.0, -1.0, 0.0, 25.0],
+            "coly": [1.0, 0.0, 10.0, 0.0],
+        },
+        schema={"colx": pl.Float64, "coly": pl.Float32},
+    )
+
+    # basic selector-broadcast expression
+    assert_frame_equal(
+        expected,
+        df.with_columns(
+            pl.when(cs.float().is_finite()).then(cs.float()).otherwise(0.0).keep_name()
+        ),
+    )
+
+    # inverted selector-broadcast expression
+    assert_frame_equal(
+        expected,
+        df.with_columns(
+            pl.when(~cs.float().is_finite()).then(0.0).otherwise(cs.float()).keep_name()
+        ),
+    )
+
+    # check that "as_expr" behaves, both explicitly and implicitly
+    for nan_or_inf in (
+        cs.float().is_nan().as_expr() | cs.float().is_infinite().as_expr(),  # type: ignore[attr-defined]
+        cs.float().is_nan().as_expr() | cs.float().is_infinite(),  # type: ignore[attr-defined]
+        cs.float().is_nan() | cs.float().is_infinite(),
+    ):
+        assert_frame_equal(
+            expected,
+            df.with_columns(
+                pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).keep_name()
+            ).fill_null(0),
+        )

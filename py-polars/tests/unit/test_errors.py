@@ -298,7 +298,7 @@ def test_lazy_concat_err() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="'LazyFrame' only allows {'vertical','diagonal','align'} concat strategies.",
+        match="'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies.",
     ):
         pl.concat([df1.lazy(), df2.lazy()], how="horizontal").collect()
 
@@ -525,6 +525,12 @@ def test_err_on_time_datetime_cast() -> None:
     s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
     with pytest.raises(pl.ComputeError, match=r"cannot cast `Time` to `Datetime`"):
         s.cast(pl.Datetime)
+
+
+def test_err_on_invalid_time_zone_cast() -> None:
+    s = pl.Series([datetime(2021, 1, 1)])
+    with pytest.raises(pl.ComputeError, match=r"unable to parse time zone: 'qwerty'"):
+        s.cast(pl.Datetime("us", "qwerty"))
 
 
 def test_invalid_inner_type_cast_list() -> None:

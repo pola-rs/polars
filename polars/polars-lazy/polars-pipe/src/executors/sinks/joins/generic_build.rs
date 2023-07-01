@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use hashbrown::hash_map::RawEntryMut;
-use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::export::arrow::array::BinaryArray;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::hash_join::ChunkId;
@@ -11,10 +11,9 @@ use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::executors::sinks::joins::inner_left::GenericJoinProbe;
-use crate::executors::sinks::utils::{hash_series, load_vec};
+use crate::executors::sinks::utils::{hash_rows, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
@@ -26,13 +25,13 @@ pub(super) type DfIdx = IdxSize;
 #[derive(Copy, Clone, Debug)]
 pub(super) struct Key {
     pub(super) hash: u64,
-    chunk_idx: ChunkIdx,
-    df_idx: DfIdx,
+    chunk_idx: IdxSize,
+    df_idx: IdxSize,
 }
 
 impl Key {
     #[inline]
-    fn new(hash: u64, chunk_idx: ChunkIdx, df_idx: DfIdx) -> Self {
+    fn new(hash: u64, chunk_idx: IdxSize, df_idx: IdxSize) -> Self {
         Key {
             hash,
             chunk_idx,
@@ -57,7 +56,7 @@ pub struct GenericBuild {
     // columns
     //      * chunk_offset = (idx * n_join_keys)
     //      * end = (offset + n_join_keys)
-    materialized_join_cols: Vec<ArrayRef>,
+    materialized_join_cols: Vec<BinaryArray<i64>>,
     suffix: Arc<str>,
     hb: RandomState,
     // partitioned tables that will be used for probing
@@ -69,7 +68,7 @@ pub struct GenericBuild {
     join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
 
     // amortize allocations
-    join_series: Vec<Series>,
+    join_columns: Vec<ArrayRef>,
     hashes: Vec<u64>,
     join_type: JoinType,
     // the join order is swapped to ensure we hash the smaller table
@@ -95,7 +94,7 @@ impl GenericBuild {
             swapped,
             join_columns_left,
             join_columns_right,
-            join_series: vec![],
+            join_columns: vec![],
             materialized_join_cols: vec![],
             hash_tables,
             hashes: vec![],
@@ -103,12 +102,12 @@ impl GenericBuild {
     }
 }
 
+#[inline]
 pub(super) fn compare_fn(
     key: &Key,
     h: u64,
-    join_columns_all_chunks: &[ArrayRef],
-    current_row: &[AnyValue],
-    n_join_cols: usize,
+    join_columns_all_chunks: &[BinaryArray<i64>],
+    current_row: &[u8],
 ) -> bool {
     let key_hash = key.hash;
 
@@ -116,18 +115,16 @@ pub(super) fn compare_fn(
     // as that has no indirection
     key_hash == h && {
         // we get the appropriate values from the join columns and compare it with the current row
-        let chunk_idx = key.chunk_idx as usize * n_join_cols;
+        let chunk_idx = key.chunk_idx as usize;
         let df_idx = key.df_idx as usize;
 
         // get the right columns from the linearly packed buffer
-        let join_cols = unsafe {
-            join_columns_all_chunks.get_unchecked_release(chunk_idx..chunk_idx + n_join_cols)
+        let other_row = unsafe {
+            join_columns_all_chunks
+                .get_unchecked_release(chunk_idx)
+                .value_unchecked(df_idx)
         };
-
-        join_cols
-            .iter()
-            .zip(current_row)
-            .all(|(column, value)| unsafe { &column.get_unchecked(df_idx) == value })
+        current_row == other_row
     }
 }
 
@@ -140,46 +137,25 @@ impl GenericBuild {
         }
     }
 
-    #[inline]
-    fn number_of_keys(&self) -> usize {
-        self.join_columns_left.len()
-    }
-
     fn set_join_series(
         &mut self,
         context: &PExecutionContext,
         chunk: &DataChunk,
-    ) -> PolarsResult<&[Series]> {
-        self.join_series.clear();
-
+    ) -> PolarsResult<&BinaryArray<i64>> {
+        debug_assert!(self.join_columns.is_empty());
         for phys_e in self.join_columns_left.iter() {
             let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
-            let s = s.to_physical_repr();
-            let s = s.rechunk();
-            self.materialized_join_cols.push(s.array_ref(0).clone());
-            self.join_series.push(s);
+            let arr = s.to_physical_repr().rechunk().array_ref(0).clone();
+            self.join_columns.push(arr);
         }
-        Ok(&self.join_series)
+        let rows_encoded = polars_row::convert_columns_no_order(&self.join_columns).into_array();
+        self.materialized_join_cols.push(rows_encoded);
+        Ok(self.materialized_join_cols.last().unwrap())
     }
-    unsafe fn get_tuple<'a>(
-        &'a self,
-        chunk_idx: ChunkIdx,
-        df_idx: DfIdx,
-        buf: &mut Vec<AnyValue<'a>>,
-    ) {
-        buf.clear();
-        // get the right columns from the linearly packed buffer
-        let n_keys = self.number_of_keys();
-        let chunk_offset = chunk_idx as usize * n_keys;
-        let chunk_end = chunk_offset + n_keys;
-        let join_cols = self
-            .materialized_join_cols
-            .get_unchecked_release(chunk_offset..chunk_end);
-        buf.extend(
-            join_cols
-                .iter()
-                .map(|arr| arr.get_unchecked(df_idx as usize)),
-        )
+    unsafe fn get_row(&self, chunk_idx: ChunkIdx, df_idx: DfIdx) -> &[u8] {
+        self.materialized_join_cols
+            .get_unchecked_release(chunk_idx as usize)
+            .value_unchecked(df_idx as usize)
     }
 }
 
@@ -199,32 +175,21 @@ impl Sink for GenericBuild {
             return Ok(SinkResult::CanHaveMoreInput);
         }
         let mut hashes = std::mem::take(&mut self.hashes);
-        self.set_join_series(context, &chunk)?;
-        hash_series(&self.join_series, &mut hashes, &self.hb);
+        let rows = self.set_join_series(context, &chunk)?.clone();
+        hash_rows(&rows, &mut hashes, &self.hb);
         self.hashes = hashes;
 
         let current_chunk_offset = self.chunks.len() as ChunkIdx;
 
-        let mut keys_iter = KeysIter::new(&self.join_series);
-        let n_join_cols = self.number_of_keys();
-
         // row offset in the chunk belonging to the hash
         let mut current_df_idx = 0 as IdxSize;
-        for h in &self.hashes {
-            let current_tuple = unsafe { keys_iter.lend_next() };
-
-            // get the hashtable belonging by this hash partition
+        for (row, h) in rows.values_iter().zip(&self.hashes) {
+            // get the hashtable belonging to this hash partition
             let partition = hash_to_partition(*h, self.hash_tables.len());
             let current_table = unsafe { self.hash_tables.get_unchecked_release_mut(partition) };
 
             let entry = current_table.raw_entry_mut().from_hash(*h, |key| {
-                compare_fn(
-                    key,
-                    *h,
-                    &self.materialized_join_cols,
-                    current_tuple,
-                    n_join_cols,
-                )
+                compare_fn(key, *h, &self.materialized_join_cols, row)
             });
 
             let payload = [current_chunk_offset, current_df_idx];
@@ -240,6 +205,11 @@ impl Sink for GenericBuild {
 
             current_df_idx += 1;
         }
+
+        // clear memory
+        self.hashes.clear();
+        self.join_columns.clear();
+
         self.chunks.push(chunk);
         Ok(SinkResult::CanHaveMoreInput)
     }
@@ -256,7 +226,6 @@ impl Sink for GenericBuild {
         if other.is_empty() {
             return;
         }
-        let mut tuple_buf = Vec::with_capacity(self.number_of_keys());
 
         let chunks_offset = self.chunks.len() as IdxSize;
         self.chunks.extend_from_slice(&other.chunks);
@@ -271,19 +240,11 @@ impl Sink for GenericBuild {
             .for_each(|(ht, other_ht)| {
                 for (k, val) in other_ht.iter() {
                     // use the indexes to materialize the row
-                    for [chunk_idx, df_idx] in val {
-                        unsafe { other.get_tuple(*chunk_idx, *df_idx, &mut tuple_buf) };
-                    }
+                    let other_row = unsafe { other.get_row(k.chunk_idx, k.df_idx) };
 
                     let h = k.hash;
                     let entry = ht.raw_entry_mut().from_hash(h, |key| {
-                        compare_fn(
-                            key,
-                            h,
-                            &self.materialized_join_cols,
-                            &tuple_buf,
-                            tuple_buf.len(),
-                        )
+                        compare_fn(key, h, &self.materialized_join_cols, other_row)
                     });
 
                     match entry {
@@ -344,7 +305,7 @@ impl Sink for GenericBuild {
                 let join_columns_right = self.join_columns_right.clone();
 
                 // take the buffers, this saves one allocation
-                let mut join_series = std::mem::take(&mut self.join_series);
+                let mut join_series = std::mem::take(&mut self.join_columns);
                 join_series.clear();
                 let mut hashes = std::mem::take(&mut self.hashes);
                 hashes.clear();
@@ -374,39 +335,5 @@ impl Sink for GenericBuild {
     }
     fn fmt(&self) -> &str {
         "generic_join_build"
-    }
-}
-
-pub(super) struct KeysIter<'a> {
-    key_iters: Vec<Box<dyn ExactSizeIterator<Item = AnyValue<'a>> + 'a>>,
-    // a small buffer that holds the current key values
-    // if we join by 2 keys, this holds 2 anyvalues.
-    buf: Vec<AnyValue<'a>>,
-}
-
-impl<'a> KeysIter<'a> {
-    pub(super) fn new(join_series: &'a [Series]) -> Self {
-        // iterators over anyvalues
-        let key_iters = join_series
-            .iter()
-            .map(|s| s.phys_iter())
-            .collect::<Vec<_>>();
-
-        // ensure that they have the appriate size as we will not bound check on push
-        let buf = Vec::with_capacity(key_iters.len());
-        Self { key_iters, buf }
-    }
-
-    /// # Safety
-    /// will not check any bounds on iterators. `lend_next` should not be called more often
-    /// than items in the given iterators.
-    pub(super) unsafe fn lend_next<'b>(&'b mut self) -> &'b [AnyValue<'a>] {
-        self.buf.clear();
-        for key_iter in self.key_iters.iter_mut() {
-            // safety: we allocated up front
-            self.buf
-                .push_unchecked(key_iter.next().unwrap_unchecked_release())
-        }
-        &self.buf
     }
 }

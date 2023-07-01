@@ -113,6 +113,32 @@ def test_dt_datetime(time_zone: str | None, time_unit: TimeUnit) -> None:
     assert result.item() == expected
 
 
+@pytest.mark.parametrize(
+    ("time_zone", "expected"),
+    [
+        (None, True),
+        ("Asia/Kathmandu", False),
+        ("UTC", True),
+    ],
+)
+@pytest.mark.parametrize("attribute", ["datetime", "date"])
+def test_local_datetime_sortedness(
+    time_zone: str | None, expected: bool, attribute: str
+) -> None:
+    ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
+    result = getattr(ser.dt, attribute)()
+    assert result.flags["SORTED_ASC"] == expected
+    assert result.flags["SORTED_DESC"] is False
+
+
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
+def test_local_time_sortedness(time_zone: str | None) -> None:
+    ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
+    result = ser.dt.time()
+    assert result.flags["SORTED_ASC"] is False
+    assert result.flags["SORTED_DESC"] is False
+
+
 def test_dt_datetime_date_time_invalid() -> None:
     with pytest.raises(ComputeError, match="expected Datetime"):
         pl.Series([date(2021, 1, 2)]).dt.datetime()
@@ -227,6 +253,87 @@ def test_month_start_end_invalid() -> None:
         match=r"`month_end` operation not supported for dtype `time` \(expected: date/datetime\)",
     ):
         ser.dt.month_end()
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_base_utc_offset(time_unit: TimeUnit) -> None:
+    ser = pl.date_range(
+        datetime(2011, 12, 29),
+        datetime(2012, 1, 1),
+        "2d",
+        time_zone="Pacific/Apia",
+        eager=True,
+    ).dt.cast_time_unit(time_unit)
+    result = ser.dt.base_utc_offset().rename("base_utc_offset")
+    expected = pl.Series(
+        "base_utc_offset",
+        [-11 * 3600 * 1000, 13 * 3600 * 1000],
+        dtype=pl.Duration("ms"),
+    )
+    assert_series_equal(result, expected)
+
+
+def test_base_utc_offset_lazy_schema() -> None:
+    ser = pl.date_range(
+        datetime(2020, 10, 25),
+        datetime(2020, 10, 26),
+        time_zone="Europe/London",
+        eager=True,
+    )
+    df = pl.DataFrame({"ts": ser}).lazy()
+    result = df.with_columns(base_utc_offset=pl.col("ts").dt.base_utc_offset()).schema
+    expected = {
+        "ts": pl.Datetime(time_unit="us", time_zone="Europe/London"),
+        "base_utc_offset": pl.Duration(time_unit="ms"),
+    }
+    assert result == expected
+
+
+def test_base_utc_offset_invalid() -> None:
+    ser = pl.date_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"`base_utc_offset` operation not supported for dtype `datetime\[μs\]` \(expected: time-zone-aware datetime\)",
+    ):
+        ser.dt.base_utc_offset().rename("base_utc_offset")
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_dst_offset(time_unit: TimeUnit) -> None:
+    ser = pl.date_range(
+        datetime(2020, 10, 25),
+        datetime(2020, 10, 26),
+        time_zone="Europe/London",
+        eager=True,
+    ).dt.cast_time_unit(time_unit)
+    result = ser.dt.dst_offset().rename("dst_offset")
+    expected = pl.Series("dst_offset", [3_600 * 1_000, 0], dtype=pl.Duration("ms"))
+    assert_series_equal(result, expected)
+
+
+def test_dst_offset_lazy_schema() -> None:
+    ser = pl.date_range(
+        datetime(2020, 10, 25),
+        datetime(2020, 10, 26),
+        time_zone="Europe/London",
+        eager=True,
+    )
+    df = pl.DataFrame({"ts": ser}).lazy()
+    result = df.with_columns(dst_offset=pl.col("ts").dt.dst_offset()).schema
+    expected = {
+        "ts": pl.Datetime(time_unit="us", time_zone="Europe/London"),
+        "dst_offset": pl.Duration(time_unit="ms"),
+    }
+    assert result == expected
+
+
+def test_dst_offset_invalid() -> None:
+    ser = pl.date_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"`dst_offset` operation not supported for dtype `datetime\[μs\]` \(expected: time-zone-aware datetime\)",
+    ):
+        ser.dt.dst_offset().rename("dst_offset")
 
 
 @pytest.mark.parametrize(

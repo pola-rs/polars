@@ -12,6 +12,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -1110,3 +1111,11 @@ def test_sliced_struct_from_arrow() -> None:
     assert pl.from_arrow(tbl.slice(1, 1)).to_dict(False) == {
         "struct_col": [{"a": 2, "b": "bar"}]
     }
+
+
+def test_from_arrow_invalid_time_zone() -> None:
+    arr = pa.array(
+        [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="+01:00")
+    )
+    with pytest.raises(ComputeError, match=r"unable to parse time zone: '\+01:00'"):
+        pl.from_arrow(arr)

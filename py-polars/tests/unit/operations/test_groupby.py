@@ -123,7 +123,8 @@ def test_groupby_args() -> None:
     # With keyword argument
     assert df.groupby("a", "b", maintain_order=True).agg("c").columns == expected
     # Mixed
-    assert df.groupby(["a"], "b", maintain_order=True).agg("c").columns == expected
+    with pytest.deprecated_call():
+        assert df.groupby(["a"], "b", maintain_order=True).agg("c").columns == expected
     # Multiple aggregations as list
     assert df.groupby("a").agg(["b", "c"]).columns == expected
     # Multiple aggregations as positional arguments

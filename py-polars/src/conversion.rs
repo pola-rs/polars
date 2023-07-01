@@ -13,7 +13,7 @@ use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
 use polars_core::frame::hash_join::JoinValidation;
 use polars_core::frame::row::any_values_to_dtype;
-use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
 use pyo3::basic::CompareOp;
@@ -641,7 +641,7 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
         let (seconds, microseconds) = {
             let convert = UTILS.getattr(py, "_datetime_for_anyvalue_windows").unwrap();
             let out = convert.call1(py, (ob,)).unwrap();
-            let out: (f64, i64) = out.extract(py).unwrap();
+            let out: (i64, i64) = out.extract(py).unwrap();
             out
         };
         // unix
@@ -649,12 +649,12 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
         let (seconds, microseconds) = {
             let convert = UTILS.getattr(py, "_datetime_for_anyvalue").unwrap();
             let out = convert.call1(py, (ob,)).unwrap();
-            let out: (f64, i64) = out.extract(py).unwrap();
+            let out: (i64, i64) = out.extract(py).unwrap();
             out
         };
 
         // s to us
-        let mut v = (seconds as i64) * 1_000_000;
+        let mut v = seconds * 1_000_000;
         v += microseconds;
 
         // choose "us" as that is python's default unit
@@ -1151,6 +1151,21 @@ impl FromPyObject<'_> for Wrap<ParallelStrategy> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<IndexOrder> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "fortran" => IndexOrder::Fortran,
+            "c" => IndexOrder::C,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "order must be one of {{'fortran', 'c'}}, got {v}",
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
@@ -1278,6 +1293,24 @@ impl FromPyObject<'_> for Wrap<JoinValidation> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "validate must be one of {{'m:m', 'm:1', '1:m', '1:1'}}, got {v}",
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+#[cfg(feature = "list_sets")]
+impl FromPyObject<'_> for Wrap<SetOperation> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "union" => SetOperation::Union,
+            "difference" => SetOperation::Difference,
+            "intersection" => SetOperation::Intersection,
+            "symmetric_difference" => SetOperation::Difference,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "validate must be one of {{'union', 'difference', 'intersection', 'symmetric_difference'}}, got {v}",
                 )))
             }
         };

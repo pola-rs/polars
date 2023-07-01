@@ -295,8 +295,9 @@ impl ListNameSpace {
         }
     }
     #[cfg(feature = "list_count")]
-    pub fn count_match<E: Into<Expr>>(self, other: E) -> Expr {
-        let other = other.into();
+    /// Count how often the value produced by ``element`` occurs.
+    pub fn count_match<E: Into<Expr>>(self, element: E) -> Expr {
+        let other = element.into();
 
         Expr::Function {
             input: vec![self.0, other],
@@ -308,5 +309,48 @@ impl ListNameSpace {
                 ..Default::default()
             },
         }
+    }
+
+    #[cfg(feature = "list_sets")]
+    fn set_operation(self, other: Expr, set_operation: SetOperation) -> Expr {
+        Expr::Function {
+            input: vec![self.0, other],
+            function: FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: true,
+                auto_explode: false,
+                cast_to_supertypes: true,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// Return the SET UNION between both list arrays.
+    #[cfg(feature = "list_sets")]
+    pub fn union<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+        self.set_operation(other, SetOperation::Union)
+    }
+
+    /// Return the SET DIFFERENCE between both list arrays.
+    #[cfg(feature = "list_sets")]
+    pub fn difference<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+        self.set_operation(other, SetOperation::Difference)
+    }
+
+    /// Return the SET INTERSECTION between both list arrays.
+    #[cfg(feature = "list_sets")]
+    pub fn intersection<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+        self.set_operation(other, SetOperation::Intersection)
+    }
+
+    /// Return the SET SYMMETRIC DIFFERENCE between both list arrays.
+    #[cfg(feature = "list_sets")]
+    pub fn symmetric_difference<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+        self.set_operation(other, SetOperation::SymmetricDifference)
     }
 }

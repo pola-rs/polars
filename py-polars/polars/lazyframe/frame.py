@@ -11,6 +11,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    ClassVar,
     Collection,
     Iterable,
     NoReturn,
@@ -262,7 +263,7 @@ class LazyFrame:
     """
 
     _ldf: PyLazyFrame
-    _accessors: set[str] = set()
+    _accessors: ClassVar[set[str]] = set()
 
     def __init__(
         self,
@@ -505,7 +506,7 @@ class LazyFrame:
     def _scan_python_function(
         cls,
         schema: pa.schema | dict[str, PolarsDataType],
-        scan_fn: bytes,
+        scan_fn: Any,
         pyarrow: bool = False,
     ) -> Self:
         self = cls.__new__(cls)
@@ -563,7 +564,7 @@ class LazyFrame:
     @property
     def columns(self) -> list[str]:
         """
-        Get or set column names.
+        Get column names.
 
         Examples
         --------
@@ -675,7 +676,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def __repr__(self) -> str:
         # don't expose internal/private classpath
-        return f"<polars.{self.__class__.__name__} object at 0x{id(self):X}>"
+        width = self.width
+        cols_str = "{} col{}".format(width, "" if width == 1 else "s")
+        schema_max_2 = (
+            item for i, item in enumerate(self.schema.items()) if i in (0, width - 1)
+        )
+        schema_str = (", " if width == 2 else " … ").join(
+            (f'"{k}": {v}' for k, v in schema_max_2)
+        )
+        return f"<{self.__class__.__name__} [{cols_str}, {{{schema_str}}}] at 0x{id(self):X}>"
 
     def _repr_html_(self) -> str:
         try:
@@ -1010,7 +1019,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )  # doctest: +ELLIPSIS
-        <polars.LazyFrame object at ...>
+        <LazyFrame [1 col, {"bar": Int64}] at ...>
 
         """
 
@@ -1782,7 +1791,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.lazy()  # doctest: +ELLIPSIS
-        <polars.LazyFrame object at ...>
+        <LazyFrame [3 cols, {"a": Int64 … "c": Boolean}] at ...>
 
         """
         return self
@@ -1857,7 +1866,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.clone()  # doctest: +ELLIPSIS
-        <polars.LazyFrame object at ...>
+        <LazyFrame [3 cols, {"a": Int64 … "c": Boolean}] at ...>
 
         """
         return self._from_pyldf(self._ldf.clone())
@@ -2182,8 +2191,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         - 1s    (1 second)
         - 1m    (1 minute)
         - 1h    (1 hour)
-        - 1d    (1 day)
-        - 1w    (1 week)
+        - 1d    (1 calendar day)
+        - 1w    (1 calendar week)
         - 1mo   (1 calendar month)
         - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
@@ -2196,6 +2205,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
 
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
+
         In case of a groupby_rolling on an integer column, the windows are defined by:
 
         - "1i"      # length 1
@@ -2205,15 +2218,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         index_column
             Column used to group based on the time window.
-            Often to type Date/Datetime
-            This column must be sorted in ascending order. If not the output will not
-            make sense.
+            Often of type Date/Datetime.
+            This column must be sorted in ascending order (or, if `by` is specified,
+            then it must be sorted in ascending order within each group).
 
             In case of a rolling groupby on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
             performance matters use an Int64 column.
         period
-            length of the window
+            length of the window - must be non-negative
         offset
             offset of the window. Default is -period
         closed : {'right', 'left', 'both', 'none'}
@@ -2285,7 +2298,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(period)}"
 
-        pyexprs_by = parse_as_list_of_expressions(by)
+        pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
 
@@ -2331,8 +2344,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         - 1s    (1 second)
         - 1m    (1 minute)
         - 1h    (1 hour)
-        - 1d    (1 day)
-        - 1w    (1 week)
+        - 1d    (1 calendar day)
+        - 1w    (1 calendar week)
         - 1mo   (1 calendar month)
         - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
@@ -2345,21 +2358,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
 
+        By "calendar day", we mean the corresponding time on the next day (which may
+        not be 24 hours, due to daylight savings). Similarly for "calendar week",
+        "calendar month", "calendar quarter", and "calendar year".
+
         In case of a groupby_dynamic on an integer column, the windows are defined by:
 
         - "1i"      # length 1
         - "10i"     # length 10
 
         .. warning::
-            The index column must be sorted in ascending order.
+            The index column must be sorted in ascending order. If `by` is passed, then
+            the index column must be sorted in ascending order within each group.
 
         Parameters
         ----------
         index_column
             Column used to group based on the time window.
-            Often to type Date/Datetime
-            This column must be sorted in ascending order. If not the output will not
-            make sense.
+            Often of type Date/Datetime.
+            This column must be sorted in ascending order (or, if `by` is specified,
+            then it must be sorted in ascending order within each group).
 
             In case of a dynamic groupby on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
@@ -2385,11 +2403,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             The strategy to determine the start of the first window by.
 
             * 'window': Truncate the start of the window with the 'every' argument.
+              Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
-            * 'monday': Start the window on the monday before the first data point.
-            * 'tuesday': Start the window on the tuesday before the first data point.
-            * ...
-            * 'sunday': Start the window on the sunday before the first data point.
+            * a day of the week (only takes effect if `every` contains ``'w'``):
+
+              * 'monday': Start the window on the Monday before the first data point.
+              * 'tuesday': Start the window on the Tuesday before the first data point.
+              * ...
+              * 'sunday': Start the window on the Sunday before the first data point.
         check_sorted
             When the ``by`` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
@@ -2407,6 +2428,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         See Also
         --------
         groupby_rolling
+
+        Notes
+        -----
+        If you're coming from pandas, then
+
+        .. code-block:: python
+
+            # polars
+            df.groupby_dynamic("ts", every="1d").agg(pl.col("value").sum())
+
+        is equivalent to
+
+        .. code-block:: python
+
+            # pandas
+            df.set_index("ts").resample("D")["value"].sum().reset_index()
+
+        though note that, unlike pandas, polars doesn't add extra rows for empty
+        windows. If you need `index_column` to be evenly spaced, then please combine
+        with :func:`DataFrame.upsample`.
 
         Examples
         --------
@@ -2605,7 +2646,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset = _timedelta_to_pl_duration(offset)
         every = _timedelta_to_pl_duration(every)
 
-        pyexprs_by = parse_as_list_of_expressions(by)
+        pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
         lgb = self._ldf.groupby_dynamic(
             index_column,
             every,
@@ -2690,8 +2731,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 - 1s    (1 second)
                 - 1m    (1 minute)
                 - 1h    (1 hour)
-                - 1d    (1 day)
-                - 1w    (1 week)
+                - 1d    (1 calendar day)
+                - 1w    (1 calendar week)
                 - 1mo   (1 calendar month)
                 - 1q    (1 calendar quarter)
                 - 1y    (1 calendar year)
@@ -2703,6 +2744,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 Suffix with `"_saturating"` to indicate that dates too large for
                 their month should saturate at the largest date
                 (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
+                By "calendar day", we mean the corresponding time on the next day
+                (which may not be 24 hours, due to daylight savings). Similarly for
+                "calendar week", "calendar month", "calendar quarter", and
+                "calendar year".
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both

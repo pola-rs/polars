@@ -13,7 +13,7 @@ use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::*;
-use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "pivot")]
@@ -648,7 +648,7 @@ impl PyDataFrame {
         })
     }
 
-    pub fn to_numpy(&self, py: Python) -> Option<PyObject> {
+    pub fn to_numpy(&self, py: Python, order: Wrap<IndexOrder>) -> Option<PyObject> {
         let mut st = None;
         for s in self.df.iter() {
             let dt_i = s.dtype();
@@ -664,32 +664,32 @@ impl PyDataFrame {
         match st {
             DataType::UInt32 => self
                 .df
-                .to_ndarray::<UInt32Type>()
+                .to_ndarray::<UInt32Type>(order.0)
                 .ok()
                 .map(|arr| arr.into_pyarray(py).into_py(py)),
             DataType::UInt64 => self
                 .df
-                .to_ndarray::<UInt64Type>()
+                .to_ndarray::<UInt64Type>(order.0)
                 .ok()
                 .map(|arr| arr.into_pyarray(py).into_py(py)),
             DataType::Int32 => self
                 .df
-                .to_ndarray::<Int32Type>()
+                .to_ndarray::<Int32Type>(order.0)
                 .ok()
                 .map(|arr| arr.into_pyarray(py).into_py(py)),
             DataType::Int64 => self
                 .df
-                .to_ndarray::<Int64Type>()
+                .to_ndarray::<Int64Type>(order.0)
                 .ok()
                 .map(|arr| arr.into_pyarray(py).into_py(py)),
             DataType::Float32 => self
                 .df
-                .to_ndarray::<Float32Type>()
+                .to_ndarray::<Float32Type>(order.0)
                 .ok()
                 .map(|arr| arr.into_pyarray(py).into_py(py)),
             DataType::Float64 => self
                 .df
-                .to_ndarray::<Float64Type>()
+                .to_ndarray::<Float64Type>(order.0)
                 .ok()
                 .map(|arr| arr.into_pyarray(py).into_py(py)),
             _ => None,
@@ -1235,16 +1235,20 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    #[pyo3(signature = (columns, separator, drop_first=false))]
     pub fn to_dummies(
         &self,
         columns: Option<Vec<String>>,
         separator: Option<&str>,
+        drop_first: bool,
     ) -> PyResult<Self> {
         let df = match columns {
-            Some(cols) => self
-                .df
-                .columns_to_dummies(cols.iter().map(|x| x as &str).collect(), separator),
-            None => self.df.to_dummies(separator),
+            Some(cols) => self.df.columns_to_dummies(
+                cols.iter().map(|x| x as &str).collect(),
+                separator,
+                drop_first,
+            ),
+            None => self.df.to_dummies(separator, drop_first),
         }
         .map_err(PyPolarsErr::from)?;
         Ok(df.into())
