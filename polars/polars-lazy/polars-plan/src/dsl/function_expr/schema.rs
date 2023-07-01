@@ -70,7 +70,7 @@ impl FunctionExpr {
                     } => {
                         // output dtype may change based on `tz`
                         return mapper.map_to_date_range_dtype(tz);
-                    },
+                    }
                     TimeRange { .. } => {
                         return Ok(Field::new("time", DataType::List(Box::new(DataType::Time))));
                     }
@@ -306,8 +306,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub(super) fn map_to_date_range_dtype(&self, tz: &Option<String>) -> PolarsResult<Field> {
-        let mut ret = self.map_to_supertype()?;
-        let ret_dtype = match (&ret.dtype, tz) {
+        let inner_dtype = match (&self.map_to_supertype()?.dtype, tz) {
             #[cfg(feature = "timezones")]
             (DataType::Datetime(tu, Some(field_tz)), Some(tz)) => {
                 if field_tz != tz {
@@ -326,8 +325,7 @@ impl<'a> FieldsMapper<'a> {
                 polars_bail!(ComputeError: "expected Date or Datetime, got {}", dtype)
             }
         };
-        ret.coerce(DataType::List(Box::new(ret_dtype)));
-        Ok(ret)
+        Ok(Field::new("date", DataType::List(Box::new(inner_dtype))))
     }
 
     /// Map the dtypes to the "supertype" of a list of lists.
