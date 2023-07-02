@@ -8,11 +8,15 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal
-from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.type_aliases import TimeUnit
+else:
+    from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 
 def test_arange() -> None:
@@ -186,6 +190,28 @@ def test_date_range_lazy_with_literals() -> None:
             date(2000, 1, 1), date(2023, 12, 31), freq="987d"
         ).date.tolist()
     )
+
+
+def test_date_range_lazy_time_zones_invalid() -> None:
+    start = datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))
+    stop = datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu"))
+    with pytest.raises(
+        ComputeError,
+        match="Given time_zone is different from that of timezone aware datetimes. Given: 'Pacific/Tarawa', got: 'Asia/Kathmandu",
+    ), pytest.warns(TimeZoneAwareConstructorWarning, match="Series with UTC"):
+        (
+            pl.DataFrame({"start": [start], "stop": [stop]})
+            .with_columns(
+                pl.date_range(
+                    start,
+                    stop,
+                    interval="678d",
+                    eager=False,
+                    time_zone="Pacific/Tarawa",
+                )
+            )
+            .lazy()
+        )
 
 
 @pytest.mark.parametrize("low", ["start", pl.col("start")])
@@ -560,20 +586,50 @@ def test_deprecated_name_arg() -> None:
         assert result_eager.name == name
 
 
-def test_date_range_schema() -> None:
-    df = pl.DataFrame(
-        {"start": [datetime(2020, 1, 1)], "end": [datetime(2020, 1, 2)]}
-    ).lazy()
+@pytest.mark.parametrize(
+    ("values_time_zone", "input_time_zone", "output_time_zone"),
+    [
+        ("Asia/Kathmandu", "Asia/Kathmandu", "Asia/Kathmandu"),
+        ("Asia/Kathmandu", None, "Asia/Kathmandu"),
+        (None, "Asia/Kathmandu", "Asia/Kathmandu"),
+        (None, None, None),
+    ],
+)
+def test_date_range_schema(
+    values_time_zone: str | None,
+    input_time_zone: str | None,
+    output_time_zone: str | None,
+) -> None:
+    df = (
+        pl.DataFrame({"start": [datetime(2020, 1, 1)], "end": [datetime(2020, 1, 2)]})
+        .with_columns(pl.col("*").dt.replace_time_zone(values_time_zone))
+        .lazy()
+    )
     result = df.with_columns(
-        pl.date_range(pl.col("start"), pl.col("end")).alias("date_range")
+        pl.date_range(pl.col("start"), pl.col("end"), time_zone=input_time_zone).alias(
+            "date_range"
+        )
     )
     expected_schema = {
-        "start": pl.Datetime(time_unit="us", time_zone=None),
-        "end": pl.Datetime(time_unit="us", time_zone=None),
-        "date_range": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
+        "start": pl.Datetime(time_unit="us", time_zone=values_time_zone),
+        "end": pl.Datetime(time_unit="us", time_zone=values_time_zone),
+        "date_range": pl.List(pl.Datetime(time_unit="us", time_zone=output_time_zone)),
     }
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
+
+    expected = pl.DataFrame(
+        {
+            "start": [datetime(2020, 1, 1)],
+            "end": [datetime(2020, 1, 2)],
+            "date_range": [[datetime(2020, 1, 1), datetime(2020, 1, 2)]],
+        }
+    ).with_columns(
+        pl.col("start").dt.replace_time_zone(values_time_zone),
+        pl.col("end").dt.replace_time_zone(values_time_zone),
+        pl.col("date_range").explode().dt.replace_time_zone(output_time_zone).implode(),
+    )
+    assert_frame_equal(result.collect(), expected)
 
 
 def test_date_range_no_alias_schema_9037() -> None:

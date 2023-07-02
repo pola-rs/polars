@@ -82,7 +82,7 @@ pub(super) fn temporal_range_dispatch(
     name: &str,
     every: Duration,
     closed: ClosedWindow,
-    _tz: Option<TimeZone>, // todo: respect _tz: https://github.com/pola-rs/polars/issues/8512
+    tz: Option<TimeZone>,
 ) -> PolarsResult<Series> {
     let start = &s[0];
     let stop = &s[1];
@@ -93,21 +93,45 @@ pub(super) fn temporal_range_dispatch(
     );
     const TO_MS: i64 = SECONDS_IN_DAY * 1000;
 
-    let rng_start = start.to_physical_repr();
-    let rng_stop = stop.to_physical_repr();
-    let dtype = start.dtype();
+    let start_dtype = start.dtype();
 
-    let mut start = rng_start.cast(&DataType::Int64)?;
-    let mut stop = rng_stop.cast(&DataType::Int64)?;
+    // Note: `start` and `stop` have already been cast to their supertype,
+    // so only `start`'s dtype needs to be matched against.
+    let (mut start, mut stop) = match start_dtype {
+        #[cfg(feature = "timezones")]
+        DataType::Datetime(_, Some(_)) => (
+            start
+                .datetime()
+                .unwrap()
+                .replace_time_zone(None, None)?
+                .into_series()
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
+            stop.datetime()
+                .unwrap()
+                .replace_time_zone(None, None)?
+                .into_series()
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
+        ),
+        _ => (
+            start.to_physical_repr().cast(&DataType::Int64)?,
+            stop.to_physical_repr().cast(&DataType::Int64)?,
+        ),
+    };
 
-    let (tu, tz) = match dtype {
-        DataType::Date => {
+    let dtype = match (start_dtype, tz) {
+        (DataType::Date, _) => {
             start = &start * TO_MS;
             stop = &stop * TO_MS;
-            (TimeUnit::Milliseconds, None)
+            DataType::Date
         }
-        DataType::Datetime(tu, tz) => (*tu, tz.as_ref()),
-        DataType::Time => (TimeUnit::Nanoseconds, None),
+        #[cfg(feature = "timezones")]
+        (DataType::Datetime(tu, _), Some(tz)) => DataType::Datetime(*tu, Some(tz)),
+        #[cfg(feature = "timezones")]
+        (DataType::Datetime(tu, Some(tz)), None) => DataType::Datetime(*tu, Some(tz.to_string())),
+        (DataType::Datetime(tu, _), _) => DataType::Datetime(*tu, None),
+        (DataType::Time, _) => DataType::Time,
         _ => unimplemented!(),
     };
     let start = start.i64().unwrap();
@@ -124,7 +148,15 @@ pub(super) fn temporal_range_dispatch(
             for (start, stop) in start.into_iter().zip(stop.into_iter()) {
                 match (start, stop) {
                     (Some(start), Some(stop)) => {
-                        let rng = date_range_impl("", start, stop, every, closed, tu, tz)?;
+                        let rng = date_range_impl(
+                            "",
+                            start,
+                            stop,
+                            every,
+                            closed,
+                            TimeUnit::Milliseconds,
+                            None,
+                        )?;
                         let rng = rng.cast(&DataType::Date).unwrap();
                         let rng = rng.to_physical_repr();
                         let rng = rng.i32().unwrap();
@@ -135,7 +167,7 @@ pub(super) fn temporal_range_dispatch(
             }
             builder.finish().into_series()
         }
-        DataType::Datetime(_, _) | DataType::Time => {
+        DataType::Datetime(tu, ref tz) => {
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
                 name,
                 start.len(),
@@ -145,7 +177,33 @@ pub(super) fn temporal_range_dispatch(
             for (start, stop) in start.into_iter().zip(stop.into_iter()) {
                 match (start, stop) {
                     (Some(start), Some(stop)) => {
-                        let rng = date_range_impl("", start, stop, every, closed, tu, tz)?;
+                        let rng = date_range_impl("", start, stop, every, closed, tu, tz.as_ref())?;
+                        builder.append_slice(rng.cont_slice().unwrap())
+                    }
+                    _ => builder.append_null(),
+                }
+            }
+            builder.finish().into_series()
+        }
+        DataType::Time => {
+            let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
+                name,
+                start.len(),
+                start.len() * 5,
+                DataType::Int64,
+            );
+            for (start, stop) in start.into_iter().zip(stop.into_iter()) {
+                match (start, stop) {
+                    (Some(start), Some(stop)) => {
+                        let rng = date_range_impl(
+                            "",
+                            start,
+                            stop,
+                            every,
+                            closed,
+                            TimeUnit::Nanoseconds,
+                            None,
+                        )?;
                         builder.append_slice(rng.cont_slice().unwrap())
                     }
                     _ => builder.append_null(),
@@ -156,6 +214,6 @@ pub(super) fn temporal_range_dispatch(
         _ => unimplemented!(),
     };
 
-    let to_type = DataType::List(Box::new(dtype.clone()));
+    let to_type = DataType::List(Box::new(dtype));
     list.cast(&to_type)
 }
