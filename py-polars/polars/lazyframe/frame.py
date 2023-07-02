@@ -1772,14 +1772,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def lazy(self) -> Self:
         """
-        Return lazy representation, i.e. itself.
+        Do nothing and return the :class:`LazyFrame`.
 
         Useful for writing code that expects either a :class:`DataFrame` or
         :class:`LazyFrame`.
 
-        Returns
-        -------
-        LazyFrame
+        Notes
+        -----
+        It is prefered to write your code such that you always know whether you are
+        operating on a :class:`DataFrame` or a :class:`LazyFrame`. Avoid using this
+        method if you can.
 
         Examples
         --------
