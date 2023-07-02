@@ -370,7 +370,6 @@ fn test_streaming_double_left_join() -> PolarsResult<()> {
     Ok(())
 }
 
-
 #[test]
 fn test_sort_maintain_order_streaming() -> PolarsResult<()> {
     let q = df![
