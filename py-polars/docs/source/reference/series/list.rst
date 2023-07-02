@@ -9,6 +9,8 @@ The following methods are available under the `Series.list` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Series.list.all
+    Series.list.any
     Series.list.arg_max
     Series.list.arg_min
     Series.list.concat
