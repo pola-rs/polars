@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pytest
@@ -9,7 +9,7 @@ import pytest
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -67,6 +67,77 @@ def test_arange_name() -> None:
 
     result_lazy = pl.select(pl.arange(0, 5)).to_series()
     assert result_lazy.name == expected_name
+
+
+def test_arange_schema() -> None:
+    result = pl.LazyFrame().select(pl.arange(-3, 3))
+
+    expected_schema = {"arange": pl.Int64}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+
+def test_int_range() -> None:
+    result = pl.int_range(0, 3)
+    expected = pl.Series("int", [0, 1, 2])
+    assert_series_equal(pl.select(result).to_series(), expected)
+
+
+def test_int_range_eager() -> None:
+    result = pl.int_range(0, 3, eager=True)
+    expected = pl.Series("int", [0, 1, 2])
+    assert_series_equal(result, expected)
+
+
+def test_int_range_schema() -> None:
+    result = pl.LazyFrame().select(pl.int_range(-3, 3))
+
+    expected_schema = {"int": pl.Int64}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "expected"),
+    [
+        ("a", "b", pl.Series("int_range", [[1, 2], [2, 3]])),
+        (-1, "a", pl.Series("int_range", [[-1, 0], [-1, 0, 1]])),
+        ("b", 4, pl.Series("int_range", [[3], []])),
+    ],
+)
+def test_int_ranges(start: Any, end: Any, expected: pl.Series) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+
+    result = df.select(pl.int_ranges(start, end))
+    assert_series_equal(result.to_series(), expected)
+
+
+def test_int_ranges_eager() -> None:
+    start = pl.Series([1, 2])
+    result = pl.int_ranges(start, 4, eager=True)
+
+    expected = pl.Series("int_range", [[1, 2, 3], [2, 3]])
+    assert_series_equal(result, expected)
+
+
+def test_int_ranges_schema_dtype_default() -> None:
+    lf = pl.LazyFrame({"start": [1, 2], "end": [3, 4]})
+
+    result = lf.select(pl.int_ranges("start", "end"))
+
+    expected_schema = {"int_range": pl.List(pl.Int64)}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+
+def test_int_ranges_schema_dtype_arg() -> None:
+    lf = pl.LazyFrame({"start": [1, 2], "end": [3, 4]})
+
+    result = lf.select(pl.int_ranges("start", "end", dtype=pl.UInt16))
+
+    expected_schema = {"int_range": pl.List(pl.UInt16)}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
 
 
 def test_date_range() -> None:
