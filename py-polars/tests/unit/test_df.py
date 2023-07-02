@@ -483,7 +483,7 @@ def test_sort() -> None:
     )
 
 
-def test_sort_maintain_order():
+def test_sort_maintain_order() -> None:
     l1 = (
         pl.LazyFrame({"A": [1] * 4, "B": ["A", "B", "C", "D"]})
         .sort("A", maintain_order=True)
