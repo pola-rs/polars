@@ -97,7 +97,7 @@ def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
         result = df_or_lazy.groupby_rolling(
             index_column="index_column", period="2i"
         ).agg(good_param)
-        result.collect()
+        result = result.collect()
         assert_frame_equal(result, expected)
 
 
