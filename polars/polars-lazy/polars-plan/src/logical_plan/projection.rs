@@ -195,6 +195,20 @@ pub(super) fn replace_dtype_with_column(mut expr: Expr, column_name: Arc<str>) -
     expr
 }
 
+fn dtypes_match(d1: &DataType, d2: &DataType) -> bool {
+    match (d1, d2) {
+        // note: allow Datetime "*" wildcard for timezones...
+        (DataType::Datetime(tu_l, tz_l), DataType::Datetime(tu_r, tz_r)) => {
+            tu_l == tu_r
+                && (tz_l == tz_r
+                    || tz_r.is_some() && (tz_l.as_deref().unwrap_or("") == "*")
+                    || tz_l.is_some() && (tz_r.as_deref().unwrap_or("") == "*"))
+        }
+        // ...but otherwise require exact match
+        _ => d1 == d2,
+    }
+}
+
 /// replace `DtypeColumn` with `col("foo")..col("bar")`
 fn expand_dtypes(
     expr: &Expr,
@@ -205,10 +219,10 @@ fn expand_dtypes(
 ) -> PolarsResult<()> {
     // note: we loop over the schema to guarantee that we return a stable
     // field-order, irrespective of which dtypes are filtered against
-    for field in schema
-        .iter_fields()
-        .filter(|f| (dtypes.contains(&f.dtype) && !exclude.contains(f.name().as_str())))
-    {
+    for field in schema.iter_fields().filter(|f| {
+        dtypes.iter().any(|dtype| dtypes_match(dtype, &f.dtype))
+            && !exclude.contains(f.name().as_str())
+    }) {
         let name = field.name();
         let new_expr = expr.clone();
         let new_expr = replace_dtype_with_column(new_expr, Arc::from(name.as_str()));
@@ -230,10 +244,9 @@ fn prepare_excluded(
         if let Expr::Exclude(_, to_exclude) = e {
             #[cfg(feature = "regex")]
             {
-                // instead of matching the names for regex patterns
-                // and expanding the matches in the schema we
-                // reuse the `replace_regex` function. This is a bit
-                // slower but DRY.
+                // instead of matching the names for regex patterns and
+                // expanding the matches in the schema we reuse the
+                // `replace_regex` func; this is a bit slower but DRY.
                 let mut buf = vec![];
                 for to_exclude_single in to_exclude {
                     match to_exclude_single {
@@ -249,7 +262,7 @@ fn prepare_excluded(
                         }
                         Excluded::Dtype(dt) => {
                             for fld in schema.iter_fields() {
-                                if fld.data_type() == dt {
+                                if dtypes_match(fld.data_type(), dt) {
                                     exclude.insert(Arc::from(fld.name().as_ref()));
                                 }
                             }

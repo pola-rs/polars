@@ -311,10 +311,12 @@ class Datetime(TemporalType):
         Parameters
         ----------
         time_unit : {'us', 'ns', 'ms'}
-            Unit of time.
+            Unit of time / precision.
         time_zone
-            Time zone string as defined in zoneinfo (run
+            Time zone string, as defined in zoneinfo (to see valid strings run
             ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
+            When using to match dtypes, can use "*" to check for Datetime columns
+            that have any timezone.
 
         """
         if isinstance(time_zone, timezone):
