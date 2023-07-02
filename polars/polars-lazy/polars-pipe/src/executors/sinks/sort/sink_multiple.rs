@@ -170,6 +170,7 @@ impl SortSinkMultiple {
                 descending: vec![false],
                 nulls_last: false,
                 slice: sort_args.slice,
+                maintain_order: false,
             },
             Arc::new(schema),
         ));

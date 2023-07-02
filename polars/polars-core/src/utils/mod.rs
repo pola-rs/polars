@@ -50,7 +50,7 @@ pub fn _set_partition_size() -> usize {
 /// as `Option<T::Native>` was already implemented:
 /// `impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>`
 pub struct NoNull<T> {
-    inner: T,
+    pub inner: T,
 }
 
 impl<T> NoNull<T> {

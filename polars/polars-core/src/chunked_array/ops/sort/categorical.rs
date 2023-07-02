@@ -99,6 +99,7 @@ impl CategoricalChunked {
             nulls_last: false,
             descending,
             multithreaded: true,
+            maintain_order: false,
         })
     }
 

@@ -1845,7 +1845,7 @@ impl DataFrame {
         let by_column = self.select_series(by_column)?;
         let descending = descending.into_vec();
         self.columns = self
-            .sort_impl(by_column, descending, false, None, true)?
+            .sort_impl(by_column, descending, false, false, None, true)?
             .columns;
         Ok(self)
     }
@@ -1856,6 +1856,7 @@ impl DataFrame {
         by_column: Vec<Series>,
         descending: Vec<bool>,
         nulls_last: bool,
+        maintain_order: bool,
         slice: Option<(i64, usize)>,
         parallel: bool,
     ) -> PolarsResult<Self> {
@@ -1864,6 +1865,7 @@ impl DataFrame {
 
         // therefore when we try to set the first columns as sorted, we ignore the error
         // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
+        eprintln!("In sort impl");
         let first_descending = descending[0];
         let first_by_column = by_column[0].name().to_string();
 
@@ -1888,9 +1890,12 @@ impl DataFrame {
 
             return Ok(out);
         }
+        eprintln!("In sort impl 2");
 
         if let Some((0, k)) = slice {
-            return self.top_k_impl(k, descending, by_column, nulls_last);
+
+            eprintln!("In sort impl 3 top_k_impl");
+            return self.top_k_impl(k, descending, by_column, nulls_last, maintain_order);
         }
 
         #[cfg(feature = "dtype-struct")]
@@ -1907,11 +1912,13 @@ impl DataFrame {
         let df = df.as_single_chunk_par();
         let mut take = match (by_column.len(), has_struct) {
             (1, false) => {
+                eprintln!("In match statement first arm");
                 let s = &by_column[0];
                 let options = SortOptions {
                     descending: descending[0],
                     nulls_last,
                     multithreaded: parallel,
+                    maintain_order,
                 };
                 // fast path for a frame with a single series
                 // no need to compute the sort indices and then take by these indices
@@ -1927,6 +1934,7 @@ impl DataFrame {
                 s.arg_sort(options)
             }
             _ => {
+                eprintln!("In match statement second arm");
                 if nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
                     argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
                 } else {
@@ -1986,6 +1994,7 @@ impl DataFrame {
                 by_column,
                 descending,
                 options.nulls_last,
+                options.maintain_order,
                 None,
                 options.multithreaded,
             )?

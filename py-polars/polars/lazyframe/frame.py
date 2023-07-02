@@ -1030,6 +1030,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *more_by: IntoExpr,
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> Self:
         """
         Sort the dataframe by the given columns.
@@ -1125,7 +1126,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             raise ValueError(
                 f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
             )
-        return self._from_pyldf(self._ldf.sort_by_exprs(by, descending, nulls_last))
+        return self._from_pyldf(self._ldf.sort_by_exprs(by, descending, nulls_last, maintain_order))
 
     def top_k(
         self,

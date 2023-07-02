@@ -220,11 +220,12 @@ impl LazyFrame {
     pub fn sort(self, by_column: &str, options: SortOptions) -> Self {
         let descending = options.descending;
         let nulls_last = options.nulls_last;
+        let maintain_order = options.maintain_order;
 
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(vec![col(by_column)], vec![descending], nulls_last)
+            .sort(vec![col(by_column)], vec![descending], nulls_last, maintain_order)
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -248,7 +249,9 @@ impl LazyFrame {
         by_exprs: E,
         descending: B,
         nulls_last: bool,
+        maintain_order: bool,
     ) -> Self {
+        eprintln!("In sort_by_exprs");
         let by_exprs = by_exprs.as_ref().to_vec();
         let descending = descending.as_ref().to_vec();
         if by_exprs.is_empty() {
@@ -257,7 +260,7 @@ impl LazyFrame {
             let opt_state = self.get_opt_state();
             let lp = self
                 .get_plan_builder()
-                .sort(by_exprs, descending, nulls_last)
+                .sort(by_exprs, descending, nulls_last, maintain_order)
                 .build();
             Self::from_logical_plan(lp, opt_state)
         }
@@ -269,14 +272,16 @@ impl LazyFrame {
         by_exprs: E,
         descending: B,
         nulls_last: bool,
+        maintain_order: bool,
     ) -> Self {
+        eprintln!("In top_pk");
         let mut descending = descending.as_ref().to_vec();
         // top-k is reverse from sort
         for v in &mut descending {
             *v = !*v;
         }
         // this will optimize to top-k
-        self.sort_by_exprs(by_exprs, descending, nulls_last)
+        self.sort_by_exprs(by_exprs, descending, nulls_last, maintain_order)
             .slice(0, k)
     }
 
@@ -286,10 +291,11 @@ impl LazyFrame {
         by_exprs: E,
         descending: B,
         nulls_last: bool,
+        maintain_order: bool,
     ) -> Self {
         let descending = descending.as_ref().to_vec();
         // this will optimize to bottom-k
-        self.sort_by_exprs(by_exprs, descending, nulls_last)
+        self.sort_by_exprs(by_exprs, descending, nulls_last, maintain_order)
             .slice(0, k)
     }
 
@@ -548,6 +554,7 @@ impl LazyFrame {
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
         let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
+        eprintln!("Collect LazyDataframe");
         let out = physical_plan.execute(&mut state);
         #[cfg(debug_assertions)]
         {

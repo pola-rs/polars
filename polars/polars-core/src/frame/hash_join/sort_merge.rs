@@ -224,6 +224,7 @@ pub fn _sort_or_hash_inner(
                 descending: false,
                 nulls_last: false,
                 multithreaded: true,
+                maintain_order: false,
             });
             let s_right = unsafe { s_right.take_unchecked(&sort_idx).unwrap() };
             let ids = par_sorted_merge_inner_no_nulls(s_left, &s_right);
@@ -250,6 +251,7 @@ pub fn _sort_or_hash_inner(
                 descending: false,
                 nulls_last: false,
                 multithreaded: true,
+                maintain_order: false,
             });
             let s_left = unsafe { s_left.take_unchecked(&sort_idx).unwrap() };
             let ids = par_sorted_merge_inner_no_nulls(&s_left, s_right);
@@ -318,6 +320,7 @@ pub(super) fn sort_or_hash_left(
                 descending: false,
                 nulls_last: false,
                 multithreaded: true,
+                maintain_order: false,
             });
             let s_right = unsafe { s_right.take_unchecked(&sort_idx).unwrap() };
 
