@@ -219,13 +219,13 @@ def test_rolling_extrema() -> None:
     df = (
         pl.DataFrame(
             {
-                "col1": pl.arange(0, 7, eager=True),
-                "col2": pl.arange(0, 7, eager=True).reverse(),
+                "col1": pl.int_range(0, 7, eager=True),
+                "col2": pl.int_range(0, 7, eager=True).reverse(),
             }
         )
     ).with_columns(
         [
-            pl.when(pl.arange(0, pl.count(), eager=False) < 2)
+            pl.when(pl.int_range(0, pl.count(), eager=False) < 2)
             .then(None)
             .otherwise(pl.all())
             .suffix("_nulls")
