@@ -461,24 +461,29 @@ impl Display for DataFrame {
                 };
                 (s, lower_bounds)
             };
-            let tbl_lower_bounds =
+
+            let col_width_exact =
+                |l: usize| ColumnConstraint::Absolute(comfy_table::Width::Fixed(l as u16));
+            let col_width_lower_bound =
                 |l: usize| ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16));
+            // let col_width_upper_bound =
+            //     |l: usize| ColumnConstraint::UpperBoundary(comfy_table::Width::Fixed(l as u16));
 
             let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
             let fields = self.fields();
             for field in fields[0..n_first].iter() {
                 let (s, l) = field_to_str(field);
                 names.push(s);
-                constraints.push(tbl_lower_bounds(l));
+                constraints.push(col_width_lower_bound(l));
             }
             if reduce_columns {
                 names.push("…".into());
-                constraints.push(tbl_lower_bounds(3));
+                constraints.push(col_width_exact(3));
             }
             for field in fields[self.width() - n_last..].iter() {
                 let (s, l) = field_to_str(field);
                 names.push(s);
-                constraints.push(tbl_lower_bounds(l));
+                constraints.push(col_width_lower_bound(l));
             }
             let (preset, is_utf8) = match std::env::var(FMT_TABLE_FORMATTING)
                 .as_deref()
