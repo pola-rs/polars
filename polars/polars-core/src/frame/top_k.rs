@@ -69,8 +69,7 @@ impl DataFrame {
         let sorted = if k >= self.height() {
             if maintain_order {
                 rows.sort();
-            }
-            else {
+            } else {
                 rows.sort_unstable();
             }
             &rows
@@ -78,8 +77,7 @@ impl DataFrame {
             // todo: maybe there is some more efficient method, comparable to select_nth_unstable
             rows.sort();
             &rows[..k]
-        }
-        else {
+        } else {
             let (lower, _el, _upper) = rows.select_nth_unstable(k);
             lower.sort_unstable();
             &*lower

@@ -777,7 +777,7 @@ fn test_lazy_groupby_sort() {
         .agg([col("b").sort(false).first()])
         .collect()
         .unwrap()
-        .sort(["a"], false)
+        .sort(["a"], false, false)
         .unwrap();
 
     assert_eq!(
@@ -791,7 +791,7 @@ fn test_lazy_groupby_sort() {
         .agg([col("b").sort(false).last()])
         .collect()
         .unwrap()
-        .sort(["a"], false)
+        .sort(["a"], false, false)
         .unwrap();
 
     assert_eq!(
@@ -815,7 +815,7 @@ fn test_lazy_groupby_sort_by() {
         .agg([col("b").sort_by([col("c")], [true]).first()])
         .collect()
         .unwrap()
-        .sort(["a"], false)
+        .sort(["a"], false, false)
         .unwrap();
 
     assert_eq!(
@@ -1891,21 +1891,18 @@ fn test_partitioned_gb_ternary() -> PolarsResult<()> {
     Ok(())
 }
 
-
 #[test]
 fn test_sort_maintain_order_true() -> PolarsResult<()> {
-
     let q = df![
         "A" => [1, 1, 1, 1],
         "B" => ["A", "B", "C", "D"],
     ]?
     .lazy();
 
-    let res = q.sort_by_exprs([col("A")], 
-                                                             [false], 
-                                                             false, 
-                                                             true)
-                                              .slice(0, 3).collect()?;
+    let res = q
+        .sort_by_exprs([col("A")], [false], false, true)
+        .slice(0, 3)
+        .collect()?;
     println!("{:?}", res);
     assert!(res.frame_equal(&df![
         "A" => [1, 1, 1],

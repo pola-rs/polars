@@ -100,7 +100,12 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
             (col("fats_g") * lit(10)).sum(),
             col("calories").mean().alias("cal_mean"),
         ])
-        .sort_by_exprs([col("sugars_g"), col("calories")], [false, false], false, false);
+        .sort_by_exprs(
+            [col("sugars_g"), col("calories")],
+            [false, false],
+            false,
+            false,
+        );
 
     assert_streaming_with_default(q, true, false);
     Ok(())
@@ -364,4 +369,3 @@ fn test_streaming_double_left_join() -> PolarsResult<()> {
     assert_streaming_with_default(q, true, false);
     Ok(())
 }
-

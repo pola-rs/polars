@@ -3609,7 +3609,7 @@ mod test {
         let df = df
             .unique_stable(None, UniqueKeepStrategy::First, None)
             .unwrap()
-            .sort(["flt"], false)
+            .sort(["flt"], false, false)
             .unwrap();
         let valid = df! {
             "flt" => [1., 2., 3.],

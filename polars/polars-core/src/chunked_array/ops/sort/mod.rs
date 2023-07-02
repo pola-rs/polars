@@ -822,7 +822,7 @@ mod test {
         let c = Utf8Chunked::new("c", &["a", "b", "c", "d", "e", "f", "g", "h"]);
         let df = DataFrame::new(vec![a.into_series(), b.into_series(), c.into_series()])?;
 
-        let out = df.sort(["a", "b", "c"], false)?;
+        let out = df.sort(["a", "b", "c"], false, false)?;
         assert_eq!(
             Vec::from(out.column("b")?.i64()?),
             &[
@@ -842,7 +842,7 @@ mod test {
         let b = Int32Chunked::new("b", &[5, 4, 2, 3, 4, 5]).into_series();
         let df = DataFrame::new(vec![a, b])?;
 
-        let out = df.sort(["a", "b"], false)?;
+        let out = df.sort(["a", "b"], false, false)?;
         let expected = df!(
             "a" => ["a", "a", "b", "b", "c", "c"],
             "b" => [3, 5, 4, 4, 2, 5]
@@ -854,14 +854,14 @@ mod test {
             "values" => ["a", "a", "b"]
         )?;
 
-        let out = df.sort(["groups", "values"], vec![true, false])?;
+        let out = df.sort(["groups", "values"], vec![true, false], false)?;
         let expected = df!(
             "groups" => [3, 2, 1],
             "values" => ["b", "a", "a"]
         )?;
         assert!(out.frame_equal(&expected));
 
-        let out = df.sort(["values", "groups"], vec![false, true])?;
+        let out = df.sort(["values", "groups"], vec![false, true], false)?;
         let expected = df!(
             "groups" => [2, 1, 3],
             "values" => ["a", "a", "b"]
@@ -878,7 +878,7 @@ mod test {
             descending: false,
             nulls_last: false,
             multithreaded: true,
-            maintain_order: false
+            maintain_order: false,
         });
         let expected = &[None, None, Some("a"), Some("b"), Some("c")];
         assert_eq!(Vec::from(&out), expected);

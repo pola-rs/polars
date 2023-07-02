@@ -222,7 +222,10 @@ pub fn cut(
     )?;
 
     if maintain_order {
-        out = out.sort([ROW_COUNT], false, false)?.drop(ROW_COUNT).unwrap()
+        out = out
+            .sort([ROW_COUNT], false, false)?
+            .drop(ROW_COUNT)
+            .unwrap()
     };
 
     if let Some(mut valids) = valids {

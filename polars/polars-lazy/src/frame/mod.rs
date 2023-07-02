@@ -225,7 +225,12 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(vec![col(by_column)], vec![descending], nulls_last, maintain_order)
+            .sort(
+                vec![col(by_column)],
+                vec![descending],
+                nulls_last,
+                maintain_order,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }

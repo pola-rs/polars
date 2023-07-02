@@ -217,5 +217,12 @@ pub(super) fn sort_accumulated(
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
     let sort_column = df.get_columns()[sort_idx].clone();
-    df.sort_impl(vec![sort_column], vec![descending], false, false, slice, true)
+    df.sort_impl(
+        vec![sort_column],
+        vec![descending],
+        false,
+        false,
+        slice,
+        true,
+    )
 }

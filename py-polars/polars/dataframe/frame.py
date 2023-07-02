@@ -4041,6 +4041,8 @@ class DataFrame:
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maitained if elements are equal.
 
         See Also
         --------
@@ -4123,6 +4125,8 @@ class DataFrame:
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maitained if elements are equal.
 
         See Also
         --------

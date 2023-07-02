@@ -1047,6 +1047,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maitained if elements are equal.
 
         Examples
         --------
@@ -1154,6 +1156,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maitained if elements are equal.
 
         See Also
         --------
@@ -1234,6 +1238,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maitained if elements are equal.
 
         See Also
         --------

@@ -483,16 +483,16 @@ def test_sort() -> None:
     )
 
 def test_sort_maintain_order():
-    l1 = (pl.LazyFrame({'A': [1] * 4, 'B': ['A', 'B', 'C', 'D']})\
-        .sort('A', maintain_order=True)\
+    l1 = (pl.LazyFrame({"A": [1] * 4, "B": ["A", "B", "C", "D"]})\
+        .sort("A", maintain_order=True)\
         .slice(0, 3)\
-        .collect()['B'].to_list()
+        .collect()["B"].to_list()
     )
     l2 = (
-    pl.LazyFrame({'A': [1] * 4, 'B': ['A', 'B', 'C', 'D']})
-    .sort('A')
+    pl.LazyFrame({"A": [1] * 4, "B": ["A", "B", "C", "D"]})
+    .sort("A")
     .collect()
-    .slice(0, 3)['B'].to_list()
+    .slice(0, 3)["B"].to_list()
     )
     assert l1 == l2 == ["A", "B", "C"]
 
