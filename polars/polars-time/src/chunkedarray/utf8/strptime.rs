@@ -8,8 +8,11 @@ use regex::Regex;
 
 use crate::chunkedarray::{polars_bail, PolarsResult};
 
-static HOUR_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[HI]").unwrap());
-static MINUTE_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%M").unwrap());
+static HOUR_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[HIl]").unwrap());
+static MINUTE_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?M").unwrap());
+static SECOND_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?S").unwrap());
+static TWELVE_HOUR_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[Il]").unwrap());
+static MERIDIEM_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[pP]").unwrap());
 
 #[inline]
 fn update_and_parse<T: atoi::FromRadix10>(
@@ -52,14 +55,23 @@ fn parse_month_abbrev(val: &[u8], offset: usize) -> Option<(u32, usize)> {
 /// E.g. chrono supports single letter date identifiers like %F, whereas polars only consumes
 /// year, day, month distinctively with %Y, %d, %m.
 pub(super) fn compile_fmt(fmt: &str) -> PolarsResult<String> {
-    if HOUR_PATTERN.is_match(fmt) & !MINUTE_PATTERN.is_match(fmt) {
-        // (hopefully) temporary hack. Ideally, chrono would return a ParseKindError indicating
-        // if `fmt` is too long for NaiveDate. If that's implemented, then this check could
-        // be removed, and that error could be matched against in `transform_datetime_*s`
-        // See https://github.com/chronotope/chrono/issues/1075.
-        polars_bail!(ComputeError: "Invalid format string: found hour, but no minute directive. \
-            Please either specify both or neither.");
+    // (hopefully) temporary hacks. Ideally, chrono would return a ParseKindError indicating
+    // if `fmt` is too long for NaiveDate. If that's implemented, then this check could
+    // be removed, and that error could be matched against in `transform_datetime_*s`
+    // See https://github.com/chronotope/chrono/issues/1075.
+    if HOUR_PATTERN.is_match(fmt) ^ MINUTE_PATTERN.is_match(fmt) {
+        polars_bail!(ComputeError: "Invalid format string: \
+            Please either specify both hour and minute, or neither.");
     }
+    if SECOND_PATTERN.is_match(fmt) && !HOUR_PATTERN.is_match(fmt) {
+        polars_bail!(ComputeError: "Invalid format string: \
+            Found seconds directive, but no hours directive.");
+    }
+    if TWELVE_HOUR_PATTERN.is_match(fmt) ^ MERIDIEM_PATTERN.is_match(fmt) {
+        polars_bail!(ComputeError: "Invalid format string: \
+            Please either specify both 12-hour directive and meridiem directive, or neither.");
+    }
+
     Ok(fmt
         .replace("%D", "%m/%d/%y")
         .replace("%R", "%H:%M")
