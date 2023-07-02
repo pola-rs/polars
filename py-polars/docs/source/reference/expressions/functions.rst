@@ -18,6 +18,7 @@ These functions are available from the polars module root and can be used as exp
    approx_unique
    arange
    arg_sort_by
+   arg_where
    avg
    coalesce
    concat_list
@@ -30,6 +31,7 @@ These functions are available from the polars module root and can be used as exp
    cumsum
    date
    datetime
+   date_range
    duration
    element
    exclude
@@ -40,6 +42,8 @@ These functions are available from the polars module root and can be used as exp
    groups
    head
    implode
+   int_range
+   int_ranges
    lit
    map
    max
@@ -47,6 +51,7 @@ These functions are available from the polars module root and can be used as exp
    median
    min
    n_unique
+   ones
    quantile
    reduce
    repeat
@@ -59,8 +64,10 @@ These functions are available from the polars module root and can be used as exp
    sql_expr
    tail
    time
+   time_range
    var
    when
+   zeros
 
 
 **Available in expression namespace:**

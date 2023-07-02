@@ -21,11 +21,6 @@ macro_rules! set_unwrapped_or_0 {
 }
 
 #[pyfunction]
-pub fn arange(start: PyExpr, end: PyExpr, step: i64) -> PyExpr {
-    dsl::arange(start.inner, end.inner, step).into()
-}
-
-#[pyfunction]
 pub fn rolling_corr(
     x: PyExpr,
     y: PyExpr,
