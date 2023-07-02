@@ -3822,3 +3822,8 @@ def test_sum_empty_column_names() -> None:
         {"x": [0], "y": [0]}, schema={"x": pl.UInt32, "y": pl.UInt32}
     )
     assert_frame_equal(df.sum(), expected)
+
+
+def test_df_collect() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    assert_frame_equal(df, df.collect())
