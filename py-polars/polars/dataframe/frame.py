@@ -4042,7 +4042,7 @@ class DataFrame:
         nulls_last
             Place null values last.
         maintain_order
-            Whether the order should be maitained if elements are equal.
+            Whether the order should be maintained if elements are equal.
 
         See Also
         --------
@@ -4090,7 +4090,13 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .top_k(k, by=by, descending=descending, nulls_last=nulls_last, maintain_order=maintain_order)
+            .top_k(
+                k,
+                by=by,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+            )
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
@@ -4126,7 +4132,7 @@ class DataFrame:
         nulls_last
             Place null values last.
         maintain_order
-            Whether the order should be maitained if elements are equal.
+            Whether the order should be maintained if elements are equal.
 
         See Also
         --------
@@ -4174,7 +4180,13 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .bottom_k(k, by=by, descending=descending, nulls_last=nulls_last, maintain_order=maintain_order)
+            .bottom_k(
+                k,
+                by=by,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+            )
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
