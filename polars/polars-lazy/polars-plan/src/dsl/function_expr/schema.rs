@@ -63,9 +63,13 @@ impl FunctionExpr {
                     }
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return mapper.map_datetime_dtype_timezone(Some(tz)),
-                    DateRange { .. } => {
-                        let res = mapper.map_to_list_supertype()?;
-                        return Ok(Field::new("date", res.dtype));
+                    DateRange {
+                        every: _,
+                        closed: _,
+                        tz,
+                    } => {
+                        // output dtype may change based on `tz`
+                        return mapper.map_to_date_range_dtype(tz);
                     }
                     TimeRange { .. } => {
                         return Ok(Field::new("time", DataType::List(Box::new(DataType::Time))));
@@ -299,6 +303,29 @@ impl<'a> FieldsMapper<'a> {
             .unwrap_or(DataType::Unknown);
         first.coerce(dt);
         Ok(first)
+    }
+
+    pub(super) fn map_to_date_range_dtype(&self, tz: &Option<String>) -> PolarsResult<Field> {
+        let inner_dtype = match (&self.map_to_supertype()?.dtype, tz) {
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, Some(field_tz)), Some(tz)) => {
+                if field_tz != tz {
+                    polars_bail!(ComputeError: format!("Given time_zone is different from that of timezone aware datetimes. \
+                    Given: '{}', got: '{}'.", tz, field_tz))
+                }
+                DataType::Datetime(*tu, Some(tz.to_string()))
+            }
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, Some(tz)), _) => DataType::Datetime(*tu, Some(tz.to_string())),
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, _), Some(tz)) => DataType::Datetime(*tu, Some(tz.to_string())),
+            (DataType::Datetime(tu, _), _) => DataType::Datetime(*tu, None),
+            (DataType::Date, _) => DataType::Date,
+            (dtype, _) => {
+                polars_bail!(ComputeError: "expected Date or Datetime, got {}", dtype)
+            }
+        };
+        Ok(Field::new("date", DataType::List(Box::new(inner_dtype))))
     }
 
     /// Map the dtypes to the "supertype" of a list of lists.
