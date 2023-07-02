@@ -251,7 +251,6 @@ impl LazyFrame {
         nulls_last: bool,
         maintain_order: bool,
     ) -> Self {
-        eprintln!("In sort_by_exprs");
         let by_exprs = by_exprs.as_ref().to_vec();
         let descending = descending.as_ref().to_vec();
         if by_exprs.is_empty() {
@@ -274,7 +273,6 @@ impl LazyFrame {
         nulls_last: bool,
         maintain_order: bool,
     ) -> Self {
-        eprintln!("In top_pk");
         let mut descending = descending.as_ref().to_vec();
         // top-k is reverse from sort
         for v in &mut descending {

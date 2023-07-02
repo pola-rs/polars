@@ -57,7 +57,6 @@ impl DataFrame {
         nulls_last: bool,
         maintain_order: bool,
     ) -> PolarsResult<DataFrame> {
-        eprintln!("In top_k_impl top k impl");
         _broadcast_descending(by_column.len(), &mut descending);
         let encoded = _get_rows_encoded(&by_column, &descending, nulls_last)?;
         let arr = encoded.into_array();
@@ -67,39 +66,28 @@ impl DataFrame {
             .map(|(idx, bytes)| CompareRow { idx, bytes })
             .collect::<Vec<_>>();
 
-        eprintln!("This is k {} and self.height {}", k, self.height());
         let sorted = if k >= self.height() {
-            eprintln!("In top_k_impl k >= self.height()");
             if maintain_order {
-                eprintln!("sort stable");
                 rows.sort();
             }
             else {
-                eprintln!("sort unstable");
                 rows.sort_unstable();
             }
             &rows
-        } else {
-            if maintain_order {
-                eprintln!("sort stable lower");
-                // todo: maybe there is some more efficient method, comparable to select_nth_unstable
-                rows.sort();
-                &rows[..k]
-            }
-            else {
-
-                let (lower, _el, _upper) = rows.select_nth_unstable(k);
-                eprintln!("sort unstable lower");
-                lower.sort_unstable();
-                &*lower
-            }
+        } else if maintain_order {
+            // todo: maybe there is some more efficient method, comparable to select_nth_unstable
+            rows.sort();
+            &rows[..k]
+        }
+        else {
+            let (lower, _el, _upper) = rows.select_nth_unstable(k);
+            lower.sort_unstable();
+            &*lower
         };
 
         let idx: NoNull<IdxCa> = sorted.iter().map(|cmp_row| cmp_row.idx).collect();
-        eprintln!("idx {:?}", idx.inner);
 
         let mut df = unsafe { self.take_unchecked(&idx.into_inner()) };
-        eprintln!("df {:?}", df);
 
         let first_descending = descending[0];
         let first_by_column = by_column[0].name().to_string();

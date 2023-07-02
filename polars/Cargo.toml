@@ -177,7 +177,6 @@ test = [
   "ipc",
   "ipc_streaming",
   "json",
-  "serde",
 ]
 
 # all opt-in datatypes
