@@ -311,7 +311,7 @@ def test_list_all() -> None:
             ]
         }
     ).select(pl.col("a").list.all()).to_dict(False) == {
-        "a": [True, False, True, False, False, False, False]
+        "a": [True, False, True, False, False, False, True]
     }
 
 
