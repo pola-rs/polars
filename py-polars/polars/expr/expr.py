@@ -11,6 +11,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    ClassVar,
     Collection,
     FrozenSet,
     Iterable,
@@ -93,7 +94,16 @@ class Expr:
     """Expressions that can be used in various contexts."""
 
     _pyexpr: PyExpr = None
-    _accessors: set[str] = {"arr", "cat", "dt", "list", "meta", "str", "bin", "struct"}
+    _accessors: ClassVar[set[str]] = {
+        "arr",
+        "cat",
+        "dt",
+        "list",
+        "meta",
+        "str",
+        "bin",
+        "struct",
+    }
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Self:
@@ -4971,7 +4981,7 @@ class Expr:
         └────────┴─────────────────────┘
         >>> df_temporal.with_columns(
         ...     rolling_row_min=pl.col("row_nr").rolling_min(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5180,7 +5190,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_max=pl.col("row_nr").rolling_max(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5250,7 +5260,7 @@ class Expr:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their mean.
 
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -5413,7 +5423,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_mean=pl.col("row_nr").rolling_mean(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5530,7 +5540,7 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length of the window that will be multiplied
+            An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
@@ -5646,7 +5656,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_sum=pl.col("row_nr").rolling_sum(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5715,10 +5725,6 @@ class Expr:
         """
         Compute a rolling standard deviation.
 
-        A window of length `window_size` will traverse the array. The values that fill
-        this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
-
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
@@ -5764,8 +5770,8 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
+            An optional slice with the same length as the window that determines the
+            relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
@@ -5826,11 +5832,11 @@ class Expr:
         │ f64 ┆ f64         │
         ╞═════╪═════════════╡
         │ 1.0 ┆ null        │
-        │ 2.0 ┆ 0.883883    │
-        │ 3.0 ┆ 1.237437    │
-        │ 4.0 ┆ 1.59099     │
-        │ 5.0 ┆ 1.944544    │
-        │ 6.0 ┆ 2.298097    │
+        │ 2.0 ┆ 0.433013    │
+        │ 3.0 ┆ 0.433013    │
+        │ 4.0 ┆ 0.433013    │
+        │ 5.0 ┆ 0.433013    │
+        │ 6.0 ┆ 0.433013    │
         └─────┴─────────────┘
 
         Center the values in the window
@@ -5882,7 +5888,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_std=pl.col("row_nr").rolling_std(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5951,10 +5957,6 @@ class Expr:
         """
         Compute a rolling variance.
 
-        A window of length `window_size` will traverse the array. The values that fill
-        this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
-
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
@@ -6000,8 +6002,8 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
+            An optional slice with the same length as the window that determines the
+            relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
@@ -6062,11 +6064,11 @@ class Expr:
         │ f64 ┆ f64         │
         ╞═════╪═════════════╡
         │ 1.0 ┆ null        │
-        │ 2.0 ┆ 0.78125     │
-        │ 3.0 ┆ 1.53125     │
-        │ 4.0 ┆ 2.53125     │
-        │ 5.0 ┆ 3.78125     │
-        │ 6.0 ┆ 5.28125     │
+        │ 2.0 ┆ 0.1875      │
+        │ 3.0 ┆ 0.1875      │
+        │ 4.0 ┆ 0.1875      │
+        │ 5.0 ┆ 0.1875      │
+        │ 6.0 ┆ 0.1875      │
         └─────┴─────────────┘
 
         Center the values in the window
@@ -6118,7 +6120,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_var=pl.col("row_nr").rolling_var(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -6237,8 +6239,8 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
+            An optional slice with the same length as the window that determines the
+            relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
@@ -6398,8 +6400,8 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length as the window that will be
-            multiplied elementwise with the values in the window.
+            An optional slice with the same length as the window that determines the
+            relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.

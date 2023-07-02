@@ -68,6 +68,7 @@ impl<'a> MaterializeValues<Option<&'a [u8]>> for MutableBinaryArray<i64> {
 
 fn set_operation<K, I, R>(
     set: &mut PlIndexSet<K>,
+    set2: &mut PlIndexSet<K>,
     a: I,
     b: I,
     out: &mut R,
@@ -108,6 +109,14 @@ where
             }
             out.extend_buf(set.drain(..))
         }
+        SetOperation::SymmetricDifference => {
+            set2.clear();
+            // We could speed this up, but implementing ourselves, but we need to have a clonable
+            // iterator as we need 2 passes
+            set.extend(a);
+            set2.extend(b);
+            out.extend_buf(set.symmetric_difference(set2).copied())
+        }
     }
 }
 
@@ -121,6 +130,7 @@ pub enum SetOperation {
     Intersection,
     Union,
     Difference,
+    SymmetricDifference,
 }
 
 impl Display for SetOperation {
@@ -129,6 +139,7 @@ impl Display for SetOperation {
             SetOperation::Intersection => "intersection",
             SetOperation::Union => "union",
             SetOperation::Difference => "difference",
+            SetOperation::SymmetricDifference => "symmetric_difference",
         };
         write!(f, "{s}")
     }
@@ -148,6 +159,7 @@ where
     assert_eq!(offsets_a.len(), offsets_b.len());
 
     let mut set = Default::default();
+    let mut set2 = Default::default();
 
     let mut values_out = MutablePrimitiveArray::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
@@ -176,7 +188,14 @@ where
                 .take(end_b - start_b)
                 .map(copied_opt);
 
-            let offset = set_operation(&mut set, a_iter, b_iter, &mut values_out, set_type);
+            let offset = set_operation(
+                &mut set,
+                &mut set2,
+                a_iter,
+                b_iter,
+                &mut values_out,
+                set_type,
+            );
             offsets.push(offset as i64);
         }
     }
@@ -199,6 +218,7 @@ fn binary(
     assert_eq!(offsets_a.len(), offsets_b.len());
 
     let mut set = Default::default();
+    let mut set2 = Default::default();
 
     let mut values_out = MutableBinaryArray::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
@@ -219,7 +239,14 @@ fn binary(
             let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
             let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
 
-            let offset = set_operation(&mut set, a_iter, b_iter, &mut values_out, set_type);
+            let offset = set_operation(
+                &mut set,
+                &mut set2,
+                a_iter,
+                b_iter,
+                &mut values_out,
+                set_type,
+            );
             offsets.push(offset as i64);
         }
     }

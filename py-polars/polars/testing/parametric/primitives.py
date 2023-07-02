@@ -172,6 +172,7 @@ class column:
                         raise InvalidArgument(
                             "Unable to determine dtype for strategy"
                         ) from None
+
                 if sample_value_type is not None:
                     value_dtype = py_type_to_dtype(sample_value_type)
                     if value_dtype is not List:
@@ -651,7 +652,7 @@ def dataframes(
                 coldefs = list(cols)
 
             # append any explicitly provided cols
-            coldefs.extend(include_cols or ())  # type: ignore[arg-type]
+            coldefs.extend(include_cols or ())
 
             # assign dataframe/series size
             series_size = (

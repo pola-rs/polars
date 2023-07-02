@@ -52,6 +52,10 @@ impl FunctionExpr {
                     MonthStart => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "date_offset")]
                     MonthEnd => mapper.with_same_dtype().unwrap().dtype,
+                    #[cfg(feature = "timezones")]
+                    BaseUtcOffset => DataType::Duration(TimeUnit::Milliseconds),
+                    #[cfg(feature = "timezones")]
+                    DSTOffset => DataType::Duration(TimeUnit::Milliseconds),
                     Round(..) => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "timezones")]
                     CastTimezone(tz, _use_earliest) => {
@@ -59,9 +63,13 @@ impl FunctionExpr {
                     }
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return mapper.map_datetime_dtype_timezone(Some(tz)),
-                    DateRange { .. } => {
-                        let res = mapper.map_to_list_supertype()?;
-                        return Ok(Field::new("date", res.dtype));
+                    DateRange {
+                        every: _,
+                        closed: _,
+                        tz,
+                    } => {
+                        // output dtype may change based on `tz`
+                        return mapper.map_to_date_range_dtype(tz);
                     }
                     TimeRange { .. } => {
                         return Ok(Field::new("time", DataType::List(Box::new(DataType::Time))));
@@ -77,6 +85,18 @@ impl FunctionExpr {
                 mapper.with_dtype(dtype)
             }
 
+            #[cfg(feature = "arange")]
+            Range(fun) => {
+                use RangeFunction::*;
+                let field = match fun {
+                    ARange { .. } => Field::new("arange", DataType::Int64), // This is not always correct
+                    IntRange { .. } => Field::new("int", DataType::Int64),
+                    IntRanges { .. } => {
+                        Field::new("int_range", DataType::List(Box::new(DataType::Int64)))
+                    }
+                };
+                Ok(field)
+            }
             #[cfg(feature = "date_offset")]
             DateOffset(_) => mapper.with_same_dtype(),
             #[cfg(feature = "trigonometry")]
@@ -105,6 +125,10 @@ impl FunctionExpr {
                     Sum => mapper.nested_sum_type(),
                     #[cfg(feature = "list_sets")]
                     SetOperation(_) => mapper.with_same_dtype(),
+                    #[cfg(feature = "list_any_all")]
+                    Any => mapper.with_dtype(DataType::Boolean),
+                    #[cfg(feature = "list_any_all")]
+                    All => mapper.with_dtype(DataType::Boolean),
                 }
             }
             #[cfg(feature = "dtype-array")]
@@ -295,6 +319,29 @@ impl<'a> FieldsMapper<'a> {
             .unwrap_or(DataType::Unknown);
         first.coerce(dt);
         Ok(first)
+    }
+
+    pub(super) fn map_to_date_range_dtype(&self, tz: &Option<String>) -> PolarsResult<Field> {
+        let inner_dtype = match (&self.map_to_supertype()?.dtype, tz) {
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, Some(field_tz)), Some(tz)) => {
+                if field_tz != tz {
+                    polars_bail!(ComputeError: format!("Given time_zone is different from that of timezone aware datetimes. \
+                    Given: '{}', got: '{}'.", tz, field_tz))
+                }
+                DataType::Datetime(*tu, Some(tz.to_string()))
+            }
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, Some(tz)), _) => DataType::Datetime(*tu, Some(tz.to_string())),
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, _), Some(tz)) => DataType::Datetime(*tu, Some(tz.to_string())),
+            (DataType::Datetime(tu, _), _) => DataType::Datetime(*tu, None),
+            (DataType::Date, _) => DataType::Date,
+            (dtype, _) => {
+                polars_bail!(ComputeError: "expected Date or Datetime, got {}", dtype)
+            }
+        };
+        Ok(Field::new("date", DataType::List(Box::new(inner_dtype))))
     }
 
     /// Map the dtypes to the "supertype" of a list of lists.

@@ -27,6 +27,60 @@ class ExprListNameSpace:
     def __getitem__(self, item: int) -> Expr:
         return self.get(item)
 
+    def all(self) -> Expr:
+        """
+        Evaluate whether all boolean values in a list are true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.all())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ true  │
+        │ null  │
+        └───────┘
+
+        """
+        return wrap_expr(self._pyexpr.list_all())
+
+    def any(self) -> Expr:
+        """
+        Evaluate whether any boolean value in a list is true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.any())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ null  │
+        └───────┘
+
+        """
+        return wrap_expr(self._pyexpr.list_any())
+
     def lengths(self) -> Expr:
         """
         Get the length of the arrays as UInt32.
@@ -873,9 +927,7 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(
-        ...     difference=pl.col("a").list.difference("b"),
-        ... )
+        >>> df.with_columns(pl.col("a").list.difference("b").alias("difference"))
         shape: (4, 3)
         ┌───────────┬──────────────┬────────────┐
         │ a         ┆ b            ┆ difference │
@@ -929,3 +981,16 @@ class ExprListNameSpace:
         """  # noqa: W505.
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "intersection"))
+
+    def symmetric_difference(self, other: Expr | IntoExpr) -> Expr:
+        """
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        """  # noqa: W505.
+        other = parse_as_expression(other, str_as_lit=False)
+        return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))

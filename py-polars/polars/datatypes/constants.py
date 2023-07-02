@@ -33,6 +33,9 @@ DATETIME_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
         Datetime("ms"),
         Datetime("us"),
         Datetime("ns"),
+        Datetime("ms", "*"),
+        Datetime("us", "*"),
+        Datetime("ns", "*"),
     ]
 )
 DURATION_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(

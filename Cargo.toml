@@ -33,8 +33,8 @@ thiserror = "^1"
 num-traits = "0.2"
 ahash = "0.8"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
-hashbrown = { version = "0.13.1", features = ["rayon", "ahash"] }
-indexmap = { version = "1", features = ["std"] }
+hashbrown = { version = "0.14.0", features = ["rayon", "ahash"] }
+indexmap = { version = "2", features = ["std"] }
 bitflags = "1.3"
 once_cell = "1"
 memchr = "2"

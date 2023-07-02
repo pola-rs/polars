@@ -8,7 +8,7 @@ import typing
 import warnings
 from collections import defaultdict
 from collections.abc import Sized
-from io import BytesIO, StringIO
+from io import BytesIO, StringIO, TextIOWrapper
 from operator import itemgetter
 from pathlib import Path
 from typing import (
@@ -16,6 +16,7 @@ from typing import (
     Any,
     BinaryIO,
     Callable,
+    ClassVar,
     Collection,
     Generator,
     Iterable,
@@ -24,6 +25,7 @@ from typing import (
     NoReturn,
     Sequence,
     TypeVar,
+    cast,
     overload,
 )
 
@@ -335,7 +337,7 @@ class DataFrame:
 
     """
 
-    _accessors: set[str] = set()
+    _accessors: ClassVar[set[str]] = set()
 
     def __init__(
         self,
@@ -2341,7 +2343,7 @@ class DataFrame:
     @overload
     def write_csv(
         self,
-        file: BytesIO | str | Path,
+        file: BytesIO | TextIOWrapper | str | Path,
         *,
         has_header: bool = ...,
         separator: str = ...,
@@ -2357,7 +2359,7 @@ class DataFrame:
 
     def write_csv(
         self,
-        file: BytesIO | str | Path | None = None,
+        file: BytesIO | TextIOWrapper | str | Path | None = None,
         *,
         has_header: bool = True,
         separator: str = ",",
@@ -2445,6 +2447,8 @@ class DataFrame:
 
         if isinstance(file, (str, Path)):
             file = normalise_filepath(file)
+        elif isinstance(file, TextIOWrapper):
+            file = cast(TextIOWrapper, file.buffer)
 
         self._df.write_csv(
             file,
@@ -3163,12 +3167,12 @@ class DataFrame:
                     "'sqlalchemy' not found. Install polars with 'pip install polars[sqlalchemy]'."
                 ) from exc
 
-            engine = create_engine(connection_uri)
+            engine_sa = create_engine(connection_uri)
 
             # this conversion to pandas as zero-copy
             # so we can utilize their sql utils for free
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
-                name=table_name, con=engine, if_exists=if_exists, index=False
+                name=table_name, con=engine_sa, if_exists=if_exists, index=False
             )
 
         else:
@@ -8850,7 +8854,7 @@ class DataFrame:
     @typing.no_type_check
     def corr(self, **kwargs: Any) -> DataFrame:
         """
-        Return Pearson product-moment correlation coefficients.
+        Return pairwise Pearson product-moment correlation coefficients between columns.
 
         See numpy ``corrcoef`` for more information:
         https://numpy.org/doc/stable/reference/generated/numpy.corrcoef.html
@@ -8899,6 +8903,52 @@ class DataFrame:
         key
             Key that is sorted.
 
+        Examples
+        --------
+        >>> df0 = pl.DataFrame(
+        ...     {"name": ["steve", "elise", "bob"], "age": [42, 44, 18]}
+        ... ).sort("age")
+        >>> df0
+        shape: (3, 2)
+        ┌───────┬─────┐
+        │ name  ┆ age │
+        │ ---   ┆ --- │
+        │ str   ┆ i64 │
+        ╞═══════╪═════╡
+        │ bob   ┆ 18  │
+        │ steve ┆ 42  │
+        │ elise ┆ 44  │
+        └───────┴─────┘
+        >>> df1 = pl.DataFrame(
+        ...     {"name": ["anna", "megan", "steve", "thomas"], "age": [21, 33, 42, 20]}
+        ... ).sort("age")
+        >>> df1
+        shape: (4, 2)
+        ┌────────┬─────┐
+        │ name   ┆ age │
+        │ ---    ┆ --- │
+        │ str    ┆ i64 │
+        ╞════════╪═════╡
+        │ thomas ┆ 20  │
+        │ anna   ┆ 21  │
+        │ megan  ┆ 33  │
+        │ steve  ┆ 42  │
+        └────────┴─────┘
+        >>> df0.merge_sorted(df1, key="age")
+        shape: (7, 2)
+        ┌────────┬─────┐
+        │ name   ┆ age │
+        │ ---    ┆ --- │
+        │ str    ┆ i64 │
+        ╞════════╪═════╡
+        │ bob    ┆ 18  │
+        │ thomas ┆ 20  │
+        │ anna   ┆ 21  │
+        │ megan  ┆ 33  │
+        │ steve  ┆ 42  │
+        │ steve  ┆ 42  │
+        │ elise  ┆ 44  │
+        └────────┴─────┘
         """
         return self.lazy().merge_sorted(other.lazy(), key).collect(no_optimization=True)
 

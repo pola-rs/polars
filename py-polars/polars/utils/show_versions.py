@@ -58,13 +58,16 @@ def show_versions() -> None:
 def _get_dependency_info() -> dict[str, str]:
     # see the list of dependencies in pyproject.toml
     opt_deps = [
-        "numpy",
-        "pandas",
-        "pyarrow",
+        "adbc_driver_sqlite",
         "connectorx",
         "deltalake",
         "fsspec",
         "matplotlib",
+        "numpy",
+        "pandas",
+        "pyarrow",
+        "pydantic",
+        "sqlalchemy",
         "xlsx2csv",
         "xlsxwriter",
     ]

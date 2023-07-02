@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.0,<1.1"]
+requires = ["maturin>=1.1,<1.2"]
 build-backend = "maturin"
 
 [project]
@@ -40,20 +40,22 @@ Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
-# NOTE: keep this list in sync with show_versions()
+# NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 pyarrow = ["pyarrow>=7.0.0"]
 pandas = ["pyarrow>=7.0.0", "pandas"]
 numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
-deltalake = ["deltalake >= 0.8.0"]
+deltalake = ["deltalake >= 0.10.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
+pydantic = ["pydantic"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
+adbc = ["adbc_driver_sqlite"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,sqlalchemy,xlsxwriter]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc]",
 ]
 
 [tool.mypy]
