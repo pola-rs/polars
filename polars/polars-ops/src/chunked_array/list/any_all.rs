@@ -12,12 +12,15 @@ where
     polars_ensure!(values.data_type() == &ArrowDataType::Boolean, ComputeError: "expected boolean elements in list");
 
     let values = values.as_any().downcast_ref::<BooleanArray>().unwrap();
+    let validity = arr.validity().cloned();
 
     // fast path where all values set
     // all is free
     let all_set = arrow::compute::boolean::all(values);
     if all_set && is_all {
-        return Ok(BooleanChunked::full("", true, arr.len()).chunks()[0].clone());
+        return Ok(BooleanChunked::full("", true, arr.len()).chunks()[0]
+            .clone()
+            .with_validity(validity));
     }
 
     let mut start = offsets[0] as usize;
@@ -32,7 +35,9 @@ where
         op(&val)
     });
 
-    Ok(Box::new(BooleanArray::from_trusted_len_values_iter(iter)))
+    Ok(Box::new(
+        BooleanArray::from_trusted_len_values_iter(iter).with_validity(validity),
+    ))
 }
 
 pub(super) fn list_all(ca: &ListChunked) -> PolarsResult<Series> {
