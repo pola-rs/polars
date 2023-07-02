@@ -1963,11 +1963,11 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn sort_example(df: &DataFrame, descending: bool) -> PolarsResult<DataFrame> {
-    ///     df.sort(["a"], descending)
+    ///     df.sort(["a"], descending, false)
     /// }
     ///
     /// fn sort_by_multiple_columns_example(df: &DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.sort(&["a", "b"], vec![false, true])
+    ///     df.sort(&["a", "b"], vec![false, true], false)
     /// }
     /// ```
     pub fn sort(
