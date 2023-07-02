@@ -557,7 +557,6 @@ impl LazyFrame {
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
         let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
-        eprintln!("Collect LazyDataframe");
         let out = physical_plan.execute(&mut state);
         #[cfg(debug_assertions)]
         {

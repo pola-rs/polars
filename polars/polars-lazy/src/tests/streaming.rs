@@ -369,3 +369,24 @@ fn test_streaming_double_left_join() -> PolarsResult<()> {
     assert_streaming_with_default(q, true, false);
     Ok(())
 }
+
+
+#[test]
+fn test_sort_maintain_order_streaming() -> PolarsResult<()> {
+    let q = df![
+        "A" => [1, 1, 1, 1],
+        "B" => ["A", "B", "C", "D"],
+    ]?
+    .lazy();
+
+    let res = q
+        .sort_by_exprs([col("A")], [false], false, true)
+        .slice(0, 3)
+        .with_streaming(true)
+        .collect()?;
+    assert!(res.frame_equal(&df![
+        "A" => [1, 1, 1],
+        "B" => ["A", "B", "C"],
+    ]?));
+    Ok(())
+}

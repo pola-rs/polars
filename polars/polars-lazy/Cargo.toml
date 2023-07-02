@@ -172,6 +172,7 @@ test_all = [
   "pivot",
   "semi_anti_join",
   "cse",
+  "streaming",
 ]
 
 [package.metadata.docs.rs]

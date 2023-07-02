@@ -3,6 +3,10 @@ use polars_plan::prelude::*;
 
 pub(super) fn is_streamable_sort(args: &SortArguments) -> bool {
     // check if slice is positive
+    if args.maintain_order {
+        eprintln!("Cannot maintain_order in streaming mode. Falling back to non-streaming mode.");
+        return false;
+    }
     match args.slice {
         Some((offset, _)) => offset >= 0,
         None => true,
