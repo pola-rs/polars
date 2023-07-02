@@ -4043,7 +4043,7 @@ class DataFrame:
             Place null values last.
         maintain_order
             Whether the order should be maintained if elements are equal.
-            Note that if `true` streaming is not possible and performance might be 
+            Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
 
         See Also
@@ -4135,7 +4135,7 @@ class DataFrame:
             Place null values last.
         maintain_order
             Whether the order should be maintained if elements are equal.
-            Note that if `true` streaming is not possible and performance might be 
+            Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
 
         See Also
