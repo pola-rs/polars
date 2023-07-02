@@ -4,7 +4,7 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import TYPE_CHECKING, Any, NamedTuple, no_type_check
+from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple, no_type_check
 
 import numpy as np
 import pandas as pd
@@ -16,11 +16,6 @@ from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
 from polars.exceptions import ShapeError, TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal  # noqa: TCH002
 
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
@@ -284,28 +279,27 @@ def test_init_pydantic_2x() -> None:
         event: Literal["leave", "enter"] = Field("enter")
         time_on_page: int = Field(0, serialization_alias="top")
 
-    if sys.version_info >= (3, 8):
-        data_json = """
-        [{
-            "user_id": "x",
-            "ts": {"$date": "2021-01-01T00:00:00.000Z"},
-            "url": "/latest/foobar",
-            "referer": "https://google.com",
-            "event": "enter",
-            "top": 123
-        }]
-        """
-        at = pydantic.TypeAdapter(list[PageView])
-        models = at.validate_json(data_json)
+    data_json = """
+    [{
+        "user_id": "x",
+        "ts": {"$date": "2021-01-01T00:00:00.000Z"},
+        "url": "/latest/foobar",
+        "referer": "https://google.com",
+        "event": "enter",
+        "top": 123
+    }]
+    """
+    at = pydantic.TypeAdapter(List[PageView])
+    models = at.validate_json(data_json)
 
-        assert pl.DataFrame(models).to_dict(False) == {
-            "user_id": ["x"],
-            "ts": [datetime(2021, 1, 1, 0, 0)],
-            "path": ["?"],
-            "referer": ["https://google.com"],
-            "event": ["enter"],
-            "time_on_page": [0],
-        }
+    assert pl.DataFrame(models).to_dict(False) == {
+        "user_id": ["x"],
+        "ts": [datetime(2021, 1, 1, 0, 0)],
+        "path": ["?"],
+        "referer": ["https://google.com"],
+        "event": ["enter"],
+        "time_on_page": [0],
+    }
 
 
 def test_init_structured_objects_unhashable() -> None:
