@@ -558,7 +558,7 @@ def test_to_pandas() -> None:
         if a.dtype == pl.List:
             vals_b = [(None if x is None else x.tolist()) for x in b]
         else:
-            vals_b = b.replace({np.nan: None}).values.tolist()  # type: ignore[union-attr]
+            vals_b = b.replace({np.nan: None}).values.tolist()
 
         assert vals_b == test_data
 
