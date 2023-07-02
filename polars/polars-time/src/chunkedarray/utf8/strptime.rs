@@ -8,7 +8,7 @@ use regex::Regex;
 
 use crate::chunkedarray::{polars_bail, PolarsResult};
 
-static HOUR_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[HIl]").unwrap());
+static HOUR_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[HkIl]").unwrap());
 static MINUTE_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?M").unwrap());
 static SECOND_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?S").unwrap());
 static TWELVE_HOUR_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[Il]").unwrap());
