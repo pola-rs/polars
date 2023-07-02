@@ -194,15 +194,13 @@ def test_groupby_agg_input_types(lazy: bool) -> None:
     for bad_param in bad_agg_parameters():
         with pytest.raises(TypeError):  # noqa: PT012
             result = df_or_lazy.groupby("a").agg(bad_param)
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
+            result.collect()
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 7]})
 
     for good_param in good_agg_parameters():
         result = df_or_lazy.groupby("a", maintain_order=True).agg(good_param)
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
+        result = result.collect()
         assert_frame_equal(result, expected)
 
 
@@ -218,8 +216,7 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
             result = df_or_lazy.groupby_dynamic(
                 index_column="index_column", every="2i", closed="right"
             ).agg(bad_param)
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
+            result.collect()
 
     expected = pl.DataFrame({"index_column": [-2, 0, 2], "b": [1, 4, 2]})
 
@@ -227,8 +224,7 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
         result = df_or_lazy.groupby_dynamic(
             index_column="index_column", every="2i", closed="right"
         ).agg(good_param)
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
+        result = result.collect()
         assert_frame_equal(result, expected)
 
 

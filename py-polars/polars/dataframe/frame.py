@@ -7026,7 +7026,7 @@ class DataFrame:
         """
         return wrap_ldf(self._df.lazy())
 
-    def collect(self, **kwargs) -> Self:
+    def collect(self, **kwargs: Any) -> Self:
         """
         Do nothing and return the :class:`DataFrame`.
 
@@ -7040,7 +7040,7 @@ class DataFrame:
 
         Notes
         -----
-        It is prefered to write your code such that you always know whether you are
+        It is preferred to write your code such that you always know whether you are
         operating on a :class:`DataFrame` or a :class:`LazyFrame`. Avoid using this
         method if you can.
 
@@ -7049,7 +7049,6 @@ class DataFrame:
         >>> def print_frame_height(frame: pl.DataFrame | pl.LazyFrame) -> None:
         ...     df = frame.collect()
         ...     print(df.height)
-        ...
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> print_frame_height(df)
         3

@@ -89,8 +89,7 @@ def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
             result = df_or_lazy.groupby_rolling(
                 index_column="index_column", period="2i"
             ).agg(bad_param)
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
+            result.collect()
 
     expected = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
 
@@ -98,8 +97,7 @@ def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
         result = df_or_lazy.groupby_rolling(
             index_column="index_column", period="2i"
         ).agg(good_param)
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
+        result.collect()
         assert_frame_equal(result, expected)
 
 

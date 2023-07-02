@@ -359,7 +359,7 @@ def align_frames(
     # we just subselect out the columns representing the component frames)
     eager = isinstance(frames[0], pl.DataFrame)
     alignment_frame: LazyFrame = (
-        reduce(  # type: ignore[attr-defined]
+        reduce(
             lambda x, y: x.lazy().join(  # type: ignore[arg-type, return-value]
                 y.lazy(), how=how, on=align_on, suffix=str(id(y))
             ),
