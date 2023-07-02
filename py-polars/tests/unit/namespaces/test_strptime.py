@@ -532,7 +532,7 @@ def test_strptime_subseconds_datetime(data: str, format: str, expected: time) ->
     ("string", "fmt"),
     [
         pytest.param("2023-05-04|7", "%Y-%m-%d|%H", id="hour but no minute"),
-        pytest.param("2023-05-04|7", "%Y-%m-%d|%I", id="padded hour but no minute"),
+        pytest.param("2023-05-04|7", "%Y-%m-%d|%k", id="padded hour but no minute"),
         pytest.param("2023-05-04|10", "%Y-%m-%d|%M", id="minute but no hour"),
         pytest.param("2023-05-04|10", "%Y-%m-%d|%S", id="second but no hour"),
         pytest.param(
