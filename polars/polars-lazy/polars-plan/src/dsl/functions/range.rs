@@ -223,13 +223,19 @@ pub fn date_range(
     end: Expr,
     every: Duration,
     closed: ClosedWindow,
+    time_unit: Option<TimeUnit>,
     tz: Option<TimeZone>,
 ) -> Expr {
     let input = vec![start, end];
 
     Expr::Function {
         input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRange { every, closed, tz }),
+        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRange {
+            every,
+            closed,
+            time_unit,
+            tz,
+        }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: true,

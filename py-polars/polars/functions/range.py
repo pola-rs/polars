@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from datetime import datetime, time, timedelta
+from datetime import time, timedelta
 from typing import TYPE_CHECKING, overload
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import Date, Int64
+from polars.datatypes import Int64
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_s
 from polars.utils.convert import (
-    _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_duration,
 )
@@ -23,7 +22,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from datetime import date
+    from datetime import date, datetime
 
     from polars import Expr, Series
     from polars.type_aliases import ClosedInterval, PolarsDataType, TimeUnit
@@ -218,9 +217,9 @@ def date_range(
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
     time_unit : {None, 'ns', 'us', 'ms'}
-        Set the time unit.
+        Set the time unit. Only takes effect if output is of ``Datetime`` type.
     time_zone:
-        Optional timezone
+        Optional timezone. Only takes effect if output is of ``Datetime`` type.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
@@ -356,72 +355,30 @@ def date_range(
     elif " " in interval:
         interval = interval.replace(" ", "")
 
-    if (
-        not eager
-        or isinstance(start, (str, pl.Expr))
-        or isinstance(end, (str, pl.Expr))
-    ):
-        start = parse_as_expression(start)
-        end = parse_as_expression(end)
-        expr = wrap_expr(plr.date_range_lazy(start, end, interval, closed, time_zone))
-        if name is not None:
-            expr = expr.alias(name)
-        return expr
-
-    start, start_is_date = _ensure_datetime(start)
-    end, end_is_date = _ensure_datetime(end)
-
-    if start.tzinfo is not None or time_zone is not None:
-        if start.tzinfo != end.tzinfo:
-            raise ValueError(
-                "Cannot mix different timezone aware datetimes."
-                f" Got: '{start.tzinfo}' and '{end.tzinfo}'."
-            )
-
-        if time_zone is not None and start.tzinfo is not None:
-            if str(start.tzinfo) != time_zone:
-                raise ValueError(
-                    "Given time_zone is different from that of timezone aware datetimes."
-                    f" Given: '{time_zone}', got: '{start.tzinfo}'."
-                )
-        if time_zone is None and start.tzinfo is not None:
-            time_zone = str(start.tzinfo)
-
-    time_unit_: TimeUnit
+    time_unit_: TimeUnit | None
     if time_unit is not None:
         time_unit_ = time_unit
     elif "ns" in interval:
         time_unit_ = "ns"
     else:
-        time_unit_ = "us"
+        time_unit_ = None
 
-    start_pl = _datetime_to_pl_timestamp(start, time_unit_)
-    end_pl = _datetime_to_pl_timestamp(end, time_unit_)
-    dt_range = wrap_s(
-        plr.date_range_eager(start_pl, end_pl, interval, closed, time_unit_, time_zone)
+    start_pl = parse_as_expression(start)
+    end_pl = parse_as_expression(end)
+    dt_range = wrap_expr(
+        plr.date_range_lazy(start_pl, end_pl, interval, closed, time_unit_, time_zone)
     )
-    if (
-        start_is_date
-        and end_is_date
-        and not _interval_granularity(interval).endswith(("h", "m", "s"))
-    ):
-        dt_range = dt_range.cast(Date)
-
     if name is not None:
         dt_range = dt_range.alias(name)
-    return dt_range
 
-
-def _ensure_datetime(value: date | datetime) -> tuple[datetime, bool]:
-    is_date_type = False
-    if not isinstance(value, datetime):
-        value = datetime(value.year, value.month, value.day)
-        is_date_type = True
-    return value, is_date_type
-
-
-def _interval_granularity(interval: str) -> str:
-    return interval[-2:].lstrip("0123456789")
+    if (
+        not eager
+        or isinstance(start_pl, (str, pl.Expr))
+        or isinstance(end_pl, (str, pl.Expr))
+    ):
+        return dt_range
+    res = F.select(dt_range).to_series().explode().set_sorted()
+    return res
 
 
 @overload
