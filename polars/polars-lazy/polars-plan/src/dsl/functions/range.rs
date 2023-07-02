@@ -15,7 +15,6 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
             ..Default::default()
         },
     }
-    .alias("arange")
 }
 
 #[cfg(feature = "arange")]

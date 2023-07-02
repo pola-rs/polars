@@ -69,6 +69,14 @@ def test_arange_name() -> None:
     assert result_lazy.name == expected_name
 
 
+def test_arange_schema() -> None:
+    result = pl.LazyFrame().select(pl.arange(-3, 3))
+
+    expected_schema = {"arange": pl.Int64}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+
 def test_int_range() -> None:
     result = pl.int_range(0, 3)
     expected = pl.Series("int", [0, 1, 2])
@@ -79,6 +87,14 @@ def test_int_range_eager() -> None:
     result = pl.int_range(0, 3, eager=True)
     expected = pl.Series("int", [0, 1, 2])
     assert_series_equal(result, expected)
+
+
+def test_int_range_schema() -> None:
+    result = pl.LazyFrame().select(pl.int_range(-3, 3))
+
+    expected_schema = {"int": pl.Int64}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
 
 
 @pytest.mark.parametrize(
@@ -102,6 +118,26 @@ def test_int_ranges_eager() -> None:
 
     expected = pl.Series("int_range", [[1, 2, 3], [2, 3]])
     assert_series_equal(result, expected)
+
+
+def test_int_ranges_schema_dtype_default() -> None:
+    lf = pl.LazyFrame({"start": [1, 2], "end": [3, 4]})
+
+    result = lf.select(pl.int_ranges("start", "end"))
+
+    expected_schema = {"int_range": pl.List(pl.Int64)}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+
+def test_int_ranges_schema_dtype_arg() -> None:
+    lf = pl.LazyFrame({"start": [1, 2], "end": [3, 4]})
+
+    result = lf.select(pl.int_ranges("start", "end", dtype=pl.UInt16))
+
+    expected_schema = {"int_range": pl.List(pl.UInt16)}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
 
 
 def test_date_range() -> None:

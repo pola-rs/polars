@@ -58,11 +58,15 @@ pub(super) fn arange(s: &[Series], step: i64) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
 
-    if start.len() == 1 && end.len() == 1 {
+    let mut result = if start.len() == 1 && end.len() == 1 {
         int_range(s, step)
     } else {
         int_ranges(s, step)
-    }
+    }?;
+
+    result.rename("arange");
+
+    Ok(result)
 }
 
 pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
