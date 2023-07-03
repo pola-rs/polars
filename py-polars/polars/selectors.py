@@ -34,14 +34,52 @@ SelectorType = TypeVar("SelectorType", bound="_selector_proxy_")
 
 
 def is_selector(obj: Any) -> bool:
-    """Return whether the given object is a selector."""
+    """
+    Indicate whether the given object/expression is a selector.
+
+    Examples
+    --------
+    >>> from polars.selectors import is_selector
+    >>> import polars.selectors as cs
+    >>> is_selector(pl.col("colx"))
+    False
+    >>> is_selector(cs.first() | cs.last())
+    True
+    """
     return isinstance(obj, _selector_proxy_)
 
 
 def selector_column_names(
     frame: DataFrame | LazyFrame, selector: SelectorType
 ) -> tuple[str, ...]:
-    """Return the column names that would be selected from the given frame."""
+    """
+    Return the column names that would be selected from the given frame.
+
+    Parameters
+    ----------
+    frame
+        A polars DataFrame or LazyFrame.
+    selector
+        An arbitrary polars selector (or compound selector).
+
+    Examples
+    --------
+    >>> from polars.selectors import selector_column_names
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "colx": ["x", "y"],
+    ...         "coly": [123, 456],
+    ...         "colz": [2.0, 5.5],
+    ...     }
+    ... )
+    >>> selector_column_names(df, cs.numeric())
+    ('coly', 'colz')
+    >>> selector_column_names(df, cs.first() | cs.last())
+    ('colx', 'colz')
+    >>> selector_column_names(df, ~(cs.first() | cs.last()))
+    ('coly',)
+    """
     return tuple(frame.clear().select(selector).columns)
 
 
