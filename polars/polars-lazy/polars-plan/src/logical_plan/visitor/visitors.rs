@@ -2,7 +2,7 @@ use super::*;
 
 /// An implementor of this trait decides how and in which order its nodes get traversed
 /// Implemented for [`Expr`] and [`AexprNode`].
-pub(crate) trait TreeWalker: Sized {
+pub trait TreeWalker: Sized {
     fn apply_children(
         &self,
         op: &mut dyn FnMut(&Self) -> PolarsResult<VisitRecursion>,
