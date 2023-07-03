@@ -425,7 +425,14 @@ def test_err_filter_no_expansion() -> None:
         df.filter(pl.col(pl.Int16).min() < 0.1)
 
 
-def test_date_string_comparison() -> None:
+@pytest.mark.parametrize(
+    ("e"),
+    [
+        pl.col("date") > "2021-11-10",
+        pl.col("date") < "2021-11-10",
+    ],
+)
+def test_date_string_comparison(e: pl.Expr) -> None:
     df = pl.DataFrame(
         {
             "date": [
@@ -439,7 +446,7 @@ def test_date_string_comparison() -> None:
     with pytest.raises(
         pl.ComputeError, match=r"cannot compare 'date/datetime/time' to a string value"
     ):
-        df.select(pl.col("date") > "2021-11-10")
+        df.select(e)
 
 
 def test_err_on_multiple_column_expansion() -> None:
