@@ -105,4 +105,14 @@ impl PyExpr {
             panic!("activate 'json' feature")
         }
     }
+
+    fn meta_tree_format(&self) -> PyResult<String> {
+        let e = self
+            .inner
+            .clone()
+            .meta()
+            .into_tree_formatter()
+            .map_err(PyPolarsErr::from)?;
+        Ok(format!("{e}"))
+    }
 }

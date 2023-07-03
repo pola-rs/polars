@@ -31,7 +31,7 @@ impl OptimizationRule for SlicePushDown {
                     let m = m.clone();
                     let input = m.get_input().first();
                     let new_input = pushdown(input, offset, length, expr_arena);
-                    Some(m.replace_input(new_input))
+                    Some(m.replace_inputs(&[new_input]))
                 }
                 Literal(lv) => {
                     match lv {
