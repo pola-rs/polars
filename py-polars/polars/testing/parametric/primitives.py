@@ -41,17 +41,12 @@ from polars.testing.parametric.strategies import (
 )
 
 if TYPE_CHECKING:
-    import sys
+    from typing import Literal
 
     from hypothesis.strategies import DrawFn, SearchStrategy
 
     from polars import LazyFrame
     from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 _time_units = list(DTYPE_TEMPORAL_UNITS)

@@ -540,17 +540,14 @@ def test_no_rechunk() -> None:
 def test_cat_to_pandas() -> None:
     df = pl.DataFrame({"a": ["best", "test"]})
     df = df.with_columns(pl.all().cast(pl.Categorical))
+
     pd_out = df.to_pandas()
-    assert "category" in str(pd_out["a"].dtype)
-    try:
-        pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
-        assert pd_pa_out["a"].dtype.type in (
-            pd.core.dtypes.dtypes.CategoricalDtypeType,
-            pa.DictionaryType,
-        )
-    except ModuleNotFoundError:
-        # Skip test if suitable pandas version not installed.
-        pass
+    assert isinstance(pd_out["a"].dtype, pd.CategoricalDtype)
+
+    pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
+    assert pd_pa_out["a"].dtype == pd.ArrowDtype(
+        pa.dictionary(pa.int64(), pa.large_string())
+    )
 
 
 def test_to_pandas() -> None:

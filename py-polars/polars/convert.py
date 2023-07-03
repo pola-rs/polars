@@ -639,7 +639,7 @@ def from_pandas(
 
 @overload
 def from_pandas(
-    data: pd.Series | pd.DatetimeIndex,
+    data: pd.Series[Any] | pd.Index,
     *,
     schema_overrides: SchemaDict | None = ...,
     rechunk: bool = ...,
@@ -650,7 +650,7 @@ def from_pandas(
 
 
 def from_pandas(
-    data: pd.DataFrame | pd.Series | pd.DatetimeIndex,
+    data: pd.DataFrame | pd.Series[Any] | pd.Index,
     *,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,

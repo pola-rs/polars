@@ -26,4 +26,4 @@ pytest-cov==4.1.0
 pytest-xdist==3.3.1
 
 # Stub files
-pandas-stubs==1.2.0.62
+pandas-stubs

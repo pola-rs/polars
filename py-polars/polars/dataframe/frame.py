@@ -112,6 +112,7 @@ if TYPE_CHECKING:
     import sys
     from datetime import timedelta
     from io import IOBase
+    from typing import Literal
 
     import deltalake
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
@@ -153,11 +154,6 @@ if TYPE_CHECKING:
         UnstackDirection,
     )
     from polars.utils import NoDefault
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec, TypeAlias

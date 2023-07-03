@@ -80,10 +80,6 @@ def create_temp_sqlite_db(test_db: str) -> None:
                 "date": pl.Date,
             },
             [date(2020, 1, 1), date(2021, 12, 31)],
-            marks=pytest.mark.skipif(
-                sys.version_info < (3, 8),
-                reason="connectorx not available below Python 3.8",
-            ),
         ),
         pytest.param(
             "adbc",

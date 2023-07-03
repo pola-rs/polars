@@ -22,8 +22,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    import sys
     from datetime import date
+    from typing import Literal
 
     from polars import Expr, Series
     from polars.type_aliases import (
@@ -33,11 +33,6 @@ if TYPE_CHECKING:
         PolarsIntegerType,
         TimeUnit,
     )
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 @overload

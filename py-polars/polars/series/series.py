@@ -336,7 +336,7 @@ class Series:
     def _from_pandas(
         cls,
         name: str,
-        values: pd.Series | pd.DatetimeIndex,
+        values: pd.Series[Any] | pd.DatetimeIndex,
         *,
         nan_to_null: bool = True,
     ) -> Self:
@@ -3421,7 +3421,7 @@ class Series:
 
     def to_pandas(  # noqa: D417
         self, *args: Any, use_pyarrow_extension_array: bool = False, **kwargs: Any
-    ) -> pd.Series:
+    ) -> pd.Series[Any]:
         """
         Convert this Series to a pandas Series.
 
