@@ -126,7 +126,7 @@ def test_read_database(
             "SELECT * FROM test_data",
             "sqlite",
             ValueError,
-            "Engine is not implemented, try either connectorx or adbc.",
+            "Engine 'not_engine' not implemented; use connectorx or adbc.",
             id="Not an available sql engine",
         ),
         pytest.param(
