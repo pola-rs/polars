@@ -15,7 +15,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    import sys
+    from typing import Literal
 
     from polars import Expr, Series
     from polars.type_aliases import (
@@ -23,11 +23,6 @@ if TYPE_CHECKING:
         PolarsDataType,
         PolarsExprType,
     )
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 @overload

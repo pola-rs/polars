@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 
 from hypothesis import settings
 
@@ -91,7 +90,7 @@ def set_profile(profile: ParametricProfileNames | int) -> None:
     if profile_name.replace("_", "").isdigit():
         profile_name = str(int(profile_name))
 
-    elif sys.version_info >= (3, 8):
+    else:
         from typing import get_args
 
         valid_profile_names = get_args(ParametricProfileNames)
