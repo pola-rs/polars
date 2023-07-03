@@ -49,7 +49,7 @@ pub(crate) trait TreeWalker: Sized {
     }
 }
 
-pub(crate) trait Visitor {
+pub trait Visitor {
     type Node;
 
     /// Invoked before any children of `node` are visited.
@@ -64,7 +64,7 @@ pub(crate) trait Visitor {
     }
 }
 
-pub(crate) trait RewritingVisitor {
+pub trait RewritingVisitor {
     type Node;
 
     /// Invoked before any children of `node` are visited.

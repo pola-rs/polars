@@ -62,18 +62,16 @@ impl UpperExp for AExpr {
     }
 }
 
-struct TreeFmtVisitor {
+pub(crate) struct TreeFmtVisitor {
     levels: Vec<Vec<String>>,
-    scratch: Vec<Node>,
     depth: u32,
     width: u32,
 }
 
 impl TreeFmtVisitor {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             levels: vec![],
-            scratch: vec![],
             depth: 0,
             width: 0,
         }
@@ -95,7 +93,7 @@ impl Visitor for TreeFmtVisitor {
         // the post-visit ensures the width of this node is known
         let row = self.levels.get_mut(self.depth as usize).unwrap();
 
-        // set default values to ensure we format at the right widht
+        // set default values to ensure we format at the right width
         row.resize(self.width as usize + 1, "".to_string());
         row[self.width as usize] = repr;
 
@@ -105,7 +103,7 @@ impl Visitor for TreeFmtVisitor {
         Ok(VisitRecursion::Continue)
     }
 
-    fn post_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
+    fn post_visit(&mut self, _node: &Self::Node) -> PolarsResult<VisitRecursion> {
         // because we traverse depth first
         // every post-visit increases the width as we finished a depth-first branch
         self.width += 1;
@@ -134,7 +132,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
     for (row_count, row) in levels.iter().enumerate() {
         // write vertical bars
         if row_count != 0 {
-            write!(f, "\n")?;
+            writeln!(f)?;
             for ((col_i, col_name), col_width) in row.iter().enumerate().zip(&col_widths) {
                 let mut col_spacing = COL_SPACING;
                 if col_i > 0 {
@@ -172,7 +170,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
                 write!(f, " ")?
             }
         }
-        write!(f, "\n")?;
+        writeln!(f)?;
     }
 
     Ok(())

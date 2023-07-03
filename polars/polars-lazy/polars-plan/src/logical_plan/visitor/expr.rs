@@ -23,12 +23,12 @@ impl TreeWalker for Expr {
         Ok(VisitRecursion::Continue)
     }
 
-    fn map_children(self, op: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self> {
+    fn map_children(self, _op: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self> {
         todo!()
     }
 }
 
-pub(crate) struct AexprNode {
+pub struct AexprNode {
     node: Node,
     arena: *mut Arena<AExpr>,
 }
@@ -38,7 +38,7 @@ impl AexprNode {
     ///
     /// # Safety
     /// This will keep a pointer to `arena`. The caller must ensure it stays alive.
-    fn new(node: Node, arena: &mut Arena<AExpr>) -> Self {
+    unsafe fn new(node: Node, arena: &mut Arena<AExpr>) -> Self {
         Self { node, arena }
     }
 
@@ -47,6 +47,7 @@ impl AexprNode {
     where
         F: FnMut(AexprNode) -> T,
     {
+        // safety: we drop this context before arena is out of scope
         unsafe { op(Self::new(node, arena)) }
     }
 

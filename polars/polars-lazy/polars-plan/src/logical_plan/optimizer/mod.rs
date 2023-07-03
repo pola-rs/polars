@@ -9,7 +9,6 @@ mod cse;
 mod delay_rechunk;
 mod drop_nulls;
 
-mod cse_expr;
 mod fast_projection;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
 pub(crate) mod file_caching;
