@@ -31,6 +31,8 @@ pub mod string;
 mod struct_;
 
 use std::fmt::Debug;
+#[cfg(feature = "random")]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub use arity::*;
@@ -1561,8 +1563,21 @@ impl Expr {
 
     #[cfg(feature = "random")]
     pub fn shuffle(self, seed: Option<u64>) -> Self {
-        self.apply(move |s| Ok(Some(s.shuffle(seed))), GetOutput::same_type())
-            .with_fmt("shuffle")
+        // ensure seeds differ between groupby groups
+        // otherwise all groups would be sampled the same
+        let atomic_seed = seed.map(AtomicU64::new);
+        dbg!("atomic");
+        self.apply(
+            move |s| {
+                let seed = atomic_seed
+                    .as_ref()
+                    .map(|atomic| atomic.fetch_add(1, Ordering::Relaxed));
+
+                Ok(Some(s.shuffle(seed)))
+            },
+            GetOutput::same_type(),
+        )
+        .with_fmt("shuffle")
     }
 
     #[cfg(feature = "random")]
@@ -1573,8 +1588,16 @@ impl Expr {
         shuffle: bool,
         seed: Option<u64>,
     ) -> Self {
+        // ensure seeds differ between groupby groups
+        // otherwise all groups would be sampled the same
+        let atomic_seed = seed.map(AtomicU64::new);
         self.apply(
-            move |s| s.sample_n(n, with_replacement, shuffle, seed).map(Some),
+            move |s| {
+                let seed = atomic_seed
+                    .as_ref()
+                    .map(|atomic| atomic.fetch_add(1, Ordering::Relaxed));
+                s.sample_n(n, with_replacement, shuffle, seed).map(Some)
+            },
             GetOutput::same_type(),
         )
         .with_fmt("sample_n")
@@ -1588,8 +1611,14 @@ impl Expr {
         shuffle: bool,
         seed: Option<u64>,
     ) -> Self {
+        // ensure seeds differ between groupby groups
+        // otherwise all groups would be sampled the same
+        let atomic_seed = seed.map(AtomicU64::new);
         self.apply(
             move |s| {
+                let seed = atomic_seed
+                    .as_ref()
+                    .map(|atomic| atomic.fetch_add(1, Ordering::Relaxed));
                 s.sample_frac(frac, with_replacement, shuffle, seed)
                     .map(Some)
             },

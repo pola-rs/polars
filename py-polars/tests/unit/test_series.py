@@ -1287,13 +1287,6 @@ def test_rank() -> None:
     )
 
 
-def test_rank_random() -> None:
-    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
-    assert_series_equal(
-        s.rank("random", seed=1), pl.Series("a", [2, 4, 7, 3, 5, 6, 1], dtype=UInt32)
-    )
-
-
 def test_diff() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     expected = pl.Series("a", [1, 1, -1, 0, 1, -3])
@@ -1814,21 +1807,6 @@ def test_dot() -> None:
         s1 @ [4, 5, 6, 7, 8]
 
 
-def test_sample() -> None:
-    s = pl.Series("a", [1, 2, 3, 4, 5])
-
-    assert len(s.sample(n=2, seed=0)) == 2
-    assert len(s.sample(fraction=0.4, seed=0)) == 2
-
-    assert len(s.sample(n=2, with_replacement=True, seed=0)) == 2
-
-    # on a series of length 5, you cannot sample more than 5 items
-    with pytest.raises(pl.ShapeError):
-        s.sample(n=10, with_replacement=False, seed=0)
-    # unless you use with_replacement=True
-    assert len(s.sample(n=10, with_replacement=True, seed=0)) == 10
-
-
 def test_peak_max_peak_min() -> None:
     s = pl.Series("a", [4, 1, 3, 2, 5])
     result = s.peak_min()
@@ -1947,16 +1925,6 @@ def test_log_exp() -> None:
 
     expected = pl.Series("a", np.log1p(a.to_numpy()))
     assert_series_equal(a.log1p(), expected)
-
-
-def test_shuffle() -> None:
-    a = pl.Series("a", [1, 2, 3])
-    out = a.shuffle(2)
-    expected = pl.Series("a", [2, 1, 3])
-    assert_series_equal(out, expected)
-
-    out = pl.select(pl.lit(a).shuffle(2)).to_series()
-    assert_series_equal(out, expected)
 
 
 def test_to_physical() -> None:

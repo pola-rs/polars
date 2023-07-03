@@ -7523,6 +7523,7 @@ class Expr:
         └─────┘
 
         """
+        # we seed from python so that we respect ``random.seed``
         if seed is None:
             seed = random.randint(0, 10000)
         return self._from_pyexpr(self._pyexpr.shuffle(seed))
