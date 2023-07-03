@@ -86,6 +86,18 @@ impl FunctionExpr {
                 mapper.with_dtype(dtype)
             }
 
+            #[cfg(feature = "arange")]
+            Range(fun) => {
+                use RangeFunction::*;
+                let field = match fun {
+                    ARange { .. } => Field::new("arange", DataType::Int64), // This is not always correct
+                    IntRange { .. } => Field::new("int", DataType::Int64),
+                    IntRanges { .. } => {
+                        Field::new("int_range", DataType::List(Box::new(DataType::Int64)))
+                    }
+                };
+                Ok(field)
+            }
             #[cfg(feature = "date_offset")]
             DateOffset(_) => mapper.with_same_dtype(),
             #[cfg(feature = "trigonometry")]
@@ -114,6 +126,10 @@ impl FunctionExpr {
                     Sum => mapper.nested_sum_type(),
                     #[cfg(feature = "list_sets")]
                     SetOperation(_) => mapper.with_same_dtype(),
+                    #[cfg(feature = "list_any_all")]
+                    Any => mapper.with_dtype(DataType::Boolean),
+                    #[cfg(feature = "list_any_all")]
+                    All => mapper.with_dtype(DataType::Boolean),
                 }
             }
             #[cfg(feature = "dtype-array")]

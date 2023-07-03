@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.7', '3.11']
+        python-version: ['3.8', '3.11']
     defaults:
       run:
         working-directory: py-polars
@@ -59,4 +59,4 @@ jobs:
 
       # Allow untyped calls for older Python versions
       - name: Run mypy
-        run: mypy ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls' || '' }}
+        run: mypy ${{ (matrix.python-version == '3.8') && '--allow-untyped-calls' || '' }}

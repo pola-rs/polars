@@ -21,16 +21,17 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    import sys
     from datetime import date, datetime
+    from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import ClosedInterval, PolarsDataType, TimeUnit
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
+    from polars.type_aliases import (
+        ClosedInterval,
+        IntoExpr,
+        PolarsDataType,
+        PolarsIntegerType,
+        TimeUnit,
+    )
 
 
 @overload
@@ -132,6 +133,177 @@ def arange(
 
     if dtype is not None and dtype != Int64:
         result = result.cast(dtype)
+    if eager:
+        return F.select(result).to_series()
+
+    return result
+
+
+@overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    eager: Literal[False] = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    eager: Literal[True],
+) -> Series:
+    ...
+
+
+@overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    eager: bool,
+) -> Expr | Series:
+    ...
+
+
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = 1,
+    *,
+    eager: bool = False,
+) -> Expr | Series:
+    """
+    Generate a range of integers.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the range (inclusive).
+    end
+        Upper bound of the range (exclusive).
+    step
+        Step size of the range.
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
+
+    Returns
+    -------
+    Column of data type ``Int64``.
+
+    Examples
+    --------
+    >>> pl.int_range(0, 3, eager=True)
+    shape: (3,)
+    Series: 'int' [i64]
+    [
+            0
+            1
+            2
+    ]
+
+    """
+    start = parse_as_expression(start)
+    end = parse_as_expression(end)
+    result = wrap_expr(plr.int_range(start, end, step))
+
+    if eager:
+        return F.select(result).to_series()
+
+    return result
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: Literal[False] = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: Literal[True],
+) -> Series:
+    ...
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: bool,
+) -> Expr | Series:
+    ...
+
+
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = 1,
+    *,
+    dtype: PolarsIntegerType = Int64,
+    eager: bool = False,
+) -> Expr | Series:
+    """
+    Generate a range of integers for each row of the input columns.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the range (inclusive).
+    end
+        Upper bound of the range (exclusive).
+    step
+        Step size of the range.
+    dtype
+        Integer data type of the ranges. Defaults to ``Int64``.
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
+
+    Returns
+    -------
+    Column of data type ``List(dtype)``.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"start": [1, -1], "end": [3, 2]})
+    >>> df.with_columns(pl.int_ranges("start", "end"))
+    shape: (2, 3)
+    ┌───────┬─────┬────────────┐
+    │ start ┆ end ┆ int_range  │
+    │ ---   ┆ --- ┆ ---        │
+    │ i64   ┆ i64 ┆ list[i64]  │
+    ╞═══════╪═════╪════════════╡
+    │ 1     ┆ 3   ┆ [1, 2]     │
+    │ -1    ┆ 2   ┆ [-1, 0, 1] │
+    └───────┴─────┴────────────┘
+
+    """
+    start = parse_as_expression(start)
+    end = parse_as_expression(end)
+    result = wrap_expr(plr.int_ranges(start, end, step, dtype))
+
     if eager:
         return F.select(result).to_series()
 

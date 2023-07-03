@@ -27,6 +27,7 @@ rayon.workspace = true
 regex = { version = "1.6", optional = true }
 serde = { version = "1", features = ["derive", "rc"], optional = true }
 smartstring.workspace = true
+strum_macros.workspace = true
 
 [features]
 # debugging utility
@@ -119,6 +120,7 @@ propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
 fused = []
 list_sets = ["polars-ops/list_sets"]
+list_any_all = ["polars-ops/list_any_all"]
 
 bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
 

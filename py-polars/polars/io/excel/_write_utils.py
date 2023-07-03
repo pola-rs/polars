@@ -21,7 +21,7 @@ from polars.dependencies import json
 from polars.exceptions import DuplicateError
 
 if TYPE_CHECKING:
-    import sys
+    from typing import Literal
 
     from xlsxwriter import Workbook
     from xlsxwriter.format import Format
@@ -35,11 +35,6 @@ if TYPE_CHECKING:
         PolarsDataType,
         RowTotalsDefinition,
     )
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:

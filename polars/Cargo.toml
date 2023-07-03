@@ -159,6 +159,7 @@ coalesce = ["polars-lazy/coalesce"]
 streaming = ["polars-lazy/streaming"]
 fused = ["polars-ops/fused", "polars-lazy/fused"]
 list_sets = ["polars-lazy/list_sets"]
+list_any_all = ["polars-lazy/list_any_all"]
 
 test = [
   "lazy",

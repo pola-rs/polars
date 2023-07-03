@@ -4,7 +4,6 @@ pub mod series;
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use crate::prelude::*;
 
     #[test]

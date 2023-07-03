@@ -14,6 +14,20 @@ use crate::prelude::*;
 pub struct ListNameSpace(pub Expr);
 
 impl ListNameSpace {
+    #[cfg(feature = "list_any_all")]
+    pub fn any(self) -> Expr {
+        self.0
+            .apply_private(FunctionExpr::ListExpr(ListFunction::Any))
+            .with_fmt("list.any")
+    }
+
+    #[cfg(feature = "list_any_all")]
+    pub fn all(self) -> Expr {
+        self.0
+            .apply_private(FunctionExpr::ListExpr(ListFunction::All))
+            .with_fmt("list.all")
+    }
+
     /// Get lengths of the arrays in the List type.
     pub fn lengths(self) -> Expr {
         let function = |s: Series| {

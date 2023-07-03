@@ -20,15 +20,10 @@ with contextlib.suppress(ImportError):
     from polars.polars import set_float_fmt as _set_float_fmt
 
 if TYPE_CHECKING:
-    import sys
     from types import TracebackType
+    from typing import Literal
 
     from polars.type_aliases import FloatFmt
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 # note: register all Config-specific environment variable names here; need to constrain
