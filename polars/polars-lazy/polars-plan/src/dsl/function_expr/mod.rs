@@ -49,6 +49,7 @@ mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
 mod unique;
+mod cut;
 
 use std::fmt::{Display, Formatter};
 
@@ -192,6 +193,17 @@ pub enum FunctionExpr {
         method: correlation::CorrelationMethod,
         ddof: u8,
     },
+    Cut {
+        breaks: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+    },
+    QCut {
+        probs: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+    },
     ToPhysical,
 }
 
@@ -287,6 +299,8 @@ impl Display for FunctionExpr {
             ArrayExpr(af) => return Display::fmt(af, f),
             ConcatExpr(_) => "concat_expr",
             Correlation { method, .. } => return Display::fmt(method, f),
+            Cut { .. } => "cut",
+            QCut { .. } => "qcut",
             ToPhysical => "to_physical",
         };
         write!(f, "{s}")
@@ -514,6 +528,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
             Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            Cut { breaks, labels, left_closed } => map!(cut::cut, breaks.clone(), labels.clone(), left_closed),
+            QCut { probs, labels, left_closed, allow_duplicates } => map!(cut::qcut, probs.clone(), labels.clone(), left_closed, allow_duplicates),
             ToPhysical => map!(dispatch::to_physical),
         }
     }

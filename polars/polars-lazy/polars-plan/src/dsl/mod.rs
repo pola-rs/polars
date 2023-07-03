@@ -1463,11 +1463,7 @@ impl Expr {
     }
 
     pub fn cut(self, breaks: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool) -> Expr {
-        self.apply(
-            move |s| s.cut(breaks.clone(), labels.clone(), left_closed).map(Some),
-            GetOutput::from_type(DataType::Categorical(None)),
-        )
-        .with_fmt("cut")
+        self.map_private(FunctionExpr::Cut { breaks, labels, left_closed })
     }
 
     pub fn qcut(
@@ -1477,14 +1473,7 @@ impl Expr {
         left_closed: bool,
         allow_duplicates: bool,
     ) -> Expr {
-        self.apply(
-            move |s| {
-                s.qcut(probs.clone(), labels.clone(), left_closed, allow_duplicates)
-                    .map(Some)
-            },
-            GetOutput::from_type(DataType::Categorical(None)),
-        )
-        .with_fmt("cut")
+        self.map_private(FunctionExpr::QCut { probs, labels, left_closed, allow_duplicates})
     }
 
     #[cfg(feature = "diff")]

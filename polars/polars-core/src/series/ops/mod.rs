@@ -1,4 +1,3 @@
-pub mod cut;
 #[cfg(feature = "diff")]
 pub mod diff;
 mod downcast;

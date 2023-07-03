@@ -1,9 +1,11 @@
 use std::iter::once;
 
-use crate::prelude::*;
+use polars_core::prelude::*;
 
-impl Series {
-    pub fn cut(
+use crate::series::ops::SeriesSealed;
+
+pub trait CutSeries: SeriesSealed {
+    fn cut(
         &self,
         breaks: Vec<f64>,
         labels: Option<Vec<String>>,
@@ -38,11 +40,12 @@ impl Series {
         };
 
         let cl: Vec<&str> = cutlabs.iter().map(String::as_str).collect();
-        let s_flt = self.cast(&DataType::Float64)?;
+        let s = self.as_series();
+        let s_flt = s.cast(&DataType::Float64)?;
         let bin_iter = s_flt.f64()?.into_iter();
 
-        let out_name = format!("{}_bin", self.name());
-        let mut bld = CategoricalChunkedBuilder::new(&out_name, self.len());
+        let out_name = format!("{}_bin", s.name());
+        let mut bld = CategoricalChunkedBuilder::new(&out_name, s.len());
         unsafe {
             if left_closed {
                 bld.drain_iter(bin_iter.map(|opt| {
@@ -57,14 +60,15 @@ impl Series {
         Ok(bld.finish().into_series())
     }
 
-    pub fn qcut(
+    fn qcut(
         &self,
         probs: Vec<f64>,
         labels: Option<Vec<String>>,
         left_closed: bool,
         allow_duplicates: bool,
     ) -> PolarsResult<Series> {
-        let s = self.sort(false);
+        let s = self.as_series();
+        let s = s.sort(false);
         let s = s.f64()?;
         let f = |&p| {
             s.quantile(p, QuantileInterpolOptions::Linear)
@@ -99,3 +103,5 @@ impl Series {
         self.cut(qbreaks, labels, left_closed)
     }
 }
+
+impl CutSeries for Series {}

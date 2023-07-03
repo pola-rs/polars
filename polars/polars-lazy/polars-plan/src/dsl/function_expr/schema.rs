@@ -233,6 +233,8 @@ impl FunctionExpr {
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr(_) => mapper.map_to_supertype(),
             Correlation { .. } => mapper.map_to_float_dtype(),
+            Cut { .. } => mapper.with_dtype(DataType::Categorical(None)),
+            QCut { .. } => mapper.with_dtype(DataType::Categorical(None)),
             ToPhysical => mapper.to_physical_type(),
         }
     }
