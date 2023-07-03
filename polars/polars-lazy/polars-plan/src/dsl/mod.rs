@@ -1463,7 +1463,7 @@ impl Expr {
     }
 
     pub fn cut(self, breaks: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool) -> Expr {
-        self.map_private(FunctionExpr::Cut { breaks, labels, left_closed })
+        self.apply_private(FunctionExpr::Cut { breaks, labels, left_closed })
     }
 
     pub fn qcut(
@@ -1473,7 +1473,7 @@ impl Expr {
         left_closed: bool,
         allow_duplicates: bool,
     ) -> Expr {
-        self.map_private(FunctionExpr::QCut { probs, labels, left_closed, allow_duplicates})
+        self.apply_private(FunctionExpr::QCut { probs, labels, left_closed, allow_duplicates})
     }
 
     #[cfg(feature = "diff")]

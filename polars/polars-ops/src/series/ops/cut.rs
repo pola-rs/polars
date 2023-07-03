@@ -68,6 +68,7 @@ pub trait CutSeries: SeriesSealed {
         allow_duplicates: bool,
     ) -> PolarsResult<Series> {
         let s = self.as_series();
+        let s = s.cast(&DataType::Float64)?;
         let s = s.sort(false);
         let s = s.f64()?;
         let f = |&p| {
