@@ -7,6 +7,7 @@ use polars_core::frame::groupby::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
+use strum_macros::IntoStaticStr;
 
 use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::Context;
@@ -14,7 +15,7 @@ use crate::prelude::aexpr::NodeInputs::Single;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, IntoStaticStr)]
 pub enum AAggExpr {
     Min {
         input: Node,
@@ -202,46 +203,50 @@ impl AExpr {
         let input = match &mut self {
             Column(_) | Literal(_) | Wildcard | Count | Nth(_) => return self,
             Alias(input, _) => input,
-            Cast {
-                expr,
-                ..
-            } => expr,
-            Explode(input) | Slice {input, ..} | Cache {input, ..}=> input,
+            Cast { expr, .. } => expr,
+            Explode(input) | Slice { input, .. } | Cache { input, .. } => input,
             BinaryExpr { left, right, .. } => {
                 *left = inputs[0];
                 *right = inputs[1];
-                return self
+                return self;
             }
-            Sort { expr, .. } |
-            Take {expr, ..}
-            => expr,
+            Sort { expr, .. } | Take { expr, .. } => expr,
             SortBy { expr, by, .. } => {
                 *expr = *inputs.last().unwrap();
                 by.clear();
                 by.extend_from_slice(&inputs[..inputs.len() - 1]);
-                return self
+                return self;
             }
             Filter { input, .. } => input,
             Agg(a) => {
                 a.set_input(inputs[0]);
-                return self
-            },
-            Ternary { truthy, falsy, predicate } => {
+                return self;
+            }
+            Ternary {
+                truthy,
+                falsy,
+                predicate,
+            } => {
                 *truthy = inputs[0];
                 *falsy = inputs[1];
                 *predicate = inputs[2];
-                return self
+                return self;
             }
-            AnonymousFunction { input, .. } | Function {input, ..} => {
+            AnonymousFunction { input, .. } | Function { input, .. } => {
                 input.clear();
                 input.extend(inputs.iter().rev().copied());
-                return self
+                return self;
             }
-            Window { function, partition_by, order_by, .. } => {
+            Window {
+                function,
+                partition_by,
+                order_by,
+                ..
+            } => {
                 *function = inputs[0];
                 partition_by.extend_from_slice(&inputs[1..]);
                 assert!(order_by.is_none());
-                return self
+                return self;
             }
         };
         *input = inputs[0];
