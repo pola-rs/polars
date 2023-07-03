@@ -30,21 +30,22 @@ def read_database(
     query
         Raw SQL query (or queries).
     connection_uri
-        A connectorx (or adbc) connection URI that starts with the backend's
+        A connectorx or ADBC connection URI that starts with the backend's
         driver name, for example:
 
-        * "postgresql://username:password@server:port/database"
+        * "postgresql://user:pass@server:port/database"
+        * "snowflake://user:pass@account/database/schema?warehouse=warehouse&role=role"
     partition_on
-        The column on which to partition the result.
+        The column on which to partition the result (connectorx).
     partition_range
-        The value range of the partition column.
+        The value range of the partition column (connectorx).
     partition_num
-        How many partitions to generate.
+        How many partitions to generate (connectorx).
     protocol
-        Backend-specific transfer protocol directive; see connectorx documentation for
-        details.
+        Backend-specific transfer protocol directive (connectorx); see connectorx
+        documentation for more details.
     engine : {'connectorx', 'adbc'}
-        Select the engine used for reading the data.
+        Selects the engine used for reading the database:
 
         * ``'connectorx'``
           Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
@@ -62,8 +63,11 @@ def read_database(
 
     Notes
     -----
-    Make sure to install connectorx>=0.3.1. Read the documentation
-    `here <https://sfu-db.github.io/connector-x/intro.html>`_.
+    For ``connectorx``, ensure that you have ``connectorx>=0.3.1``. The documentation
+    is available `here <https://sfu-db.github.io/connector-x/intro.html>`_.
+
+    For ``adbc`` you will need to have installed ``pyarrow`` and the ADBC driver associated
+    with the backend you are connecting to, eg: ``adbc-driver-postgresql``.
 
     Examples
     --------
@@ -79,7 +83,11 @@ def read_database(
     >>> uri = "postgresql://username:password@server:port/database"
     >>> query = "SELECT * FROM lineitem"
     >>> pl.read_database(
-    ...     query, uri, partition_on="partition_col", partition_num=10
+    ...     query,
+    ...     uri,
+    ...     partition_on="partition_col",
+    ...     partition_num=10,
+    ...     engine="connectorx",
     ... )  # doctest: +SKIP
 
     Read a DataFrame in parallel using 2 threads by explicitly providing two SQL
@@ -90,9 +98,17 @@ def read_database(
     ...     "SELECT * FROM lineitem WHERE partition_col <= 10",
     ...     "SELECT * FROM lineitem WHERE partition_col > 10",
     ... ]
-    >>> pl.read_database(queries, uri)  # doctest: +SKIP
+    >>> pl.read_database(queries, uri, engine="connectorx")  # doctest: +SKIP
 
-    """
+    Read data from Snowflake using the ADBC driver:
+
+    >>> df = pl.read_database(
+    ...     "SELECT * FROM test_table",
+    ...     "snowflake://user:pass@company-org/testdb/public?warehouse=test&role=myrole",
+    ...     engine="adbc",
+    ... )  # doctest: +SKIP
+
+    """  # noqa: W505
     if engine == "connectorx":
         return _read_sql_connectorx(
             query,
@@ -107,7 +123,7 @@ def read_database(
             raise ValueError("Only a single SQL query string is accepted for adbc.")
         return _read_sql_adbc(query, connection_uri)
     else:
-        raise ValueError("Engine is not implemented, try either connectorx or adbc.")
+        raise ValueError(f"Engine {engine!r} not implemented; use connectorx or adbc.")
 
 
 def _read_sql_connectorx(
@@ -160,7 +176,7 @@ def _open_adbc_connection(connection_uri: str) -> Any:
     except ImportError:
         raise ImportError(
             f"ADBC {driver_name} driver not detected; if ADBC supports this database, "
-            f"please run `pip install adbc_driver_{driver_name} pyarrow`"
+            f"please run `pip install adbc-driver-{driver_name} pyarrow`"
         ) from None
 
     # some backends require the driver name to be stripped from the URI
