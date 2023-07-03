@@ -14,6 +14,7 @@ mod clip;
 mod concat;
 mod correlation;
 mod cum;
+mod cut;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
@@ -49,7 +50,6 @@ mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
 mod unique;
-mod cut;
 
 use std::fmt::{Display, Formatter};
 
@@ -528,8 +528,23 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
             Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
-            Cut { breaks, labels, left_closed } => map!(cut::cut, breaks.clone(), labels.clone(), left_closed),
-            QCut { probs, labels, left_closed, allow_duplicates } => map!(cut::qcut, probs.clone(), labels.clone(), left_closed, allow_duplicates),
+            Cut {
+                breaks,
+                labels,
+                left_closed,
+            } => map!(cut::cut, breaks.clone(), labels.clone(), left_closed),
+            QCut {
+                probs,
+                labels,
+                left_closed,
+                allow_duplicates,
+            } => map!(
+                cut::qcut,
+                probs.clone(),
+                labels.clone(),
+                left_closed,
+                allow_duplicates
+            ),
             ToPhysical => map!(dispatch::to_physical),
         }
     }

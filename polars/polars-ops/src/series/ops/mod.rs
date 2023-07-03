@@ -2,6 +2,7 @@ mod approx_algo;
 #[cfg(feature = "approx_unique")]
 mod approx_unique;
 mod arg_min_max;
+mod cut;
 #[cfg(feature = "round_series")]
 mod floor_divide;
 #[cfg(feature = "fused")]
@@ -19,12 +20,12 @@ mod search_sorted;
 #[cfg(feature = "to_dummies")]
 mod to_dummies;
 mod various;
-mod cut;
 
 pub use approx_algo::*;
 #[cfg(feature = "approx_unique")]
 pub use approx_unique::*;
 pub use arg_min_max::ArgAgg;
+pub use cut::*;
 #[cfg(feature = "round_series")]
 pub use floor_divide::*;
 #[cfg(feature = "fused")]
@@ -43,7 +44,6 @@ pub use search_sorted::*;
 #[cfg(feature = "to_dummies")]
 pub use to_dummies::*;
 pub use various::*;
-pub use cut::*;
 
 pub trait SeriesSealed {
     fn as_series(&self) -> &Series;
