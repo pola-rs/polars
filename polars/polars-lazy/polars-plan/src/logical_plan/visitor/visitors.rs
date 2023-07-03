@@ -1,7 +1,7 @@
 use super::*;
 
 /// An implementor of this trait decides how and in which order its nodes get traversed
-/// Implemented for [`Expr`] and [`AexprNode`].
+/// Implemented for [`crate::dsl::Expr`] and [`AexprNode`].
 pub trait TreeWalker: Sized {
     fn apply_children(
         &self,
