@@ -4,7 +4,6 @@ from __future__ import annotations
 import contextlib
 import os
 import random
-import typing
 import warnings
 from collections import defaultdict
 from collections.abc import Sized
@@ -8847,7 +8846,6 @@ class DataFrame:
             columns.extend(more_columns)
         return self._from_pydf(self._df.unnest(columns))
 
-    @typing.no_type_check
     def corr(self, **kwargs: Any) -> DataFrame:
         """
         Return pairwise Pearson product-moment correlation coefficients between columns.
@@ -8862,7 +8860,7 @@ class DataFrame:
         Parameters
         ----------
         **kwargs
-            keyword arguments are passed to numpy corrcoef
+            Keyword arguments are passed to numpy ``corrcoef``.
 
         Examples
         --------
