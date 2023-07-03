@@ -34,13 +34,15 @@ pub(crate) struct AexprNode {
 }
 
 impl AexprNode {
+    /// Don't use this directly, use [`Self::with_context`]
+    ///
     /// # Safety
     /// This will keep a pointer to `arena`. The caller must ensure it stays alive.
-    pub unsafe fn new(node: Node, arena: &mut Arena<AExpr>) -> Self {
+    fn new(node: Node, arena: &mut Arena<AExpr>) -> Self {
         Self { node, arena }
     }
 
-    /// Safe interface
+    /// Safe interface. Take the `&mut Arena` only for the duration of `op`.
     pub fn with_context<F, T>(node: Node, arena: &mut Arena<AExpr>, mut op: F) -> T
     where
         F: FnMut(AexprNode) -> T,
@@ -62,8 +64,8 @@ impl AexprNode {
     }
 
     pub fn with_arena_mut<'a, F, T>(&mut self, op: F) -> T
-        where
-            F: FnOnce(&'a mut Arena<AExpr>) -> T,
+    where
+        F: FnOnce(&'a mut Arena<AExpr>) -> T,
     {
         let arena = unsafe { &mut (*self.arena) };
 
@@ -102,7 +104,10 @@ impl TreeWalker for AexprNode {
         Ok(VisitRecursion::Continue)
     }
 
-    fn map_children(mut self, op: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self> {
+    fn map_children(
+        mut self,
+        op: &mut dyn FnMut(Self) -> PolarsResult<Self>,
+    ) -> PolarsResult<Self> {
         let mut scratch = vec![];
 
         let ae = self.to_aexpr();

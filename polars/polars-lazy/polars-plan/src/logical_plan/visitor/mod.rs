@@ -31,5 +31,5 @@ pub enum RewriteRecursion {
     Stop,
     /// Call `op` immediately and return
     /// This doesn't visit the children
-    MutateAndStop
+    MutateAndStop,
 }

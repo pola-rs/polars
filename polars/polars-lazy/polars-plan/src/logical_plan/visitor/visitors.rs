@@ -8,15 +8,10 @@ pub(crate) trait TreeWalker: Sized {
         op: &mut dyn FnMut(&Self) -> PolarsResult<VisitRecursion>,
     ) -> PolarsResult<VisitRecursion>;
 
-    fn map_children(
-        self,
-        op: &mut dyn FnMut(Self) -> PolarsResult<Self>,
-    ) -> PolarsResult<Self>;
+    fn map_children(self, op: &mut dyn FnMut(Self) -> PolarsResult<Self>) -> PolarsResult<Self>;
 
-    fn visit(
-        &self,
-        visitor: &mut dyn Visitor<Node = Self>,
-    ) -> PolarsResult<VisitRecursion> {
+    /// Walks all nodes in depth-first-order.
+    fn visit(&self, visitor: &mut dyn Visitor<Node = Self>) -> PolarsResult<VisitRecursion> {
         match visitor.pre_visit(self)? {
             VisitRecursion::Continue => {}
             // If the recursion should skip, do not apply to its children. And let the recursion continue
@@ -36,9 +31,7 @@ pub(crate) trait TreeWalker: Sized {
         visitor.post_visit(self)
     }
 
-    fn rewrite(self,
-    rewriter: &mut dyn RewritingVisitor<Node=Self>
-    ) -> PolarsResult<Self> {
+    fn rewrite(self, rewriter: &mut dyn RewritingVisitor<Node = Self>) -> PolarsResult<Self> {
         let mutate_this_node = match rewriter.pre_visit(&self)? {
             RewriteRecursion::MutateAndStop => return rewriter.mutate(self),
             RewriteRecursion::Stop => return Ok(self),
@@ -89,7 +82,6 @@ mod test {
 
     #[test]
     fn test_visitor() {
-
         struct VisitPath {
             pre_idx: usize,
             pre_stack: Vec<usize>,
@@ -103,7 +95,7 @@ mod test {
                     pre_idx: 0,
                     pre_stack: vec![],
                     post_idx: 0,
-                    post_stack: vec![]
+                    post_stack: vec![],
                 }
             }
         }
@@ -130,12 +122,9 @@ mod test {
         let node = to_aexpr(e, &mut arena);
         let mut visitor = VisitPath::new();
 
-        AexprNode::with_context(node, &mut arena, |node| {
-            node.visit(&mut visitor).unwrap()
-        });
+        AexprNode::with_context(node, &mut arena, |node| node.visit(&mut visitor).unwrap());
 
         dbg!(visitor.pre_stack);
         dbg!(visitor.post_stack);
-
     }
 }
