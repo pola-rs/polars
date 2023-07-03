@@ -466,8 +466,6 @@ impl Display for DataFrame {
                 |l: usize| ColumnConstraint::Absolute(comfy_table::Width::Fixed(l as u16));
             let col_width_lower_bound =
                 |l: usize| ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16));
-            // let col_width_upper_bound =
-            //     |l: usize| ColumnConstraint::UpperBoundary(comfy_table::Width::Fixed(l as u16));
 
             let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
             let fields = self.fields();
