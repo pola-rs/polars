@@ -1,6 +1,8 @@
 use polars_arrow::error::PolarsResult;
 
 use crate::prelude::*;
+
+#[macro_export]
 macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
         use Expr::*;
