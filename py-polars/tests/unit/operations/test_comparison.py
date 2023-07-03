@@ -132,3 +132,18 @@ def test_offset_handling_arg_where_7863() -> None:
         .item()
         == 2
     )
+
+
+def test_missing_equality_on_bools() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [True, None, False],
+        }
+    )
+
+    assert df.select(pl.col("a").ne_missing(True))["a"].to_list() == [False, True, True]
+    assert df.select(pl.col("a").ne_missing(False))["a"].to_list() == [
+        True,
+        True,
+        False,
+    ]
