@@ -49,11 +49,11 @@ pub trait CutSeries: SeriesSealed {
         unsafe {
             if left_closed {
                 bld.drain_iter(bin_iter.map(|opt| {
-                    opt.map(|x| *cl.get_unchecked(sorted_breaks.partition_point(|&v| v < x)))
+                    opt.map(|x| *cl.get_unchecked(sorted_breaks.partition_point(|&v| x >= v)))
                 }));
             } else {
                 bld.drain_iter(bin_iter.map(|opt| {
-                    opt.map(|x| *cl.get_unchecked(sorted_breaks.partition_point(|&v| v <= x)))
+                    opt.map(|x| *cl.get_unchecked(sorted_breaks.partition_point(|&v| x > v)))
                 }));
             }
         }

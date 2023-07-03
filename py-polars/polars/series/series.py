@@ -1603,7 +1603,7 @@ class Series:
         left_closed: bool = False,
     ) -> DataFrame | Series:
         """
-        Bin values into discrete values.
+        Bin continuous values into discrete categories.
 
         Parameters
         ----------
@@ -1674,7 +1674,7 @@ class Series:
         allow_duplicates: bool = False,
     ) -> DataFrame | Series:
         """
-        Bin values into discrete values based on their quantiles.
+        Bin continuous values into discrete categories based on their quantiles.
 
         Parameters
         ----------
