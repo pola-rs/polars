@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pickle
-import typing
 from datetime import datetime, timedelta
 
 import pytest
@@ -103,8 +102,7 @@ def test_expression_json() -> None:
     assert round_tripped.meta == e
 
 
-@typing.no_type_check
-def times2(x):
+def times2(x: pl.Series) -> pl.Series:
     return x * 2
 
 

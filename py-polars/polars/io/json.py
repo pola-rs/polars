@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from polars import DataFrame
 
 
-def read_json(source: str | Path | IOBase) -> DataFrame:
+def read_json(source: str | Path | IOBase | bytes) -> DataFrame:
     """
     Read into a DataFrame from a JSON file.
 
