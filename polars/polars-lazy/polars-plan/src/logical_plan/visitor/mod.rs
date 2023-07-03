@@ -1,5 +1,4 @@
-//! Defines different visitor patterns and sort-orders for any tree.
-//! See more on tree-traversal https://en.wikipedia.org/wiki/Tree_traversal
+//! Defines different visitor patterns and for any tree.
 
 use polars_arrow::error::PolarsResult;
 mod expr;
