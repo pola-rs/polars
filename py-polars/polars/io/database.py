@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+import sys
+from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
@@ -27,7 +30,8 @@ def read_database(
     query
         Raw SQL query (or queries).
     connection_uri
-        A connectorx compatible connection uri, for example
+        A connectorx (or adbc) connection URI that starts with the backend's
+        driver name, for example:
 
         * "postgresql://username:password@server:port/database"
     partition_on
@@ -48,13 +52,13 @@ def read_database(
           please see the connectorx docs:
 
           * https://github.com/sfu-db/connector-x#supported-sources--destinations
-        * ``'adbc'``
-          Currently just PostgreSQL and SQLite are supported and these are both in
-          development. When flight_sql is further in development and widely adopted
-          this will make this significantly better. For an up-to-date list
-          please see the adbc docs:
 
-          * https://arrow.apache.org/adbc/0.1.0/driver/cpp/index.html
+        * ``'adbc'``
+          Currently there is limited support for this engine, with a relatively small
+          number of drivers available, most of which are still in development. For
+          an up-to-date list of drivers please see the ADBC docs:
+
+          * https://arrow.apache.org/adbc/
 
     Notes
     -----
@@ -143,25 +147,24 @@ def _read_sql_adbc(query: str, connection_uri: str) -> DataFrame:
 
 
 def _open_adbc_connection(connection_uri: str) -> Any:
-    if connection_uri.startswith("sqlite"):
-        try:
-            import adbc_driver_sqlite.dbapi as adbc_sqlite
-        except ImportError:
-            raise ImportError(
-                "ADBC sqlite driver not detected. Please run `pip install "
-                "adbc_driver_sqlite pyarrow`."
-            ) from None
-        connection_uri = connection_uri.replace(r"sqlite:///", "")
-        return adbc_sqlite.connect(connection_uri)
+    driver_name = connection_uri.split(":", 1)[0].lower()
 
-    elif connection_uri.startswith("postgres"):
-        try:
-            import adbc_driver_postgresql.dbapi as adbc_postgres
-        except ImportError:
-            raise ImportError(
-                "ADBC postgresql driver not detected. Please run `pip install "
-                "adbc_driver_postgresql pyarrow`."
-            ) from None
-        return adbc_postgres.connect(connection_uri)
+    # note: existing URI driver prefixes currently map 1:1 with
+    # the adbc module suffix; update this map if that changes.
+    module_suffix_map: dict[str, str] = {}
+    try:
+        module_suffix = module_suffix_map.get(driver_name, driver_name)
+        module_name = f"adbc_driver_{module_suffix}.dbapi"
+        import_module(module_name)
+        adbc_driver = sys.modules[module_name]
+    except ImportError:
+        raise ImportError(
+            f"ADBC {driver_name} driver not detected; if ADBC supports this database, "
+            f"please run `pip install adbc_driver_{driver_name} pyarrow`"
+        ) from None
 
-    raise ValueError("ADBC does not currently support this database.")
+    # some backends require the driver name to be stripped from the URI
+    if driver_name in ("sqlite", "snowflake"):
+        connection_uri = re.sub(f"^{driver_name}:/{{,3}}", "", connection_uri)
+
+    return adbc_driver.connect(connection_uri)
