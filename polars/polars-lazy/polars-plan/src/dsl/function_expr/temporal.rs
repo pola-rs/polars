@@ -82,7 +82,8 @@ pub(super) fn temporal_range_dispatch(
     name: &str,
     every: Duration,
     closed: ClosedWindow,
-    tz: Option<TimeZone>,
+    time_unit: Option<TimeUnit>,
+    time_zone: Option<TimeZone>,
 ) -> PolarsResult<Series> {
     let start = &s[0];
     let stop = &s[1];
@@ -93,21 +94,43 @@ pub(super) fn temporal_range_dispatch(
     );
     const TO_MS: i64 = SECONDS_IN_DAY * 1000;
 
-    let start_dtype = start.dtype();
-
     // Note: `start` and `stop` have already been cast to their supertype,
     // so only `start`'s dtype needs to be matched against.
-    let (mut start, mut stop) = match start_dtype {
+    #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
+    let mut dtype = match (start.dtype(), time_unit) {
+        (DataType::Date, time_unit) => {
+            let nsecs = every.nanoseconds();
+            if nsecs == 0 {
+                DataType::Date
+            } else if let Some(tu) = time_unit {
+                DataType::Datetime(tu, None)
+            } else if nsecs % 1_000 != 0 {
+                DataType::Datetime(TimeUnit::Nanoseconds, None)
+            } else {
+                DataType::Datetime(TimeUnit::Microseconds, None)
+            }
+        }
+        (DataType::Time, _) => DataType::Time,
+        // overwrite nothing, keep as-is
+        (DataType::Datetime(_, _), None) => start.dtype().clone(),
+        // overwrite time unit, keep timezone
+        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
+        _ => unreachable!(),
+    };
+
+    let (mut start, mut stop) = match dtype {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => (
             start
+                .cast(&dtype)?
                 .datetime()
                 .unwrap()
                 .replace_time_zone(None, None)?
                 .into_series()
                 .to_physical_repr()
                 .cast(&DataType::Int64)?,
-            stop.datetime()
+            stop.cast(&dtype)?
+                .datetime()
                 .unwrap()
                 .replace_time_zone(None, None)?
                 .into_series()
@@ -115,25 +138,30 @@ pub(super) fn temporal_range_dispatch(
                 .cast(&DataType::Int64)?,
         ),
         _ => (
-            start.to_physical_repr().cast(&DataType::Int64)?,
-            stop.to_physical_repr().cast(&DataType::Int64)?,
+            start
+                .cast(&dtype)?
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
+            stop.cast(&dtype)?
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
         ),
     };
 
-    let dtype = match (start_dtype, tz) {
-        (DataType::Date, _) => {
-            start = &start * TO_MS;
-            stop = &stop * TO_MS;
-            DataType::Date
+    if dtype == DataType::Date {
+        start = &start * TO_MS;
+        stop = &stop * TO_MS;
+    }
+
+    // overwrite time zone, if specified
+    match (&dtype, &time_zone) {
+        #[cfg(feature = "timezones")]
+        (DataType::Datetime(tu, _), Some(tz)) => {
+            dtype = DataType::Datetime(*tu, Some(tz.clone()));
         }
-        #[cfg(feature = "timezones")]
-        (DataType::Datetime(tu, _), Some(tz)) => DataType::Datetime(*tu, Some(tz)),
-        #[cfg(feature = "timezones")]
-        (DataType::Datetime(tu, Some(tz)), None) => DataType::Datetime(*tu, Some(tz.to_string())),
-        (DataType::Datetime(tu, _), _) => DataType::Datetime(*tu, None),
-        (DataType::Time, _) => DataType::Time,
-        _ => unimplemented!(),
+        _ => {}
     };
+
     let start = start.i64().unwrap();
     let stop = stop.i64().unwrap();
 

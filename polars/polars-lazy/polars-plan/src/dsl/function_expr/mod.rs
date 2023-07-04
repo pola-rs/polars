@@ -669,12 +669,18 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "timezones")]
             TzLocalize(tz) => map!(datetime::tz_localize, &tz),
             Combine(tu) => map_as_slice!(temporal::combine, tu),
-            DateRange { every, closed, tz } => {
+            DateRange {
+                every,
+                closed,
+                time_unit,
+                tz,
+            } => {
                 map_as_slice!(
                     temporal::temporal_range_dispatch,
                     "date",
                     every,
                     closed,
+                    time_unit,
                     tz.clone()
                 )
             }
@@ -684,6 +690,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     "time",
                     every,
                     closed,
+                    None,
                     None
                 )
             }
