@@ -201,7 +201,7 @@ pub(crate) fn write<W: Write>(
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 return Err(PolarsError::ComputeError(
-                    "csv writer does not suppert object dtype".into(),
+                    "csv writer does not support object dtype".into(),
                 ))
             }
             _ => false,
