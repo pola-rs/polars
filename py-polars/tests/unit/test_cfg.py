@@ -67,13 +67,13 @@ def test_hide_header_elements() -> None:
     pl.Config.set_tbl_hide_column_data_types(True)
     assert (
         str(df) == "shape: (3, 3)\n"
-        "┌─────┬─────┬─────┐\n"
-        "│ a   ┆ b   ┆ c   │\n"
-        "╞═════╪═════╪═════╡\n"
-        "│ 1   ┆ 4   ┆ 7   │\n"
-        "│ 2   ┆ 5   ┆ 8   │\n"
-        "│ 3   ┆ 6   ┆ 9   │\n"
-        "└─────┴─────┴─────┘"
+        "┌───┬───┬───┐\n"
+        "│ a ┆ b ┆ c │\n"
+        "╞═══╪═══╪═══╡\n"
+        "│ 1 ┆ 4 ┆ 7 │\n"
+        "│ 2 ┆ 5 ┆ 8 │\n"
+        "│ 3 ┆ 6 ┆ 9 │\n"
+        "└───┴───┴───┘"
     )
 
     pl.Config.set_tbl_hide_column_data_types(False).set_tbl_hide_column_names(True)
@@ -342,12 +342,9 @@ def test_set_tbl_width_chars() -> None:
     pl.Config.set_tbl_width_chars(60)
     assert max(len(line) for line in str(df).split("\n")) == 60
 
-    # formula for determining min width is
-    # sum(max(min(header.len, 12), 5)) + header.len + 1
-    # so we end up with 12+5+10+4 = 31
-
+    # force minimal table size (will hard-wrap everything; "don't try this at home" :p)
     pl.Config.set_tbl_width_chars(0)
-    assert max(len(line) for line in str(df).split("\n")) == 31
+    assert max(len(line) for line in str(df).split("\n")) == 19
 
 
 def test_shape_below_table_and_inlined_dtype() -> None:
