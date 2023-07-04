@@ -5,8 +5,8 @@ python -m venv .venv
 source .venv/bin/activate
 
 # upgrade pip and install dev-dependencies
-python -m pip install --upgrade pip
-python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements-dev.txt
 
-maturin develop --release -- -C target-cpu=native
-pytest -n auto --dist worksteal
+.venv/bin/maturin develop --release -- -C target-cpu=native
+.venv/bin/pytest -n auto --dist worksteal
