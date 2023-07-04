@@ -58,3 +58,83 @@ def test_cse_schema_6081() -> None:
         "value": [1, 2, 2],
         "min_value": [1, 1, 2],
     }
+
+
+def test_cse_9630_1() -> None:
+    df1 = pl.DataFrame(
+        {
+            "key": [1],
+            "x": [1],
+        }
+    ).lazy()
+
+    df2 = pl.DataFrame(
+        {
+            "key": [1],
+            "y": [2],
+        }
+    ).lazy()
+
+    joined_df2 = df1.join(df2, on="key")
+
+    all_subsections = (
+        pl.concat(
+            [
+                df1.select("key", pl.col("x").alias("value")),
+                joined_df2.select("key", pl.col("y").alias("value")),
+            ]
+        )
+        .groupby("key")
+        .agg(
+            [
+                pl.col("value"),
+            ]
+        )
+    )
+
+    intersected_df1 = all_subsections.join(df1, on="key")
+    intersected_df2 = all_subsections.join(df2, on="key")
+
+    assert intersected_df1.join(intersected_df2, on=["key"], how="left").collect(
+        common_subplan_elimination=True
+    ).to_dict(False) == {
+        "key": [1],
+        "value": [[1, 2]],
+        "x": [1],
+        "value_right": [[1, 2]],
+        "y": [2],
+    }
+
+
+def test_cse_9631_2() -> None:
+    df = pl.DataFrame({"a": [["1"], ["1"], ["3"]], "b": [["4"], ["5"], ["6"]]})
+
+    dfs = [df.lazy().select("a", "b", a2=pl.col("a"))]
+    for _n in range(1, 3):
+        dfs.append(
+            pl.concat(
+                [
+                    dfs[-1]
+                    .explode("a2")
+                    .join(dfs[0].explode("a2"), on="a2", how="inner", suffix="_2")
+                    .select("a", "b"),
+                    # Original df
+                    df.lazy().select("a", "b"),
+                ]
+            )
+            .groupby(pl.col("a").list.sort().list.join(","))
+            .agg(
+                pl.col("b").flatten(),
+            )
+            .select(
+                pl.col("a").str.split(","),
+                pl.col("b").list.unique(),
+                a2=pl.col("a").str.split(","),
+            )
+        )
+
+    assert pl.concat(dfs).collect(common_subplan_elimination=True).to_dict(False) == {
+        "a": [["1"], ["1"], ["3"], ["1"], ["3"], ["1"], ["3"]],
+        "b": [["4"], ["5"], ["6"], ["5", "4"], ["6"], ["4", "5"], ["6"]],
+        "a2": [["1"], ["1"], ["3"], ["1"], ["3"], ["1"], ["3"]],
+    }

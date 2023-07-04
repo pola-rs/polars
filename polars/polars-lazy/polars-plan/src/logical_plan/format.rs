@@ -96,10 +96,15 @@ impl LogicalPlan {
                 } else {
                     "UNION"
                 };
+                // 3 levels of indentation
+                // - 0 => UNION ... END UNION
+                // - 1 => PLAN 0, PLAN 1, ... PLAN N
+                // - 2 => actual formatting of plans
+                let sub_sub_indent = sub_indent + 2;
                 write!(f, "{:indent$}{}", "", name)?;
                 for (i, plan) in inputs.iter().enumerate() {
-                    write!(f, "\n{:indent$}PLAN {i}:", "")?;
-                    plan._format(f, sub_indent)?;
+                    write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
+                    plan._format(f, sub_sub_indent)?;
                 }
                 write!(f, "\n{:indent$}END {}", "", name)
             }
@@ -227,7 +232,7 @@ impl LogicalPlan {
             } => {
                 write!(f, "{:indent$}AGGREGATE", "")?;
                 write!(f, "\n{:indent$}\t{aggs:?} BY {keys:?} FROM", "")?;
-                write!(f, "\n{:indent$}\t{input:?}", "")
+                input._format(f, sub_indent)
             }
             Join {
                 input_left,
