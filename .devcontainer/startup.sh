@@ -3,4 +3,5 @@ cargo --version
 
 cd py-polars
 
-make build-release
+make build
+
