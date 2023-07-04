@@ -3,9 +3,7 @@
 	"build": {"dockerfile": "Dockerfile"},
 		
 	"features": {
-		"ghcr.io/devcontainers/features/python:1": {
-			"version": "os-provided"
-		}
+		"python": "latest"
 	}
 }
 
