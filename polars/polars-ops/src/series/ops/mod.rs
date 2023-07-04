@@ -25,6 +25,7 @@ pub use approx_algo::*;
 #[cfg(feature = "approx_unique")]
 pub use approx_unique::*;
 pub use arg_min_max::ArgAgg;
+#[cfg(feature = "dtype-categorical")]
 pub use cut::*;
 #[cfg(feature = "round_series")]
 pub use floor_divide::*;

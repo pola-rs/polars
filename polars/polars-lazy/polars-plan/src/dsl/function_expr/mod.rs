@@ -14,7 +14,8 @@ mod clip;
 mod concat;
 mod correlation;
 mod cum;
-mod cut;
+//#[cfg(feature = "dtype-categorical")]
+//mod cut;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
@@ -64,6 +65,8 @@ pub(crate) use correlation::CorrelationMethod;
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
+#[cfg(feature = "dtype-categorical")]
+use polars_ops::prelude::{cut, qcut};
 #[cfg(feature = "random")]
 pub(crate) use random::RandomMethod;
 use schema::FieldsMapper;
@@ -199,11 +202,13 @@ pub enum FunctionExpr {
         method: correlation::CorrelationMethod,
         ddof: u8,
     },
+    #[cfg(feature = "dtype-categorical")]
     Cut {
         breaks: Vec<f64>,
         labels: Option<Vec<String>>,
         left_closed: bool,
     },
+    #[cfg(feature = "dtype-categorical")]
     QCut {
         probs: Vec<f64>,
         labels: Option<Vec<String>>,
@@ -548,14 +553,14 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 breaks,
                 labels,
                 left_closed,
-            } => map!(cut::cut, breaks.clone(), labels.clone(), left_closed),
+            } => map!(cut, breaks.clone(), labels.clone(), left_closed),
             QCut {
                 probs,
                 labels,
                 left_closed,
                 allow_duplicates,
             } => map!(
-                cut::qcut,
+                qcut,
                 probs.clone(),
                 labels.clone(),
                 left_closed,

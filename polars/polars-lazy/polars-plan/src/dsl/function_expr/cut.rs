@@ -6,7 +6,7 @@ pub(super) fn cut(
     labels: Option<Vec<String>>,
     left_closed: bool,
 ) -> PolarsResult<Series> {
-    s.cut(breaks, labels, left_closed)
+    cut(s, breaks, labels, left_closed)
 }
 
 pub(super) fn qcut(
@@ -16,5 +16,5 @@ pub(super) fn qcut(
     left_closed: bool,
     allow_duplicates: bool,
 ) -> PolarsResult<Series> {
-    s.qcut(probs, labels, left_closed, allow_duplicates)
+    qcut(s, probs, labels, left_closed, allow_duplicates)
 }

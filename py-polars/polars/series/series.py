@@ -1656,7 +1656,11 @@ class Series:
 
         """
         if series:
-            return self._from_pyseries(self._s.scut(bins, labels, left_closed))
+            return (
+                self.to_frame()
+                .select(F.col(self._s.name()).cut(bins, labels, left_closed))
+                .to_series()
+            )
         return wrap_df(
             self._s.cut(
                 Series(break_point_label, bins, dtype=Float64)._s,
@@ -1736,13 +1740,14 @@ class Series:
 
         """
         if series:
-            return self._from_pyseries(
-                self._s.sqcut(
-                    quantiles,
-                    labels,
-                    left_closed,
-                    allow_duplicates,
+            return (
+                self.to_frame()
+                .select(
+                    F.col(self._s.name()).qcut(
+                        quantiles, labels, left_closed, allow_duplicates
+                    )
                 )
+                .to_series()
             )
         return wrap_df(
             self._s.qcut(
