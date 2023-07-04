@@ -1,5 +1,7 @@
-{
+{ 
 	"name": "Python/Rust",
+	"build": {"dockerfile": "Dockerfile"},
+		
 	"onCreateCommand": "bash .devcontainer/startup.sh",
 	"image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
 	"features": {
