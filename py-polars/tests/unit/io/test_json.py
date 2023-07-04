@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import typing
 from typing import TYPE_CHECKING
 
 import pytest
@@ -141,7 +140,6 @@ def test_json_sliced_list_serialization() -> None:
     assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
 
 
-@typing.no_type_check
 def test_json_deserialize_9687() -> None:
     response = {
         "volume": [0.0, 0.0, 0.0],
@@ -151,6 +149,6 @@ def test_json_deserialize_9687() -> None:
         "low": [1263.0, 1263.0, 1263.0],
     }
 
-    assert pl.read_json(json.dumps(response).encode()).to_dict(False) == {
-        k: [v] for k, v in response.items()
-    }
+    result = pl.read_json(json.dumps(response).encode())
+
+    assert result.to_dict(False) == {k: [v] for k, v in response.items()}

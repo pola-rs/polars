@@ -1,12 +1,15 @@
 import math
-import typing
 from datetime import date, datetime, timedelta
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    import numpy.typing as npt
 
 
 def test_quantile_expr_input() -> None:
@@ -97,7 +100,7 @@ def test_median() -> None:
 
 def test_single_element_std() -> None:
     s = pl.Series([1])
-    assert math.isnan(typing.cast(float, s.std(ddof=1)))
+    assert math.isnan(s.std(ddof=1))  # type: ignore[arg-type]
     assert s.std(ddof=0) == 0.0
 
 
@@ -109,40 +112,40 @@ def test_quantile() -> None:
 
 
 @pytest.mark.slow()
-@typing.no_type_check
-def test_quantile_vs_numpy() -> None:
-    for tp in [int, float]:
-        for n in [1, 2, 10, 100]:
-            a = np.random.randint(0, 50, n).astype(tp)
-            np_result = np.median(a)
-            # nan check
-            if np_result != np_result:
-                np_result = None
-            median = pl.Series(a).median()
-            if median is not None:
-                assert np.isclose(median, np_result)
-            else:
-                assert np_result is None
+@pytest.mark.parametrize("tp", [int, float])
+@pytest.mark.parametrize("n", [1, 2, 10, 100])
+def test_quantile_vs_numpy(tp: type, n: int) -> None:
+    a: np.ndarray[Any, Any] = np.random.randint(0, 50, n).astype(tp)
+    np_result: Optional[npt.ArrayLike] = np.median(a)
+    # nan check
+    if np_result != np_result:
+        np_result = None
+    median = pl.Series(a).median()
+    if median is not None:
+        assert np.isclose(median, np_result)  # type: ignore[arg-type]
+    else:
+        assert np_result is None
 
-            q = np.random.sample()
-            try:
-                np_result = np.quantile(a, q)
-            except IndexError:
-                np_result = None
-                pass
-            if np_result:
-                # nan check
-                if np_result != np_result:
-                    np_result = None
-                assert np.isclose(
-                    pl.Series(a).quantile(q, interpolation="linear"), np_result
-                )
+    q = np.random.sample()
+    try:
+        np_result = np.quantile(a, q)
+    except IndexError:
+        np_result = None
+        pass
+    if np_result:
+        # nan check
+        if np_result != np_result:
+            np_result = None
+        assert np.isclose(
+            pl.Series(a).quantile(q, interpolation="linear"),  # type: ignore[arg-type]
+            np_result,  # type: ignore[arg-type]
+        )
 
 
-@typing.no_type_check
 def test_mean_overflow() -> None:
     assert np.isclose(
-        pl.Series([9_223_372_036_854_775_800, 100]).mean(), 4.611686018427388e18
+        pl.Series([9_223_372_036_854_775_800, 100]).mean(),  # type: ignore[arg-type]
+        4.611686018427388e18,
     )
 
 

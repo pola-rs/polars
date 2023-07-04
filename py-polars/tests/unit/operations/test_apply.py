@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
-import typing
 from datetime import date, datetime, timedelta
 from functools import reduce
-from typing import Sequence, no_type_check
+from typing import Any, Sequence
 
 import numpy as np
 import pytest
@@ -59,7 +58,6 @@ def test_apply_return_py_object() -> None:
     assert out.rows() == [(6, 15)]
 
 
-@no_type_check
 def test_agg_objects() -> None:
     df = pl.DataFrame(
         {
@@ -70,7 +68,7 @@ def test_agg_objects() -> None:
     )
 
     class Foo:
-        def __init__(self, payload):
+        def __init__(self, payload: Any):
             self.payload = payload
 
     out = df.groupby("groups").agg(
@@ -345,8 +343,7 @@ def test_apply_set_datetime_output_8984() -> None:
 def test_err_df_apply_return_type() -> None:
     df = pl.DataFrame({"a": [[1, 2], [2, 3]], "b": [[4, 5], [6, 7]]})
 
-    @typing.no_type_check
-    def cmb(row):
+    def cmb(row: tuple[Any, ...]) -> list[Any]:
         res = [x + y for x, y in zip(row[0], row[1])]
         return [res]
 

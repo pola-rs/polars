@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
 
 
-def read_ndjson(source: str | Path | IOBase) -> DataFrame:
+def read_ndjson(source: str | Path | IOBase | bytes) -> DataFrame:
     """
     Read into a DataFrame from a newline delimited JSON file.
 

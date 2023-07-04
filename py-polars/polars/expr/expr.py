@@ -1238,7 +1238,7 @@ class Expr:
             length = F.lit(length)
         return self._from_pyexpr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
-    def append(self, other: Expr, *, upcast: bool = True) -> Self:
+    def append(self, other: IntoExpr, *, upcast: bool = True) -> Self:
         """
         Append expressions.
 

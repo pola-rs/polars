@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import typing
 from dataclasses import dataclass
 from datetime import datetime, time
 
@@ -579,7 +578,6 @@ def test_struct_arr_eval() -> None:
     }
 
 
-@typing.no_type_check
 def test_arr_unique() -> None:
     df = pl.DataFrame(
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
@@ -850,14 +848,13 @@ def test_struct_is_in() -> None:
     assert s1.is_in(s2).to_list() == [True, False, False, True]
 
 
-@typing.no_type_check
 def test_nested_struct_logicals() -> None:
     # single nested
-    payload = [[{"a": time(10)}], [{"a": time(10)}]]
-    assert pl.Series(payload).to_list() == payload
+    payload1 = [[{"a": time(10)}], [{"a": time(10)}]]
+    assert pl.Series(payload1).to_list() == payload1
     # double nested
-    payload = [[[{"a": time(10)}]], [[{"a": time(10)}]]]
-    assert pl.Series(payload).to_list() == payload
+    payload2 = [[[{"a": time(10)}]], [[{"a": time(10)}]]]
+    assert pl.Series(payload2).to_list() == payload2
 
 
 def test_struct_name_passed_in_agg_apply() -> None:

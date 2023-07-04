@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import typing
 from datetime import date, datetime, time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import pyarrow.dataset as ds
 import pytest
@@ -14,8 +13,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@typing.no_type_check
-def helper_dataset_test(file_path: Path, query) -> None:
+def helper_dataset_test(
+    file_path: Path, query: Callable[[pl.LazyFrame], pl.DataFrame]
+) -> None:
     dset = ds.dataset(file_path, format="ipc")
 
     expected = query(pl.scan_ipc(file_path))

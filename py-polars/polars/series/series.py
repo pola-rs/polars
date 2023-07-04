@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import math
 import os
-import typing
 import warnings
 from datetime import date, datetime, time, timedelta
 from typing import (
@@ -732,13 +731,20 @@ class Series:
 
         return self.cast(Float64) / other
 
-    # python 3.7 is not happy. Remove this when we finally ditch that
-    @typing.no_type_check
+    @overload
+    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __floordiv__(self, other: Any) -> Series:
+        ...
+
+    def __floordiv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
-            return F.lit(self).__floordiv__(other)
+            return F.lit(self) // other
         if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
+
         if not isinstance(other, pl.Expr):
             other = F.lit(other)
         return self.to_frame().select(F.col(self.name) // other).to_series()
