@@ -64,12 +64,13 @@ impl FunctionExpr {
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return mapper.map_datetime_dtype_timezone(Some(tz)),
                     DateRange {
-                        every: _,
+                        every,
                         closed: _,
+                        time_unit,
                         tz,
                     } => {
-                        // output dtype may change based on `tz`
-                        return mapper.map_to_date_range_dtype(tz);
+                        // output dtype may change based on `every`, `tz`, and `time_unit`
+                        return mapper.map_to_date_range_dtype(every, time_unit, tz);
                     }
                     TimeRange { .. } => {
                         return Ok(Field::new("time", DataType::List(Box::new(DataType::Time))));
@@ -323,23 +324,59 @@ impl<'a> FieldsMapper<'a> {
         Ok(first)
     }
 
-    pub(super) fn map_to_date_range_dtype(&self, tz: &Option<String>) -> PolarsResult<Field> {
-        let inner_dtype = match (&self.map_to_supertype()?.dtype, tz) {
+    #[cfg(feature = "temporal")]
+    pub(super) fn map_to_date_range_dtype(
+        &self,
+        every: &Duration,
+        time_unit: &Option<TimeUnit>,
+        tz: &Option<String>,
+    ) -> PolarsResult<Field> {
+        let inner_dtype = match (&self.map_to_supertype()?.dtype, time_unit, tz, every) {
             #[cfg(feature = "timezones")]
-            (DataType::Datetime(tu, Some(field_tz)), Some(tz)) => {
+            (DataType::Datetime(tu, Some(field_tz)), time_unit, Some(tz), _) => {
                 if field_tz != tz {
                     polars_bail!(ComputeError: format!("Given time_zone is different from that of timezone aware datetimes. \
                     Given: '{}', got: '{}'.", tz, field_tz))
                 }
+                if let Some(time_unit) = time_unit {
+                    DataType::Datetime(*time_unit, Some(tz.to_string()))
+                } else {
+                    DataType::Datetime(*tu, Some(tz.to_string()))
+                }
+            }
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(_, Some(tz)), Some(time_unit), _, _) => {
+                DataType::Datetime(*time_unit, Some(tz.to_string()))
+            }
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, Some(tz)), None, _, _) => {
                 DataType::Datetime(*tu, Some(tz.to_string()))
             }
             #[cfg(feature = "timezones")]
-            (DataType::Datetime(tu, Some(tz)), _) => DataType::Datetime(*tu, Some(tz.to_string())),
+            (DataType::Datetime(_, _), Some(time_unit), Some(tz), _) => {
+                DataType::Datetime(*time_unit, Some(tz.to_string()))
+            }
             #[cfg(feature = "timezones")]
-            (DataType::Datetime(tu, _), Some(tz)) => DataType::Datetime(*tu, Some(tz.to_string())),
-            (DataType::Datetime(tu, _), _) => DataType::Datetime(*tu, None),
-            (DataType::Date, _) => DataType::Date,
-            (dtype, _) => {
+            (DataType::Datetime(tu, _), None, Some(tz), _) => {
+                DataType::Datetime(*tu, Some(tz.to_string()))
+            }
+            (DataType::Datetime(_, _), Some(time_unit), _, _) => {
+                DataType::Datetime(*time_unit, None)
+            }
+            (DataType::Datetime(tu, _), None, _, _) => DataType::Datetime(*tu, None),
+            (DataType::Date, time_unit, time_zone, every) => {
+                let nsecs = every.nanoseconds();
+                if nsecs == 0 {
+                    DataType::Date
+                } else if let Some(tu) = time_unit {
+                    DataType::Datetime(*tu, time_zone.clone())
+                } else if nsecs % 1000 != 0 {
+                    DataType::Datetime(TimeUnit::Nanoseconds, time_zone.clone())
+                } else {
+                    DataType::Datetime(TimeUnit::Microseconds, time_zone.clone())
+                }
+            }
+            (dtype, _, _, _) => {
                 polars_bail!(ComputeError: "expected Date or Datetime, got {}", dtype)
             }
         };

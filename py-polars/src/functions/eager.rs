@@ -1,5 +1,4 @@
 use polars::{functions, time};
-use polars_core::datatypes::{TimeUnit, TimeZone};
 use polars_core::prelude::*;
 use pyo3::prelude::*;
 
@@ -62,28 +61,6 @@ pub fn concat_series(series: &PyAny) -> PyResult<PySeries> {
         s.append(&item).map_err(PyPolarsErr::from)?;
     }
     Ok(s.into())
-}
-
-#[pyfunction]
-pub fn date_range_eager(
-    start: i64,
-    stop: i64,
-    every: &str,
-    closed: Wrap<ClosedWindow>,
-    time_unit: Wrap<TimeUnit>,
-    time_zone: Option<TimeZone>,
-) -> PyResult<PySeries> {
-    let date_range = time::date_range_impl(
-        "date",
-        start,
-        stop,
-        Duration::parse(every),
-        closed.0,
-        time_unit.0,
-        time_zone.as_ref(),
-    )
-    .map_err(PyPolarsErr::from)?;
-    Ok(date_range.into_series().into())
 }
 
 #[pyfunction]
