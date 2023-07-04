@@ -5603,6 +5603,15 @@ class Series:
         ]
 
         """
+        return (
+            self.to_frame()
+            .select(
+                F.col(self.name).shuffle(
+                    seed=seed,
+                )
+            )
+            .to_series()
+        )
 
     def ewm_mean(
         self,
