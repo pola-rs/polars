@@ -1,5 +1,3 @@
-import typing
-
 import numpy as np
 
 import polars as pl
@@ -158,7 +156,6 @@ def test_double_projection_union() -> None:
     }
 
 
-@typing.no_type_check
 def test_asof_join_projection_() -> None:
     lf1 = (
         pl.DataFrame(

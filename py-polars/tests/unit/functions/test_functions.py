@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import typing
 from datetime import timedelta
 from typing import Any, cast
 
@@ -349,7 +348,6 @@ def test_overflow_diff() -> None:
     }
 
 
-@typing.no_type_check
 def test_fill_null_unknown_output_type() -> None:
     df = pl.DataFrame(
         {

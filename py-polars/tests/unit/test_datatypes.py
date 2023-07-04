@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pickle
-import typing
 from datetime import datetime, timedelta
 
 import pytest
@@ -120,7 +119,6 @@ def test_repr(dtype: pl.PolarsDataType, representation: str) -> None:
     assert repr(dtype) == representation
 
 
-@typing.no_type_check
 def test_conversion_dtype() -> None:
     df = (
         pl.DataFrame(
@@ -147,9 +145,9 @@ def test_conversion_dtype() -> None:
         .agg([pl.col(["struct"])])
     )
 
-    df = pl.from_arrow(df.to_arrow())
+    df = pl.from_arrow(df.to_arrow())  # type: ignore[assignment]
     # the assertion is not the real test
-    # this tests if dtype as bubbled up correctly in conversion
+    # this tests if dtype has bubbled up correctly in conversion
     # if not we would UB
     assert df.to_dict(False) == {
         "some_partition_column": ["partition_1", "partition_2"],

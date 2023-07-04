@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import typing
 from datetime import date, datetime
 
 import numpy as np
@@ -255,7 +254,6 @@ def test_list_slice() -> None:
     }
 
 
-@typing.no_type_check
 def test_list_sliced_get_5186() -> None:
     # https://github.com/pola-rs/polars/issues/5186
     n = 30

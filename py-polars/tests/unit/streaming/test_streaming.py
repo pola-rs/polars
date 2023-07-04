@@ -1,14 +1,19 @@
+from __future__ import annotations
+
 import time
-import typing
 from datetime import date
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from polars.type_aliases import JoinStrategy
 
 
 def test_streaming_groupby_types() -> None:
@@ -475,7 +480,6 @@ def test_streaming_groupby_all_numeric_types_stability_8570() -> None:
             assert dfd["z_sum"].sum() == dfc["z"].sum()
 
 
-@typing.no_type_check
 def test_streaming_groupby_categorical_aggregate() -> None:
     with pl.StringCache():
         out = (
@@ -606,7 +610,6 @@ def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
 
 @pytest.mark.write_disk()
 @pytest.mark.slow()
-@typing.no_type_check
 def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     p0 = tmp_path / "df0.parquet"
@@ -615,7 +618,9 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     n = 200_000
     k = 100
 
-    d0 = {f"x{i}": np.random.random(n) for i in range(k)}
+    d0: dict[str, np.ndarray[Any, Any]] = {
+        f"x{i}": np.random.random(n) for i in range(k)
+    }
     d0.update({"id": np.arange(n)})
 
     df0 = pl.DataFrame(d0)
@@ -627,6 +632,7 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     lf0 = pl.scan_parquet(p0)
     lf1 = pl.scan_parquet(p1).select(pl.all().suffix("_r"))
 
-    for how in ["left", "inner"]:
+    hows: list[JoinStrategy] = ["left", "inner"]
+    for how in hows:
         q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
         assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
