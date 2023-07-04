@@ -5,6 +5,7 @@ rustup update
 
 rustc --version
 cargo --version
+gcc --versiion
 
 cd py-polars
 
