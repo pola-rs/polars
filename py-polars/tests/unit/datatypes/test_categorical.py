@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import typing
 from typing import Any
 
 import pytest
@@ -383,7 +382,6 @@ def test_categorical_fill_null_stringcache() -> None:
     assert a.dtypes == [pl.Categorical]
 
 
-@typing.no_type_check
 def test_fast_unique_flag_from_arrow() -> None:
     df = pl.DataFrame(
         {
@@ -392,7 +390,7 @@ def test_fast_unique_flag_from_arrow() -> None:
     ).with_columns([pl.col("colB").cast(pl.Categorical)])
 
     filtered = df.to_arrow().filter([True, False, True, True, False, True, True, True])
-    assert pl.from_arrow(filtered).select(pl.col("colB").n_unique()).item() == 4
+    assert pl.from_arrow(filtered).select(pl.col("colB").n_unique()).item() == 4  # type: ignore[union-attr]
 
 
 def test_construct_with_null() -> None:

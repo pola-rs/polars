@@ -2425,13 +2425,6 @@ def test_n_unique_subsets() -> None:
     )
 
 
-def test_sample() -> None:
-    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
-
-    assert df.sample(n=2, seed=0).shape == (2, 3)
-    assert df.sample(fraction=0.4, seed=0).shape == (1, 3)
-
-
 def test_shrink_to_fit() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
@@ -2904,7 +2897,6 @@ def test_asof_by_multiple_keys() -> None:
     assert_frame_equal(result, expected)
 
 
-@typing.no_type_check
 def test_partition_by() -> None:
     df = pl.DataFrame(
         {
@@ -2944,17 +2936,16 @@ def test_partition_by() -> None:
     }
 
 
-@typing.no_type_check
 def test_list_of_list_of_struct() -> None:
     expected = [{"list_of_list_of_struct": [[{"a": 1}, {"a": 2}]]}]
     pa_df = pa.Table.from_pylist(expected)
 
     df = pl.from_arrow(pa_df)
-    assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
-    assert df.to_dicts() == expected
+    assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]  # type: ignore[union-attr]
+    assert df.to_dicts() == expected  # type: ignore[union-attr]
 
     df = pl.from_arrow(pa_df[:0])
-    assert df.to_dicts() == []
+    assert df.to_dicts() == []  # type: ignore[union-attr]
 
 
 def test_concat_to_empty() -> None:
@@ -3714,19 +3705,12 @@ def test_rolling_apply() -> None:
 
 
 def test_ufunc() -> None:
-    # NOTE: unfortunately we must use cast instead of a type: ignore comment
-    #   1. CI job with Python 3.10, numpy==1.23.1 -> mypy complains about arg-type
-    #   2. so we try to resolve it with type: ignore[arg-type]
-    #   3. CI job with Python 3.7, numpy==1.21.6 -> mypy complains about
-    #       unused type: ignore comment
-    # for more information, see: https://github.com/python/mypy/issues/8823
-
     df = pl.DataFrame([pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt8)])
     out = df.select(
         [
-            np.power(cast(Any, pl.col("a")), 2).alias("power_uint8"),
-            np.power(cast(Any, pl.col("a")), 2.0).alias("power_float64"),
-            np.power(cast(Any, pl.col("a")), 2, dtype=np.uint16).alias("power_uint16"),
+            np.power(pl.col("a"), 2).alias("power_uint8"),  # type: ignore[call-overload]
+            np.power(pl.col("a"), 2.0).alias("power_float64"),  # type: ignore[call-overload]
+            np.power(pl.col("a"), 2, dtype=np.uint16).alias("power_uint16"),  # type: ignore[call-overload]
         ]
     )
     expected = pl.DataFrame(

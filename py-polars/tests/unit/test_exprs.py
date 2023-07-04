@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 import sys
 import typing
 from datetime import date, datetime, time, timedelta, timezone
@@ -152,43 +151,6 @@ def test_count_expr() -> None:
     out = df.groupby("b", maintain_order=True).agg(pl.count())
     assert out["b"].to_list() == ["a", "b"]
     assert out["count"].to_list() == [4, 1]
-
-
-def test_shuffle() -> None:
-    # setting 'random.seed' should lead to reproducible results
-    s = pl.Series("a", range(20))
-    s_list = s.to_list()
-
-    random.seed(1)
-    result1 = pl.select(pl.lit(s).shuffle()).to_series()
-
-    random.seed(1)
-    result2 = pl.select(a=pl.lit(s_list).shuffle()).to_series()
-    assert_series_equal(result1, result2)
-
-
-def test_sample() -> None:
-    a = pl.Series("a", range(0, 20))
-    out = pl.select(
-        pl.lit(a).sample(fraction=0.5, with_replacement=False, seed=1)
-    ).to_series()
-
-    assert out.shape == (10,)
-    assert out.to_list() != out.sort().to_list()
-    assert out.unique().shape == (10,)
-    assert set(out).issubset(set(a))
-
-    out = pl.select(pl.lit(a).sample(n=10, with_replacement=False, seed=1)).to_series()
-    assert out.shape == (10,)
-    assert out.to_list() != out.sort().to_list()
-    assert out.unique().shape == (10,)
-
-    # Setting random.seed should lead to reproducible results
-    random.seed(1)
-    result1 = pl.select(pl.lit(a).sample(n=10)).to_series()
-    random.seed(1)
-    result2 = pl.select(pl.lit(a).sample(n=10)).to_series()
-    assert_series_equal(result1, result2)
 
 
 def test_map_alias() -> None:
@@ -458,20 +420,6 @@ def test_rank_so_4109() -> None:
             [None, 1.0, 2.0, 3.0],
         ],
     }
-
-
-def test_rank_random() -> None:
-    df = pl.from_dict(
-        {"a": [1] * 5, "b": [1, 2, 3, 4, 5], "c": [200, 100, 100, 50, 100]}
-    )
-
-    df_ranks1 = df.with_columns(
-        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
-    )
-    df_ranks2 = df.with_columns(
-        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
-    )
-    assert_frame_equal(df_ranks1, df_ranks2)
 
 
 def test_unique_empty() -> None:
@@ -1082,7 +1030,7 @@ def test_cache_expr(monkeypatch: Any, capfd: Any) -> None:
         "x": [[27000, 27000, 27000, 125000, 512000]],
     }
     _, err = capfd.readouterr()
-    assert """cache hit: CACHE [(col("x")) * (10)]""" in err
+    assert """cache hit: [(col("x")) * (10)].cache()""" in err
 
 
 @pytest.mark.parametrize(

@@ -41,6 +41,7 @@ memchr = "2"
 smartstring = { version = "1" }
 multiversion = "0.7"
 either = "1.8"
+strum_macros = "0.25"
 
 [workspace.dependencies.arrow]
 package = "arrow2"

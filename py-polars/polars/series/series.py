@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import math
 import os
-import typing
 import warnings
 from datetime import date, datetime, time, timedelta
 from typing import (
@@ -336,7 +335,7 @@ class Series:
     def _from_pandas(
         cls,
         name: str,
-        values: pd.Series | pd.DatetimeIndex,
+        values: pd.Series[Any] | pd.DatetimeIndex,
         *,
         nan_to_null: bool = True,
     ) -> Self:
@@ -732,13 +731,20 @@ class Series:
 
         return self.cast(Float64) / other
 
-    # python 3.7 is not happy. Remove this when we finally ditch that
-    @typing.no_type_check
+    @overload
+    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __floordiv__(self, other: Any) -> Series:
+        ...
+
+    def __floordiv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
-            return F.lit(self).__floordiv__(other)
+            return F.lit(self) // other
         if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
+
         if not isinstance(other, pl.Expr):
             other = F.lit(other)
         return self.to_frame().select(F.col(self.name) // other).to_series()
@@ -3449,7 +3455,7 @@ class Series:
 
     def to_pandas(  # noqa: D417
         self, *args: Any, use_pyarrow_extension_array: bool = False, **kwargs: Any
-    ) -> pd.Series:
+    ) -> pd.Series[Any]:
         """
         Convert this Series to a pandas Series.
 
@@ -5631,6 +5637,15 @@ class Series:
         ]
 
         """
+        return (
+            self.to_frame()
+            .select(
+                F.col(self.name).shuffle(
+                    seed=seed,
+                )
+            )
+            .to_series()
+        )
 
     def ewm_mean(
         self,

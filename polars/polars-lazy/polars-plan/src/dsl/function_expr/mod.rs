@@ -26,6 +26,8 @@ mod list;
 mod log;
 mod nan;
 mod pow;
+#[cfg(feature = "random")]
+mod random;
 #[cfg(feature = "arange")]
 mod range;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
@@ -52,6 +54,8 @@ mod trigonometry;
 mod unique;
 
 use std::fmt::{Display, Formatter};
+#[cfg(feature = "random")]
+use std::sync::atomic::AtomicU64;
 
 #[cfg(feature = "dtype-array")]
 pub(super) use array::ArrayFunction;
@@ -60,6 +64,8 @@ pub(crate) use correlation::CorrelationMethod;
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
+#[cfg(feature = "random")]
+pub(crate) use random::RandomMethod;
 use schema::FieldsMapper;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -205,6 +211,14 @@ pub enum FunctionExpr {
         allow_duplicates: bool,
     },
     ToPhysical,
+    #[cfg(feature = "random")]
+    Random {
+        method: random::RandomMethod,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        atomic_seed: Option<SpecialEq<Arc<AtomicU64>>>,
+        seed: Option<u64>,
+        fixed_seed: bool,
+    },
 }
 
 impl Display for FunctionExpr {
@@ -302,6 +316,8 @@ impl Display for FunctionExpr {
             Cut { .. } => "cut",
             QCut { .. } => "qcut",
             ToPhysical => "to_physical",
+            #[cfg(feature = "random")]
+            Random { method, .. } => method.into(),
         };
         write!(f, "{s}")
     }
@@ -546,6 +562,19 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 allow_duplicates
             ),
             ToPhysical => map!(dispatch::to_physical),
+            #[cfg(feature = "random")]
+            Random {
+                method,
+                seed,
+                atomic_seed,
+                fixed_seed,
+            } => map!(
+                random::random,
+                method,
+                atomic_seed.as_deref(),
+                seed,
+                fixed_seed
+            ),
         }
     }
 }
@@ -671,12 +700,18 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "timezones")]
             TzLocalize(tz) => map!(datetime::tz_localize, &tz),
             Combine(tu) => map_as_slice!(temporal::combine, tu),
-            DateRange { every, closed, tz } => {
+            DateRange {
+                every,
+                closed,
+                time_unit,
+                tz,
+            } => {
                 map_as_slice!(
                     temporal::temporal_range_dispatch,
                     "date",
                     every,
                     closed,
+                    time_unit,
                     tz.clone()
                 )
             }
@@ -686,6 +721,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     "time",
                     every,
                     closed,
+                    None,
                     None
                 )
             }

@@ -7,6 +7,7 @@ use polars_core::frame::groupby::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
+use strum_macros::IntoStaticStr;
 
 use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::Context;
@@ -14,7 +15,7 @@ use crate::prelude::aexpr::NodeInputs::Single;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, IntoStaticStr)]
 pub enum AAggExpr {
     Min {
         input: Node,
@@ -197,21 +198,59 @@ impl AExpr {
             .map(|f| f.data_type().clone())
     }
 
-    pub(crate) fn replace_input(self, input: Node) -> Self {
+    pub(crate) fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
-        match self {
-            Alias(_, name) => Alias(input, name),
-            Cast {
-                expr: _,
-                data_type,
-                strict,
-            } => Cast {
-                expr: input,
-                data_type,
-                strict,
-            },
-            _ => todo!(),
-        }
+        let input = match &mut self {
+            Column(_) | Literal(_) | Wildcard | Count | Nth(_) => return self,
+            Alias(input, _) => input,
+            Cast { expr, .. } => expr,
+            Explode(input) | Slice { input, .. } | Cache { input, .. } => input,
+            BinaryExpr { left, right, .. } => {
+                *left = inputs[0];
+                *right = inputs[1];
+                return self;
+            }
+            Sort { expr, .. } | Take { expr, .. } => expr,
+            SortBy { expr, by, .. } => {
+                *expr = *inputs.last().unwrap();
+                by.clear();
+                by.extend_from_slice(&inputs[..inputs.len() - 1]);
+                return self;
+            }
+            Filter { input, .. } => input,
+            Agg(a) => {
+                a.set_input(inputs[0]);
+                return self;
+            }
+            Ternary {
+                truthy,
+                falsy,
+                predicate,
+            } => {
+                *truthy = inputs[0];
+                *falsy = inputs[1];
+                *predicate = inputs[2];
+                return self;
+            }
+            AnonymousFunction { input, .. } | Function { input, .. } => {
+                input.clear();
+                input.extend(inputs.iter().rev().copied());
+                return self;
+            }
+            Window {
+                function,
+                partition_by,
+                order_by,
+                ..
+            } => {
+                *function = inputs[0];
+                partition_by.extend_from_slice(&inputs[1..]);
+                assert!(order_by.is_none());
+                return self;
+            }
+        };
+        *input = inputs[0];
+        self
     }
 
     pub(crate) fn get_input(&self) -> NodeInputs {
@@ -238,9 +277,11 @@ impl AExpr {
                 falsy,
                 predicate,
             } => Many(vec![*truthy, *falsy, *predicate]),
+            // we iterate in reverse order, so that the lhs is popped first and will be found
+            // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
             AnonymousFunction { input, .. } | Function { input, .. } => match input.len() {
                 1 => Single(input[0]),
-                _ => Many(input.clone()),
+                _ => Many(input.iter().copied().rev().collect()),
             },
             Window {
                 function,
@@ -290,6 +331,26 @@ impl AAggExpr {
             Var(input, _) => Single(*input),
             AggGroups(input) => Single(*input),
         }
+    }
+    pub fn set_input(&mut self, input: Node) {
+        use AAggExpr::*;
+        let node = match self {
+            Min { input, .. } => input,
+            Max { input, .. } => input,
+            Median(input) => input,
+            NUnique(input) => input,
+            First(input) => input,
+            Last(input) => input,
+            Mean(input) => input,
+            Implode(input) => input,
+            Quantile { expr, .. } => expr,
+            Sum(input) => input,
+            Count(input) => input,
+            Std(input, _) => input,
+            Var(input, _) => input,
+            AggGroups(input) => input,
+        };
+        *node = input;
     }
 }
 

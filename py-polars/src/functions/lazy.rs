@@ -185,12 +185,21 @@ pub fn date_range_lazy(
     end: PyExpr,
     every: &str,
     closed: Wrap<ClosedWindow>,
+    time_unit: Option<Wrap<TimeUnit>>,
     time_zone: Option<TimeZone>,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::parse(every);
-    dsl::functions::date_range(start, end, every, closed.0, time_zone).into()
+    dsl::functions::date_range(
+        start,
+        end,
+        every,
+        closed.0,
+        time_unit.map(|x| x.0),
+        time_zone,
+    )
+    .into()
 }
 
 #[pyfunction]

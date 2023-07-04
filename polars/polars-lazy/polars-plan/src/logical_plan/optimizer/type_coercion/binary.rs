@@ -229,9 +229,11 @@ pub(super) fn process_binary(
             return Ok(None)
         }
         #[cfg(feature = "dtype-date")]
-        (Date, Utf8, op) if op.is_comparison() => err_date_str_compare()?,
+        (Date, Utf8, op) | (Utf8, Date, op) if op.is_comparison() => err_date_str_compare()?,
         #[cfg(feature = "dtype-datetime")]
-        (Datetime(_, _), Utf8, op) if op.is_comparison() => err_date_str_compare()?,
+        (Datetime(_, _), Utf8, op) | (Utf8, Datetime(_, _), op) if op.is_comparison() => {
+            err_date_str_compare()?
+        }
         #[cfg(feature = "dtype-time")]
         (Time, Utf8, op) if op.is_comparison() => err_date_str_compare()?,
         // structs can be arbitrarily nested, leave the complexity to the caller for now.
