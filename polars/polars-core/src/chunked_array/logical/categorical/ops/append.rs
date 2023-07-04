@@ -32,7 +32,7 @@ Alternatively, if the performance cost is acceptable, you could just set:
 
     pl.enable_string_cache(True)
 
-on startup."
+on startup.
 "#.trim_start()
             );
         } else {
