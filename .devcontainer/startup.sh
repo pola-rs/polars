@@ -15,6 +15,6 @@ python -m pip install -r docs/requirements-docs.txt
 
 pip install maturin
 
-maturin develop
+maturin develop --release
 
 pytest -n auto --dist worksteal
