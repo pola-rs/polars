@@ -2,7 +2,7 @@
 	"name": "Python/Rust",
 	"build": {"dockerfile": "Dockerfile"},
 	"features": {
-		"python": "latest"
+		"ghcr.io/devcontainers/features/python:1": {}
 	},
 	"onCreateCommand": "bash .devcontainer/startup.sh"
 }
