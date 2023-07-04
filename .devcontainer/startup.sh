@@ -5,5 +5,5 @@ source "$HOME/.cargo/env"
 # install maturin
 pip install maturin
 
-cd py-polars && maturin develop --release -- -C codegen-units=16 -C lto=thin -C target-cpu=native
+make build
 make test
