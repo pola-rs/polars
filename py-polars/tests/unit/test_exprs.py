@@ -1082,7 +1082,7 @@ def test_cache_expr(monkeypatch: Any, capfd: Any) -> None:
         "x": [[27000, 27000, 27000, 125000, 512000]],
     }
     _, err = capfd.readouterr()
-    assert """cache hit: CACHE [(col("x")) * (10)]""" in err
+    assert """cache hit: [(col("x")) * (10)].cache()""" in err
 
 
 @pytest.mark.parametrize(
