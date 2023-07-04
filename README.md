@@ -19,7 +19,7 @@
   <a href="https://doi.org/10.5281/zenodo.7697217">
     <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7697217.svg" alt="DOI Latest Release"/>
   </a>
-  <a href="https://codespaces.com/pola-rs/polars">
+  <a href="https://codespaces.new/pola-rs/polars">
     <img src="https://github.com/codespaces/badge.svg"/>
   </a>
 </div>
