@@ -24,6 +24,8 @@ pub(crate) mod names;
 mod options;
 #[cfg(all(feature = "python", feature = "serde"))]
 pub mod python_udf;
+#[cfg(feature = "random")]
+mod random;
 mod selector;
 #[cfg(feature = "strings")]
 pub mod string;
@@ -1557,45 +1559,6 @@ impl Expr {
         };
         self.apply(move |s| s.reshape(&dims).map(Some), output_type)
             .with_fmt("reshape")
-    }
-
-    #[cfg(feature = "random")]
-    pub fn shuffle(self, seed: Option<u64>) -> Self {
-        self.apply(move |s| Ok(Some(s.shuffle(seed))), GetOutput::same_type())
-            .with_fmt("shuffle")
-    }
-
-    #[cfg(feature = "random")]
-    pub fn sample_n(
-        self,
-        n: usize,
-        with_replacement: bool,
-        shuffle: bool,
-        seed: Option<u64>,
-    ) -> Self {
-        self.apply(
-            move |s| s.sample_n(n, with_replacement, shuffle, seed).map(Some),
-            GetOutput::same_type(),
-        )
-        .with_fmt("sample_n")
-    }
-
-    #[cfg(feature = "random")]
-    pub fn sample_frac(
-        self,
-        frac: f64,
-        with_replacement: bool,
-        shuffle: bool,
-        seed: Option<u64>,
-    ) -> Self {
-        self.apply(
-            move |s| {
-                s.sample_frac(frac, with_replacement, shuffle, seed)
-                    .map(Some)
-            },
-            GetOutput::same_type(),
-        )
-        .with_fmt("sample_frac")
     }
 
     #[cfg(feature = "ewma")]

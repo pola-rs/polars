@@ -234,6 +234,8 @@ impl FunctionExpr {
             ConcatExpr(_) => mapper.map_to_supertype(),
             Correlation { .. } => mapper.map_to_float_dtype(),
             ToPhysical => mapper.to_physical_type(),
+            #[cfg(feature = "random")]
+            Random { .. } => mapper.with_same_dtype(),
         }
     }
 }

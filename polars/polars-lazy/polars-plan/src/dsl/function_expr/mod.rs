@@ -25,6 +25,8 @@ mod list;
 mod log;
 mod nan;
 mod pow;
+#[cfg(feature = "random")]
+mod random;
 #[cfg(feature = "arange")]
 mod range;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
@@ -51,6 +53,8 @@ mod trigonometry;
 mod unique;
 
 use std::fmt::{Display, Formatter};
+#[cfg(feature = "random")]
+use std::sync::atomic::AtomicU64;
 
 #[cfg(feature = "dtype-array")]
 pub(super) use array::ArrayFunction;
@@ -59,6 +63,8 @@ pub(crate) use correlation::CorrelationMethod;
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
+#[cfg(feature = "random")]
+pub(crate) use random::RandomMethod;
 use schema::FieldsMapper;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -193,6 +199,14 @@ pub enum FunctionExpr {
         ddof: u8,
     },
     ToPhysical,
+    #[cfg(feature = "random")]
+    Random {
+        method: random::RandomMethod,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        atomic_seed: Option<SpecialEq<Arc<AtomicU64>>>,
+        seed: Option<u64>,
+        fixed_seed: bool,
+    },
 }
 
 impl Display for FunctionExpr {
@@ -288,6 +302,8 @@ impl Display for FunctionExpr {
             ConcatExpr(_) => "concat_expr",
             Correlation { method, .. } => return Display::fmt(method, f),
             ToPhysical => "to_physical",
+            #[cfg(feature = "random")]
+            Random { method, .. } => method.into(),
         };
         write!(f, "{s}")
     }
@@ -515,6 +531,19 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
             Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
             ToPhysical => map!(dispatch::to_physical),
+            #[cfg(feature = "random")]
+            Random {
+                method,
+                seed,
+                atomic_seed,
+                fixed_seed,
+            } => map!(
+                random::random,
+                method,
+                atomic_seed.as_deref(),
+                seed,
+                fixed_seed
+            ),
         }
     }
 }
