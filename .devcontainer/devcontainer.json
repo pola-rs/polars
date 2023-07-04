@@ -2,8 +2,6 @@
 	"name": "Python/Rust",
 	"build": {"dockerfile": "Dockerfile"},
 		
-	"onCreateCommand": "bash .devcontainer/startup.sh",
-	"image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
 	"features": {
 		"ghcr.io/devcontainers/features/python:1": {
 			"version": "os-provided"
