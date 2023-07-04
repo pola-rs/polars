@@ -1,3 +1,10 @@
+rustc --version
+cargo --version
+rustup update stable
+
+rustc --version
+cargo --version
+
 cd py-polars
 
 # construct a virtual environment as required by maturin
