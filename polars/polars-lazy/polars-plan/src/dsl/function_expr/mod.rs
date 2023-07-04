@@ -14,8 +14,6 @@ mod clip;
 mod concat;
 mod correlation;
 mod cum;
-//#[cfg(feature = "dtype-categorical")]
-//mod cut;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
