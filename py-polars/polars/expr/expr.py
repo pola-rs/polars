@@ -7497,7 +7497,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
-    def shuffle(self, seed: int | None = None) -> Self:
+    def shuffle(self, seed: int | None = None, fixed_seed: bool = False) -> Self:
         """
         Shuffle the contents of this expression.
 
@@ -7506,6 +7506,10 @@ class Expr:
         seed
             Seed for the random number generator. If set to None (default), a random
             seed is generated using the ``random`` module.
+        fixed_seed
+            If True, The seed will not be incremented between draws.
+            This can make output predictable because draw ordering can
+            change due to threads being scheduled in a different order.
 
         Examples
         --------
@@ -7526,7 +7530,7 @@ class Expr:
         # we seed from python so that we respect ``random.seed``
         if seed is None:
             seed = random.randint(0, 10000)
-        return self._from_pyexpr(self._pyexpr.shuffle(seed))
+        return self._from_pyexpr(self._pyexpr.shuffle(seed, fixed_seed))
 
     @deprecated_alias(frac="fraction")
     def sample(
@@ -7537,6 +7541,7 @@ class Expr:
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
+        fixed_seed: bool = False,
     ) -> Self:
         """
         Sample from this expression.
@@ -7555,6 +7560,10 @@ class Expr:
         seed
             Seed for the random number generator. If set to None (default), a random
             seed is generated using the ``random`` module.
+        fixed_seed
+            If True, The seed will not be incremented between draws.
+            This can make output predictable because draw ordering can
+            change due to threads being scheduled in a different order.
 
         Examples
         --------
@@ -7580,13 +7589,15 @@ class Expr:
 
         if fraction is not None:
             return self._from_pyexpr(
-                self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
+                self._pyexpr.sample_frac(
+                    fraction, with_replacement, shuffle, seed, fixed_seed
+                )
             )
 
         if n is None:
             n = 1
         return self._from_pyexpr(
-            self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
+            self._pyexpr.sample_n(n, with_replacement, shuffle, seed, fixed_seed)
         )
 
     def ewm_mean(
