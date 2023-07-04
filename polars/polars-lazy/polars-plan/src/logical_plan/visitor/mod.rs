@@ -1,12 +1,11 @@
-//! Defines different visitor patterns and sort-orders for any tree.
-//! See more on tree-traversal https://en.wikipedia.org/wiki/Tree_traversal
+//! Defines different visitor patterns and for any tree.
 
 use polars_arrow::error::PolarsResult;
 mod expr;
 mod visitors;
 
-pub(crate) use expr::*;
-pub(crate) use visitors::*;
+pub use expr::*;
+pub use visitors::*;
 
 /// Controls how the [`TreeWalker`] recursion should proceed for [`TreeWalker::visit`].
 #[derive(Debug)]

@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from datetime import datetime, time, timedelta
+from datetime import time, timedelta
 from typing import TYPE_CHECKING, overload
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import Date, Int64
+from polars.datatypes import Int64
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_s
 from polars.utils.convert import (
-    _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_duration,
 )
@@ -22,16 +21,17 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    import sys
-    from datetime import date
+    from datetime import date, datetime
+    from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import ClosedInterval, PolarsDataType, TimeUnit
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
+    from polars.type_aliases import (
+        ClosedInterval,
+        IntoExpr,
+        PolarsDataType,
+        PolarsIntegerType,
+        TimeUnit,
+    )
 
 
 @overload
@@ -140,6 +140,177 @@ def arange(
 
 
 @overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    eager: Literal[False] = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    eager: Literal[True],
+) -> Series:
+    ...
+
+
+@overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    eager: bool,
+) -> Expr | Series:
+    ...
+
+
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = 1,
+    *,
+    eager: bool = False,
+) -> Expr | Series:
+    """
+    Generate a range of integers.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the range (inclusive).
+    end
+        Upper bound of the range (exclusive).
+    step
+        Step size of the range.
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
+
+    Returns
+    -------
+    Column of data type ``Int64``.
+
+    Examples
+    --------
+    >>> pl.int_range(0, 3, eager=True)
+    shape: (3,)
+    Series: 'int' [i64]
+    [
+            0
+            1
+            2
+    ]
+
+    """
+    start = parse_as_expression(start)
+    end = parse_as_expression(end)
+    result = wrap_expr(plr.int_range(start, end, step))
+
+    if eager:
+        return F.select(result).to_series()
+
+    return result
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: Literal[False] = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: Literal[True],
+) -> Series:
+    ...
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: bool,
+) -> Expr | Series:
+    ...
+
+
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = 1,
+    *,
+    dtype: PolarsIntegerType = Int64,
+    eager: bool = False,
+) -> Expr | Series:
+    """
+    Generate a range of integers for each row of the input columns.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the range (inclusive).
+    end
+        Upper bound of the range (exclusive).
+    step
+        Step size of the range.
+    dtype
+        Integer data type of the ranges. Defaults to ``Int64``.
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
+
+    Returns
+    -------
+    Column of data type ``List(dtype)``.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"start": [1, -1], "end": [3, 2]})
+    >>> df.with_columns(pl.int_ranges("start", "end"))
+    shape: (2, 3)
+    ┌───────┬─────┬────────────┐
+    │ start ┆ end ┆ int_range  │
+    │ ---   ┆ --- ┆ ---        │
+    │ i64   ┆ i64 ┆ list[i64]  │
+    ╞═══════╪═════╪════════════╡
+    │ 1     ┆ 3   ┆ [1, 2]     │
+    │ -1    ┆ 2   ┆ [-1, 0, 1] │
+    └───────┴─────┴────────────┘
+
+    """
+    start = parse_as_expression(start)
+    end = parse_as_expression(end)
+    result = wrap_expr(plr.int_ranges(start, end, step, dtype))
+
+    if eager:
+        return F.select(result).to_series()
+
+    return result
+
+
+@overload
 def date_range(
     start: date | datetime | Expr | str,
     end: date | datetime | Expr | str,
@@ -218,9 +389,9 @@ def date_range(
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
     time_unit : {None, 'ns', 'us', 'ms'}
-        Set the time unit.
+        Set the time unit. Only takes effect if output is of ``Datetime`` type.
     time_zone:
-        Optional timezone
+        Optional timezone. Only takes effect if output is of ``Datetime`` type.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
@@ -356,72 +527,30 @@ def date_range(
     elif " " in interval:
         interval = interval.replace(" ", "")
 
-    if (
-        not eager
-        or isinstance(start, (str, pl.Expr))
-        or isinstance(end, (str, pl.Expr))
-    ):
-        start = parse_as_expression(start)
-        end = parse_as_expression(end)
-        expr = wrap_expr(plr.date_range_lazy(start, end, interval, closed, time_zone))
-        if name is not None:
-            expr = expr.alias(name)
-        return expr
-
-    start, start_is_date = _ensure_datetime(start)
-    end, end_is_date = _ensure_datetime(end)
-
-    if start.tzinfo is not None or time_zone is not None:
-        if start.tzinfo != end.tzinfo:
-            raise ValueError(
-                "Cannot mix different timezone aware datetimes."
-                f" Got: '{start.tzinfo}' and '{end.tzinfo}'."
-            )
-
-        if time_zone is not None and start.tzinfo is not None:
-            if str(start.tzinfo) != time_zone:
-                raise ValueError(
-                    "Given time_zone is different from that of timezone aware datetimes."
-                    f" Given: '{time_zone}', got: '{start.tzinfo}'."
-                )
-        if time_zone is None and start.tzinfo is not None:
-            time_zone = str(start.tzinfo)
-
-    time_unit_: TimeUnit
+    time_unit_: TimeUnit | None
     if time_unit is not None:
         time_unit_ = time_unit
     elif "ns" in interval:
         time_unit_ = "ns"
     else:
-        time_unit_ = "us"
+        time_unit_ = None
 
-    start_pl = _datetime_to_pl_timestamp(start, time_unit_)
-    end_pl = _datetime_to_pl_timestamp(end, time_unit_)
-    dt_range = wrap_s(
-        plr.date_range_eager(start_pl, end_pl, interval, closed, time_unit_, time_zone)
+    start_pl = parse_as_expression(start)
+    end_pl = parse_as_expression(end)
+    dt_range = wrap_expr(
+        plr.date_range_lazy(start_pl, end_pl, interval, closed, time_unit_, time_zone)
     )
-    if (
-        start_is_date
-        and end_is_date
-        and not _interval_granularity(interval).endswith(("h", "m", "s"))
-    ):
-        dt_range = dt_range.cast(Date)
-
     if name is not None:
         dt_range = dt_range.alias(name)
-    return dt_range
 
-
-def _ensure_datetime(value: date | datetime) -> tuple[datetime, bool]:
-    is_date_type = False
-    if not isinstance(value, datetime):
-        value = datetime(value.year, value.month, value.day)
-        is_date_type = True
-    return value, is_date_type
-
-
-def _interval_granularity(interval: str) -> str:
-    return interval[-2:].lstrip("0123456789")
+    if (
+        not eager
+        or isinstance(start_pl, (str, pl.Expr))
+        or isinstance(end_pl, (str, pl.Expr))
+    ):
+        return dt_range
+    res = F.select(dt_range).to_series().explode().set_sorted()
+    return res
 
 
 @overload

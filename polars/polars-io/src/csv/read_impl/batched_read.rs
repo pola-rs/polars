@@ -217,7 +217,7 @@ impl<'a> CoreReader<'a> {
         // RAII structure that will ensure we maintain a global stringcache
         #[cfg(feature = "dtype-categorical")]
         let _cat_lock = if _has_cat {
-            Some(polars_core::IUseStringCache::new())
+            Some(polars_core::IUseStringCache::hold())
         } else {
             None
         };

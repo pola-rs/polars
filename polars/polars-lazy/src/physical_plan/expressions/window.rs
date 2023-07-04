@@ -490,6 +490,12 @@ impl PhysicalExpr for WindowExpr {
         }
         let gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
 
+        // If the aggregation creates categoricals and `MapStrategy` is `Join`,
+        // the string cache was needed. So we hold it for that case.
+        // Worst case is that a categorical is created with indexes from the string
+        // cache which is fine, as the physical representation is undefined.
+        #[cfg(feature = "dtype-categorical")]
+        let _sc = polars_core::IUseStringCache::hold();
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;

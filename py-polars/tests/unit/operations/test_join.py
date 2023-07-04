@@ -512,19 +512,18 @@ def test_update() -> None:
     assert c.rows() == a.rows()
 
 
-@typing.no_type_check
 def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
     ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()
 
     with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
-        _ = ldf.join(df, on="A")
+        _ = ldf.join(df, on="A")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
-        _ = df.join(ldf, on="A")
+        _ = df.join(ldf, on="A")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
-        _ = ldf.join_asof(df, on="A")
+        _ = ldf.join_asof(df, on="A")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
-        _ = df.join_asof(ldf, on="A")
+        _ = df.join_asof(ldf, on="A")  # type: ignore[arg-type]
 
 
 def test_join_concat_projection_pd_case_7071() -> None:

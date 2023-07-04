@@ -138,3 +138,17 @@ def test_json_sliced_list_serialization() -> None:
     sliced_df = df[1, :]
     sliced_df.write_ndjson(f)
     assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
+
+
+def test_json_deserialize_9687() -> None:
+    response = {
+        "volume": [0.0, 0.0, 0.0],
+        "open": [1263.0, 1263.0, 1263.0],
+        "close": [1263.0, 1263.0, 1263.0],
+        "high": [1263.0, 1263.0, 1263.0],
+        "low": [1263.0, 1263.0, 1263.0],
+    }
+
+    result = pl.read_json(json.dumps(response).encode())
+
+    assert result.to_dict(False) == {k: [v] for k, v in response.items()}

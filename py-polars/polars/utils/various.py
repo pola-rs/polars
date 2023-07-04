@@ -6,7 +6,7 @@ import re
 import sys
 from collections.abc import MappingView, Sized
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, TypeVar
 
 import polars as pl
 from polars import functions as F
@@ -22,11 +22,6 @@ from polars.datatypes import (
     unpack_dtypes,
 )
 from polars.dependencies import _PYARROW_AVAILABLE
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
 
 if TYPE_CHECKING:
     from collections.abc import Reversible

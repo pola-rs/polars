@@ -1,8 +1,8 @@
 use super::*;
 
 /// An implementor of this trait decides how and in which order its nodes get traversed
-/// Implemented for [`Expr`] and [`AexprNode`].
-pub(crate) trait TreeWalker: Sized {
+/// Implemented for [`crate::dsl::Expr`] and [`AexprNode`].
+pub trait TreeWalker: Sized {
     fn apply_children(
         &self,
         op: &mut dyn FnMut(&Self) -> PolarsResult<VisitRecursion>,
@@ -49,7 +49,7 @@ pub(crate) trait TreeWalker: Sized {
     }
 }
 
-pub(crate) trait Visitor {
+pub trait Visitor {
     type Node;
 
     /// Invoked before any children of `node` are visited.
@@ -64,7 +64,7 @@ pub(crate) trait Visitor {
     }
 }
 
-pub(crate) trait RewritingVisitor {
+pub trait RewritingVisitor {
     type Node;
 
     /// Invoked before any children of `node` are visited.

@@ -17,7 +17,7 @@ fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Node(pub usize);
 
 impl Default for Node {

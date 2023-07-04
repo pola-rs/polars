@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import typing
 import warnings
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
@@ -71,6 +70,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from io import IOBase
+    from typing import Literal
 
     import pyarrow as pa
 
@@ -93,11 +93,6 @@ if TYPE_CHECKING:
         StartBy,
         UniqueKeepStrategy,
     )
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec
@@ -3185,7 +3180,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 
-    @typing.no_type_check
     def with_context(self, other: Self | list[Self]) -> Self:
         """
         Add an external context to the computation graph.
