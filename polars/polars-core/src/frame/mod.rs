@@ -736,10 +736,14 @@ impl DataFrame {
         self.columns.is_empty()
     }
 
-    pub(crate) fn hstack_mut_no_checks(&mut self, columns: &[Series]) -> &mut Self {
-        for col in columns {
-            self.columns.push(col.clone());
-        }
+    /// Add columns horizontally.
+    ///
+    /// # Safety
+    /// The caller must ensure:
+    /// - the length of all [`Series`] is equal to the height of this [`DataFrame`]
+    /// - the columns names are unique
+    pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Series]) -> &mut Self {
+        self.columns.extend_from_slice(columns);
         self
     }
 
@@ -774,7 +778,7 @@ impl DataFrame {
             );
         }
         drop(names);
-        Ok(self.hstack_mut_no_checks(columns))
+        Ok(unsafe { self.hstack_mut_unchecked(columns) })
     }
 
     /// Add multiple `Series` to a `DataFrame`.
