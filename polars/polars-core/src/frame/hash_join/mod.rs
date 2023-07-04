@@ -110,8 +110,7 @@ Alternatively, if the performance cost is acceptable, you could just set:
 
     pl.enable_string_cache(True)
 
-on startup.
-"#.trim_start()
+on startup."#.trim_start()
         );
     }
     Ok(())
