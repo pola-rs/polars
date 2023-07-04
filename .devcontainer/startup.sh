@@ -8,5 +8,5 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt
 
-@unset CONDA_PREFIX && maturin develop --release -- -C target-cpu=native
+maturin develop --release -- -C target-cpu=native
 pytest -n auto --dist worksteal
