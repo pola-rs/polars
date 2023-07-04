@@ -15,6 +15,7 @@ python -m pip install -r requirements-dev.txt
 # maturin is a dependency declared in requirements-dev.txt
 # pip install maturin
 
-maturin develop --release
+# from the README
+maturin develop --release -- -C codegen-units=16 -C lto=thin -C target-cpu=native
 
 pytest -n auto --dist worksteal
