@@ -4,10 +4,10 @@
 
 cd py-polars
 
-# construct the virtual environment
-# python3 -m venv .venv
+# construct a virtual environment as required by maturin
+python -m venv .venv
+source .venv/bin/activate
 
-# source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt
 python -m pip install -r requirements-lint.txt
