@@ -122,7 +122,7 @@ def test_cse_9631_2() -> None:
                     df.lazy().select("a", "b"),
                 ]
             )
-            .groupby(pl.col("a").list.sort().list.join(","))
+            .groupby(pl.col("a").list.sort().list.join(","), maintain_order=True)
             .agg(
                 pl.col("b").flatten(),
             )
@@ -135,6 +135,6 @@ def test_cse_9631_2() -> None:
 
     assert pl.concat(dfs).collect(common_subplan_elimination=True).to_dict(False) == {
         "a": [["1"], ["1"], ["3"], ["1"], ["3"], ["1"], ["3"]],
-        "b": [["4"], ["5"], ["6"], ["5", "4"], ["6"], ["4", "5"], ["6"]],
+        "b": [["4"], ["5"], ["6"], ["5", "4"], ["6"], ["5", "4"], ["6"]],
         "a2": [["1"], ["1"], ["3"], ["1"], ["3"], ["1"], ["3"]],
     }
