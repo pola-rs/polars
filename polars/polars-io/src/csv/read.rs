@@ -564,7 +564,7 @@ where
 
             #[cfg(feature = "dtype-categorical")]
             if _has_cat {
-                _cat_lock = Some(polars_core::IUseStringCache::new())
+                _cat_lock = Some(polars_core::IUseStringCache::hold())
             }
 
             let mut csv_reader = self.core_reader(Some(Arc::new(schema)), to_cast)?;
@@ -582,7 +582,7 @@ where
                     })
                     .unwrap_or(false);
                 if has_cat {
-                    _cat_lock = Some(polars_core::IUseStringCache::new())
+                    _cat_lock = Some(polars_core::IUseStringCache::hold())
                 }
             }
             let mut csv_reader = self.core_reader(self.schema.clone(), vec![])?;
