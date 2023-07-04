@@ -18,8 +18,22 @@ impl CategoricalChunked {
 
         if is_local_different_source {
             polars_bail!(
-                ComputeError:
-                "cannot concat categoricals coming from a different source; consider setting a global StringCache"
+            ComputeError: r#"
+cannot concat categoricals coming from a different source, consider setting a global StringCache.
+
+Help: if you're using Python, this may look something like:
+
+    with pl.StringCache():
+        df1 = pl.DataFrame({'a': ['1', '2']}, schema={'a': pl.Categorical})
+        df2 = pl.DataFrame({'a': ['1', '3']}, schema={'a': pl.Categorical})
+        pl.concat([df1, df2])
+
+Alternatively, if the performance cost is acceptable, you could just set:
+
+    pl.enable_string_cache(True)
+
+on startup."
+"#.trim_start()
             );
         } else {
             let len = self.len();
