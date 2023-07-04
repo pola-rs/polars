@@ -1,9 +1,9 @@
 { 
 	"name": "Python/Rust",
 	"build": {"dockerfile": "Dockerfile"},
-		
 	"features": {
 		"python": "latest"
 	}
+	"onCreateCommand": "bash .devcontainer/startup.sh"
 }
 
