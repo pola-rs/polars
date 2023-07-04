@@ -1,6 +1,6 @@
-rustc --version
-cargo --version
-rustup update stable
+#rustc --version
+#cargo --version
+#rustup update stable
 
 rustc --version
 cargo --version
@@ -15,5 +15,7 @@ python -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements-dev.txt
 
-.venv/bin/maturin develop --release -- -C target-cpu=native
-.venv/bin/pytest -n auto --dist worksteal
+.venv/bin/maturin develop --release 
+#-- -C target-cpu=native
+
+#.venv/bin/pytest -n auto --dist worksteal
