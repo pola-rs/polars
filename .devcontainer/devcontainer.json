@@ -1,23 +1,11 @@
 {
-	"name": "Python 3",
-	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "mcr.microsoft.com/devcontainers/python:1-3.9-bookworm",
+	"name": "Python/Rust",
 	"onCreateCommand": "bash .devcontainer/startup.sh",
-	"customizations": {
-		"vscode": {
-			"settings": {
-				"python.testing.pytestEnabled": true,
-				"python.testing.unittestEnabled": false,
-				"python.testing.pytestArgs": [
-					"."
-				],
-				"python.pythonPath": ".venv/bin/python",
-				"python.defaultInterpreterPath": ".venv/bin/python",
-				"python.terminal.activateEnvInCurrentTerminal": true
-			},
-			"extensions": [
-				"ms-toolsai.jupyter"
-			]
+	"image": "mcr.microsoft.com/devcontainers/rust:1-bullseye",
+	"features": {
+		"ghcr.io/devcontainers/features/python:1": {
+			"installTools": true,
+			"version": "os-provided"
 		}
 	}
 }
