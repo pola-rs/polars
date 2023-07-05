@@ -233,6 +233,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add("ShapeError", py.get_type::<crate::error::ShapeError>())
         .unwrap();
     m.add(
+        "StringCacheMismatchError",
+        py.get_type::<crate::error::StringCacheMismatchError>(),
+    )
+    .unwrap();
+    m.add(
         "StructFieldNotFoundError",
         py.get_type::<StructFieldNotFoundError>(),
     )

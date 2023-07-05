@@ -56,6 +56,8 @@ pub enum PolarsError {
     SchemaMismatch(ErrString),
     #[error("lengths don't match: {0}")]
     ShapeMismatch(ErrString),
+    #[error("string caches don't match: {0}")]
+    StringCacheMismatch(ErrString),
     #[error("field not found: {0}")]
     StructFieldNotFound(ErrString),
 }
@@ -91,6 +93,7 @@ impl PolarsError {
             SchemaFieldNotFound(msg) => SchemaFieldNotFound(func(msg).into()),
             SchemaMismatch(msg) => SchemaMismatch(func(msg).into()),
             ShapeMismatch(msg) => ShapeMismatch(func(msg).into()),
+            StringCacheMismatch(msg) => StringCacheMismatch(func(msg).into()),
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
         }
     }
@@ -157,6 +160,26 @@ macro_rules! polars_err {
     };
     (unpack) => {
         polars_err!(SchemaMismatch: "cannot unpack series, data types don't match")
+    };
+    (string_cache_mismatch) => {
+        polars_err!(StringCacheMismatch: r#"
+cannot compare categoricals coming from different sources, consider setting a global StringCache.
+
+Help: if you're using Python, this may look something like:
+
+    with pl.StringCache():
+        # Initialize Categoricals.
+        df1 = pl.DataFrame({'a': ['1', '2']}, schema={'a': pl.Categorical})
+        df2 = pl.DataFrame({'a': ['1', '3']}, schema={'a': pl.Categorical})
+        # Your operations go here.
+        pl.concat([df1, df2])
+
+Alternatively, if the performance cost is acceptable, you could just set:
+
+    import polars as pl
+    pl.enable_string_cache(True)
+
+on startup."#.trim_start())
     };
     (duplicate = $name:expr) => {
         polars_err!(Duplicate: "column with name '{}' has more than one occurrences", $name)

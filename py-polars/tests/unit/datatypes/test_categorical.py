@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
+from polars.exceptions import StringCacheMismatchError
 from polars.testing import assert_frame_equal
 
 
@@ -301,8 +302,8 @@ def test_err_on_categorical_asof_join_by_arg() -> None:
         ]
     )
     with pytest.raises(
-        pl.ComputeError,
-        match=r"joins/or comparisons on categoricals can only happen if they were created under the same global string cache",
+        StringCacheMismatchError,
+        match="cannot compare categoricals coming from different sources",
     ):
         df1.join_asof(df2, on=pl.col("time").set_sorted(), by="cat")
 
