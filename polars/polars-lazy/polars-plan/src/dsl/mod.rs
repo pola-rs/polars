@@ -1471,10 +1471,6 @@ impl Expr {
             labels,
             left_closed,
         })
-        .with_function_options(|mut opt| {
-            opt.allow_group_aware = false;
-            opt
-        })
     }
 
     #[cfg(feature = "cutqcut")]
@@ -1485,6 +1481,10 @@ impl Expr {
         left_closed: bool,
         allow_duplicates: bool,
     ) -> Expr {
+        // For now, we can't qcut over groups without creating consistent labels. The generated
+        // labels would be based on per-group quantiles, and per-group label differences caused
+        // problems when combining into a single categorical Series
+        let group_ok = labels.is_some();
         self.apply_private(FunctionExpr::QCut {
             probs,
             labels,
@@ -1492,7 +1492,7 @@ impl Expr {
             allow_duplicates,
         })
         .with_function_options(|mut opt| {
-            opt.allow_group_aware = false;
+            opt.allow_group_aware = group_ok;
             opt
         })
     }
