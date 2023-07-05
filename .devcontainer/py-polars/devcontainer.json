@@ -7,7 +7,6 @@
 			"version": "os-provided"
 		}
 	},
-	#"build": {"dockerfile": "Dockerfile"},
 	"onCreateCommand": "cd py-polars && make build"
 }
 
