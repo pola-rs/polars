@@ -74,7 +74,7 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
-    from polars import DataFrame, Expr, Series
+    from polars import DataFrame, Expr
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
@@ -1866,7 +1866,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.clone())
 
-    def filter(self, predicate: Expr | str | Series | list[bool]) -> Self:
+    def filter(self, predicate: IntoExpr) -> Self:
         """
         Filter the rows in the LazyFrame based on a predicate expression.
 

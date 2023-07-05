@@ -1,4 +1,3 @@
-import typing
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -111,7 +110,6 @@ def test_simd_float_sum_determinism() -> None:
     ]
 
 
-@typing.no_type_check
 def test_floor_division_float_int_consistency() -> None:
     a = np.random.randn(10) * 10
 
