@@ -1,6 +1,6 @@
 { 
 	"name": "Python/Rust",
 	"build": {"dockerfile": "Dockerfile"},
-	"onCreateCommand": ".devcontainer/startup.sh"
+	"onCreateCommand": ".devcontainer/py-polars/startup.sh"
 }
 
