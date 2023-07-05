@@ -95,22 +95,7 @@ pub fn _check_categorical_src(l: &DataType, r: &DataType) -> PolarsResult<()> {
     if let (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) = (l, r) {
         polars_ensure!(
             l.same_src(r),
-            ComputeError: r#"
-joins/or comparisons on categoricals can only happen
-if they were created under the same global string cache.
-
-Help: if you're using Python, this may look something like:
-
-    with pl.StringCache():
-        df1 = pl.DataFrame({'a': ['1', '2']}, schema={'a': pl.Categorical})
-        df2 = pl.DataFrame({'a': ['1', '3']}, schema={'a': pl.Categorical})
-        df1.join(df2, on='a')
-
-Alternatively, if the performance cost is acceptable, you could just set:
-
-    pl.enable_string_cache(True)
-
-on startup."#.trim_start()
+            op = string_cache_mismatch
         );
     }
     Ok(())

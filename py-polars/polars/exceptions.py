@@ -43,6 +43,9 @@ except ImportError:
     class ShapeError(Exception):  # type: ignore[no-redef]
         """Exception raised when trying to combine data structures with incompatible shapes."""  # noqa: W505
 
+    class StringCacheMismatchError(Exception):  # type: ignore[no-redef]
+        """Exception raised when string caches come from different sources."""
+
     class StructFieldNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified schema field is not found."""
 
@@ -96,6 +99,7 @@ __all__ = [
     "SchemaError",
     "SchemaFieldNotFoundError",
     "ShapeError",
+    "StringCacheMismatchError",
     "StructFieldNotFoundError",
     "TooManyRowsReturnedError",
 ]
