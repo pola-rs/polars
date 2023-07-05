@@ -63,7 +63,7 @@ pub(crate) use correlation::CorrelationMethod;
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
-#[cfg(feature = "dtype-categorical")]
+#[cfg(feature = "cutqcut")]
 use polars_ops::prelude::{cut, qcut};
 #[cfg(feature = "random")]
 pub(crate) use random::RandomMethod;
