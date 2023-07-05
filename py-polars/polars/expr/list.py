@@ -990,7 +990,8 @@ class ExprListNameSpace:
         ----------
         other
             Right hand side of the set operation.
-            
+
+
         Examples
         --------
         >>> df = pl.DataFrame(
