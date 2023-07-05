@@ -1,7 +1,6 @@
 { 
 	"name": "Python/Rust",
 	"build": {"dockerfile": "Dockerfile"},
-	#"workspaceFolder": "/workspace/polars/py-polars",
 	"onCreateCommand": "bash .devcontainer/startup"
 }
 
