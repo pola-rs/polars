@@ -75,7 +75,7 @@ fn set_operation<K, I, R>(
     set_type: SetOperation,
 ) -> usize
 where
-    K: Eq + Hash + Copy,
+    K: Eq + Hash + Copy + std::fmt::Debug,
     I: IntoIterator<Item = K>,
     R: MaterializeValues<K>,
 {
