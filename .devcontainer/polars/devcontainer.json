@@ -3,8 +3,6 @@
 	#"build": {"dockerfile": "Dockerfile"},
         "image": "mcr.microsoft.com/devcontainers/rust:1",
         #"onCreateCommand": "bash .devcontainer/startup.sh"
-
-
-	"onCreateCommand": ".devcontainer/polars/startup.sh"
+	#"onCreateCommand": ".devcontainer/polars/startup.sh"
 }
 
