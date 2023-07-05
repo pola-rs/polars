@@ -177,6 +177,27 @@ impl PyExpr {
             .quantile(quantile.inner, interpolation.0)
             .into()
     }
+
+    #[pyo3(signature = (breaks, labels, left_closed))]
+    #[cfg(feature = "cutqcut")]
+    fn cut(&self, breaks: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool) -> Self {
+        self.inner.clone().cut(breaks, labels, left_closed).into()
+    }
+    #[pyo3(signature = (probs, labels, left_closed, allow_duplicates))]
+    #[cfg(feature = "cutqcut")]
+    fn qcut(
+        &self,
+        probs: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .qcut(probs, labels, left_closed, allow_duplicates)
+            .into()
+    }
+
     fn agg_groups(&self) -> Self {
         self.clone().inner.agg_groups().into()
     }

@@ -133,6 +133,7 @@ serde = [
 fused = ["polars-plan/fused", "polars-ops/fused"]
 list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all", "polars-plan/list_any_all"]
+cutqcut = ["polars-plan/cutqcut", "polars-ops/cutqcut"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 

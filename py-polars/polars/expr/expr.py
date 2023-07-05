@@ -3234,6 +3234,57 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
+    def cut(
+        self,
+        breaks: list[float],
+        labels: list[str] | None = None,
+        left_closed: bool = False,
+    ) -> Self:
+        """
+        Bin continuous values into discrete categories.
+
+        Parameters
+        ----------
+        breaks
+            A list of unique cut points.
+        labels
+            Labels to assign to bins. If given, the length must be len(probs) + 1.
+        left_closed
+            Whether intervals should be [) instead of the default of (]
+
+        """
+        return self._from_pyexpr(self._pyexpr.cut(breaks, labels, left_closed))
+
+    def qcut(
+        self,
+        probs: list[float],
+        labels: list[str] | None = None,
+        left_closed: bool = False,
+        allow_duplicates: bool = False,
+    ) -> Self:
+        """
+        Bin continuous values into discrete categories based on their quantiles.
+
+        Parameters
+        ----------
+        probs
+            Probabilities for which to find the corresponding quantiles
+            For p in probs, we assume 0 <= p <= 1
+        labels
+            Labels to assign to bins. If given, the length must be len(probs) + 1.
+            If computing over a grouping variable we recommend this be set.
+        left_closed
+            Whether intervals should be [) instead of the default of (]
+        allow_duplicates
+            If True, the resulting quantile breaks don't have to be unique. This can
+            happen even with unique probs depending on the data. Duplicates will be
+            dropped, resulting in fewer bins.
+
+        """
+        return self._from_pyexpr(
+            self._pyexpr.qcut(probs, labels, left_closed, allow_duplicates)
+        )
+
     def filter(self, predicate: Expr) -> Self:
         """
         Filter a single column.

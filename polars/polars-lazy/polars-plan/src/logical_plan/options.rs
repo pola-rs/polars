@@ -190,6 +190,9 @@ pub struct FunctionOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
     pub collect_groups: ApplyOptions,
+    // used for formatting, (only for anonymous functions)
+    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
+    pub fmt_str: &'static str,
     /// There can be two ways of expanding wildcards:
     ///
     /// Say the schema is 'a', 'b' and there is a function f
@@ -205,7 +208,6 @@ pub struct FunctionOptions {
     ///
     /// this also accounts for regex expansion
     pub input_wildcard_expansion: bool,
-
     /// automatically explode on unit length it ran as final aggregation.
     ///
     /// this is the case for aggregations like sum, min, covariance etc.
@@ -217,10 +219,6 @@ pub struct FunctionOptions {
     /// head_1(x) -> {1}
     /// sum(x) -> {4}
     pub auto_explode: bool,
-    // used for formatting, (only for anonymous functions)
-    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
-    pub fmt_str: &'static str,
-
     // if the expression and its inputs should be cast to supertypes
     pub cast_to_supertypes: bool,
     // apply physical expression may rename the output of this function
@@ -233,6 +231,7 @@ pub struct FunctionOptions {
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
+    pub allow_group_aware: bool,
 }
 
 impl FunctionOptions {
@@ -265,6 +264,7 @@ impl Default for FunctionOptions {
             pass_name_to_apply: false,
             changes_length: false,
             check_lengths: UnsafeBool(true),
+            allow_group_aware: true,
         }
     }
 }
