@@ -1,6 +1,6 @@
 { 
 	"name": "Python/Rust",
 	"build": {"dockerfile": "Dockerfile"},
-	"onCreateCommand": "bash .devcontainer/startup"
+	"onCreateCommand": "bash .devcontainer/startup.sh"
 }
 
