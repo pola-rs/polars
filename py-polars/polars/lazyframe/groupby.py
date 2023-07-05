@@ -44,7 +44,7 @@ class LazyGroupBy:
 
         Examples
         --------
-        Compute the sum of a column for each group.
+        Compute the aggregation of the columns for each group.
 
         >>> ldf = pl.DataFrame(
         ...     {
@@ -53,6 +53,24 @@ class LazyGroupBy:
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... ).lazy()
+        >>> ldf.groupby("a").agg(
+        ...     [pl.col("b"), pl.col("c")]
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (3, 3)
+        ┌─────┬───────────┬───────────┐
+        │ a   ┆ b         ┆ c         │
+        │ --- ┆ ---       ┆ ---       │
+        │ str ┆ list[i64] ┆ list[i64] │
+        ╞═════╪═══════════╪═══════════╡
+        │ a   ┆ [1, 1]    ┆ [5, 3]    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b   ┆ [2, 3]    ┆ [4, 2]    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ c   ┆ [3]       ┆ [1]       │
+        └─────┴───────────┴───────────┘
+
+        Compute the sum of a column for each group.
+
         >>> ldf.groupby("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐

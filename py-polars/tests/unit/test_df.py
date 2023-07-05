@@ -2425,13 +2425,6 @@ def test_n_unique_subsets() -> None:
     )
 
 
-def test_sample() -> None:
-    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
-
-    assert df.sample(n=2, seed=0).shape == (2, 3)
-    assert df.sample(fraction=0.4, seed=0).shape == (1, 3)
-
-
 def test_shrink_to_fit() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
@@ -2904,7 +2897,6 @@ def test_asof_by_multiple_keys() -> None:
     assert_frame_equal(result, expected)
 
 
-@typing.no_type_check
 def test_partition_by() -> None:
     df = pl.DataFrame(
         {
@@ -2944,17 +2936,16 @@ def test_partition_by() -> None:
     }
 
 
-@typing.no_type_check
 def test_list_of_list_of_struct() -> None:
     expected = [{"list_of_list_of_struct": [[{"a": 1}, {"a": 2}]]}]
     pa_df = pa.Table.from_pylist(expected)
 
     df = pl.from_arrow(pa_df)
-    assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
-    assert df.to_dicts() == expected
+    assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]  # type: ignore[union-attr]
+    assert df.to_dicts() == expected  # type: ignore[union-attr]
 
     df = pl.from_arrow(pa_df[:0])
-    assert df.to_dicts() == []
+    assert df.to_dicts() == []  # type: ignore[union-attr]
 
 
 def test_concat_to_empty() -> None:

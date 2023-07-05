@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import typing
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -312,7 +311,6 @@ def test_parquet_5795() -> None:
     assert_frame_equal(pl.read_parquet(f), pl.from_pandas(df_pd))
 
 
-@typing.no_type_check
 def test_parquet_nesting_structs_list() -> None:
     f = io.BytesIO()
     df = pl.from_records(
@@ -339,7 +337,6 @@ def test_parquet_nesting_structs_list() -> None:
     assert_frame_equal(pl.read_parquet(f), df)
 
 
-@typing.no_type_check
 def test_parquet_nested_dictionaries_6217() -> None:
     _type = pa.dictionary(pa.int64(), pa.string())
 
@@ -360,7 +357,7 @@ def test_parquet_nested_dictionaries_6217() -> None:
         pq.write_table(table, f, compression="snappy")
         f.seek(0)
         read = pl.read_parquet(f)
-        assert_frame_equal(read, df)
+        assert_frame_equal(read, df)  # type: ignore[arg-type]
 
 
 @pytest.mark.write_disk()
@@ -422,7 +419,6 @@ def test_fetch_union(tmp_path: Path) -> None:
 
 
 @pytest.mark.slow()
-@typing.no_type_check
 def test_struct_pyarrow_dataset_5796(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -434,7 +430,7 @@ def test_struct_pyarrow_dataset_5796(tmp_path: Path) -> None:
     tbl = ds.dataset(file_path).to_table()
     result = pl.from_arrow(tbl)
 
-    assert_frame_equal(result, df)
+    assert_frame_equal(result, df)  # type: ignore[arg-type]
 
 
 @pytest.mark.slow()
@@ -475,12 +471,11 @@ def test_nested_null_roundtrip() -> None:
     assert_frame_equal(df_read, df)
 
 
-@typing.no_type_check
 def test_parquet_nested_list_pandas() -> None:
     # pandas/pyarrow writes as nested null dict
-    df = pd.DataFrame({"listcol": [[] * 10]})
+    df_pd = pd.DataFrame({"listcol": [[] * 10]})
     f = io.BytesIO()
-    df.to_parquet(f)
+    df_pd.to_parquet(f)
     f.seek(0)
     df = pl.read_parquet(f)
     assert df.dtypes == [pl.List(pl.Null)]

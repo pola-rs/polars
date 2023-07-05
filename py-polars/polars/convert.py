@@ -185,7 +185,7 @@ def from_dicts(
 
 
 def from_records(
-    data: Sequence[Sequence[Any]],
+    data: Sequence[Any],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,

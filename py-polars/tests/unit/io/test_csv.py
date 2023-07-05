@@ -4,7 +4,6 @@ import gzip
 import io
 import sys
 import textwrap
-import typing
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -1153,7 +1152,6 @@ def test_csv_categorical_categorical_merge() -> None:
     )["x"].to_list() == ["A", "B"]
 
 
-@typing.no_type_check
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     batches = reader.next_batches(5)
@@ -1176,13 +1174,13 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
     # the final batch of the low-memory variant is different
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(5)
-    assert len(batches) == 5
-    batches += reader.next_batches(5)
+    assert len(batches) == 5  # type: ignore[arg-type]
+    batches += reader.next_batches(5)  # type: ignore[operator]
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(10)
-    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
+    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
 
 
 def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:

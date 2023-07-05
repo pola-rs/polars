@@ -118,7 +118,7 @@ pub fn optimize(
 
     // make sure its before slice pushdown.
     if projection_pushdown {
-        rules.push(Box::new(FastProjectionAndCollapse {}));
+        rules.push(Box::new(FastProjectionAndCollapse::new()));
     }
     rules.push(Box::new(DelayRechunk::new()));
 
