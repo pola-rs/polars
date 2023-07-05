@@ -161,15 +161,17 @@ macro_rules! polars_err {
     (unpack) => {
         polars_err!(SchemaMismatch: "cannot unpack series, data types don't match")
     };
-    (op = string_cache_mismatch) => {
+    (string_cache_mismatch) => {
         polars_err!(StringCacheMismatch: r#"
 cannot compare categoricals coming from different sources, consider setting a global StringCache.
 
 Help: if you're using Python, this may look something like:
 
     with pl.StringCache():
+        # Initialize Categoricals.
         df1 = pl.DataFrame({'a': ['1', '2']}, schema={'a': pl.Categorical})
         df2 = pl.DataFrame({'a': ['1', '3']}, schema={'a': pl.Categorical})
+        # Your operations go here.
         pl.concat([df1, df2])
 
 Alternatively, if the performance cost is acceptable, you could just set:

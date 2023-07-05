@@ -93,7 +93,7 @@ use crate::series::IsSorted;
 #[cfg(feature = "dtype-categorical")]
 pub fn _check_categorical_src(l: &DataType, r: &DataType) -> PolarsResult<()> {
     if let (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) = (l, r) {
-        polars_ensure!(l.same_src(r), op = string_cache_mismatch);
+        polars_ensure!(l.same_src(r), string_cache_mismatch);
     }
     Ok(())
 }

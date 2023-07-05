@@ -17,7 +17,7 @@ impl CategoricalChunked {
             };
 
         if is_local_different_source {
-            polars_bail!(op = string_cache_mismatch);
+            polars_bail!(string_cache_mismatch);
         } else {
             let len = self.len();
             let new_rev_map = self.merge_categorical_map(other)?;
