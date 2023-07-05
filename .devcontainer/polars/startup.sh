@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 
-echo "Hello World"
+echo $(cargo --version)
+echo $(rustc --version)

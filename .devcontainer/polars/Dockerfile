@@ -1,12 +1,5 @@
 FROM mcr.microsoft.com/devcontainers/rust:1
 
-# install the linker
-RUN apt-get update && export DEBIAN_FRONTEND=noninteractive && apt-get -y install --no-install-recommends build-essential gcc && rm -rf /var/lib/apt/lists/*
-
-USER vscode
-
-ENV PATH="$PATH:/home/vscode/.cargo/bin"
-
-# Use this for experiments
-# COPY --chown=vscode polars /home/vscode/polars
+# the linker is part of the image above, see
+https://github.com/microsoft/vscode-dev-containers/blob/c4c22252ef095a111618d535a2201d7140cd7ae0/containers/rust/.devcontainer/library-scripts/rust-debian.sh#L146C64-L146C64
 
