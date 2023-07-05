@@ -4,5 +4,5 @@ echo $PATH
 echo $(whoami)
 
 cd py-polars
-make build-release
+make build
 
