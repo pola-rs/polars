@@ -1,0 +1,6 @@
+{ 
+	"name": "Rust",
+	"build": {"dockerfile": "Dockerfile"},
+	"onCreateCommand": ".devcontainer/polars/startup.sh"
+}
+
