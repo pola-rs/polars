@@ -163,7 +163,7 @@ macro_rules! polars_err {
     };
     (op = string_cache_mismatch) => {
         polars_err!(StringCacheMismatch: r#"
-cannot compare categoricals coming from a different source, consider setting a global StringCache.
+cannot compare categoricals coming from different sources, consider setting a global StringCache.
 
 Help: if you're using Python, this may look something like:
 

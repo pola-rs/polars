@@ -10,6 +10,7 @@ try:
         SchemaError,
         SchemaFieldNotFoundError,
         ShapeError,
+        StringCacheMismatchError,
         StructFieldNotFoundError,
     )
 except ImportError:
