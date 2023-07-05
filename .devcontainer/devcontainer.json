@@ -2,6 +2,6 @@
 	"name": "Python/Rust",
 	"build": {"dockerfile": "Dockerfile"},
 	"workspaceFolder": "/workspace/polars/py-polars",
-	"onCreateCommand": ["make 'build'"]
+	"onCreateCommand": ["make build"]
 }
 
