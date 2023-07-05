@@ -11,7 +11,8 @@ RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/ca
 
 RUN ls ~/.cargo/bin
 
-ENV PATH="$PATH:~/.cargo/bin"
+RUN echo $HOME
+ENV PATH="$PATH:$HOME/.cargo/bin"
 
 
 #COPY polars /polars
