@@ -1,6 +1,5 @@
 { 
-	"name": "rust",
-        "image": "mcr.microsoft.com/devcontainers/rust:1-1-bookworm",
-        "postCreateCommand": ".devcontainer/polars/startup.sh"
+	"name": "Rust",
+        "image": "mcr.microsoft.com/devcontainers/rust:1-1-bookworm"
 }
 
