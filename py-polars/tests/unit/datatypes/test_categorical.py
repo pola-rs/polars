@@ -401,3 +401,13 @@ def test_construct_with_null() -> None:
 
     s = pl.Series([{"struct_A": None}], dtype=pl.Struct({"struct_A": pl.Categorical}))
     assert s.to_list() == [{"struct_A": None}]
+
+
+def test_categorical_concat_string_cached() -> None:
+    with pl.StringCache():
+        df1 = pl.DataFrame({"x": ["A"]}).with_columns(pl.col("x").cast(pl.Categorical))
+        df2 = pl.DataFrame({"x": ["B"]}).with_columns(pl.col("x").cast(pl.Categorical))
+
+    out = pl.concat([df1, df2])
+    assert out.dtypes == [pl.Categorical]
+    assert out["x"].to_list() == ["A", "B"]
