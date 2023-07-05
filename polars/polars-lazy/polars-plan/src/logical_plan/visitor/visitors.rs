@@ -35,8 +35,8 @@ pub trait TreeWalker: Sized {
         let mutate_this_node = match rewriter.pre_visit(&self)? {
             RewriteRecursion::MutateAndStop => return rewriter.mutate(self),
             RewriteRecursion::Stop => return Ok(self),
-            RewriteRecursion::Continue => true,
-            RewriteRecursion::Skip => false,
+            RewriteRecursion::MutateAndContinue => true,
+            RewriteRecursion::NoMutateAndContinue => false,
         };
 
         let after_applied_children = self.map_children(&mut |node| node.rewrite(rewriter))?;
@@ -69,7 +69,7 @@ pub trait RewritingVisitor {
 
     /// Invoked before any children of `node` are visited.
     fn pre_visit(&mut self, _node: &Self::Node) -> PolarsResult<RewriteRecursion> {
-        Ok(RewriteRecursion::Continue)
+        Ok(RewriteRecursion::MutateAndContinue)
     }
 
     fn mutate(&mut self, node: Self::Node) -> PolarsResult<Self::Node>;

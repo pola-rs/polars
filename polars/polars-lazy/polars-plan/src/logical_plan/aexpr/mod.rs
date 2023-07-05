@@ -152,6 +152,9 @@ pub enum AExpr {
 }
 
 impl AExpr {
+    pub(crate) fn col(name: &str) -> Self {
+        AExpr::Column(Arc::from(name))
+    }
     /// Any expression that is sensitive to the number of elements in a group
     /// - Aggregations
     /// - Sorts

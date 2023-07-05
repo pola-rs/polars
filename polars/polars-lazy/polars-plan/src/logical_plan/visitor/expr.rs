@@ -73,6 +73,11 @@ impl AexprNode {
         op(arena)
     }
 
+    pub fn assign(&mut self, ae: AExpr) {
+        let node = self.with_arena_mut(|arena| arena.add(ae));
+        self.node = node
+    }
+
     pub fn to_aexpr(&self) -> &AExpr {
         self.with_arena(|arena| arena.get(self.node))
     }

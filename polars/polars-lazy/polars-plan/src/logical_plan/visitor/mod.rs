@@ -22,9 +22,9 @@ pub enum VisitRecursion {
 #[derive(Debug)]
 pub enum RewriteRecursion {
     /// Continue the visit to this node and children.
-    Continue,
+    MutateAndContinue,
     /// Don't mutate this node, continue visiting the children
-    Skip,
+    NoMutateAndContinue,
     /// Stop and return.
     /// This doesn't visit the children
     Stop,
