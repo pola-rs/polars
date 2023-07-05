@@ -1464,6 +1464,39 @@ impl Expr {
         .with_fmt("rank")
     }
 
+    #[cfg(feature = "cutqcut")]
+    pub fn cut(self, breaks: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool) -> Expr {
+        self.apply_private(FunctionExpr::Cut {
+            breaks,
+            labels,
+            left_closed,
+        })
+        .with_function_options(|mut opt| {
+            opt.allow_group_aware = false;
+            opt
+        })
+    }
+
+    #[cfg(feature = "cutqcut")]
+    pub fn qcut(
+        self,
+        probs: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+    ) -> Expr {
+        self.apply_private(FunctionExpr::QCut {
+            probs,
+            labels,
+            left_closed,
+            allow_duplicates,
+        })
+        .with_function_options(|mut opt| {
+            opt.allow_group_aware = false;
+            opt
+        })
+    }
+
     #[cfg(feature = "diff")]
     pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
         self.apply_private(FunctionExpr::Diff(n, null_behavior))

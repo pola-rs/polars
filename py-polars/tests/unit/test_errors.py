@@ -669,3 +669,15 @@ def test_sort_by_err_9259() -> None:
         df.lazy().groupby("c").agg(
             [pl.col("a").sort_by(pl.col("b").filter(pl.col("b") > 100)).sum()]
         ).collect()
+
+
+def test_raise_cut_in_over() -> None:
+    with pl.StringCache():
+        x = pl.Series(range(20))
+    r = pl.Series(
+        [pl.repeat("a", 10, eager=True), pl.repeat("b", 10, eager=True)]
+    ).explode()
+    df = pl.DataFrame({"x": x, "g": r})
+
+    with pytest.raises(pl.ComputeError):
+        df.with_columns(pl.col("x").qcut([0.5]).over("g").to_physical())
