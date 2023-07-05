@@ -3,7 +3,7 @@ use polars_core::frame::explode::MeltArgs;
 use polars_core::series::ops::NullBehavior;
 
 use super::*;
-#[cfg(feature = "arange")]
+#[cfg(feature = "range")]
 use crate::dsl::arg_sort_by;
 
 #[test]
@@ -1017,7 +1017,7 @@ fn test_groupby_cumsum() -> PolarsResult<()> {
 }
 
 #[test]
-#[cfg(feature = "arange")]
+#[cfg(feature = "range")]
 fn test_arg_sort_multiple() -> PolarsResult<()> {
     let df = df![
         "int" => [1, 2, 3, 1, 2],

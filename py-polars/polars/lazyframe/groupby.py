@@ -231,7 +231,7 @@ class LazyGroupBy:
 
         >>> (
         ...     df.lazy()
-        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .filter(pl.int_range(0, pl.count()).shuffle().over("color") < 2)
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 

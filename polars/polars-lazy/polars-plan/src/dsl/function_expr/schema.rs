@@ -86,7 +86,7 @@ impl FunctionExpr {
                 mapper.with_dtype(dtype)
             }
 
-            #[cfg(feature = "arange")]
+            #[cfg(feature = "range")]
             Range(fun) => {
                 use RangeFunction::*;
                 let field = match fun {

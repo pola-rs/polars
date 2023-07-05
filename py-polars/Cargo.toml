@@ -143,7 +143,7 @@ features = [
   "rank",
   "diff",
   "moment",
-  "arange",
+  "range",
   "true_div",
   "dtype-categorical",
   "diagonal_concat",

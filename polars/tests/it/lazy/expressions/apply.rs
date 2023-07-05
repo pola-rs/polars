@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-#[cfg(feature = "arange")]
+#[cfg(feature = "range")]
 fn test_arange_agg() -> PolarsResult<()> {
     let df = df![
         "x" => [5, 5, 4, 4, 2, 2]

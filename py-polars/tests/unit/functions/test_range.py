@@ -33,7 +33,7 @@ def test_arange_decreasing() -> None:
 
 def test_arange_expr() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
-    out = df.select([pl.arange(0, pl.col("a").count() * 10)])
+    out = df.select(pl.int_range(0, pl.col("a").count() * 10))
     assert out.shape == (20, 1)
     assert out.to_series(0)[-1] == 19
 
@@ -41,24 +41,36 @@ def test_arange_expr() -> None:
     out2 = pl.arange(0, 10, 2, eager=True)
     assert out2.to_list() == [0, 2, 4, 6, 8]
 
-    out3 = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
-    assert out3.dtype == pl.List
-    assert out3[0].to_list() == [0, 2]
 
-    df = pl.DataFrame({"start": [1, 2, 3, 5, 5, 5], "stop": [8, 3, 12, 8, 8, 8]})
+def test_arange_deprecated() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [1, 2, 3, 5, 5, 5],
+            "stop": [8, 3, 12, 8, 8, 8],
+        }
+    )
 
-    assert df.select(pl.arange(pl.lit(1), pl.col("stop") + 1).alias("test")).to_dict(
-        False
-    ) == {
-        "test": [
-            [1, 2, 3, 4, 5, 6, 7, 8],
-            [1, 2, 3],
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-            [1, 2, 3, 4, 5, 6, 7, 8],
-            [1, 2, 3, 4, 5, 6, 7, 8],
-            [1, 2, 3, 4, 5, 6, 7, 8],
-        ]
-    }
+    with pytest.deprecated_call():
+        result = df.select(pl.arange(pl.lit(1), pl.col("stop") + 1).alias("test"))
+
+    expected = pl.DataFrame(
+        {
+            "test": [
+                [1, 2, 3, 4, 5, 6, 7, 8],
+                [1, 2, 3],
+                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                [1, 2, 3, 4, 5, 6, 7, 8],
+                [1, 2, 3, 4, 5, 6, 7, 8],
+                [1, 2, 3, 4, 5, 6, 7, 8],
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    with pytest.deprecated_call():
+        result_s = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
+    assert result_s.dtype == pl.List
+    assert result_s[0].to_list() == [0, 2]
 
 
 def test_arange_name() -> None:
