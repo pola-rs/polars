@@ -1,8 +1,7 @@
 { 
 	"name": "Python/Rust",
 	"build": {"dockerfile": "Dockerfile"},
-	"onCreateCommand": ["cd py-polars"]
+	"onCreateCommand": ["cd py-polars"],
 	"postCreateCommand": ["make build"]
-
 }
 
