@@ -1,6 +1,6 @@
 { 
 	"name": "Rust",
         "image": "mcr.microsoft.com/devcontainers/rust:1-bullseye",
-        "onCreateCommand": "cargo test"
+        "onCreateCommand": "cargo --version && rustc --version && python --version && gcc --version"
 }
 
