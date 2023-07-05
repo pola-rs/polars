@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.config import _get_float_fmt
+from polars.exceptions import StringCacheMismatchError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -481,7 +482,7 @@ def test_string_cache() -> None:
 
     df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
     df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(StringCacheMismatchError):
         _ = df1a.join(df2a, on="a", how="inner")
 
     # now turn on the cache
