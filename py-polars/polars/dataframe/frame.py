@@ -60,7 +60,7 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 from polars.functions.lazy import col, lit
-from polars.io._utils import _is_local_file
+from polars.io._utils import _is_glob_pattern, _is_local_file
 from polars.io.excel._write_utils import (
     _unpack_multi_column_dict,
     _xl_apply_conditional_formats,
@@ -731,7 +731,7 @@ class DataFrame:
 
         if isinstance(columns, str):
             columns = [columns]
-        if isinstance(source, str) and "*" in source:
+        if isinstance(source, str) and _is_glob_pattern(source):
             dtypes_dict = None
             if dtype_list is not None:
                 dtypes_dict = dict(dtype_list)
@@ -833,7 +833,11 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(source, str) and "*" in source and _is_local_file(source):
+        if (
+            isinstance(source, str)
+            and _is_glob_pattern(source)
+            and _is_local_file(source)
+        ):
             from polars import scan_parquet
 
             scan = scan_parquet(
@@ -948,7 +952,11 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(source, str) and "*" in source and _is_local_file(source):
+        if (
+            isinstance(source, str)
+            and _is_glob_pattern(source)
+            and _is_local_file(source)
+        ):
             from polars import scan_ipc
 
             scan = scan_ipc(
