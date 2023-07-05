@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 
 echo $PATH
-export $PATH="$PATH:/root/.cargo/bin"
-ls /root/.cargo/bin
+echo whoami
+
+export $PATH="$PATH:/home/vscode/.cargo/bin"
+ls /home/vscode/.cargo/bin
 
 cd py-polars
 make build
