@@ -1,6 +1,13 @@
 { 
 	"name": "Python/Rust",
-	"build": {"dockerfile": "Dockerfile"},
+	"image": "mcr.microsoft.com/devcontainers/rust:1-bullseye"
+	"features": {
+		"ghcr.io/devcontainers/features/python:1": {
+			"installTools": true,
+			"version": "os-provided"
+		}
+	}
+	#"build": {"dockerfile": "Dockerfile"},
 	"onCreateCommand": "cd py-polars && make build"
 }
 
