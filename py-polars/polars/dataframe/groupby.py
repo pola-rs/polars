@@ -316,7 +316,7 @@ class GroupBy:
         It is better to implement this with an expression:
 
         >>> df.filter(
-        ...     pl.arange(0, pl.count()).shuffle().over("color") < 2
+        ...     pl.int_range(0, pl.count()).shuffle().over("color") < 2
         ... )  # doctest: +IGNORE_RESULT
 
         """
@@ -931,7 +931,7 @@ class RollingGroupBy:
 
         >>> (
         ...     df.lazy()
-        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .filter(pl.int_range(0, pl.count()).shuffle().over("color") < 2)
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 
@@ -1136,7 +1136,7 @@ class DynamicGroupBy:
 
         >>> (
         ...     df.lazy()
-        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .filter(pl.int_range(0, pl.count()).shuffle().over("color") < 2)
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 
