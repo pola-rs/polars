@@ -1,12 +1,6 @@
 { 
 	"name": "Python/Rust",
 	"build": {"dockerfile": "Dockerfile"},
-	"features": {
-		"ghcr.io/devcontainers/features/python:1": {
-			"installTools": true,
-			"version": "os-provided"
-		}
-	},
 	"onCreateCommand": "bash .devcontainer/startup.sh"
 }
 
