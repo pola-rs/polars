@@ -8,12 +8,7 @@ body:
     attributes:
       label: Problem description
       description: >
-        Please describe the behavior you want and the motivation. Please also provide
-        examples of how Polars would be used if your feature were added.
-
-        If you're not sure what to write here, try imagining what the ideal
-        documentation of your new feature would look like. Then try to write it.
-      placeholder: >
-        I wish I could use Polars to ...
+        Please describe the feature or enhancement and explain why it should be implemented.
+        Include a code example if applicable.
     validations:
       required: true
