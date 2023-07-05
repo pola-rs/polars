@@ -200,13 +200,13 @@ pub enum FunctionExpr {
         method: correlation::CorrelationMethod,
         ddof: u8,
     },
-    #[cfg(feature = "dtype-categorical")]
+    #[cfg(feature = "cutqcut")]
     Cut {
         breaks: Vec<f64>,
         labels: Option<Vec<String>>,
         left_closed: bool,
     },
-    #[cfg(feature = "dtype-categorical")]
+    #[cfg(feature = "cutqcut")]
     QCut {
         probs: Vec<f64>,
         labels: Option<Vec<String>>,
@@ -316,7 +316,9 @@ impl Display for FunctionExpr {
             ArrayExpr(af) => return Display::fmt(af, f),
             ConcatExpr(_) => "concat_expr",
             Correlation { method, .. } => return Display::fmt(method, f),
+            #[cfg(feature = "cutqcut")]
             Cut { .. } => "cut",
+            #[cfg(feature = "cutqcut")]
             QCut { .. } => "qcut",
             ToPhysical => "to_physical",
             #[cfg(feature = "random")]
@@ -547,11 +549,13 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
             Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            #[cfg(feature = "cutqcut")]
             Cut {
                 breaks,
                 labels,
                 left_closed,
             } => map!(cut, breaks.clone(), labels.clone(), left_closed),
+            #[cfg(feature = "cutqcut")]
             QCut {
                 probs,
                 labels,

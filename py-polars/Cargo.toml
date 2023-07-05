@@ -68,6 +68,7 @@ list_count = ["polars/list_count"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars/list_any_all"]
+cutqcut = ["polars/cutqcut"]
 
 all = [
   "json",
@@ -105,6 +106,7 @@ all = [
   "list_count",
   "list_sets",
   "list_any_all",
+  "cutqcut",
 ]
 
 # we cannot conditionally activate simd

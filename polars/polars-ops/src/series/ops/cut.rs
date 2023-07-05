@@ -8,10 +8,10 @@ pub fn cut(
     labels: Option<Vec<String>>,
     left_closed: bool,
 ) -> PolarsResult<Series> {
-    polars_ensure!(breaks.len() > 0, ShapeMismatch: "Breaks are empty");
+    polars_ensure!(!breaks.is_empty(), ShapeMismatch: "Breaks are empty");
     polars_ensure!(!breaks.iter().any(|x| x.is_nan()), ComputeError: "Breaks cannot be NaN");
     // Breaks must be sorted to cut inputs properly.
-    let mut breaks = breaks.clone();
+    let mut breaks = breaks;
     let sorted_breaks = breaks.as_mut_slice();
     sorted_breaks.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
     polars_ensure!(sorted_breaks.windows(2).all(|x| x[0] != x[1]), Duplicate: "Breaks are not unique");

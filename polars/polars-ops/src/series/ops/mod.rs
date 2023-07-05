@@ -2,6 +2,7 @@ mod approx_algo;
 #[cfg(feature = "approx_unique")]
 mod approx_unique;
 mod arg_min_max;
+#[cfg(feature = "cutqcut")]
 mod cut;
 #[cfg(feature = "round_series")]
 mod floor_divide;
@@ -25,7 +26,7 @@ pub use approx_algo::*;
 #[cfg(feature = "approx_unique")]
 pub use approx_unique::*;
 pub use arg_min_max::ArgAgg;
-#[cfg(feature = "dtype-categorical")]
+#[cfg(feature = "cutqcut")]
 pub use cut::*;
 #[cfg(feature = "round_series")]
 pub use floor_divide::*;

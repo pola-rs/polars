@@ -1464,14 +1464,20 @@ impl Expr {
         .with_fmt("rank")
     }
 
+    #[cfg(feature = "cutqcut")]
     pub fn cut(self, breaks: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool) -> Expr {
         self.apply_private(FunctionExpr::Cut {
             breaks,
             labels,
             left_closed,
         })
+        .with_function_options(|mut opt| {
+            opt.allow_group_aware = false;
+            opt
+        })
     }
 
+    #[cfg(feature = "cutqcut")]
     pub fn qcut(
         self,
         probs: Vec<f64>,
@@ -1484,6 +1490,10 @@ impl Expr {
             labels,
             left_closed,
             allow_duplicates,
+        })
+        .with_function_options(|mut opt| {
+            opt.allow_group_aware = false;
+            opt
         })
     }
 
