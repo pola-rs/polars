@@ -119,7 +119,7 @@ impl Series {
                 let mut offset = 0i64;
                 for _ in 0..rows {
                     let row = s_ref.slice(offset, cols as usize);
-                    builder.append_series(&row);
+                    builder.append_series(&row).unwrap();
                     offset += cols;
                 }
                 Ok(builder.finish().into_series())
