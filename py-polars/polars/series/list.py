@@ -623,7 +623,7 @@ class ListNameSpace:
         [
                 [2, 3]
                 []
-                [3, null]
+                [null, 3]
                 [6]
         ]
 
