@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.18.4"
+version = "0.18.5"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -68,6 +68,7 @@ list_count = ["polars/list_count"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars/list_any_all"]
+cutqcut = ["polars/cutqcut"]
 
 all = [
   "json",
@@ -105,6 +106,7 @@ all = [
   "list_count",
   "list_sets",
   "list_any_all",
+  "cutqcut",
 ]
 
 # we cannot conditionally activate simd
@@ -143,7 +145,7 @@ features = [
   "rank",
   "diff",
   "moment",
-  "arange",
+  "range",
   "true_div",
   "dtype-categorical",
   "diagonal_concat",

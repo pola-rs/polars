@@ -1464,6 +1464,39 @@ impl Expr {
         .with_fmt("rank")
     }
 
+    #[cfg(feature = "cutqcut")]
+    pub fn cut(self, breaks: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool) -> Expr {
+        self.apply_private(FunctionExpr::Cut {
+            breaks,
+            labels,
+            left_closed,
+        })
+    }
+
+    #[cfg(feature = "cutqcut")]
+    pub fn qcut(
+        self,
+        probs: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+    ) -> Expr {
+        // For now, we can't qcut over groups without creating consistent labels. The generated
+        // labels would be based on per-group quantiles, and per-group label differences caused
+        // problems when combining into a single categorical Series
+        let group_ok = labels.is_some();
+        self.apply_private(FunctionExpr::QCut {
+            probs,
+            labels,
+            left_closed,
+            allow_duplicates,
+        })
+        .with_function_options(|mut opt| {
+            opt.allow_group_aware = group_ok;
+            opt
+        })
+    }
+
     #[cfg(feature = "diff")]
     pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
         self.apply_private(FunctionExpr::Diff(n, null_behavior))

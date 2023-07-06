@@ -26,6 +26,7 @@ pub struct ApplyExpr {
     pub input_schema: Option<SchemaRef>,
     pub allow_threading: bool,
     pub check_lengths: bool,
+    pub allow_group_aware: bool,
 }
 
 impl ApplyExpr {
@@ -46,6 +47,7 @@ impl ApplyExpr {
             input_schema: None,
             allow_threading: true,
             check_lengths: true,
+            allow_group_aware: true,
         }
     }
 
@@ -280,6 +282,11 @@ impl PhysicalExpr for ApplyExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
+        polars_ensure!(
+            self.allow_group_aware,
+            expr = self.expr,
+            ComputeError: "this expression cannot run in the groupby context",
+        );
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 

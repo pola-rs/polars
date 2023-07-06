@@ -974,7 +974,7 @@ class ExprListNameSpace:
         ╞═══════════╪══════════════╪══════════════╡
         │ [1, 2, 3] ┆ [2, 3, 4]    ┆ [2, 3]       │
         │ []        ┆ [3]          ┆ []           │
-        │ [null, 3] ┆ [3, 4, null] ┆ [3, null]    │
+        │ [null, 3] ┆ [3, 4, null] ┆ [null, 3]    │
         │ [5, 6, 7] ┆ [6, 8]       ┆ [6]          │
         └───────────┴──────────────┴──────────────┘
 
@@ -991,6 +991,27 @@ class ExprListNameSpace:
         other
             Right hand side of the set operation.
 
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
+        ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("b").list.symmetric_difference("a").alias("sdiff"))
+        shape: (4, 3)
+        ┌───────────┬──────────────┬───────────┐
+        │ a         ┆ b            ┆ sdiff     │
+        │ ---       ┆ ---          ┆ ---       │
+        │ list[i64] ┆ list[i64]    ┆ list[i64] │
+        ╞═══════════╪══════════════╪═══════════╡
+        │ [1, 2, 3] ┆ [2, 3, 4]    ┆ [4, 1]    │
+        │ []        ┆ [3]          ┆ [3]       │
+        │ [null, 3] ┆ [3, 4, null] ┆ [4]       │
+        │ [5, 6, 7] ┆ [6, 8]       ┆ [8, 5, 7] │
+        └───────────┴──────────────┴───────────┘
         """  # noqa: W505.
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))

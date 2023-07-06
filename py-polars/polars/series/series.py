@@ -1605,9 +1605,11 @@ class Series:
         category_label: str = "category",
         *,
         maintain_order: bool = False,
-    ) -> DataFrame:
+        series: bool = False,
+        left_closed: bool = False,
+    ) -> DataFrame | Series:
         """
-        Bin values into discrete values.
+        Bin continuous values into discrete categories.
 
         Parameters
         ----------
@@ -1617,15 +1619,19 @@ class Series:
             Labels to assign to the bins. If given the length of labels must be
             len(bins) + 1.
         break_point_label
-            Name given to the breakpoint column.
+            Name given to the breakpoint column. Only used if series == False
         category_label
-            Name given to the category column.
+            Name given to the category column. Only used if series == False
         maintain_order
-            Keep the order of the original `Series`.
+            Keep the order of the original `Series`. Only used if series == False
+        series
+            If True, return the a categorical series in the data's original order
+        left_closed
+            Whether intervals should be [) instead of (]
 
         Returns
         -------
-        DataFrame
+        DataFrame or Series
 
         Examples
         --------
@@ -1647,8 +1653,47 @@ class Series:
         │ 2.0  ┆ inf         ┆ (1.0, inf]   │
         │ 2.5  ┆ inf         ┆ (1.0, inf]   │
         └──────┴─────────────┴──────────────┘
-
+        >>> a.cut([-1, 1], series=True)
+        shape: (12,)
+        Series: 'a' [cat]
+        [
+            "(-inf, -1]"
+            "(-inf, -1]"
+            "(-inf, -1]"
+            "(-inf, -1]"
+            "(-inf, -1]"
+            "(-1, 1]"
+            "(-1, 1]"
+            "(-1, 1]"
+            "(-1, 1]"
+            "(1, inf]"
+            "(1, inf]"
+            "(1, inf]"
+        ]
+        >>> a.cut([-1, 1], series=True, left_closed=True)
+        shape: (12,)
+        Series: 'a' [cat]
+        [
+            "[-inf, -1)"
+            "[-inf, -1)"
+            "[-inf, -1)"
+            "[-inf, -1)"
+            "[-1, 1)"
+            "[-1, 1)"
+            "[-1, 1)"
+            "[-1, 1)"
+            "[1, inf)"
+            "[1, inf)"
+            "[1, inf)"
+            "[1, inf)"
+        ]
         """
+        if series:
+            return (
+                self.to_frame()
+                .select(F.col(self._s.name()).cut(bins, labels, left_closed))
+                .to_series()
+            )
         return wrap_df(
             self._s.cut(
                 Series(break_point_label, bins, dtype=Float64)._s,
@@ -1667,9 +1712,12 @@ class Series:
         break_point_label: str = "break_point",
         category_label: str = "category",
         maintain_order: bool = False,
-    ) -> DataFrame:
+        series: bool = False,
+        left_closed: bool = False,
+        allow_duplicates: bool = False,
+    ) -> DataFrame | Series:
         """
-        Bin values into discrete values based on their quantiles.
+        Bin continuous values into discrete categories based on their quantiles.
 
         Parameters
         ----------
@@ -1680,15 +1728,23 @@ class Series:
             Labels to assign to the quantiles. If given the length of labels must be
             len(bins) + 1.
         break_point_label
-            Name given to the breakpoint column.
+            Name given to the breakpoint column. Only used if series == False.
         category_label
-            Name given to the category column.
+            Name given to the category column. Only used if series == False.
         maintain_order
-            Keep the order of the original `Series`.
+            Keep the order of the original `Series`. Only used if series == False.
+        series
+            If True, return a categorical series in the data's original order
+        left_closed
+            Whether intervals should be [) instead of (]
+        allow_duplicates
+            If True, the resulting quantile breaks don't have to be unique. This can
+            happen even with unique probs depending on the data. Duplicates will be
+            dropped, resulting in fewer bins.
 
         Returns
         -------
-        DataFrame
+        DataFrame or Series
 
         Warnings
         --------
@@ -1714,8 +1770,43 @@ class Series:
         │ 1.0  ┆ inf         ┆ (0.25, inf]   │
         │ 2.0  ┆ inf         ┆ (0.25, inf]   │
         └──────┴─────────────┴───────────────┘
-
+        >>> a.qcut([0.0, 0.25, 0.75], series=True)
+        shape: (8,)
+        Series: 'a' [cat]
+        [
+            "(-inf, -5]"
+            "(-5, -3.25]"
+            "(-3.25, 0.25]"
+            "(-3.25, 0.25]"
+            "(-3.25, 0.25]"
+            "(-3.25, 0.25]"
+            "(0.25, inf]"
+            "(0.25, inf]"
+        ]
+        >>> a.qcut([0.0, 0.25, 0.75], series=True, left_closed=True)
+        shape: (8,)
+        Series: 'a' [cat]
+        [
+            "[-5, -3.25)"
+            "[-5, -3.25)"
+            "[-3.25, 0.25)"
+            "[-3.25, 0.25)"
+            "[-3.25, 0.25)"
+            "[-3.25, 0.25)"
+            "[0.25, inf)"
+            "[0.25, inf)"
+        ]
         """
+        if series:
+            return (
+                self.to_frame()
+                .select(
+                    F.col(self._s.name()).qcut(
+                        quantiles, labels, left_closed, allow_duplicates
+                    )
+                )
+                .to_series()
+            )
         return wrap_df(
             self._s.qcut(
                 Series(quantiles, dtype=Float64)._s,

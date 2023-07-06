@@ -129,7 +129,7 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
         if let DataType::List(_) = dt {
             let mut builder = AnonymousListBuilder::new(name, list_cap, Some(dt.clone()));
             for s in series_slice {
-                builder.append_series(s)
+                builder.append_series(s).unwrap();
             }
             builder.finish().into_series()
         } else {
@@ -137,7 +137,7 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
 
             let mut builder = get_list_builder(dt, values_cap, list_cap, name).unwrap();
             for series in series_slice {
-                builder.append_series(series)
+                builder.append_series(series).unwrap();
             }
             builder.finish().into_series()
         }
@@ -157,7 +157,7 @@ impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
 
         let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name).unwrap();
         for series in series_slice {
-            builder.append_opt_series(series.as_ref())
+            builder.append_opt_series(series.as_ref()).unwrap();
         }
         builder.finish().into_series()
     }

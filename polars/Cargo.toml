@@ -117,7 +117,7 @@ rank = ["polars-core/rank", "polars-lazy/rank"]
 diff = ["polars-core/diff", "polars-lazy/diff", "polars-ops/diff"]
 pct_change = ["polars-core/pct_change", "polars-lazy/pct_change"]
 moment = ["polars-core/moment", "polars-lazy/moment", "polars-ops/moment"]
-arange = ["polars-lazy/arange"]
+range = ["polars-lazy/range"]
 true_div = ["polars-lazy/true_div"]
 diagonal_concat = ["polars-core/diagonal_concat", "polars-lazy/diagonal_concat"]
 horizontal_concat = ["polars-core/horizontal_concat"]
@@ -160,6 +160,7 @@ streaming = ["polars-lazy/streaming"]
 fused = ["polars-ops/fused", "polars-lazy/fused"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars-lazy/list_any_all"]
+cutqcut = ["polars-lazy/cutqcut"]
 
 test = [
   "lazy",
@@ -287,7 +288,7 @@ docs-selection = [
   "interpolate",
   "diff",
   "rank",
-  "arange",
+  "range",
   "diagonal_concat",
   "horizontal_concat",
   "abs",

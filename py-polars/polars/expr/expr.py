@@ -3234,6 +3234,152 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
+    def cut(
+        self,
+        breaks: list[float],
+        labels: list[str] | None = None,
+        left_closed: bool = False,
+    ) -> Self:
+        """
+        Bin continuous values into discrete categories.
+
+        Parameters
+        ----------
+        breaks
+            A list of unique cut points.
+        labels
+            Labels to assign to bins. If given, the length must be len(probs) + 1.
+        left_closed
+            Whether intervals should be [) instead of the default of (]
+
+        Examples
+        --------
+        >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
+        >>> df = pl.DataFrame(dict(g=g, x=range(10)))
+        >>> df.with_columns(q=pl.col("x").cut([2, 5]))
+        shape: (10, 3)
+        ┌─────┬─────┬───────────┐
+        │ g   ┆ x   ┆ q         │
+        │ --- ┆ --- ┆ ---       │
+        │ str ┆ i64 ┆ cat       │
+        ╞═════╪═════╪═══════════╡
+        │ a   ┆ 0   ┆ (-inf, 2] │
+        │ a   ┆ 1   ┆ (-inf, 2] │
+        │ a   ┆ 2   ┆ (-inf, 2] │
+        │ a   ┆ 3   ┆ (2, 5]    │
+        │ …   ┆ …   ┆ …         │
+        │ b   ┆ 6   ┆ (5, inf]  │
+        │ b   ┆ 7   ┆ (5, inf]  │
+        │ b   ┆ 8   ┆ (5, inf]  │
+        │ b   ┆ 9   ┆ (5, inf]  │
+        └─────┴─────┴───────────┘
+        >>> df.with_columns(q=pl.col("x").cut([2, 5], left_closed=True))
+        shape: (10, 3)
+        ┌─────┬─────┬───────────┐
+        │ g   ┆ x   ┆ q         │
+        │ --- ┆ --- ┆ ---       │
+        │ str ┆ i64 ┆ cat       │
+        ╞═════╪═════╪═══════════╡
+        │ a   ┆ 0   ┆ [-inf, 2) │
+        │ a   ┆ 1   ┆ [-inf, 2) │
+        │ a   ┆ 2   ┆ [2, 5)    │
+        │ a   ┆ 3   ┆ [2, 5)    │
+        │ …   ┆ …   ┆ …         │
+        │ b   ┆ 6   ┆ [5, inf)  │
+        │ b   ┆ 7   ┆ [5, inf)  │
+        │ b   ┆ 8   ┆ [5, inf)  │
+        │ b   ┆ 9   ┆ [5, inf)  │
+        └─────┴─────┴───────────┘
+        """
+        return self._from_pyexpr(self._pyexpr.cut(breaks, labels, left_closed))
+
+    def qcut(
+        self,
+        probs: list[float],
+        labels: list[str] | None = None,
+        left_closed: bool = False,
+        allow_duplicates: bool = False,
+    ) -> Self:
+        """
+        Bin continuous values into discrete categories based on their quantiles.
+
+        Parameters
+        ----------
+        probs
+            Probabilities for which to find the corresponding quantiles
+            For p in probs, we assume 0 <= p <= 1
+        labels
+            Labels to assign to bins. If given, the length must be len(probs) + 1.
+            If computing over groups this must be set for now.
+        left_closed
+            Whether intervals should be [) instead of the default of (]
+        allow_duplicates
+            If True, the resulting quantile breaks don't have to be unique. This can
+            happen even with unique probs depending on the data. Duplicates will be
+            dropped, resulting in fewer bins.
+
+
+        Examples
+        --------
+        >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
+        >>> df = pl.DataFrame(dict(g=g, x=range(10)))
+        >>> df.with_columns(q=pl.col("x").qcut([0.5]))
+        shape: (10, 3)
+        ┌─────┬─────┬─────────────┐
+        │ g   ┆ x   ┆ q           │
+        │ --- ┆ --- ┆ ---         │
+        │ str ┆ i64 ┆ cat         │
+        ╞═════╪═════╪═════════════╡
+        │ a   ┆ 0   ┆ (-inf, 4.5] │
+        │ a   ┆ 1   ┆ (-inf, 4.5] │
+        │ a   ┆ 2   ┆ (-inf, 4.5] │
+        │ a   ┆ 3   ┆ (-inf, 4.5] │
+        │ …   ┆ …   ┆ …           │
+        │ b   ┆ 6   ┆ (4.5, inf]  │
+        │ b   ┆ 7   ┆ (4.5, inf]  │
+        │ b   ┆ 8   ┆ (4.5, inf]  │
+        │ b   ┆ 9   ┆ (4.5, inf]  │
+        └─────┴─────┴─────────────┘
+        >>> df.with_columns(q=pl.col("x").qcut([0.5], ["lo", "hi"]).over("g"))
+        shape: (10, 3)
+        ┌─────┬─────┬─────┐
+        │ g   ┆ x   ┆ q   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ cat │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 0   ┆ lo  │
+        │ a   ┆ 1   ┆ lo  │
+        │ a   ┆ 2   ┆ lo  │
+        │ a   ┆ 3   ┆ hi  │
+        │ …   ┆ …   ┆ …   │
+        │ b   ┆ 6   ┆ lo  │
+        │ b   ┆ 7   ┆ lo  │
+        │ b   ┆ 8   ┆ hi  │
+        │ b   ┆ 9   ┆ hi  │
+        └─────┴─────┴─────┘
+        >>> df.with_columns(q=pl.col("x").qcut([0.5], ["lo", "hi"], True).over("g"))
+        shape: (10, 3)
+        ┌─────┬─────┬─────┐
+        │ g   ┆ x   ┆ q   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ cat │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 0   ┆ lo  │
+        │ a   ┆ 1   ┆ lo  │
+        │ a   ┆ 2   ┆ hi  │
+        │ a   ┆ 3   ┆ hi  │
+        │ …   ┆ …   ┆ …   │
+        │ b   ┆ 6   ┆ lo  │
+        │ b   ┆ 7   ┆ hi  │
+        │ b   ┆ 8   ┆ hi  │
+        │ b   ┆ 9   ┆ hi  │
+        └─────┴─────┴─────┘
+
+        """
+        return self._from_pyexpr(
+            self._pyexpr.qcut(probs, labels, left_closed, allow_duplicates)
+        )
+
     def filter(self, predicate: Expr) -> Self:
         """
         Filter a single column.

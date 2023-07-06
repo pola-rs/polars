@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import typing
 from datetime import date, datetime, time, timedelta, timezone
 from itertools import permutations
 from typing import Any, cast
@@ -428,15 +427,14 @@ def test_unique_empty() -> None:
         assert_series_equal(s.unique(), s)
 
 
-@typing.no_type_check
 def test_search_sorted() -> None:
     for seed in [1, 2, 3]:
         np.random.seed(seed)
-        a = np.sort(np.random.randn(10) * 100)
-        s = pl.Series(a)
+        arr = np.sort(np.random.randn(10) * 100)
+        s = pl.Series(arr)
 
-        for v in range(int(np.min(a)), int(np.max(a)), 20):
-            assert np.searchsorted(a, v) == s.search_sorted(v)
+        for v in range(int(np.min(arr)), int(np.max(arr)), 20):
+            assert np.searchsorted(arr, v) == s.search_sorted(v)
 
     a = pl.Series([1, 2, 3])
     b = pl.Series([1, 2, 2, -1])
