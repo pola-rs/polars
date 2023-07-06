@@ -15,7 +15,6 @@ use polars_core::with_match_physical_integer_type;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-
 trait MaterializeValues<K> {
     // extends the iterator to the values and returns the current offset
     fn extend_buf<I: Iterator<Item = K>>(&mut self, values: I) -> usize;
@@ -153,14 +152,8 @@ where
                 .take(end_b - start_b)
                 .map(copied_opt);
 
-            let offset = set_operation(
-                &mut set,
-                &mut set2,
-                a_iter,
-                b_iter,
-                &mut values_out,
-                set_op,
-            );
+            let offset =
+                set_operation(&mut set, &mut set2, a_iter, b_iter, &mut values_out, set_op);
             offsets.push(offset as i64);
         }
     }
@@ -204,14 +197,8 @@ fn binary(
             let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
             let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
 
-            let offset = set_operation(
-                &mut set,
-                &mut set2,
-                a_iter,
-                b_iter,
-                &mut values_out,
-                set_op,
-            );
+            let offset =
+                set_operation(&mut set, &mut set2, a_iter, b_iter, &mut values_out, set_op);
             offsets.push(offset as i64);
         }
     }
