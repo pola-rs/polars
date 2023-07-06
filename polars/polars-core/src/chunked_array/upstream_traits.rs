@@ -183,9 +183,9 @@ where
         let mut builder =
             get_list_builder(v.borrow().dtype(), capacity * 5, capacity, "collected").unwrap();
 
-        builder.append_series(v.borrow());
+        builder.append_series(v.borrow()).unwrap();
         for s in it {
-            builder.append_series(s.borrow());
+            builder.append_series(s.borrow()).unwrap();
         }
         builder.finish()
     }
@@ -231,7 +231,7 @@ impl FromIterator<Option<Series>> for ListChunked {
                     builder.append_empty();
 
                     for opt_s in it {
-                        builder.append_opt_series(opt_s.as_ref());
+                        builder.append_opt_series(opt_s.as_ref()).unwrap();
                     }
                     builder.finish()
                 } else {
@@ -243,10 +243,10 @@ impl FromIterator<Option<Series>> for ListChunked {
                             for _ in 0..init_null_count {
                                 builder.append_null();
                             }
-                            builder.append_series(first_s);
+                            builder.append_series(first_s).unwrap();
 
                             for opt_s in it {
-                                builder.append_opt_series(opt_s.as_ref());
+                                builder.append_opt_series(opt_s.as_ref()).unwrap();
                             }
                             builder.finish()
                         }
@@ -263,10 +263,10 @@ impl FromIterator<Option<Series>> for ListChunked {
                             for _ in 0..init_null_count {
                                 builder.append_null();
                             }
-                            builder.append_series(first_s);
+                            builder.append_series(first_s).unwrap();
 
                             for opt_s in it {
-                                builder.append_opt_series(opt_s.as_ref());
+                                builder.append_opt_series(opt_s.as_ref()).unwrap();
                             }
                             builder.finish()
                         }
@@ -721,7 +721,7 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
 
                 for v in vectors {
                     for val in v {
-                        builder.append_opt_series(val.as_ref());
+                        builder.append_opt_series(val.as_ref()).unwrap();
                     }
                 }
                 builder.finish()
@@ -731,7 +731,7 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
                     get_list_builder(dtype, value_capacity, list_capacity, "collected").unwrap();
                 for v in &vectors {
                     for val in v {
-                        builder.append_opt_series(val.as_ref());
+                        builder.append_opt_series(val.as_ref()).unwrap();
                     }
                 }
                 builder.finish()
