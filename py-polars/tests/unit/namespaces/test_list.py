@@ -496,3 +496,15 @@ def test_list_set_operations() -> None:
         ["a", "b", "c", "s"],
         ["b", "e", "z", "a", "f"],
     ]
+
+    df = pl.DataFrame(
+        {
+            "a": [[2, 3, 3], [3, 1], [1, 2, 3]],
+            "b": [[2, 3, 4], [3, 3, 1], [3, 3]],
+        }
+    )
+    r1 = df.with_columns(pl.col("a").list.intersection("b"))['a'].to_list()
+    r2 = df.with_columns(pl.col("b").list.intersection("a"))['b'].to_list()
+    exp = [[2, 3], [3, 1], [3]]
+    assert r1 == exp
+    assert r2 == exp
