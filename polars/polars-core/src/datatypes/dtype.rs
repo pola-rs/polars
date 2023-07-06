@@ -344,7 +344,7 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
     Ok(match (left, right) {
         #[cfg(feature = "dtype-categorical")]
         (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r))) => {
-            let rev_map = merge_categorical_map(rev_map_l, rev_map_r)?;
+            let rev_map = merge_rev_map(rev_map_l, rev_map_r)?;
             Categorical(Some(rev_map))
         }
         (List(inner_l), List(inner_r)) => {
