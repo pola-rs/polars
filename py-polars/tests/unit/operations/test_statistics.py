@@ -190,3 +190,60 @@ def test_correlation_cast_supertype() -> None:
     df = pl.DataFrame({"a": [1, 8, 3], "b": [4.0, 5.0, 2.0]})
     df = df.with_columns(pl.col("b"))
     assert df.select(pl.corr("a", "b")).to_dict(False) == {"a": [0.5447047794019223]}
+
+
+def test_cut_over() -> None:
+    with pl.StringCache():
+        x = pl.Series(range(20))
+    r = pl.Series(
+        [pl.repeat("a", 10, eager=True), pl.repeat("b", 10, eager=True)]
+    ).explode()
+    df = pl.DataFrame({"x": x, "g": r})
+
+    out = df.with_columns(pl.col("x").qcut([0.5]).over("g")).to_dict(False)
+    assert out == {
+        "x": [
+            "(-inf, 4.5]",
+            "(-inf, 4.5]",
+            "(-inf, 4.5]",
+            "(-inf, 4.5]",
+            "(-inf, 4.5]",
+            "(4.5, inf]",
+            "(4.5, inf]",
+            "(4.5, inf]",
+            "(4.5, inf]",
+            "(4.5, inf]",
+            "(-inf, 14.5]",
+            "(-inf, 14.5]",
+            "(-inf, 14.5]",
+            "(-inf, 14.5]",
+            "(-inf, 14.5]",
+            "(14.5, inf]",
+            "(14.5, inf]",
+            "(14.5, inf]",
+            "(14.5, inf]",
+            "(14.5, inf]",
+        ],
+        "g": [
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "b",
+            "b",
+            "b",
+            "b",
+            "b",
+            "b",
+            "b",
+            "b",
+            "b",
+            "b",
+        ],
+    }
