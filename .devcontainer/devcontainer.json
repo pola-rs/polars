@@ -1,12 +1,12 @@
 { 
 	"name": "Rust",
-        "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
+	"image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
 	"features": {
-                "ghcr.io/devcontainers/features/python:1": {
-                        "installTools": true,
-                        "version": "os-provided"
-                }
-        },
-        "onCreateCommand": "cargo --version && rustc --version"
+		"ghcr.io/devcontainers/features/python:1": {
+			"installTools": true,
+			"version": "os-provided"
+		}
+	},
+	"onCreateCommand": "cargo --version && rustc --version"
 }
 
