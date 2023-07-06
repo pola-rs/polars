@@ -1,30 +1,113 @@
 from __future__ import annotations
 
-import contextlib
+import warnings
 from typing import TYPE_CHECKING, Any, Iterable, overload
 
 import polars._reexport as pl
 import polars.functions as F
-from polars.datatypes import (
-    UInt32,
-)
-from polars.utils._parse_expr_input import (
-    parse_as_list_of_expressions,
-)
-from polars.utils._wrap import wrap_expr
 from polars.utils.decorators import deprecated_alias
-
-with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
-
+from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
-
     from polars import Expr, Series
-    from polars.type_aliases import (
-        IntoExpr,
-        PythonLiteral,
+    from polars.type_aliases import IntoExpr, PythonLiteral
+
+
+@overload
+def all(exprs: Series) -> bool:  # type: ignore[misc]
+    ...
+
+
+@overload
+def all(
+    exprs: IntoExpr | Iterable[IntoExpr] | None = ..., *more_exprs: IntoExpr
+) -> Expr:
+    ...
+
+
+@deprecated_alias(columns="exprs")
+def all(
+    exprs: IntoExpr | Iterable[IntoExpr] | None = None, *more_exprs: IntoExpr
+) -> Expr | bool:
+    """
+    Either return an expression representing all columns, or evaluate a bitwise AND operation.
+
+    If no arguments are passed, this is an alias for ``pl.col("*")``.
+    If a single string is passed, this is an alias for ``pl.col(name).any()``.
+
+    If a single Series is passed, this is an alias for ``Series.any()``.
+    **This functionality is deprecated**.
+
+    Otherwise, this function computes the bitwise AND horizontally across multiple
+    columns.
+    **This functionality is deprecated**.
+
+    Parameters
+    ----------
+    exprs
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns to use in the aggregation, specified as positional arguments.
+
+    Examples
+    --------
+    Selecting all columns and calculating the sum:
+
+    >>> df = pl.DataFrame(
+    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
+    ... )
+    >>> df.select(pl.all().sum())
+    shape: (1, 3)
+    ┌─────┬──────┬─────┐
+    │ a   ┆ b    ┆ c   │
+    │ --- ┆ ---  ┆ --- │
+    │ i64 ┆ str  ┆ i64 │
+    ╞═════╪══════╪═════╡
+    │ 6   ┆ null ┆ 3   │
+    └─────┴──────┴─────┘
+
+    Bitwise AND across multiple columns:
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [True, False, True],
+    ...         "b": [True, False, False],
+    ...         "c": [False, True, False],
+    ...     }
+    ... )
+    >>> df.select(pl.all("a", "b"))
+    shape: (3, 1)
+    ┌───────┐
+    │ all   │
+    │ ---   │
+    │ bool  │
+    ╞═══════╡
+    │ true  │
+    │ false │
+    │ false │
+    └───────┘
+
+    """  # noqa: W505
+    if not more_exprs:
+        if exprs is None:
+            return F.col("*")
+        elif isinstance(exprs, pl.Series):
+            warnings.warn(
+                "passing a Series to `all` is deprecated. Use `Series.all()` instead.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
+            return exprs.all()
+        elif isinstance(exprs, str):
+            return F.col(exprs).all()
+
+    warnings.warn(
+        "using `all` for horizontal computation is deprecated. Use `all_horizontal` instead.",
+        DeprecationWarning,
+        stacklevel=find_stacklevel(),
     )
+    return F.all_horizontal(exprs, *more_exprs)
 
 
 @overload
@@ -43,10 +126,13 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
     Evaluate a bitwise OR operation.
 
     If a single string is passed, this is an alias for ``pl.col(name).any()``.
+
     If a single Series is passed, this is an alias for ``Series.any()``.
+    **This functionality is deprecated**.
 
     Otherwise, this function computes the bitwise OR horizontally across multiple
     columns.
+    **This functionality is deprecated**.
 
     Parameters
     ----------
@@ -107,198 +193,21 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
     """
     if not more_exprs:
         if isinstance(exprs, pl.Series):
+            warnings.warn(
+                "passing a Series to `any` is deprecated. Use `Series.any()` instead.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
             return exprs.any()
         elif isinstance(exprs, str):
             return F.col(exprs).any()
 
-    pyexprs = parse_as_list_of_expressions(exprs, *more_exprs)
-    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
-
-    return F.fold(
-        F.lit(False), lambda a, b: a.cast(bool) | b.cast(bool), exprs_wrapped
-    ).alias("any")
-
-
-@overload
-def all(exprs: Series) -> bool:  # type: ignore[misc]
-    ...
-
-
-@overload
-def all(
-    exprs: IntoExpr | Iterable[IntoExpr] | None = ..., *more_exprs: IntoExpr
-) -> Expr:
-    ...
-
-
-@deprecated_alias(columns="exprs")
-def all(
-    exprs: IntoExpr | Iterable[IntoExpr] | None = None, *more_exprs: IntoExpr
-) -> Expr | bool:
-    """
-    Either return an expression representing all columns, or evaluate a bitwise AND operation.
-
-    If no arguments are passed, this is an alias for ``pl.col("*")``.
-    If a single string is passed, this is an alias for ``pl.col(name).any()``.
-    If a single Series is passed, this is an alias for ``Series.any()``.
-
-    Otherwise, this function computes the bitwise AND horizontally across multiple
-    columns.
-
-    Parameters
-    ----------
-    exprs
-        Column(s) to use in the aggregation. Accepts expression input. Strings are
-        parsed as column names, other non-expression inputs are parsed as literals.
-    *more_exprs
-        Additional columns to use in the aggregation, specified as positional arguments.
-
-    Examples
-    --------
-    Selecting all columns and calculating the sum:
-
-    >>> df = pl.DataFrame(
-    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
-    ... )
-    >>> df.select(pl.all().sum())
-    shape: (1, 3)
-    ┌─────┬──────┬─────┐
-    │ a   ┆ b    ┆ c   │
-    │ --- ┆ ---  ┆ --- │
-    │ i64 ┆ str  ┆ i64 │
-    ╞═════╪══════╪═════╡
-    │ 6   ┆ null ┆ 3   │
-    └─────┴──────┴─────┘
-
-    Bitwise AND across multiple columns:
-
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "a": [True, False, True],
-    ...         "b": [True, False, False],
-    ...         "c": [False, True, False],
-    ...     }
-    ... )
-    >>> df.select(pl.all("a", "b"))
-    shape: (3, 1)
-    ┌───────┐
-    │ all   │
-    │ ---   │
-    │ bool  │
-    ╞═══════╡
-    │ true  │
-    │ false │
-    │ false │
-    └───────┘
-
-    """  # noqa: W505
-    if not more_exprs:
-        if exprs is None:
-            return F.col("*")
-        elif isinstance(exprs, pl.Series):
-            return exprs.all()
-        elif isinstance(exprs, str):
-            return F.col(exprs).all()
-
-    pyexprs = parse_as_list_of_expressions(exprs, *more_exprs)
-    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
-
-    return F.fold(
-        F.lit(True), lambda a, b: a.cast(bool) & b.cast(bool), exprs_wrapped
-    ).alias("all")
-
-
-@overload
-def cumsum(exprs: Series) -> Series:  # type: ignore[misc]
-    ...
-
-
-@overload
-def cumsum(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
-    ...
-
-
-@deprecated_alias(column="exprs")
-def cumsum(
-    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
-) -> Expr | Series:
-    """
-    Cumulatively sum all values.
-
-    If a single string is passed, this is an alias for ``pl.col(name).cumsum()``.
-    If a single Series is passed, this is an alias for ``Series.cumsum()``.
-
-    Otherwise, this function computes the cumulative sum horizontally across multiple
-    columns.
-
-    Parameters
-    ----------
-    exprs
-        Column(s) to use in the aggregation. Accepts expression input. Strings are
-        parsed as column names, other non-expression inputs are parsed as literals.
-    *more_exprs
-        Additional columns to use in the aggregation, specified as positional arguments.
-
-    Examples
-    --------
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "a": [1, 2],
-    ...         "b": [3, 4],
-    ...         "c": [5, 6],
-    ...     }
-    ... )
-    >>> df
-    shape: (2, 3)
-    ┌─────┬─────┬─────┐
-    │ a   ┆ b   ┆ c   │
-    │ --- ┆ --- ┆ --- │
-    │ i64 ┆ i64 ┆ i64 │
-    ╞═════╪═════╪═════╡
-    │ 1   ┆ 3   ┆ 5   │
-    │ 2   ┆ 4   ┆ 6   │
-    └─────┴─────┴─────┘
-
-    Cumulatively sum a column by name:
-
-    >>> df.select(pl.cumsum("a"))
-    shape: (2, 1)
-    ┌─────┐
-    │ a   │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 1   │
-    │ 3   │
-    └─────┘
-
-    Cumulatively sum a list of columns/expressions horizontally:
-
-    >>> df.with_columns(pl.cumsum("a", "c"))
-    shape: (2, 4)
-    ┌─────┬─────┬─────┬───────────┐
-    │ a   ┆ b   ┆ c   ┆ cumsum    │
-    │ --- ┆ --- ┆ --- ┆ ---       │
-    │ i64 ┆ i64 ┆ i64 ┆ struct[2] │
-    ╞═════╪═════╪═════╪═══════════╡
-    │ 1   ┆ 3   ┆ 5   ┆ {1,6}     │
-    │ 2   ┆ 4   ┆ 6   ┆ {2,8}     │
-    └─────┴─────┴─────┴───────────┘
-
-    """
-    if not more_exprs:
-        if isinstance(exprs, pl.Series):
-            return exprs.cumsum()
-        elif isinstance(exprs, str):
-            return F.col(exprs).cumsum()
-
-    pyexprs = parse_as_list_of_expressions(exprs, *more_exprs)
-    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
-
-    # (Expr): use u32 as that will not cast to float as eagerly
-    return F.cumfold(F.lit(0).cast(UInt32), lambda a, b: a + b, exprs_wrapped).alias(
-        "cumsum"
+    warnings.warn(
+        "using `any` for horizontal computation is deprecated. Use `any_horizontal` instead.",
+        DeprecationWarning,
+        stacklevel=find_stacklevel(),
     )
+    return F.any_horizontal(exprs, *more_exprs)
 
 
 @overload
@@ -316,10 +225,13 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     Get the maximum value.
 
     If a single string is passed, this is an alias for ``pl.col(name).max()``.
+
     If a single Series is passed, this is an alias for ``Series.max()``.
+    **This functionality is deprecated**.
 
     Otherwise, this function computes the maximum value horizontally across multiple
     columns.
+    **This functionality is deprecated**.
 
     Parameters
     ----------
@@ -389,12 +301,21 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     """
     if not more_exprs:
         if isinstance(exprs, pl.Series):
+            warnings.warn(
+                "passing a Series to `max` is deprecated. Use `Series.max()` instead.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
             return exprs.max()
         elif isinstance(exprs, str):
             return F.col(exprs).max()
 
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
-    return wrap_expr(plr.max_exprs(exprs))
+    warnings.warn(
+        "using `max` for horizontal computation is deprecated. Use `max_horizontal` instead.",
+        DeprecationWarning,
+        stacklevel=find_stacklevel(),
+    )
+    return F.max_horizontal(exprs, *more_exprs)
 
 
 @overload
@@ -414,10 +335,13 @@ def min(
     Get the minimum value.
 
     If a single string is passed, this is an alias for ``pl.col(name).min()``.
+
     If a single Series is passed, this is an alias for ``Series.min()``.
+    **This functionality is deprecated**.
 
     Otherwise, this function computes the minimum value horizontally across multiple
     columns.
+    **This functionality is deprecated**.
 
     Parameters
     ----------
@@ -487,12 +411,21 @@ def min(
     """
     if not more_exprs:
         if isinstance(exprs, pl.Series):
+            warnings.warn(
+                "passing a Series to `min` is deprecated. Use `Series.min()` instead.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
             return exprs.min()
         elif isinstance(exprs, str):
             return F.col(exprs).min()
 
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
-    return wrap_expr(plr.min_exprs(exprs))
+    warnings.warn(
+        "using `min` for horizontal computation is deprecated. Use `min_horizontal` instead.",
+        DeprecationWarning,
+        stacklevel=find_stacklevel(),
+    )
+    return F.min_horizontal(exprs, *more_exprs)
 
 
 @overload
@@ -513,9 +446,12 @@ def sum(
     Sum all values.
 
     If a single string is passed, this is an alias for ``pl.col(name).sum()``.
+
     If a single Series is passed, this is an alias for ``Series.sum()``.
+    **This functionality is deprecated**.
 
     Otherwise, this function computes the sum horizontally across multiple columns.
+    **This functionality is deprecated**.
 
     Parameters
     ----------
@@ -601,9 +537,92 @@ def sum(
     """
     if not more_exprs:
         if isinstance(exprs, pl.Series):
+            warnings.warn(
+                "passing a Series to `sum` is deprecated. Use `Series.sum()` instead.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
             return exprs.sum()
         elif isinstance(exprs, str):
             return F.col(exprs).sum()
 
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
-    return wrap_expr(plr.sum_exprs(exprs))
+    warnings.warn(
+        "using `sum` for horizontal computation is deprecated. Use `sum_horizontal` instead.",
+        DeprecationWarning,
+        stacklevel=find_stacklevel(),
+    )
+    return F.sum_horizontal(exprs, *more_exprs)
+
+
+@overload
+def cumsum(exprs: Series) -> Series:  # type: ignore[misc]
+    ...
+
+
+@overload
+def cumsum(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
+    ...
+
+
+@deprecated_alias(column="exprs")
+def cumsum(
+    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+) -> Expr | Series:
+    """
+    Cumulatively sum all values.
+
+    If a single string is passed, this is an alias for ``pl.col(name).cumsum()``.
+
+    If a single Series is passed, this is an alias for ``Series.cumsum()``.
+    **This functionality is deprecated**.
+
+    Otherwise, this function computes the cumulative sum horizontally across multiple
+    columns.
+    **This functionality is deprecated**.
+
+    Parameters
+    ----------
+    exprs
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns to use in the aggregation, specified as positional arguments.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [4, 5, 6],
+    ...     }
+    ... )
+    >>> df.select(pl.cumsum("a"))
+    shape: (2, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 3   │
+    │ 6   │
+    └─────┘
+
+    """
+    if not more_exprs:
+        if isinstance(exprs, pl.Series):
+            warnings.warn(
+                "passing a Series to `cumsum` is deprecated. Use `Series.cumsum()` instead.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
+            return exprs.cumsum()
+        elif isinstance(exprs, str):
+            return F.col(exprs).cumsum()
+
+    warnings.warn(
+        "using `cumsum` for horizontal computation is deprecated. Use `cumsum_horizontal` instead.",
+        DeprecationWarning,
+        stacklevel=find_stacklevel(),
+    )
+    return F.cumsum_horizontal(exprs, *more_exprs)
