@@ -5,13 +5,14 @@ use polars_arrow::prelude::*;
 use super::*;
 
 pub trait ListBuilderTrait {
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) -> PolarsResult<()> {
         match opt_s {
-            Some(s) => self.append_series(s),
+            Some(s) => return self.append_series(s),
             None => self.append_null(),
         }
+        Ok(())
     }
-    fn append_series(&mut self, s: &Series);
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()>;
     fn append_null(&mut self);
     fn finish(&mut self) -> ListChunked;
 }
@@ -20,11 +21,11 @@ impl<S: ?Sized> ListBuilderTrait for Box<S>
 where
     S: ListBuilderTrait,
 {
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) -> PolarsResult<()> {
         (**self).append_opt_series(opt_s)
     }
 
-    fn append_series(&mut self, s: &Series) {
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
         (**self).append_series(s)
     }
 
@@ -139,28 +140,18 @@ where
     T: PolarsNumericType,
 {
     #[inline]
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        match opt_s {
-            Some(s) => {
-                self.append_series(s);
-            }
-            None => self.append_null(),
-        }
-    }
-
-    #[inline]
     fn append_null(&mut self) {
         self.fast_explode = false;
         self.builder.push_null();
     }
 
     #[inline]
-    fn append_series(&mut self, s: &Series) {
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
         if s.is_empty() {
             self.fast_explode = false;
         }
         let physical = s.to_physical_repr();
-        let ca = physical.unpack::<T>().unwrap();
+        let ca = physical.unpack::<T>()?;
         let values = self.builder.mut_values();
 
         ca.downcast_iter().for_each(|arr| {
@@ -174,6 +165,7 @@ where
         });
         // overflow of i64 is far beyond polars capable lengths.
         unsafe { self.builder.try_push_valid().unwrap_unchecked() };
+        Ok(())
     }
 
     fn finish(&mut self) -> ListChunked {
@@ -243,28 +235,19 @@ impl ListUtf8ChunkedBuilder {
 
 impl ListBuilderTrait for ListUtf8ChunkedBuilder {
     #[inline]
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        match opt_s {
-            Some(s) => self.append_series(s),
-            None => {
-                self.append_null();
-            }
-        }
-    }
-
-    #[inline]
     fn append_null(&mut self) {
         self.fast_explode = false;
         self.builder.push_null();
     }
 
     #[inline]
-    fn append_series(&mut self, s: &Series) {
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
         if s.is_empty() {
             self.fast_explode = false;
         }
-        let ca = s.utf8().unwrap();
-        self.append(ca)
+        let ca = s.utf8()?;
+        self.append(ca);
+        Ok(())
     }
 
     fn finish(&mut self) -> ListChunked {
@@ -324,27 +307,19 @@ impl ListBinaryChunkedBuilder {
 }
 
 impl ListBuilderTrait for ListBinaryChunkedBuilder {
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        match opt_s {
-            Some(s) => self.append_series(s),
-            None => {
-                self.append_null();
-            }
-        }
-    }
-
     #[inline]
     fn append_null(&mut self) {
         self.fast_explode = false;
         self.builder.push_null();
     }
 
-    fn append_series(&mut self, s: &Series) {
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
         if s.is_empty() {
             self.fast_explode = false;
         }
-        let ca = s.binary().unwrap();
-        self.append(ca)
+        let ca = s.binary()?;
+        self.append(ca);
+        Ok(())
     }
 
     fn finish(&mut self) -> ListChunked {
@@ -396,15 +371,6 @@ impl ListBooleanChunkedBuilder {
 }
 
 impl ListBuilderTrait for ListBooleanChunkedBuilder {
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        match opt_s {
-            Some(s) => self.append_series(s),
-            None => {
-                self.append_null();
-            }
-        }
-    }
-
     #[inline]
     fn append_null(&mut self) {
         self.fast_explode = false;
@@ -412,9 +378,10 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
     }
 
     #[inline]
-    fn append_series(&mut self, s: &Series) {
-        let ca = s.bool().unwrap();
-        self.append(ca)
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
+        let ca = s.bool()?;
+        self.append(ca);
+        Ok(())
     }
 
     fn finish(&mut self) -> ListChunked {
@@ -424,8 +391,9 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
 
 impl ListBuilderTrait for LargeListNullBuilder {
     #[inline]
-    fn append_series(&mut self, _s: &Series) {
-        self.push_null()
+    fn append_series(&mut self, _s: &Series) -> PolarsResult<()> {
+        self.push_null();
+        Ok(())
     }
 
     #[inline]
@@ -511,11 +479,37 @@ pub fn get_list_builder(
     }
 }
 
+enum DtypeMerger {
+    #[cfg(feature = "dtype-categorical")]
+    Categorical(RevMapMerger),
+    Other(Option<DataType>),
+}
+
+impl DtypeMerger {
+    fn new(dtype: Option<DataType>) -> Self {
+        match dtype {
+            #[cfg(feature = "dtype-categorical")]
+            Some(DataType::Categorical(Some(rev_map))) if rev_map.is_global() => {
+                DtypeMerger::Categorical(RevMapMerger::new(rev_map))
+            }
+            _ => DtypeMerger::Other(dtype),
+        }
+    }
+
+    fn materialize(self) -> Option<DataType> {
+        match self {
+            #[cfg(feature = "dtype-categorical")]
+            DtypeMerger::Categorical(merger) => Some(DataType::Categorical(Some(merger.finish()))),
+            DtypeMerger::Other(dtype) => dtype,
+        }
+    }
+}
+
 pub struct AnonymousListBuilder<'a> {
     name: String,
     builder: AnonymousBuilder<'a>,
     fast_explode: bool,
-    inner_dtype: Option<DataType>,
+    inner_dtype: DtypeMerger,
 }
 
 impl Default for AnonymousListBuilder<'_> {
@@ -530,17 +524,18 @@ impl<'a> AnonymousListBuilder<'a> {
             name: name.into(),
             builder: AnonymousBuilder::new(capacity),
             fast_explode: true,
-            inner_dtype,
+            inner_dtype: DtypeMerger::new(inner_dtype),
         }
     }
 
-    pub fn append_opt_series(&mut self, opt_s: Option<&'a Series>) {
+    pub fn append_opt_series(&mut self, opt_s: Option<&'a Series>) -> PolarsResult<()> {
         match opt_s {
-            Some(s) => self.append_series(s),
+            Some(s) => return self.append_series(s),
             None => {
                 self.append_null();
             }
         }
+        Ok(())
     }
 
     pub fn append_opt_array(&mut self, opt_s: Option<&'a dyn Array>) {
@@ -568,23 +563,26 @@ impl<'a> AnonymousListBuilder<'a> {
         self.builder.push_empty()
     }
 
-    pub fn append_series(&mut self, s: &'a Series) {
-        // empty arrays tend to be null type and thus differ
-        // if we would push it the concat would fail.
-        if s.is_empty() && matches!(s.dtype(), DataType::Null) {
-            self.append_empty();
-        } else {
-            match s.dtype() {
-                #[cfg(feature = "dtype-struct")]
-                DataType::Struct(_) => {
-                    let arr = &**s.array_ref(0);
-                    self.builder.push(arr)
-                }
-                _ => {
-                    self.builder.push_multiple(s.chunks());
-                }
+    pub fn append_series(&mut self, s: &'a Series) -> PolarsResult<()> {
+        match s.dtype() {
+            // empty arrays tend to be null type and thus differ
+            // if we would push it the concat would fail.
+            DataType::Null if s.is_empty() => self.append_empty(),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {
+                let arr = &**s.array_ref(0);
+                self.builder.push(arr);
+                return Ok(());
             }
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(Some(rev_map)) => {
+                let DtypeMerger::Categorical(merger) = &mut self.inner_dtype else { unreachable!() };
+                merger.merge_map(rev_map)?;
+            }
+            _ => {}
         }
+        self.builder.push_multiple(s.chunks());
+        Ok(())
     }
 
     pub fn finish(&mut self) -> ListChunked {
@@ -594,16 +592,15 @@ impl<'a> AnonymousListBuilder<'a> {
             ListChunked::full_null_with_dtype(
                 &slf.name,
                 0,
-                &slf.inner_dtype.unwrap_or(DataType::Null),
+                &slf.inner_dtype.materialize().unwrap_or(DataType::Null),
             )
         } else {
-            let inner_dtype_physical = slf
-                .inner_dtype
-                .as_ref()
-                .map(|dt| dt.to_physical().to_arrow());
+            let inner_dtype = slf.inner_dtype.materialize();
+
+            let inner_dtype_physical = inner_dtype.as_ref().map(|dt| dt.to_physical().to_arrow());
             let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
-            let list_dtype_logical = match slf.inner_dtype {
+            let list_dtype_logical = match inner_dtype {
                 None => DataType::from(arr.data_type()),
                 Some(dt) => DataType::List(Box::new(dt)),
             };
@@ -634,7 +631,7 @@ impl Default for AnonymousOwnedListBuilder {
 }
 
 impl ListBuilderTrait for AnonymousOwnedListBuilder {
-    fn append_series(&mut self, s: &Series) {
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
         if s.is_empty() {
             self.append_empty();
         } else {
@@ -657,6 +654,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             // this make sure that the underlying ArrayRef's are not dropped
             self.owned.push(s.clone());
         }
+        Ok(())
     }
 
     #[inline]

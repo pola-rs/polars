@@ -36,14 +36,17 @@ struct State {
     slots: MutableUtf8Array<i64>,
 }
 
-struct RevMapMerger {
+pub(crate) struct RevMapMerger {
     id: u128,
     original: Arc<RevMapping>,
+    // only initiate state when
+    // we encounter a rev-map from a different source,
+    // but from the same string cache
     state: Option<State>,
 }
 
 impl RevMapMerger {
-    fn init(rev_map: Arc<RevMapping>) -> Self {
+    pub(crate) fn new(rev_map: Arc<RevMapping>) -> Self {
         let RevMapping::Global(_, _, id) = rev_map.as_ref() else { panic!("impl error") };
         RevMapMerger {
             state: None,
@@ -60,7 +63,7 @@ impl RevMapMerger {
         })
     }
 
-    fn merge_map(&mut self, rev_map: &Arc<RevMapping>) -> PolarsResult<()> {
+    pub(crate) fn merge_map(&mut self, rev_map: &Arc<RevMapping>) -> PolarsResult<()> {
         // happy path
         // they come from the same source
         if Arc::ptr_eq(&self.original, rev_map) {
@@ -89,7 +92,7 @@ impl RevMapMerger {
         Ok(())
     }
 
-    fn finish(self) -> Arc<RevMapping> {
+    pub(crate) fn finish(self) -> Arc<RevMapping> {
         match self.state {
             None => self.original,
             Some(state) => {
@@ -106,7 +109,7 @@ pub(crate) fn merge_rev_map(
 ) -> PolarsResult<Arc<RevMapping>> {
     match (&**left, &**right) {
         (RevMapping::Global(_, _, _), RevMapping::Global(_, _, _)) => {
-            let mut merger = RevMapMerger::init(left.clone());
+            let mut merger = RevMapMerger::new(left.clone());
             merger.merge_map(right)?;
             Ok(merger.finish())
         }
