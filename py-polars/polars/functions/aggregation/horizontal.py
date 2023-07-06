@@ -35,7 +35,11 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     Selecting all columns and calculating the sum:
 
     >>> df = pl.DataFrame(
-    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": ["hello", "foo", "bar"],
+    ...         "c": [1, 1, 1],
+    ...     }
     ... )
     >>> df.select(pl.all().sum())
     shape: (1, 3)
@@ -56,7 +60,7 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": [False, True, False],
     ...     }
     ... )
-    >>> df.select(pl.all("a", "b"))
+    >>> df.select(pl.all_horizontal("a", "b"))
     shape: (3, 1)
     ┌───────┐
     │ all   │
@@ -96,7 +100,7 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": [False, True, False],
     ...     }
     ... )
-    >>> df.with_columns(pl.any("a", "b", "c"))
+    >>> df.with_columns(pl.any_horizontal("a", "b", "c"))
     shape: (3, 4)
     ┌───────┬───────┬───────┬──────┐
     │ a     ┆ b     ┆ c     ┆ any  │
@@ -136,7 +140,7 @@ def max_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["foo", "bar", "foo"],
     ...     }
     ... )
-    >>> df.select(pl.max("a", "b"))
+    >>> df.select(pl.max_horizontal("a", "b"))
     shape: (3, 1)
     ┌─────┐
     │ max │
@@ -172,7 +176,7 @@ def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["foo", "bar", "foo"],
     ...     }
     ... )
-    >>> df.select(pl.min("a", "b"))
+    >>> df.select(pl.min_horizontal("a", "b"))
     shape: (3, 1)
     ┌─────┐
     │ min │
@@ -208,7 +212,7 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": [5, 6],
     ...     }
     ... )
-    >>> df.with_columns(pl.sum("a", "c"))
+    >>> df.with_columns(pl.sum_horizontal("a", "c"))
     shape: (2, 4)
     ┌─────┬─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   ┆ sum │
@@ -243,7 +247,7 @@ def cumsum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": [5, 6],
     ...     }
     ... )
-    >>> df.with_columns(pl.cumsum("a", "c"))
+    >>> df.with_columns(pl.cumsum_horizontal("a", "c"))
     shape: (2, 4)
     ┌─────┬─────┬─────┬───────────┐
     │ a   ┆ b   ┆ c   ┆ cumsum    │

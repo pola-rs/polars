@@ -4421,7 +4421,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Drop a row only if all values are null:
 
-        >>> lf.filter(~pl.all(pl.all().is_null())).collect()
+        >>> lf.filter(~pl.all_horizontal(pl.all().is_null())).collect()
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │

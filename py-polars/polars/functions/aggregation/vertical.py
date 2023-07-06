@@ -52,39 +52,33 @@ def all(
 
     Examples
     --------
-    Selecting all columns and calculating the sum:
-
-    >>> df = pl.DataFrame(
-    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
-    ... )
-    >>> df.select(pl.all().sum())
-    shape: (1, 3)
-    ┌─────┬──────┬─────┐
-    │ a   ┆ b    ┆ c   │
-    │ --- ┆ ---  ┆ --- │
-    │ i64 ┆ str  ┆ i64 │
-    ╞═════╪══════╪═════╡
-    │ 6   ┆ null ┆ 3   │
-    └─────┴──────┴─────┘
-
-    Bitwise AND across multiple columns:
+    Selecting all columns.
 
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [True, False, True],
-    ...         "b": [True, False, False],
-    ...         "c": [False, True, False],
+    ...         "b": [False, False, False],
     ...     }
     ... )
-    >>> df.select(pl.all("a", "b"))
-    shape: (3, 1)
+    >>> df.select(pl.all().sum())
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ u32 ┆ u32 │
+    ╞═════╪═════╡
+    │ 2   ┆ 0   │
+    └─────┴─────┘
+
+    Evaluate bitwise AND for a column:
+
+    >>> df.select(pl.all("a"))
+    shape: (1, 1)
     ┌───────┐
-    │ all   │
+    │ a     │
     │ ---   │
     │ bool  │
     ╞═══════╡
-    │ true  │
-    │ false │
     │ false │
     └───────┘
 
@@ -148,47 +142,17 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
     ...     {
     ...         "a": [True, False, True],
     ...         "b": [False, False, False],
-    ...         "c": [False, True, False],
     ...     }
     ... )
-    >>> df
-    shape: (3, 3)
-    ┌───────┬───────┬───────┐
-    │ a     ┆ b     ┆ c     │
-    │ ---   ┆ ---   ┆ ---   │
-    │ bool  ┆ bool  ┆ bool  │
-    ╞═══════╪═══════╪═══════╡
-    │ true  ┆ false ┆ false │
-    │ false ┆ false ┆ true  │
-    │ true  ┆ false ┆ false │
-    └───────┴───────┴───────┘
-
-    Compares the values (in binary format) and return true if any value in the column
-    is true.
-
-    >>> df.select(pl.any("*"))
-    shape: (1, 3)
-    ┌──────┬───────┬──────┐
-    │ a    ┆ b     ┆ c    │
-    │ ---  ┆ ---   ┆ ---  │
-    │ bool ┆ bool  ┆ bool │
-    ╞══════╪═══════╪══════╡
-    │ true ┆ false ┆ true │
-    └──────┴───────┴──────┘
-
-    Across multiple columns:
-
-    >>> df.select(pl.any("a", "b"))
-    shape: (3, 1)
-    ┌───────┐
-    │ any   │
-    │ ---   │
-    │ bool  │
-    ╞═══════╡
-    │ true  │
-    │ false │
-    │ true  │
-    └───────┘
+    >>> df.select(pl.any("a"))
+    shape: (1, 1)
+    ┌──────┐
+    │ a    │
+    │ ---  │
+    │ bool │
+    ╞══════╡
+    │ true │
+    └──────┘
 
     """
     if not more_exprs:
@@ -243,7 +207,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
 
     Examples
     --------
-    Get the maximum value by row by passing multiple columns/expressions.
+    Get the maximum value of a column by passing a single column name.
 
     >>> df = pl.DataFrame(
     ...     {
@@ -252,20 +216,6 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     ...         "c": ["foo", "bar", "foo"],
     ...     }
     ... )
-    >>> df.select(pl.max("a", "b"))
-    shape: (3, 1)
-    ┌─────┐
-    │ max │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 4   │
-    │ 8   │
-    │ 3   │
-    └─────┘
-
-    Get the maximum value of a column by passing a single column name.
-
     >>> df.select(pl.max("a"))
     shape: (1, 1)
     ┌─────┐
@@ -353,7 +303,7 @@ def min(
 
     Examples
     --------
-    Get the minimum value by row by passing multiple columns/expressions.
+    Get the minimum value of a column by passing a single column name.
 
     >>> df = pl.DataFrame(
     ...     {
@@ -362,20 +312,6 @@ def min(
     ...         "c": ["foo", "bar", "foo"],
     ...     }
     ... )
-    >>> df.select(pl.min("a", "b"))
-    shape: (3, 1)
-    ┌─────┐
-    │ min │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 1   │
-    │ 5   │
-    │ 2   │
-    └─────┘
-
-    Get the minimum value of a column by passing a single column name.
-
     >>> df.select(pl.min("a"))
     shape: (1, 1)
     ┌─────┐
@@ -463,6 +399,8 @@ def sum(
 
     Examples
     --------
+    Sum a column by name:
+
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 2],
@@ -470,19 +408,6 @@ def sum(
     ...         "c": [5, 6],
     ...     }
     ... )
-    >>> df
-    shape: (2, 3)
-    ┌─────┬─────┬─────┐
-    │ a   ┆ b   ┆ c   │
-    │ --- ┆ --- ┆ --- │
-    │ i64 ┆ i64 ┆ i64 │
-    ╞═════╪═════╪═════╡
-    │ 1   ┆ 3   ┆ 5   │
-    │ 2   ┆ 4   ┆ 6   │
-    └─────┴─────┴─────┘
-
-    Sum a column by name:
-
     >>> df.select(pl.sum("a"))
     shape: (1, 1)
     ┌─────┐
@@ -492,24 +417,6 @@ def sum(
     ╞═════╡
     │ 3   │
     └─────┘
-
-    Sum a list of columns/expressions horizontally:
-
-    >>> df.with_columns(pl.sum("a", "c"))
-    shape: (2, 4)
-    ┌─────┬─────┬─────┬─────┐
-    │ a   ┆ b   ┆ c   ┆ sum │
-    │ --- ┆ --- ┆ --- ┆ --- │
-    │ i64 ┆ i64 ┆ i64 ┆ i64 │
-    ╞═════╪═════╪═════╪═════╡
-    │ 1   ┆ 3   ┆ 5   ┆ 6   │
-    │ 2   ┆ 4   ┆ 6   ┆ 8   │
-    └─────┴─────┴─────┴─────┘
-
-    Sum a series:
-
-    >>> pl.sum(df.get_column("a"))
-    3
 
     To aggregate the sums for more than one column/expression use ``pl.col(list).sum()``
     or a regular expression selector like ``pl.sum(regex)``:
@@ -597,7 +504,7 @@ def cumsum(
     ...     }
     ... )
     >>> df.select(pl.cumsum("a"))
-    shape: (2, 1)
+    shape: (3, 1)
     ┌─────┐
     │ a   │
     │ --- │

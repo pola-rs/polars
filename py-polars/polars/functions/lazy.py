@@ -1784,7 +1784,7 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
     --------
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
-    >>> pl.select(pl.min([foo, bar]))
+    >>> pl.select(pl.min_horizontal(foo, bar))
     shape: (3, 1)
     ┌─────┐
     │ min │
