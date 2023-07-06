@@ -153,8 +153,8 @@ def max_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     └─────┘
 
     """
-    exprs = parse_as_list_of_expressions(*exprs)
-    return wrap_expr(plr.max_exprs(exprs))
+    pyexprs = parse_as_list_of_expressions(*exprs)
+    return wrap_expr(plr.max_exprs(pyexprs))
 
 
 def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
@@ -189,8 +189,8 @@ def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     └─────┘
 
     """
-    exprs = parse_as_list_of_expressions(*exprs)
-    return wrap_expr(plr.min_exprs(exprs))
+    pyexprs = parse_as_list_of_expressions(*exprs)
+    return wrap_expr(plr.min_exprs(pyexprs))
 
 
 def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
@@ -224,8 +224,8 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     └─────┴─────┴─────┴─────┘
 
     """
-    exprs = parse_as_list_of_expressions(*exprs)
-    return wrap_expr(plr.sum_exprs(exprs))
+    pyexprs = parse_as_list_of_expressions(*exprs)
+    return wrap_expr(plr.sum_exprs(pyexprs))
 
 
 def cumsum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
