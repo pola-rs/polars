@@ -4,7 +4,7 @@
 	"features": {
 		"ghcr.io/devcontainers/features/python:1": {
 			"installTools": false,
-			"version": "3.10"
+			"version": "os-provided"
 		}
 	},
 	"onCreateCommand": "cargo --version && rustc --version"
