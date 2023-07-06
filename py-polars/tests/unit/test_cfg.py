@@ -346,6 +346,21 @@ def test_set_tbl_width_chars() -> None:
     pl.Config.set_tbl_width_chars(0)
     assert max(len(line) for line in str(df).split("\n")) == 19
 
+    # this check helps to check that column width bucketing
+    # is exact; no extraneous character allocation
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "fruits": ["banana", "banana", "apple", "apple", "banana"],
+            "B": [5, 4, 3, 2, 1],
+            "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+        },
+        schema_overrides={"A": pl.Int64, "B": pl.Int64},
+    ).select(pl.all(), pl.all().suffix("_suffix!"))
+
+    with pl.Config(tbl_width_chars=87):
+        assert max(len(line) for line in str(df).split("\n")) == 87
+
 
 def test_shape_below_table_and_inlined_dtype() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})

@@ -350,6 +350,7 @@ fn make_str_val(v: &str, truncate: usize) -> String {
     }
 }
 
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
     let name = make_str_val(f.name(), str_truncate);
     let name_length = name.len();
@@ -367,12 +368,12 @@ fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
         format!("\n{}", f.data_type())
     };
     let mut dtype_length = column_data_type.trim_start().len();
-    let mut column_separator = "\n---";
+    let mut separator = "\n---";
     if env_is_true(FMT_TABLE_HIDE_COLUMN_SEPARATOR)
         | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
         | env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
     {
-        column_separator = ""
+        separator = ""
     }
     let s = if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
         & !env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
@@ -381,10 +382,14 @@ fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
         dtype_length = inline_name_dtype.len();
         inline_name_dtype
     } else {
-        format!("{column_name}{column_separator}{column_data_type}")
+        format!("{column_name}{separator}{column_data_type}")
     };
-
-    (s, std::cmp::max(name_length, dtype_length) + 2)
+    let mut s_len = std::cmp::max(name_length, dtype_length);
+    let separator_length = separator.trim().len();
+    if s_len < separator_length {
+        s_len = separator_length;
+    }
+    (s, s_len + 2)
 }
 
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -393,7 +398,7 @@ fn prepare_row(
     n_first: usize,
     n_last: usize,
     str_truncate: usize,
-    max_elem_lengths: &mut Vec<usize>,
+    max_elem_lengths: &mut [usize],
 ) -> Vec<String> {
     let reduce_columns = n_first + n_last < row.len();
     let n_elems = n_first + n_last + reduce_columns as usize;
