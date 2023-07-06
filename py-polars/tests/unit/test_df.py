@@ -1134,69 +1134,6 @@ def test_head_groupby() -> None:
     )
 
 
-def test_lazy_functions() -> None:
-    df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.select([pl.count("a")])
-    assert list(out["a"]) == [3]
-    assert pl.count(df["a"]) == 3
-    out = df.select(
-        [
-            pl.var("b").alias("1"),
-            pl.std("b").alias("2"),
-            pl.max("b").alias("3"),
-            pl.min("b").alias("4"),
-            pl.sum("b").alias("5"),
-            pl.mean("b").alias("6"),
-            pl.median("b").alias("7"),
-            pl.n_unique("b").alias("8"),
-            pl.first("b").alias("9"),
-            pl.last("b").alias("10"),
-        ]
-    )
-    expected = 1.0
-    assert np.isclose(out.to_series(0), expected)
-    assert np.isclose(pl.var(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 1.0
-    assert np.isclose(out.to_series(1), expected)
-    assert np.isclose(pl.std(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 3
-    assert np.isclose(out.to_series(2), expected)
-    assert np.isclose(pl.max(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 1
-    assert np.isclose(out.to_series(3), expected)
-    assert np.isclose(pl.min(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 6
-    assert np.isclose(out.to_series(4), expected)
-    assert np.isclose(pl.sum(df["b"]), expected)
-    expected = 2
-    assert np.isclose(out.to_series(5), expected)
-    assert np.isclose(pl.mean(df["b"]), expected)
-    expected = 2
-    assert np.isclose(out.to_series(6), expected)
-    assert np.isclose(pl.median(df["b"]), expected)
-    expected = 3
-    assert np.isclose(out.to_series(7), expected)
-    assert np.isclose(pl.n_unique(df["b"]), expected)
-    expected = 1
-    assert np.isclose(out.to_series(8), expected)
-    assert np.isclose(pl.first(df["b"]), expected)
-    expected = 3
-    assert np.isclose(out.to_series(9), expected)
-    assert np.isclose(pl.last(df["b"]), expected)
-
-    # regex selection
-    out = df.select(
-        [
-            pl.struct(pl.max("^a|b$")).alias("x"),
-            pl.struct(pl.min("^.*[bc]$")).alias("y"),
-            pl.struct(pl.sum("^[^b]$")).alias("z"),
-        ]
-    )
-    assert out.rows() == [
-        ({"a": "foo", "b": 3}, {"b": 1, "c": 1.0}, {"a": None, "c": 6.0})
-    ]
-
-
 def test_is_null_is_not_null() -> None:
     df = pl.DataFrame({"nrs": [1, 2, None]})
     assert df.select(pl.col("nrs").is_null())["nrs"].to_list() == [False, False, True]
@@ -3037,14 +2974,6 @@ def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
 
     with pytest.raises(pl.ComputeError):
         fruits_cars.select(pl.col("fruits").upper_bound())
-
-
-def test_nested_min_max() -> None:
-    df = pl.DataFrame({"a": [1], "b": [2], "c": [3], "d": [4]})
-    out = df.with_columns(pl.max([pl.min(["a", "b"]), pl.min(["c", "d"])]).alias("t"))
-    assert out.shape == (1, 5)
-    assert out.row(0) == (1, 2, 3, 4, 3)
-    assert out.columns == ["a", "b", "c", "d", "t"]
 
 
 def test_selection_misc() -> None:
