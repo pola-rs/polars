@@ -200,8 +200,9 @@ impl Series {
                 let mut tz = tz.clone();
                 if tz.as_deref() == Some("") {
                     tz = None;
-                }
-                if let Some(_tz) = &tz {
+                } else if tz.as_deref() == Some("+00:00") {
+                    tz = Some("UTC".to_string());
+                } else if let Some(_tz) = &tz {
                     #[cfg(feature = "timezones")]
                     validate_time_zone(_tz)?;
                 }

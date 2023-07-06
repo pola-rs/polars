@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import os
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -495,3 +497,13 @@ def test_parquet_string_cache() -> None:
     # so polars should automatically set string cache
     f.seek(0)
     assert_series_equal(pl.read_parquet(f)["a"].cast(str), df["a"].cast(str))
+
+
+def test_tz_aware_parquet_9586() -> None:
+    result = pl.read_parquet(
+        os.path.join("tests", "unit", "io", "files", "tz_aware.parquet")
+    )
+    expected = pl.DataFrame(
+        {"UTC_DATETIME_ID": [datetime(2023, 6, 26, 14, 15, 0, tzinfo=timezone.utc)]}
+    ).select(pl.col("*").cast(pl.Datetime("ns", "UTC")))
+    assert_frame_equal(result, expected)
