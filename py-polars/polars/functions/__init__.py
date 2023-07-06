@@ -1,3 +1,4 @@
+from polars.functions.aggregation import all, any, cumsum, max, min, sum
 from polars.functions.as_datatype import (
     concat_list,
     concat_str,
@@ -10,8 +11,6 @@ from polars.functions.as_datatype import datetime_ as datetime
 from polars.functions.as_datatype import time_ as time
 from polars.functions.eager import align_frames, concat
 from polars.functions.lazy import (
-    all,
-    any,
     apply,
     approx_unique,
     arg_sort_by,
@@ -25,7 +24,6 @@ from polars.functions.lazy import (
     cov,
     cumfold,
     cumreduce,
-    cumsum,
     element,
     exclude,
     first,
@@ -37,10 +35,8 @@ from polars.functions.lazy import (
     last,
     lit,
     map,
-    max,
     mean,
     median,
-    min,
     n_unique,
     quantile,
     reduce,
@@ -49,7 +45,6 @@ from polars.functions.lazy import (
     select,
     sql_expr,
     std,
-    sum,
     tail,
     var,
 )
