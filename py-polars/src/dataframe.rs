@@ -1155,11 +1155,16 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn partition_by(&self, by: Vec<String>, maintain_order: bool) -> PyResult<Vec<Self>> {
+    pub fn partition_by(
+        &self,
+        by: Vec<String>,
+        maintain_order: bool,
+        drop_keys: bool,
+    ) -> PyResult<Vec<Self>> {
         let out = if maintain_order {
-            self.df.partition_by_stable(by)
+            self.df.partition_by_stable(by, drop_keys)
         } else {
-            self.df.partition_by(by)
+            self.df.partition_by(by, drop_keys)
         }
         .map_err(PyPolarsErr::from)?;
         // Safety:
