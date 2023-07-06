@@ -36,6 +36,7 @@ struct State {
     slots: MutableUtf8Array<i64>,
 }
 
+#[derive(Default)]
 pub(crate) struct RevMapMerger {
     id: u128,
     original: Arc<RevMapping>,
