@@ -6,6 +6,12 @@ pub(super) enum DtypeMerger {
     Other(Option<DataType>),
 }
 
+impl Default for DtypeMerger {
+    fn default() -> Self {
+        DtypeMerger::Other(None)
+    }
+}
+
 impl DtypeMerger {
     pub(super) fn new(dtype: Option<DataType>) -> Self {
         match dtype {

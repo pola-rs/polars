@@ -411,3 +411,14 @@ def test_categorical_concat_string_cached() -> None:
     out = pl.concat([df1, df2])
     assert out.dtypes == [pl.Categorical]
     assert out["x"].to_list() == ["A", "B"]
+
+
+def test_list_builder_different_categorical_rev_maps() -> None:
+    with pl.StringCache():
+        # built with different values, so different rev-map
+        s1 = pl.Series(["a", "b"], dtype=pl.Categorical)
+        s2 = pl.Series(["c", "d"], dtype=pl.Categorical)
+
+    assert pl.DataFrame({"c": [s1, s2]}).to_dict(False) == {
+        "c": [["a", "b"], ["c", "d"]]
+    }

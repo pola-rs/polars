@@ -1130,7 +1130,9 @@ fn append_series(
                 .getattr("_s")
                 .expect("could net get series attribute '_s'");
             let pyseries = py_pyseries.extract::<PySeries>()?;
-            builder.append_series(&pyseries.series).map_err(PyPolarsErr::from)?;
+            builder
+                .append_series(&pyseries.series)
+                .map_err(PyPolarsErr::from)?;
         }
         Err(_) => {
             builder.append_opt_series(None).map_err(PyPolarsErr::from)?;
@@ -1211,7 +1213,9 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         let dt = out_series.dtype();
                         builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
                             .map_err(PyPolarsErr::from)?;
-                        builder.append_opt_series(Some(&out_series)).map_err(PyPolarsErr::from)?;
+                        builder
+                            .append_opt_series(Some(&out_series))
+                            .map_err(PyPolarsErr::from)?;
                     } else {
                         let mut builder =
                             get_list_builder(dt, 0, 1, self.name()).map_err(PyPolarsErr::from)?;
@@ -1234,7 +1238,9 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                             let dt = out_series.dtype();
                             builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
                                 .map_err(PyPolarsErr::from)?;
-                            builder.append_opt_series(Some(&out_series)).map_err(PyPolarsErr::from)?;
+                            builder
+                                .append_opt_series(Some(&out_series))
+                                .map_err(PyPolarsErr::from)?;
                             break;
                         } else {
                             nulls += 1;
