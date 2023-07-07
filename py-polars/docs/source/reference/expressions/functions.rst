@@ -19,6 +19,8 @@ These functions are available from the polars module root and can be used as exp
    apply
    approx_unique
    arange
+   arctan2
+   arctan2d
    arg_sort_by
    arg_where
    avg

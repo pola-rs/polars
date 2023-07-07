@@ -84,6 +84,8 @@ from polars.functions import (
     apply,
     approx_unique,
     arange,
+    arctan2,
+    arctan2d,
     arg_sort_by,
     arg_where,
     avg,
@@ -303,6 +305,8 @@ __all__ = [
     # polars.functions.lazy
     "apply",
     "arange",
+    "arctan2",
+    "arctan2d",
     "arg_sort_by",
     "avg",
     "coalesce",
