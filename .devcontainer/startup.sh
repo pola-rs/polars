@@ -14,3 +14,6 @@ rustup component add clippy --toolchain ${toolchain}-x86_64-unknown-linux-gnu
 # Install dprint, see https://dprint.dev/install/
 # this will be slower since it builds from the source
 cargo install --locked dprint
+
+# install cmake
+apt-get update && apt-get install -y cmake
