@@ -807,7 +807,7 @@ def test_lit_dtypes() -> None:
         return pl.select(pl.lit(value, dtype=dtype)).to_series()
 
     d = datetime(2049, 10, 5, 1, 2, 3, 987654)
-    d_ms = datetime(2049, 10, 5, 1, 2, 3, 987000)
+    d_ms = datetime(2049, 10, 5, 1, 2, 3, 988000)
     d_tz = datetime(2049, 10, 5, 1, 2, 3, 987654, tzinfo=ZoneInfo("Asia/Kathmandu"))
 
     td = timedelta(days=942, hours=6, microseconds=123456)
