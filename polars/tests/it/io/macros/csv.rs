@@ -64,7 +64,7 @@ fn scan_csv_macro_null_values() -> PolarsResult<()> {
 }
 
 #[test]
-fn scan_csv_macro_row_cound() -> PolarsResult<()> {
+fn scan_csv_macro_row_count() -> PolarsResult<()> {
     let _ = polars::scan_csv!(&FOODS_CSV, row_count = ("rc", 0))?.collect()?;
     let _ = polars::scan_csv!(&FOODS_CSV, row_count = "rc", encoding = "utf8")?.collect()?;
 
