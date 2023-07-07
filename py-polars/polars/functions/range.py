@@ -82,8 +82,11 @@ def arange(
     """
     Generate a range of integers.
 
-    This can be used in a ``select``, ``with_columns`` etc. Be sure that the resulting
-    range size is equal to the length of the DataFrame you are collecting.
+    .. deprecated:: 0.18.5
+        ``arange`` has been replaced by two new functions: ``int_range`` for generating
+        a single range, and ``int_ranges`` for generating a list column with multiple
+        ranges. ``arange`` will remain available as an alias for `int_range`, which
+        means it will lose the functionality to generate multiple ranges.
 
     Parameters
     ----------
@@ -101,7 +104,7 @@ def arange(
 
     See Also
     --------
-    int_range :
+    int_range : Generate a range of integers.
     int_ranges : Generate a range of integers for each row of the input columns.
 
     Examples
@@ -205,6 +208,10 @@ def int_range(
     -------
     Column of data type ``Int64``.
 
+    See Also
+    --------
+    int_ranges : Generate a range of integers for each row of the input columns.
+
     Examples
     --------
     >>> pl.int_range(0, 3, eager=True)
@@ -291,6 +298,10 @@ def int_ranges(
     Returns
     -------
     Column of data type ``List(dtype)``.
+
+    See Also
+    --------
+    int_range : Generate a single range of integers.
 
     Examples
     --------
