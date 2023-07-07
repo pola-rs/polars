@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 
 fn map_cats(
     s: &Series,
-    cutlabs: &Vec<String>,
+    cutlabs: &[String],
     sorted_breaks: &[f64],
     left_closed: bool,
     include_breaks: bool,
@@ -41,7 +41,7 @@ fn map_cats(
                     brk_vals.append_null();
                 }
                 Some(idx) => unsafe {
-                    bld.append_value(*cl.get_unchecked(idx));
+                    bld.append_value(cl.get_unchecked(idx));
                     brk_vals.append_value(*right_ends.get_unchecked(idx));
                 },
             });
