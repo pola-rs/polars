@@ -195,7 +195,13 @@ where
 /// The name of the resulting column will be "all"; use [`alias`](Expr::alias) to choose a different name.
 pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| Ok(Some(s1.bool()?.bitand(s2.bool()?).into_series()));
+    let func = |s1: Series, s2: Series| {
+        Ok(Some(
+            s1.bool()?
+                .bitand(s2.cast(&DataType::Boolean)?.bool()?)
+                .into_series(),
+        ))
+    };
     fold_exprs(lit(true), func, exprs).alias("all")
 }
 
@@ -204,7 +210,13 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 /// The name of the resulting column will be "any"; use [`alias`](Expr::alias) to choose a different name.
 pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| Ok(Some(s1.bool()?.bitor(s2.bool()?).into_series()));
+    let func = |s1: Series, s2: Series| {
+        Ok(Some(
+            s1.bool()?
+                .bitor(s2.cast(&DataType::Boolean)?.bool()?)
+                .into_series(),
+        ))
+    };
     fold_exprs(lit(false), func, exprs).alias("any")
 }
 
