@@ -416,7 +416,7 @@ pub mod scan_csv {
             VALUE: AsRef<str>,
         {
             let mut opts = self.clone();
-            let v = value.as_ref().parse().unwrap_or_else(|_| CsvEncoding::Utf8);
+            let v = value.as_ref().parse().unwrap_or(CsvEncoding::Utf8);
 
             opts.encoding = Some(v);
             opts
@@ -455,7 +455,7 @@ pub mod scan_csv {
         }
     }
 
-    pub fn set_options<'a>(rdr: LazyCsvReader<'a>, options: LazyCsvOptions) -> LazyCsvReader<'a> {
+    pub fn set_options(rdr: LazyCsvReader<'_>, options: LazyCsvOptions) -> LazyCsvReader<'_> {
         let mut rdr = rdr
             .has_header(options.has_header)
             .with_rechunk(options.rechunk)
@@ -566,7 +566,7 @@ pub mod scan_parquet {
         {
             let mut opts = self.clone();
 
-            opts.parallel = Some(value.try_into().unwrap_or_else(|_| ParallelStrategy::Auto));
+            opts.parallel = Some(value.try_into().unwrap_or(ParallelStrategy::Auto));
             opts
         }
     }

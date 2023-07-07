@@ -86,7 +86,7 @@ fn scan_csv_macro_2() -> PolarsResult<()> {
         low_memory = true,
         missing_is_null = true,
         n_rows = 100,
-        null_values = ("null")
+        null_values = "null"
     )?
     .collect()?;
     assert_eq!(df.shape(), (27, 4));
