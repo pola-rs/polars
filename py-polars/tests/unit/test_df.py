@@ -2926,31 +2926,6 @@ def test_fill_null_limits() -> None:
     }
 
 
-def test_max_min_multiple_columns(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.select(pl.max(["A", "B"]).alias("max"))
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-
-    res = fruits_cars.select(pl.min(["A", "B"]).alias("min"))
-    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
-
-
-def test_max_min_wildcard_columns(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.min(["*"]))
-    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.min([pl.all()]))
-    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
-
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.max(["*"]))
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.max([pl.all()]))
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(
-        pl.max([pl.all(), "A", "*"])
-    )
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-
-
 def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select([pl.head("A", 2)])
     res_series = pl.head(fruits_cars["A"], 2)
@@ -3541,17 +3516,7 @@ def test_round() -> None:
 
 def test_dot() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]})
-    assert cast(float, df.select(pl.col("a").dot(pl.col("b"))).item()) == 12.96
-
-
-def test_all_expr() -> None:
-    df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
-    assert_frame_equal(df.select([pl.all()]), df)
-
-
-def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.with_columns(pl.col("A").cast(bool)).select(pl.any("A"))[0, 0]
-    assert fruits_cars.select(pl.any([pl.col("A"), pl.col("B")]))[0, 0]
+    assert df.select(pl.col("a").dot(pl.col("b"))).item() == 12.96
 
 
 def test_rolling_apply() -> None:

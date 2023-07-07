@@ -54,7 +54,7 @@ def test_struct_arithmetic() -> None:
             "b": [3, 4],
             "c": [5, 6],
         }
-    ).select(pl.cumsum(["a", "c"]))
+    ).select(pl.cumsum_horizontal("a", "c"))
     assert df.select(pl.col("cumsum") * 2).to_dict(False) == {
         "cumsum": [{"a": 2, "c": 12}, {"a": 4, "c": 16}]
     }
@@ -73,7 +73,7 @@ def test_struct_arithmetic() -> None:
 
     # inline, this check cumsum reports the right output type
     assert pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]}).select(
-        pl.cumsum(["a", "c"]) * 3
+        pl.cumsum_horizontal("a", "c") * 3
     ).to_dict(False) == {"cumsum": [{"a": 3, "c": 18}, {"a": 6, "c": 24}]}
 
 
@@ -192,7 +192,7 @@ def test_boolean_addition() -> None:
     assert s.to_list() == [2, 0, 1]
     df = pl.DataFrame(
         {"a": [True], "b": [False]},
-    ).select(pl.sum(pl.col(["a", "b"])))
+    ).select(pl.sum_horizontal("a", "b"))
     assert df.dtypes == [pl.utils.get_index_type()]
 
 
