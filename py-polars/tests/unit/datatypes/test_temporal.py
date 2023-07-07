@@ -2684,6 +2684,13 @@ def test_misc_precision_any_value_conversion(time_zone: Any, warn: bool) -> None
         assert pl.Series([dt]).cast(pl.Datetime("ns", time_zone)).to_list() == [dt]
 
 
+def test_ns_rounding() -> None:
+    # ns rounding
+    assert pl.Series(
+        [1646058685919897849], dtype=pl.Datetime(time_unit="ns")
+    ).to_list() == [datetime(2022, 2, 28, 14, 31, 25, 919898)]
+
+
 @pytest.mark.parametrize(
     "tm",
     [

@@ -101,7 +101,7 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
         micros = dt.microsecond
         return _timestamp_in_seconds(dt) * 1_000_000 + micros
     elif time_unit == "ms":
-        millis = dt.microsecond // 1000
+        millis = dt.microsecond // 1000 + (dt.microsecond % 1000 >= 500)
         return _timestamp_in_seconds(dt) * 1_000 + millis
     else:
         raise ValueError(
@@ -144,13 +144,16 @@ def _to_python_time(value: int) -> time:
         minutes, seconds = divmod(seconds, 60)
         hours, minutes = divmod(minutes, 60)
         return time(
-            hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1000
+            hour=hours,
+            minute=minutes,
+            second=seconds,
+            microsecond=nanoseconds // 1000 + (nanoseconds % 1000 >= 500),
         )
 
 
 def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> timedelta:
     if time_unit == "ns":
-        return timedelta(microseconds=value // 1e3)
+        return timedelta(microseconds=value // 1000 + (value % 1000 >= 500))
     elif time_unit == "us":
         return timedelta(microseconds=value)
     elif time_unit == "ms":
@@ -177,7 +180,7 @@ def _to_python_datetime(
         if time_unit == "us":
             return EPOCH + timedelta(microseconds=value)
         elif time_unit == "ns":
-            return EPOCH + timedelta(microseconds=value // 1000)
+            return EPOCH + timedelta(microseconds=value // 1000 + (value % 1000 >= 500))
         elif time_unit == "ms":
             return EPOCH + timedelta(milliseconds=value)
         else:
@@ -188,7 +191,9 @@ def _to_python_datetime(
         if time_unit == "us":
             dt = EPOCH_UTC + timedelta(microseconds=value)
         elif time_unit == "ns":
-            dt = EPOCH_UTC + timedelta(microseconds=value // 1000)
+            dt = EPOCH_UTC + timedelta(
+                microseconds=value // 1000 + (value % 1000 >= 500)
+            )
         elif time_unit == "ms":
             dt = EPOCH_UTC + timedelta(milliseconds=value)
         else:
