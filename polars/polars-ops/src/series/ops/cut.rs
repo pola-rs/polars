@@ -1,6 +1,47 @@
-use std::iter::once;
+use std::{iter::once, cmp::PartialOrd};
 
 use polars_core::prelude::*;
+use polars_utils::aliases::PlHashMap;
+
+fn map_cats(
+    s: &Series,
+    cutlabs: &Vec<String>,
+    sorted_breaks: &[f64],
+    left_closed: bool,
+    breaks_struct: bool
+) -> PolarsResult<Series> {
+    let cl: Vec<&str> = cutlabs.iter().map(String::as_str).collect();
+
+    let out_name = format!("{}_bin", s.name());
+    let mut bld = CategoricalChunkedBuilder::new(&out_name, s.len());
+    let s2 = s.cast(&DataType::Float64);
+    //let s_iter = s2?.f64()?.into_iter();
+
+    let op = if left_closed { PartialOrd::ge } else { PartialOrd::gt };
+    unsafe {
+        bld.drain_iter(s2?.f64()?.into_iter().map(|opt| {
+            opt
+                .filter(|x| !x.is_nan())
+                .map(|x| *cl.get_unchecked(sorted_breaks.partition_point(|v| op(&x, v))))
+        }));
+    }
+    let res = bld.finish();
+    if breaks_struct {
+        let mut mapper = PlHashMap::<&str, f64>::with_capacity(cl.len());
+        mapper.extend(cl.iter().zip(sorted_breaks.iter().chain(once(&f64::INFINITY))));
+        let brk_vals = res
+            .iter_str()
+            .map(|k| k.map(|l| mapper[l])).collect::<Float64Chunked>();
+        let outvals = vec![res.into_series(), brk_vals.into_series()];
+        Ok(StructChunked::new("cut", &outvals)?.into_series())
+    } else {
+        Ok(res.into_series())
+    }
+}
+
+// fn cut_with_breaks() {
+
+// }
 
 pub fn cut(
     s: &Series,
@@ -36,24 +77,8 @@ pub fn cut(
             .collect::<Vec<String>>(),
     };
 
-    let cl: Vec<&str> = cutlabs.iter().map(String::as_str).collect();
-    let s_flt = s.cast(&DataType::Float64)?;
-    let bin_iter = s_flt.f64()?.into_iter();
 
-    let out_name = format!("{}_bin", s.name());
-    let mut bld = CategoricalChunkedBuilder::new(&out_name, s.len());
-    unsafe {
-        if left_closed {
-            bld.drain_iter(bin_iter.map(|opt| {
-                opt.map(|x| *cl.get_unchecked(sorted_breaks.partition_point(|&v| x >= v)))
-            }));
-        } else {
-            bld.drain_iter(bin_iter.map(|opt| {
-                opt.map(|x| *cl.get_unchecked(sorted_breaks.partition_point(|&v| x > v)))
-            }));
-        }
-    }
-    Ok(bld.finish().into_series())
+    map_cats(s, &cutlabs, sorted_breaks, left_closed, true)
 }
 
 pub fn qcut(
