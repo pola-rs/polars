@@ -99,6 +99,11 @@ def arange(
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
 
+    See Also
+    --------
+    int_range :
+    int_ranges : Generate a range of integers for each row of the input columns.
+
     Examples
     --------
     >>> pl.arange(0, 3, eager=True)
@@ -141,6 +146,7 @@ def int_range(
     end: int | IntoExpr,
     step: int = ...,
     *,
+    dtype: PolarsIntegerType = ...,
     eager: Literal[False] = ...,
 ) -> Expr:
     ...
@@ -152,6 +158,7 @@ def int_range(
     end: int | IntoExpr,
     step: int = ...,
     *,
+    dtype: PolarsIntegerType = ...,
     eager: Literal[True],
 ) -> Series:
     ...
@@ -163,6 +170,7 @@ def int_range(
     end: int | IntoExpr,
     step: int = ...,
     *,
+    dtype: PolarsIntegerType = ...,
     eager: bool,
 ) -> Expr | Series:
     ...
@@ -173,6 +181,7 @@ def int_range(
     end: int | IntoExpr,
     step: int = 1,
     *,
+    dtype: PolarsIntegerType = Int64,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -186,6 +195,8 @@ def int_range(
         Upper bound of the range (exclusive).
     step
         Step size of the range.
+    dtype
+        Data type of the range. Defaults to ``Int64``.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
@@ -208,7 +219,7 @@ def int_range(
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
-    result = wrap_expr(plr.int_range(start, end, step))
+    result = wrap_expr(plr.int_range(start, end, step, dtype))
 
     if eager:
         return F.select(result).to_series()
