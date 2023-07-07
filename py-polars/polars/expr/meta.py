@@ -28,19 +28,63 @@ class ExprMetaNameSpace:
         return not self == other
 
     def eq(self, other: ExprMetaNameSpace | Expr) -> bool:
-        """Indicate if this expression is the same as another expression."""
+        """
+        Indicate if this expression is the same as another expression.
+
+        Examples
+        --------
+        >>> foo_bar = pl.col("foo").alias("bar")
+        >>> foo = pl.col("foo")
+        >>> foo_bar.meta.eq(foo)
+        False
+        >>> foo_bar2 = pl.col("foo").alias("bar")
+        >>> foo_bar.meta.eq(foo_bar2)
+        True
+
+        """
         return self._pyexpr.meta_eq(other._pyexpr)
 
     def ne(self, other: ExprMetaNameSpace | Expr) -> bool:
-        """Indicate if this expression is NOT the same as another expression."""
+        """
+        Indicate if this expression is NOT the same as another expression.
+
+        Examples
+        --------
+        >>> foo_bar = pl.col("foo").alias("bar")
+        >>> foo = pl.col("foo")
+        >>> foo_bar.meta.ne(foo)
+        True
+        >>> foo_bar2 = pl.col("foo").alias("bar")
+        >>> foo_bar.meta.ne(foo_bar2)
+        False
+
+        """
         return not self.eq(other)
 
     def has_multiple_outputs(self) -> bool:
-        """Whether this expression expands into multiple expressions."""
+        """
+        Whether this expression expands into multiple expressions.
+
+        Examples
+        --------
+        >>> e = pl.col(["a", "b"]).alias("bar")
+        >>> e.meta.has_multiple_outputs()
+        True
+
+        """
         return self._pyexpr.meta_has_multiple_outputs()
 
     def is_regex_projection(self) -> bool:
-        """Whether this expression expands to columns that match a regex pattern."""
+        """
+        Whether this expression expands to columns that match a regex pattern.
+
+        Examples
+        --------
+        >>> e = pl.col("^.*$").alias("bar")
+        >>> e.meta.is_regex_projection()
+        True
+
+        """
         return self._pyexpr.meta_is_regex_projection()
 
     def output_name(self) -> str:
@@ -49,6 +93,24 @@ class ExprMetaNameSpace:
 
         It may not always be possible to determine the output name, as that can depend
         on the schema of the context; in that case this will raise ``ComputeError``.
+
+        Examples
+        --------
+        >>> e = pl.col("foo") * pl.col("bar")
+        >>> e.meta.output_name()
+        "foo"
+        >>> e_filter = pl.col("foo").filter(pl.col("bar") == 13)
+        >>> e_filter.meta.output_name()
+        "foo"
+        >>> e_sum_over = pl.sum("foo").over("groups")
+        >>> e_sum_over.meta.output_name()
+        "foo"
+        >>> e_sum_slice = pl.sum("foo").slice(pl.count() - 10, pl.col("bar"))
+        >>> e_sum_over.meta.output_name()
+        "foo"
+        >>> e_count = pl.count()
+        >>> e.meta.output_name()
+        "count"
 
         """
         return self._pyexpr.meta_output_name()
