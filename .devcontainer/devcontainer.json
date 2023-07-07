@@ -5,6 +5,9 @@
 		"ghcr.io/devcontainers/features/python:1": {
 			"installTools": false,
 			"version": "os-provided"
+		},
+		"ghcr.io/rocker-org/devcontainer-features/apt-packages:1": {
+				"packages": "cmake"
 		}
 	},
 	"onCreateCommand": ".devcontainer/startup.sh"
