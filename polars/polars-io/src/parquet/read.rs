@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use arrow::io::parquet::read;
@@ -36,6 +37,30 @@ pub enum ParallelStrategy {
     /// This will choose the most occurring unit.
     #[default]
     Auto,
+}
+
+impl FromStr for ParallelStrategy {
+    type Err = PolarsError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none" => Ok(Self::None),
+            "columns" => Ok(Self::Columns),
+            "row_groups" => Ok(Self::RowGroups),
+            "auto" => Ok(Self::Auto),
+            _ => {
+                polars_bail!(InvalidOperation: "valid values are: 'none', 'columns', 'row_groups', 'auto'")
+            }
+        }
+    }
+}
+
+impl TryFrom<&str> for ParallelStrategy {
+    type Error = PolarsError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::from_str(value)
+    }
 }
 
 /// Read Apache parquet format into a DataFrame.
