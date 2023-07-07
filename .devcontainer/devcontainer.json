@@ -7,6 +7,6 @@
 			"version": "os-provided"
 		}
 	},
-	"onCreateCommand": "cargo --version && rustc --version"
+	"onCreateCommand": "./startup.sh"
 }
 
