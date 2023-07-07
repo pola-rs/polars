@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.testing import assert_frame_equal
-from polars.utils.convert import get_zoneinfo as ZoneInfo
+from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
+    from polars.datatypes import PolarsDataType
     from polars.type_aliases import TimeUnit
+else:
+    from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 
 def test_arange() -> None:
@@ -28,7 +33,7 @@ def test_arange_decreasing() -> None:
 
 def test_arange_expr() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
-    out = df.select([pl.arange(0, pl.col("a").count() * 10)])
+    out = df.select(pl.int_range(0, pl.col("a").count() * 10))
     assert out.shape == (20, 1)
     assert out.to_series(0)[-1] == 19
 
@@ -36,24 +41,36 @@ def test_arange_expr() -> None:
     out2 = pl.arange(0, 10, 2, eager=True)
     assert out2.to_list() == [0, 2, 4, 6, 8]
 
-    out3 = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
-    assert out3.dtype == pl.List
-    assert out3[0].to_list() == [0, 2]
 
-    df = pl.DataFrame({"start": [1, 2, 3, 5, 5, 5], "stop": [8, 3, 12, 8, 8, 8]})
+def test_arange_deprecated() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [1, 2, 3, 5, 5, 5],
+            "stop": [8, 3, 12, 8, 8, 8],
+        }
+    )
 
-    assert df.select(pl.arange(pl.lit(1), pl.col("stop") + 1).alias("test")).to_dict(
-        False
-    ) == {
-        "test": [
-            [1, 2, 3, 4, 5, 6, 7, 8],
-            [1, 2, 3],
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-            [1, 2, 3, 4, 5, 6, 7, 8],
-            [1, 2, 3, 4, 5, 6, 7, 8],
-            [1, 2, 3, 4, 5, 6, 7, 8],
-        ]
-    }
+    with pytest.deprecated_call():
+        result = df.select(pl.arange(pl.lit(1), pl.col("stop") + 1).alias("test"))
+
+    expected = pl.DataFrame(
+        {
+            "test": [
+                [1, 2, 3, 4, 5, 6, 7, 8],
+                [1, 2, 3],
+                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                [1, 2, 3, 4, 5, 6, 7, 8],
+                [1, 2, 3, 4, 5, 6, 7, 8],
+                [1, 2, 3, 4, 5, 6, 7, 8],
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    with pytest.deprecated_call():
+        result_s = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
+    assert result_s.dtype == pl.List
+    assert result_s[0].to_list() == [0, 2]
 
 
 def test_arange_name() -> None:
@@ -63,6 +80,77 @@ def test_arange_name() -> None:
 
     result_lazy = pl.select(pl.arange(0, 5)).to_series()
     assert result_lazy.name == expected_name
+
+
+def test_arange_schema() -> None:
+    result = pl.LazyFrame().select(pl.arange(-3, 3))
+
+    expected_schema = {"arange": pl.Int64}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+
+def test_int_range() -> None:
+    result = pl.int_range(0, 3)
+    expected = pl.Series("int", [0, 1, 2])
+    assert_series_equal(pl.select(result).to_series(), expected)
+
+
+def test_int_range_eager() -> None:
+    result = pl.int_range(0, 3, eager=True)
+    expected = pl.Series("int", [0, 1, 2])
+    assert_series_equal(result, expected)
+
+
+def test_int_range_schema() -> None:
+    result = pl.LazyFrame().select(pl.int_range(-3, 3))
+
+    expected_schema = {"int": pl.Int64}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "expected"),
+    [
+        ("a", "b", pl.Series("int_range", [[1, 2], [2, 3]])),
+        (-1, "a", pl.Series("int_range", [[-1, 0], [-1, 0, 1]])),
+        ("b", 4, pl.Series("int_range", [[3], []])),
+    ],
+)
+def test_int_ranges(start: Any, end: Any, expected: pl.Series) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+
+    result = df.select(pl.int_ranges(start, end))
+    assert_series_equal(result.to_series(), expected)
+
+
+def test_int_ranges_eager() -> None:
+    start = pl.Series([1, 2])
+    result = pl.int_ranges(start, 4, eager=True)
+
+    expected = pl.Series("int_range", [[1, 2, 3], [2, 3]])
+    assert_series_equal(result, expected)
+
+
+def test_int_ranges_schema_dtype_default() -> None:
+    lf = pl.LazyFrame({"start": [1, 2], "end": [3, 4]})
+
+    result = lf.select(pl.int_ranges("start", "end"))
+
+    expected_schema = {"int_range": pl.List(pl.Int64)}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+
+def test_int_ranges_schema_dtype_arg() -> None:
+    lf = pl.LazyFrame({"start": [1, 2], "end": [3, 4]})
+
+    result = lf.select(pl.int_ranges("start", "end", dtype=pl.UInt16))
+
+    expected_schema = {"int_range": pl.List(pl.UInt16)}
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
 
 
 def test_date_range() -> None:
@@ -188,6 +276,28 @@ def test_date_range_lazy_with_literals() -> None:
     )
 
 
+def test_date_range_lazy_time_zones_invalid() -> None:
+    start = datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))
+    stop = datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu"))
+    with pytest.raises(
+        ComputeError,
+        match="Given time_zone is different from that of timezone aware datetimes. Given: 'Pacific/Tarawa', got: 'Asia/Kathmandu",
+    ), pytest.warns(TimeZoneAwareConstructorWarning, match="Series with UTC"):
+        (
+            pl.DataFrame({"start": [start], "stop": [stop]})
+            .with_columns(
+                pl.date_range(
+                    start,
+                    stop,
+                    interval="678d",
+                    eager=False,
+                    time_zone="Pacific/Tarawa",
+                )
+            )
+            .lazy()
+        )
+
+
 @pytest.mark.parametrize("low", ["start", pl.col("start")])
 @pytest.mark.parametrize("high", ["stop", pl.col("stop")])
 def test_date_range_lazy_with_expressions(
@@ -225,7 +335,6 @@ def test_date_range_lazy_with_expressions(
             low,
             high,
             interval="1d",
-            eager=True,
         ).alias("dts")
     ).to_dict(
         False
@@ -248,7 +357,6 @@ def test_date_range_lazy_with_expressions(
             low,
             high,
             interval="1d",
-            eager=True,
         ).alias("dts")
     ).to_dict(
         False
@@ -290,12 +398,7 @@ def test_date_range_single_row_lazy_7110() -> None:
 
 
 def test_date_range_invalid_time_zone() -> None:
-    with pytest.raises(
-        pl.ComputeError, match="unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        DeprecationWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(pl.ComputeError, match="unable to parse time zone: 'foo'"):
         pl.date_range(
             datetime(2001, 1, 1),
             datetime(2001, 1, 3),
@@ -322,9 +425,8 @@ def test_timezone_aware_date_range() -> None:
     ]
 
     with pytest.raises(
-        ValueError,
-        match="Cannot mix different timezone aware datetimes. "
-        "Got: 'Asia/Shanghai' and 'None'",
+        ComputeError,
+        match="failed to determine supertype",
     ):
         pl.date_range(
             low,
@@ -335,9 +437,8 @@ def test_timezone_aware_date_range() -> None:
         )
 
     with pytest.raises(
-        ValueError,
-        match="Given time_zone is different from that of timezone aware datetimes. "
-        "Given: 'UTC', got: 'Asia/Shanghai'.",
+        ComputeError,
+        match=r"Given time_zone is different from that of timezone aware datetimes",
     ):
         pl.date_range(
             low, high, interval=timedelta(days=5), time_zone="UTC", eager=True
@@ -567,20 +668,253 @@ def test_deprecated_name_arg() -> None:
         assert result_eager.name == name
 
 
-def test_date_range_schema() -> None:
-    df = pl.DataFrame(
-        {"start": [datetime(2020, 1, 1)], "end": [datetime(2020, 1, 2)]}
-    ).lazy()
+@pytest.mark.parametrize(
+    ("values_time_zone", "input_time_zone", "output_time_zone"),
+    [
+        ("Asia/Kathmandu", "Asia/Kathmandu", "Asia/Kathmandu"),
+        ("Asia/Kathmandu", None, "Asia/Kathmandu"),
+        (None, "Asia/Kathmandu", "Asia/Kathmandu"),
+        (None, None, None),
+    ],
+)
+@pytest.mark.parametrize(
+    ("values_time_unit", "input_time_unit", "output_time_unit"),
+    [
+        ("ms", None, "ms"),
+        ("us", None, "us"),
+        ("ns", None, "ns"),
+        ("ms", "ms", "ms"),
+        ("us", "ms", "ms"),
+        ("ns", "ms", "ms"),
+        ("ms", "us", "us"),
+        ("us", "us", "us"),
+        ("ns", "us", "us"),
+        ("ms", "ns", "ns"),
+        ("us", "ns", "ns"),
+        ("ns", "ns", "ns"),
+    ],
+)
+def test_date_range_schema(
+    values_time_zone: str | None,
+    input_time_zone: str | None,
+    output_time_zone: str | None,
+    values_time_unit: TimeUnit,
+    input_time_unit: TimeUnit | None,
+    output_time_unit: TimeUnit,
+) -> None:
+    df = (
+        pl.DataFrame({"start": [datetime(2020, 1, 1)], "end": [datetime(2020, 1, 2)]})
+        .with_columns(
+            pl.col("*")
+            .dt.replace_time_zone(values_time_zone)
+            .dt.cast_time_unit(values_time_unit)
+        )
+        .lazy()
+    )
     result = df.with_columns(
-        pl.date_range(pl.col("start"), pl.col("end")).alias("date_range")
+        pl.date_range(
+            pl.col("start"),
+            pl.col("end"),
+            time_zone=input_time_zone,
+            time_unit=input_time_unit,
+        ).alias("date_range")
     )
     expected_schema = {
-        "start": pl.Datetime(time_unit="us", time_zone=None),
-        "end": pl.Datetime(time_unit="us", time_zone=None),
-        "date_range": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
+        "start": pl.Datetime(time_unit=values_time_unit, time_zone=values_time_zone),
+        "end": pl.Datetime(time_unit=values_time_unit, time_zone=values_time_zone),
+        "date_range": pl.List(
+            pl.Datetime(time_unit=output_time_unit, time_zone=output_time_zone)
+        ),
     }
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
+
+    expected = pl.DataFrame(
+        {
+            "start": [datetime(2020, 1, 1)],
+            "end": [datetime(2020, 1, 2)],
+            "date_range": [[datetime(2020, 1, 1), datetime(2020, 1, 2)]],
+        }
+    ).with_columns(
+        pl.col("start")
+        .dt.replace_time_zone(values_time_zone)
+        .dt.cast_time_unit(values_time_unit),
+        pl.col("end")
+        .dt.replace_time_zone(values_time_zone)
+        .dt.cast_time_unit(values_time_unit),
+        pl.col("date_range")
+        .explode()
+        .dt.replace_time_zone(output_time_zone)
+        .dt.cast_time_unit(output_time_unit)
+        .implode(),
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    (
+        "input_time_unit",
+        "input_time_zone",
+        "output_dtype",
+        "interval",
+        "expected_date_range",
+    ),
+    [
+        (None, None, pl.Date, "1d", ["2020-01-01", "2020-01-02", "2020-01-03"]),
+        ("ms", None, pl.Date, "1d", ["2020-01-01", "2020-01-02", "2020-01-03"]),
+        (
+            None,
+            "Asia/Kathmandu",
+            pl.Date,
+            "1d",
+            ["2020-01-01", "2020-01-02", "2020-01-03"],
+        ),
+        (
+            "ms",
+            "Asia/Kathmandu",
+            pl.Date,
+            "1d",
+            ["2020-01-01", "2020-01-02", "2020-01-03"],
+        ),
+    ],
+)
+def test_date_range_schema_no_upcast(
+    input_time_unit: TimeUnit | None,
+    input_time_zone: str | None,
+    output_dtype: PolarsDataType,
+    interval: str,
+    expected_date_range: list[str],
+) -> None:
+    df = pl.DataFrame({"start": [date(2020, 1, 1)], "end": [date(2020, 1, 3)]}).lazy()
+    result = df.with_columns(
+        pl.date_range(
+            pl.col("start"),
+            pl.col("end"),
+            interval=interval,
+            time_unit=input_time_unit,
+            time_zone=input_time_zone,
+        ).alias("date_range")
+    )
+    expected_schema = {
+        "start": pl.Date,
+        "end": pl.Date,
+        "date_range": pl.List(output_dtype),
+    }
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+    expected = pl.DataFrame(
+        {
+            "start": [date(2020, 1, 1)],
+            "end": [date(2020, 1, 3)],
+            "date_range": pl.Series(expected_date_range)
+            .str.to_datetime(time_unit="ns")
+            .implode(),
+        }
+    ).with_columns(
+        pl.col("date_range").explode().cast(output_dtype).implode(),
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    (
+        "input_time_unit",
+        "input_time_zone",
+        "output_dtype",
+        "interval",
+        "expected_date_range",
+    ),
+    [
+        (None, None, pl.Datetime("us"), "1s1d", ["2020-01-01", "2020-01-02 00:00:01"]),
+        (None, None, pl.Datetime("us"), "1d1s", ["2020-01-01", "2020-01-02 00:00:01"]),
+        (
+            None,
+            None,
+            pl.Datetime("ns"),
+            "1d1ns",
+            ["2020-01-01", "2020-01-02 00:00:00.000000001"],
+        ),
+        ("ms", None, pl.Datetime("ms"), "1s1d", ["2020-01-01", "2020-01-02 00:00:01"]),
+        ("ms", None, pl.Datetime("ms"), "1d1s", ["2020-01-01", "2020-01-02 00:00:01"]),
+        (
+            None,
+            "Asia/Kathmandu",
+            pl.Datetime("us", "Asia/Kathmandu"),
+            "1s1d",
+            ["2020-01-01", "2020-01-02 00:00:01"],
+        ),
+        (
+            None,
+            "Asia/Kathmandu",
+            pl.Datetime("us", "Asia/Kathmandu"),
+            "1d1s",
+            ["2020-01-01", "2020-01-02 00:00:01"],
+        ),
+        (
+            None,
+            "Asia/Kathmandu",
+            pl.Datetime("ns", "Asia/Kathmandu"),
+            "1d1ns",
+            ["2020-01-01", "2020-01-02 00:00:00.000000001"],
+        ),
+        (
+            "ms",
+            "Asia/Kathmandu",
+            pl.Datetime("ms", "Asia/Kathmandu"),
+            "1s1d",
+            ["2020-01-01", "2020-01-02 00:00:01"],
+        ),
+        (
+            "ms",
+            "Asia/Kathmandu",
+            pl.Datetime("ms", "Asia/Kathmandu"),
+            "1d1s",
+            ["2020-01-01", "2020-01-02 00:00:01"],
+        ),
+    ],
+)
+def test_date_range_schema_upcasts_to_datetime(
+    input_time_unit: TimeUnit | None,
+    input_time_zone: str | None,
+    output_dtype: PolarsDataType,
+    interval: str,
+    expected_date_range: list[str],
+) -> None:
+    df = pl.DataFrame({"start": [date(2020, 1, 1)], "end": [date(2020, 1, 3)]}).lazy()
+    result = df.with_columns(
+        pl.date_range(
+            pl.col("start"),
+            pl.col("end"),
+            interval=interval,
+            time_unit=input_time_unit,
+            time_zone=input_time_zone,
+        ).alias("date_range")
+    )
+    expected_schema = {
+        "start": pl.Date,
+        "end": pl.Date,
+        "date_range": pl.List(output_dtype),
+    }
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+    expected = pl.DataFrame(
+        {
+            "start": [date(2020, 1, 1)],
+            "end": [date(2020, 1, 3)],
+            "date_range": pl.Series(expected_date_range)
+            .str.to_datetime(time_unit="ns")
+            .implode(),
+        }
+    ).with_columns(
+        pl.col("date_range")
+        .explode()
+        .dt.cast_time_unit(output_dtype.time_unit)  # type: ignore[union-attr]
+        .dt.replace_time_zone(output_dtype.time_zone)  # type: ignore[union-attr]
+        .implode(),
+    )
+    assert_frame_equal(result.collect(), expected)
 
 
 def test_date_range_no_alias_schema_9037() -> None:

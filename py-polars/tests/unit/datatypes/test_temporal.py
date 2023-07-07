@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, Any, cast, no_type_check
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -1461,16 +1461,17 @@ def test_agg_logical() -> None:
     assert s.min() == dates[0]
 
 
-@no_type_check
 def test_from_time_arrow() -> None:
     pa_times = pa.table([pa.array([10, 20, 30], type=pa.time32("s"))], names=["times"])
 
-    assert pl.from_arrow(pa_times).to_series().to_list() == [
+    result: pl.DataFrame = pl.from_arrow(pa_times)  # type: ignore[assignment]
+
+    assert result.to_series().to_list() == [
         time(0, 0, 10),
         time(0, 0, 20),
         time(0, 0, 30),
     ]
-    assert pl.from_arrow(pa_times).rows() == [
+    assert result.rows() == [
         (time(0, 0, 10),),
         (time(0, 0, 20),),
         (time(0, 0, 30),),
@@ -1920,12 +1921,7 @@ def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
 
 
 def test_strptime_with_invalid_tz() -> None:
-    with pytest.raises(
-        ComputeError, match="unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        FutureWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
     with pytest.raises(
         ComputeError,
@@ -1963,12 +1959,7 @@ def test_strptime_unguessable_format() -> None:
 
 def test_convert_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.raises(
-        ComputeError, match="unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        FutureWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
 

@@ -15,35 +15,6 @@ use polars_core::with_match_physical_integer_type;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-struct Intersection<'a, T, I: Iterator<Item = T>> {
-    // iterator of the first set
-    iter: I,
-    // the second set
-    other: &'a PlIndexSet<T>,
-}
-
-impl<'a, T, I> Iterator for Intersection<'a, T, I>
-where
-    T: Eq + Hash,
-    I: Iterator<Item = T>,
-{
-    type Item = T;
-
-    fn next(&mut self) -> Option<T> {
-        loop {
-            let elt = self.iter.next()?;
-            if self.other.contains(&elt) {
-                return Some(elt);
-            }
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let (_, upper) = self.iter.size_hint();
-        (0, upper)
-    }
-}
-
 trait MaterializeValues<K> {
     // extends the iterator to the values and returns the current offset
     fn extend_buf<I: Iterator<Item = K>>(&mut self, values: I) -> usize;
@@ -68,10 +39,11 @@ impl<'a> MaterializeValues<Option<&'a [u8]>> for MutableBinaryArray<i64> {
 
 fn set_operation<K, I, R>(
     set: &mut PlIndexSet<K>,
+    set2: &mut PlIndexSet<K>,
     a: I,
     b: I,
     out: &mut R,
-    set_type: SetOperation,
+    set_op: SetOperation,
 ) -> usize
 where
     K: Eq + Hash + Copy,
@@ -82,19 +54,12 @@ where
     let a = a.into_iter();
     let b = b.into_iter();
 
-    match set_type {
+    match set_op {
         SetOperation::Intersection => {
-            let (smaller, larger) = if a.size_hint().0 <= b.size_hint().0 {
-                (a, b)
-            } else {
-                (b, a)
-            };
-            set.extend(smaller);
-            let iter = Intersection {
-                iter: larger,
-                other: set,
-            };
-            out.extend_buf(iter)
+            set2.clear();
+            set.extend(a);
+            set2.extend(b);
+            out.extend_buf(set.intersection(set2).copied())
         }
         SetOperation::Union => {
             set.extend(a);
@@ -107,6 +72,14 @@ where
                 set.remove(&v);
             }
             out.extend_buf(set.drain(..))
+        }
+        SetOperation::SymmetricDifference => {
+            set2.clear();
+            // We could speed this up, but implementing ourselves, but we need to have a clonable
+            // iterator as we need 2 passes
+            set.extend(a);
+            set2.extend(b);
+            out.extend_buf(set.symmetric_difference(set2).copied())
         }
     }
 }
@@ -121,6 +94,7 @@ pub enum SetOperation {
     Intersection,
     Union,
     Difference,
+    SymmetricDifference,
 }
 
 impl Display for SetOperation {
@@ -129,6 +103,7 @@ impl Display for SetOperation {
             SetOperation::Intersection => "intersection",
             SetOperation::Union => "union",
             SetOperation::Difference => "difference",
+            SetOperation::SymmetricDifference => "symmetric_difference",
         };
         write!(f, "{s}")
     }
@@ -139,7 +114,7 @@ fn primitive<T>(
     b: &PrimitiveArray<T>,
     offsets_a: &[i64],
     offsets_b: &[i64],
-    set_type: SetOperation,
+    set_op: SetOperation,
     validity: Option<Bitmap>,
 ) -> ListArray<i64>
 where
@@ -148,6 +123,7 @@ where
     assert_eq!(offsets_a.len(), offsets_b.len());
 
     let mut set = Default::default();
+    let mut set2 = Default::default();
 
     let mut values_out = MutablePrimitiveArray::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
@@ -176,7 +152,8 @@ where
                 .take(end_b - start_b)
                 .map(copied_opt);
 
-            let offset = set_operation(&mut set, a_iter, b_iter, &mut values_out, set_type);
+            let offset =
+                set_operation(&mut set, &mut set2, a_iter, b_iter, &mut values_out, set_op);
             offsets.push(offset as i64);
         }
     }
@@ -192,13 +169,14 @@ fn binary(
     b: &BinaryArray<i64>,
     offsets_a: &[i64],
     offsets_b: &[i64],
-    set_type: SetOperation,
+    set_op: SetOperation,
     validity: Option<Bitmap>,
     as_utf8: bool,
 ) -> ListArray<i64> {
     assert_eq!(offsets_a.len(), offsets_b.len());
 
     let mut set = Default::default();
+    let mut set2 = Default::default();
 
     let mut values_out = MutableBinaryArray::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
@@ -219,7 +197,8 @@ fn binary(
             let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
             let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
 
-            let offset = set_operation(&mut set, a_iter, b_iter, &mut values_out, set_type);
+            let offset =
+                set_operation(&mut set, &mut set2, a_iter, b_iter, &mut values_out, set_op);
             offsets.push(offset as i64);
         }
     }
@@ -255,7 +234,7 @@ fn utf8_to_binary(arr: &Utf8Array<i64>) -> BinaryArray<i64> {
 fn array_set_operation(
     a: &ListArray<i64>,
     b: &ListArray<i64>,
-    set_type: SetOperation,
+    set_op: SetOperation,
 ) -> ListArray<i64> {
     let offsets_a = a.offsets().as_slice();
     let offsets_b = b.offsets().as_slice();
@@ -274,7 +253,7 @@ fn array_set_operation(
 
             let a = utf8_to_binary(a);
             let b = utf8_to_binary(b);
-            binary(&a, &b, offsets_a, offsets_b, set_type, validity, true)
+            binary(&a, &b, offsets_a, offsets_b, set_op, validity, true)
         }
         ArrowDataType::LargeBinary => {
             let a = values_a
@@ -285,7 +264,7 @@ fn array_set_operation(
                 .as_any()
                 .downcast_ref::<BinaryArray<i64>>()
                 .unwrap();
-            binary(a, b, offsets_a, offsets_b, set_type, validity, false)
+            binary(a, b, offsets_a, offsets_b, set_op, validity, false)
         }
         ArrowDataType::Boolean => {
             todo!("boolean type not yet supported in list union operations")
@@ -295,13 +274,13 @@ fn array_set_operation(
                 let a = values_a.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
                 let b = values_b.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
 
-                primitive(&a, &b, offsets_a, offsets_b, set_type, validity)
+                primitive(&a, &b, offsets_a, offsets_b, set_op, validity)
             })
         }
     }
 }
 
-pub fn list_set_operation(a: &ListChunked, b: &ListChunked, set_type: SetOperation) -> ListChunked {
+pub fn list_set_operation(a: &ListChunked, b: &ListChunked, set_op: SetOperation) -> ListChunked {
     let (a, b) = align_chunks_binary(a, b);
 
     // no downcasting needed as lists
@@ -309,7 +288,7 @@ pub fn list_set_operation(a: &ListChunked, b: &ListChunked, set_type: SetOperati
     let chunks = a
         .downcast_iter()
         .zip(b.downcast_iter())
-        .map(|(a, b)| array_set_operation(a, b, set_type).boxed())
+        .map(|(a, b)| array_set_operation(a, b, set_op).boxed())
         .collect::<Vec<_>>();
 
     // safety: dtypes are correct

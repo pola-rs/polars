@@ -13,6 +13,8 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 
 use super::*;
+#[cfg(feature = "list_any_all")]
+use crate::chunked_array::list::any_all::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
 use crate::chunked_array::list::sum_mean::sum_with_nulls;
 use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
@@ -114,6 +116,18 @@ pub trait ListNameSpaceImpl: AsList {
         list_max_function(self.as_list())
     }
 
+    #[cfg(feature = "list_any_all")]
+    fn lst_all(&self) -> PolarsResult<Series> {
+        let ca = self.as_list();
+        list_all(ca)
+    }
+
+    #[cfg(feature = "list_any_all")]
+    fn lst_any(&self) -> PolarsResult<Series> {
+        let ca = self.as_list();
+        list_any(ca)
+    }
+
     fn lst_min(&self) -> Series {
         list_min_function(self.as_list())
     }
@@ -145,26 +159,40 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
+    fn same_type(&self, out: ListChunked) -> ListChunked {
+        let ca = self.as_list();
+        let dtype = ca.dtype();
+        if out.dtype() != dtype {
+            out.cast(ca.dtype()).unwrap().list().unwrap().clone()
+        } else {
+            out
+        }
+    }
+
     #[must_use]
     fn lst_sort(&self, options: SortOptions) -> ListChunked {
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().sort_with(options))
+        let out = ca.apply_amortized(|s| s.as_ref().sort_with(options));
+        self.same_type(out)
     }
 
     #[must_use]
     fn lst_reverse(&self) -> ListChunked {
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().reverse())
+        let out = ca.apply_amortized(|s| s.as_ref().reverse());
+        self.same_type(out)
     }
 
     fn lst_unique(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        ca.try_apply_amortized(|s| s.as_ref().unique())
+        let out = ca.try_apply_amortized(|s| s.as_ref().unique())?;
+        Ok(self.same_type(out))
     }
 
     fn lst_unique_stable(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        ca.try_apply_amortized(|s| s.as_ref().unique_stable())
+        let out = ca.try_apply_amortized(|s| s.as_ref().unique_stable())?;
+        Ok(self.same_type(out))
     }
 
     fn lst_arg_min(&self) -> IdxCa {
@@ -195,12 +223,14 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_shift(&self, periods: i64) -> ListChunked {
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().shift(periods))
+        let out = ca.apply_amortized(|s| s.as_ref().shift(periods));
+        self.same_type(out)
     }
 
     fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().slice(offset, length))
+        let out = ca.apply_amortized(|s| s.as_ref().slice(offset, length));
+        self.same_type(out)
     }
 
     fn lst_lengths(&self) -> IdxCa {
@@ -378,7 +408,7 @@ pub trait ListNameSpaceImpl: AsList {
                     }
                     s
                 });
-                builder.append_opt_series(opt_s.as_ref())
+                builder.append_opt_series(opt_s.as_ref()).unwrap();
             });
             builder.finish()
         } else {
@@ -440,7 +470,7 @@ pub trait ListNameSpaceImpl: AsList {
                     // nothing
                     _ => {}
                 }
-                builder.append_series(&acc);
+                builder.append_series(&acc).unwrap();
             }
             builder.finish()
         };

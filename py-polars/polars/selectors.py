@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import re
+from datetime import timezone
 from typing import TYPE_CHECKING, Any, Collection, TypeVar
 
 from polars import Expr
 from polars import functions as F
 from polars.datatypes import (
-    DATETIME_DTYPES,
     FLOAT_DTYPES,
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
@@ -34,14 +34,52 @@ SelectorType = TypeVar("SelectorType", bound="_selector_proxy_")
 
 
 def is_selector(obj: Any) -> bool:
-    """Return whether the given object is a selector."""
+    """
+    Indicate whether the given object/expression is a selector.
+
+    Examples
+    --------
+    >>> from polars.selectors import is_selector
+    >>> import polars.selectors as cs
+    >>> is_selector(pl.col("colx"))
+    False
+    >>> is_selector(cs.first() | cs.last())
+    True
+    """
     return isinstance(obj, _selector_proxy_)
 
 
 def selector_column_names(
     frame: DataFrame | LazyFrame, selector: SelectorType
 ) -> tuple[str, ...]:
-    """Return the column names that would be selected from the given frame."""
+    """
+    Return the column names that would be selected from the given frame.
+
+    Parameters
+    ----------
+    frame
+        A polars DataFrame or LazyFrame.
+    selector
+        An arbitrary polars selector (or compound selector).
+
+    Examples
+    --------
+    >>> from polars.selectors import selector_column_names
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "colx": ["x", "y"],
+    ...         "coly": [123, 456],
+    ...         "colz": [2.0, 5.5],
+    ...     }
+    ... )
+    >>> selector_column_names(df, cs.numeric())
+    ('coly', 'colz')
+    >>> selector_column_names(df, cs.first() | cs.last())
+    ('colx', 'colz')
+    >>> selector_column_names(df, ~(cs.first() | cs.last()))
+    ('coly',)
+    """
     return tuple(frame.clear().select(selector).columns)
 
 
@@ -49,63 +87,36 @@ class _selector_proxy_(Expr):
     """Base column selector expression/proxy."""
 
     _attrs: dict[str, Any]
-    _inverted: bool
+    _repr_override: str
 
     def __init__(
         self,
         expr: Expr,
         name: str,
         parameters: dict[str, Any] | None = None,
-        raw_parameters: list[Any] | None = None,
-        invert: bool = False,
     ):
         self._pyexpr = expr._pyexpr
-        self._inverted = invert
-
-        # note: 'params' and 'name' are primarily stored for the repr,
-        # whereas 'raw_params' is what we need to invert the expression.
         self._attrs = {
-            "raw_params": raw_parameters,
             "params": parameters,
             "name": name,
         }
 
     def __invert__(self) -> Self:
         """Invert the selector."""
-        if not hasattr(self, "_attrs"):
-            return ~self.as_expr()  # type: ignore[return-value]
-
-        name = self._attrs["name"]
-        if name in ("sub", "and", "or"):
-            raise ValueError(f"Cannot currently invert {name!r} selector")
-        elif name in ("first", "last"):
-            return all() - self  # type: ignore[return-value]
-
-        params = self._attrs["params"] or {}
-        raw_params = self._attrs["raw_params"] or []
-        if not raw_params and params:
-            raw_params = list(params.values())
-
-        if name == "all":
-            inverted_expr = F.all() if self._inverted else F.col([])
-        elif self._inverted:
-            inverted_expr = F.col(*raw_params)
+        if hasattr(self, "_attrs"):
+            inverted = all() - self
+            inverted._repr_override = f"~{self!r}"  # type: ignore[attr-defined]
         else:
-            inverted_expr = F.all().exclude(*raw_params)
-
-        return self.__class__(
-            expr=inverted_expr,
-            name=name,
-            parameters=params,
-            raw_parameters=raw_params,
-            invert=not self._inverted,
-        )
+            inverted = ~self.as_expr()
+        return inverted  # type: ignore[return-value]
 
     def __repr__(self) -> str:
         if not hasattr(self, "_attrs"):
             return re.sub(
                 r"<[\w.]+_selector_proxy_[\w ]+>", "<selector>", super().__repr__()
             )
+        elif hasattr(self, "_repr_override"):
+            return self._repr_override
         else:
             selector_name, params = self._attrs["name"], self._attrs["params"]
             set_ops = {"and": "&", "or": "|", "sub": "-"}
@@ -113,12 +124,11 @@ class _selector_proxy_(Expr):
                 op = set_ops[selector_name]
                 return f" {op} ".join(repr(p) for p in params.values())
             else:
-                not_ = "~" if self._inverted else ""
                 str_params = ",".join(
                     (repr(v)[1:-1] if k.startswith("*") else f"{k}={v!r}")
                     for k, v in (params or {}).items()
                 )
-                return f"{not_}cs.{selector_name}({str_params})"
+                return f"cs.{selector_name}({str_params})"
 
     def __sub__(self, other: Any) -> Expr:  # type: ignore[override]
         if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
@@ -467,13 +477,29 @@ def contains(substring: str | Collection[str]) -> Expr:
         F.col(raw_params),
         name="contains",
         parameters={"substring": escaped_substring},
-        raw_parameters=[raw_params],
     )
 
 
-def datetime(time_unit: TimeUnit | None = None) -> Expr:
+def datetime(
+    time_unit: TimeUnit | Collection[TimeUnit] | None = None,
+    time_zone: (str | timezone | Collection[str | timezone | None] | None) = (
+        "*",
+        None,
+    ),
+) -> Expr:
     """
-    Select all datetime columns.
+    Select all datetime columns, optionally filtering by timeunit/timezone.
+
+    Parameters
+    ----------
+    time_unit
+        One (or more) of the allowed timeunit precision strings, "ms", "us", and "ns".
+        Omit to select columns with any valid timeunit.
+    time_zone
+        * One or more timezone strings, as defined in zoneinfo (to see valid options
+          run ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
+        * Set ``None`` to select Datetime columns that do not have a timezone.
+        * Set "*" to select Datetime columns that have *any* timezone.
 
     Examples
     --------
@@ -481,40 +507,86 @@ def datetime(time_unit: TimeUnit | None = None) -> Expr:
     >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
+    ...         "tstamp_tokyo": [
+    ...             datetime(1999, 7, 20, 20, 20, 16, 987654),
+    ...             datetime(2000, 5, 15, 21, 21, 21, 123465),
+    ...         ],
+    ...         "tstamp_utc": [
+    ...             datetime(2023, 4, 10, 12, 14, 16, 999000),
+    ...             datetime(2025, 8, 25, 14, 18, 22, 666000),
+    ...         ],
     ...         "tstamp": [
     ...             datetime(2000, 11, 20, 18, 12, 16, 600000),
     ...             datetime(2020, 10, 30, 10, 20, 25, 123000),
     ...         ],
-    ...         "dtime": [
-    ...             datetime(2010, 10, 10, 10, 25, 30, 987000),
-    ...             datetime(2024, 12, 31, 20, 30, 45, 400500),
-    ...         ],
     ...         "dt": [date(1999, 12, 31), date(2010, 7, 5)],
     ...     },
-    ...     schema_overrides={"tstamp": pl.Datetime("ns"), "dtime": pl.Datetime("ms")},
+    ...     schema_overrides={
+    ...         "tstamp_tokyo": pl.Datetime("ns", "Asia/Tokyo"),
+    ...         "tstamp_utc": pl.Datetime("us", "UTC"),
+    ...     },
     ... )
 
     Select all datetime columns:
 
     >>> df.select(cs.datetime())
+    shape: (2, 3)
+    ┌────────────────────────────────┬─────────────────────────────┬─────────────────────────┐
+    │ tstamp_tokyo                   ┆ tstamp_utc                  ┆ tstamp                  │
+    │ ---                            ┆ ---                         ┆ ---                     │
+    │ datetime[ns, Asia/Tokyo]       ┆ datetime[μs, UTC]           ┆ datetime[μs]            │
+    ╞════════════════════════════════╪═════════════════════════════╪═════════════════════════╡
+    │ 1999-07-21 05:20:16.987654 JST ┆ 2023-04-10 12:14:16.999 UTC ┆ 2000-11-20 18:12:16.600 │
+    │ 2000-05-16 06:21:21.123465 JST ┆ 2025-08-25 14:18:22.666 UTC ┆ 2020-10-30 10:20:25.123 │
+    └────────────────────────────────┴─────────────────────────────┴─────────────────────────┘
+
+    Select all datetime columns that have 'us' precision:
+
+    >>> df.select(cs.datetime("us"))
     shape: (2, 2)
-    ┌─────────────────────────┬─────────────────────────┐
-    │ tstamp                  ┆ dtime                   │
-    │ ---                     ┆ ---                     │
-    │ datetime[ns]            ┆ datetime[ms]            │
-    ╞═════════════════════════╪═════════════════════════╡
-    │ 2000-11-20 18:12:16.600 ┆ 2010-10-10 10:25:30.987 │
-    │ 2020-10-30 10:20:25.123 ┆ 2024-12-31 20:30:45.400 │
-    └─────────────────────────┴─────────────────────────┘
+    ┌─────────────────────────────┬─────────────────────────┐
+    │ tstamp_utc                  ┆ tstamp                  │
+    │ ---                         ┆ ---                     │
+    │ datetime[μs, UTC]           ┆ datetime[μs]            │
+    ╞═════════════════════════════╪═════════════════════════╡
+    │ 2023-04-10 12:14:16.999 UTC ┆ 2000-11-20 18:12:16.600 │
+    │ 2025-08-25 14:18:22.666 UTC ┆ 2020-10-30 10:20:25.123 │
+    └─────────────────────────────┴─────────────────────────┘
 
-    Select all datetime columns that have 'ns' precision:
+    Select all datetime columns that have *any* timezone:
 
-    >>> df.select(cs.datetime("ns"))
+    >>> df.select(cs.datetime(time_zone="*"))
+    shape: (2, 2)
+    ┌────────────────────────────────┬─────────────────────────────┐
+    │ tstamp_tokyo                   ┆ tstamp_utc                  │
+    │ ---                            ┆ ---                         │
+    │ datetime[ns, Asia/Tokyo]       ┆ datetime[μs, UTC]           │
+    ╞════════════════════════════════╪═════════════════════════════╡
+    │ 1999-07-21 05:20:16.987654 JST ┆ 2023-04-10 12:14:16.999 UTC │
+    │ 2000-05-16 06:21:21.123465 JST ┆ 2025-08-25 14:18:22.666 UTC │
+    └────────────────────────────────┴─────────────────────────────┘
+
+    Select all datetime columns that have a *specific* timezone:
+
+    >>> df.select(cs.datetime(time_zone="UTC"))
+    shape: (2, 1)
+    ┌─────────────────────────────┐
+    │ tstamp_utc                  │
+    │ ---                         │
+    │ datetime[μs, UTC]           │
+    ╞═════════════════════════════╡
+    │ 2023-04-10 12:14:16.999 UTC │
+    │ 2025-08-25 14:18:22.666 UTC │
+    └─────────────────────────────┘
+
+    Select all datetime columns that have NO timezone:
+
+    >>> df.select(cs.datetime(time_zone=None))
     shape: (2, 1)
     ┌─────────────────────────┐
     │ tstamp                  │
     │ ---                     │
-    │ datetime[ns]            │
+    │ datetime[μs]            │
     ╞═════════════════════════╡
     │ 2000-11-20 18:12:16.600 │
     │ 2020-10-30 10:20:25.123 │
@@ -533,13 +605,28 @@ def datetime(time_unit: TimeUnit | None = None) -> Expr:
     │ 2010-07-05 │
     └────────────┘
 
-    """
-    datetime_dtypes = DATETIME_DTYPES if not time_unit else Datetime(time_unit)
+    """  # noqa: W505
+    if not time_unit or time_unit == "*":
+        time_unit = ["ms", "us", "ns"]
+    else:
+        time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
+
+    if time_zone is None:
+        time_zone = [None]
+    elif time_zone:
+        time_zone = (
+            [time_zone] if isinstance(time_zone, (str, timezone)) else list(time_zone)
+        )
+
+    datetime_dtypes = []
+    for tu in time_unit:
+        for tz in time_zone:  # type: ignore[union-attr]
+            datetime_dtypes.append(Datetime(tu, tz))
+
     return _selector_proxy_(
-        F.col(datetime_dtypes),  # type: ignore[arg-type]
+        F.col(datetime_dtypes),
         name="datetime",
-        parameters={"time_unit": time_unit},
-        raw_parameters=[datetime_dtypes],
+        parameters={"time_unit": time_unit, "time_zone": time_zone},
     )
 
 
@@ -617,7 +704,6 @@ def ends_with(*suffix: str) -> Expr:
         F.col(raw_params),
         name="ends_with",
         parameters={"*suffix": escaped_suffix},
-        raw_parameters=[raw_params],
     )
 
 
@@ -711,7 +797,8 @@ def float() -> Expr:
 
     """
     return _selector_proxy_(
-        F.col(FLOAT_DTYPES), name="float", raw_parameters=[FLOAT_DTYPES]
+        F.col(FLOAT_DTYPES),
+        name="float",
     )
 
 
@@ -767,7 +854,8 @@ def integer() -> Expr:
 
     """
     return _selector_proxy_(
-        F.col(INTEGER_DTYPES), name="integer", raw_parameters=[INTEGER_DTYPES]
+        F.col(INTEGER_DTYPES),
+        name="integer",
     )
 
 
@@ -880,7 +968,6 @@ def matches(pattern: str) -> Expr:
             F.col(raw_params),
             name="matches",
             parameters={"pattern": pattern},
-            raw_parameters=[raw_params],
         )
 
 
@@ -937,7 +1024,8 @@ def numeric() -> Expr:
 
     """
     return _selector_proxy_(
-        F.col(NUMERIC_DTYPES), name="numeric", raw_parameters=[NUMERIC_DTYPES]
+        F.col(NUMERIC_DTYPES),
+        name="numeric",
     )
 
 
@@ -1015,7 +1103,6 @@ def starts_with(*prefix: str) -> Expr:
         F.col(raw_params),
         name="starts_with",
         parameters={"*prefix": prefix},
-        raw_parameters=[raw_params],
     )
 
 
@@ -1078,7 +1165,8 @@ def string(include_categorical: bool = False) -> Expr:
         string_dtypes.append(Categorical)
 
     return _selector_proxy_(
-        F.col(string_dtypes), name="string", raw_parameters=[string_dtypes]
+        F.col(string_dtypes),
+        name="string",
     )
 
 
@@ -1147,7 +1235,8 @@ def temporal() -> Expr:
 
     """
     return _selector_proxy_(
-        F.col(TEMPORAL_DTYPES), name="temporal", raw_parameters=[TEMPORAL_DTYPES]
+        F.col(TEMPORAL_DTYPES),
+        name="temporal",
     )
 
 

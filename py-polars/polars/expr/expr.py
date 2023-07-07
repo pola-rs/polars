@@ -11,6 +11,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    ClassVar,
     Collection,
     FrozenSet,
     Iterable,
@@ -93,7 +94,16 @@ class Expr:
     """Expressions that can be used in various contexts."""
 
     _pyexpr: PyExpr = None
-    _accessors: set[str] = {"arr", "cat", "dt", "list", "meta", "str", "bin", "struct"}
+    _accessors: ClassVar[set[str]] = {
+        "arr",
+        "cat",
+        "dt",
+        "list",
+        "meta",
+        "str",
+        "bin",
+        "struct",
+    }
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Self:
@@ -1228,7 +1238,7 @@ class Expr:
             length = F.lit(length)
         return self._from_pyexpr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
-    def append(self, other: Expr, *, upcast: bool = True) -> Self:
+    def append(self, other: IntoExpr, *, upcast: bool = True) -> Self:
         """
         Append expressions.
 
@@ -3224,6 +3234,152 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
+    def cut(
+        self,
+        breaks: list[float],
+        labels: list[str] | None = None,
+        left_closed: bool = False,
+    ) -> Self:
+        """
+        Bin continuous values into discrete categories.
+
+        Parameters
+        ----------
+        breaks
+            A list of unique cut points.
+        labels
+            Labels to assign to bins. If given, the length must be len(probs) + 1.
+        left_closed
+            Whether intervals should be [) instead of the default of (]
+
+        Examples
+        --------
+        >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
+        >>> df = pl.DataFrame(dict(g=g, x=range(10)))
+        >>> df.with_columns(q=pl.col("x").cut([2, 5]))
+        shape: (10, 3)
+        ┌─────┬─────┬───────────┐
+        │ g   ┆ x   ┆ q         │
+        │ --- ┆ --- ┆ ---       │
+        │ str ┆ i64 ┆ cat       │
+        ╞═════╪═════╪═══════════╡
+        │ a   ┆ 0   ┆ (-inf, 2] │
+        │ a   ┆ 1   ┆ (-inf, 2] │
+        │ a   ┆ 2   ┆ (-inf, 2] │
+        │ a   ┆ 3   ┆ (2, 5]    │
+        │ …   ┆ …   ┆ …         │
+        │ b   ┆ 6   ┆ (5, inf]  │
+        │ b   ┆ 7   ┆ (5, inf]  │
+        │ b   ┆ 8   ┆ (5, inf]  │
+        │ b   ┆ 9   ┆ (5, inf]  │
+        └─────┴─────┴───────────┘
+        >>> df.with_columns(q=pl.col("x").cut([2, 5], left_closed=True))
+        shape: (10, 3)
+        ┌─────┬─────┬───────────┐
+        │ g   ┆ x   ┆ q         │
+        │ --- ┆ --- ┆ ---       │
+        │ str ┆ i64 ┆ cat       │
+        ╞═════╪═════╪═══════════╡
+        │ a   ┆ 0   ┆ [-inf, 2) │
+        │ a   ┆ 1   ┆ [-inf, 2) │
+        │ a   ┆ 2   ┆ [2, 5)    │
+        │ a   ┆ 3   ┆ [2, 5)    │
+        │ …   ┆ …   ┆ …         │
+        │ b   ┆ 6   ┆ [5, inf)  │
+        │ b   ┆ 7   ┆ [5, inf)  │
+        │ b   ┆ 8   ┆ [5, inf)  │
+        │ b   ┆ 9   ┆ [5, inf)  │
+        └─────┴─────┴───────────┘
+        """
+        return self._from_pyexpr(self._pyexpr.cut(breaks, labels, left_closed))
+
+    def qcut(
+        self,
+        probs: list[float],
+        labels: list[str] | None = None,
+        left_closed: bool = False,
+        allow_duplicates: bool = False,
+    ) -> Self:
+        """
+        Bin continuous values into discrete categories based on their quantiles.
+
+        Parameters
+        ----------
+        probs
+            Probabilities for which to find the corresponding quantiles
+            For p in probs, we assume 0 <= p <= 1
+        labels
+            Labels to assign to bins. If given, the length must be len(probs) + 1.
+            If computing over groups this must be set for now.
+        left_closed
+            Whether intervals should be [) instead of the default of (]
+        allow_duplicates
+            If True, the resulting quantile breaks don't have to be unique. This can
+            happen even with unique probs depending on the data. Duplicates will be
+            dropped, resulting in fewer bins.
+
+
+        Examples
+        --------
+        >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
+        >>> df = pl.DataFrame(dict(g=g, x=range(10)))
+        >>> df.with_columns(q=pl.col("x").qcut([0.5]))
+        shape: (10, 3)
+        ┌─────┬─────┬─────────────┐
+        │ g   ┆ x   ┆ q           │
+        │ --- ┆ --- ┆ ---         │
+        │ str ┆ i64 ┆ cat         │
+        ╞═════╪═════╪═════════════╡
+        │ a   ┆ 0   ┆ (-inf, 4.5] │
+        │ a   ┆ 1   ┆ (-inf, 4.5] │
+        │ a   ┆ 2   ┆ (-inf, 4.5] │
+        │ a   ┆ 3   ┆ (-inf, 4.5] │
+        │ …   ┆ …   ┆ …           │
+        │ b   ┆ 6   ┆ (4.5, inf]  │
+        │ b   ┆ 7   ┆ (4.5, inf]  │
+        │ b   ┆ 8   ┆ (4.5, inf]  │
+        │ b   ┆ 9   ┆ (4.5, inf]  │
+        └─────┴─────┴─────────────┘
+        >>> df.with_columns(q=pl.col("x").qcut([0.5], ["lo", "hi"]).over("g"))
+        shape: (10, 3)
+        ┌─────┬─────┬─────┐
+        │ g   ┆ x   ┆ q   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ cat │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 0   ┆ lo  │
+        │ a   ┆ 1   ┆ lo  │
+        │ a   ┆ 2   ┆ lo  │
+        │ a   ┆ 3   ┆ hi  │
+        │ …   ┆ …   ┆ …   │
+        │ b   ┆ 6   ┆ lo  │
+        │ b   ┆ 7   ┆ lo  │
+        │ b   ┆ 8   ┆ hi  │
+        │ b   ┆ 9   ┆ hi  │
+        └─────┴─────┴─────┘
+        >>> df.with_columns(q=pl.col("x").qcut([0.5], ["lo", "hi"], True).over("g"))
+        shape: (10, 3)
+        ┌─────┬─────┬─────┐
+        │ g   ┆ x   ┆ q   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ cat │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 0   ┆ lo  │
+        │ a   ┆ 1   ┆ lo  │
+        │ a   ┆ 2   ┆ hi  │
+        │ a   ┆ 3   ┆ hi  │
+        │ …   ┆ …   ┆ …   │
+        │ b   ┆ 6   ┆ lo  │
+        │ b   ┆ 7   ┆ hi  │
+        │ b   ┆ 8   ┆ hi  │
+        │ b   ┆ 9   ┆ hi  │
+        └─────┴─────┴─────┘
+
+        """
+        return self._from_pyexpr(
+            self._pyexpr.qcut(probs, labels, left_closed, allow_duplicates)
+        )
+
     def filter(self, predicate: Expr) -> Self:
         """
         Filter a single column.
@@ -4952,7 +5108,7 @@ class Expr:
         └────────┴─────────────────────┘
         >>> df_temporal.with_columns(
         ...     rolling_row_min=pl.col("row_nr").rolling_min(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5161,7 +5317,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_max=pl.col("row_nr").rolling_max(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5231,7 +5387,7 @@ class Expr:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their mean.
 
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -5394,7 +5550,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_mean=pl.col("row_nr").rolling_mean(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5511,7 +5667,7 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length of the window that will be multiplied
+            An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
@@ -5627,7 +5783,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_sum=pl.col("row_nr").rolling_sum(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5696,10 +5852,6 @@ class Expr:
         """
         Compute a rolling standard deviation.
 
-        A window of length `window_size` will traverse the array. The values that fill
-        this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
-
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
@@ -5745,8 +5897,8 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
+            An optional slice with the same length as the window that determines the
+            relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
@@ -5807,11 +5959,11 @@ class Expr:
         │ f64 ┆ f64         │
         ╞═════╪═════════════╡
         │ 1.0 ┆ null        │
-        │ 2.0 ┆ 0.883883    │
-        │ 3.0 ┆ 1.237437    │
-        │ 4.0 ┆ 1.59099     │
-        │ 5.0 ┆ 1.944544    │
-        │ 6.0 ┆ 2.298097    │
+        │ 2.0 ┆ 0.433013    │
+        │ 3.0 ┆ 0.433013    │
+        │ 4.0 ┆ 0.433013    │
+        │ 5.0 ┆ 0.433013    │
+        │ 6.0 ┆ 0.433013    │
         └─────┴─────────────┘
 
         Center the values in the window
@@ -5863,7 +6015,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_std=pl.col("row_nr").rolling_std(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -5932,10 +6084,6 @@ class Expr:
         """
         Compute a rolling variance.
 
-        A window of length `window_size` will traverse the array. The values that fill
-        this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
-
         If ``by`` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
@@ -5981,8 +6129,8 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
+            An optional slice with the same length as the window that determines the
+            relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
@@ -6043,11 +6191,11 @@ class Expr:
         │ f64 ┆ f64         │
         ╞═════╪═════════════╡
         │ 1.0 ┆ null        │
-        │ 2.0 ┆ 0.78125     │
-        │ 3.0 ┆ 1.53125     │
-        │ 4.0 ┆ 2.53125     │
-        │ 5.0 ┆ 3.78125     │
-        │ 6.0 ┆ 5.28125     │
+        │ 2.0 ┆ 0.1875      │
+        │ 3.0 ┆ 0.1875      │
+        │ 4.0 ┆ 0.1875      │
+        │ 5.0 ┆ 0.1875      │
+        │ 6.0 ┆ 0.1875      │
         └─────┴─────────────┘
 
         Center the values in the window
@@ -6099,7 +6247,7 @@ class Expr:
 
         >>> df_temporal.with_columns(
         ...     rolling_row_var=pl.col("row_nr").rolling_var(
-        ...         window_size="2h", by="date"
+        ...         window_size="2h", by="date", closed="left"
         ...     )
         ... )
         shape: (25, 3)
@@ -6218,8 +6366,8 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
+            An optional slice with the same length as the window that determines the
+            relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
@@ -6264,7 +6412,7 @@ class Expr:
         │ 6.0 ┆ 5.5            │
         └─────┴────────────────┘
 
-        Specify weights to multiply the values in the window with:
+        Specify weights for the values in each window:
 
         >>> df.with_columns(
         ...     rolling_median=pl.col("A").rolling_median(
@@ -6278,11 +6426,11 @@ class Expr:
         │ f64 ┆ f64            │
         ╞═════╪════════════════╡
         │ 1.0 ┆ null           │
-        │ 2.0 ┆ 0.875          │
-        │ 3.0 ┆ 1.375          │
-        │ 4.0 ┆ 1.875          │
-        │ 5.0 ┆ 2.375          │
-        │ 6.0 ┆ 2.875          │
+        │ 2.0 ┆ 1.5            │
+        │ 3.0 ┆ 2.5            │
+        │ 4.0 ┆ 3.5            │
+        │ 5.0 ┆ 4.5            │
+        │ 6.0 ┆ 5.5            │
         └─────┴────────────────┘
 
         Center the values in the window
@@ -6379,8 +6527,8 @@ class Expr:
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
         weights
-            An optional slice with the same length as the window that will be
-            multiplied elementwise with the values in the window.
+            An optional slice with the same length as the window that determines the
+            relative contribution of each value in a window to the output.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
@@ -6427,7 +6575,7 @@ class Expr:
         │ 6.0 ┆ 4.0              │
         └─────┴──────────────────┘
 
-        Specify weights to multiply the values in the window with:
+        Specify weights for the values in each window:
 
         >>> df.with_columns(
         ...     rolling_quantile=pl.col("A").rolling_quantile(
@@ -6443,9 +6591,33 @@ class Expr:
         │ 1.0 ┆ null             │
         │ 2.0 ┆ null             │
         │ 3.0 ┆ null             │
-        │ 4.0 ┆ 0.8              │
-        │ 5.0 ┆ 1.0              │
-        │ 6.0 ┆ 1.2              │
+        │ 4.0 ┆ 2.0              │
+        │ 5.0 ┆ 3.0              │
+        │ 6.0 ┆ 4.0              │
+        └─────┴──────────────────┘
+
+        Specify weights and interpolation method
+
+        >>> df.with_columns(
+        ...     rolling_quantile=pl.col("A").rolling_quantile(
+        ...         quantile=0.25,
+        ...         window_size=4,
+        ...         weights=[0.2, 0.4, 0.4, 0.2],
+        ...         interpolation="linear",
+        ...     ),
+        ... )
+        shape: (6, 2)
+        ┌─────┬──────────────────┐
+        │ A   ┆ rolling_quantile │
+        │ --- ┆ ---              │
+        │ f64 ┆ f64              │
+        ╞═════╪══════════════════╡
+        │ 1.0 ┆ null             │
+        │ 2.0 ┆ null             │
+        │ 3.0 ┆ null             │
+        │ 4.0 ┆ 1.625            │
+        │ 5.0 ┆ 2.625            │
+        │ 6.0 ┆ 3.625            │
         └─────┴──────────────────┘
 
         Center the values in the window
@@ -7471,7 +7643,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
-    def shuffle(self, seed: int | None = None) -> Self:
+    def shuffle(self, seed: int | None = None, fixed_seed: bool = False) -> Self:
         """
         Shuffle the contents of this expression.
 
@@ -7480,6 +7652,10 @@ class Expr:
         seed
             Seed for the random number generator. If set to None (default), a random
             seed is generated using the ``random`` module.
+        fixed_seed
+            If True, The seed will not be incremented between draws.
+            This can make output predictable because draw ordering can
+            change due to threads being scheduled in a different order.
 
         Examples
         --------
@@ -7497,9 +7673,10 @@ class Expr:
         └─────┘
 
         """
+        # we seed from python so that we respect ``random.seed``
         if seed is None:
             seed = random.randint(0, 10000)
-        return self._from_pyexpr(self._pyexpr.shuffle(seed))
+        return self._from_pyexpr(self._pyexpr.shuffle(seed, fixed_seed))
 
     @deprecated_alias(frac="fraction")
     def sample(
@@ -7510,6 +7687,7 @@ class Expr:
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
+        fixed_seed: bool = False,
     ) -> Self:
         """
         Sample from this expression.
@@ -7528,6 +7706,10 @@ class Expr:
         seed
             Seed for the random number generator. If set to None (default), a random
             seed is generated using the ``random`` module.
+        fixed_seed
+            If True, The seed will not be incremented between draws.
+            This can make output predictable because draw ordering can
+            change due to threads being scheduled in a different order.
 
         Examples
         --------
@@ -7553,13 +7735,15 @@ class Expr:
 
         if fraction is not None:
             return self._from_pyexpr(
-                self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
+                self._pyexpr.sample_frac(
+                    fraction, with_replacement, shuffle, seed, fixed_seed
+                )
             )
 
         if n is None:
             n = 1
         return self._from_pyexpr(
-            self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
+            self._pyexpr.sample_n(n, with_replacement, shuffle, seed, fixed_seed)
         )
 
     def ewm_mean(

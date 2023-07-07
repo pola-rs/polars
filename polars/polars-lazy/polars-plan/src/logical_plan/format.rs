@@ -96,10 +96,15 @@ impl LogicalPlan {
                 } else {
                     "UNION"
                 };
+                // 3 levels of indentation
+                // - 0 => UNION ... END UNION
+                // - 1 => PLAN 0, PLAN 1, ... PLAN N
+                // - 2 => actual formatting of plans
+                let sub_sub_indent = sub_indent + 2;
                 write!(f, "{:indent$}{}", "", name)?;
                 for (i, plan) in inputs.iter().enumerate() {
-                    write!(f, "\n{:indent$}PLAN {i}:", "")?;
-                    plan._format(f, sub_indent)?;
+                    write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
+                    plan._format(f, sub_sub_indent)?;
                 }
                 write!(f, "\n{:indent$}END {}", "", name)
             }
@@ -227,7 +232,7 @@ impl LogicalPlan {
             } => {
                 write!(f, "{:indent$}AGGREGATE", "")?;
                 write!(f, "\n{:indent$}\t{aggs:?} BY {keys:?} FROM", "")?;
-                write!(f, "\n{:indent$}\t{input:?}", "")
+                input._format(f, sub_indent)
             }
             Join {
                 input_left,
@@ -317,21 +322,21 @@ impl Debug for Expr {
             }
             BinaryExpr { left, op, right } => write!(f, "[({left:?}) {op:?} ({right:?})]"),
             Sort { expr, options } => match options.descending {
-                true => write!(f, "{expr:?} DESC"),
-                false => write!(f, "{expr:?} ASC"),
+                true => write!(f, "{expr:?}.sort(desc)"),
+                false => write!(f, "{expr:?}.sort(asc)"),
             },
             SortBy {
                 expr,
                 by,
                 descending,
             } => {
-                write!(f, "SORT {expr:?} BY {by:?} REVERSE ORDERING {descending:?}",)
+                write!(f, "{expr:?}.sort_by(by={by:?}, descending={descending:?})",)
             }
             Filter { input, by } => {
-                write!(f, "{input:?}\nFILTER WHERE {by:?}")
+                write!(f, "{input:?}.filter({by:?})")
             }
             Take { expr, idx } => {
-                write!(f, "TAKE {expr:?} AT {idx:?}")
+                write!(f, "{expr:?}.take({idx:?})")
             }
             Agg(agg) => {
                 use AggExpr::*;
@@ -387,7 +392,7 @@ impl Debug for Expr {
                 falsy,
             } => write!(
                 f,
-                "\nWHEN {predicate:?}\nTHEN\n\t{truthy:?}\nOTHERWISE\n\t{falsy:?}",
+                ".when({predicate:?}).then({truthy:?}).otherwise({falsy:?})",
             ),
             Function {
                 input, function, ..
@@ -411,12 +416,12 @@ impl Debug for Expr {
                 length,
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
             Wildcard => write!(f, "*"),
-            Exclude(column, names) => write!(f, "{column:?}, EXCEPT {names:?}"),
-            KeepName(e) => write!(f, "KEEP NAME {e:?}"),
-            RenameAlias { expr, .. } => write!(f, "RENAME_ALIAS {expr:?}"),
-            Columns(names) => write!(f, "COLUMNS({names:?})"),
-            DtypeColumn(dt) => write!(f, "COLUMN OF DTYPE: {dt:?}"),
-            Cache { input, .. } => write!(f, "CACHE {input:?}"),
+            Exclude(column, names) => write!(f, "{column:?}.exclude({names:?})"),
+            KeepName(e) => write!(f, "{e:?}.keep_name()"),
+            RenameAlias { expr, .. } => write!(f, ".rename_alias({expr:?})"),
+            Columns(names) => write!(f, "cols({names:?})"),
+            DtypeColumn(dt) => write!(f, "dtype_columns({dt:?})"),
+            Cache { input, .. } => write!(f, "{input:?}.cache()"),
             Selector(_) => write!(f, "SELECTOR"),
         }
     }

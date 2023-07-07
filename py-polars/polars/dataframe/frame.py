@@ -4,11 +4,10 @@ from __future__ import annotations
 import contextlib
 import os
 import random
-import typing
 import warnings
 from collections import defaultdict
 from collections.abc import Sized
-from io import BytesIO, StringIO
+from io import BytesIO, StringIO, TextIOWrapper
 from operator import itemgetter
 from pathlib import Path
 from typing import (
@@ -16,6 +15,7 @@ from typing import (
     Any,
     BinaryIO,
     Callable,
+    ClassVar,
     Collection,
     Generator,
     Iterable,
@@ -24,6 +24,7 @@ from typing import (
     NoReturn,
     Sequence,
     TypeVar,
+    cast,
     overload,
 )
 
@@ -59,7 +60,7 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 from polars.functions.lazy import col, lit
-from polars.io._utils import _is_local_file
+from polars.io._utils import _is_glob_pattern, _is_local_file
 from polars.io.excel._write_utils import (
     _unpack_multi_column_dict,
     _xl_apply_conditional_formats,
@@ -110,6 +111,7 @@ if TYPE_CHECKING:
     import sys
     from datetime import timedelta
     from io import IOBase
+    from typing import Literal
 
     import deltalake
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
@@ -128,6 +130,7 @@ if TYPE_CHECKING:
         DbWriteMode,
         FillNullStrategy,
         FrameInitTypes,
+        IndexOrder,
         IntoExpr,
         IpcCompression,
         JoinStrategy,
@@ -150,11 +153,6 @@ if TYPE_CHECKING:
         UnstackDirection,
     )
     from polars.utils import NoDefault
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec, TypeAlias
@@ -334,7 +332,7 @@ class DataFrame:
 
     """
 
-    _accessors: set[str] = set()
+    _accessors: ClassVar[set[str]] = set()
 
     def __init__(
         self,
@@ -469,7 +467,7 @@ class DataFrame:
     @classmethod
     def _from_records(
         cls,
-        data: Sequence[Sequence[Any]],
+        data: Sequence[Any],
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
@@ -733,7 +731,7 @@ class DataFrame:
 
         if isinstance(columns, str):
             columns = [columns]
-        if isinstance(source, str) and "*" in source:
+        if isinstance(source, str) and _is_glob_pattern(source):
             dtypes_dict = None
             if dtype_list is not None:
                 dtypes_dict = dict(dtype_list)
@@ -809,7 +807,7 @@ class DataFrame:
     @classmethod
     def _read_parquet(
         cls,
-        source: str | Path | BinaryIO,
+        source: str | Path | BinaryIO | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -835,7 +833,11 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(source, str) and "*" in source and _is_local_file(source):
+        if (
+            isinstance(source, str)
+            and _is_glob_pattern(source)
+            and _is_local_file(source)
+        ):
             from polars import scan_parquet
 
             scan = scan_parquet(
@@ -876,7 +878,7 @@ class DataFrame:
     @classmethod
     def _read_avro(
         cls,
-        source: str | Path | BinaryIO,
+        source: str | Path | BinaryIO | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -908,7 +910,7 @@ class DataFrame:
     @classmethod
     def _read_ipc(
         cls,
-        source: str | Path | BinaryIO,
+        source: str | Path | BinaryIO | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -950,7 +952,11 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(source, str) and "*" in source and _is_local_file(source):
+        if (
+            isinstance(source, str)
+            and _is_glob_pattern(source)
+            and _is_local_file(source)
+        ):
             from polars import scan_ipc
 
             scan = scan_ipc(
@@ -985,7 +991,7 @@ class DataFrame:
         return self
 
     @classmethod
-    def _read_json(cls, source: str | Path | IOBase) -> Self:
+    def _read_json(cls, source: str | Path | IOBase | bytes) -> Self:
         """
         Read into a DataFrame from a JSON file.
 
@@ -1006,7 +1012,7 @@ class DataFrame:
         return self
 
     @classmethod
-    def _read_ndjson(cls, source: str | Path | IOBase) -> Self:
+    def _read_ndjson(cls, source: str | Path | IOBase | bytes) -> Self:
         """
         Read into a DataFrame from a newline delimited JSON file.
 
@@ -1907,7 +1913,9 @@ class DataFrame:
         """
         return list(self.iter_rows(named=True))
 
-    def to_numpy(self, structured: bool = False) -> np.ndarray[Any, Any]:
+    def to_numpy(
+        self, structured: bool = False, *, order: IndexOrder = "fortran"
+    ) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
 
@@ -1918,6 +1926,14 @@ class DataFrame:
         structured
             Optionally return a structured array, with field names and
             dtypes that correspond to the DataFrame schema.
+        order
+            The index order of the returned NumPy array, either C-like or
+            Fortran-like. In general, using the Fortran-like index order is faster.
+            However, the C-like order might be more appropriate to use for downstream
+            applications to prevent cloning data, e.g. when reshaping into a
+            one-dimensional array. Note that this option only takes effect if
+            ``structured`` is set to ``False`` and the DataFrame dtypes allow for a
+            global dtype for all columns.
 
         Notes
         -----
@@ -1975,7 +1991,7 @@ class DataFrame:
             for idx, c in enumerate(self.columns):
                 out[c] = arrays[idx]
         else:
-            out = self._df.to_numpy()
+            out = self._df.to_numpy(order)
             if out is None:
                 return np.vstack(
                     [self.to_series(i).to_numpy() for i in range(self.width)]
@@ -2330,7 +2346,7 @@ class DataFrame:
     @overload
     def write_csv(
         self,
-        file: BytesIO | str | Path,
+        file: BytesIO | TextIOWrapper | str | Path,
         *,
         has_header: bool = ...,
         separator: str = ...,
@@ -2346,7 +2362,7 @@ class DataFrame:
 
     def write_csv(
         self,
-        file: BytesIO | str | Path | None = None,
+        file: BytesIO | TextIOWrapper | str | Path | None = None,
         *,
         has_header: bool = True,
         separator: str = ",",
@@ -2434,6 +2450,8 @@ class DataFrame:
 
         if isinstance(file, (str, Path)):
             file = normalise_filepath(file)
+        elif isinstance(file, TextIOWrapper):
+            file = cast(TextIOWrapper, file.buffer)
 
         self._df.write_csv(
             file,
@@ -3079,7 +3097,6 @@ class DataFrame:
 
             # do not remove this
             # needed below
-            import pyarrow.parquet  # noqa: F401
 
             pa.parquet.write_table(
                 table=tbl,
@@ -3153,12 +3170,12 @@ class DataFrame:
                     "'sqlalchemy' not found. Install polars with 'pip install polars[sqlalchemy]'."
                 ) from exc
 
-            engine = create_engine(connection_uri)
+            engine_sa = create_engine(connection_uri)
 
             # this conversion to pandas as zero-copy
             # so we can utilize their sql utils for free
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
-                name=table_name, con=engine, if_exists=if_exists, index=False
+                name=table_name, con=engine_sa, if_exists=if_exists, index=False
             )
 
         else:
@@ -8837,10 +8854,9 @@ class DataFrame:
             columns.extend(more_columns)
         return self._from_pydf(self._df.unnest(columns))
 
-    @typing.no_type_check
     def corr(self, **kwargs: Any) -> DataFrame:
         """
-        Return Pearson product-moment correlation coefficients.
+        Return pairwise Pearson product-moment correlation coefficients between columns.
 
         See numpy ``corrcoef`` for more information:
         https://numpy.org/doc/stable/reference/generated/numpy.corrcoef.html
@@ -8852,7 +8868,7 @@ class DataFrame:
         Parameters
         ----------
         **kwargs
-            keyword arguments are passed to numpy corrcoef
+            Keyword arguments are passed to numpy ``corrcoef``.
 
         Examples
         --------
@@ -8889,6 +8905,52 @@ class DataFrame:
         key
             Key that is sorted.
 
+        Examples
+        --------
+        >>> df0 = pl.DataFrame(
+        ...     {"name": ["steve", "elise", "bob"], "age": [42, 44, 18]}
+        ... ).sort("age")
+        >>> df0
+        shape: (3, 2)
+        ┌───────┬─────┐
+        │ name  ┆ age │
+        │ ---   ┆ --- │
+        │ str   ┆ i64 │
+        ╞═══════╪═════╡
+        │ bob   ┆ 18  │
+        │ steve ┆ 42  │
+        │ elise ┆ 44  │
+        └───────┴─────┘
+        >>> df1 = pl.DataFrame(
+        ...     {"name": ["anna", "megan", "steve", "thomas"], "age": [21, 33, 42, 20]}
+        ... ).sort("age")
+        >>> df1
+        shape: (4, 2)
+        ┌────────┬─────┐
+        │ name   ┆ age │
+        │ ---    ┆ --- │
+        │ str    ┆ i64 │
+        ╞════════╪═════╡
+        │ thomas ┆ 20  │
+        │ anna   ┆ 21  │
+        │ megan  ┆ 33  │
+        │ steve  ┆ 42  │
+        └────────┴─────┘
+        >>> df0.merge_sorted(df1, key="age")
+        shape: (7, 2)
+        ┌────────┬─────┐
+        │ name   ┆ age │
+        │ ---    ┆ --- │
+        │ str    ┆ i64 │
+        ╞════════╪═════╡
+        │ bob    ┆ 18  │
+        │ thomas ┆ 20  │
+        │ anna   ┆ 21  │
+        │ megan  ┆ 33  │
+        │ steve  ┆ 42  │
+        │ steve  ┆ 42  │
+        │ elise  ┆ 44  │
+        └────────┴─────┘
         """
         return self.lazy().merge_sorted(other.lazy(), key).collect(no_optimization=True)
 

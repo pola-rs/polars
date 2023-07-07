@@ -82,7 +82,8 @@ pub(super) fn temporal_range_dispatch(
     name: &str,
     every: Duration,
     closed: ClosedWindow,
-    _tz: Option<TimeZone>, // todo: respect _tz: https://github.com/pola-rs/polars/issues/8512
+    time_unit: Option<TimeUnit>,
+    time_zone: Option<TimeZone>,
 ) -> PolarsResult<Series> {
     let start = &s[0];
     let stop = &s[1];
@@ -93,23 +94,74 @@ pub(super) fn temporal_range_dispatch(
     );
     const TO_MS: i64 = SECONDS_IN_DAY * 1000;
 
-    let rng_start = start.to_physical_repr();
-    let rng_stop = stop.to_physical_repr();
-    let dtype = start.dtype();
-
-    let mut start = rng_start.cast(&DataType::Int64)?;
-    let mut stop = rng_stop.cast(&DataType::Int64)?;
-
-    let (tu, tz) = match dtype {
-        DataType::Date => {
-            start = &start * TO_MS;
-            stop = &stop * TO_MS;
-            (TimeUnit::Milliseconds, None)
+    // Note: `start` and `stop` have already been cast to their supertype,
+    // so only `start`'s dtype needs to be matched against.
+    #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
+    let mut dtype = match (start.dtype(), time_unit) {
+        (DataType::Date, time_unit) => {
+            let nsecs = every.nanoseconds();
+            if nsecs == 0 {
+                DataType::Date
+            } else if let Some(tu) = time_unit {
+                DataType::Datetime(tu, None)
+            } else if nsecs % 1_000 != 0 {
+                DataType::Datetime(TimeUnit::Nanoseconds, None)
+            } else {
+                DataType::Datetime(TimeUnit::Microseconds, None)
+            }
         }
-        DataType::Datetime(tu, tz) => (*tu, tz.as_ref()),
-        DataType::Time => (TimeUnit::Nanoseconds, None),
-        _ => unimplemented!(),
+        (DataType::Time, _) => DataType::Time,
+        // overwrite nothing, keep as-is
+        (DataType::Datetime(_, _), None) => start.dtype().clone(),
+        // overwrite time unit, keep timezone
+        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
+        _ => unreachable!(),
     };
+
+    let (mut start, mut stop) = match dtype {
+        #[cfg(feature = "timezones")]
+        DataType::Datetime(_, Some(_)) => (
+            start
+                .cast(&dtype)?
+                .datetime()
+                .unwrap()
+                .replace_time_zone(None, None)?
+                .into_series()
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
+            stop.cast(&dtype)?
+                .datetime()
+                .unwrap()
+                .replace_time_zone(None, None)?
+                .into_series()
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
+        ),
+        _ => (
+            start
+                .cast(&dtype)?
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
+            stop.cast(&dtype)?
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
+        ),
+    };
+
+    if dtype == DataType::Date {
+        start = &start * TO_MS;
+        stop = &stop * TO_MS;
+    }
+
+    // overwrite time zone, if specified
+    match (&dtype, &time_zone) {
+        #[cfg(feature = "timezones")]
+        (DataType::Datetime(tu, _), Some(tz)) => {
+            dtype = DataType::Datetime(*tu, Some(tz.clone()));
+        }
+        _ => {}
+    };
+
     let start = start.i64().unwrap();
     let stop = stop.i64().unwrap();
 
@@ -124,7 +176,15 @@ pub(super) fn temporal_range_dispatch(
             for (start, stop) in start.into_iter().zip(stop.into_iter()) {
                 match (start, stop) {
                     (Some(start), Some(stop)) => {
-                        let rng = date_range_impl("", start, stop, every, closed, tu, tz)?;
+                        let rng = date_range_impl(
+                            "",
+                            start,
+                            stop,
+                            every,
+                            closed,
+                            TimeUnit::Milliseconds,
+                            None,
+                        )?;
                         let rng = rng.cast(&DataType::Date).unwrap();
                         let rng = rng.to_physical_repr();
                         let rng = rng.i32().unwrap();
@@ -135,7 +195,7 @@ pub(super) fn temporal_range_dispatch(
             }
             builder.finish().into_series()
         }
-        DataType::Datetime(_, _) | DataType::Time => {
+        DataType::Datetime(tu, ref tz) => {
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
                 name,
                 start.len(),
@@ -145,7 +205,33 @@ pub(super) fn temporal_range_dispatch(
             for (start, stop) in start.into_iter().zip(stop.into_iter()) {
                 match (start, stop) {
                     (Some(start), Some(stop)) => {
-                        let rng = date_range_impl("", start, stop, every, closed, tu, tz)?;
+                        let rng = date_range_impl("", start, stop, every, closed, tu, tz.as_ref())?;
+                        builder.append_slice(rng.cont_slice().unwrap())
+                    }
+                    _ => builder.append_null(),
+                }
+            }
+            builder.finish().into_series()
+        }
+        DataType::Time => {
+            let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
+                name,
+                start.len(),
+                start.len() * 5,
+                DataType::Int64,
+            );
+            for (start, stop) in start.into_iter().zip(stop.into_iter()) {
+                match (start, stop) {
+                    (Some(start), Some(stop)) => {
+                        let rng = date_range_impl(
+                            "",
+                            start,
+                            stop,
+                            every,
+                            closed,
+                            TimeUnit::Nanoseconds,
+                            None,
+                        )?;
                         builder.append_slice(rng.cont_slice().unwrap())
                     }
                     _ => builder.append_null(),
@@ -156,6 +242,6 @@ pub(super) fn temporal_range_dispatch(
         _ => unimplemented!(),
     };
 
-    let to_type = DataType::List(Box::new(dtype.clone()));
+    let to_type = DataType::List(Box::new(dtype));
     list.cast(&to_type)
 }

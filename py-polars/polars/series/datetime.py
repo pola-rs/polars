@@ -1829,7 +1829,7 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Date/Datetime expression
+        Date/Datetime series
 
         Notes
         -----
@@ -1859,7 +1859,7 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Date/Datetime expression
+        Date/Datetime series.
 
         Notes
         -----
@@ -1880,5 +1880,84 @@ class DateTimeNameSpace:
                 2000-02-29 02:00:00
                 2000-03-31 02:00:00
                 2000-04-30 02:00:00
+        ]
+        """
+
+    def base_utc_offset(self) -> Series:
+        """
+        Base offset from UTC.
+
+        This is usually constant for all datetimes in a given time zone, but
+        may vary in the rare case that a country switches time zone, like
+        Samoa (Apia) did at the end of 2011.
+
+        Returns
+        -------
+        Duration Series
+
+        See Also
+        --------
+        Series.dt.dst_offset : Additional offset currently in effect.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> ser = pl.date_range(
+        ...     datetime(2011, 12, 29),
+        ...     datetime(2012, 1, 1),
+        ...     "2d",
+        ...     time_zone="Pacific/Apia",
+        ...     eager=True,
+        ... )
+        >>> ser
+        shape: (2,)
+        Series: 'date' [datetime[μs, Pacific/Apia]]
+        [
+                2011-12-29 00:00:00 -10
+                2011-12-31 00:00:00 +14
+        ]
+        >>> ser.dt.base_utc_offset().rename("base_utc_offset")
+        shape: (2,)
+        Series: 'base_utc_offset' [duration[ms]]
+        [
+                -11h
+                13h
+        ]
+        """
+
+    def dst_offset(self) -> Series:
+        """
+        Additional offset currently in effect (typically due to daylight saving time).
+
+        Returns
+        -------
+        Duration Series
+
+        See Also
+        --------
+        Series.dt.base_utc_offset : Base offset from UTC.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> ser = pl.date_range(
+        ...     datetime(2020, 10, 25),
+        ...     datetime(2020, 10, 26),
+        ...     time_zone="Europe/London",
+        ...     eager=True,
+        ... )
+        >>> ser
+        shape: (2,)
+        Series: 'date' [datetime[μs, Europe/London]]
+        [
+                2020-10-25 00:00:00 BST
+                2020-10-26 00:00:00 GMT
+        ]
+        >>> ser.dt.dst_offset().rename("dst_offset")
+        shape: (2,)
+        Series: 'dst_offset' [duration[ms]]
+        [
+                1h
+                0ms
         ]
         """

@@ -37,11 +37,8 @@ impl<T: PolarsObject> ExtensionListBuilder<T> {
 }
 
 impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
-    fn append_series(&mut self, s: &Series) {
-        let arr = s
-            .as_any()
-            .downcast_ref::<ObjectChunked<T>>()
-            .expect("series of type object");
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
+        let arr = s.as_any().downcast_ref::<ObjectChunked<T>>().unwrap();
 
         for v in arr.into_iter() {
             self.values_builder.append_option(v.cloned())
@@ -51,6 +48,7 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
         }
         let len_so_far = self.offsets[self.offsets.len() - 1];
         self.offsets.push(len_so_far + arr.len() as i64);
+        Ok(())
     }
 
     fn append_null(&mut self) {

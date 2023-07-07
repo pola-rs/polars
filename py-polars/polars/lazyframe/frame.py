@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import typing
 import warnings
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
@@ -11,6 +10,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    ClassVar,
     Collection,
     Iterable,
     NoReturn,
@@ -70,10 +70,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from io import IOBase
+    from typing import Literal
 
     import pyarrow as pa
 
-    from polars import DataFrame, Expr, Series
+    from polars import DataFrame, Expr
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
@@ -92,11 +93,6 @@ if TYPE_CHECKING:
         StartBy,
         UniqueKeepStrategy,
     )
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec
@@ -262,7 +258,7 @@ class LazyFrame:
     """
 
     _ldf: PyLazyFrame
-    _accessors: set[str] = set()
+    _accessors: ClassVar[set[str]] = set()
 
     def __init__(
         self,
@@ -1870,7 +1866,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.clone())
 
-    def filter(self, predicate: Expr | str | Series | list[bool]) -> Self:
+    def filter(self, predicate: IntoExpr) -> Self:
         """
         Filter the rows in the LazyFrame based on a predicate expression.
 
@@ -3184,7 +3180,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 
-    @typing.no_type_check
     def with_context(self, other: Self | list[Self]) -> Self:
         """
         Add an external context to the computation graph.
@@ -4707,6 +4702,52 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         key
             Key that is sorted.
 
+        Examples
+        --------
+        >>> df0 = pl.LazyFrame(
+        ...     {"name": ["steve", "elise", "bob"], "age": [42, 44, 18]}
+        ... ).sort("age")
+        >>> df0.collect()
+        shape: (3, 2)
+        ┌───────┬─────┐
+        │ name  ┆ age │
+        │ ---   ┆ --- │
+        │ str   ┆ i64 │
+        ╞═══════╪═════╡
+        │ bob   ┆ 18  │
+        │ steve ┆ 42  │
+        │ elise ┆ 44  │
+        └───────┴─────┘
+        >>> df1 = pl.LazyFrame(
+        ...     {"name": ["anna", "megan", "steve", "thomas"], "age": [21, 33, 42, 20]}
+        ... ).sort("age")
+        >>> df1.collect()
+        shape: (4, 2)
+        ┌────────┬─────┐
+        │ name   ┆ age │
+        │ ---    ┆ --- │
+        │ str    ┆ i64 │
+        ╞════════╪═════╡
+        │ thomas ┆ 20  │
+        │ anna   ┆ 21  │
+        │ megan  ┆ 33  │
+        │ steve  ┆ 42  │
+        └────────┴─────┘
+        >>> df0.merge_sorted(df1, key="age").collect()
+        shape: (7, 2)
+        ┌────────┬─────┐
+        │ name   ┆ age │
+        │ ---    ┆ --- │
+        │ str    ┆ i64 │
+        ╞════════╪═════╡
+        │ bob    ┆ 18  │
+        │ thomas ┆ 20  │
+        │ anna   ┆ 21  │
+        │ megan  ┆ 33  │
+        │ steve  ┆ 42  │
+        │ steve  ┆ 42  │
+        │ elise  ┆ 44  │
+        └────────┴─────┘
         """
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
 

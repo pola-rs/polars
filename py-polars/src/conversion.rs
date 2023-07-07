@@ -13,7 +13,7 @@ use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
 use polars_core::frame::hash_join::JoinValidation;
 use polars_core::frame::row::any_values_to_dtype;
-use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
 use pyo3::basic::CompareOp;
@@ -1151,6 +1151,21 @@ impl FromPyObject<'_> for Wrap<ParallelStrategy> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<IndexOrder> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "fortran" => IndexOrder::Fortran,
+            "c" => IndexOrder::C,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "order must be one of {{'fortran', 'c'}}, got {v}",
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
@@ -1292,9 +1307,10 @@ impl FromPyObject<'_> for Wrap<SetOperation> {
             "union" => SetOperation::Union,
             "difference" => SetOperation::Difference,
             "intersection" => SetOperation::Intersection,
+            "symmetric_difference" => SetOperation::SymmetricDifference,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "validate must be one of {{'union', 'difference', 'intersection'}}, got {v}",
+                    "validate must be one of {{'union', 'difference', 'intersection', 'symmetric_difference'}}, got {v}",
                 )))
             }
         };

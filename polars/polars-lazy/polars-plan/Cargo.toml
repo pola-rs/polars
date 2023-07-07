@@ -27,6 +27,7 @@ rayon.workspace = true
 regex = { version = "1.6", optional = true }
 serde = { version = "1", features = ["derive", "rc"], optional = true }
 smartstring.workspace = true
+strum_macros.workspace = true
 
 [features]
 # debugging utility
@@ -81,7 +82,7 @@ is_unique = ["polars-ops/is_unique"]
 cross_join = ["polars-core/cross_join"]
 asof_join = ["polars-core/asof_join", "polars-time", "polars-ops/asof_join"]
 concat_str = ["polars-core/concat_str"]
-arange = []
+range = []
 mode = ["polars-core/mode"]
 cum_agg = ["polars-core/cum_agg"]
 interpolate = ["polars-ops/interpolate"]
@@ -119,6 +120,8 @@ propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
 fused = []
 list_sets = ["polars-ops/list_sets"]
+list_any_all = ["polars-ops/list_any_all"]
+cutqcut = ["polars-ops/cutqcut"]
 
 bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
 

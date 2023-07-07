@@ -18,6 +18,10 @@ from polars.exceptions import NoDataError
 from polars.utils.various import normalise_filepath
 
 
+def _is_glob_pattern(file: str) -> bool:
+    return any(char in file for char in ["*", "?", "["])
+
+
 def _is_local_file(file: str) -> bool:
     try:
         next(glob.iglob(file, recursive=True))

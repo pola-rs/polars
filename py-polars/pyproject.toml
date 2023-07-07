@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.0,<1.1"]
+requires = ["maturin>=1.1,<1.2"]
 build-backend = "maturin"
 
 [project]
@@ -10,10 +10,8 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 license = { file = "LICENSE" }
-requires-python = ">=3.7"
-dependencies = [
-  "typing_extensions >= 4.0.1; python_version < '3.8'",
-]
+requires-python = ">=3.8"
+
 keywords = ["dataframe", "arrow", "out-of-core"]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
@@ -24,7 +22,6 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.7",
   "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
@@ -40,20 +37,22 @@ Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
-# NOTE: keep this list in sync with show_versions()
+# NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 pyarrow = ["pyarrow>=7.0.0"]
 pandas = ["pyarrow>=7.0.0", "pandas"]
 numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
-deltalake = ["deltalake >= 0.8.0"]
+deltalake = ["deltalake >= 0.10.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
+pydantic = ["pydantic"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
+adbc = ["adbc_driver_sqlite"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,sqlalchemy,xlsxwriter]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc]",
 ]
 
 [tool.mypy]

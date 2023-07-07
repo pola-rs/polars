@@ -24,6 +24,58 @@ class ListNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
+    def all(self) -> Expr:
+        """
+        Evaluate whether all boolean values in a list are true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.all())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ true  │
+        │ null  │
+        └───────┘
+
+        """
+
+    def any(self) -> Expr:
+        """
+        Evaluate whether any boolean value in a list is true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.any())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ null  │
+        └───────┘
+
+        """
+
     def lengths(self) -> Series:
         """
         Get the length of the arrays as UInt32.
@@ -506,24 +558,84 @@ class ListNameSpace:
         ----------
         other
             Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
+        >>> a.list.union(b)  # doctest: +IGNORE_RESULT
+        shape: (4,)
+        Series: '' [list[i64]]
+        [
+                [1, 2, 3, 4]
+                [3]
+                [null, 3, 4]
+                [5, 6, 7, 8]
+        ]
+
         """  # noqa: W505.
 
     def difference(self, other: Series) -> Series:
         """
-        Compute the SET DIFFERENCE between the  elements in this list and the elements of ``other``.
+        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
 
         Parameters
         ----------
         other
             Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
+        >>> a.list.difference(b)
+        shape: (4,)
+        Series: '' [list[i64]]
+        [
+                [1]
+                []
+                []
+                [5, 7]
+        ]
+
+        See Also
+        --------
+        polars.Series.list.diff: Calculates the n-th discrete difference of every sublist.
+
         """  # noqa: W505.
 
     def intersection(self, other: Series) -> Series:
         """
-        Compute the SET INTERSECTION between the  elements in this list and the elements of ``other``.
+        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
 
         Parameters
         ----------
         other
             Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
+        >>> a.list.intersection(b)
+        shape: (4,)
+        Series: '' [list[i64]]
+        [
+                [2, 3]
+                []
+                [null, 3]
+                [6]
+        ]
+
+        """  # noqa: W505.
+
+    def symmetric_difference(self, other: Series) -> Series:
+        """
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
         """  # noqa: W505.

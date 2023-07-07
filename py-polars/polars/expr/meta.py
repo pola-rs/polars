@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Literal, overload
 
 from polars.utils._wrap import wrap_expr
 from polars.utils.various import normalise_filepath
@@ -178,3 +178,28 @@ class ExprMetaNameSpace:
         else:
             self._pyexpr.meta_write_json(file)
         return None
+
+    @overload
+    def tree_format(self, *, return_as_string: Literal[False]) -> None:
+        ...
+
+    @overload
+    def tree_format(self, *, return_as_string: Literal[True]) -> str:
+        ...
+
+    def tree_format(self, return_as_string: bool = False) -> str | None:
+        """
+        Format the expression as a tree.
+
+        Parameters
+        ----------
+        return_as_string:
+            If True, return as string rather than printing to stdout.
+
+        """
+        s = self._pyexpr.meta_tree_format()
+        if return_as_string:
+            return s
+        else:
+            print(s)
+            return None

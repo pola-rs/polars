@@ -45,6 +45,9 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 }
                 PolarsError::SchemaMismatch(err) => SchemaError::new_err(err.to_string()),
                 PolarsError::ShapeMismatch(err) => ShapeError::new_err(err.to_string()),
+                PolarsError::StringCacheMismatch(err) => {
+                    StringCacheMismatchError::new_err(err.to_string())
+                }
                 PolarsError::StructFieldNotFound(name) => {
                     StructFieldNotFoundError::new_err(name.to_string())
                 }
@@ -75,6 +78,7 @@ create_exception!(exceptions, NoDataError, PyException);
 create_exception!(exceptions, SchemaError, PyException);
 create_exception!(exceptions, SchemaFieldNotFoundError, PyException);
 create_exception!(exceptions, ShapeError, PyException);
+create_exception!(exceptions, StringCacheMismatchError, PyException);
 create_exception!(exceptions, StructFieldNotFoundError, PyException);
 
 #[macro_export]

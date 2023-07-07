@@ -19,7 +19,7 @@ pub mod float;
 pub mod iterator;
 pub mod kernels;
 #[cfg(feature = "ndarray")]
-mod ndarray;
+pub(crate) mod ndarray;
 
 #[cfg(feature = "dtype-array")]
 pub(crate) mod array;
@@ -338,7 +338,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.field.data_type()
     }
 
-    #[cfg(feature = "dtype-struct")]
+    #[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
     pub(crate) unsafe fn set_dtype(&mut self, dtype: DataType) {
         self.field = Arc::new(Field::new(self.name(), dtype))
     }

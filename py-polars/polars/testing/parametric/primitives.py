@@ -41,17 +41,12 @@ from polars.testing.parametric.strategies import (
 )
 
 if TYPE_CHECKING:
-    import sys
+    from typing import Literal
 
     from hypothesis.strategies import DrawFn, SearchStrategy
 
     from polars import LazyFrame
     from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 _time_units = list(DTYPE_TEMPORAL_UNITS)
@@ -172,6 +167,7 @@ class column:
                         raise InvalidArgument(
                             "Unable to determine dtype for strategy"
                         ) from None
+
                 if sample_value_type is not None:
                     value_dtype = py_type_to_dtype(sample_value_type)
                     if value_dtype is not List:
@@ -651,7 +647,7 @@ def dataframes(
                 coldefs = list(cols)
 
             # append any explicitly provided cols
-            coldefs.extend(include_cols or ())  # type: ignore[arg-type]
+            coldefs.extend(include_cols or ())
 
             # assign dataframe/series size
             series_size = (

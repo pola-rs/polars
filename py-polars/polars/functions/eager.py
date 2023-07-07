@@ -15,19 +15,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    import sys
-
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars.type_aliases import (
-        ConcatMethod,
-        JoinStrategy,
-        PolarsType,
-    )
-
-    if sys.version_info >= (3, 8):
-        pass
-    else:
-        pass
+    from polars.type_aliases import ConcatMethod, JoinStrategy, PolarsType
 
 
 def concat(

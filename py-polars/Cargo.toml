@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.18.4"
+version = "0.18.6"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -25,7 +25,7 @@ once_cell = "1"
 polars-algo = { path = "../polars/polars-algo", default-features = false }
 polars-core = { path = "../polars/polars-core", features = ["python"], default-features = false }
 polars-lazy = { path = "../polars/polars-lazy", features = ["python"], default-features = false }
-pyo3 = { version = "0.19", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
+pyo3 = { version = "0.19", features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
 pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 smartstring = "1"
@@ -67,6 +67,8 @@ list_take = ["polars/list_take"]
 list_count = ["polars/list_count"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
+list_any_all = ["polars/list_any_all"]
+cutqcut = ["polars/cutqcut"]
 
 all = [
   "json",
@@ -103,6 +105,8 @@ all = [
   "list_take",
   "list_count",
   "list_sets",
+  "list_any_all",
+  "cutqcut",
 ]
 
 # we cannot conditionally activate simd
@@ -141,7 +145,7 @@ features = [
   "rank",
   "diff",
   "moment",
-  "arange",
+  "range",
   "true_div",
   "dtype-categorical",
   "diagonal_concat",

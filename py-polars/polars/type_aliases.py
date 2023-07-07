@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import (
@@ -9,6 +8,7 @@ from typing import (
     Collection,
     Iterable,
     List,
+    Literal,
     Mapping,
     Sequence,
     Tuple,
@@ -17,14 +17,11 @@ from typing import (
     Union,
 )
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
 if TYPE_CHECKING:
+    import sys
+
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars.datatypes import DataType, DataTypeClass, TemporalType
+    from polars.datatypes import DataType, DataTypeClass, IntegralType, TemporalType
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
@@ -39,6 +36,7 @@ if TYPE_CHECKING:
 # Data types
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
 PolarsTemporalType: TypeAlias = Union[Type["TemporalType"], "TemporalType"]
+PolarsIntegerType: TypeAlias = Union[Type["IntegralType"], "IntegralType"]
 OneOrMoreDataTypes: TypeAlias = Union[PolarsDataType, Iterable[PolarsDataType]]
 PythonDataType: TypeAlias = Union[
     Type[int],
@@ -86,6 +84,7 @@ FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
 FloatFmt: TypeAlias = Literal["full", "mixed"]
+IndexOrder: TypeAlias = Literal["c", "fortran"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]

@@ -14,6 +14,20 @@ use crate::prelude::*;
 pub struct ListNameSpace(pub Expr);
 
 impl ListNameSpace {
+    #[cfg(feature = "list_any_all")]
+    pub fn any(self) -> Expr {
+        self.0
+            .apply_private(FunctionExpr::ListExpr(ListFunction::Any))
+            .with_fmt("list.any")
+    }
+
+    #[cfg(feature = "list_any_all")]
+    pub fn all(self) -> Expr {
+        self.0
+            .apply_private(FunctionExpr::ListExpr(ListFunction::All))
+            .with_fmt("list.all")
+    }
+
     /// Get lengths of the arrays in the List type.
     pub fn lengths(self) -> Expr {
         let function = |s: Series| {
@@ -345,5 +359,12 @@ impl ListNameSpace {
     pub fn intersection<E: Into<Expr>>(self, other: E) -> Expr {
         let other = other.into();
         self.set_operation(other, SetOperation::Intersection)
+    }
+
+    /// Return the SET SYMMETRIC DIFFERENCE between both list arrays.
+    #[cfg(feature = "list_sets")]
+    pub fn symmetric_difference<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+        self.set_operation(other, SetOperation::SymmetricDifference)
     }
 }

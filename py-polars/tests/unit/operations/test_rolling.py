@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import typing
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -220,13 +219,13 @@ def test_rolling_extrema() -> None:
     df = (
         pl.DataFrame(
             {
-                "col1": pl.arange(0, 7, eager=True),
-                "col2": pl.arange(0, 7, eager=True).reverse(),
+                "col1": pl.int_range(0, 7, eager=True),
+                "col2": pl.int_range(0, 7, eager=True).reverse(),
             }
         )
     ).with_columns(
         [
-            pl.when(pl.arange(0, pl.count(), eager=False) < 2)
+            pl.when(pl.int_range(0, pl.count(), eager=False) < 2)
             .then(None)
             .otherwise(pl.all())
             .suffix("_nulls")
@@ -248,7 +247,7 @@ def test_rolling_extrema() -> None:
     }
 
     # shuffled data triggers other kernels
-    df = df.select([pl.all().shuffle(0)])
+    df = df.select([pl.all().shuffle(0, fixed_seed=True)])
     assert df.select([pl.all().rolling_min(3)]).to_dict(False) == {
         "col1": [None, None, 0, 0, 1, 2, 2],
         "col2": [None, None, 0, 2, 1, 1, 1],
@@ -500,8 +499,16 @@ def test_rolling_var_numerical_stability_5197() -> None:
     assert res[:4] == [None] * 4
 
 
-@typing.no_type_check
-def test_dynamic_groupby_timezone_awareness() -> None:
+@pytest.mark.parametrize(
+    ("every", "offset"),
+    [
+        ("3d", "-1d"),
+        (timedelta(days=3), timedelta(days=-1)),
+    ],
+)
+def test_dynamic_groupby_timezone_awareness(
+    every: str | timedelta, offset: str | timedelta
+) -> None:
     df = pl.DataFrame(
         (
             pl.date_range(
@@ -517,17 +524,16 @@ def test_dynamic_groupby_timezone_awareness() -> None:
         )
     )
 
-    for every, offset in (("3d", "-1d"), (timedelta(days=3), timedelta(days=-1))):
-        assert (
-            df.groupby_dynamic(
-                "datetime",
-                every=every,
-                offset=offset,
-                closed="right",
-                include_boundaries=True,
-                truncate=False,
-            ).agg(pl.col("value").last())
-        ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
+    assert (
+        df.groupby_dynamic(
+            "datetime",
+            every=every,
+            offset=offset,
+            closed="right",
+            include_boundaries=True,
+            truncate=False,
+        ).agg(pl.col("value").last())
+    ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
 
 
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])

@@ -5,57 +5,114 @@ use arrow::offset::Offsets;
 
 use super::*;
 
-pub(crate) fn merge_categorical_map(
+fn slots_to_mut(slots: &Utf8Array<i64>) -> MutableUtf8Array<i64> {
+    // safety: invariants don't change, just the type
+    let offset_buf = unsafe { Offsets::new_unchecked(slots.offsets().as_slice().to_vec()) };
+    let values_buf = slots.values().as_slice().to_vec();
+
+    let validity_buf = if let Some(validity) = slots.validity() {
+        let mut validity_buf = MutableBitmap::new();
+        let (b, offset, len) = validity.as_slice();
+        validity_buf.extend_from_slice(b, offset, len);
+        Some(validity_buf)
+    } else {
+        None
+    };
+
+    // Safety
+    // all offsets are valid and the u8 data is valid utf8
+    unsafe {
+        MutableUtf8Array::new_unchecked(
+            DataType::Utf8.to_arrow(),
+            offset_buf,
+            values_buf,
+            validity_buf,
+        )
+    }
+}
+
+struct State {
+    map: PlHashMap<u32, u32>,
+    slots: MutableUtf8Array<i64>,
+}
+
+#[derive(Default)]
+pub(crate) struct RevMapMerger {
+    id: u128,
+    original: Arc<RevMapping>,
+    // only initiate state when
+    // we encounter a rev-map from a different source,
+    // but from the same string cache
+    state: Option<State>,
+}
+
+impl RevMapMerger {
+    pub(crate) fn new(rev_map: Arc<RevMapping>) -> Self {
+        let RevMapping::Global(_, _, id) = rev_map.as_ref() else { panic!("impl error") };
+        RevMapMerger {
+            state: None,
+            id: *id,
+            original: rev_map,
+        }
+    }
+
+    fn init_state(&mut self) {
+        let RevMapping::Global(map, slots, _) = self.original.as_ref() else { unreachable!() };
+        self.state = Some(State {
+            map: (*map).clone(),
+            slots: slots_to_mut(slots),
+        })
+    }
+
+    pub(crate) fn merge_map(&mut self, rev_map: &Arc<RevMapping>) -> PolarsResult<()> {
+        // happy path
+        // they come from the same source
+        if Arc::ptr_eq(&self.original, rev_map) {
+            return Ok(());
+        }
+        let RevMapping::Global(map, slots, id) = rev_map.as_ref() else { polars_bail!(ComputeError: "expected global rev-map") };
+        polars_ensure!(*id == self.id, ComputeError: "categoricals don't originate from the same string cache\n\
+    try setting a global string cache or increase the scope of the local string cache");
+
+        if self.state.is_none() {
+            self.init_state()
+        }
+        let state = self.state.as_mut().unwrap();
+
+        for (cat, idx) in map.iter() {
+            state.map.entry(*cat).or_insert_with(|| {
+                // Safety
+                // within bounds
+                let str_val = unsafe { slots.value_unchecked(*idx as usize) };
+                let new_idx = state.slots.len() as u32;
+                state.slots.push(Some(str_val));
+
+                new_idx
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn finish(self) -> Arc<RevMapping> {
+        match self.state {
+            None => self.original,
+            Some(state) => {
+                let new_rev = RevMapping::Global(state.map, state.slots.into(), self.id);
+                Arc::new(new_rev)
+            }
+        }
+    }
+}
+
+pub(crate) fn merge_rev_map(
     left: &Arc<RevMapping>,
     right: &Arc<RevMapping>,
 ) -> PolarsResult<Arc<RevMapping>> {
     match (&**left, &**right) {
-        (RevMapping::Global(l_map, l_slots, l_id), RevMapping::Global(r_map, r_slots, r_id)) => {
-            polars_ensure!(
-                l_id == r_id,
-                ComputeError: "unable to merge categorical arrays created under different global \
-                string caches (try setting a global string cache)"
-            );
-            let mut new_map = (*l_map).clone();
-
-            // safety: invariants don't change, just the type
-            let offset_buf =
-                unsafe { Offsets::new_unchecked(l_slots.offsets().as_slice().to_vec()) };
-            let values_buf = l_slots.values().as_slice().to_vec();
-
-            let validity_buf = if let Some(validity) = l_slots.validity() {
-                let mut validity_buf = MutableBitmap::new();
-                let (b, offset, len) = validity.as_slice();
-                validity_buf.extend_from_slice(b, offset, len);
-                Some(validity_buf)
-            } else {
-                None
-            };
-
-            // Safety
-            // all offsets are valid and the u8 data is valid utf8
-            let mut new_slots = unsafe {
-                MutableUtf8Array::new_unchecked(
-                    DataType::Utf8.to_arrow(),
-                    offset_buf,
-                    values_buf,
-                    validity_buf,
-                )
-            };
-
-            for (cat, idx) in r_map.iter() {
-                new_map.entry(*cat).or_insert_with(|| {
-                    // Safety
-                    // within bounds
-                    let str_val = unsafe { r_slots.value_unchecked(*idx as usize) };
-                    let new_idx = new_slots.len() as u32;
-                    new_slots.push(Some(str_val));
-
-                    new_idx
-                });
-            }
-            let new_rev = RevMapping::Global(new_map, new_slots.into(), *l_id);
-            Ok(Arc::new(new_rev))
+        (RevMapping::Global(_, _, _), RevMapping::Global(_, _, _)) => {
+            let mut merger = RevMapMerger::new(left.clone());
+            merger.merge_map(right)?;
+            Ok(merger.finish())
         }
         (RevMapping::Local(arr_l), RevMapping::Local(arr_r)) => {
             // they are from the same source, just clone
@@ -81,7 +138,7 @@ pub(crate) fn merge_categorical_map(
 
 impl CategoricalChunked {
     pub(crate) fn merge_categorical_map(&self, other: &Self) -> PolarsResult<Arc<RevMapping>> {
-        merge_categorical_map(self.get_rev_map(), other.get_rev_map())
+        merge_rev_map(self.get_rev_map(), other.get_rev_map())
     }
 }
 
@@ -90,13 +147,13 @@ impl CategoricalChunked {
 mod test {
     use super::*;
     use crate::chunked_array::categorical::CategoricalChunkedBuilder;
-    use crate::{enable_string_cache, reset_string_cache};
+    use crate::{enable_string_cache, reset_string_cache, IUseStringCache};
 
     #[test]
     fn test_merge_rev_map() {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
-        enable_string_cache(true);
+        let _sc = IUseStringCache::hold();
 
         let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
         let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);

@@ -21,11 +21,6 @@ macro_rules! set_unwrapped_or_0 {
 }
 
 #[pyfunction]
-pub fn arange(start: PyExpr, end: PyExpr, step: i64) -> PyExpr {
-    dsl::arange(start.inner, end.inner, step).into()
-}
-
-#[pyfunction]
 pub fn rolling_corr(
     x: PyExpr,
     y: PyExpr,
@@ -190,12 +185,21 @@ pub fn date_range_lazy(
     end: PyExpr,
     every: &str,
     closed: Wrap<ClosedWindow>,
+    time_unit: Option<Wrap<TimeUnit>>,
     time_zone: Option<TimeZone>,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::parse(every);
-    dsl::functions::date_range(start, end, every, closed.0, time_zone).into()
+    dsl::functions::date_range(
+        start,
+        end,
+        every,
+        closed.0,
+        time_unit.map(|x| x.0),
+        time_zone,
+    )
+    .into()
 }
 
 #[pyfunction]
@@ -401,38 +405,25 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn repeat(value: Wrap<AnyValue>, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
-    let value = value.0;
+pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
+    let mut value = value.inner;
     let n = n.inner;
-    let dtype = dtype.map(|wrap| wrap.0);
 
-    let target_dtype = match dtype {
-        Some(dtype) => dtype,
-        None => match value.dtype() {
-            // Integer inputs that fit in Int32 are parsed as such
-            DataType::Int64 => {
-                let int_value: i64 = value.try_extract().unwrap();
-                if int_value >= i32::MIN as i64 && int_value <= i32::MAX as i64 {
-                    DataType::Int32
-                } else {
-                    DataType::Int64
-                }
-            }
-            DataType::Unknown => DataType::Null,
-            _ => value.dtype(),
-        },
-    };
-
-    let lit_value = LiteralValue::try_from(value).map_err(PyPolarsErr::from)?;
-    let must_cast = lit_value.get_datatype() != target_dtype;
-
-    let mut expr = dsl::repeat(lit_value, n);
-
-    if must_cast {
-        expr = expr.cast(target_dtype);
+    if let Some(dtype) = dtype {
+        value = value.cast(dtype.0);
     }
 
-    Ok(expr.into())
+    if let Expr::Literal(lv) = &value {
+        let av = lv.to_anyvalue().unwrap();
+        // Integer inputs that fit in Int32 are parsed as such
+        if let DataType::Int64 = av.dtype() {
+            let int_value = av.try_extract::<i64>().unwrap();
+            if int_value >= i32::MIN as i64 && int_value <= i32::MAX as i64 {
+                value = value.cast(DataType::Int32);
+            }
+        }
+    }
+    Ok(dsl::repeat(value, n).into())
 }
 
 #[pyfunction]

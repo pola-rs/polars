@@ -8,15 +8,10 @@ from polars.io.csv.functions import read_csv
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
-    import sys
     from io import BytesIO
+    from typing import Literal
 
     from polars import DataFrame
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 @overload

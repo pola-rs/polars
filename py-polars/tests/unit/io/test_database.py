@@ -80,10 +80,6 @@ def create_temp_sqlite_db(test_db: str) -> None:
                 "date": pl.Date,
             },
             [date(2020, 1, 1), date(2021, 12, 31)],
-            marks=pytest.mark.skipif(
-                sys.version_info < (3, 8),
-                reason="connectorx not available below Python 3.8",
-            ),
         ),
         pytest.param(
             "adbc",
@@ -123,35 +119,43 @@ def test_read_database(
 
 
 @pytest.mark.parametrize(
-    ("engine", "query", "database", "err"),
+    ("engine", "query", "database", "errclass", "err"),
     [
         pytest.param(
             "not_engine",
             "SELECT * FROM test_data",
             "sqlite",
-            "Engine is not implemented, try either connectorx or adbc.",
+            ValueError,
+            "Engine 'not_engine' not implemented; use connectorx or adbc.",
             id="Not an available sql engine",
         ),
         pytest.param(
             "adbc",
             ["SELECT * FROM test_data", "SELECT * FROM test_data"],
             "sqlite",
+            ValueError,
             "Only a single SQL query string is accepted for adbc.",
-            id="Unavailable list of queries for adbc.",
+            id="Unavailable list of queries for adbc",
         ),
         pytest.param(
             "adbc",
             "SELECT * FROM test_data",
             "mysql",
-            "ADBC does not currently support this database.",
-            id="Unavailable database for adbc.",
+            ImportError,
+            "ADBC mysql driver not detected",
+            id="Unavailable adbc driver",
         ),
     ],
 )
 def test_read_database_exceptions(
-    engine: DbReadEngine, query: str, database: str, err: str, tmp_path: Path
+    engine: DbReadEngine,
+    query: str,
+    database: str,
+    errclass: type,
+    err: str,
+    tmp_path: Path,
 ) -> None:
-    with pytest.raises(ValueError, match=err):
+    with pytest.raises(errclass, match=err):
         pl.read_database(
             connection_uri=f"{database}://test",
             query=query,

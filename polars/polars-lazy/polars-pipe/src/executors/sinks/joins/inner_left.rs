@@ -119,7 +119,7 @@ impl GenericJoinProbe {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<BinaryArray<i64>> {
-        self.join_columns.clear();
+        debug_assert!(self.join_columns.is_empty());
 
         let determine_idx = !self.swapped_or_left && self.join_column_idx.is_none();
         let mut names = vec![];
@@ -150,6 +150,36 @@ impl GenericJoinProbe {
 
         // safety: we keep rows-encode alive
         unsafe { Ok(self.current_rows.borrow_array()) }
+    }
+
+    fn finish_join(
+        &mut self,
+        mut left_df: DataFrame,
+        right_df: DataFrame,
+    ) -> PolarsResult<DataFrame> {
+        Ok(match &self.output_names {
+            None => {
+                let out = _finish_join(left_df, right_df, Some(self.suffix.as_ref()))?;
+                self.output_names = Some(out.get_column_names_owned());
+                out
+            }
+            Some(names) => unsafe {
+                // safety:
+                // if we have duplicate names, we overwrite
+                // them in the next snippet
+                left_df
+                    .get_columns_mut()
+                    .extend_from_slice(right_df.get_columns());
+                left_df
+                    .get_columns_mut()
+                    .iter_mut()
+                    .zip(names)
+                    .for_each(|(s, name)| {
+                        s.rename(name);
+                    });
+                left_df
+            },
+        })
     }
 
     fn execute_left(
@@ -196,30 +226,15 @@ impl GenericJoinProbe {
         }
         let right_df = self.df_a.as_ref();
 
-        let mut left_df = unsafe { chunk.data._take_unchecked_slice(&self.join_tuples_b, false) };
+        let left_df = unsafe { chunk.data._take_unchecked_slice(&self.join_tuples_b, false) };
         let right_df =
             unsafe { right_df._take_opt_chunked_unchecked_seq(&self.join_tuples_a_left_join) };
 
-        let out = match &self.output_names {
-            None => {
-                let out = _finish_join(left_df, right_df, Some(self.suffix.as_ref()))?;
-                self.output_names = Some(out.get_column_names_owned());
-                out
-            }
-            Some(names) => unsafe {
-                left_df
-                    .get_columns_mut()
-                    .extend_from_slice(right_df.get_columns());
-                left_df
-                    .get_columns_mut()
-                    .iter_mut()
-                    .zip(names)
-                    .for_each(|(s, name)| {
-                        s.rename(name);
-                    });
-                left_df
-            },
-        };
+        let out = self.finish_join(left_df, right_df)?;
+
+        // clear memory
+        self.join_columns.clear();
+        self.hashes.clear();
 
         Ok(OperatorResult::Finished(chunk.with_data(out)))
     }
@@ -275,30 +290,16 @@ impl GenericJoinProbe {
             df._take_unchecked_slice(&self.join_tuples_b, false)
         };
 
-        let (mut a, b) = if self.swapped_or_left {
+        let (a, b) = if self.swapped_or_left {
             (right_df, left_df)
         } else {
             (left_df, right_df)
         };
-        let out = match &self.output_names {
-            None => {
-                let out = _finish_join(a, b, Some(self.suffix.as_ref()))?;
-                self.output_names = Some(out.get_column_names_owned());
-                out
-            }
-            Some(names) => {
-                a.hstack_mut(b.get_columns()).unwrap();
-                unsafe {
-                    a.get_columns_mut()
-                        .iter_mut()
-                        .zip(names)
-                        .for_each(|(s, name)| {
-                            s.rename(name);
-                        });
-                }
-                a
-            }
-        };
+        let out = self.finish_join(a, b)?;
+
+        // clear memory
+        self.join_columns.clear();
+        self.hashes.clear();
 
         Ok(OperatorResult::Finished(chunk.with_data(out)))
     }

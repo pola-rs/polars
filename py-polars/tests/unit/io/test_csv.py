@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import gzip
 import io
+import sys
 import textwrap
-import typing
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -1152,7 +1152,6 @@ def test_csv_categorical_categorical_merge() -> None:
     )["x"].to_list() == ["A", "B"]
 
 
-@typing.no_type_check
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     batches = reader.next_batches(5)
@@ -1175,13 +1174,13 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
     # the final batch of the low-memory variant is different
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(5)
-    assert len(batches) == 5
-    batches += reader.next_batches(5)
+    assert len(batches) == 5  # type: ignore[arg-type]
+    batches += reader.next_batches(5)  # type: ignore[operator]
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(10)
-    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
+    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
 
 
 def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:
@@ -1340,3 +1339,34 @@ def test_read_csv_n_rows_outside_heuristic() -> None:
 
     f.seek(0)
     assert pl.read_csv(f, n_rows=2048, has_header=False).shape == (2048, 4)
+
+
+def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    # The capsys fixture allows pytest to access stdout/stderr. See
+    # https://docs.pytest.org/en/7.1.x/how-to/capture-stdout-stderr.html
+    df = pl.DataFrame(
+        {
+            "numbers": [1, 2, 3],
+            "strings": ["test", "csv", "stdout"],
+            "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
+        }
+    )
+
+    # pytest hijacks sys.stdout and changes its type, which causes mypy failure
+    df.write_csv(sys.stdout)  # type: ignore[call-overload]
+    captured = capsys.readouterr()
+    assert captured.out == (
+        "numbers,strings,dates\n"
+        "1,test,2023-01-01\n"
+        "2,csv,2023-01-02\n"
+        "3,stdout,2023-01-03\n"
+    )
+
+    df.write_csv(sys.stderr)  # type: ignore[call-overload]
+    captured = capsys.readouterr()
+    assert captured.err == (
+        "numbers,strings,dates\n"
+        "1,test,2023-01-01\n"
+        "2,csv,2023-01-02\n"
+        "3,stdout,2023-01-03\n"
+    )
