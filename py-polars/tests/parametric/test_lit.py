@@ -27,5 +27,6 @@ def test_datetime_us(value: datetime) -> None:
 @given(value=strategy_datetime_ms)
 def test_datetime_ms(value: datetime) -> None:
     result = pl.select(pl.lit(value, dtype=pl.Datetime("ms")))["literal"][0]
-    expected_microsecond = (value.microsecond // 1000 + (value % 1000 >= 500)) * 1000
+    ms = value.microsecond
+    expected_microsecond = (ms // 1000 + (ms % 1000 >= 500)) * 1000
     assert result == value.replace(microsecond=expected_microsecond)
