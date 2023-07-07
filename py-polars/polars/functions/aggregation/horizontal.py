@@ -19,10 +19,7 @@ if TYPE_CHECKING:
 
 def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     """
-    Evaluate a bitwise AND operation.
-
-    Otherwise, this function computes the bitwise AND horizontally across multiple
-    columns.
+    Compute the bitwise AND horizontally across columns.
 
     Parameters
     ----------
@@ -32,45 +29,25 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     Examples
     --------
-    Selecting all columns and calculating the sum:
-
     >>> df = pl.DataFrame(
     ...     {
-    ...         "a": [1, 2, 3],
-    ...         "b": ["hello", "foo", "bar"],
-    ...         "c": [1, 1, 1],
+    ...         "a": [False, False, True, True],
+    ...         "b": [False, True, None, True],
+    ...         "c": ["w", "x", "y", "z"],
     ...     }
     ... )
-    >>> df.select(pl.all().sum())
-    shape: (1, 3)
-    ┌─────┬──────┬─────┐
-    │ a   ┆ b    ┆ c   │
-    │ --- ┆ ---  ┆ --- │
-    │ i64 ┆ str  ┆ i64 │
-    ╞═════╪══════╪═════╡
-    │ 6   ┆ null ┆ 3   │
-    └─────┴──────┴─────┘
-
-    Bitwise AND across multiple columns:
-
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "a": [True, False, True],
-    ...         "b": [True, False, False],
-    ...         "c": [False, True, False],
-    ...     }
-    ... )
-    >>> df.select(pl.all_horizontal("a", "b"))
-    shape: (3, 1)
-    ┌───────┐
-    │ all   │
-    │ ---   │
-    │ bool  │
-    ╞═══════╡
-    │ true  │
-    │ false │
-    │ false │
-    └───────┘
+    >>> df.with_columns(pl.all_horizontal("a", "b"))
+    shape: (4, 4)
+    ┌───────┬───────┬─────┬───────┐
+    │ a     ┆ b     ┆ c   ┆ all   │
+    │ ---   ┆ ---   ┆ --- ┆ ---   │
+    │ bool  ┆ bool  ┆ str ┆ bool  │
+    ╞═══════╪═══════╪═════╪═══════╡
+    │ false ┆ false ┆ w   ┆ false │
+    │ false ┆ true  ┆ x   ┆ false │
+    │ true  ┆ null  ┆ y   ┆ null  │
+    │ true  ┆ true  ┆ z   ┆ true  │
+    └───────┴───────┴─────┴───────┘
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
@@ -83,7 +60,7 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
 def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     """
-    Compute bitwise OR horizontally across multiple columns.
+    Compute the bitwise OR horizontally across columns.
 
     Parameters
     ----------
@@ -95,22 +72,23 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     --------
     >>> df = pl.DataFrame(
     ...     {
-    ...         "a": [True, False, True],
-    ...         "b": [False, False, False],
-    ...         "c": [False, True, False],
+    ...         "a": [False, False, True, None],
+    ...         "b": [False, True, None, None],
+    ...         "c": ["w", "x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.any_horizontal("a", "b", "c"))
-    shape: (3, 4)
-    ┌───────┬───────┬───────┬──────┐
-    │ a     ┆ b     ┆ c     ┆ any  │
-    │ ---   ┆ ---   ┆ ---   ┆ ---  │
-    │ bool  ┆ bool  ┆ bool  ┆ bool │
-    ╞═══════╪═══════╪═══════╪══════╡
-    │ true  ┆ false ┆ false ┆ true │
-    │ false ┆ false ┆ true  ┆ true │
-    │ true  ┆ false ┆ false ┆ true │
-    └───────┴───────┴───────┴──────┘
+    >>> df.with_columns(pl.any_horizontal("a", "b"))
+    shape: (4, 4)
+    ┌───────┬───────┬─────┬───────┐
+    │ a     ┆ b     ┆ c   ┆ any   │
+    │ ---   ┆ ---   ┆ --- ┆ ---   │
+    │ bool  ┆ bool  ┆ str ┆ bool  │
+    ╞═══════╪═══════╪═════╪═══════╡
+    │ false ┆ false ┆ w   ┆ false │
+    │ false ┆ true  ┆ x   ┆ true  │
+    │ true  ┆ null  ┆ y   ┆ true  │
+    │ null  ┆ null  ┆ z   ┆ null  │
+    └───────┴───────┴─────┴───────┘
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
@@ -136,21 +114,21 @@ def max_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 8, 3],
-    ...         "b": [4, 5, 2],
-    ...         "c": ["foo", "bar", "foo"],
+    ...         "b": [4, 5, None],
+    ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.select(pl.max_horizontal("a", "b"))
-    shape: (3, 1)
-    ┌─────┐
-    │ max │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 4   │
-    │ 8   │
-    │ 3   │
-    └─────┘
+    >>> df.with_columns(pl.max_horizontal("a", "b"))
+    shape: (3, 4)
+    ┌─────┬──────┬─────┬─────┐
+    │ a   ┆ b    ┆ c   ┆ max │
+    │ --- ┆ ---  ┆ --- ┆ --- │
+    │ i64 ┆ i64  ┆ str ┆ i64 │
+    ╞═════╪══════╪═════╪═════╡
+    │ 1   ┆ 4    ┆ x   ┆ 4   │
+    │ 8   ┆ 5    ┆ y   ┆ 8   │
+    │ 3   ┆ null ┆ z   ┆ 3   │
+    └─────┴──────┴─────┴─────┘
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
@@ -172,21 +150,21 @@ def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 8, 3],
-    ...         "b": [4, 5, 2],
-    ...         "c": ["foo", "bar", "foo"],
+    ...         "b": [4, 5, None],
+    ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.select(pl.min_horizontal("a", "b"))
-    shape: (3, 1)
-    ┌─────┐
-    │ min │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 1   │
-    │ 5   │
-    │ 2   │
-    └─────┘
+    >>> df.with_columns(pl.min_horizontal("a", "b"))
+    shape: (3, 4)
+    ┌─────┬──────┬─────┬─────┐
+    │ a   ┆ b    ┆ c   ┆ min │
+    │ --- ┆ ---  ┆ --- ┆ --- │
+    │ i64 ┆ i64  ┆ str ┆ i64 │
+    ╞═════╪══════╪═════╪═════╡
+    │ 1   ┆ 4    ┆ x   ┆ 1   │
+    │ 8   ┆ 5    ┆ y   ┆ 5   │
+    │ 3   ┆ null ┆ z   ┆ 3   │
+    └─────┴──────┴─────┴─────┘
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
@@ -207,21 +185,22 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     --------
     >>> df = pl.DataFrame(
     ...     {
-    ...         "a": [1, 2],
-    ...         "b": [3, 4],
-    ...         "c": [5, 6],
+    ...         "a": [1, 8, 3],
+    ...         "b": [4, 5, None],
+    ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.sum_horizontal("a", "c"))
-    shape: (2, 4)
-    ┌─────┬─────┬─────┬─────┐
-    │ a   ┆ b   ┆ c   ┆ sum │
-    │ --- ┆ --- ┆ --- ┆ --- │
-    │ i64 ┆ i64 ┆ i64 ┆ i64 │
-    ╞═════╪═════╪═════╪═════╡
-    │ 1   ┆ 3   ┆ 5   ┆ 6   │
-    │ 2   ┆ 4   ┆ 6   ┆ 8   │
-    └─────┴─────┴─────┴─────┘
+    >>> df.with_columns(pl.sum_horizontal("a", "b"))
+    shape: (3, 4)
+    ┌─────┬──────┬─────┬──────┐
+    │ a   ┆ b    ┆ c   ┆ sum  │
+    │ --- ┆ ---  ┆ --- ┆ ---  │
+    │ i64 ┆ i64  ┆ str ┆ i64  │
+    ╞═════╪══════╪═════╪══════╡
+    │ 1   ┆ 4    ┆ x   ┆ 5    │
+    │ 8   ┆ 5    ┆ y   ┆ 13   │
+    │ 3   ┆ null ┆ z   ┆ null │
+    └─────┴──────┴─────┴──────┘
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
@@ -242,21 +221,22 @@ def cumsum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     --------
     >>> df = pl.DataFrame(
     ...     {
-    ...         "a": [1, 2],
-    ...         "b": [3, 4],
-    ...         "c": [5, 6],
+    ...         "a": [1, 8, 3],
+    ...         "b": [4, 5, None],
+    ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.cumsum_horizontal("a", "c"))
-    shape: (2, 4)
-    ┌─────┬─────┬─────┬───────────┐
-    │ a   ┆ b   ┆ c   ┆ cumsum    │
-    │ --- ┆ --- ┆ --- ┆ ---       │
-    │ i64 ┆ i64 ┆ i64 ┆ struct[2] │
-    ╞═════╪═════╪═════╪═══════════╡
-    │ 1   ┆ 3   ┆ 5   ┆ {1,6}     │
-    │ 2   ┆ 4   ┆ 6   ┆ {2,8}     │
-    └─────┴─────┴─────┴───────────┘
+    >>> df.with_columns(pl.cumsum_horizontal("a", "b"))
+    shape: (3, 4)
+    ┌─────┬──────┬─────┬───────────┐
+    │ a   ┆ b    ┆ c   ┆ cumsum    │
+    │ --- ┆ ---  ┆ --- ┆ ---       │
+    │ i64 ┆ i64  ┆ str ┆ struct[2] │
+    ╞═════╪══════╪═════╪═══════════╡
+    │ 1   ┆ 4    ┆ x   ┆ {1,5}     │
+    │ 8   ┆ 5    ┆ y   ┆ {8,13}    │
+    │ 3   ┆ null ┆ z   ┆ {3,null}  │
+    └─────┴──────┴─────┴───────────┘
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
