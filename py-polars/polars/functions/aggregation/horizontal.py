@@ -51,11 +51,7 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
-    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
-
-    return F.fold(
-        F.lit(True), lambda a, b: a.cast(bool) & b.cast(bool), exprs_wrapped
-    ).alias("all")
+    return wrap_expr(plr.all_horizontal(pyexprs))
 
 
 def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
@@ -92,11 +88,7 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
-    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
-
-    return F.fold(
-        F.lit(False), lambda a, b: a.cast(bool) | b.cast(bool), exprs_wrapped
-    ).alias("any")
+    return wrap_expr(plr.any_horizontal(pyexprs))
 
 
 def max_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
@@ -132,7 +124,7 @@ def max_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
-    return wrap_expr(plr.max_exprs(pyexprs))
+    return wrap_expr(plr.max_horizontal(pyexprs))
 
 
 def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
@@ -168,7 +160,7 @@ def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
-    return wrap_expr(plr.min_exprs(pyexprs))
+    return wrap_expr(plr.min_horizontal(pyexprs))
 
 
 def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
@@ -204,7 +196,7 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
-    return wrap_expr(plr.sum_exprs(pyexprs))
+    return wrap_expr(plr.sum_horizontal(pyexprs))
 
 
 def cumsum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
