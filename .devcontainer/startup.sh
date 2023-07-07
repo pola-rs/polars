@@ -16,4 +16,4 @@ rustup component add clippy --toolchain ${toolchain}-x86_64-unknown-linux-gnu
 cargo install --locked dprint
 
 # install cmake
-apt-get update && apt-get install -y cmake
+sudo apt-get update && sudo apt-get install -y cmake
