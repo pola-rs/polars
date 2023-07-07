@@ -178,12 +178,21 @@ impl PyExpr {
             .into()
     }
 
-    #[pyo3(signature = (breaks, labels, left_closed))]
+    #[pyo3(signature = (breaks, labels, left_closed, include_breaks))]
     #[cfg(feature = "cutqcut")]
-    fn cut(&self, breaks: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool) -> Self {
-        self.inner.clone().cut(breaks, labels, left_closed).into()
+    fn cut(
+        &self,
+        breaks: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .cut(breaks, labels, left_closed, include_breaks)
+            .into()
     }
-    #[pyo3(signature = (probs, labels, left_closed, allow_duplicates))]
+    #[pyo3(signature = (probs, labels, left_closed, allow_duplicates, include_breaks))]
     #[cfg(feature = "cutqcut")]
     fn qcut(
         &self,
@@ -191,10 +200,11 @@ impl PyExpr {
         labels: Option<Vec<String>>,
         left_closed: bool,
         allow_duplicates: bool,
+        include_breaks: bool,
     ) -> Self {
         self.inner
             .clone()
-            .qcut(probs, labels, left_closed, allow_duplicates)
+            .qcut(probs, labels, left_closed, allow_duplicates, include_breaks)
             .into()
     }
 

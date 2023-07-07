@@ -205,6 +205,7 @@ pub enum FunctionExpr {
         breaks: Vec<f64>,
         labels: Option<Vec<String>>,
         left_closed: bool,
+        include_breaks: bool,
     },
     #[cfg(feature = "cutqcut")]
     QCut {
@@ -212,6 +213,7 @@ pub enum FunctionExpr {
         labels: Option<Vec<String>>,
         left_closed: bool,
         allow_duplicates: bool,
+        include_breaks: bool,
     },
     ToPhysical,
     #[cfg(feature = "random")]
@@ -554,19 +556,28 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 breaks,
                 labels,
                 left_closed,
-            } => map!(cut, breaks.clone(), labels.clone(), left_closed),
+                include_breaks,
+            } => map!(
+                cut,
+                breaks.clone(),
+                labels.clone(),
+                left_closed,
+                include_breaks
+            ),
             #[cfg(feature = "cutqcut")]
             QCut {
                 probs,
                 labels,
                 left_closed,
                 allow_duplicates,
+                include_breaks,
             } => map!(
                 qcut,
                 probs.clone(),
                 labels.clone(),
                 left_closed,
-                allow_duplicates
+                allow_duplicates,
+                include_breaks
             ),
             ToPhysical => map!(dispatch::to_physical),
             #[cfg(feature = "random")]

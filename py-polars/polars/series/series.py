@@ -1604,9 +1604,9 @@ class Series:
         break_point_label: str = "break_point",
         category_label: str = "category",
         *,
-        maintain_order: bool = False,
-        series: bool = False,
+        series: bool = True,
         left_closed: bool = False,
+        include_breaks: bool = False,
     ) -> DataFrame | Series:
         """
         Bin continuous values into discrete categories.
@@ -1619,15 +1619,20 @@ class Series:
             Labels to assign to the bins. If given the length of labels must be
             len(bins) + 1.
         break_point_label
-            Name given to the breakpoint column. Only used if series == False
+            Name given to the breakpoint column/field. Only used if series == False or
+            include_breaks == True
         category_label
             Name given to the category column. Only used if series == False
         maintain_order
             Keep the order of the original `Series`. Only used if series == False
         series
-            If True, return the a categorical series in the data's original order
+            If True, return the a categorical series in the data's original order.
         left_closed
             Whether intervals should be [) instead of (]
+        include_breaks
+            Include the the right endpoint of the bin each observation falls in.
+            If returning a DataFrame, it will be a column, and if returning a Series
+            it will be a field in a Struct
 
         Returns
         -------
@@ -1688,21 +1693,26 @@ class Series:
             "[1, inf)"
         ]
         """
-        if series:
+        n = self._s.name()
+
+        if not series:
+            # "Old style" always includes breaks
             return (
                 self.to_frame()
-                .select(F.col(self._s.name()).cut(bins, labels, left_closed))
-                .to_series()
+                .with_columns(
+                    F.col(n).cut(bins, labels, left_closed, True).alias(n + "_bin")
+                )
+                .unnest(n + "_bin")
+                .rename({"brk": break_point_label, n + "_bin": category_label})
             )
-        return wrap_df(
-            self._s.cut(
-                Series(break_point_label, bins, dtype=Float64)._s,
-                labels,
-                break_point_label,
-                category_label,
-                maintain_order,
-            )
+        res = (
+            self.to_frame()
+            .select(F.col(n).cut(bins, labels, left_closed, include_breaks))
+            .to_series()
         )
+        if include_breaks:
+            return res.struct.rename_fields([break_point_label, category_label])
+        return res
 
     def qcut(
         self,
@@ -1711,10 +1721,10 @@ class Series:
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
-        maintain_order: bool = False,
         series: bool = False,
         left_closed: bool = False,
         allow_duplicates: bool = False,
+        include_breaks: bool = False,
     ) -> DataFrame | Series:
         """
         Bin continuous values into discrete categories based on their quantiles.
@@ -1728,7 +1738,8 @@ class Series:
             Labels to assign to the quantiles. If given the length of labels must be
             len(bins) + 1.
         break_point_label
-            Name given to the breakpoint column. Only used if series == False.
+            Name given to the breakpoint column/field. Only used if series == False or
+            include_breaks == True
         category_label
             Name given to the category column. Only used if series == False.
         maintain_order
@@ -1741,6 +1752,10 @@ class Series:
             If True, the resulting quantile breaks don't have to be unique. This can
             happen even with unique probs depending on the data. Duplicates will be
             dropped, resulting in fewer bins.
+        include_breaks
+            Include the the right endpoint of the bin each observation falls in.
+            If returning a DataFrame, it will be a column, and if returning a Series
+            it will be a field in a Struct
 
         Returns
         -------
@@ -1754,7 +1769,7 @@ class Series:
         Examples
         --------
         >>> a = pl.Series("a", range(-5, 3))
-        >>> a.qcut([0.0, 0.25, 0.75])
+        >>> a.qcut([0.0, 0.25, 0.75], series=False)
         shape: (8, 3)
         ┌──────┬─────────────┬───────────────┐
         │ a    ┆ break_point ┆ category      │
@@ -1797,25 +1812,32 @@ class Series:
             "[0.25, inf)"
         ]
         """
-        if series:
+        n = self._s.name()
+
+        if not series:
+            # "Old style" always includes breaks
             return (
                 self.to_frame()
-                .select(
-                    F.col(self._s.name()).qcut(
-                        quantiles, labels, left_closed, allow_duplicates
-                    )
+                .with_columns(
+                    F.col(n)
+                    .qcut(quantiles, labels, left_closed, allow_duplicates, True)
+                    .alias(n + "_bin")
                 )
-                .to_series()
+                .unnest(n + "_bin")
+                .rename({"brk": break_point_label, n + "_bin": category_label})
             )
-        return wrap_df(
-            self._s.qcut(
-                Series(quantiles, dtype=Float64)._s,
-                labels,
-                break_point_label,
-                category_label,
-                maintain_order,
+        res = (
+            self.to_frame()
+            .select(
+                F.col(n).qcut(
+                    quantiles, labels, left_closed, allow_duplicates, include_breaks
+                )
             )
+            .to_series()
         )
+        if include_breaks:
+            return res.struct.rename_fields([break_point_label, category_label])
+        return res
 
     def hist(
         self,

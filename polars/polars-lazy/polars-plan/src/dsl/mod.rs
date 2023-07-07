@@ -1465,11 +1465,18 @@ impl Expr {
     }
 
     #[cfg(feature = "cutqcut")]
-    pub fn cut(self, breaks: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool) -> Expr {
+    pub fn cut(
+        self,
+        breaks: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        include_breaks: bool,
+    ) -> Expr {
         self.apply_private(FunctionExpr::Cut {
             breaks,
             labels,
             left_closed,
+            include_breaks,
         })
     }
 
@@ -1480,12 +1487,14 @@ impl Expr {
         labels: Option<Vec<String>>,
         left_closed: bool,
         allow_duplicates: bool,
+        include_breaks: bool,
     ) -> Expr {
         self.apply_private(FunctionExpr::QCut {
             probs,
             labels,
             left_closed,
             allow_duplicates,
+            include_breaks,
         })
     }
 

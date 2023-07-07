@@ -3239,6 +3239,7 @@ class Expr:
         breaks: list[float],
         labels: list[str] | None = None,
         left_closed: bool = False,
+        include_breaks: bool = False,
     ) -> Self:
         """
         Bin continuous values into discrete categories.
@@ -3251,6 +3252,9 @@ class Expr:
             Labels to assign to bins. If given, the length must be len(probs) + 1.
         left_closed
             Whether intervals should be [) instead of the default of (]
+        include_breaks
+            Include the the right endpoint of the bin each observation falls in.
+            If True, the resulting column will be a Struct.
 
         Examples
         --------
@@ -3291,7 +3295,9 @@ class Expr:
         │ b   ┆ 9   ┆ [5, inf)  │
         └─────┴─────┴───────────┘
         """
-        return self._from_pyexpr(self._pyexpr.cut(breaks, labels, left_closed))
+        return self._from_pyexpr(
+            self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
+        )
 
     def qcut(
         self,
@@ -3299,6 +3305,7 @@ class Expr:
         labels: list[str] | None = None,
         left_closed: bool = False,
         allow_duplicates: bool = False,
+        include_breaks: bool = False,
     ) -> Self:
         """
         Bin continuous values into discrete categories based on their quantiles.
@@ -3317,6 +3324,9 @@ class Expr:
             If True, the resulting quantile breaks don't have to be unique. This can
             happen even with unique probs depending on the data. Duplicates will be
             dropped, resulting in fewer bins.
+        include_breaks
+            Include the the right endpoint of the bin each observation falls in.
+            If True, the resulting column will be a Struct.
 
 
         Examples
@@ -3374,10 +3384,28 @@ class Expr:
         │ b   ┆ 8   ┆ hi  │
         │ b   ┆ 9   ┆ hi  │
         └─────┴─────┴─────┘
-
+        >>> df.with_columns(q=pl.col("x").qcut([0.25, 0.5], include_breaks=True))
+        shape: (10, 3)
+        ┌─────┬─────┬───────────────────────┐
+        │ g   ┆ x   ┆ q                     │
+        │ --- ┆ --- ┆ ---                   │
+        │ str ┆ i64 ┆ struct[2]             │
+        ╞═════╪═════╪═══════════════════════╡
+        │ a   ┆ 0   ┆ {2.25,"(-inf, 2.25]"} │
+        │ a   ┆ 1   ┆ {2.25,"(-inf, 2.25]"} │
+        │ a   ┆ 2   ┆ {2.25,"(-inf, 2.25]"} │
+        │ a   ┆ 3   ┆ {4.5,"(2.25, 4.5]"}   │
+        │ …   ┆ …   ┆ …                     │
+        │ b   ┆ 6   ┆ {inf,"(4.5, inf]"}    │
+        │ b   ┆ 7   ┆ {inf,"(4.5, inf]"}    │
+        │ b   ┆ 8   ┆ {inf,"(4.5, inf]"}    │
+        │ b   ┆ 9   ┆ {inf,"(4.5, inf]"}    │
+        └─────┴─────┴───────────────────────┘
         """
         return self._from_pyexpr(
-            self._pyexpr.qcut(probs, labels, left_closed, allow_duplicates)
+            self._pyexpr.qcut(
+                probs, labels, left_closed, allow_duplicates, include_breaks
+            )
         )
 
     def filter(self, predicate: Expr) -> Self:
