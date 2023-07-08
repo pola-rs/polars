@@ -273,11 +273,10 @@ def test_int_to_python_timedelta() -> None:
 
 def test_from_numpy() -> None:
     # note: numpy timeunit support is limited to those supported by polars.
-    # as a result, datetime64[s] is converted to datetime64[ms]
+    # as a result, datetime64[s] raises
     x = np.asarray(range(100_000, 200_000, 10_000), dtype="datetime64[s]")
-    s = pl.Series(x)
-    assert s[0] == x[0]
-    assert len(s) == 10
+    with pytest.raises(ValueError, match="Please cast to the closest supported unit"):
+        pl.Series(x)
 
 
 @pytest.mark.parametrize(
@@ -286,13 +285,7 @@ def test_from_numpy() -> None:
         ("ns", ["1970-01-02T01:12:34.123456789"], pl.Datetime("ns")),
         ("us", ["1970-01-02T01:12:34.123456"], pl.Datetime("us")),
         ("ms", ["1970-01-02T01:12:34.123"], pl.Datetime("ms")),
-        ("s", ["1970-01-02T01:12:34"], pl.Datetime("ms")),
-        ("m", ["1970-01-02T01:12"], pl.Datetime("ms")),
-        ("h", ["1970-01-02T01:00"], pl.Datetime("ms")),
         ("D", ["1970-01-02"], pl.Date),
-        ("W", ["1970-01-01"], pl.Date),
-        ("M", ["1970-01-01"], pl.Date),
-        ("Y", ["1970-01-01"], pl.Date),
     ],
 )
 def test_from_numpy_supported_units(
