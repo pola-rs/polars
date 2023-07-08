@@ -3127,11 +3127,13 @@ class DataFrame:
         Parameters
         ----------
         table_name
-            Name of the table to append to or create in the SQL database.
+            Name of the table to create or append to in the target SQL database.
+            If your table name contains special characters, it should be quoted.
         connection_uri
-            Connection uri, for example
+            Connection URI, for example:
 
-            * "postgresql://username:password@server:port/database"
+            * "postgresql://user:pass@server:port/database"
+            * "sqlite:////path/to/database.db"
         if_exists : {'append', 'replace', 'fail'}
             The insert mode.
             'replace' will create a new database table, overwriting an existing one.
@@ -3159,6 +3161,7 @@ class DataFrame:
                 cursor.adbc_ingest(table_name, self.to_arrow(), mode)
                 cursor.close()
                 conn.commit()
+
         elif engine == "sqlalchemy":
             if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleNotFoundError(
@@ -3172,13 +3175,20 @@ class DataFrame:
                 ) from exc
 
             engine_sa = create_engine(connection_uri)
+            db_schema = None
+            if not table_name.startswith('"') and "." in table_name:
+                db_schema, table_name = table_name.split(".", 1)
+            table_name = table_name.strip('"')
 
-            # this conversion to pandas as zero-copy
-            # so we can utilize their sql utils for free
+            # ensure conversion to pandas uses the pyarrow extension array option
+            # so that we can make use of the sql/db export without copying data
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
-                name=table_name, con=engine_sa, if_exists=if_exists, index=False
+                name=table_name,
+                schema=db_schema,
+                con=engine_sa,
+                if_exists=if_exists,
+                index=False,
             )
-
         else:
             raise ValueError(f"'engine' {engine} is not supported.")
 
