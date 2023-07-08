@@ -44,6 +44,7 @@ These functions are available from the polars module root and can be used as exp
    implode
    int_range
    int_ranges
+   last
    lit
    map
    max
