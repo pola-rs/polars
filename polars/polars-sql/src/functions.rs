@@ -168,6 +168,12 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT RTRIM(column_1) from df;
     /// ```
     RTrim,
+    /// SQL 'contains' function
+    /// ```sql
+    /// SELECT contains(column_1, 'a') from df;
+    /// SELECT column_2 from df WHERE contains(column_1, 'a');
+    /// ```
+    Contains,
     /// SQL 'starts_with' function
     /// ```sql
     /// SELECT STARTS_WITH(column_1, 'a') from df;
@@ -327,6 +333,7 @@ impl PolarsSqlFunctions {
             "avg",
             "ceil",
             "ceiling",
+            "contains",
             "cos",
             "cosd",
             "cot",
@@ -411,6 +418,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
             "rtrim" => Self::RTrim,
+            "contains" => Self::Contains,
             "starts_with" => Self::StartsWith,
             "upper" => Self::Upper,
             // ----
@@ -497,6 +505,7 @@ impl SqlFunctionVisitor<'_> {
             // ----
             // String functions
             // ----
+            Contains => self.visit_binary(|e, s| e.str().contains(s, false)),
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
             Lower => self.visit_unary(|e| e.str().to_lowercase()),
             LTrim => match function.args.len() {

@@ -23,7 +23,7 @@ polars-io = { version = "0.30.0", path = "../polars-io", features = ["lazy", "cs
 polars-json = { version = "0.30.0", path = "../polars-json", optional = true }
 polars-ops = { version = "0.30.0", path = "../polars-ops", default-features = false }
 polars-pipe = { version = "0.30.0", path = "./polars-pipe", optional = true }
-polars-plan = { version = "0.30.0", path = "./polars-plan" }
+polars-plan = { version = "0.30.0", path = "./polars-plan", features = ["regex"] }
 polars-time = { version = "0.30.0", path = "../polars-time", optional = true }
 polars-utils = { version = "0.30.0", path = "../polars-utils" }
 pyo3 = { version = "0.19", optional = true }

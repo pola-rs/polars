@@ -80,3 +80,119 @@ fn test_string_functions() {
         .unwrap();
     assert!(df_sql.frame_equal_missing(&df_pl));
 }
+
+#[test]
+fn test_contains_function_with_full_literal() {
+    let df = df! {
+        "a" => &["foo", "xxxbarxxx", "---bazyyy"]
+    }
+    .unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = r#"SELECT a FROM df where contains(a, 'foo')"#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let df_pl = df
+        .lazy()
+        .select(&[lit("foo").alias("a")])
+        .collect()
+        .unwrap();
+    assert!(df_sql.frame_equal_missing(&df_pl));
+}
+
+#[test]
+fn test_contains_function_with_partial_literal() {
+    let df = df! {
+        "a" => &["foo", "xxxbarxxx", "---bazyyy"]
+    }
+    .unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = r#"SELECT a FROM df where contains(a, 'bar')"#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let df_pl = df
+        .lazy()
+        .select(&[lit("xxxbarxxx").alias("a")])
+        .collect()
+        .unwrap();
+    assert!(df_sql.frame_equal_missing(&df_pl));
+}
+
+#[test]
+fn test_contains_function_with_partial_literal_with_multiple_results() {
+    let df = df! {
+        "a" => &["foo", "xxxbarxxx", "---bazyyy"]
+    }
+    .unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = r#"SELECT a FROM df where contains(a, 'ba')"#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    assert_eq!(df_sql.column("a").unwrap().len(), 2);
+}
+
+#[test]
+fn test_contains_function_with_literal_with_no_results() {
+    let df = df! {
+        "a" => &["foo", "xxxbarxxx", "---bazyyy"]
+    }
+    .unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = r#"SELECT a FROM df where contains(a, 'zippy')"#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+    assert!(df_sql.column("a").unwrap().is_empty());
+}
+
+#[test]
+fn test_contains_function_with_regex() {
+    let df = df! {
+        "a" => &["foo", "xxxbarxxx", "---bazyyy"]
+    }
+    .unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = r#"SELECT a FROM df where contains(a, '\w+bar\w+')"#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let df_pl = df
+        .lazy()
+        .select(&[lit("xxxbarxxx").alias("a")])
+        .collect()
+        .unwrap();
+    assert!(df_sql.frame_equal_missing(&df_pl));
+}
+
+#[test]
+fn test_contains_function_with_regex_with_multiple_results() {
+    let df = df! {
+        "a" => &["foo", "xxxbarxxx", "---bazyyy"]
+    }
+    .unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = r#"SELECT a FROM df where contains(a, '.+ba\w+')"#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+    assert_eq!(df_sql.column("a").unwrap().len(), 2);
+}
+
+#[test]
+fn test_contains_function_with_regex_with_no_results() {
+    let df = df! {
+        "a" => &["foo", "xxxbarxxx", "---bazyyy"]
+    }
+    .unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = r#"SELECT a FROM df where contains(a, '.+zippy\w+')"#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+    assert!(df_sql.column("a").unwrap().is_empty());
+}
