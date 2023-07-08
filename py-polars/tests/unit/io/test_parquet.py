@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
-import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -32,6 +31,17 @@ COMPRESSIONS = [
     "brotli",
     "zstd",
 ]
+
+
+def test_write_parquet_using_pyarrow_9753(tmpdir: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    df.write_parquet(
+        tmpdir / "test.parquet",
+        compression="zstd",
+        statistics=True,
+        use_pyarrow=True,
+        pyarrow_options={"coerce_timestamps": "us"},
+    )
 
 
 @pytest.fixture()
@@ -354,6 +364,8 @@ def test_parquet_nested_dictionaries_6217() -> None:
         df = pl.from_arrow(table)
 
         f = io.BytesIO()
+        import pyarrow.parquet as pq
+
         pq.write_table(table, f, compression="snappy")
         f.seek(0)
         read = pl.read_parquet(f)

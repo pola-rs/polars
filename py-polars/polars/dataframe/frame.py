@@ -3095,8 +3095,9 @@ class DataFrame:
 
             tbl = pa.table(data)
 
-            # do not remove this
+            # do not remove this import!
             # needed below
+            import pyarrow.parquet  # noqa: F401
 
             pa.parquet.write_table(
                 table=tbl,
