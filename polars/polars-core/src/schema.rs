@@ -389,7 +389,7 @@ impl Schema {
             polars_ensure!(k == other_k, ComputeError: "schema names differ: got {}, expected {}", k, other_k);
 
             let st = try_get_supertype(dt, other_dt)?;
-            changed |= &st != dt;
+            changed |= (&st != dt) || (&st != other_dt);
             *dt = st
         }
         Ok(changed)
