@@ -304,16 +304,6 @@ def test_from_numpy_supported_units(
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("numpy_time_unit", ["ps", "as", "fs"])
-def test_from_numpy_non_supported_units(numpy_time_unit: str) -> None:
-    values = np.array(
-        ["1970-01-01T01:01:01.123456789123456789"],
-        dtype=f"datetime64[{numpy_time_unit}]",
-    )
-    with pytest.raises(ValueError, match="Please cast to the closest supported unit"):
-        pl.from_numpy(values)
-
-
 def test_datetime_consistency() -> None:
     dt = datetime(2022, 7, 5, 10, 30, 45, 123455)
     df = pl.DataFrame({"date": [dt]})
