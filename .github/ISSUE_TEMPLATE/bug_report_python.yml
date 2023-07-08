@@ -70,7 +70,7 @@ body:
         ```
         Replace this line with the output of pl.show_versions(), leave the backticks in place
         ```
-        
+
         </details>
     validations:
       required: true
