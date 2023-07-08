@@ -24,7 +24,6 @@ use num_traits::{Num, NumCast};
 
 use crate::config::*;
 use crate::prelude::*;
-
 const LIMIT: usize = 25;
 
 #[derive(Copy, Clone)]
@@ -352,24 +351,82 @@ fn make_str_val(v: &str, truncate: usize) -> String {
 }
 
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
+    let name = make_str_val(f.name(), str_truncate);
+    let name_length = name.len();
+    let mut column_name = name;
+    if env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES) {
+        column_name = "".to_string();
+    }
+    let column_data_type = if env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
+        "".to_string()
+    } else if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
+        | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
+    {
+        format!("{}", f.data_type())
+    } else {
+        format!("\n{}", f.data_type())
+    };
+    let mut dtype_length = column_data_type.trim_start().len();
+    let mut separator = "\n---";
+    if env_is_true(FMT_TABLE_HIDE_COLUMN_SEPARATOR)
+        | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
+        | env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
+    {
+        separator = ""
+    }
+    let s = if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
+        & !env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
+    {
+        let inline_name_dtype = format!("{column_name} ({column_data_type})");
+        dtype_length = inline_name_dtype.len();
+        inline_name_dtype
+    } else {
+        format!("{column_name}{separator}{column_data_type}")
+    };
+    let mut s_len = std::cmp::max(name_length, dtype_length);
+    let separator_length = separator.trim().len();
+    if s_len < separator_length {
+        s_len = separator_length;
+    }
+    (s, s_len + 2)
+}
+
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn prepare_row(
     row: Vec<Cow<'_, str>>,
     n_first: usize,
     n_last: usize,
     str_truncate: usize,
+    max_elem_lengths: &mut [usize],
 ) -> Vec<String> {
     let reduce_columns = n_first + n_last < row.len();
-    let mut row_str = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
-    for v in row[0..n_first].iter() {
-        row_str.push(make_str_val(v, str_truncate));
+    let n_elems = n_first + n_last + reduce_columns as usize;
+    let mut row_strings = Vec::with_capacity(n_elems);
+
+    for (idx, v) in row[0..n_first].iter().enumerate() {
+        let elem_str = make_str_val(v, str_truncate);
+        let elem_len = elem_str.len() + 2;
+        if max_elem_lengths[idx] < elem_len {
+            max_elem_lengths[idx] = elem_len;
+        };
+        row_strings.push(elem_str);
     }
     if reduce_columns {
-        row_str.push("…".to_string());
+        row_strings.push("…".to_string());
+        max_elem_lengths[n_first] = 3;
     }
-    for v in row[row.len() - n_last..].iter() {
-        row_str.push(make_str_val(v, str_truncate));
+    let elem_offset = n_first + reduce_columns as usize;
+    for (idx, v) in row[row.len() - n_last..].iter().enumerate() {
+        let elem_str = make_str_val(v, str_truncate);
+        let elem_len = elem_str.len() + 2;
+        let elem_idx = elem_offset + idx;
+        if max_elem_lengths[elem_idx] < elem_len {
+            max_elem_lengths[elem_idx] = elem_len;
+        };
+        row_strings.push(elem_str);
     }
-    row_str
+    row_strings
 }
 
 fn env_is_true(varname: &str) -> bool {
@@ -426,62 +483,26 @@ impl Display for DataFrame {
             } else {
                 (self.width(), 0)
             };
+
             let reduce_columns = n_first + n_last < self.width();
-            let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
+            let n_tbl_cols = n_first + n_last + reduce_columns as usize;
+            let mut names = Vec::with_capacity(n_tbl_cols);
+            let mut name_lengths = Vec::with_capacity(n_tbl_cols);
 
-            let field_to_str = |f: &Field| {
-                let name = make_str_val(f.name(), str_truncate);
-                let lower_bounds = name.len().clamp(5, 12);
-                let mut column_name = name;
-                if env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES) {
-                    column_name = "".to_string();
-                }
-                let column_data_type = if env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
-                    "".to_string()
-                } else if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
-                    | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
-                {
-                    format!("{}", f.data_type())
-                } else {
-                    format!("\n{}", f.data_type())
-                };
-                let mut column_separator = "\n---";
-                if env_is_true(FMT_TABLE_HIDE_COLUMN_SEPARATOR)
-                    | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
-                    | env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
-                {
-                    column_separator = ""
-                }
-                let s = if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
-                    & !env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
-                {
-                    format!("{column_name} ({column_data_type})")
-                } else {
-                    format!("{column_name}{column_separator}{column_data_type}")
-                };
-                (s, lower_bounds)
-            };
-
-            let col_width_exact =
-                |l: usize| ColumnConstraint::Absolute(comfy_table::Width::Fixed(l as u16));
-            let col_width_lower_bound =
-                |l: usize| ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16));
-
-            let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
             let fields = self.fields();
             for field in fields[0..n_first].iter() {
-                let (s, l) = field_to_str(field);
+                let (s, l) = field_to_str(field, str_truncate);
                 names.push(s);
-                constraints.push(col_width_lower_bound(l));
+                name_lengths.push(l);
             }
             if reduce_columns {
                 names.push("…".into());
-                constraints.push(col_width_exact(3));
+                name_lengths.push(3);
             }
             for field in fields[self.width() - n_last..].iter() {
-                let (s, l) = field_to_str(field);
+                let (s, l) = field_to_str(field, str_truncate);
                 names.push(s);
-                constraints.push(col_width_lower_bound(l));
+                name_lengths.push(l);
             }
             let (preset, is_utf8) = match std::env::var(FMT_TABLE_FORMATTING)
                 .as_deref()
@@ -512,10 +533,14 @@ impl Display for DataFrame {
             if is_utf8 && env_is_true(FMT_TABLE_ROUNDED_CORNERS) {
                 table.apply_modifier(UTF8_ROUND_CORNERS);
             }
+
+            let mut constraints = Vec::with_capacity(n_tbl_cols);
+            let mut max_elem_lengths: Vec<usize> = vec![0; n_tbl_cols];
+
             if max_n_rows > 0 {
                 if height > max_n_rows + 1 {
-                    // Truncate the table if we have more rows than the configured maximum number
-                    // of rows plus the single row which would contain "…".
+                    // Truncate the table if we have more rows than the configured maximum
+                    // number of rows plus the single row which would contain "…".
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
                     for i in 0..std::cmp::max(max_n_rows / 2, 1) {
                         let row = self
@@ -523,7 +548,11 @@ impl Display for DataFrame {
                             .iter()
                             .map(|s| s.str_value(i).unwrap())
                             .collect();
-                        rows.push(prepare_row(row, n_first, n_last, str_truncate));
+
+                        let row_strings =
+                            prepare_row(row, n_first, n_last, str_truncate, &mut max_elem_lengths);
+
+                        rows.push(row_strings);
                     }
                     let dots = rows[0].iter().map(|_| "…".to_string()).collect();
                     rows.push(dots);
@@ -534,7 +563,15 @@ impl Display for DataFrame {
                                 .iter()
                                 .map(|s| s.str_value(i).unwrap())
                                 .collect();
-                            rows.push(prepare_row(row, n_first, n_last, str_truncate));
+
+                            let row_strings = prepare_row(
+                                row,
+                                n_first,
+                                n_last,
+                                str_truncate,
+                                &mut max_elem_lengths,
+                            );
+                            rows.push(row_strings);
                         }
                     }
                     table.add_rows(rows);
@@ -546,7 +583,15 @@ impl Display for DataFrame {
                                 .iter()
                                 .map(|s| s.str_value(i).unwrap())
                                 .collect();
-                            table.add_row(prepare_row(row, n_first, n_last, str_truncate));
+
+                            let row_strings = prepare_row(
+                                row,
+                                n_first,
+                                n_last,
+                                str_truncate,
+                                &mut max_elem_lengths,
+                            );
+                            table.add_row(row_strings);
                         } else {
                             break;
                         }
@@ -557,12 +602,7 @@ impl Display for DataFrame {
                 table.add_row(dots);
             }
 
-            // insert a header row, unless both column names and column data types are already hidden
-            if !(env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
-                && env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES))
-            {
-                table.set_header(names).set_constraints(constraints);
-            }
+            let tbl_fallback_width = 100;
             let tbl_width = std::env::var("POLARS_TABLE_WIDTH")
                 .map(|s| {
                     Some(
@@ -572,20 +612,47 @@ impl Display for DataFrame {
                 })
                 .unwrap_or(None);
 
+            // column width constraints
+            let col_width_exact =
+                |w: usize| ColumnConstraint::Absolute(comfy_table::Width::Fixed(w as u16));
+            let col_width_bounds = |l: usize, u: usize| ColumnConstraint::Boundaries {
+                lower: Width::Fixed(l as u16),
+                upper: Width::Fixed(u as u16),
+            };
+            let min_col_width = 5;
+            for (idx, elem_len) in max_elem_lengths.iter().enumerate() {
+                let mx = std::cmp::min(
+                    str_truncate + 3, // (3 = 2 space chars of padding + ellipsis char)
+                    std::cmp::max(name_lengths[idx], *elem_len),
+                );
+                if mx <= min_col_width {
+                    constraints.push(col_width_exact(mx));
+                } else {
+                    constraints.push(col_width_bounds(min_col_width, mx));
+                }
+            }
+
+            // insert a header row, unless both column names and dtypes are hidden
+            if !(env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
+                && env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES))
+            {
+                table.set_header(names).set_constraints(constraints);
+            }
+
             // if tbl_width is explicitly set, use it
             if let Some(w) = tbl_width {
                 table.set_width(w);
-            }
-
-            // if no tbl_width (its not-tty && it is not explicitly set), then set default.
-            // this is needed to support non-tty applications
-            #[cfg(feature = "fmt")]
-            if table.width().is_none() && !table.is_tty() {
-                table.set_width(100);
-            }
-            #[cfg(feature = "fmt_no_tty")]
-            if table.width().is_none() {
-                table.set_width(100);
+            } else {
+                // if no tbl_width (it's not tty && width not explicitly set), apply
+                // a default value; this is needed to support non-tty applications
+                #[cfg(feature = "fmt")]
+                if table.width().is_none() && !table.is_tty() {
+                    table.set_width(tbl_fallback_width);
+                }
+                #[cfg(feature = "fmt_no_tty")]
+                if table.width().is_none() {
+                    table.set_width(tbl_fallback_width);
+                }
             }
 
             // set alignment of cells, if defined
@@ -607,14 +674,15 @@ impl Display for DataFrame {
             }
 
             // establish 'shape' information (above/below/hidden)
-            let shape_str = fmt_df_shape(&self.shape());
-
             if env_is_true(FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION) {
                 write!(f, "{table}")?;
-            } else if env_is_true(FMT_TABLE_DATAFRAME_SHAPE_BELOW) {
-                write!(f, "{table}\nshape: {}", shape_str)?;
             } else {
-                write!(f, "shape: {}\n{}", shape_str, table)?;
+                let shape_str = fmt_df_shape(&self.shape());
+                if env_is_true(FMT_TABLE_DATAFRAME_SHAPE_BELOW) {
+                    write!(f, "{table}\nshape: {}", shape_str)?;
+                } else {
+                    write!(f, "shape: {}\n{}", shape_str, table)?;
+                }
             }
         }
 
@@ -626,7 +694,6 @@ impl Display for DataFrame {
                 self.shape()
             )?;
         }
-
         Ok(())
     }
 }
