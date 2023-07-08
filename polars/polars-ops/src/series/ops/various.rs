@@ -54,16 +54,16 @@ pub trait SeriesMethods: SeriesSealed {
         }
         let nc = s.null_count();
         let slen = s.len() - nc - 1; // Number of comparisons we might have to do
-        if nc == s.len() { // All nulls is all equal
+        if nc == s.len() {
+            // All nulls is all equal
             return Ok(true);
         }
-        if nc > 0 {   
+        if nc > 0 {
             let nulls = s.chunks().iter().flat_map(|c| c.validity().unwrap());
             let mut npairs = nulls.clone().zip(nulls.skip(1));
             // A null never precedes (follows) a non-null iff all nulls are at the end (beginning)
-            if options.nulls_last && npairs.any(|(a, b)| !a && b){
-                return Ok(false);
-            } else if npairs.any(|(a, b)| a && !b){
+            if (options.nulls_last && npairs.any(|(a, b)| !a && b)) || npairs.any(|(a, b)| a && !b)
+            {
                 return Ok(false);
             }
         }
@@ -72,7 +72,7 @@ pub trait SeriesMethods: SeriesSealed {
         let (s1, s2) = (s.slice(offset, slen), s.slice(offset + 1, slen));
         match options.descending {
             true => Ok(Series::gt_eq(&s1, &s2)?.all()),
-            false => Ok(Series::lt_eq(&s1, &s2)?.all())
+            false => Ok(Series::lt_eq(&s1, &s2)?.all()),
         }
     }
 }
