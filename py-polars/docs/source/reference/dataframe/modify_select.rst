@@ -45,6 +45,7 @@ Manipulation/selection
     DataFrame.reverse
     DataFrame.row
     DataFrame.rows
+    DataFrame.rows_by_key
     DataFrame.sample
     DataFrame.select
     DataFrame.set_sorted
