@@ -41,7 +41,7 @@ body:
 
         pl.DataFrame({
             "foo": [None, 1, 2],
-            "bar": np.int_range(3)
+            "bar": np.arange(3)
         })
 
         ...
