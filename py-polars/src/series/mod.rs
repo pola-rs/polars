@@ -651,13 +651,13 @@ impl PySeries {
         })
     }
 
-    fn is_sorted(&self, descending: bool) -> bool {
+    fn is_sorted(&self, descending: bool) -> PyResult<bool> {
         let options = SortOptions {
             descending,
             nulls_last: descending,
             multithreaded: true,
         };
-        self.series.is_sorted(options)
+        Ok(self.series.is_sorted(options).map_err(PyPolarsErr::from)?)
     }
 
     fn clear(&self) -> Self {
