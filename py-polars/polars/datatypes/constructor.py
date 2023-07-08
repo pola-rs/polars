@@ -102,10 +102,19 @@ def numpy_values_and_dtype(
         values = values.astype(np.float32)
         dtype = values.dtype.type
     elif dtype == np.datetime64:
-        if np.datetime_data(values.dtype)[0] in dt.DTYPE_TEMPORAL_UNITS:
+        time_unit = np.datetime_data(values.dtype)[0]
+        if time_unit in dt.DTYPE_TEMPORAL_UNITS:
             values = values.astype(np.int64)
+        elif time_unit in {"s", "m", "h"}:
+            values = values.astype("datetime64[ms]").astype(np.int64)
+        elif time_unit == "D":
+            values = values.astype(np.int64)
+        elif time_unit in {"W", "M", "Y"}:
+            values = values.astype("datetime64[D]").astype(np.int64)
         else:
-            dtype = object
+            raise ValueError(
+                "Expected 'Y', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', or 'ns'. Please cast to the closest supported unit."
+            )
     return values, dtype
 
 

@@ -6072,6 +6072,8 @@ def _resolve_datetime_dtype(
             dtype = Datetime("ns")
         elif time_unit == "us":
             dtype = Datetime("us")
-        elif time_unit == "ms":
+        elif time_unit in {"ms", "s", "m", "h"}:
             dtype = Datetime("ms")
+        elif time_unit in {"D", "W", "M", "Y"}:
+            dtype = Date
     return dtype
