@@ -869,6 +869,12 @@ class Series:
     def __deepcopy__(self, memo: None = None) -> Self:
         return self.clone()
 
+    def __contains__(self, item) -> bool:
+        try:
+            return (self == item).any()
+        except ValueError:
+            return False
+
     def __iter__(self) -> Generator[Any, None, None]:
         if self.dtype == List:
             # TODO: either make a change and return py-native list data here, or find
