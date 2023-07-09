@@ -608,7 +608,7 @@ def datetime(
     └────────────┘
 
     """  # noqa: W505
-    if not time_unit or time_unit == "*":
+    if time_unit is None:
         time_unit = ["ms", "us", "ns"]
     else:
         time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
@@ -724,7 +724,7 @@ def duration(
     └────────────┘
 
     """
-    if not time_unit or time_unit == "*":
+    if time_unit is None:
         time_unit = ["ms", "us", "ns"]
     else:
         time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
