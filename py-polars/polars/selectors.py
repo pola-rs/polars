@@ -13,6 +13,7 @@ from polars.datatypes import (
     TEMPORAL_DTYPES,
     Categorical,
     Datetime,
+    Duration,
     Utf8,
     is_polars_dtype,
 )
@@ -30,9 +31,6 @@ if TYPE_CHECKING:
         from typing_extensions import Self
 
 
-SelectorType = TypeVar("SelectorType", bound="_selector_proxy_")
-
-
 def is_selector(obj: Any) -> bool:
     """
     Indicate whether the given object/expression is a selector.
@@ -46,6 +44,7 @@ def is_selector(obj: Any) -> bool:
     >>> is_selector(cs.first() | cs.last())
     True
     """
+    # note: don't want to expose the "_selector_proxy_" object
     return isinstance(obj, _selector_proxy_)
 
 
@@ -130,7 +129,7 @@ class _selector_proxy_(Expr):
                 )
                 return f"cs.{selector_name}({str_params})"
 
-    def __sub__(self, other: Any) -> Expr:  # type: ignore[override]
+    def __sub__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_sub(other),
@@ -140,7 +139,7 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__sub__(other)
 
-    def __and__(self, other: Any) -> Expr:  # type: ignore[override]
+    def __and__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_and(other),
@@ -150,7 +149,7 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__and__(other)
 
-    def __or__(self, other: Any) -> Expr:  # type: ignore[override]
+    def __or__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_add(other),
@@ -160,14 +159,14 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__or__(other)
 
-    def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
+    def __rand__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         # order of operation doesn't matter
         if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return self.__and__(other)
         else:
             return self.as_expr().__rand__(other)
 
-    def __ror__(self, other: Any) -> Expr:  # type: ignore[override]
+    def __ror__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
         # order of operation doesn't matter
         if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
             return self.__or__(other)
@@ -199,7 +198,10 @@ def _re_string(string: str | Collection[str]) -> str:
     return f"({rx})"
 
 
-def all() -> Expr:
+SelectorType = TypeVar("SelectorType", Expr, _selector_proxy_)
+
+
+def all() -> SelectorType:
     """
     Select all columns.
 
@@ -252,7 +254,7 @@ def all() -> Expr:
 
 def by_dtype(
     *dtypes: PolarsDataType | Collection[PolarsDataType],
-) -> Expr:
+) -> SelectorType:
     """
     Select all columns matching the given dtypes.
 
@@ -334,7 +336,7 @@ def by_dtype(
     )
 
 
-def by_name(*names: str | Collection[str]) -> Expr:
+def by_name(*names: str | Collection[str]) -> SelectorType:
     """
     Select all columns matching the given names.
 
@@ -403,7 +405,7 @@ def by_name(*names: str | Collection[str]) -> Expr:
     )
 
 
-def contains(substring: str | Collection[str]) -> Expr:
+def contains(substring: str | Collection[str]) -> SelectorType:
     """
     Select columns that contain the given literal substring(s).
 
@@ -486,9 +488,9 @@ def datetime(
         "*",
         None,
     ),
-) -> Expr:
+) -> SelectorType:
     """
-    Select all datetime columns, optionally filtering by timeunit/timezone.
+    Select all datetime columns, optionally filtering by time unit/zone.
 
     Parameters
     ----------
@@ -606,7 +608,7 @@ def datetime(
     └────────────┘
 
     """  # noqa: W505
-    if not time_unit or time_unit == "*":
+    if time_unit is None:
         time_unit = ["ms", "us", "ns"]
     else:
         time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
@@ -630,7 +632,112 @@ def datetime(
     )
 
 
-def ends_with(*suffix: str) -> Expr:
+def duration(
+    time_unit: TimeUnit | Collection[TimeUnit] | None = None,
+) -> SelectorType:
+    """
+    Select all duration columns, optionally filtering by time unit.
+
+    Parameters
+    ----------
+    time_unit
+        One (or more) of the allowed timeunit precision strings, "ms", "us", and "ns".
+        Omit to select columns with any valid timeunit.
+
+    Examples
+    --------
+    >>> from datetime import date, timedelta
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "dt": [date(2022, 1, 31), date(2025, 7, 5)],
+    ...         "td1": [
+    ...             timedelta(days=1, milliseconds=123456),
+    ...             timedelta(days=1, hours=23, microseconds=987000),
+    ...         ],
+    ...         "td2": [
+    ...             timedelta(days=7, microseconds=456789),
+    ...             timedelta(days=14, minutes=999, seconds=59),
+    ...         ],
+    ...         "td3": [
+    ...             timedelta(weeks=4, days=-10, microseconds=999999),
+    ...             timedelta(weeks=3, milliseconds=123456, microseconds=1),
+    ...         ],
+    ...     },
+    ...     schema_overrides={
+    ...         "td1": pl.Duration("ms"),
+    ...         "td2": pl.Duration("us"),
+    ...         "td3": pl.Duration("ns"),
+    ...     },
+    ... )
+
+    Select all duration columns:
+
+    >>> df.select(cs.duration())
+    shape: (2, 3)
+    ┌────────────────┬─────────────────┬────────────────────┐
+    │ td1            ┆ td2             ┆ td3                │
+    │ ---            ┆ ---             ┆ ---                │
+    │ duration[ms]   ┆ duration[μs]    ┆ duration[ns]       │
+    ╞════════════════╪═════════════════╪════════════════════╡
+    │ 1d 2m 3s 456ms ┆ 7d 456789µs     ┆ 18d 999999µs       │
+    │ 1d 23h 987ms   ┆ 14d 16h 39m 59s ┆ 21d 2m 3s 456001µs │
+    └────────────────┴─────────────────┴────────────────────┘
+
+    Select all duration columns that have 'ms' precision:
+
+    >>> df.select(cs.duration("ms"))
+    shape: (2, 1)
+    ┌────────────────┐
+    │ td1            │
+    │ ---            │
+    │ duration[ms]   │
+    ╞════════════════╡
+    │ 1d 2m 3s 456ms │
+    │ 1d 23h 987ms   │
+    └────────────────┘
+
+    Select all duration columns that have 'ms' OR 'ns' precision:
+
+    >>> df.select(cs.duration(["ms", "ns"]))
+    shape: (2, 2)
+    ┌────────────────┬────────────────────┐
+    │ td1            ┆ td3                │
+    │ ---            ┆ ---                │
+    │ duration[ms]   ┆ duration[ns]       │
+    ╞════════════════╪════════════════════╡
+    │ 1d 2m 3s 456ms ┆ 18d 999999µs       │
+    │ 1d 23h 987ms   ┆ 21d 2m 3s 456001µs │
+    └────────────────┴────────────────────┘
+
+    Select all columns *except* for duration columns:
+
+    >>> df.select(~cs.duration())
+    shape: (2, 1)
+    ┌────────────┐
+    │ dt         │
+    │ ---        │
+    │ date       │
+    ╞════════════╡
+    │ 2022-01-31 │
+    │ 2025-07-05 │
+    └────────────┘
+
+    """
+    if time_unit is None:
+        time_unit = ["ms", "us", "ns"]
+    else:
+        time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
+
+    duration_dtypes = [Duration(tu) for tu in time_unit]
+    return _selector_proxy_(
+        F.col(duration_dtypes),
+        name="duration",
+        parameters={"time_unit": time_unit},
+    )
+
+
+def ends_with(*suffix: str) -> SelectorType:
     """
     Select columns that end with the given substring(s).
 
@@ -707,7 +814,7 @@ def ends_with(*suffix: str) -> Expr:
     )
 
 
-def first() -> Expr:
+def first() -> SelectorType:
     """
     Select the first column in the current scope.
 
@@ -745,7 +852,7 @@ def first() -> Expr:
     return _selector_proxy_(F.first(), name="first")
 
 
-def float() -> Expr:
+def float() -> SelectorType:
     """
     Select all float columns.
 
@@ -802,7 +909,7 @@ def float() -> Expr:
     )
 
 
-def integer() -> Expr:
+def integer() -> SelectorType:
     """
     Select all integer columns.
 
@@ -859,7 +966,7 @@ def integer() -> Expr:
     )
 
 
-def last() -> Expr:
+def last() -> SelectorType:
     """
     Select the last column in the current scope.
 
@@ -897,7 +1004,7 @@ def last() -> Expr:
     return _selector_proxy_(F.last(), name="last")
 
 
-def matches(pattern: str) -> Expr:
+def matches(pattern: str) -> SelectorType:
     """
     Select all columns that match the given regex pattern.
 
@@ -971,7 +1078,7 @@ def matches(pattern: str) -> Expr:
         )
 
 
-def numeric() -> Expr:
+def numeric() -> SelectorType:
     """
     Select all numeric columns.
 
@@ -1029,7 +1136,7 @@ def numeric() -> Expr:
     )
 
 
-def starts_with(*prefix: str) -> Expr:
+def starts_with(*prefix: str) -> SelectorType:
     """
     Select columns that start with the given substring(s).
 
@@ -1106,7 +1213,7 @@ def starts_with(*prefix: str) -> Expr:
     )
 
 
-def string(include_categorical: bool = False) -> Expr:
+def string(include_categorical: bool = False) -> SelectorType:
     """
     Select all Utf8 (and, optionally, Categorical) string columns.
 
@@ -1170,7 +1277,7 @@ def string(include_categorical: bool = False) -> Expr:
     )
 
 
-def temporal() -> Expr:
+def temporal() -> SelectorType:
     """
     Select all temporal columns.
 
@@ -1246,6 +1353,7 @@ __all__ = [
     "by_name",
     "contains",
     "datetime",
+    "duration",
     "ends_with",
     "first",
     "float",
