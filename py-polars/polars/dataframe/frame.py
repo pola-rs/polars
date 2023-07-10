@@ -3128,11 +3128,13 @@ class DataFrame:
         Parameters
         ----------
         table_name
-            Name of the table to append to or create in the SQL database.
+            Name of the table to create or append to in the target SQL database.
+            If your table name contains special characters, it should be quoted.
         connection_uri
-            Connection uri, for example
+            Connection URI, for example:
 
-            * "postgresql://username:password@server:port/database"
+            * "postgresql://user:pass@server:port/database"
+            * "sqlite:////path/to/database.db"
         if_exists : {'append', 'replace', 'fail'}
             The insert mode.
             'replace' will create a new database table, overwriting an existing one.
@@ -3160,26 +3162,43 @@ class DataFrame:
                 cursor.adbc_ingest(table_name, self.to_arrow(), mode)
                 cursor.close()
                 conn.commit()
+
         elif engine == "sqlalchemy":
             if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleNotFoundError(
                     f"Writing with engine 'sqlalchemy' requires Pandas 1.5.x or higher, found Pandas {pd.__version__}."
                 )
+
             try:
                 from sqlalchemy import create_engine
             except ImportError as exc:
                 raise ImportError(
                     "'sqlalchemy' not found. Install polars with 'pip install polars[sqlalchemy]'."
                 ) from exc
+            from csv import reader as delimited_read
 
+            # the table name may also include the db schema; ensure that we identify
+            # both components and pass them through unquoted (sqlalachemy will quote)
+            table_ident = next(delimited_read([table_name], delimiter="."))
+            if len(table_ident) > 2:
+                raise ValueError(f"table_name appears to be invalid: {table_name!r}")
+            elif len(table_ident) > 1:
+                db_schema = table_ident[0]
+                table_name = table_ident[1]
+            else:
+                table_name = table_ident[0]
+                db_schema = None
+
+            # ensure conversion to pandas uses the pyarrow extension array option
+            # so that we can make use of the sql/db export without copying data
             engine_sa = create_engine(connection_uri)
-
-            # this conversion to pandas as zero-copy
-            # so we can utilize their sql utils for free
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
-                name=table_name, con=engine_sa, if_exists=if_exists, index=False
+                name=table_name,
+                schema=db_schema,
+                con=engine_sa,
+                if_exists=if_exists,
+                index=False,
             )
-
         else:
             raise ValueError(f"'engine' {engine} is not supported.")
 
