@@ -175,6 +175,53 @@ pub fn create_physical_plan(
                 state.has_windows,
             )))
         }
+        Scan {
+            path,
+            file_info,
+            output_schema,
+            scan_type,
+            predicate,
+        } => {
+            let predicate = predicate
+                .map(|pred| {
+                    create_physical_expr(
+                        pred,
+                        Context::Default,
+                        expr_arena,
+                        output_schema.as_ref(),
+                        &mut Default::default(),
+                    )
+                })
+                .map_or(Ok(None), |v| v.map(Some))?;
+
+            match scan_type {
+                #[cfg(feature = "csv")]
+                FileScan::Csv { options } => Ok(Box::new(executors::CsvExec {
+                    path,
+                    schema: file_info.schema,
+                    options,
+                    predicate,
+                })),
+                #[cfg(feature = "ipc")]
+                FileScan::Ipc { options } => Ok(Box::new(executors::IpcExec {
+                    path,
+                    schema: file_info.schema,
+                    predicate,
+                    options,
+                })),
+                #[cfg(feature = "parquet")]
+                FileScan::Parquet {
+                    options,
+                    cloud_options,
+                } => Ok(Box::new(executors::ParquetExec::new(
+                    path,
+                    file_info.schema,
+                    predicate,
+                    options,
+                    cloud_options,
+                ))),
+            }
+        }
         #[cfg(feature = "csv")]
         CsvScan {
             path,

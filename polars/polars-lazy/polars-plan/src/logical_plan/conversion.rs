@@ -171,6 +171,18 @@ pub fn to_alp(
     lp_arena: &mut Arena<ALogicalPlan>,
 ) -> PolarsResult<Node> {
     let v = match lp {
+        LogicalPlan::Scan {
+            file_info,
+            path,
+            predicate,
+            scan_type,
+        } => ALogicalPlan::Scan {
+            file_info,
+            path,
+            output_schema: None,
+            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
+            scan_type,
+        },
         LogicalPlan::AnonymousScan {
             function,
             file_info,
@@ -656,6 +668,18 @@ impl ALogicalPlan {
             conversion_fn(node, lp_arena).into_lp(conversion_fn, lp_arena, expr_arena)
         };
         match lp {
+            ALogicalPlan::Scan {
+                path,
+                file_info,
+                predicate,
+                scan_type,
+                output_schema: _,
+            } => LogicalPlan::Scan {
+                path,
+                file_info,
+                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
+                scan_type,
+            },
             ALogicalPlan::AnonymousScan {
                 function,
                 file_info,

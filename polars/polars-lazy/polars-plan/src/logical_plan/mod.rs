@@ -20,6 +20,7 @@ mod builder;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
+mod file_scan;
 mod format;
 mod functions;
 pub(crate) mod iterator;
@@ -40,6 +41,7 @@ pub use anonymous_scan::*;
 pub use apply::*;
 pub use builder::*;
 pub use conversion::*;
+pub use file_scan::*;
 pub use functions::*;
 pub use iterator::*;
 pub use lit::*;
@@ -47,6 +49,7 @@ pub use optimizer::*;
 pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
 pub use crate::logical_plan::optimizer::file_caching::{
@@ -154,6 +157,12 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         id: usize,
         count: usize,
+    },
+    Scan {
+        path: PathBuf,
+        file_info: FileInfo,
+        predicate: Option<Expr>,
+        scan_type: FileScan,
     },
     /// Scan a CSV file
     #[cfg(feature = "csv")]

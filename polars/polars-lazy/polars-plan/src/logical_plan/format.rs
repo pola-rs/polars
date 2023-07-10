@@ -112,6 +112,29 @@ impl LogicalPlan {
                 write!(f, "{:indent$}CACHE[id: {:x}, count: {}]", "", *id, *count)?;
                 input._format(f, sub_indent)
             }
+            Scan {
+                path,
+                file_info,
+                predicate,
+                scan_type,
+                ..
+            } => {
+                let n_columns = scan_type
+                    .with_columns()
+                    .as_ref()
+                    .map(|columns| columns.len() as i64)
+                    .unwrap_or(-1);
+                write_scan(
+                    f,
+                    scan_type.into(),
+                    path,
+                    sub_indent,
+                    n_columns,
+                    file_info.schema.len(),
+                    predicate,
+                    scan_type.n_rows(),
+                )
+            }
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,

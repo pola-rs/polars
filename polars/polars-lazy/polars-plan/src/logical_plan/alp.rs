@@ -12,6 +12,7 @@ use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
 #[cfg(feature = "csv")]
 use crate::logical_plan::CsvParserOptions;
+use crate::logical_plan::FileScan;
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
 #[cfg(feature = "parquet")]
@@ -42,6 +43,14 @@ pub enum ALogicalPlan {
     Selection {
         input: Node,
         predicate: Node,
+    },
+    Scan {
+        path: PathBuf,
+        file_info: FileInfo,
+        predicate: Option<Node>,
+        // schema of the projected file
+        output_schema: Option<SchemaRef>,
+        scan_type: FileScan,
     },
     #[cfg(feature = "csv")]
     CsvScan {
@@ -161,6 +170,7 @@ impl ALogicalPlan {
     pub(crate) fn scan_schema(&self) -> &SchemaRef {
         use ALogicalPlan::*;
         match self {
+            Scan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "python")]
             PythonScan { options, .. } => &options.schema,
             #[cfg(feature = "csv")]
@@ -177,6 +187,7 @@ impl ALogicalPlan {
     pub fn name(&self) -> &'static str {
         use ALogicalPlan::*;
         match self {
+            Scan { scan_type, .. } => scan_type.into(),
             AnonymousScan { .. } => "anonymous_scan",
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
@@ -213,6 +224,11 @@ impl ALogicalPlan {
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
+            Scan {
+                output_schema,
+                file_info,
+                ..
+            } => output_schema.as_ref().unwrap_or(&file_info.schema),
             #[cfg(feature = "parquet")]
             ParquetScan {
                 file_info,
@@ -355,6 +371,25 @@ impl ALogicalPlan {
                 exprs,
                 schema: schema.clone(),
             },
+            Scan {
+                path,
+                file_info,
+                output_schema,
+                predicate,
+                scan_type,
+            } => {
+                let mut new_predicate = None;
+                if predicate.is_some() {
+                    new_predicate = exprs.pop()
+                }
+                Scan {
+                    path: path.clone(),
+                    file_info: file_info.clone(),
+                    output_schema: output_schema.clone(),
+                    predicate: new_predicate,
+                    scan_type: scan_type.clone(),
+                }
+            }
             #[cfg(feature = "ipc")]
             IpcScan {
                 path,
@@ -505,6 +540,11 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
+            Scan { predicate, .. } => {
+                if let Some(node) = predicate {
+                    container.push(*node)
+                }
+            }
             #[cfg(feature = "ipc")]
             IpcScan { predicate, .. } => {
                 if let Some(node) = predicate {
@@ -583,6 +623,7 @@ impl ALogicalPlan {
                 }
                 *input
             }
+            Scan { .. } => return,
             #[cfg(feature = "parquet")]
             ParquetScan { .. } => return,
             #[cfg(feature = "ipc")]

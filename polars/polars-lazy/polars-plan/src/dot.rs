@@ -340,6 +340,29 @@ impl LogicalPlan {
                     self.write_dot(acc_str, prev_node, current_node, id_map)
                 }
             }
+            Scan {
+                path,
+                file_info,
+                predicate,
+                scan_type,
+            } => {
+                let name: &str = scan_type.into();
+
+                self.write_scan(
+                    acc_str,
+                    prev_node,
+                    name,
+                    path.as_ref(),
+                    scan_type
+                        .with_columns()
+                        .map(|cols| cols.as_slice()),
+                    file_info.schema.len(),
+                    predicate,
+                    branch,
+                    id,
+                    id_map,
+                )
+            }
             #[cfg(feature = "csv")]
             CsvScan {
                 path,

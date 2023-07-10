@@ -11,6 +11,7 @@ impl LogicalPlan {
     pub fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
         use LogicalPlan::*;
         match self {
+            Scan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             #[cfg(feature = "python")]
             PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
             Union { inputs, .. } => inputs[0].schema(),
