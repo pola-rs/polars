@@ -508,15 +508,18 @@ impl ProjectionPushDown {
             Scan {
                 path,
                 file_info,
-                mut scan_type,
+                scan_type,
                 predicate,
-                file_options: options,
+                mut file_options,
                 ..
             } => {
-                *scan_type.with_columns_mut() =
-                    get_scan_columns(&mut acc_projections, expr_arena, options.row_count.as_ref());
+                file_options.with_columns = get_scan_columns(
+                    &mut acc_projections,
+                    expr_arena,
+                    file_options.row_count.as_ref(),
+                );
 
-                let output_schema = if scan_type.with_columns().is_none() {
+                let output_schema = if file_options.with_columns.is_none() {
                     None
                 } else {
                     Some(Arc::new(update_scan_schema(
@@ -533,7 +536,7 @@ impl ProjectionPushDown {
                     output_schema,
                     scan_type,
                     predicate,
-                    file_options: options
+                    file_options,
                 };
                 Ok(lp)
             }

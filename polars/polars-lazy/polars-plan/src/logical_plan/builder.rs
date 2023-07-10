@@ -282,7 +282,7 @@ impl LogicalPlanBuilder {
             row_estimation: (None, estimated_n_rows),
         };
 
-        let options = FileScanOptions{
+        let options = FileScanOptions {
             with_columns: None,
             cache,
             n_rows,
@@ -296,26 +296,22 @@ impl LogicalPlanBuilder {
             file_options: options,
             predicate: None,
             scan_type: FileScan::Csv {
-               options : CsvParserOptions {
-                   has_header,
-                   delimiter,
-                   ignore_errors,
-                   skip_rows,
-                   n_rows,
-                   with_columns: None,
-                   low_memory,
-                   cache,
-                   comment_char,
-                   quote_char,
-                   eol_char,
-                   null_values,
-                   rechunk,
-                   encoding,
-                   try_parse_dates,
-                   file_counter: Default::default(),
-               },
-            }
-        }.into())
+                options: CsvParserOptions {
+                    has_header,
+                    delimiter,
+                    ignore_errors,
+                    skip_rows,
+                    low_memory,
+                    comment_char,
+                    quote_char,
+                    eol_char,
+                    null_values,
+                    encoding,
+                    try_parse_dates,
+                },
+            },
+        }
+        .into())
     }
 
     pub fn cache(self) -> Self {

@@ -345,7 +345,7 @@ impl LogicalPlan {
                 file_info,
                 predicate,
                 scan_type,
-                file_options: options
+                file_options: options,
             } => {
                 let name: &str = scan_type.into();
 
@@ -354,9 +354,7 @@ impl LogicalPlan {
                     prev_node,
                     name,
                     path.as_ref(),
-                    options
-                        .with_columns.as_ref()
-                        .map(|cols| cols.as_slice()),
+                    options.with_columns.as_ref().map(|cols| cols.as_slice()),
                     file_info.schema.len(),
                     predicate,
                     branch,

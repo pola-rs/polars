@@ -187,8 +187,8 @@ pub fn set_estimated_row_counts(
         DataFrameScan { df, .. } => {
             let len = df.height();
             (Some(len), len, _filter_count)
-        },
-        Scan {file_info, ..} => {
+        }
+        Scan { file_info, .. } => {
             let (known_size, estimated_size) = file_info.row_estimation;
             (known_size, estimated_size, _filter_count)
         }

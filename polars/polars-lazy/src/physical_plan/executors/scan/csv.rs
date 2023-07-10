@@ -12,7 +12,7 @@ pub struct CsvExec {
 
 impl CsvExec {
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        let mut with_columns = mem::take(&mut self.options.with_columns);
+        let mut with_columns = mem::take(&mut self.file_options.with_columns);
         let mut projected_len = 0;
         with_columns.as_ref().map(|columns| {
             projected_len = columns.len();
@@ -22,7 +22,7 @@ impl CsvExec {
         if projected_len == 0 {
             with_columns = None;
         }
-        let n_rows = _set_n_rows_for_scan(self.options.n_rows);
+        let n_rows = _set_n_rows_for_scan(self.file_options.n_rows);
         let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
 
         CsvReader::from_path(&self.path)
@@ -57,7 +57,7 @@ impl Executor for CsvExec {
                 .predicate
                 .as_ref()
                 .map(|ae| ae.as_expression().unwrap().clone()),
-            slice: (self.options.skip_rows, self.options.n_rows),
+            slice: (self.options.skip_rows, self.file_options.n_rows),
         };
 
         let profile_name = if state.has_node_timer() {
@@ -75,7 +75,9 @@ impl Executor for CsvExec {
             || {
                 state
                     .file_cache
-                    .read(finger_print, self.options.file_counter, &mut || self.read())
+                    .read(finger_print, self.file_options.file_counter, &mut || {
+                        self.read()
+                    })
             },
             profile_name,
         )

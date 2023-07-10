@@ -1,5 +1,3 @@
-use polars_io::RowCount;
-
 use super::*;
 
 #[derive(Clone, Debug, IntoStaticStr, PartialEq)]
@@ -18,32 +16,11 @@ pub enum FileScan {
 
 impl FileScan {
     pub(crate) fn skip_rows(&self) -> usize {
+        #[allow(unreachable_patterns)]
         match self {
             #[cfg(feature = "csv")]
             Self::Csv { options } => options.skip_rows,
             _ => 0,
-        }
-
-    }
-    pub(crate) fn with_columns(&self) -> Option<&Arc<Vec<String>>> {
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { options } => options.with_columns.as_ref(),
-            #[cfg(feature = "ipc")]
-            Self::Ipc { options, .. } => options.with_columns.as_ref(),
-            #[cfg(feature = "parquet")]
-            Self::Parquet { options, .. } => options.with_columns.as_ref(),
-        }
-    }
-
-    pub(crate) fn with_columns_mut(&mut self) -> &mut Option<Arc<Vec<String>>> {
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { options } => &mut options.with_columns,
-            #[cfg(feature = "ipc")]
-            Self::Ipc { options, .. } => &mut options.with_columns,
-            #[cfg(feature = "parquet")]
-            Self::Parquet { options, .. } => &mut options.with_columns,
         }
     }
 
@@ -55,17 +32,6 @@ impl FileScan {
             Self::Ipc { options, .. } => options.row_count.is_some(),
             #[cfg(feature = "parquet")]
             Self::Parquet { options, .. } => options.row_count.is_some(),
-        }
-    }
-
-    pub(crate) fn n_rows(&self) -> Option<usize> {
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { options } => options.n_rows,
-            #[cfg(feature = "parquet")]
-            Self::Parquet { options, .. } => options.n_rows,
-            #[cfg(feature = "ipc")]
-            Self::Ipc { options, .. } => options.n_rows,
         }
     }
 }

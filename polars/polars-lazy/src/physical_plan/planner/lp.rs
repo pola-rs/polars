@@ -181,7 +181,7 @@ pub fn create_physical_plan(
             output_schema,
             scan_type,
             predicate,
-            file_options: options
+            file_options: options,
         } => {
             let predicate = predicate
                 .map(|pred| {
@@ -197,12 +197,14 @@ pub fn create_physical_plan(
 
             match scan_type {
                 #[cfg(feature = "csv")]
-                FileScan::Csv { options: csv_options } => Ok(Box::new(executors::CsvExec {
+                FileScan::Csv {
+                    options: csv_options,
+                } => Ok(Box::new(executors::CsvExec {
                     path,
                     schema: file_info.schema,
                     options: csv_options,
                     predicate,
-                    file_options: options
+                    file_options: options,
                 })),
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc { options } => Ok(Box::new(executors::IpcExec {

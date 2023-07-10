@@ -6,7 +6,6 @@ use polars_core::prelude::*;
 
 use crate::logical_plan::ALogicalPlanBuilder;
 use crate::prelude::*;
-use crate::prelude::LogicalPlan::Cache;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct FileFingerPrint {
@@ -136,13 +135,45 @@ pub fn find_column_union_and_fingerprints(
             scan_type,
             ..
         } => {
-            let slice = match scan_type {
-                #[cfg(feature = "csv")]
-                FileScan::Csv {
-                    options: inner_opts
-                } => (inner_opts.skip_rows, options.n_rows),
-                _ => (0, options.n_rows)
-            };
+            let slice = (scan_type.skip_rows(), options.n_rows);
+            let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
+            process_with_columns(
+                path,
+                options.with_columns.as_deref(),
+                predicate,
+                slice,
+                columns,
+                &file_info.schema,
+            );
+        }
+        #[cfg(feature = "parquet")]
+        ParquetScan {
+            path,
+            options,
+            file_info,
+            predicate,
+            ..
+        } => {
+            let slice = (0, options.n_rows);
+            let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
+            process_with_columns(
+                path,
+                options.with_columns.as_deref(),
+                predicate,
+                slice,
+                columns,
+                &file_info.schema,
+            );
+        }
+        #[cfg(feature = "ipc")]
+        IpcScan {
+            path,
+            options,
+            file_info,
+            predicate,
+            ..
+        } => {
+            let slice = (0, options.n_rows);
             let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
             process_with_columns(
                 path,
@@ -288,9 +319,13 @@ impl FileCacher {
                     lp_arena.replace(root, lp);
                 }
                 ALogicalPlan::Scan {
-                    path, file_info, predicate, output_schema, mut scan_type, file_options: mut options
+                    path,
+                    file_info,
+                    predicate,
+                    output_schema,
+                    scan_type,
+                    file_options: mut options,
                 } => {
-
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
                     let finger_print = FileFingerPrint {
                         path,
@@ -315,10 +350,17 @@ impl FileCacher {
                         output_schema,
                         predicate,
                         file_options: options.clone(),
-                        scan_type: scan_type.clone()
+                        scan_type: scan_type.clone(),
                     };
+                    let lp = self.finish_rewrite(
+                        lp,
+                        expr_arena,
+                        lp_arena,
+                        &finger_print,
+                        options.with_columns,
+                        behind_cache,
+                    );
                     lp_arena.replace(root, lp);
-
                 }
                 #[cfg(feature = "ipc")]
                 ALogicalPlan::IpcScan {

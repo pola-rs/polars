@@ -34,7 +34,7 @@ impl CsvSource {
         let options = self.options.take().unwrap();
         let file_options = self.file_options.take().unwrap();
         let path = self.path.take().unwrap();
-        let mut with_columns = options.with_columns;
+        let mut with_columns = file_options.with_columns;
         let mut projected_len = 0;
         with_columns.as_ref().map(|columns| {
             projected_len = columns.len();

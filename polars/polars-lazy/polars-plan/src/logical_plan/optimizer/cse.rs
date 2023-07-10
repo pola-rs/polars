@@ -153,24 +153,25 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
             path_left == path_right
                 && options_l == options_r
                 && predicate_equal(*predicate_l, *predicate_r, expr_arena)
-        },
+        }
         (
-            Scan{
+            Scan {
                 path: path_left,
                 predicate: predicate_left,
                 scan_type: scan_type_left,
                 ..
             },
-            Scan{
+            Scan {
                 path: path_right,
                 predicate: predicate_right,
                 scan_type: scan_type_right,
                 ..
-            } )=> {
+            },
+        ) => {
             path_left == path_right
-            && predicate_left == predicate_right
-            && scan_type_left == scan_type_right
-        },
+                && predicate_left == predicate_right
+                && scan_type_left == scan_type_right
+        }
         (Selection { predicate: l, .. }, Selection { predicate: r, .. }) => {
             node_to_expr(*l, expr_arena) == node_to_expr(*r, expr_arena)
         }
@@ -421,7 +422,10 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
 ) {
     use ALogicalPlan::*;
     match lp_arena.get_mut(root) {
-        Scan { file_options: options, ..} => {
+        Scan {
+            file_options: options,
+            ..
+        } => {
             if acc_count >= options.file_counter {
                 options.file_counter = 1;
             } else {

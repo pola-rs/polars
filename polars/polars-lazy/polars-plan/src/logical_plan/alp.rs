@@ -10,8 +10,6 @@ use polars_utils::arena::{Arena, Node};
 
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
-#[cfg(feature = "csv")]
-use crate::logical_plan::CsvParserOptions;
 use crate::logical_plan::FileScan;
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
@@ -52,7 +50,7 @@ pub enum ALogicalPlan {
         output_schema: Option<SchemaRef>,
         scan_type: FileScan,
         /// generic options that can be used for all file types.
-        file_options: FileScanOptions
+        file_options: FileScanOptions,
     },
     #[cfg(feature = "ipc")]
     IpcScan {

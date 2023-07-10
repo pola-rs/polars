@@ -29,16 +29,11 @@ pub struct CsvParserOptions {
     pub eol_char: u8,
     pub has_header: bool,
     pub skip_rows: usize,
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
     pub low_memory: bool,
     pub ignore_errors: bool,
-    pub cache: bool,
     pub null_values: Option<NullValues>,
-    pub rechunk: bool,
     pub encoding: CsvEncoding,
     pub try_parse_dates: bool,
-    pub file_counter: FileCount,
 }
 
 #[cfg(feature = "parquet")]
@@ -116,7 +111,6 @@ pub struct FileScanOptions {
     pub rechunk: bool,
     pub file_counter: FileCount,
 }
-
 
 impl From<IpcScanOptions> for IpcScanOptionsInner {
     fn from(options: IpcScanOptions) -> Self {
