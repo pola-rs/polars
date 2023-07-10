@@ -22,7 +22,7 @@ mod list;
 mod meta;
 pub(crate) mod names;
 mod options;
-#[cfg(all(feature = "python", feature = "serde"))]
+#[cfg(feature = "python")]
 pub mod python_udf;
 #[cfg(feature = "random")]
 mod random;
