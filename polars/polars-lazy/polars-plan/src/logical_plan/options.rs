@@ -37,7 +37,6 @@ pub struct CsvParserOptions {
     pub null_values: Option<NullValues>,
     pub rechunk: bool,
     pub encoding: CsvEncoding,
-    pub row_count: Option<RowCount>,
     pub try_parse_dates: bool,
     pub file_counter: FileCount,
 }
@@ -105,6 +104,19 @@ pub struct IpcScanOptionsInner {
     pub file_counter: FileCount,
     pub memmap: bool,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+/// Generic options for all file types
+pub struct FileScanOptions {
+    pub n_rows: Option<usize>,
+    pub with_columns: Option<Arc<Vec<String>>>,
+    pub cache: bool,
+    pub row_count: Option<RowCount>,
+    pub rechunk: bool,
+    pub file_counter: FileCount,
+}
+
 
 impl From<IpcScanOptions> for IpcScanOptionsInner {
     fn from(options: IpcScanOptions) -> Self {

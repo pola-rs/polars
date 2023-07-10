@@ -51,15 +51,7 @@ pub enum ALogicalPlan {
         // schema of the projected file
         output_schema: Option<SchemaRef>,
         scan_type: FileScan,
-    },
-    #[cfg(feature = "csv")]
-    CsvScan {
-        path: PathBuf,
-        file_info: FileInfo,
-        // schema of the projected file
-        output_schema: Option<SchemaRef>,
-        options: CsvParserOptions,
-        predicate: Option<Node>,
+        options: FileScanOptions
     },
     #[cfg(feature = "ipc")]
     IpcScan {
@@ -173,8 +165,6 @@ impl ALogicalPlan {
             Scan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "python")]
             PythonScan { options, .. } => &options.schema,
-            #[cfg(feature = "csv")]
-            CsvScan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "parquet")]
             ParquetScan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "ipc")]
@@ -193,8 +183,6 @@ impl ALogicalPlan {
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
             Selection { .. } => "selection",
-            #[cfg(feature = "csv")]
-            CsvScan { .. } => "csv_scan",
             #[cfg(feature = "ipc")]
             IpcScan { .. } => "ipc_scan",
             #[cfg(feature = "parquet")]
@@ -252,12 +240,6 @@ impl ALogicalPlan {
                 ..
             } => output_schema.as_ref().unwrap_or(&file_info.schema),
             Selection { input, .. } => return arena.get(*input).schema(arena),
-            #[cfg(feature = "csv")]
-            CsvScan {
-                file_info,
-                output_schema,
-                ..
-            } => output_schema.as_ref().unwrap_or(&file_info.schema),
             Projection { schema, .. } => schema,
             LocalProjection { schema, .. } => schema,
             Aggregate { schema, .. } => schema,
@@ -376,6 +358,7 @@ impl ALogicalPlan {
                 file_info,
                 output_schema,
                 predicate,
+                options,
                 scan_type,
             } => {
                 let mut new_predicate = None;
@@ -386,6 +369,7 @@ impl ALogicalPlan {
                     path: path.clone(),
                     file_info: file_info.clone(),
                     output_schema: output_schema.clone(),
+                    options: options.clone(),
                     predicate: new_predicate,
                     scan_type: scan_type.clone(),
                 }
@@ -435,27 +419,6 @@ impl ALogicalPlan {
                     predicate: new_predicate,
                     options: options.clone(),
                     cloud_options: cloud_options.clone(),
-                }
-            }
-            #[cfg(feature = "csv")]
-            CsvScan {
-                path,
-                file_info,
-                output_schema,
-                predicate,
-                options,
-                ..
-            } => {
-                let mut new_predicate = None;
-                if predicate.is_some() {
-                    new_predicate = exprs.pop()
-                }
-                CsvScan {
-                    path: path.clone(),
-                    file_info: file_info.clone(),
-                    output_schema: output_schema.clone(),
-                    options: options.clone(),
-                    predicate: new_predicate,
                 }
             }
             DataFrameScan {
@@ -551,12 +514,6 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
-            #[cfg(feature = "csv")]
-            CsvScan { predicate, .. } => {
-                if let Some(node) = predicate {
-                    container.push(*node)
-                }
-            }
             DataFrameScan { selection, .. } => {
                 if let Some(expr) = selection {
                     container.push(*expr)
@@ -628,8 +585,6 @@ impl ALogicalPlan {
             ParquetScan { .. } => return,
             #[cfg(feature = "ipc")]
             IpcScan { .. } => return,
-            #[cfg(feature = "csv")]
-            CsvScan { .. } => return,
             DataFrameScan { .. } => return,
             AnonymousScan { .. } => return,
             #[cfg(feature = "python")]

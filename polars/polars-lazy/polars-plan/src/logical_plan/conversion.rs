@@ -176,12 +176,14 @@ pub fn to_alp(
             path,
             predicate,
             scan_type,
+            options,
         } => ALogicalPlan::Scan {
             file_info,
             path,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             scan_type,
+            options
         },
         LogicalPlan::AnonymousScan {
             function,
@@ -219,19 +221,6 @@ pub fn to_alp(
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Slice { input, offset, len }
         }
-        #[cfg(feature = "csv")]
-        LogicalPlan::CsvScan {
-            path,
-            file_info,
-            options,
-            predicate,
-        } => ALogicalPlan::CsvScan {
-            path,
-            file_info,
-            output_schema: None,
-            options,
-            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-        },
         #[cfg(feature = "ipc")]
         LogicalPlan::IpcScan {
             path,
@@ -674,11 +663,13 @@ impl ALogicalPlan {
                 predicate,
                 scan_type,
                 output_schema: _,
+                options
             } => LogicalPlan::Scan {
                 path,
                 file_info,
                 predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
                 scan_type,
+                options
             },
             ALogicalPlan::AnonymousScan {
                 function,
@@ -717,19 +708,6 @@ impl ALogicalPlan {
                     predicate: p,
                 }
             }
-            #[cfg(feature = "csv")]
-            ALogicalPlan::CsvScan {
-                path,
-                file_info,
-                output_schema: _,
-                options,
-                predicate,
-            } => LogicalPlan::CsvScan {
-                path,
-                file_info,
-                options,
-                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-            },
             #[cfg(feature = "ipc")]
             ALogicalPlan::IpcScan {
                 path,

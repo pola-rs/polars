@@ -345,6 +345,7 @@ impl LogicalPlan {
                 file_info,
                 predicate,
                 scan_type,
+                options
             } => {
                 let name: &str = scan_type.into();
 
@@ -353,8 +354,8 @@ impl LogicalPlan {
                     prev_node,
                     name,
                     path.as_ref(),
-                    scan_type
-                        .with_columns()
+                    options
+                        .with_columns.as_ref()
                         .map(|cols| cols.as_slice()),
                     file_info.schema.len(),
                     predicate,
@@ -363,25 +364,6 @@ impl LogicalPlan {
                     id_map,
                 )
             }
-            #[cfg(feature = "csv")]
-            CsvScan {
-                path,
-                options,
-                file_info,
-                predicate,
-                ..
-            } => self.write_scan(
-                acc_str,
-                prev_node,
-                "CSV",
-                path.as_ref(),
-                options.with_columns.as_deref().map(|cols| cols.as_slice()),
-                file_info.schema.len(),
-                predicate,
-                branch,
-                id,
-                id_map,
-            ),
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,

@@ -162,16 +162,8 @@ pub enum LogicalPlan {
         path: PathBuf,
         file_info: FileInfo,
         predicate: Option<Expr>,
+        options: FileScanOptions,
         scan_type: FileScan,
-    },
-    /// Scan a CSV file
-    #[cfg(feature = "csv")]
-    CsvScan {
-        path: PathBuf,
-        file_info: FileInfo,
-        options: CsvParserOptions,
-        /// Filters at the scan level
-        predicate: Option<Expr>,
     },
     #[cfg(feature = "parquet")]
     /// Scan a Parquet file

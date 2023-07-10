@@ -181,28 +181,49 @@ impl SlicePushDown {
                 Ok(lp)
 
             }
-
             #[cfg(feature = "csv")]
-            (CsvScan {
+            (Scan {
                 path,
                 file_info,
                 output_schema,
                 mut options,
                 predicate,
-            }, Some(state)) if state.offset >= 0 && predicate.is_none() => {
-                options.skip_rows += state.offset as usize;
+                scan_type: FileScan::Csv {options: mut csv_options}
+            }, Some(state)) if predicate.is_none() && state.offset >= 0 =>  {
                 options.n_rows = Some(state.len as usize);
+                csv_options.skip_rows += state.offset as usize;
 
-                let lp = CsvScan {
+                let lp = Scan {
                     path,
                     file_info,
                     output_schema,
+                    scan_type: FileScan::Csv {options: csv_options},
                     options,
                     predicate,
                 };
                 Ok(lp)
-            }
+            },
+            (Scan {
+                path,
+                file_info,
+                output_schema,
+                mut options,
+                predicate,
+                scan_type
+            }, Some(state)) if state.offset == 0 && predicate.is_none() => {
 
+                options.n_rows = Some(state.len as usize);
+                let lp = Scan {
+                    path,
+                    file_info,
+                    output_schema,
+                    predicate,
+                    options,
+                    scan_type
+                };
+
+                Ok(lp)
+            }
             (Union {inputs, mut options }, Some(state)) => {
                 options.slice = Some((state.offset, state.len as usize));
                 Ok(Union {inputs, options})

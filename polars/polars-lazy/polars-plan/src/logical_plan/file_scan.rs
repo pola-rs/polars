@@ -2,7 +2,7 @@ use polars_io::RowCount;
 
 use super::*;
 
-#[derive(Clone, Debug, IntoStaticStr)]
+#[derive(Clone, Debug, IntoStaticStr, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FileScan {
     #[cfg(feature = "csv")]
@@ -17,6 +17,14 @@ pub enum FileScan {
 }
 
 impl FileScan {
+    pub(crate) fn skip_rows(&self) -> usize {
+        match self {
+            #[cfg(feature = "csv")]
+            Self::Csv { options } => options.skip_rows,
+            _ => 0,
+        }
+
+    }
     pub(crate) fn with_columns(&self) -> Option<&Arc<Vec<String>>> {
         match self {
             #[cfg(feature = "csv")]

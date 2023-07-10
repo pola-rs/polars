@@ -510,6 +510,7 @@ impl ProjectionPushDown {
                 file_info,
                 mut scan_type,
                 predicate,
+                options,
                 ..
             } => {
                 *scan_type.with_columns_mut() =
@@ -532,37 +533,7 @@ impl ProjectionPushDown {
                     output_schema,
                     scan_type,
                     predicate,
-                };
-                Ok(lp)
-            }
-            #[cfg(feature = "csv")]
-            CsvScan {
-                path,
-                file_info,
-                mut options,
-                predicate,
-                ..
-            } => {
-                options.with_columns =
-                    get_scan_columns(&mut acc_projections, expr_arena, options.row_count.as_ref());
-
-                let output_schema = if options.with_columns.is_none() {
-                    None
-                } else {
-                    Some(Arc::new(update_scan_schema(
-                        &acc_projections,
-                        expr_arena,
-                        &file_info.schema,
-                        true,
-                    )?))
-                };
-
-                let lp = CsvScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    options,
-                    predicate,
+                    options
                 };
                 Ok(lp)
             }

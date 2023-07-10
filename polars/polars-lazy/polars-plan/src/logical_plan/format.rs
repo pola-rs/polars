@@ -187,30 +187,6 @@ impl LogicalPlan {
                 write!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
                 input._format(f, indent)
             }
-            #[cfg(feature = "csv")]
-            CsvScan {
-                path,
-                options,
-                file_info,
-                predicate,
-                ..
-            } => {
-                let n_columns = options
-                    .with_columns
-                    .as_ref()
-                    .map(|columns| columns.len() as i64)
-                    .unwrap_or(-1);
-                write_scan(
-                    f,
-                    "CSV",
-                    path,
-                    sub_indent,
-                    n_columns,
-                    file_info.schema.len(),
-                    predicate,
-                    options.n_rows,
-                )
-            }
             DataFrameScan {
                 schema,
                 projection,

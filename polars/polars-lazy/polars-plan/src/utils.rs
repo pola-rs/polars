@@ -71,8 +71,7 @@ impl PushNode for [Option<Node>; 1] {
 
 pub(crate) fn is_scan(plan: &ALogicalPlan) -> bool {
     match plan {
-        #[cfg(feature = "csv")]
-        ALogicalPlan::CsvScan { .. } => true,
+        ALogicalPlan::Scan {..} => true,
         ALogicalPlan::DataFrameScan { .. } => true,
         #[cfg(feature = "parquet")]
         ALogicalPlan::ParquetScan { .. } => true,

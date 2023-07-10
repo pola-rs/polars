@@ -281,31 +281,41 @@ impl LogicalPlanBuilder {
             schema,
             row_estimation: (None, estimated_n_rows),
         };
-        Ok(LogicalPlan::CsvScan {
+
+        let options = FileScanOptions{
+            with_columns: None,
+            cache,
+            n_rows,
+            rechunk,
+            row_count,
+            file_counter: Default::default(),
+        };
+        Ok(LogicalPlan::Scan {
             path,
             file_info,
-            options: CsvParserOptions {
-                has_header,
-                delimiter,
-                ignore_errors,
-                skip_rows,
-                n_rows,
-                with_columns: None,
-                low_memory,
-                cache,
-                comment_char,
-                quote_char,
-                eol_char,
-                null_values,
-                rechunk,
-                encoding,
-                row_count,
-                try_parse_dates,
-                file_counter: Default::default(),
-            },
+            options,
             predicate: None,
-        }
-        .into())
+            scan_type: FileScan::Csv {
+               options : CsvParserOptions {
+                   has_header,
+                   delimiter,
+                   ignore_errors,
+                   skip_rows,
+                   n_rows,
+                   with_columns: None,
+                   low_memory,
+                   cache,
+                   comment_char,
+                   quote_char,
+                   eol_char,
+                   null_values,
+                   rechunk,
+                   encoding,
+                   try_parse_dates,
+                   file_counter: Default::default(),
+               },
+            }
+        }.into())
     }
 
     pub fn cache(self) -> Self {

@@ -288,6 +288,7 @@ impl PredicatePushDown {
                 file_info,
                 predicate,
                 scan_type,
+                options,
                 output_schema
             } => {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
@@ -297,47 +298,12 @@ impl PredicatePushDown {
                     path,
                     file_info,
                     predicate,
+                    options,
                     output_schema,
                     scan_type
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
 
-            }
-            #[cfg(feature = "csv")]
-            CsvScan {
-                path,
-                file_info,
-                output_schema,
-                options,
-                predicate,
-            } => {
-                let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
-                let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
-
-                let lp = if let (Some(predicate), Some(_)) = (predicate, options.n_rows) {
-                    let lp = CsvScan {
-                        path,
-                        file_info,
-                        output_schema,
-                        options,
-                        predicate: None,
-                    };
-                    let input = lp_arena.add(lp);
-                    Selection {
-                        input,
-                        predicate
-                    }
-                } else {
-                    CsvScan {
-                        path,
-                        file_info,
-                        output_schema,
-                        options,
-                        predicate,
-                    }
-                };
-
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             AnonymousScan {
                 function,
