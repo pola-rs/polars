@@ -64,15 +64,14 @@ where
                 }
             }
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
-        }
-        #[cfg(feature = "csv")]
-        CsvScan {
+        },
+        Scan {
             path,
             file_info,
             options,
             predicate,
             output_schema,
-            ..
+            scan_type
         } => {
             // add predicate to operators
             if let (true, Some(predicate)) = (push_predicate, predicate) {
@@ -81,8 +80,14 @@ where
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            let src = sources::CsvSource::new(path, file_info.schema, options, verbose)?;
-            Ok(Box::new(src) as Box<dyn Source>)
+            match scan_type {
+                FileScan::Csv {options: csv_options} => {
+                    let src = sources::CsvSource::new(path, file_info.schema, csv_options, options, verbose)?;
+                    Ok(Box::new(src) as Box<dyn Source>)
+                },
+                _ => todo!()
+            }
+
         }
         #[cfg(feature = "parquet")]
         ParquetScan {
@@ -480,8 +485,7 @@ where
                 true,
                 verbose,
             )?,
-            #[cfg(feature = "csv")]
-            lp @ CsvScan { .. } => get_source(
+            lp @ Scan {..} => get_source(
                 lp.clone(),
                 &mut operator_objects,
                 expr_arena,

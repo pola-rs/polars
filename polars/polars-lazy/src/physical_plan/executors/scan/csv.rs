@@ -6,6 +6,7 @@ pub struct CsvExec {
     pub path: PathBuf,
     pub schema: SchemaRef,
     pub options: CsvParserOptions,
+    pub file_options: FileScanOptions,
     pub predicate: Option<Arc<dyn PhysicalExpr>>,
 }
 
@@ -41,8 +42,8 @@ impl CsvExec {
             .with_quote_char(self.options.quote_char)
             .with_end_of_line_char(self.options.eol_char)
             .with_encoding(self.options.encoding)
-            .with_rechunk(self.options.rechunk)
-            .with_row_count(std::mem::take(&mut self.options.row_count))
+            .with_rechunk(self.file_options.rechunk)
+            .with_row_count(std::mem::take(&mut self.file_options.row_count))
             .with_try_parse_dates(self.options.try_parse_dates)
             .finish()
     }

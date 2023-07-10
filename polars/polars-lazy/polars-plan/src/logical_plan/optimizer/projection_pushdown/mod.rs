@@ -514,7 +514,7 @@ impl ProjectionPushDown {
                 ..
             } => {
                 *scan_type.with_columns_mut() =
-                    get_scan_columns(&mut acc_projections, expr_arena, scan_type.row_count());
+                    get_scan_columns(&mut acc_projections, expr_arena, options.row_count.as_ref());
 
                 let output_schema = if scan_type.with_columns().is_none() {
                     None

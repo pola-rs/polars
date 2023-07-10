@@ -47,17 +47,6 @@ impl FileScan {
         }
     }
 
-    pub(crate) fn row_count(&self) -> Option<&RowCount> {
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { options } => options.row_count.as_ref(),
-            #[cfg(feature = "ipc")]
-            Self::Ipc { options, .. } => options.row_count.as_ref(),
-            #[cfg(feature = "parquet")]
-            Self::Parquet { options, .. } => options.row_count.as_ref(),
-        }
-    }
-
     pub(crate) fn sort_projection(&self) -> bool {
         match self {
             #[cfg(feature = "csv")]

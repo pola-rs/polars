@@ -201,17 +201,21 @@ pub(crate) fn insert_streaming_nodes(
                     )
                 }
             }
-            #[cfg(feature = "csv")]
-            CsvScan { options, .. } => {
+            Scan {options, scan_type, ..} => {
                 if state.streamable {
-                    // the batched csv reader doesn't stop exactly at n_rows
-                    if let Some(n_rows) = options.n_rows {
-                        insert_slice(root, 0, n_rows as IdxSize, lp_arena, &mut state);
+
+                    #[cfg(feature = "csv")]
+                    if matches!(scan_type, FileScan::Csv {..}) {
+                        // the batched csv reader doesn't stop exactly at n_rows
+                        if let Some(n_rows) = options.n_rows {
+                            insert_slice(root, 0, n_rows as IdxSize, lp_arena, &mut state);
+                        }
                     }
 
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)
                 }
+
             }
             #[cfg(feature = "parquet")]
             ParquetScan { .. } => {
@@ -269,16 +273,14 @@ pub(crate) fn insert_streaming_nodes(
                     && inputs.iter().all(|node| match lp_arena.get(*node) {
                         #[cfg(feature = "parquet")]
                         ParquetScan { .. } => true,
-                        #[cfg(feature = "csv")]
-                        CsvScan { .. } => true,
+                        Scan {..} => true,
                         MapFunction {
                             input,
                             function: FunctionNode::Rechunk,
                         } => match lp_arena.get(*input) {
                             #[cfg(feature = "parquet")]
                             ParquetScan { .. } => true,
-                            #[cfg(feature = "csv")]
-                            CsvScan { .. } => true,
+                            Scan {..} => true,
                             _ => false,
                         },
                         _ => false,
