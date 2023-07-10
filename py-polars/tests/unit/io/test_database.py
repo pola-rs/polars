@@ -205,8 +205,8 @@ def test_write_database(
     tmp_db = f"test_{engine}.db"
     test_db = str(tmp_path / tmp_db)
 
-    # note: explicitly test a table name that requires quotes to
-    # ensure that we handle it correctly (also use a db schema)
+    # note: test a table name that requires quotes to ensure that we handle
+    # it correctly (also supply an explicit db schema with/without quotes)
     tbl_name = '"test-data"'
 
     sample_df.write_database(
@@ -218,7 +218,7 @@ def test_write_database(
 
     if mode == "append":
         sample_df.write_database(
-            table_name=f"main.{tbl_name}",
+            table_name=f'"main".{tbl_name}',
             connection_uri=f"sqlite:///{test_db}",
             if_exists="append",
             engine=engine,

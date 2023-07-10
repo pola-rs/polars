@@ -3167,21 +3167,28 @@ class DataFrame:
                 raise ModuleNotFoundError(
                     f"Writing with engine 'sqlalchemy' requires Pandas 1.5.x or higher, found Pandas {pd.__version__}."
                 )
+
             try:
                 from sqlalchemy import create_engine
             except ImportError as exc:
                 raise ImportError(
                     "'sqlalchemy' not found. Install polars with 'pip install polars[sqlalchemy]'."
                 ) from exc
+            from csv import reader as delimited_read
 
-            engine_sa = create_engine(connection_uri)
-            db_schema = None
-            if not table_name.startswith('"') and "." in table_name:
-                db_schema, table_name = table_name.split(".", 1)
-            table_name = table_name.strip('"')
+            # the table name may also include the db schema; ensure that we identify
+            # both components and pass them through unquoted (sqlalachemy will quote)
+            table_ident = next(delimited_read([table_name], delimiter="."))
+            if len(table_ident) > 1:
+                db_schema = table_ident[0].strip('"')
+                table_name = table_ident[1].strip('"')
+            else:
+                table_name = table_ident[0].strip('"')
+                db_schema = None
 
             # ensure conversion to pandas uses the pyarrow extension array option
             # so that we can make use of the sql/db export without copying data
+            engine_sa = create_engine(connection_uri)
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
                 name=table_name,
                 schema=db_schema,
