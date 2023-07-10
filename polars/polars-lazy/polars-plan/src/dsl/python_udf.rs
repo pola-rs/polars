@@ -8,7 +8,9 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::Series;
 use pyo3::types::{PyBytes, PyModule};
 use pyo3::{PyErr, PyObject, Python};
+#[cfg(feature = "serde")]
 use serde::ser::Error;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::expr_dyn_fn::*;
@@ -47,6 +49,7 @@ impl PartialEq for PythonFunction {
     }
 }
 
+#[cfg(feature = "serde")]
 impl Serialize for PythonFunction {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -70,6 +73,7 @@ impl Serialize for PythonFunction {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'a> Deserialize<'a> for PythonFunction {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -106,6 +110,7 @@ impl PythonUdfExpression {
         }
     }
 
+    #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn SeriesUdf>> {
         debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
         // skip header
@@ -158,6 +163,7 @@ impl SeriesUdf for PythonUdfExpression {
         Ok(Some(out))
     }
 
+    #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
         buf.extend_from_slice(MAGIC_BYTE_MARK);
         ciborium::ser::into_writer(&self.output_type, &mut *buf).unwrap();
