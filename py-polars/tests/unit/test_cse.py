@@ -1,5 +1,8 @@
 import re
 from datetime import date
+from tempfile import NamedTemporaryFile
+
+import pytest
 
 import polars as pl
 
@@ -104,3 +107,28 @@ def test_cse_9630() -> None:
         "value_right": [[1, 2]],
         "y": [2],
     }
+
+
+@pytest.mark.write_disk()
+def test_schema_row_count_cse() -> None:
+    csv_a = NamedTemporaryFile()
+    csv_a.write(
+        b"""
+    A,B
+    Gr1,A
+    Gr1,B
+    """.strip()
+    )
+    csv_a.seek(0)
+
+    df_a = pl.scan_csv(csv_a.name).with_row_count("Idx")
+    assert df_a.join(df_a, on="B").groupby(
+        "A", maintain_order=True
+    ).all().collect().to_dict(False) == {
+        "A": ["Gr1"],
+        "Idx": [[0, 1]],
+        "B": [["A", "B"]],
+        "Idx_right": [[0, 1]],
+        "A_right": [["Gr1", "Gr1"]],
+    }
+    csv_a.close()

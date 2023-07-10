@@ -37,6 +37,7 @@ impl ParquetExec {
             &mut self.options.with_columns,
             &mut self.schema,
             self.options.n_rows,
+            self.options.row_count.is_some(),
         );
 
         ParquetReader::new(file)
