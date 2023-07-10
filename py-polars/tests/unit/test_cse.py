@@ -131,3 +131,4 @@ def test_schema_row_count_cse() -> None:
         "Idx_right": [[0, 1]],
         "A_right": [["Gr1", "Gr1"]],
     }
+    csv_a.close()

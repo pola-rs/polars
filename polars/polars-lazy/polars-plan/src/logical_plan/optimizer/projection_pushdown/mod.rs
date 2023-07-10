@@ -127,10 +127,6 @@ fn update_scan_schema(
     acc_projections: &[Node],
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
-    // this is only needed for parsers that sort the projections
-    // currently these are:
-    // sorting parsers: csv,
-    // non-sorting: parquet, ipc
     sort_projections: bool,
 ) -> PolarsResult<Schema> {
     let mut new_schema = Schema::with_capacity(acc_projections.len());
@@ -442,7 +438,7 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &file_info.schema,
-                        false,
+                        options.row_count.is_some(),
                     )?))
                 };
                 options.with_columns = with_columns;
@@ -475,7 +471,7 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &file_info.schema,
-                        false,
+                        options.row_count.is_some(),
                     )?))
                 };
                 options.with_columns = with_columns;
