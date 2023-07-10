@@ -598,7 +598,7 @@ def test_sql_round_ndigits(decimals: int, expected: list[float]) -> None:
             out = ctx.execute("SELECT ROUND(n) AS n FROM df")
             assert_series_equal(out["n"], pl.Series("n", values=expected))
 
-        out = ctx.execute(f"""SELECT ROUND("n",{decimals}) AS n FROM df""")
+        out = ctx.execute(f'SELECT ROUND("n",{decimals}) AS n FROM df')
         assert_series_equal(out["n"], pl.Series("n", values=expected))
 
 
@@ -608,6 +608,36 @@ def test_sql_round_ndigits_errors() -> None:
         pl.InvalidOperationError, match="Invalid 'decimals' for Round: -1"
     ):
         ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
+
+
+def test_sql_substr() -> None:
+    df = pl.DataFrame(
+        {
+            "scol": ["abcdefg", "abcde", "abc", None],
+        }
+    )
+    with pl.SQLContext(df=df) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              SUBSTR(scol,1) AS s1,
+              SUBSTR(scol,2) AS s2,
+              SUBSTR(scol,3) AS s3,
+              SUBSTR(scol,1,5) AS s1_5,
+              SUBSTR(scol,2,2) AS s2_2,
+              SUBSTR(scol,3,1) AS s3_1,
+            FROM df
+            """
+        ).collect()
+
+    assert res.to_dict(False) == {
+        "s1": ["bcdefg", "bcde", "bc", None],
+        "s2": ["cdefg", "cde", "c", None],
+        "s3": ["defg", "de", "", None],
+        "s1_5": ["bcdef", "bcde", "bc", None],
+        "s2_2": ["cd", "cd", "c", None],
+        "s3_1": ["d", "d", "", None],
+    }
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
@@ -647,7 +677,10 @@ def test_register_context() -> None:
 
 
 def test_sql_expr() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]})
-    sql_expr = pl.sql_expr("MIN(a)")
-    expected = pl.DataFrame({"a": [1]})
-    assert df.select(sql_expr).frame_equal(expected)
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["xyz", "abcde", None]})
+    sql_exprs = (
+        pl.sql_expr("MIN(a)"),
+        pl.sql_expr("SUBSTR(b,1,2)"),
+    )
+    expected = pl.DataFrame({"a": [1, 1, 1], "b": ["yz", "bc", None]})
+    assert df.select(sql_exprs).frame_equal(expected)
