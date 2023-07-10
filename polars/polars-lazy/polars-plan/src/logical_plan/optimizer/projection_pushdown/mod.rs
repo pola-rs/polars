@@ -510,7 +510,7 @@ impl ProjectionPushDown {
                 file_info,
                 mut scan_type,
                 predicate,
-                options,
+                file_options: options,
                 ..
             } => {
                 *scan_type.with_columns_mut() =
@@ -533,7 +533,7 @@ impl ProjectionPushDown {
                     output_schema,
                     scan_type,
                     predicate,
-                    options
+                    file_options: options
                 };
                 Ok(lp)
             }

@@ -48,10 +48,11 @@ pub enum ALogicalPlan {
         path: PathBuf,
         file_info: FileInfo,
         predicate: Option<Node>,
-        // schema of the projected file
+        /// schema of the projected file
         output_schema: Option<SchemaRef>,
         scan_type: FileScan,
-        options: FileScanOptions
+        /// generic options that can be used for all file types.
+        file_options: FileScanOptions
     },
     #[cfg(feature = "ipc")]
     IpcScan {
@@ -358,7 +359,7 @@ impl ALogicalPlan {
                 file_info,
                 output_schema,
                 predicate,
-                options,
+                file_options: options,
                 scan_type,
             } => {
                 let mut new_predicate = None;
@@ -369,7 +370,7 @@ impl ALogicalPlan {
                     path: path.clone(),
                     file_info: file_info.clone(),
                     output_schema: output_schema.clone(),
-                    options: options.clone(),
+                    file_options: options.clone(),
                     predicate: new_predicate,
                     scan_type: scan_type.clone(),
                 }

@@ -201,7 +201,7 @@ pub(crate) fn insert_streaming_nodes(
                     )
                 }
             }
-            Scan {options, scan_type, ..} => {
+            Scan { file_options: options, scan_type, ..} => {
                 if state.streamable {
 
                     #[cfg(feature = "csv")]

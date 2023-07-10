@@ -421,7 +421,7 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
 ) {
     use ALogicalPlan::*;
     match lp_arena.get_mut(root) {
-        Scan {options, ..} => {
+        Scan { file_options: options, ..} => {
             if acc_count >= options.file_counter {
                 options.file_counter = 1;
             } else {

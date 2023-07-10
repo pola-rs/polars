@@ -162,7 +162,7 @@ pub enum LogicalPlan {
         path: PathBuf,
         file_info: FileInfo,
         predicate: Option<Expr>,
-        options: FileScanOptions,
+        file_options: FileScanOptions,
         scan_type: FileScan,
     },
     #[cfg(feature = "parquet")]

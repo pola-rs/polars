@@ -345,7 +345,7 @@ impl LogicalPlan {
                 file_info,
                 predicate,
                 scan_type,
-                options
+                file_options: options
             } => {
                 let name: &str = scan_type.into();
 

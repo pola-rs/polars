@@ -61,7 +61,7 @@ impl OptimizationRule for DelayRechunk {
 
                 if let Some(node) = input_node {
                     match lp_arena.get_mut(node) {
-                        Scan{ options, ..} => {
+                        Scan{ file_options: options, ..} => {
                             options.rechunk = false;
                         }
                         #[cfg(feature = "parquet")]

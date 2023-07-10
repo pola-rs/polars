@@ -293,7 +293,7 @@ impl LogicalPlanBuilder {
         Ok(LogicalPlan::Scan {
             path,
             file_info,
-            options,
+            file_options: options,
             predicate: None,
             scan_type: FileScan::Csv {
                options : CsvParserOptions {

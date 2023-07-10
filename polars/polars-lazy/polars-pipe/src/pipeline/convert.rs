@@ -68,7 +68,7 @@ where
         Scan {
             path,
             file_info,
-            options,
+            file_options: options,
             predicate,
             output_schema,
             scan_type

@@ -176,14 +176,14 @@ pub fn to_alp(
             path,
             predicate,
             scan_type,
-            options,
+            file_options: options,
         } => ALogicalPlan::Scan {
             file_info,
             path,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             scan_type,
-            options
+            file_options: options
         },
         LogicalPlan::AnonymousScan {
             function,
@@ -663,13 +663,13 @@ impl ALogicalPlan {
                 predicate,
                 scan_type,
                 output_schema: _,
-                options
+                file_options: options
             } => LogicalPlan::Scan {
                 path,
                 file_info,
                 predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
                 scan_type,
-                options
+                file_options: options
             },
             ALogicalPlan::AnonymousScan {
                 function,

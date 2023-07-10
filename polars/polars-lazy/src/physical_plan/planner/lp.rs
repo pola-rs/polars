@@ -181,7 +181,7 @@ pub fn create_physical_plan(
             output_schema,
             scan_type,
             predicate,
-            options
+            file_options: options
         } => {
             let predicate = predicate
                 .map(|pred| {

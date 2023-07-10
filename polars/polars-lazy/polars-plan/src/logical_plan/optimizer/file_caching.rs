@@ -61,7 +61,7 @@ pub fn collect_fingerprints(
     match lp_arena.get(root) {
         Scan {
             path,
-            options,
+            file_options: options,
             predicate,
             scan_type,
             ..
@@ -130,7 +130,7 @@ pub fn find_column_union_and_fingerprints(
     match lp_arena.get(root) {
         Scan {
             path,
-            options,
+            file_options: options,
             predicate,
             file_info,
             scan_type,
@@ -288,7 +288,7 @@ impl FileCacher {
                     lp_arena.replace(root, lp);
                 }
                 ALogicalPlan::Scan {
-                    path, file_info, predicate, output_schema, mut scan_type, mut options
+                    path, file_info, predicate, output_schema, mut scan_type, file_options: mut options
                 } => {
 
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
@@ -314,7 +314,7 @@ impl FileCacher {
                         file_info,
                         output_schema,
                         predicate,
-                        options: options.clone(),
+                        file_options: options.clone(),
                         scan_type: scan_type.clone()
                     };
                     lp_arena.replace(root, lp);

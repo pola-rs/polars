@@ -288,7 +288,7 @@ impl PredicatePushDown {
                 file_info,
                 predicate,
                 scan_type,
-                options,
+                file_options: options,
                 output_schema
             } => {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
@@ -298,7 +298,7 @@ impl PredicatePushDown {
                     path,
                     file_info,
                     predicate,
-                    options,
+                    file_options: options,
                     output_schema,
                     scan_type
                 };
