@@ -229,3 +229,15 @@ def test_write_database(
 
     sample_df = sample_df.with_columns(pl.col("date").cast(pl.Utf8))
     assert_frame_equal(sample_df, result)
+
+    # check that some invalid parameters raise errors
+    for invalid_params in (
+        {"table_name": "w.x.y.z"},
+        {"if_exists": "crunk", "table_name": f"main.{tbl_name}"},
+    ):
+        with pytest.raises(ValueError):
+            sample_df.write_database(
+                connection_uri=f"sqlite:///{test_db}",
+                engine=engine,
+                **invalid_params,  # type: ignore[arg-type]
+            )

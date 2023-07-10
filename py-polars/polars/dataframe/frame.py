@@ -3179,11 +3179,13 @@ class DataFrame:
             # the table name may also include the db schema; ensure that we identify
             # both components and pass them through unquoted (sqlalachemy will quote)
             table_ident = next(delimited_read([table_name], delimiter="."))
-            if len(table_ident) > 1:
-                db_schema = table_ident[0].strip('"')
-                table_name = table_ident[1].strip('"')
+            if len(table_ident) > 2:
+                raise ValueError(f"table_name appears to be invalid: {table_name!r}")
+            elif len(table_ident) > 1:
+                db_schema = table_ident[0]
+                table_name = table_ident[1]
             else:
-                table_name = table_ident[0].strip('"')
+                table_name = table_ident[0]
                 db_schema = None
 
             # ensure conversion to pandas uses the pyarrow extension array option
