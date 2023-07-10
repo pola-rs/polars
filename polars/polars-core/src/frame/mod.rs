@@ -1843,7 +1843,6 @@ impl DataFrame {
         descending: impl IntoVec<bool>,
         maintain_order: bool,
     ) -> PolarsResult<&mut Self> {
-        println!("In sort in place");
         let by_column = self.select_series(by_column)?;
         let descending = descending.into_vec();
         self.columns = self
