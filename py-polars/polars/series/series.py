@@ -870,6 +870,7 @@ class Series:
         return self.clone()
 
     def __contains__(self, item) -> bool:
+        # TODO! optimize via `is_in` and `SORTED` flags
         try:
             return (self == item).any()
         except ValueError:
