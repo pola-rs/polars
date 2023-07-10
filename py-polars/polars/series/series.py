@@ -869,7 +869,7 @@ class Series:
     def __deepcopy__(self, memo: None = None) -> Self:
         return self.clone()
 
-    def __contains__(self, item) -> bool:
+    def __contains__(self, item: Any) -> bool:
         # TODO! optimize via `is_in` and `SORTED` flags
         try:
             return (self == item).any()
