@@ -1202,67 +1202,81 @@ impl LazyFrame {
         let add_row_count_in_map = match &mut self.logical_plan {
             // Do the row count at scan
             #[cfg(feature = "csv")]
-            LogicalPlan::CsvScan { options, .. } => {
+            LogicalPlan::CsvScan {
+                options, file_info, ..
+            } => {
                 options.row_count = Some(RowCount {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
+                file_info.schema = Arc::new(
+                    file_info
+                        .schema
+                        .new_inserting_at_index(0, name.into(), IDX_DTYPE)
+                        .unwrap(),
+                );
                 false
             }
             #[cfg(feature = "ipc")]
-            LogicalPlan::IpcScan { options, .. } => {
+            LogicalPlan::IpcScan {
+                options, file_info, ..
+            } => {
                 options.row_count = Some(RowCount {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
+                file_info.schema = Arc::new(
+                    file_info
+                        .schema
+                        .new_inserting_at_index(0, name.into(), IDX_DTYPE)
+                        .unwrap(),
+                );
                 false
             }
             #[cfg(feature = "parquet")]
-            LogicalPlan::ParquetScan { options, .. } => {
+            LogicalPlan::ParquetScan {
+                options, file_info, ..
+            } => {
                 options.row_count = Some(RowCount {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
+                file_info.schema = Arc::new(
+                    file_info
+                        .schema
+                        .new_inserting_at_index(0, name.into(), IDX_DTYPE)
+                        .unwrap(),
+                );
                 false
             }
             _ => true,
         };
 
-        let name2: SmartString = name.into();
-        let udf_schema = move |s: &Schema| {
-            // Can't error, index 0 is always in bounds
-            let new = s
-                .new_inserting_at_index(0, name2.clone(), IDX_DTYPE)
-                .unwrap();
-            Ok(Arc::new(new))
-        };
-
-        let name = name.to_owned();
-
-        // if we do the row count at scan we add a dummy map, to update the schema
-        let opt = if add_row_count_in_map {
-            AllowedOptimizations {
+        if add_row_count_in_map {
+            let name: SmartString = name.into();
+            let name2: SmartString = name.clone();
+            let opt = AllowedOptimizations {
                 slice_pushdown: false,
                 predicate_pushdown: false,
                 streaming: false,
                 ..Default::default()
-            }
+            };
+            let udf_schema = move |s: &Schema| {
+                // Can't error, index 0 is always in bounds
+                let new = s
+                    .new_inserting_at_index(0, name2.clone(), IDX_DTYPE)
+                    .unwrap();
+                Ok(Arc::new(new))
+            };
+            self.map(
+                move |df: DataFrame| df.with_row_count(&name, offset),
+                opt,
+                Some(Arc::new(udf_schema)),
+                Some("WITH ROW COUNT"),
+            )
         } else {
-            AllowedOptimizations::default()
-        };
-
-        self.map(
-            move |df: DataFrame| {
-                if add_row_count_in_map {
-                    df.with_row_count(&name, offset)
-                } else {
-                    Ok(df)
-                }
-            },
-            opt,
-            Some(Arc::new(udf_schema)),
-            Some("WITH ROW COUNT"),
-        )
+            self
+        }
     }
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
