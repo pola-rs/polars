@@ -17,6 +17,7 @@ impl IpcExec {
             &mut self.options.with_columns,
             &mut self.schema,
             self.options.n_rows,
+            self.options.row_count.is_some(),
         );
         IpcReader::new(file)
             .with_n_rows(n_rows)

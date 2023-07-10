@@ -197,7 +197,7 @@ def test_parquet_stats(tmp_path: Path) -> None:
     ).collect().shape == (8, 1)
 
 
-def test_row_count_schema(parquet_file_path: Path) -> None:
+def test_row_count_schema_parquet(parquet_file_path: Path) -> None:
     assert (
         pl.scan_parquet(str(parquet_file_path), row_count_name="id")
         .select(["id", "b"])

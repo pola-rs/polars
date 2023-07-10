@@ -127,7 +127,7 @@ impl LogicalPlanBuilder {
         use polars_io::{is_cloud_url, SerReader as _};
 
         let path = path.into();
-        let file_info: PolarsResult<FileInfo> = if is_cloud_url(&path) {
+        let (mut schema, num_rows) = if is_cloud_url(&path) {
             #[cfg(not(feature = "async"))]
             panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
@@ -136,24 +136,22 @@ impl LogicalPlanBuilder {
             #[cfg(feature = "async")]
             {
                 let uri = path.to_string_lossy();
-                let (schema, num_rows) =
-                    ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?;
-                Ok(FileInfo {
-                    schema: Arc::new(schema),
-                    row_estimation: (Some(num_rows), num_rows),
-                })
+                ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?
             }
         } else {
             let file = std::fs::File::open(&path)?;
             let mut reader = ParquetReader::new(file);
-            let schema = Arc::new(reader.schema()?);
-            let num_rows = reader.num_rows()?;
-            Ok(FileInfo {
-                schema,
-                row_estimation: (Some(num_rows), num_rows),
-            })
+            (reader.schema()?, reader.num_rows()?)
         };
-        let file_info = file_info?;
+
+        if let Some(rc) = &row_count {
+            let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+        }
+
+        let file_info = FileInfo {
+            schema: Arc::new(schema),
+            row_estimation: (Some(num_rows), num_rows),
+        };
 
         Ok(LogicalPlan::ParquetScan {
             path,
@@ -185,7 +183,12 @@ impl LogicalPlanBuilder {
         let path = path.into();
         let file = std::fs::File::open(&path)?;
         let mut reader = IpcReader::new(file);
-        let schema = Arc::new(reader.schema()?);
+
+        let mut schema = reader.schema()?;
+        if let Some(rc) = &options.row_count {
+            let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+        }
+        let schema = Arc::new(schema);
 
         let num_rows = reader._num_rows()?;
         let file_info = FileInfo {
@@ -211,7 +214,7 @@ impl LogicalPlanBuilder {
         mut skip_rows: usize,
         n_rows: Option<usize>,
         cache: bool,
-        schema: Option<Arc<Schema>>,
+        mut schema: Option<Arc<Schema>>,
         schema_overwrite: Option<&Schema>,
         low_memory: bool,
         comment_char: Option<u8>,
@@ -239,7 +242,7 @@ impl LogicalPlanBuilder {
 
         // TODO! delay inferring schema until absolutely necessary
         // this needs a way to estimated bytes/rows.
-        let (inferred_schema, rows_read, bytes_read) = infer_file_schema(
+        let (mut inferred_schema, rows_read, bytes_read) = infer_file_schema(
             &reader_bytes,
             delimiter,
             infer_schema_length,
@@ -253,6 +256,21 @@ impl LogicalPlanBuilder {
             null_values.as_ref(),
             try_parse_dates,
         )?;
+
+        if let Some(rc) = &row_count {
+            match schema {
+                None => {
+                    let _ = inferred_schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+                }
+                Some(inner) => {
+                    schema = Some(Arc::new(
+                        inner
+                            .new_inserting_at_index(0, rc.name.as_str().into(), IDX_DTYPE)
+                            .unwrap(),
+                    ));
+                }
+            }
+        }
 
         let schema = schema.unwrap_or_else(|| Arc::new(inferred_schema));
         let n_bytes = reader_bytes.len();

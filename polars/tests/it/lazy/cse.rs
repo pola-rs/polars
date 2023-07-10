@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg(feature = "semi_anti_join")]
 fn test_cse_union_schema_6504() -> PolarsResult<()> {
     use polars_core::df;
     let q1: LazyFrame = df![

@@ -10,6 +10,7 @@ mod semi_anti_join;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
+use polars_io::RowCount;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
 
@@ -38,13 +39,23 @@ fn init_set() -> PlHashSet<Arc<str>> {
 fn get_scan_columns(
     acc_projections: &mut Vec<Node>,
     expr_arena: &Arena<AExpr>,
+    row_count: Option<&RowCount>,
 ) -> Option<Arc<Vec<String>>> {
     let mut with_columns = None;
     if !acc_projections.is_empty() {
         let mut columns = Vec::with_capacity(acc_projections.len());
         for expr in acc_projections {
             for name in aexpr_to_leaf_names(*expr, expr_arena) {
-                columns.push((*name).to_owned())
+                // we shouldn't project the row-count column, as that is generated
+                // in the scan
+                let push = match row_count {
+                    Some(rc) if name.as_ref() != rc.name.as_str() => true,
+                    None => true,
+                    _ => false,
+                };
+                if push {
+                    columns.push((*name).to_owned())
+                }
             }
         }
         with_columns = Some(Arc::new(columns));
@@ -355,7 +366,7 @@ impl ProjectionPushDown {
                 output_schema,
             } => {
                 if function.allows_projection_pushdown() {
-                    options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                    options.with_columns = get_scan_columns(&mut acc_projections, expr_arena, None);
 
                     let output_schema = if options.with_columns.is_none() {
                         None
@@ -403,7 +414,7 @@ impl ProjectionPushDown {
                         &schema,
                         false,
                     )?));
-                    projection = get_scan_columns(&mut acc_projections, expr_arena);
+                    projection = get_scan_columns(&mut acc_projections, expr_arena, None);
                 }
                 let lp = DataFrameScan {
                     df,
@@ -422,7 +433,8 @@ impl ProjectionPushDown {
                 mut options,
                 ..
             } => {
-                let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                let with_columns =
+                    get_scan_columns(&mut acc_projections, expr_arena, options.row_count.as_ref());
                 let output_schema = if with_columns.is_none() {
                     None
                 } else {
@@ -454,7 +466,8 @@ impl ProjectionPushDown {
                 cloud_options,
                 ..
             } => {
-                let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                let with_columns =
+                    get_scan_columns(&mut acc_projections, expr_arena, options.row_count.as_ref());
                 let output_schema = if with_columns.is_none() {
                     None
                 } else {
@@ -482,7 +495,7 @@ impl ProjectionPushDown {
                 mut options,
                 predicate,
             } => {
-                options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                options.with_columns = get_scan_columns(&mut acc_projections, expr_arena, None);
 
                 options.output_schema = if options.with_columns.is_none() {
                     None
@@ -504,7 +517,8 @@ impl ProjectionPushDown {
                 predicate,
                 ..
             } => {
-                options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                options.with_columns =
+                    get_scan_columns(&mut acc_projections, expr_arena, options.row_count.as_ref());
 
                 let output_schema = if options.with_columns.is_none() {
                     None
