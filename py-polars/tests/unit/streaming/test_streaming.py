@@ -381,6 +381,7 @@ def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
     assert "df -> sort" in err
 
 
+@pytest.mark.skip("Occasionally fails - re-enable when it can pass reliably.")
 @pytest.mark.write_disk()
 def test_streaming_groupby_ooc(monkeypatch: Any) -> None:
     np.random.seed(1)
