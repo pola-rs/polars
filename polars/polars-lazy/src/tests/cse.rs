@@ -48,7 +48,7 @@ fn test_cse_unions() -> PolarsResult<()> {
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
-            IpcScan { options, .. } => {
+            Scan { options, .. } => {
                 if let Some(columns) = &options.with_columns {
                     columns.len() == 2
                 } else {
