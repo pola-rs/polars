@@ -6,7 +6,7 @@ body:
   - type: checkboxes
     id: checks
     attributes:
-      label: Polars version checks
+      label: Checks
       options:
         - label: >
             I have checked that this issue has not already been reported.
@@ -17,21 +17,25 @@ body:
           required: true
 
   - type: textarea
-    id: problem
-    attributes:
-      label: Issue description
-      description: >
-        Please provide a high-level description of the issue.
-    validations:
-      required: true
-
-  - type: textarea
     id: example
     attributes:
       label: Reproducible example
       description: >
         Please follow [this guide](https://matthewrocklin.com/blog/work/2018/02/28/minimal-bug-reports) on how to
         provide a minimal, copy-pastable example. Include the (wrong) output if applicable.
+      value: |
+        ```rust
+
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Issue description
+      description: >
+        Provide any additional information you think might be relevant.
     validations:
       required: true
 
@@ -40,7 +44,7 @@ body:
     attributes:
       label: Expected behavior
       description: >
-        Please describe or show a code example of the expected behavior.
+        Describe or show a code example of the expected behavior.
     validations:
       required: true
 
@@ -49,8 +53,8 @@ body:
     attributes:
       label: Installed versions
       description: >
-        Please tell us which feature gates you used.
-      value: >
+        List the feature gates you used.
+      value: |
         <details>
 
         Replace this line with a list of feature gates

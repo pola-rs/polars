@@ -12,6 +12,7 @@ pyarrow
 pydantic
 backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
+SQLAlchemy
 xlsx2csv
 XlsxWriter
 adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'

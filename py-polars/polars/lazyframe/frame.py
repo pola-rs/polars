@@ -2607,7 +2607,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "idx": pl.arange(0, 6, eager=True),
+        ...         "idx": pl.int_range(0, 6, eager=True),
         ...         "A": ["A", "A", "B", "B", "B", "C"],
         ...     }
         ... )

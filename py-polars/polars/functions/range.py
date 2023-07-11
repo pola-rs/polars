@@ -82,8 +82,11 @@ def arange(
     """
     Generate a range of integers.
 
-    This can be used in a ``select``, ``with_columns`` etc. Be sure that the resulting
-    range size is equal to the length of the DataFrame you are collecting.
+    .. deprecated:: 0.18.5
+        ``arange`` has been replaced by two new functions: ``int_range`` for generating
+        a single range, and ``int_ranges`` for generating a list column with multiple
+        ranges. ``arange`` will remain available as an alias for `int_range`, which
+        means it will lose the functionality to generate multiple ranges.
 
     Parameters
     ----------
@@ -98,6 +101,11 @@ def arange(
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
+
+    See Also
+    --------
+    int_range : Generate a range of integers.
+    int_ranges : Generate a range of integers for each row of the input columns.
 
     Examples
     --------
@@ -141,6 +149,7 @@ def int_range(
     end: int | IntoExpr,
     step: int = ...,
     *,
+    dtype: PolarsIntegerType = ...,
     eager: Literal[False] = ...,
 ) -> Expr:
     ...
@@ -152,6 +161,7 @@ def int_range(
     end: int | IntoExpr,
     step: int = ...,
     *,
+    dtype: PolarsIntegerType = ...,
     eager: Literal[True],
 ) -> Series:
     ...
@@ -163,6 +173,7 @@ def int_range(
     end: int | IntoExpr,
     step: int = ...,
     *,
+    dtype: PolarsIntegerType = ...,
     eager: bool,
 ) -> Expr | Series:
     ...
@@ -173,6 +184,7 @@ def int_range(
     end: int | IntoExpr,
     step: int = 1,
     *,
+    dtype: PolarsIntegerType = Int64,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -186,6 +198,8 @@ def int_range(
         Upper bound of the range (exclusive).
     step
         Step size of the range.
+    dtype
+        Data type of the range. Defaults to ``Int64``.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
@@ -193,6 +207,10 @@ def int_range(
     Returns
     -------
     Column of data type ``Int64``.
+
+    See Also
+    --------
+    int_ranges : Generate a range of integers for each row of the input columns.
 
     Examples
     --------
@@ -208,7 +226,7 @@ def int_range(
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
-    result = wrap_expr(plr.int_range(start, end, step))
+    result = wrap_expr(plr.int_range(start, end, step, dtype))
 
     if eager:
         return F.select(result).to_series()
@@ -280,6 +298,10 @@ def int_ranges(
     Returns
     -------
     Column of data type ``List(dtype)``.
+
+    See Also
+    --------
+    int_range : Generate a single range of integers.
 
     Examples
     --------

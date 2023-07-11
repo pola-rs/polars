@@ -20,17 +20,23 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
             DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
         }
         SQLDataType::BigInt(_) => DataType::Int64,
+        SQLDataType::Binary(_) | SQLDataType::Blob(_) | SQLDataType::Varbinary(_) => {
+            DataType::Binary
+        }
         SQLDataType::Boolean => DataType::Boolean,
         SQLDataType::Char(_)
-        | SQLDataType::Varchar(_)
-        | SQLDataType::Uuid
+        | SQLDataType::CharVarying(_)
+        | SQLDataType::Character(_)
+        | SQLDataType::CharacterVarying(_)
         | SQLDataType::Clob(_)
+        | SQLDataType::String
         | SQLDataType::Text
-        | SQLDataType::String => DataType::Utf8,
+        | SQLDataType::Uuid
+        | SQLDataType::Varchar(_) => DataType::Utf8,
         SQLDataType::Date => DataType::Date,
-        SQLDataType::Double => DataType::Float64,
+        SQLDataType::Double | SQLDataType::DoublePrecision => DataType::Float64,
         SQLDataType::Float(_) => DataType::Float32,
-        SQLDataType::Int(_) => DataType::Int32,
+        SQLDataType::Int(_) | SQLDataType::Integer(_) => DataType::Int32,
         SQLDataType::Interval => DataType::Duration(TimeUnit::Milliseconds),
         SQLDataType::Real => DataType::Float32,
         SQLDataType::SmallInt(_) => DataType::Int16,
@@ -38,7 +44,7 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::Timestamp { .. } => DataType::Datetime(TimeUnit::Milliseconds, None),
         SQLDataType::TinyInt(_) => DataType::Int8,
         SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
-        SQLDataType::UnsignedInt(_) => DataType::UInt32,
+        SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
         SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
         SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
 

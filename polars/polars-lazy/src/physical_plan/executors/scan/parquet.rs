@@ -11,6 +11,7 @@ pub struct ParquetExec {
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
+    file_options: FileScanOptions,
 }
 
 impl ParquetExec {
@@ -20,6 +21,7 @@ impl ParquetExec {
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
+        file_options: FileScanOptions,
     ) -> Self {
         ParquetExec {
             path,
@@ -27,6 +29,7 @@ impl ParquetExec {
             predicate,
             options,
             cloud_options,
+            file_options,
         }
     }
 
@@ -34,16 +37,17 @@ impl ParquetExec {
         let (file, projection, n_rows, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
-            &mut self.options.with_columns,
+            &mut self.file_options.with_columns,
             &mut self.schema,
-            self.options.n_rows,
+            self.file_options.n_rows,
+            self.file_options.row_count.is_some(),
         );
 
         ParquetReader::new(file)
             .with_n_rows(n_rows)
             .read_parallel(self.options.parallel)
-            .with_row_count(mem::take(&mut self.options.row_count))
-            .set_rechunk(self.options.rechunk)
+            .with_row_count(mem::take(&mut self.file_options.row_count))
+            .set_rechunk(self.file_options.rechunk)
             .set_low_memory(self.options.low_memory)
             .use_statistics(self.options.use_statistics)
             ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))
@@ -58,7 +62,7 @@ impl Executor for ParquetExec {
                 .predicate
                 .as_ref()
                 .map(|ae| ae.as_expression().unwrap().clone()),
-            slice: (0, self.options.n_rows),
+            slice: (0, self.file_options.n_rows),
         };
 
         let profile_name = if state.has_node_timer() {
@@ -76,7 +80,9 @@ impl Executor for ParquetExec {
             || {
                 state
                     .file_cache
-                    .read(finger_print, self.options.file_counter, &mut || self.read())
+                    .read(finger_print, self.file_options.file_counter, &mut || {
+                        self.read()
+                    })
             },
             profile_name,
         )

@@ -40,6 +40,7 @@ fn prepare_scan_args(
     with_columns: &mut Option<Arc<Vec<String>>>,
     schema: &mut SchemaRef,
     n_rows: Option<usize>,
+    has_row_count: bool,
 ) -> (std::fs::File, Projection, StopNRows, Predicate) {
     let file = std::fs::File::open(path).unwrap();
 
@@ -49,7 +50,7 @@ fn prepare_scan_args(
     let projection: Option<Vec<_>> = with_columns.map(|with_columns| {
         with_columns
             .iter()
-            .map(|name| schema.index_of(name).unwrap())
+            .map(|name| schema.index_of(name).unwrap() - has_row_count as usize)
             .collect()
     });
 

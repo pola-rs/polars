@@ -16,7 +16,7 @@ If you're unclear on how to proceed after reading this guide, please contact us 
 
 We use [GitHub issues](https://github.com/pola-rs/polars/issues) to track bugs and suggested enhancements.
 You can report a bug by opening a [new issue](https://github.com/pola-rs/polars/issues/new/choose).
-Use the appropriate issue type for the language you are using ([Rust](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_rust.yml) / [Python](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_python.yml) / [Node.js](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_nodejs.yml)).
+Use the appropriate issue type for the language you are using ([Rust](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_rust.yml) / [Python](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_python.yml)).
 
 Before creating a bug report, please check that your bug has not already been reported, and that your bug exists on the latest version of Polars.
 If you find a closed issue that seems to report the same bug you're experiencing, open a new issue and include a link to the original issue in your issue description.

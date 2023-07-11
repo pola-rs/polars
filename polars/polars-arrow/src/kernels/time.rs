@@ -21,19 +21,20 @@ fn convert_to_naive_local(
     ndt: NaiveDateTime,
     use_earliest: Option<bool>,
 ) -> Result<NaiveDateTime> {
-    match from_tz.from_local_datetime(&ndt) {
-        LocalResult::Single(dt) => Ok(dt.with_timezone(to_tz).naive_local()),
+    let ndt = from_tz.from_utc_datetime(&ndt).naive_local();
+    match to_tz.from_local_datetime(&ndt) {
+        LocalResult::Single(dt) => Ok(dt.naive_utc()),
         LocalResult::Ambiguous(dt_earliest, dt_latest) => match use_earliest {
-            Some(true) => Ok(dt_earliest.with_timezone(to_tz).naive_local()),
-            Some(false) => Ok(dt_latest.with_timezone(to_tz).naive_local()),
+            Some(true) => Ok(dt_earliest.naive_utc()),
+            Some(false) => Ok(dt_latest.naive_utc()),
             None => Err(ArrowError::InvalidArgumentError(
-                format!("datetime '{}' is ambiguous in time zone '{}'. Please use `use_earliest` to tell how it should be localized.", ndt, from_tz)
+                format!("datetime '{}' is ambiguous in time zone '{}'. Please use `use_earliest` to tell how it should be localized.", ndt, to_tz)
             ))
         },
         LocalResult::None => Err(ArrowError::InvalidArgumentError(
             format!(
                 "datetime '{}' is non-existent in time zone '{}'. Non-existent datetimes are not yet supported",
-                ndt, from_tz
+                ndt, to_tz
             )
             ,
         )),

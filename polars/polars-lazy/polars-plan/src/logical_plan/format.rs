@@ -112,81 +112,33 @@ impl LogicalPlan {
                 write!(f, "{:indent$}CACHE[id: {:x}, count: {}]", "", *id, *count)?;
                 input._format(f, sub_indent)
             }
-            #[cfg(feature = "parquet")]
-            ParquetScan {
+            Scan {
                 path,
                 file_info,
                 predicate,
-                options,
+                scan_type,
+                file_options,
                 ..
             } => {
-                let n_columns = options
+                let n_columns = file_options
                     .with_columns
                     .as_ref()
                     .map(|columns| columns.len() as i64)
                     .unwrap_or(-1);
                 write_scan(
                     f,
-                    "PARQUET",
+                    scan_type.into(),
                     path,
                     sub_indent,
                     n_columns,
                     file_info.schema.len(),
                     predicate,
-                    options.n_rows,
-                )
-            }
-            #[cfg(feature = "ipc")]
-            IpcScan {
-                path,
-                file_info,
-                options,
-                predicate,
-                ..
-            } => {
-                let n_columns = options
-                    .with_columns
-                    .as_ref()
-                    .map(|columns| columns.len() as i64)
-                    .unwrap_or(-1);
-                write_scan(
-                    f,
-                    "IPC",
-                    path,
-                    sub_indent,
-                    n_columns,
-                    file_info.schema.len(),
-                    predicate,
-                    options.n_rows,
+                    file_options.n_rows,
                 )
             }
             Selection { predicate, input } => {
                 write!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
                 input._format(f, indent)
-            }
-            #[cfg(feature = "csv")]
-            CsvScan {
-                path,
-                options,
-                file_info,
-                predicate,
-                ..
-            } => {
-                let n_columns = options
-                    .with_columns
-                    .as_ref()
-                    .map(|columns| columns.len() as i64)
-                    .unwrap_or(-1);
-                write_scan(
-                    f,
-                    "CSV",
-                    path,
-                    sub_indent,
-                    n_columns,
-                    file_info.schema.len(),
-                    predicate,
-                    options.n_rows,
-                )
             }
             DataFrameScan {
                 schema,
