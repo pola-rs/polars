@@ -32,8 +32,11 @@ impl FileScan {
             Self::Ipc { .. } => _file_options.row_count.is_some(),
             #[cfg(feature = "parquet")]
             Self::Parquet { .. } => _file_options.row_count.is_some(),
+            #[allow(unreachable_patterns)]
+            _ => false,
         }
     }
+
     pub fn streamable(&self) -> bool {
         match self {
             #[cfg(feature = "csv")]
@@ -42,6 +45,8 @@ impl FileScan {
             Self::Ipc { .. } => false,
             #[cfg(feature = "parquet")]
             Self::Parquet { .. } => true,
+            #[allow(unreachable_patterns)]
+            _ => false,
         }
     }
 }

@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-#[cfg(any(feature = "ipc", feature = "csv", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
