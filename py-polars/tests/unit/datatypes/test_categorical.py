@@ -240,7 +240,7 @@ def test_cast_inner_categorical() -> None:
     assert out.to_list() == [["a"], ["a", "b"]]
 
     with pytest.raises(
-        pl.ComputeError, match=r"casting to categorical not allowed in `arr.eval`"
+        pl.ComputeError, match=r"casting to categorical not allowed in `list.eval`"
     ):
         pl.Series("foo", [["a", "b"], ["a", "b"]]).list.eval(
             pl.element().cast(pl.Categorical)
