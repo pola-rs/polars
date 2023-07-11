@@ -3337,7 +3337,11 @@ impl DataFrame {
         };
 
         // drop key columns prior to calculation if requested
-        let df = if !include_key { self.drop_many(cols) } else { self.clone() };
+        let df = if !include_key {
+            self.drop_many(cols)
+        } else {
+            self.clone()
+        };
 
         // don't parallelize this
         // there is a lot of parallelization in take and this may easily SO
@@ -3354,9 +3358,7 @@ impl DataFrame {
                 }
                 GroupsProxy::Slice { groups, .. } => Ok(groups
                     .into_par_iter()
-                    .map(|[first, len]| {
-                        df.slice(first as i64, len as usize)
-                    })
+                    .map(|[first, len]| df.slice(first as i64, len as usize))
                     .collect()),
             }
         })
