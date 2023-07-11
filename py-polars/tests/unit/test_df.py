@@ -2935,11 +2935,11 @@ def test_partition_by() -> None:
     ]
     assert [
         a.to_dict(False)
-        for a in df.partition_by(["foo", "bar"], maintain_order=True, drop_keys=True)
+        for a in df.partition_by(["foo", "bar"], maintain_order=True, include_key=False)
     ] == expected
     assert [
         a.to_dict(False)
-        for a in df.partition_by("foo", "bar", maintain_order=True, drop_keys=True)
+        for a in df.partition_by("foo", "bar", maintain_order=True, include_key=False)
     ] == expected
 
     assert [a.to_dict(False) for a in df.partition_by("foo", maintain_order=True)] == [

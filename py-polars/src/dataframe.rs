@@ -1159,12 +1159,12 @@ impl PyDataFrame {
         &self,
         by: Vec<String>,
         maintain_order: bool,
-        drop_keys: bool,
+        include_key: bool,
     ) -> PyResult<Vec<Self>> {
         let out = if maintain_order {
-            self.df.partition_by_stable(by, drop_keys)
+            self.df.partition_by_stable(by, include_key)
         } else {
-            self.df.partition_by(by, drop_keys)
+            self.df.partition_by(by, include_key)
         }
         .map_err(PyPolarsErr::from)?;
         // Safety:
