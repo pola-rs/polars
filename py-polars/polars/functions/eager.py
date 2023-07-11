@@ -319,7 +319,7 @@ def align_frames(
 
     Now data is aligned, and you can easily calculate the row-wise dot product:
 
-    >>> (af1 * af2 * af3).fill_null(0).select(pl.sum(pl.col("*")).alias("dot"))
+    >>> (af1 * af2 * af3).fill_null(0).select(pl.sum_horizontal("*").alias("dot"))
     shape: (3, 1)
     ┌───────┐
     │ dot   │

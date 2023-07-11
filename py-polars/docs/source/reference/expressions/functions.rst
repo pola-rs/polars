@@ -13,7 +13,9 @@ These functions are available from the polars module root and can be used as exp
    :toctree: api/
 
    all
+   all_horizontal
    any
+   any_horizontal
    apply
    approx_unique
    arange
@@ -29,6 +31,7 @@ These functions are available from the polars module root and can be used as exp
    cumfold
    cumreduce
    cumsum
+   cumsum_horizontal
    date
    datetime
    date_range
@@ -44,12 +47,15 @@ These functions are available from the polars module root and can be used as exp
    implode
    int_range
    int_ranges
+   last
    lit
    map
    max
+   max_horizontal
    mean
    median
    min
+   min_horizontal
    n_unique
    ones
    quantile
@@ -61,6 +67,7 @@ These functions are available from the polars module root and can be used as exp
    std
    struct
    sum
+   sum_horizontal
    sql_expr
    tail
    time

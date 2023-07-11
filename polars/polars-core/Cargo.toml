@@ -153,7 +153,7 @@ arrow.workspace = true
 bitflags.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
 chrono-tz = { version = "0.8", optional = true }
-comfy-table = { version = "6.1.4", optional = true, default_features = false }
+comfy-table = { version = "7.0.1", optional = true, default_features = false }
 either.workspace = true
 hashbrown.workspace = true
 indexmap.workspace = true

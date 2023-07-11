@@ -171,6 +171,20 @@ pub fn to_alp(
     lp_arena: &mut Arena<ALogicalPlan>,
 ) -> PolarsResult<Node> {
     let v = match lp {
+        LogicalPlan::Scan {
+            file_info,
+            path,
+            predicate,
+            scan_type,
+            file_options: options,
+        } => ALogicalPlan::Scan {
+            file_info,
+            path,
+            output_schema: None,
+            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
+            scan_type,
+            file_options: options,
+        },
         LogicalPlan::AnonymousScan {
             function,
             file_info,
@@ -207,47 +221,6 @@ pub fn to_alp(
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Slice { input, offset, len }
         }
-        #[cfg(feature = "csv")]
-        LogicalPlan::CsvScan {
-            path,
-            file_info,
-            options,
-            predicate,
-        } => ALogicalPlan::CsvScan {
-            path,
-            file_info,
-            output_schema: None,
-            options,
-            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-        },
-        #[cfg(feature = "ipc")]
-        LogicalPlan::IpcScan {
-            path,
-            file_info,
-            predicate,
-            options,
-        } => ALogicalPlan::IpcScan {
-            path,
-            file_info,
-            output_schema: None,
-            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            options,
-        },
-        #[cfg(feature = "parquet")]
-        LogicalPlan::ParquetScan {
-            path,
-            file_info,
-            predicate,
-            options,
-            cloud_options,
-        } => ALogicalPlan::ParquetScan {
-            path,
-            file_info,
-            output_schema: None,
-            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            options,
-            cloud_options,
-        },
         LogicalPlan::DataFrameScan {
             df,
             schema,
@@ -656,6 +629,20 @@ impl ALogicalPlan {
             conversion_fn(node, lp_arena).into_lp(conversion_fn, lp_arena, expr_arena)
         };
         match lp {
+            ALogicalPlan::Scan {
+                path,
+                file_info,
+                predicate,
+                scan_type,
+                output_schema: _,
+                file_options: options,
+            } => LogicalPlan::Scan {
+                path,
+                file_info,
+                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
+                scan_type,
+                file_options: options,
+            },
             ALogicalPlan::AnonymousScan {
                 function,
                 file_info,
@@ -693,47 +680,6 @@ impl ALogicalPlan {
                     predicate: p,
                 }
             }
-            #[cfg(feature = "csv")]
-            ALogicalPlan::CsvScan {
-                path,
-                file_info,
-                output_schema: _,
-                options,
-                predicate,
-            } => LogicalPlan::CsvScan {
-                path,
-                file_info,
-                options,
-                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-            },
-            #[cfg(feature = "ipc")]
-            ALogicalPlan::IpcScan {
-                path,
-                file_info,
-                output_schema: _,
-                predicate,
-                options,
-            } => LogicalPlan::IpcScan {
-                path,
-                file_info,
-                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-                options,
-            },
-            #[cfg(feature = "parquet")]
-            ALogicalPlan::ParquetScan {
-                path,
-                file_info,
-                output_schema: _,
-                predicate,
-                options,
-                cloud_options,
-            } => LogicalPlan::ParquetScan {
-                path,
-                file_info,
-                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-                options,
-                cloud_options,
-            },
             ALogicalPlan::DataFrameScan {
                 df,
                 schema,

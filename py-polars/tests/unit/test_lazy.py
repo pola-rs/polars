@@ -567,23 +567,6 @@ def test_sort() -> None:
     assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 2, 2, 3]))
 
 
-def test_all_expr() -> None:
-    ldf = pl.LazyFrame({"nrs": [1, 2, 3, 4, 5, None]})
-    assert_frame_equal(ldf.select([pl.all()]), ldf)
-
-
-def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert (
-        fruits_cars.lazy()
-        .with_columns(pl.col("A").cast(bool))
-        .select(pl.any("A"))
-        .collect()[0, 0]
-    ) is True
-    assert (
-        fruits_cars.lazy().select(pl.any([pl.col("A"), pl.col("B")])).collect()[0, 0]
-    ) is True
-
-
 def test_custom_groupby() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = (
@@ -1291,24 +1274,6 @@ def test_type_coercion_unknown_4190() -> None:
     ).collect()
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 1), (2, 2), (3, 3)]
-
-
-def test_all_any_accept_expr() -> None:
-    ldf = pl.LazyFrame(
-        {
-            "a": [1, None, 2],
-            "b": [1, 2, None],
-        }
-    )
-    assert ldf.select(
-        [
-            pl.any(pl.all().is_null()).alias("null_in_row"),
-            pl.all(pl.all().is_null()).alias("all_null_in_row"),
-        ]
-    ).collect().to_dict(False) == {
-        "null_in_row": [False, True, True],
-        "all_null_in_row": [False, False, False],
-    }
 
 
 def test_lazy_cache_same_key() -> None:

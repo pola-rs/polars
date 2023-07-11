@@ -121,7 +121,7 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
             polars_bail!(
                 ComputeError:
                 "lengths of `start`: {} and `end`: {} arguments `\
-                cannot be matched in the `arange` expression",
+                cannot be matched in the `int_ranges` expression",
                 start.len(), end.len()
             );
         }

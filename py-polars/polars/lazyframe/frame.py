@@ -2607,7 +2607,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "idx": pl.arange(0, 6, eager=True),
+        ...         "idx": pl.int_range(0, 6, eager=True),
         ...         "A": ["A", "A", "B", "B", "B", "C"],
         ...     }
         ... )
@@ -4421,7 +4421,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Drop a row only if all values are null:
 
-        >>> lf.filter(~pl.all(pl.all().is_null())).collect()
+        >>> lf.filter(~pl.all_horizontal(pl.all().is_null())).collect()
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │

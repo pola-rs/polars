@@ -1,12 +1,68 @@
+use std::cmp::PartialOrd;
 use std::iter::once;
 
 use polars_core::prelude::*;
+
+fn map_cats(
+    s: &Series,
+    cutlabs: &[String],
+    sorted_breaks: &[f64],
+    left_closed: bool,
+    include_breaks: bool,
+) -> PolarsResult<Series> {
+    let cl: Vec<&str> = cutlabs.iter().map(String::as_str).collect();
+
+    let out_name = format!("{}_bin", s.name());
+    let mut bld = CategoricalChunkedBuilder::new(&out_name, s.len());
+    let s2 = s.cast(&DataType::Float64)?;
+    // It would be nice to parallelize this
+    let s_iter = s2.f64()?.into_iter();
+
+    let op = if left_closed {
+        PartialOrd::ge
+    } else {
+        PartialOrd::gt
+    };
+
+    if include_breaks {
+        // This is to replicate the behavior of the old buggy version that only worked on series and
+        // returned a dataframe. That included a column of the right endpoint of the interval. So we
+        // return a struct series instead which can be turned into a dataframe later.
+        let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
+        let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new("brk", s.len());
+        s_iter
+            .map(|opt| {
+                opt.filter(|x| !x.is_nan())
+                    .map(|x| sorted_breaks.partition_point(|v| op(&x, v)))
+            })
+            .for_each(|idx| match idx {
+                None => {
+                    bld.append_null();
+                    brk_vals.append_null();
+                }
+                Some(idx) => unsafe {
+                    bld.append_value(cl.get_unchecked(idx));
+                    brk_vals.append_value(*right_ends.get_unchecked(idx));
+                },
+            });
+
+        let outvals = vec![brk_vals.finish().into_series(), bld.finish().into_series()];
+        Ok(StructChunked::new(&out_name, &outvals)?.into_series())
+    } else {
+        bld.drain_iter(s_iter.map(|opt| {
+            opt.filter(|x| !x.is_nan())
+                .map(|x| unsafe { *cl.get_unchecked(sorted_breaks.partition_point(|v| op(&x, v))) })
+        }));
+        Ok(bld.finish().into_series())
+    }
+}
 
 pub fn cut(
     s: &Series,
     breaks: Vec<f64>,
     labels: Option<Vec<String>>,
     left_closed: bool,
+    include_breaks: bool,
 ) -> PolarsResult<Series> {
     polars_ensure!(!breaks.is_empty(), ShapeMismatch: "Breaks are empty");
     polars_ensure!(!breaks.iter().any(|x| x.is_nan()), ComputeError: "Breaks cannot be NaN");
@@ -36,24 +92,7 @@ pub fn cut(
             .collect::<Vec<String>>(),
     };
 
-    let cl: Vec<&str> = cutlabs.iter().map(String::as_str).collect();
-    let s_flt = s.cast(&DataType::Float64)?;
-    let bin_iter = s_flt.f64()?.into_iter();
-
-    let out_name = format!("{}_bin", s.name());
-    let mut bld = CategoricalChunkedBuilder::new(&out_name, s.len());
-    unsafe {
-        if left_closed {
-            bld.drain_iter(bin_iter.map(|opt| {
-                opt.map(|x| *cl.get_unchecked(sorted_breaks.partition_point(|&v| x >= v)))
-            }));
-        } else {
-            bld.drain_iter(bin_iter.map(|opt| {
-                opt.map(|x| *cl.get_unchecked(sorted_breaks.partition_point(|&v| x > v)))
-            }));
-        }
-    }
-    Ok(bld.finish().into_series())
+    map_cats(s, &cutlabs, sorted_breaks, left_closed, include_breaks)
 }
 
 pub fn qcut(
@@ -62,6 +101,7 @@ pub fn qcut(
     labels: Option<Vec<String>>,
     left_closed: bool,
     allow_duplicates: bool,
+    include_breaks: bool,
 ) -> PolarsResult<Series> {
     let s = s.cast(&DataType::Float64)?;
     let s2 = s.sort(false);
@@ -94,7 +134,7 @@ pub fn qcut(
             }
         };
         qbreaks.dedup();
-        return cut(&s, qbreaks, lfilt, left_closed);
+        return cut(&s, qbreaks, lfilt, left_closed, include_breaks);
     }
-    cut(&s, qbreaks, labels, left_closed)
+    cut(&s, qbreaks, labels, left_closed, include_breaks)
 }

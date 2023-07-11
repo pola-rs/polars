@@ -170,7 +170,7 @@ def test_read_database_exceptions(
         pytest.param(
             "adbc",
             "create",
-            id="create",
+            id="adbc_create",
             marks=pytest.mark.skipif(
                 sys.version_info < (3, 9) or sys.platform == "win32",
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
@@ -179,11 +179,21 @@ def test_read_database_exceptions(
         pytest.param(
             "adbc",
             "append",
-            id="append",
+            id="adbc_append",
             marks=pytest.mark.skipif(
                 sys.version_info < (3, 9) or sys.platform == "win32",
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
             ),
+        ),
+        pytest.param(
+            "sqlalchemy",
+            "create",
+            id="sa_create",
+        ),
+        pytest.param(
+            "sqlalchemy",
+            "append",
+            id="sa_append",
         ),
     ],
 )
@@ -192,10 +202,15 @@ def test_write_database(
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    test_db = str(tmp_path / "test.db")
+    tmp_db = f"test_{engine}.db"
+    test_db = str(tmp_path / tmp_db)
+
+    # note: test a table name that requires quotes to ensure that we handle
+    # it correctly (also supply an explicit db schema with/without quotes)
+    tbl_name = '"test-data"'
 
     sample_df.write_database(
-        table_name="test_data",
+        table_name=f"main.{tbl_name}",
         connection_uri=f"sqlite:///{test_db}",
         if_exists="replace",
         engine=engine,
@@ -203,14 +218,26 @@ def test_write_database(
 
     if mode == "append":
         sample_df.write_database(
-            table_name="test_data",
+            table_name=f'"main".{tbl_name}',
             connection_uri=f"sqlite:///{test_db}",
             if_exists="append",
             engine=engine,
         )
         sample_df = pl.concat([sample_df, sample_df])
 
-    result = pl.read_database("SELECT * FROM test_data", f"sqlite:///{test_db}")
+    result = pl.read_database(f"SELECT * FROM {tbl_name}", f"sqlite:///{test_db}")
 
     sample_df = sample_df.with_columns(pl.col("date").cast(pl.Utf8))
     assert_frame_equal(sample_df, result)
+
+    # check that some invalid parameters raise errors
+    for invalid_params in (
+        {"table_name": "w.x.y.z"},
+        {"if_exists": "crunk", "table_name": f"main.{tbl_name}"},
+    ):
+        with pytest.raises(ValueError):
+            sample_df.write_database(
+                connection_uri=f"sqlite:///{test_db}",
+                engine=engine,
+                **invalid_params,  # type: ignore[arg-type]
+            )

@@ -108,7 +108,8 @@ fn test_cast_exprs() {
             cast(a as FLOAT) as floats,
             cast(a as INT) as ints,
             cast(a as BIGINT) as bigints,
-            cast(a as STRING) as strings
+            cast(a as STRING) as strings,
+            cast(a as BLOB) as binary
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let df_pl = df
@@ -118,6 +119,7 @@ fn test_cast_exprs() {
             col("a").cast(DataType::Int32).alias("ints"),
             col("a").cast(DataType::Int64).alias("bigints"),
             col("a").cast(DataType::Utf8).alias("strings"),
+            col("a").cast(DataType::Binary).alias("binary"),
         ])
         .collect()
         .unwrap();

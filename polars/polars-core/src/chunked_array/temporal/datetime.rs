@@ -106,7 +106,7 @@ impl DatetimeChunked {
             let chunks = self
                 .downcast_iter()
                 .map(|arr| {
-                    replace_timezone(arr, self.time_unit().to_arrow(), to, from, use_earliest)
+                    replace_timezone(arr, self.time_unit().to_arrow(), from, to, use_earliest)
                 })
                 .collect::<PolarsResult<_>>()?;
             let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };

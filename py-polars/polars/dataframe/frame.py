@@ -1896,13 +1896,14 @@ class DataFrame:
 
     def to_dicts(self) -> list[dict[str, Any]]:
         """
-        Convert every row to a dictionary of python-native values.
+        Convert every row to a dictionary of Python-native values.
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that python
-        natively only supports up to ``us``-precision; if this matters you should export
-        to a different format.
+        If you have ``ns``-precision temporal values you should be aware that Python
+        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        truncated to microseconds on conversion to Python. If this matters to your
+        use-case you should export to a different format (such as Arrow or NumPy).
 
         Examples
         --------
@@ -3095,8 +3096,9 @@ class DataFrame:
 
             tbl = pa.table(data)
 
-            # do not remove this
+            # do not remove this import!
             # needed below
+            import pyarrow.parquet  # noqa: F401
 
             pa.parquet.write_table(
                 table=tbl,
@@ -3126,11 +3128,13 @@ class DataFrame:
         Parameters
         ----------
         table_name
-            Name of the table to append to or create in the SQL database.
+            Name of the table to create or append to in the target SQL database.
+            If your table name contains special characters, it should be quoted.
         connection_uri
-            Connection uri, for example
+            Connection URI, for example:
 
-            * "postgresql://username:password@server:port/database"
+            * "postgresql://user:pass@server:port/database"
+            * "sqlite:////path/to/database.db"
         if_exists : {'append', 'replace', 'fail'}
             The insert mode.
             'replace' will create a new database table, overwriting an existing one.
@@ -3158,26 +3162,43 @@ class DataFrame:
                 cursor.adbc_ingest(table_name, self.to_arrow(), mode)
                 cursor.close()
                 conn.commit()
+
         elif engine == "sqlalchemy":
             if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleNotFoundError(
                     f"Writing with engine 'sqlalchemy' requires Pandas 1.5.x or higher, found Pandas {pd.__version__}."
                 )
+
             try:
                 from sqlalchemy import create_engine
             except ImportError as exc:
                 raise ImportError(
                     "'sqlalchemy' not found. Install polars with 'pip install polars[sqlalchemy]'."
                 ) from exc
+            from csv import reader as delimited_read
 
+            # the table name may also include the db schema; ensure that we identify
+            # both components and pass them through unquoted (sqlalachemy will quote)
+            table_ident = next(delimited_read([table_name], delimiter="."))
+            if len(table_ident) > 2:
+                raise ValueError(f"table_name appears to be invalid: {table_name!r}")
+            elif len(table_ident) > 1:
+                db_schema = table_ident[0]
+                table_name = table_ident[1]
+            else:
+                table_name = table_ident[0]
+                db_schema = None
+
+            # ensure conversion to pandas uses the pyarrow extension array option
+            # so that we can make use of the sql/db export without copying data
             engine_sa = create_engine(connection_uri)
-
-            # this conversion to pandas as zero-copy
-            # so we can utilize their sql utils for free
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
-                name=table_name, con=engine_sa, if_exists=if_exists, index=False
+                name=table_name,
+                schema=db_schema,
+                con=engine_sa,
+                if_exists=if_exists,
+                index=False,
             )
-
         else:
             raise ValueError(f"'engine' {engine} is not supported.")
 
@@ -4443,7 +4464,7 @@ class DataFrame:
 
         Drop a row only if all values are null:
 
-        >>> df.filter(~pl.all(pl.all().is_null()))
+        >>> df.filter(~pl.all_horizontal(pl.all().is_null()))
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
@@ -5143,7 +5164,7 @@ class DataFrame:
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "idx": pl.arange(0, 6, eager=True),
+        ...         "idx": pl.int_range(0, 6, eager=True),
         ...         "A": ["A", "A", "B", "B", "B", "C"],
         ...     }
         ... )
@@ -6562,7 +6583,7 @@ class DataFrame:
         >>> df = pl.DataFrame(
         ...     {
         ...         "col1": list(ascii_uppercase[0:9]),
-        ...         "col2": pl.arange(0, 9, eager=True),
+        ...         "col2": pl.int_range(0, 9, eager=True),
         ...     }
         ... )
         >>> df
@@ -6634,7 +6655,7 @@ class DataFrame:
         if how == "horizontal":
             df = (
                 df.with_columns(
-                    (F.arange(0, n_cols * n_rows, eager=True) % n_cols).alias(
+                    (F.int_range(0, n_cols * n_rows, eager=True) % n_cols).alias(
                         "__sort_order"
                     ),
                 )
@@ -8289,9 +8310,10 @@ class DataFrame:
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that python
-        natively only supports up to ``us``-precision; if this matters you should export
-        to a different format, as this method returns only python-native values.
+        If you have ``ns``-precision temporal values you should be aware that Python
+        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        truncated to microseconds on conversion to Python. If this matters to your
+        use-case you should export to a different format (such as Arrow or NumPy).
 
         Warnings
         --------
@@ -8369,9 +8391,10 @@ class DataFrame:
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that python
-        natively only supports up to ``us``-precision; if this matters you should export
-        to a different format, as this method returns only python-native values.
+        If you have ``ns``-precision temporal values you should be aware that Python
+        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        truncated to microseconds on conversion to Python. If this matters to your
+        use-case you should export to a different format (such as Arrow or NumPy).
 
         Examples
         --------
@@ -8529,9 +8552,10 @@ class DataFrame:
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that python
-        natively only supports up to ``us``-precision; if this matters in your use-case
-        you should export to a different format.
+        If you have ``ns``-precision temporal values you should be aware that Python
+        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        truncated to microseconds on conversion to Python. If this matters to your
+        use-case you should export to a different format (such as Arrow or NumPy).
 
         Warnings
         --------

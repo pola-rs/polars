@@ -1,21 +1,13 @@
 use std::borrow::Cow;
-#[cfg(any(feature = "ipc", feature = "csv", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[cfg(feature = "parquet")]
-use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
-#[cfg(feature = "csv")]
-use crate::logical_plan::CsvParserOptions;
-#[cfg(feature = "ipc")]
-use crate::logical_plan::IpcScanOptionsInner;
-#[cfg(feature = "parquet")]
-use crate::logical_plan::ParquetOptions;
+use crate::logical_plan::FileScan;
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 
@@ -43,33 +35,15 @@ pub enum ALogicalPlan {
         input: Node,
         predicate: Node,
     },
-    #[cfg(feature = "csv")]
-    CsvScan {
+    Scan {
         path: PathBuf,
         file_info: FileInfo,
-        // schema of the projected file
-        output_schema: Option<SchemaRef>,
-        options: CsvParserOptions,
         predicate: Option<Node>,
-    },
-    #[cfg(feature = "ipc")]
-    IpcScan {
-        path: PathBuf,
-        file_info: FileInfo,
-        // schema of the projected file
+        /// schema of the projected file
         output_schema: Option<SchemaRef>,
-        options: IpcScanOptionsInner,
-        predicate: Option<Node>,
-    },
-    #[cfg(feature = "parquet")]
-    ParquetScan {
-        path: PathBuf,
-        file_info: FileInfo,
-        // schema of the projected file
-        output_schema: Option<SchemaRef>,
-        predicate: Option<Node>,
-        options: ParquetOptions,
-        cloud_options: Option<CloudOptions>,
+        scan_type: FileScan,
+        /// generic options that can be used for all file types.
+        file_options: FileScanOptions,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -161,14 +135,9 @@ impl ALogicalPlan {
     pub(crate) fn scan_schema(&self) -> &SchemaRef {
         use ALogicalPlan::*;
         match self {
+            Scan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "python")]
             PythonScan { options, .. } => &options.schema,
-            #[cfg(feature = "csv")]
-            CsvScan { file_info, .. } => &file_info.schema,
-            #[cfg(feature = "parquet")]
-            ParquetScan { file_info, .. } => &file_info.schema,
-            #[cfg(feature = "ipc")]
-            IpcScan { file_info, .. } => &file_info.schema,
             AnonymousScan { file_info, .. } => &file_info.schema,
             _ => unreachable!(),
         }
@@ -177,17 +146,12 @@ impl ALogicalPlan {
     pub fn name(&self) -> &'static str {
         use ALogicalPlan::*;
         match self {
+            Scan { scan_type, .. } => scan_type.into(),
             AnonymousScan { .. } => "anonymous_scan",
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
             Selection { .. } => "selection",
-            #[cfg(feature = "csv")]
-            CsvScan { .. } => "csv_scan",
-            #[cfg(feature = "ipc")]
-            IpcScan { .. } => "ipc_scan",
-            #[cfg(feature = "parquet")]
-            ParquetScan { .. } => "parquet_scan",
             DataFrameScan { .. } => "df",
             Projection { .. } => "projection",
             LocalProjection { .. } => "local_projection",
@@ -213,16 +177,9 @@ impl ALogicalPlan {
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
-            #[cfg(feature = "parquet")]
-            ParquetScan {
-                file_info,
+            Scan {
                 output_schema,
-                ..
-            } => output_schema.as_ref().unwrap_or(&file_info.schema),
-            #[cfg(feature = "ipc")]
-            IpcScan {
                 file_info,
-                output_schema,
                 ..
             } => output_schema.as_ref().unwrap_or(&file_info.schema),
             DataFrameScan {
@@ -236,12 +193,6 @@ impl ALogicalPlan {
                 ..
             } => output_schema.as_ref().unwrap_or(&file_info.schema),
             Selection { input, .. } => return arena.get(*input).schema(arena),
-            #[cfg(feature = "csv")]
-            CsvScan {
-                file_info,
-                output_schema,
-                ..
-            } => output_schema.as_ref().unwrap_or(&file_info.schema),
             Projection { schema, .. } => schema,
             LocalProjection { schema, .. } => schema,
             Aggregate { schema, .. } => schema,
@@ -355,72 +306,25 @@ impl ALogicalPlan {
                 exprs,
                 schema: schema.clone(),
             },
-            #[cfg(feature = "ipc")]
-            IpcScan {
+            Scan {
                 path,
                 file_info,
                 output_schema,
-                options,
                 predicate,
-                ..
+                file_options: options,
+                scan_type,
             } => {
                 let mut new_predicate = None;
                 if predicate.is_some() {
                     new_predicate = exprs.pop()
                 }
-
-                IpcScan {
+                Scan {
                     path: path.clone(),
                     file_info: file_info.clone(),
                     output_schema: output_schema.clone(),
+                    file_options: options.clone(),
                     predicate: new_predicate,
-                    options: options.clone(),
-                }
-            }
-
-            #[cfg(feature = "parquet")]
-            ParquetScan {
-                path,
-                file_info,
-                output_schema,
-                predicate,
-                options,
-                cloud_options,
-                ..
-            } => {
-                let mut new_predicate = None;
-                if predicate.is_some() {
-                    new_predicate = exprs.pop()
-                }
-
-                ParquetScan {
-                    path: path.clone(),
-                    file_info: file_info.clone(),
-                    output_schema: output_schema.clone(),
-                    predicate: new_predicate,
-                    options: options.clone(),
-                    cloud_options: cloud_options.clone(),
-                }
-            }
-            #[cfg(feature = "csv")]
-            CsvScan {
-                path,
-                file_info,
-                output_schema,
-                predicate,
-                options,
-                ..
-            } => {
-                let mut new_predicate = None;
-                if predicate.is_some() {
-                    new_predicate = exprs.pop()
-                }
-                CsvScan {
-                    path: path.clone(),
-                    file_info: file_info.clone(),
-                    output_schema: output_schema.clone(),
-                    options: options.clone(),
-                    predicate: new_predicate,
+                    scan_type: scan_type.clone(),
                 }
             }
             DataFrameScan {
@@ -499,20 +403,7 @@ impl ALogicalPlan {
                 container.extend(iter)
             }
             HStack { exprs, .. } => container.extend_from_slice(exprs),
-            #[cfg(feature = "parquet")]
-            ParquetScan { predicate, .. } => {
-                if let Some(node) = predicate {
-                    container.push(*node)
-                }
-            }
-            #[cfg(feature = "ipc")]
-            IpcScan { predicate, .. } => {
-                if let Some(node) = predicate {
-                    container.push(*node)
-                }
-            }
-            #[cfg(feature = "csv")]
-            CsvScan { predicate, .. } => {
+            Scan { predicate, .. } => {
                 if let Some(node) = predicate {
                     container.push(*node)
                 }
@@ -583,12 +474,7 @@ impl ALogicalPlan {
                 }
                 *input
             }
-            #[cfg(feature = "parquet")]
-            ParquetScan { .. } => return,
-            #[cfg(feature = "ipc")]
-            IpcScan { .. } => return,
-            #[cfg(feature = "csv")]
-            CsvScan { .. } => return,
+            Scan { .. } => return,
             DataFrameScan { .. } => return,
             AnonymousScan { .. } => return,
             #[cfg(feature = "python")]
