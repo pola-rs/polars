@@ -12,7 +12,12 @@ use polars_io::ipc::IpcReader;
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
-#[cfg(any(feature = "parquet", feature = "parquet_async", feature = "csv"))]
+#[cfg(any(
+    feature = "parquet",
+    feature = "parquet_async",
+    feature = "csv",
+    feature = "ipc"
+))]
 use polars_io::RowCount;
 #[cfg(feature = "csv")]
 use polars_io::{
