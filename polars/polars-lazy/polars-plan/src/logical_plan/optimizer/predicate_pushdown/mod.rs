@@ -240,84 +240,48 @@ impl PredicatePushDown {
                     schema: Arc::new(schema),
                 })
             }
-            #[cfg(feature = "ipc")]
-            IpcScan {
+            Scan {
                 path,
                 file_info,
-                output_schema,
                 predicate,
-                options,
+                scan_type,
+                file_options: options,
+                output_schema
             } => {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
-                let lp = IpcScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    options,
-                };
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-            }
-            #[cfg(feature = "parquet")]
-            ParquetScan {
-                path,
-                file_info,
-                output_schema,
-                predicate,
-                options,
-                cloud_options,
-            } => {
-                let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
-
-                let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
-
-                let lp = ParquetScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    options,
-                    cloud_options,
-                };
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-            }
-            #[cfg(feature = "csv")]
-            CsvScan {
-                path,
-                file_info,
-                output_schema,
-                options,
-                predicate,
-            } => {
-                let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
-                let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
-
-                let lp = if let (Some(predicate), Some(_)) = (predicate, options.n_rows) {
-                    let lp = CsvScan {
-                        path,
-                        file_info,
-                        output_schema,
-                        options,
-                        predicate: None,
-                    };
-                    let input = lp_arena.add(lp);
-                    Selection {
-                        input,
-                        predicate
-                    }
-                } else {
-                    CsvScan {
-                        path,
-                        file_info,
-                        output_schema,
-                        options,
-                        predicate,
+                let lp = match (predicate, &scan_type) {
+                    #[cfg(feature = "csv")]
+                    (Some(predicate), FileScan::Csv {..}) => {
+                        let lp = Scan {
+                            path,
+                            file_info,
+                            predicate: None,
+                            file_options: options,
+                            output_schema,
+                            scan_type
+                        };
+                        let input = lp_arena.add(lp);
+                        Selection {
+                            input,
+                            predicate
+                        }
+                    },
+                    _ => {
+                        Scan {
+                            path,
+                            file_info,
+                            predicate,
+                            file_options: options,
+                            output_schema,
+                            scan_type
+                        }
                     }
                 };
 
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+
             }
             AnonymousScan {
                 function,

@@ -65,14 +65,13 @@ where
             }
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
         }
-        #[cfg(feature = "csv")]
-        CsvScan {
+        Scan {
             path,
             file_info,
-            options,
+            file_options,
             predicate,
             output_schema,
-            ..
+            scan_type,
         } => {
             // add predicate to operators
             if let (true, Some(predicate)) = (push_predicate, predicate) {
@@ -81,36 +80,39 @@ where
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            let src = sources::CsvSource::new(path, file_info.schema, options, verbose)?;
-            Ok(Box::new(src) as Box<dyn Source>)
-        }
-        #[cfg(feature = "parquet")]
-        ParquetScan {
-            path,
-            file_info,
-            options,
-            cloud_options,
-            predicate,
-            output_schema,
-            ..
-        } => {
-            // add predicate to operators
-            if let (true, Some(predicate)) = (push_predicate, predicate) {
-                let predicate = to_physical(predicate, expr_arena, output_schema.as_ref())?;
-                let op = operators::FilterOperator { predicate };
-                let op = Box::new(op) as Box<dyn Operator>;
-                operator_objects.push(op)
+            match scan_type {
+                #[cfg(feature = "csv")]
+                FileScan::Csv {
+                    options: csv_options,
+                } => {
+                    let src = sources::CsvSource::new(
+                        path,
+                        file_info.schema,
+                        csv_options,
+                        file_options,
+                        verbose,
+                    )?;
+                    Ok(Box::new(src) as Box<dyn Source>)
+                }
+                #[cfg(feature = "parquet")]
+                FileScan::Parquet {
+                    options: parquet_options,
+                    cloud_options,
+                } => {
+                    let src = sources::ParquetSource::new(
+                        path,
+                        parquet_options,
+                        cloud_options,
+                        file_options,
+                        file_info.schema,
+                        verbose,
+                    )?;
+                    Ok(Box::new(src) as Box<dyn Source>)
+                }
+                _ => todo!(),
             }
-            let src = sources::ParquetSource::new(
-                path,
-                options,
-                cloud_options,
-                file_info.schema,
-                verbose,
-            )?;
-            Ok(Box::new(src) as Box<dyn Source>)
         }
-        _ => todo!(),
+        _ => unreachable!(),
     }
 }
 
@@ -480,17 +482,7 @@ where
                 true,
                 verbose,
             )?,
-            #[cfg(feature = "csv")]
-            lp @ CsvScan { .. } => get_source(
-                lp.clone(),
-                &mut operator_objects,
-                expr_arena,
-                &to_physical,
-                true,
-                verbose,
-            )?,
-            #[cfg(feature = "parquet")]
-            lp @ ParquetScan { .. } => get_source(
+            lp @ Scan { .. } => get_source(
                 lp.clone(),
                 &mut operator_objects,
                 expr_arena,

@@ -421,71 +421,6 @@ impl ProjectionPushDown {
                 };
                 Ok(lp)
             }
-            #[cfg(feature = "ipc")]
-            IpcScan {
-                path,
-                file_info,
-                predicate,
-                mut options,
-                ..
-            } => {
-                let with_columns =
-                    get_scan_columns(&mut acc_projections, expr_arena, options.row_count.as_ref());
-                let output_schema = if with_columns.is_none() {
-                    None
-                } else {
-                    Some(Arc::new(update_scan_schema(
-                        &acc_projections,
-                        expr_arena,
-                        &file_info.schema,
-                        options.row_count.is_some(),
-                    )?))
-                };
-                options.with_columns = with_columns;
-
-                let lp = IpcScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    options,
-                };
-                Ok(lp)
-            }
-
-            #[cfg(feature = "parquet")]
-            ParquetScan {
-                path,
-                file_info,
-                predicate,
-                mut options,
-                cloud_options,
-                ..
-            } => {
-                let with_columns =
-                    get_scan_columns(&mut acc_projections, expr_arena, options.row_count.as_ref());
-                let output_schema = if with_columns.is_none() {
-                    None
-                } else {
-                    Some(Arc::new(update_scan_schema(
-                        &acc_projections,
-                        expr_arena,
-                        &file_info.schema,
-                        options.row_count.is_some(),
-                    )?))
-                };
-                options.with_columns = with_columns;
-
-                let lp = ParquetScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    options,
-                    cloud_options,
-                };
-                Ok(lp)
-            }
             #[cfg(feature = "python")]
             PythonScan {
                 mut options,
@@ -505,34 +440,38 @@ impl ProjectionPushDown {
                 };
                 Ok(PythonScan { options, predicate })
             }
-            #[cfg(feature = "csv")]
-            CsvScan {
+            Scan {
                 path,
                 file_info,
-                mut options,
+                scan_type,
                 predicate,
+                mut file_options,
                 ..
             } => {
-                options.with_columns =
-                    get_scan_columns(&mut acc_projections, expr_arena, options.row_count.as_ref());
+                file_options.with_columns = get_scan_columns(
+                    &mut acc_projections,
+                    expr_arena,
+                    file_options.row_count.as_ref(),
+                );
 
-                let output_schema = if options.with_columns.is_none() {
+                let output_schema = if file_options.with_columns.is_none() {
                     None
                 } else {
                     Some(Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
                         &file_info.schema,
-                        true,
+                        scan_type.sort_projection(&file_options),
                     )?))
                 };
 
-                let lp = CsvScan {
+                let lp = Scan {
                     path,
                     file_info,
                     output_schema,
-                    options,
+                    scan_type,
                     predicate,
+                    file_options,
                 };
                 Ok(lp)
             }

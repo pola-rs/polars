@@ -29,30 +29,18 @@ pub struct CsvParserOptions {
     pub eol_char: u8,
     pub has_header: bool,
     pub skip_rows: usize,
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
     pub low_memory: bool,
     pub ignore_errors: bool,
-    pub cache: bool,
     pub null_values: Option<NullValues>,
-    pub rechunk: bool,
     pub encoding: CsvEncoding,
-    pub row_count: Option<RowCount>,
     pub try_parse_dates: bool,
-    pub file_counter: FileCount,
 }
 
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
-    pub cache: bool,
     pub parallel: polars_io::parquet::ParallelStrategy,
-    pub rechunk: bool,
-    pub row_count: Option<RowCount>,
-    pub file_counter: FileCount,
     pub low_memory: bool,
     pub use_statistics: bool,
 }
@@ -83,41 +71,22 @@ pub struct IpcWriterOptions {
     pub maintain_order: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
-    pub cache: bool,
-    pub row_count: Option<RowCount>,
-    pub rechunk: bool,
     pub memmap: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct IpcScanOptionsInner {
+/// Generic options for all file types
+pub struct FileScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<Vec<String>>>,
     pub cache: bool,
     pub row_count: Option<RowCount>,
     pub rechunk: bool,
     pub file_counter: FileCount,
-    pub memmap: bool,
-}
-
-impl From<IpcScanOptions> for IpcScanOptionsInner {
-    fn from(options: IpcScanOptions) -> Self {
-        Self {
-            n_rows: options.n_rows,
-            with_columns: options.with_columns,
-            cache: options.cache,
-            row_count: options.row_count,
-            rechunk: options.rechunk,
-            file_counter: Default::default(),
-            memmap: options.memmap,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
