@@ -9175,9 +9175,6 @@ class DataFrame:
         │ 5   ┆ 105 ┆ 10  ┆ *FILL_C*e ┆ ee        │
         └─────┴─────┴─────┴───────────┴───────────┘
         """
-        if fill_value is None and on is None:
-            return self.__add__(other)
-
         return (
             self.lazy().add(other.lazy(), on, fill_value).collect(no_optimization=True)
         )
