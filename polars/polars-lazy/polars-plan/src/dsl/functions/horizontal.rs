@@ -190,24 +190,40 @@ where
     }
 }
 
-/// Create a new column with the the sum of the values in each row.
+/// Create a new column with the the bitwise-and of the elements in each row.
 ///
-/// The name of the resulting column will be `"sum"`; use [`alias`](Expr::alias) to choose a different name.
-pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let mut exprs = exprs.as_ref().to_vec();
-    let func = |s1, s2| Ok(Some(&s1 + &s2));
-    let init = match exprs.pop() {
-        Some(e) => e,
-        // use u32 as that is not cast to float as eagerly
-        _ => lit(0u32),
+/// The name of the resulting column will be "all"; use [`alias`](Expr::alias) to choose a different name.
+pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+    let exprs = exprs.as_ref().to_vec();
+    let func = |s1: Series, s2: Series| {
+        Ok(Some(
+            s1.bool()?
+                .bitand(s2.cast(&DataType::Boolean)?.bool()?)
+                .into_series(),
+        ))
     };
-    fold_exprs(init, func, exprs).alias("sum")
+    fold_exprs(lit(true), func, exprs).alias("all")
+}
+
+/// Create a new column with the the bitwise-or of the elements in each row.
+///
+/// The name of the resulting column will be "any"; use [`alias`](Expr::alias) to choose a different name.
+pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+    let exprs = exprs.as_ref().to_vec();
+    let func = |s1: Series, s2: Series| {
+        Ok(Some(
+            s1.bool()?
+                .bitor(s2.cast(&DataType::Boolean)?.bool()?)
+                .into_series(),
+        ))
+    };
+    fold_exprs(lit(false), func, exprs).alias("any")
 }
 
 /// Create a new column with the the maximum value per row.
 ///
 /// The name of the resulting column will be `"max"`; use [`alias`](Expr::alias) to choose a different name.
-pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
     if exprs.is_empty() {
         return Expr::Columns(Vec::new());
@@ -222,7 +238,7 @@ pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 /// Create a new column with the the minimum value per row.
 ///
 /// The name of the resulting column will be `"min"`; use [`alias`](Expr::alias) to choose a different name.
-pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
     if exprs.is_empty() {
         return Expr::Columns(Vec::new());
@@ -234,22 +250,18 @@ pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     reduce_exprs(func, exprs).alias("min")
 }
 
-/// Create a new column with the the bitwise-or of the elements in each row.
+/// Create a new column with the the sum of the values in each row.
 ///
-/// The name of the resulting column is arbitrary; use [`alias`](Expr::alias) to choose a different name.
-pub fn any_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| Ok(Some(s1.bool()?.bitor(s2.bool()?).into_series()));
-    fold_exprs(lit(false), func, exprs)
-}
-
-/// Create a new column with the the bitwise-and of the elements in each row.
-///
-/// The name of the resulting column is arbitrary; use [`alias`](Expr::alias) to choose a different name.
-pub fn all_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| Ok(Some(s1.bool()?.bitand(s2.bool()?).into_series()));
-    fold_exprs(lit(true), func, exprs)
+/// The name of the resulting column will be `"sum"`; use [`alias`](Expr::alias) to choose a different name.
+pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+    let mut exprs = exprs.as_ref().to_vec();
+    let func = |s1, s2| Ok(Some(&s1 + &s2));
+    let init = match exprs.pop() {
+        Some(e) => e,
+        // use u32 as that is not cast to float as eagerly
+        _ => lit(0u32),
+    };
+    fold_exprs(init, func, exprs).alias("sum")
 }
 
 /// Folds the expressions from left to right keeping the first non-null values.

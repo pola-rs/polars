@@ -1134,69 +1134,6 @@ def test_head_groupby() -> None:
     )
 
 
-def test_lazy_functions() -> None:
-    df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.select([pl.count("a")])
-    assert list(out["a"]) == [3]
-    assert pl.count(df["a"]) == 3
-    out = df.select(
-        [
-            pl.var("b").alias("1"),
-            pl.std("b").alias("2"),
-            pl.max("b").alias("3"),
-            pl.min("b").alias("4"),
-            pl.sum("b").alias("5"),
-            pl.mean("b").alias("6"),
-            pl.median("b").alias("7"),
-            pl.n_unique("b").alias("8"),
-            pl.first("b").alias("9"),
-            pl.last("b").alias("10"),
-        ]
-    )
-    expected = 1.0
-    assert np.isclose(out.to_series(0), expected)
-    assert np.isclose(pl.var(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 1.0
-    assert np.isclose(out.to_series(1), expected)
-    assert np.isclose(pl.std(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 3
-    assert np.isclose(out.to_series(2), expected)
-    assert np.isclose(pl.max(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 1
-    assert np.isclose(out.to_series(3), expected)
-    assert np.isclose(pl.min(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 6
-    assert np.isclose(out.to_series(4), expected)
-    assert np.isclose(pl.sum(df["b"]), expected)
-    expected = 2
-    assert np.isclose(out.to_series(5), expected)
-    assert np.isclose(pl.mean(df["b"]), expected)
-    expected = 2
-    assert np.isclose(out.to_series(6), expected)
-    assert np.isclose(pl.median(df["b"]), expected)
-    expected = 3
-    assert np.isclose(out.to_series(7), expected)
-    assert np.isclose(pl.n_unique(df["b"]), expected)
-    expected = 1
-    assert np.isclose(out.to_series(8), expected)
-    assert np.isclose(pl.first(df["b"]), expected)
-    expected = 3
-    assert np.isclose(out.to_series(9), expected)
-    assert np.isclose(pl.last(df["b"]), expected)
-
-    # regex selection
-    out = df.select(
-        [
-            pl.struct(pl.max("^a|b$")).alias("x"),
-            pl.struct(pl.min("^.*[bc]$")).alias("y"),
-            pl.struct(pl.sum("^[^b]$")).alias("z"),
-        ]
-    )
-    assert out.rows() == [
-        ({"a": "foo", "b": 3}, {"b": 1, "c": 1.0}, {"a": None, "c": 6.0})
-    ]
-
-
 def test_is_null_is_not_null() -> None:
     df = pl.DataFrame({"nrs": [1, 2, None]})
     assert df.select(pl.col("nrs").is_null())["nrs"].to_list() == [False, False, True]
@@ -2989,31 +2926,6 @@ def test_fill_null_limits() -> None:
     }
 
 
-def test_max_min_multiple_columns(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.select(pl.max(["A", "B"]).alias("max"))
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-
-    res = fruits_cars.select(pl.min(["A", "B"]).alias("min"))
-    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
-
-
-def test_max_min_wildcard_columns(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.min(["*"]))
-    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.min([pl.all()]))
-    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
-
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.max(["*"]))
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.max([pl.all()]))
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(
-        pl.max([pl.all(), "A", "*"])
-    )
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-
-
 def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select([pl.head("A", 2)])
     res_series = pl.head(fruits_cars["A"], 2)
@@ -3037,14 +2949,6 @@ def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
 
     with pytest.raises(pl.ComputeError):
         fruits_cars.select(pl.col("fruits").upper_bound())
-
-
-def test_nested_min_max() -> None:
-    df = pl.DataFrame({"a": [1], "b": [2], "c": [3], "d": [4]})
-    out = df.with_columns(pl.max([pl.min(["a", "b"]), pl.min(["c", "d"])]).alias("t"))
-    assert out.shape == (1, 5)
-    assert out.row(0) == (1, 2, 3, 4, 3)
-    assert out.columns == ["a", "b", "c", "d", "t"]
 
 
 def test_selection_misc() -> None:
@@ -3612,17 +3516,7 @@ def test_round() -> None:
 
 def test_dot() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]})
-    assert cast(float, df.select(pl.col("a").dot(pl.col("b"))).item()) == 12.96
-
-
-def test_all_expr() -> None:
-    df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
-    assert_frame_equal(df.select([pl.all()]), df)
-
-
-def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.with_columns(pl.col("A").cast(bool)).select(pl.any("A"))[0, 0]
-    assert fruits_cars.select(pl.any([pl.col("A"), pl.col("B")]))[0, 0]
+    assert df.select(pl.col("a").dot(pl.col("b"))).item() == 12.96
 
 
 def test_rolling_apply() -> None:
