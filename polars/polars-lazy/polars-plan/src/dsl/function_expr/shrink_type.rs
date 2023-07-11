@@ -10,7 +10,7 @@ pub(super) fn shrink(s: Series) -> PolarsResult<Series> {
                 .get(0)
                 .unwrap()
                 .extract::<u64>()
-                .unwrap_or(0 as u64);
+                .unwrap_or(0_u64);
 
             if max <= u8::MAX as u64 {
                 s.cast(&DataType::UInt8)
@@ -27,13 +27,13 @@ pub(super) fn shrink(s: Series) -> PolarsResult<Series> {
                 .get(0)
                 .unwrap()
                 .extract::<i64>()
-                .unwrap_or(0 as i64);
+                .unwrap_or(0_i64);
             let max = s
                 .max_as_series()
                 .get(0)
                 .unwrap()
                 .extract::<i64>()
-                .unwrap_or(0 as i64);
+                .unwrap_or(0_i64);
 
             if min >= i8::MIN as i64 && max <= i8::MAX as i64 {
                 s.cast(&DataType::Int8)
