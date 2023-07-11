@@ -229,9 +229,9 @@ def test_shrink_dtype() -> None:
         pl.Utf8,
         pl.Float32,
         pl.Boolean,
-        pl.UInt8,
-        pl.Int8,
-        pl.Float32,
+        pl.UInt64,
+        pl.Int64,
+        pl.Float64,
     ]
 
     assert out.to_dict(False) == {

@@ -1,17 +1,15 @@
 use super::*;
 
 pub(super) fn shrink(s: Series) -> PolarsResult<Series> {
+    // all-null case: don't change dtype
+    if s.null_count() == s.len() {
+        return Ok(s);
+    }
     if s.dtype().is_numeric() {
         if s.dtype().is_float() {
             s.cast(&DataType::Float32)
         } else if s.dtype().is_unsigned() {
-            let max = s
-                .max_as_series()
-                .get(0)
-                .unwrap()
-                .extract::<u64>()
-                .unwrap_or(0_u64);
-
+            let max = s.max_as_series().get(0).unwrap().extract::<u64>().unwrap();
             if max <= u8::MAX as u64 {
                 s.cast(&DataType::UInt8)
             } else if max <= u16::MAX as u64 {
@@ -22,18 +20,8 @@ pub(super) fn shrink(s: Series) -> PolarsResult<Series> {
                 Ok(s)
             }
         } else {
-            let min = s
-                .min_as_series()
-                .get(0)
-                .unwrap()
-                .extract::<i64>()
-                .unwrap_or(0_i64);
-            let max = s
-                .max_as_series()
-                .get(0)
-                .unwrap()
-                .extract::<i64>()
-                .unwrap_or(0_i64);
+            let min = s.min_as_series().get(0).unwrap().extract::<i64>().unwrap();
+            let max = s.max_as_series().get(0).unwrap().extract::<i64>().unwrap();
 
             if min >= i8::MIN as i64 && max <= i8::MAX as i64 {
                 s.cast(&DataType::Int8)
