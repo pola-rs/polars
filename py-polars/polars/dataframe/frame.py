@@ -9087,8 +9087,8 @@ class DataFrame:
     def add(
         self,
         other: DataFrame,
-        on: str | Sequence[str] | None = None,
         fill_value: int | float | str | Mapping[str, int | float | str] | None = None,
+        on: str | Sequence[str] | None = None,
     ) -> pl.DataFrame:
         """
         Add aligned dataframes with element-wise and filling missing values.
@@ -9176,7 +9176,7 @@ class DataFrame:
         └─────┴─────┴─────┴───────────┴───────────┘
         """
         return (
-            self.lazy().add(other.lazy(), on, fill_value).collect(no_optimization=True)
+            self.lazy().add(other.lazy(), fill_value, on).collect(no_optimization=True)
         )
 
 

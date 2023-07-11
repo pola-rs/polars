@@ -4902,8 +4902,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def add(
         self: LazyFrame,
         other: LazyFrame,
-        on: str | Sequence[str] | None = None,
         fill_value: int | float | str | Mapping[str, int | float | str] | None = None,
+        on: str | Sequence[str] | None = None,
     ) -> pl.LazyFrame:
         """
         Add aligned dataframes with element-wise and filling missing values.
@@ -4917,11 +4917,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         other
             DataFrame to be added.
-        on
-            Column names that will be joined on. If none given the row count is used.
         fill_value:
             Value used when left or right dataframe does not have corresponding element
             in opposite frame.
+        on
+            Column names that will be joined on. If none given the row count is used.
 
 
         Examples
@@ -5001,38 +5001,40 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         left_names = set(self.columns)
         right_names = set(other.columns)
-        union_names = left_names & right_names
-        missing_left = left_names - right_names
-        missing_right = right_names - left_names
+        union_names = left_names | right_names
+        missing_left = right_names - left_names
+        missing_right = left_names - right_names
 
         if isinstance(on, str):
             on = [on]
         remaining_names = union_names - set(on)
 
         # ensure we have a fill value for each column not in the join key
-        if fill_value is not None:
-            if not isinstance(fill_value, Mapping):
-                # single value, fill all frames directly
-                self = self.with_columns(F.col(remaining_names).fill_null(fill_value))
-                other = other.with_columns(F.col(remaining_names).fill_null(fill_value))
-                fill_value = {name: fill_value for name in remaining_names}
-            else:
-                self = self.with_columns(
-                    F.col(name).fill_null(fill_value[name]) for name in fill_value
-                )
-                other = other.with_columns(
-                    F.col(name).fill_null(fill_value[name]) for name in fill_value
-                )
+        if fill_value is not None and not isinstance(fill_value, Mapping):
+            fill_value = {name: fill_value for name in remaining_names}
 
         # for any columns not found in right or left, add to the other with the
         # specified fill value
         if missing_left:
-            other = other.with_columns(
-                F.lit(fill_value[name]).alias(name) for name in missing_left  # type: ignore[index]
+            if fill_value is None:
+                raise ValueError("Must provide fill value if columns do not match")
+            self = self.with_columns(
+                F.lit(fill_value[name]).alias(name) for name in missing_left
             )
         if missing_right:
+            if fill_value is None:
+                raise ValueError("Must provide fill value if columns do not match")
+            other = other.with_columns(
+                F.lit(fill_value[name]).alias(name) for name in missing_right
+            )
+
+        # fill in missing values
+        if fill_value is not None:
             self = self.with_columns(
-                F.lit(fill_value[name]).alias(name) for name in missing_right  # type: ignore[index]
+                F.col(name).fill_null(fill_value[name]) for name in fill_value
+            )
+            other = other.with_columns(
+                F.col(name).fill_null(fill_value[name]) for name in fill_value
             )
 
         # make sure our columns are found in both frames

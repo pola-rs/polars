@@ -532,14 +532,14 @@ def test_add_missing() -> None:
         }
     )
 
-    # test basic addition
     assert_frame_equal(df1 + df2, df1.add(df2))
 
-    # test basic addition with only fill value
-    assert_frame_equal(df1 + df2, df1.add(df2, fill_value=0))
+    df2 = df2.with_columns(pl.Series([1, 2, 3, 4, 5]).alias("e"))
 
     out = df1.add(
-        df2, fill_value={"a": 100, "b": 0, "c": "*FILL_C*", "d": "*FILL_D*"}, on="key"
+        df2,
+        fill_value={"a": 100, "b": 0, "c": "*FILL_C*", "d": "*FILL_D*", "e": 0},
+        on="key",
     )
 
     expected = pl.DataFrame(
@@ -555,6 +555,7 @@ def test_add_missing() -> None:
                 "*FILL_D*d",
                 "ee",
             ],
+            "e": [1, 2, 3, 4, 5],
         }
     )
 
