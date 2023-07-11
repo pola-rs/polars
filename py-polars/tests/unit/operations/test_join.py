@@ -511,6 +511,86 @@ def test_update() -> None:
     assert c.rows() == a.rows()
 
 
+def test_add_missing() -> None:
+    df1 = pl.DataFrame(
+        {
+            "key": [1, 2, 3, 4, 5],
+            "a": [1, 2, 3, 4, None],
+            "b": [1, 2, 3, None, 5],
+            "c": ["a", "b", "c", "d", None],
+            "d": ["a", "b", "c", None, "e"],
+        }
+    )
+
+    df2 = pl.DataFrame(
+        {
+            "key": [1, 2, 3, 4, 5],
+            "a": [1, None, 3, 4, 5],
+            "b": [1, 2, None, 4, 5],
+            "c": ["a", None, "c", "d", "e"],
+            "d": ["a", "b", None, "d", "e"],
+        }
+    )
+
+    # test basic addition
+    assert_frame_equal(df1 + df2, df1.add(df2))
+
+    # test basic addition with only fill value
+    assert_frame_equal(df1 + df2, df1.add(df2, fill_value=0))
+
+    out = df1.add(
+        df2, fill_value={"a": 100, "b": 0, "c": "*FILL_C*", "d": "*FILL_D*"}, on="key"
+    )
+
+    expected = pl.DataFrame(
+        {
+            "key": [1, 2, 3, 4, 5],
+            "a": [2, 102, 6, 8, 105],
+            "b": [2, 4, 3, 4, 10],
+            "c": ["aa", "b*FILL_C*", "cc", "dd", "*FILL_C*e"],
+            "d": [
+                "aa",
+                "bb",
+                "c*FILL_D*",
+                "*FILL_D*d",
+                "ee",
+            ],
+        }
+    )
+
+    print(out)
+
+    assert_frame_equal(out, expected)
+
+    df1 = pl.DataFrame(
+        {
+            "key": [1, 2, 3, 4, 5],
+            "a": [1, 2, 3, 4, None],
+            "b": [1, 2, 3, None, 5],
+        }
+    )
+
+    df2 = pl.DataFrame(
+        {
+            "key": [1, 2, 3, 4, 5],
+            "a": [1, None, 3, 4, 5],
+            "b": [1, 2, None, 4, 5],
+        }
+    )
+
+    out = df1.add(df2, fill_value=100, on="key")
+
+    expected = pl.DataFrame(
+        {
+            "key": [1, 2, 3, 4, 5],
+            "a": [2, 102, 6, 8, 105],
+            "b": [2, 4, 103, 104, 10],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
 def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
     ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()

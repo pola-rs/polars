@@ -9084,6 +9084,104 @@ class DataFrame:
         """
         return self.lazy().update(other.lazy(), on, how).collect(no_optimization=True)
 
+    def add(
+        self,
+        other: DataFrame,
+        on: str | Sequence[str] | None = None,
+        fill_value: int | float | str | Mapping[str, int | float | str] | None = None,
+    ) -> pl.DataFrame:
+        """
+        Add aligned dataframes with element-wise and filling missing values.
+
+        Notes
+        -----
+        This is syntactic sugar for an outer join + add
+
+
+        Parameters
+        ----------
+        other
+            DataFrame to be added.
+        on
+            Column names that will be joined on. If none given the row count is used.
+        fill_value:
+            Value used when left or right dataframe does not have corresponding element
+            in opposite frame.
+
+        Examples
+        --------
+        >>> df1 = pl.DataFrame(
+        ...     {
+        ...         "key": [1, 2, 3, 4, 5],
+        ...         "a": [1, 2, 3, 4, None],
+        ...         "b": [1, 2, 3, None, 5],
+        ...         "c": ["a", "b", "c", "d", None],
+        ...         "d": ["a", "b", "c", None, "e"],
+        ...     }
+        ... )
+        >>> df1
+        shape: (5, 5)
+        ┌─────┬──────┬──────┬──────┬──────┐
+        │ key ┆ a    ┆ b    ┆ c    ┆ d    │
+        │ --- ┆ ---  ┆ ---  ┆ ---  ┆ ---  │
+        │ i64 ┆ i64  ┆ i64  ┆ str  ┆ str  │
+        ╞═════╪══════╪══════╪══════╪══════╡
+        │ 1   ┆ 1    ┆ 1    ┆ a    ┆ a    │
+        │ 2   ┆ 2    ┆ 2    ┆ b    ┆ b    │
+        │ 3   ┆ 3    ┆ 3    ┆ c    ┆ c    │
+        │ 4   ┆ 4    ┆ null ┆ d    ┆ null │
+        │ 5   ┆ null ┆ 5    ┆ null ┆ e    │
+        └─────┴──────┴──────┴──────┴──────┘
+
+        >>> df2 = pl.DataFrame(
+        ...     {
+        ...         "key": [1, 2, 3, 4, 5],
+        ...         "a": [1, None, 3, 4, 5],
+        ...         "b": [1, 2, None, 4, 5],
+        ...         "c": ["a", None, "c", "d", "e"],
+        ...         "d": ["a", "b", None, "d", "e"],
+        ...     }
+        ... )
+        >>> df2
+        shape: (5, 5)
+        ┌─────┬──────┬──────┬──────┬──────┐
+        │ key ┆ a    ┆ b    ┆ c    ┆ d    │
+        │ --- ┆ ---  ┆ ---  ┆ ---  ┆ ---  │
+        │ i64 ┆ i64  ┆ i64  ┆ str  ┆ str  │
+        ╞═════╪══════╪══════╪══════╪══════╡
+        │ 1   ┆ 1    ┆ 1    ┆ a    ┆ a    │
+        │ 2   ┆ null ┆ 2    ┆ null ┆ b    │
+        │ 3   ┆ 3    ┆ null ┆ c    ┆ null │
+        │ 4   ┆ 4    ┆ 4    ┆ d    ┆ d    │
+        │ 5   ┆ 5    ┆ 5    ┆ e    ┆ e    │
+        └─────┴──────┴──────┴──────┴──────┘
+
+        >>> new_df = df1.add(
+        ...     df2,
+        ...     fill_value={"a": 100, "b": 0, "c": "*FILL_C*", "d": "*FILL_D*"},
+        ...     on="key",
+        ... )
+        >>> new_df
+        shape: (5, 5)
+        ┌─────┬─────┬─────┬───────────┬───────────┐
+        │ key ┆ a   ┆ b   ┆ c         ┆ d         │
+        │ --- ┆ --- ┆ --- ┆ ---       ┆ ---       │
+        │ i64 ┆ i64 ┆ i64 ┆ str       ┆ str       │
+        ╞═════╪═════╪═════╪═══════════╪═══════════╡
+        │ 1   ┆ 2   ┆ 2   ┆ aa        ┆ aa        │
+        │ 2   ┆ 102 ┆ 4   ┆ b*FILL_C* ┆ bb        │
+        │ 3   ┆ 6   ┆ 3   ┆ cc        ┆ c*FILL_D* │
+        │ 4   ┆ 8   ┆ 4   ┆ dd        ┆ *FILL_D*d │
+        │ 5   ┆ 105 ┆ 10  ┆ *FILL_C*e ┆ ee        │
+        └─────┴─────┴─────┴───────────┴───────────┘
+        """
+        if fill_value is None and on is None:
+            return self.__add__(other)
+
+        return (
+            self.lazy().add(other.lazy(), on, fill_value).collect(no_optimization=True)
+        )
+
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
     # if not a series create singleton series such that it will broadcast
