@@ -636,3 +636,20 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     for how in join_strategies:
         q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
         assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+
+
+def test_streaming_9776() -> None:
+    df = pl.DataFrame({"col_1": ["a"] * 1000, "ID": [None] + ["a"] * 999})
+    ordered = (
+        df.groupby("col_1", "ID", maintain_order=True)
+        .count()
+        .filter(pl.col("col_1") == "a")
+    )
+    unordered = (
+        df.groupby("col_1", "ID", maintain_order=False)
+        .count()
+        .filter(pl.col("col_1") == "a")
+    )
+    expected = [("a", None, 1), ("a", "a", 999)]
+    assert ordered.rows() == expected
+    assert unordered.sort(["col_1", "ID"]).rows() == expected
