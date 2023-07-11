@@ -1074,8 +1074,8 @@ impl DataFrame {
     }
 
     pub fn drop_many<S: AsRef<str>>(&self, names: &[S]) -> Self {
-        let names = names.iter().map(|s| s.as_ref()).collect();
-        fn inner(df: &DataFrame, names: Vec<&str>) -> DataFrame {
+        let names: PlHashSet<_> = names.iter().map(|s| s.as_ref()).collect();
+        fn inner(df: &DataFrame, names: PlHashSet<&str>) -> DataFrame {
             let mut new_cols = Vec::with_capacity(df.columns.len() - names.len());
             df.columns.iter().for_each(|s| {
                 if !names.contains(&s.name()) {
