@@ -98,6 +98,18 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::range::int_ranges))
         .unwrap();
 
+    // Functions - aggregation
+    m.add_wrapped(wrap_pyfunction!(functions::aggregation::all_horizontal))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::aggregation::any_horizontal))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::aggregation::max_horizontal))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::aggregation::min_horizontal))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::aggregation::sum_horizontal))
+        .unwrap();
+
     // Functions - lazy
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_sort_by))
         .unwrap();
@@ -149,10 +161,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::map_mul))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::max_exprs))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::min_exprs))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::rolling_corr))
@@ -164,8 +172,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lazy::repeat))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::spearman_rank_corr))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::sum_exprs))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::time_range_lazy))
         .unwrap();

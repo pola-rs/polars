@@ -63,15 +63,6 @@ def test_col_select() -> None:
     ]
 
 
-def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
-    df = fruits_cars
-    out = df.select(pl.max([pl.col("A"), pl.col("B")]))
-    assert out[:, 0].to_list() == [5, 4, 3, 4, 5]
-
-    out = df.select(pl.min([pl.col("A"), pl.col("B")]))
-    assert out[:, 0].to_list() == [1, 2, 3, 2, 1]
-
-
 def test_suffix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select([pl.all().suffix("_reverse")])
@@ -121,17 +112,6 @@ def test_filter_where() -> None:
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
     assert_frame_equal(result_where, expected)
     assert_frame_equal(result_filter, expected)
-
-
-def test_min_nulls_consistency() -> None:
-    df = pl.DataFrame({"a": [None, 2, 3], "b": [4, None, 6], "c": [7, 5, 0]})
-    out = df.select([pl.min(["a", "b", "c"])]).to_series()
-    expected = pl.Series("min", [4, 2, 0])
-    assert_series_equal(out, expected)
-
-    out = df.select([pl.max(["a", "b", "c"])]).to_series()
-    expected = pl.Series("max", [7, 5, 6])
-    assert_series_equal(out, expected)
 
 
 def test_list_join_strings() -> None:

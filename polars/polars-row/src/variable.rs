@@ -77,8 +77,8 @@ unsafe fn encode_one(
                 EMPTY_SENTINEL
             };
             *out.get_unchecked_release_mut(0) = MaybeUninit::new(byte);
-            // write remainder as zeros
-            out.get_unchecked_release_mut(1..).fill(MaybeUninit::new(0));
+            // // write remainder as zeros
+            // out.get_unchecked_release_mut(1..).fill(maybeuninit::new(0));
             1
         }
         Some(val) => {
@@ -143,8 +143,8 @@ unsafe fn encode_one(
         }
         None => {
             *out.get_unchecked_release_mut(0) = MaybeUninit::new(get_null_sentinel(field));
-            // write remainder as zeros
-            out.get_unchecked_release_mut(1..).fill(MaybeUninit::new(0));
+            // // write remainder as zeros
+            // out.get_unchecked_release_mut(1..).fill(MaybeUninit::new(0));
             1
         }
     }
@@ -161,6 +161,10 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
         let written_len = encode_one(dst, opt_value.map(|v| v.as_uninit()), field);
         *offset += written_len;
     }
+    let offset = out.offsets.last().unwrap();
+    let dst = values.get_unchecked_release_mut(*offset..);
+    // write remainder as zeros
+    dst.fill(MaybeUninit::new(0));
     out.values.set_len(out.values.capacity())
 }
 
