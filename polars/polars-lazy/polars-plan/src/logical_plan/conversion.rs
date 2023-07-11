@@ -234,21 +234,6 @@ pub fn to_alp(
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             options,
         },
-        #[cfg(feature = "parquet")]
-        LogicalPlan::ParquetScan {
-            path,
-            file_info,
-            predicate,
-            options,
-            cloud_options,
-        } => ALogicalPlan::ParquetScan {
-            path,
-            file_info,
-            output_schema: None,
-            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            options,
-            cloud_options,
-        },
         LogicalPlan::DataFrameScan {
             df,
             schema,
@@ -720,21 +705,6 @@ impl ALogicalPlan {
                 file_info,
                 predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
                 options,
-            },
-            #[cfg(feature = "parquet")]
-            ALogicalPlan::ParquetScan {
-                path,
-                file_info,
-                output_schema: _,
-                predicate,
-                options,
-                cloud_options,
-            } => LogicalPlan::ParquetScan {
-                path,
-                file_info,
-                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-                options,
-                cloud_options,
             },
             ALogicalPlan::DataFrameScan {
                 df,

@@ -116,25 +116,6 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
                 ..
             },
         ) => Arc::ptr_eq(left_df, right_df),
-        #[cfg(feature = "parquet")]
-        (
-            ParquetScan {
-                path: path_left,
-                predicate: predicate_l,
-                options: options_l,
-                ..
-            },
-            ParquetScan {
-                path: path_right,
-                predicate: predicate_r,
-                options: options_r,
-                ..
-            },
-        ) => {
-            path_left == path_right
-                && options_l == options_r
-                && predicate_equal(*predicate_l, *predicate_r, expr_arena)
-        }
         #[cfg(feature = "ipc")]
         (
             IpcScan {

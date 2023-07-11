@@ -136,32 +136,6 @@ impl SlicePushDown {
                 };
                 Ok(lp)
             }
-
-            #[cfg(feature = "parquet")]
-            (ParquetScan {
-                path,
-                file_info,
-                output_schema,
-                predicate,
-                mut options,
-                cloud_options,
-
-            },
-                // TODO! we currently skip slice pushdown if there is a predicate.
-                // we can modify the readers to only limit after predicates have been applied
-                Some(state)) if state.offset == 0 && predicate.is_none() => {
-                options.n_rows = Some(state.len as usize);
-                let lp = ParquetScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    options,
-                    cloud_options,
-                };
-
-                Ok(lp)
-            },
             #[cfg(feature = "ipc")]
             (IpcScan {path,
             file_info,

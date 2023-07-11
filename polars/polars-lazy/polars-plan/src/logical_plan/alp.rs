@@ -3,8 +3,6 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[cfg(feature = "parquet")]
-use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
@@ -13,8 +11,6 @@ use crate::logical_plan::schema::{det_join_schema, FileInfo};
 use crate::logical_plan::FileScan;
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
-#[cfg(feature = "parquet")]
-use crate::logical_plan::ParquetOptions;
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 
@@ -60,16 +56,6 @@ pub enum ALogicalPlan {
         output_schema: Option<SchemaRef>,
         options: IpcScanOptionsInner,
         predicate: Option<Node>,
-    },
-    #[cfg(feature = "parquet")]
-    ParquetScan {
-        path: PathBuf,
-        file_info: FileInfo,
-        // schema of the projected file
-        output_schema: Option<SchemaRef>,
-        predicate: Option<Node>,
-        options: ParquetOptions,
-        cloud_options: Option<CloudOptions>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -164,8 +150,6 @@ impl ALogicalPlan {
             Scan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "python")]
             PythonScan { options, .. } => &options.schema,
-            #[cfg(feature = "parquet")]
-            ParquetScan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "ipc")]
             IpcScan { file_info, .. } => &file_info.schema,
             AnonymousScan { file_info, .. } => &file_info.schema,
@@ -184,8 +168,6 @@ impl ALogicalPlan {
             Selection { .. } => "selection",
             #[cfg(feature = "ipc")]
             IpcScan { .. } => "ipc_scan",
-            #[cfg(feature = "parquet")]
-            ParquetScan { .. } => "parquet_scan",
             DataFrameScan { .. } => "df",
             Projection { .. } => "projection",
             LocalProjection { .. } => "local_projection",
@@ -214,12 +196,6 @@ impl ALogicalPlan {
             Scan {
                 output_schema,
                 file_info,
-                ..
-            } => output_schema.as_ref().unwrap_or(&file_info.schema),
-            #[cfg(feature = "parquet")]
-            ParquetScan {
-                file_info,
-                output_schema,
                 ..
             } => output_schema.as_ref().unwrap_or(&file_info.schema),
             #[cfg(feature = "ipc")]
@@ -396,30 +372,6 @@ impl ALogicalPlan {
                 }
             }
 
-            #[cfg(feature = "parquet")]
-            ParquetScan {
-                path,
-                file_info,
-                output_schema,
-                predicate,
-                options,
-                cloud_options,
-                ..
-            } => {
-                let mut new_predicate = None;
-                if predicate.is_some() {
-                    new_predicate = exprs.pop()
-                }
-
-                ParquetScan {
-                    path: path.clone(),
-                    file_info: file_info.clone(),
-                    output_schema: output_schema.clone(),
-                    predicate: new_predicate,
-                    options: options.clone(),
-                    cloud_options: cloud_options.clone(),
-                }
-            }
             DataFrameScan {
                 df,
                 schema,
@@ -496,12 +448,6 @@ impl ALogicalPlan {
                 container.extend(iter)
             }
             HStack { exprs, .. } => container.extend_from_slice(exprs),
-            #[cfg(feature = "parquet")]
-            ParquetScan { predicate, .. } => {
-                if let Some(node) = predicate {
-                    container.push(*node)
-                }
-            }
             Scan { predicate, .. } => {
                 if let Some(node) = predicate {
                     container.push(*node)
@@ -580,8 +526,6 @@ impl ALogicalPlan {
                 *input
             }
             Scan { .. } => return,
-            #[cfg(feature = "parquet")]
-            ParquetScan { .. } => return,
             #[cfg(feature = "ipc")]
             IpcScan { .. } => return,
             DataFrameScan { .. } => return,

@@ -40,13 +40,7 @@ pub struct CsvParserOptions {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
-    pub cache: bool,
     pub parallel: polars_io::parquet::ParallelStrategy,
-    pub rechunk: bool,
-    pub row_count: Option<RowCount>,
-    pub file_counter: FileCount,
     pub low_memory: bool,
     pub use_statistics: bool,
 }

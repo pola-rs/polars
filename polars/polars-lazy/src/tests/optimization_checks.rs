@@ -16,13 +16,6 @@ pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
                     },
                 ..
             }
-            | ParquetScan {
-                options:
-                    ParquetOptions {
-                        row_count: Some(_), ..
-                    },
-                ..
-            }
             | IpcScan {
                 options:
                     IpcScanOptionsInner {
@@ -46,9 +39,6 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
                 selection: Some(_), ..
             }
             | Scan {
-                predicate: Some(_), ..
-            }
-            | ParquetScan {
                 predicate: Some(_), ..
             }
             | IpcScan {
@@ -92,7 +82,6 @@ fn slice_at_scan(q: LazyFrame) -> bool {
         use ALogicalPlan::*;
         match lp {
             Scan { file_options, .. } => file_options.n_rows.is_some(),
-            ParquetScan { options, .. } => options.n_rows.is_some(),
             IpcScan { options, .. } => options.n_rows.is_some(),
             _ => false,
         }

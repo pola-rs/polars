@@ -205,7 +205,7 @@ pub(crate) fn insert_streaming_nodes(
                 file_options: options,
                 scan_type,
                 ..
-            } => {
+            } if scan_type.streamable() => {
                 if state.streamable {
                     #[cfg(feature = "csv")]
                     if matches!(scan_type, FileScan::Csv { .. }) {
@@ -215,13 +215,6 @@ pub(crate) fn insert_streaming_nodes(
                         }
                     }
 
-                    state.sources.push(root);
-                    pipeline_trees[current_idx].push(state)
-                }
-            }
-            #[cfg(feature = "parquet")]
-            ParquetScan { .. } => {
-                if state.streamable {
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)
                 }
@@ -273,18 +266,11 @@ pub(crate) fn insert_streaming_nodes(
             Union { inputs, options }
                 if options.slice.is_none()
                     && inputs.iter().all(|node| match lp_arena.get(*node) {
-                        #[cfg(feature = "parquet")]
-                        ParquetScan { .. } => true,
                         Scan { .. } => true,
                         MapFunction {
                             input,
                             function: FunctionNode::Rechunk,
-                        } => match lp_arena.get(*input) {
-                            #[cfg(feature = "parquet")]
-                            ParquetScan { .. } => true,
-                            Scan { .. } => true,
-                            _ => false,
-                        },
+                        } => matches!(lp_arena.get(*input), Scan { .. }),
                         _ => false,
                     }) =>
             {

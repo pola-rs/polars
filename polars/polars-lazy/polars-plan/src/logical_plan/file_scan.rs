@@ -24,14 +24,24 @@ impl FileScan {
         }
     }
 
-    pub(crate) fn sort_projection(&self) -> bool {
+    pub(crate) fn sort_projection(&self, _file_options: &FileScanOptions) -> bool {
         match self {
             #[cfg(feature = "csv")]
             Self::Csv { .. } => true,
             #[cfg(feature = "ipc")]
-            Self::Ipc { options, .. } => options.row_count.is_some(),
+            Self::Ipc { .. } => _file_options.row_count.is_some(),
             #[cfg(feature = "parquet")]
-            Self::Parquet { options, .. } => options.row_count.is_some(),
+            Self::Parquet { .. } => _file_options.row_count.is_some(),
+        }
+    }
+    pub fn streamable(&self) -> bool {
+        match self {
+            #[cfg(feature = "csv")]
+            Self::Csv { .. } => true,
+            #[cfg(feature = "ipc")]
+            Self::Ipc { .. } => false,
+            #[cfg(feature = "parquet")]
+            Self::Parquet { .. } => true,
         }
     }
 }

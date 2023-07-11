@@ -34,12 +34,6 @@ impl OptimizationRule for DelayRechunk {
                 let mut input_node = None;
                 for (node, lp) in (&*lp_arena).iter(*input) {
                     match lp {
-                        // we get the input node
-                        #[cfg(feature = "parquet")]
-                        ParquetScan { .. } => {
-                            input_node = Some(node);
-                            break;
-                        }
                         Scan { .. } => {
                             input_node = Some(node);
                             break;
@@ -67,8 +61,6 @@ impl OptimizationRule for DelayRechunk {
                         } => {
                             options.rechunk = false;
                         }
-                        #[cfg(feature = "parquet")]
-                        ParquetScan { options, .. } => options.rechunk = false,
                         #[cfg(feature = "ipc")]
                         IpcScan { options, .. } => {
                             options.rechunk = false;

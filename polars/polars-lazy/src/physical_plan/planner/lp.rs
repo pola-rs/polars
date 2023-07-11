@@ -181,7 +181,7 @@ pub fn create_physical_plan(
             output_schema,
             scan_type,
             predicate,
-            file_options: options,
+            file_options,
         } => {
             let predicate = predicate
                 .map(|pred| {
@@ -204,7 +204,7 @@ pub fn create_physical_plan(
                     schema: file_info.schema,
                     options: csv_options,
                     predicate,
-                    file_options: options,
+                    file_options,
                 })),
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc { options } => Ok(Box::new(executors::IpcExec {
@@ -223,6 +223,7 @@ pub fn create_physical_plan(
                     predicate,
                     options,
                     cloud_options,
+                    file_options,
                 ))),
             }
         }
@@ -252,35 +253,6 @@ pub fn create_physical_plan(
                 predicate,
                 options,
             }))
-        }
-        #[cfg(feature = "parquet")]
-        ParquetScan {
-            path,
-            file_info,
-            output_schema,
-            predicate,
-            options,
-            cloud_options,
-        } => {
-            let predicate = predicate
-                .map(|pred| {
-                    create_physical_expr(
-                        pred,
-                        Context::Default,
-                        expr_arena,
-                        output_schema.as_ref(),
-                        &mut Default::default(),
-                    )
-                })
-                .map_or(Ok(None), |v| v.map(Some))?;
-
-            Ok(Box::new(executors::ParquetExec::new(
-                path,
-                file_info.schema,
-                predicate,
-                options,
-                cloud_options,
-            )))
         }
         Projection {
             expr,

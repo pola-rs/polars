@@ -153,22 +153,27 @@ impl LogicalPlanBuilder {
             row_estimation: (Some(num_rows), num_rows),
         };
 
-        Ok(LogicalPlan::ParquetScan {
+        let options = FileScanOptions {
+            with_columns: None,
+            cache,
+            n_rows,
+            rechunk,
+            row_count,
+            file_counter: Default::default(),
+        };
+        Ok(LogicalPlan::Scan {
             path,
             file_info,
+            file_options: options,
             predicate: None,
-            options: ParquetOptions {
-                n_rows,
-                with_columns: None,
-                cache,
-                parallel,
-                row_count,
-                rechunk,
-                file_counter: Default::default(),
-                low_memory,
-                use_statistics,
+            scan_type: FileScan::Parquet {
+                options: ParquetOptions {
+                    parallel,
+                    low_memory,
+                    use_statistics,
+                },
+                cloud_options,
             },
-            cloud_options,
         }
         .into())
     }

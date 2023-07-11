@@ -17,8 +17,6 @@ impl LogicalPlan {
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
-            #[cfg(feature = "parquet")]
-            ParquetScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             #[cfg(feature = "ipc")]
             IpcScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),

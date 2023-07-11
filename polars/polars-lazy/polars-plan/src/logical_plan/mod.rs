@@ -165,15 +165,6 @@ pub enum LogicalPlan {
         file_options: FileScanOptions,
         scan_type: FileScan,
     },
-    #[cfg(feature = "parquet")]
-    /// Scan a Parquet file
-    ParquetScan {
-        path: PathBuf,
-        file_info: FileInfo,
-        predicate: Option<Expr>,
-        options: ParquetOptions,
-        cloud_options: Option<CloudOptions>,
-    },
     #[cfg(feature = "ipc")]
     IpcScan {
         path: PathBuf,

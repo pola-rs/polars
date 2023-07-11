@@ -362,25 +362,6 @@ impl LogicalPlan {
                     id_map,
                 )
             }
-            #[cfg(feature = "parquet")]
-            ParquetScan {
-                path,
-                file_info,
-                predicate,
-                options,
-                ..
-            } => self.write_scan(
-                acc_str,
-                prev_node,
-                "PARQUET",
-                path.as_ref(),
-                options.with_columns.as_deref().map(|cols| cols.as_slice()),
-                file_info.schema.len(),
-                predicate,
-                branch,
-                id,
-                id_map,
-            ),
             #[cfg(feature = "ipc")]
             IpcScan {
                 path,

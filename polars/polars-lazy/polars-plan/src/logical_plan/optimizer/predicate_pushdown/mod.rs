@@ -260,29 +260,6 @@ impl PredicatePushDown {
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
-            #[cfg(feature = "parquet")]
-            ParquetScan {
-                path,
-                file_info,
-                output_schema,
-                predicate,
-                options,
-                cloud_options,
-            } => {
-                let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
-
-                let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
-
-                let lp = ParquetScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    options,
-                    cloud_options,
-                };
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-            }
             Scan {
                 path,
                 file_info,

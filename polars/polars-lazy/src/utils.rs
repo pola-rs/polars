@@ -15,10 +15,6 @@ pub(crate) fn agg_source_paths(
             Scan { path, .. } => {
                 paths.insert(path.clone());
             }
-            #[cfg(feature = "parquet")]
-            ParquetScan { path, .. } => {
-                paths.insert(path.clone());
-            }
             #[cfg(feature = "ipc")]
             IpcScan { path, .. } => {
                 paths.insert(path.clone());
