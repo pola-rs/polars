@@ -51,23 +51,27 @@ def test_filter_is_in_4572() -> None:
 
 
 def test_filter_aggregation_any() -> None:
-    assert pl.DataFrame(
+    df = pl.DataFrame(
         {
             "id": [1, 2, 3, 4],
             "group": [1, 2, 1, 1],
             "pred_a": [False, True, False, False],
             "pred_b": [False, False, True, True],
         }
-    ).groupby("group").agg(
-        [
-            pl.any(["pred_a", "pred_b"]),
-            pl.col("id").filter(pl.any(["pred_a", "pred_b"])).alias("filtered"),
-        ]
-    ).sort(
-        "group"
-    ).to_dict(
-        False
-    ) == {
+    )
+
+    result = (
+        df.groupby("group")
+        .agg(
+            pl.any_horizontal("pred_a", "pred_b"),
+            pl.col("id")
+            .filter(pl.any_horizontal("pred_a", "pred_b"))
+            .alias("filtered"),
+        )
+        .sort("group")
+    )
+
+    assert result.to_dict(False) == {
         "group": [1, 2],
         "any": [[False, True, True], [True]],
         "filtered": [[3, 4], [2]],

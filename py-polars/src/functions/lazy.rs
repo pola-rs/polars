@@ -380,18 +380,6 @@ pub fn map_mul(
 }
 
 #[pyfunction]
-pub fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    dsl::max_exprs(exprs).into()
-}
-
-#[pyfunction]
-pub fn min_exprs(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    dsl::min_exprs(exprs).into()
-}
-
-#[pyfunction]
 pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
     dsl::pearson_corr(a.inner, b.inner, ddof).into()
 }
@@ -436,12 +424,6 @@ pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, ddof: u8, propagate_nans: bool) 
     {
         panic!("activate 'propagate_nans'")
     }
-}
-
-#[pyfunction]
-pub fn sum_exprs(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    dsl::sum_exprs(exprs).into()
 }
 
 #[pyfunction]

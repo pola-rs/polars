@@ -1094,9 +1094,9 @@ impl LazyFrame {
     /// Equal to `LazyFrame::filter(col("*").is_not_null())`
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
         match subset {
-            None => self.filter(all_exprs([col("*").is_not_null()])),
+            None => self.filter(all_horizontal([col("*").is_not_null()])),
             Some(subset) => {
-                let predicate = all_exprs(
+                let predicate = all_horizontal(
                     subset
                         .into_iter()
                         .map(|e| e.is_not_null())
