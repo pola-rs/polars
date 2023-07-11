@@ -271,14 +271,35 @@ impl PredicatePushDown {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
-                let lp = Scan {
-                    path,
-                    file_info,
-                    predicate,
-                    file_options: options,
-                    output_schema,
-                    scan_type
+                let lp = match (predicate, &scan_type) {
+                    #[cfg(feature = "csv")]
+                    (Some(predicate), FileScan::Csv {..}) => {
+                        let lp = Scan {
+                            path,
+                            file_info,
+                            predicate: None,
+                            file_options: options,
+                            output_schema,
+                            scan_type
+                        };
+                        let input = lp_arena.add(lp);
+                        Selection {
+                            input,
+                            predicate
+                        }
+                    },
+                    _ => {
+                        Scan {
+                            path,
+                            file_info,
+                            predicate,
+                            file_options: options,
+                            output_schema,
+                            scan_type
+                        }
+                    }
                 };
+
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
 
             }

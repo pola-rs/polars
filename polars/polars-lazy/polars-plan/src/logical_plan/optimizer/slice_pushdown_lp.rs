@@ -138,7 +138,7 @@ impl SlicePushDown {
             }
             #[cfg(feature = "ipc")]
             (IpcScan {path,
-            file_info,
+                file_info,
                 output_schema,
                 predicate,
                 mut options

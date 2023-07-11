@@ -190,6 +190,11 @@ pub fn set_estimated_row_counts(
             let (known_size, estimated_size) = file_info.row_estimation;
             (known_size, estimated_size, _filter_count)
         }
+        #[cfg(feature = "ipc")]
+        IpcScan { file_info, .. } => {
+            let (known_size, estimated_size) = file_info.row_estimation;
+            (known_size, estimated_size, _filter_count)
+        }
         #[cfg(feature = "python")]
         PythonScan { .. } => {
             // TODO! get row estimation.
