@@ -134,9 +134,9 @@ def test_max_min_wildcard_columns(fruits_cars: pl.DataFrame) -> None:
 )
 def test_min_horizontal_single_input(input: Any, expected_data: list[Any]) -> None:
     df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    result = df.select(pl.min_horizontal(input))
-    expected = pl.DataFrame({"min": expected_data})
-    assert_frame_equal(result, expected)
+    result = df.select(pl.min_horizontal(input)).to_series()
+    expected = pl.Series("min", expected_data)
+    assert_series_equal(result, expected)
 
 
 @pytest.mark.parametrize(
