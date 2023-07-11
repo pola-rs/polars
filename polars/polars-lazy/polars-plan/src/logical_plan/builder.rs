@@ -43,7 +43,7 @@ pub(crate) fn prepare_projection(
     Ok((exprs, schema))
 }
 
-pub struct LogicalPlanBuilder(LogicalPlan);
+pub struct LogicalPlanBuilder(pub LogicalPlan);
 
 impl From<LogicalPlan> for LogicalPlanBuilder {
     fn from(lp: LogicalPlan) -> Self {
