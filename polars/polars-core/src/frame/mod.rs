@@ -3336,6 +3336,9 @@ impl DataFrame {
             self.groupby(cols)?.take_groups()
         };
 
+        // drop key columns prior to calculation if requested
+        let df = if !include_key { self.drop_many(cols) } else { self.clone() };
+
         // don't parallelize this
         // there is a lot of parallelization in take and this may easily SO
         POOL.install(|| {
@@ -3345,26 +3348,14 @@ impl DataFrame {
                         .into_par_iter()
                         .map(|(_, group)| {
                             // groups are in bounds
-                            unsafe { self._take_unchecked_slice(&group, false) }
-                        })
-                        .map(|group| {
-                            if include_key {
-                                group
-                            } else {
-                                group.drop_many(cols)
-                            }
+                            unsafe { df._take_unchecked_slice(&group, false) }
                         })
                         .collect())
                 }
                 GroupsProxy::Slice { groups, .. } => Ok(groups
                     .into_par_iter()
-                    .map(|[first, len]| self.slice(first as i64, len as usize))
-                    .map(|group| {
-                        if include_key {
-                            group
-                        } else {
-                            group.drop_many(cols)
-                        }
+                    .map(|[first, len]| {
+                        df.slice(first as i64, len as usize)
                     })
                     .collect()),
             }
