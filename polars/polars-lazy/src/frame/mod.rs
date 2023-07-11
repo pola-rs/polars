@@ -11,6 +11,7 @@ mod parquet;
 mod python;
 
 mod anonymous_scan;
+mod err;
 mod file_list_reader;
 #[cfg(feature = "pivot")]
 pub mod pivot;
@@ -43,6 +44,7 @@ use polars_plan::logical_plan::optimize;
 use polars_plan::utils::expr_to_leaf_column_names;
 use smartstring::alias::String as SmartString;
 
+use crate::fallible;
 use crate::physical_plan::executors::Executor;
 use crate::physical_plan::planner::create_physical_plan;
 use crate::physical_plan::state::ExecutionState;
@@ -1221,27 +1223,16 @@ impl LazyFrame {
         };
 
         if add_row_count_in_map {
-            let name: SmartString = name.into();
-            let name2: SmartString = name.clone();
-            let opt = AllowedOptimizations {
-                slice_pushdown: false,
-                predicate_pushdown: false,
-                streaming: false,
-                ..Default::default()
-            };
-            let udf_schema = move |s: &Schema| {
-                // Can't error, index 0 is always in bounds
-                let new = s
-                    .new_inserting_at_index(0, name2.clone(), IDX_DTYPE)
-                    .unwrap();
-                Ok(Arc::new(new))
-            };
-            self.map(
-                move |df: DataFrame| df.with_row_count(&name, offset),
-                opt,
-                Some(Arc::new(udf_schema)),
-                Some("WITH ROW COUNT"),
-            )
+            let schema = fallible!(self.schema(), &self);
+            let schema = schema
+                .new_inserting_at_index(0, name.into(), IDX_DTYPE)
+                .unwrap();
+
+            self.map_private(FunctionNode::RowCount {
+                name: Arc::from(name),
+                offset,
+                schema: Arc::new(schema),
+            })
         } else {
             self
         }
