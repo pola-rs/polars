@@ -510,7 +510,7 @@ impl LogicalPlanBuilder {
                             This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
                     } else {
                         format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all_exprs' or `any_exprs' expression.")
+                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression.")
                     };
                     return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
                 }

@@ -187,7 +187,8 @@ def test_fold_all_schema() -> None:
         }
     )
     # divide because of overflow
-    assert df.select(pl.sum(pl.all().hash(seed=1) // int(1e8))).dtypes == [pl.UInt64]
+    result = df.select(pl.sum_horizontal(pl.all().hash(seed=1) // int(1e8)))
+    assert result.dtypes == [pl.UInt64]
 
 
 def test_fill_null_static_schema_4843() -> None:

@@ -4464,7 +4464,7 @@ class DataFrame:
 
         Drop a row only if all values are null:
 
-        >>> df.filter(~pl.all(pl.all().is_null()))
+        >>> df.filter(~pl.all_horizontal(pl.all().is_null()))
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │

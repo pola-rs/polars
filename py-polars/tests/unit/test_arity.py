@@ -13,16 +13,18 @@ def test_nested_when_then_and_wildcard_expansion_6284() -> None:
     )
 
     out0 = df.with_columns(
-        pl.when(pl.any(pl.all() == "a"))
+        pl.when(pl.any_horizontal(pl.all() == "a"))
         .then("a")
-        .otherwise(pl.when(pl.any(pl.all() == "d")).then("d").otherwise(None))
+        .otherwise(
+            pl.when(pl.any_horizontal(pl.all() == "d")).then("d").otherwise(None)
+        )
         .alias("result")
     )
 
     out1 = df.with_columns(
-        pl.when(pl.any(pl.all() == "a"))
+        pl.when(pl.any_horizontal(pl.all() == "a"))
         .then("a")
-        .when(pl.any(pl.all() == "d"))
+        .when(pl.any_horizontal(pl.all() == "d"))
         .then("d")
         .otherwise(None)
         .alias("result")
