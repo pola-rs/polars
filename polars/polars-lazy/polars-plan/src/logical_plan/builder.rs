@@ -12,7 +12,12 @@ use polars_io::ipc::IpcReader;
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
-#[cfg(any(feature = "parquet", feature = "parquet_async", feature = "csv"))]
+#[cfg(any(
+    feature = "parquet",
+    feature = "parquet_async",
+    feature = "csv",
+    feature = "ipc"
+))]
 use polars_io::RowCount;
 #[cfg(feature = "csv")]
 use polars_io::{
@@ -153,22 +158,27 @@ impl LogicalPlanBuilder {
             row_estimation: (Some(num_rows), num_rows),
         };
 
-        Ok(LogicalPlan::ParquetScan {
+        let options = FileScanOptions {
+            with_columns: None,
+            cache,
+            n_rows,
+            rechunk,
+            row_count,
+            file_counter: Default::default(),
+        };
+        Ok(LogicalPlan::Scan {
             path,
             file_info,
+            file_options: options,
             predicate: None,
-            options: ParquetOptions {
-                n_rows,
-                with_columns: None,
-                cache,
-                parallel,
-                row_count,
-                rechunk,
-                file_counter: Default::default(),
-                low_memory,
-                use_statistics,
+            scan_type: FileScan::Parquet {
+                options: ParquetOptions {
+                    parallel,
+                    low_memory,
+                    use_statistics,
+                },
+                cloud_options,
             },
-            cloud_options,
         }
         .into())
     }
@@ -177,6 +187,10 @@ impl LogicalPlanBuilder {
     pub fn scan_ipc<P: Into<std::path::PathBuf>>(
         path: P,
         options: IpcScanOptions,
+        n_rows: Option<usize>,
+        cache: bool,
+        row_count: Option<RowCount>,
+        rechunk: bool,
     ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
@@ -185,7 +199,7 @@ impl LogicalPlanBuilder {
         let mut reader = IpcReader::new(file);
 
         let mut schema = reader.schema()?;
-        if let Some(rc) = &options.row_count {
+        if let Some(rc) = &row_count {
             let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
         }
         let schema = Arc::new(schema);
@@ -195,11 +209,21 @@ impl LogicalPlanBuilder {
             schema,
             row_estimation: (None, num_rows),
         };
-        Ok(LogicalPlan::IpcScan {
+
+        let file_options = FileScanOptions {
+            with_columns: None,
+            cache,
+            n_rows,
+            rechunk,
+            row_count,
+            file_counter: Default::default(),
+        };
+        Ok(LogicalPlan::Scan {
             path,
             file_info,
+            file_options,
             predicate: None,
-            options: options.into(),
+            scan_type: FileScan::Ipc { options },
         }
         .into())
     }
@@ -281,29 +305,35 @@ impl LogicalPlanBuilder {
             schema,
             row_estimation: (None, estimated_n_rows),
         };
-        Ok(LogicalPlan::CsvScan {
+
+        let options = FileScanOptions {
+            with_columns: None,
+            cache,
+            n_rows,
+            rechunk,
+            row_count,
+            file_counter: Default::default(),
+        };
+        Ok(LogicalPlan::Scan {
             path,
             file_info,
-            options: CsvParserOptions {
-                has_header,
-                delimiter,
-                ignore_errors,
-                skip_rows,
-                n_rows,
-                with_columns: None,
-                low_memory,
-                cache,
-                comment_char,
-                quote_char,
-                eol_char,
-                null_values,
-                rechunk,
-                encoding,
-                row_count,
-                try_parse_dates,
-                file_counter: Default::default(),
-            },
+            file_options: options,
             predicate: None,
+            scan_type: FileScan::Csv {
+                options: CsvParserOptions {
+                    has_header,
+                    delimiter,
+                    ignore_errors,
+                    skip_rows,
+                    low_memory,
+                    comment_char,
+                    quote_char,
+                    eol_char,
+                    null_values,
+                    encoding,
+                    try_parse_dates,
+                },
+            },
         }
         .into())
     }

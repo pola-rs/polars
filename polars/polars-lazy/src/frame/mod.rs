@@ -1200,42 +1200,10 @@ impl LazyFrame {
     /// This may for instance block predicate pushdown optimization.
     pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
         let add_row_count_in_map = match &mut self.logical_plan {
-            // Do the row count at scan
-            #[cfg(feature = "csv")]
-            LogicalPlan::CsvScan {
-                options, file_info, ..
-            } => {
-                options.row_count = Some(RowCount {
-                    name: name.to_string(),
-                    offset: offset.unwrap_or(0),
-                });
-                file_info.schema = Arc::new(
-                    file_info
-                        .schema
-                        .new_inserting_at_index(0, name.into(), IDX_DTYPE)
-                        .unwrap(),
-                );
-                false
-            }
-            #[cfg(feature = "ipc")]
-            LogicalPlan::IpcScan {
-                options, file_info, ..
-            } => {
-                options.row_count = Some(RowCount {
-                    name: name.to_string(),
-                    offset: offset.unwrap_or(0),
-                });
-                file_info.schema = Arc::new(
-                    file_info
-                        .schema
-                        .new_inserting_at_index(0, name.into(), IDX_DTYPE)
-                        .unwrap(),
-                );
-                false
-            }
-            #[cfg(feature = "parquet")]
-            LogicalPlan::ParquetScan {
-                options, file_info, ..
+            LogicalPlan::Scan {
+                file_options: options,
+                file_info,
+                ..
             } => {
                 options.row_count = Some(RowCount {
                     name: name.to_string(),

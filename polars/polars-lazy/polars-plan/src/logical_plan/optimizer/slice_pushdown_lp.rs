@@ -136,73 +136,49 @@ impl SlicePushDown {
                 };
                 Ok(lp)
             }
-
-            #[cfg(feature = "parquet")]
-            (ParquetScan {
-                path,
-                file_info,
-                output_schema,
-                predicate,
-                mut options,
-                cloud_options,
-
-            },
-                // TODO! we currently skip slice pushdown if there is a predicate.
-                // we can modify the readers to only limit after predicates have been applied
-                Some(state)) if state.offset == 0 && predicate.is_none() => {
-                options.n_rows = Some(state.len as usize);
-                let lp = ParquetScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    options,
-                    cloud_options,
-                };
-
-                Ok(lp)
-            },
-            #[cfg(feature = "ipc")]
-            (IpcScan {path,
-            file_info,
-                output_schema,
-                predicate,
-                mut options
-            }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-                options.n_rows = Some(state.len as usize);
-                let lp = IpcScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    options
-                };
-
-                Ok(lp)
-
-            }
-
             #[cfg(feature = "csv")]
-            (CsvScan {
+            (Scan {
                 path,
                 file_info,
                 output_schema,
-                mut options,
+                file_options: mut options,
                 predicate,
-            }, Some(state)) if state.offset >= 0 && predicate.is_none() => {
-                options.skip_rows += state.offset as usize;
+                scan_type: FileScan::Csv {options: mut csv_options}
+            }, Some(state)) if predicate.is_none() && state.offset >= 0 =>  {
                 options.n_rows = Some(state.len as usize);
+                csv_options.skip_rows += state.offset as usize;
 
-                let lp = CsvScan {
+                let lp = Scan {
                     path,
                     file_info,
                     output_schema,
-                    options,
+                    scan_type: FileScan::Csv {options: csv_options},
+                    file_options: options,
                     predicate,
                 };
                 Ok(lp)
-            }
+            },
+            (Scan {
+                path,
+                file_info,
+                output_schema,
+                file_options: mut options,
+                predicate,
+                scan_type
+            }, Some(state)) if state.offset == 0 && predicate.is_none() => {
 
+                options.n_rows = Some(state.len as usize);
+                let lp = Scan {
+                    path,
+                    file_info,
+                    output_schema,
+                    predicate,
+                    file_options: options,
+                    scan_type
+                };
+
+                Ok(lp)
+            }
             (Union {inputs, mut options }, Some(state)) => {
                 options.slice = Some((state.offset, state.len as usize));
                 Ok(Union {inputs, options})

@@ -8,7 +8,7 @@ use polars_io::parquet::{BatchedParquetReader, ParquetReader};
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::{is_cloud_url, SerReader};
-use polars_plan::prelude::ParquetOptions;
+use polars_plan::prelude::{FileScanOptions, ParquetOptions};
 use polars_utils::IdxSize;
 
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
@@ -20,6 +20,7 @@ pub struct ParquetSource {
     chunk_index: IdxSize,
     path: Option<PathBuf>,
     options: Option<ParquetOptions>,
+    file_options: Option<FileScanOptions>,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     schema: Option<SchemaRef>,
@@ -33,8 +34,9 @@ impl ParquetSource {
     fn init_reader(&mut self) -> PolarsResult<()> {
         let path = self.path.take().unwrap();
         let options = self.options.take().unwrap();
+        let file_options = self.file_options.take().unwrap();
         let schema = self.schema.take().unwrap();
-        let projection: Option<Vec<_>> = options.with_columns.map(|with_columns| {
+        let projection: Option<Vec<_>> = file_options.with_columns.map(|with_columns| {
             with_columns
                 .iter()
                 .map(|name| schema.index_of(name).unwrap())
@@ -59,8 +61,8 @@ impl ParquetSource {
             {
                 let uri = path.to_string_lossy();
                 ParquetAsyncReader::from_uri(&uri, self.cloud_options.as_ref())?
-                    .with_n_rows(options.n_rows)
-                    .with_row_count(options.row_count)
+                    .with_n_rows(file_options.n_rows)
+                    .with_row_count(file_options.row_count)
                     .with_projection(projection)
                     .use_statistics(options.use_statistics)
                     .batched(chunk_size)?
@@ -69,8 +71,8 @@ impl ParquetSource {
             let file = std::fs::File::open(path).unwrap();
 
             ParquetReader::new(file)
-                .with_n_rows(options.n_rows)
-                .with_row_count(options.row_count)
+                .with_n_rows(file_options.n_rows)
+                .with_row_count(file_options.row_count)
                 .with_projection(projection)
                 .use_statistics(options.use_statistics)
                 .batched(chunk_size)?
@@ -84,6 +86,7 @@ impl ParquetSource {
         path: PathBuf,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
+        file_options: FileScanOptions,
         schema: SchemaRef,
         verbose: bool,
     ) -> PolarsResult<Self> {
@@ -94,6 +97,7 @@ impl ParquetSource {
             n_threads,
             chunk_index: 0,
             options: Some(options),
+            file_options: Some(file_options),
             path: Some(path),
             cloud_options,
             schema: Some(schema),

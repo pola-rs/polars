@@ -6,7 +6,7 @@ use polars_core::POOL;
 use polars_io::csv::read_impl::{BatchedCsvReaderMmap, BatchedCsvReaderRead};
 use polars_io::csv::{CsvEncoding, CsvReader};
 use polars_plan::global::_set_n_rows_for_scan;
-use polars_plan::prelude::CsvParserOptions;
+use polars_plan::prelude::{CsvParserOptions, FileScanOptions};
 
 use super::*;
 use crate::pipeline::determine_chunk_size;
@@ -22,6 +22,7 @@ pub(crate) struct CsvSource {
     chunk_index: IdxSize,
     path: Option<PathBuf>,
     options: Option<CsvParserOptions>,
+    file_options: Option<FileScanOptions>,
     verbose: bool,
 }
 
@@ -31,8 +32,9 @@ impl CsvSource {
     // leading to Too many Open files error
     fn init_reader(&mut self) -> PolarsResult<()> {
         let options = self.options.take().unwrap();
+        let file_options = self.file_options.take().unwrap();
         let path = self.path.take().unwrap();
-        let mut with_columns = options.with_columns;
+        let mut with_columns = file_options.with_columns;
         let mut projected_len = 0;
         with_columns.as_ref().map(|columns| {
             projected_len = columns.len();
@@ -48,7 +50,7 @@ impl CsvSource {
         } else {
             self.schema.len()
         };
-        let n_rows = _set_n_rows_for_scan(options.n_rows);
+        let n_rows = _set_n_rows_for_scan(file_options.n_rows);
         // inversely scale the chunk size by the number of threads so that we reduce memory pressure
         // in streaming
         let chunk_size = determine_chunk_size(n_cols, POOL.current_num_threads())?;
@@ -76,7 +78,7 @@ impl CsvSource {
             // never rechunk in streaming
             .with_rechunk(false)
             .with_chunk_size(chunk_size)
-            .with_row_count(options.row_count)
+            .with_row_count(file_options.row_count)
             .with_try_parse_dates(options.try_parse_dates);
 
         let reader = Box::new(reader);
@@ -100,6 +102,7 @@ impl CsvSource {
         path: PathBuf,
         schema: SchemaRef,
         options: CsvParserOptions,
+        file_options: FileScanOptions,
         verbose: bool,
     ) -> PolarsResult<Self> {
         Ok(CsvSource {
@@ -110,6 +113,7 @@ impl CsvSource {
             chunk_index: 0,
             path: Some(path),
             options: Some(options),
+            file_options: Some(file_options),
             verbose,
         })
     }

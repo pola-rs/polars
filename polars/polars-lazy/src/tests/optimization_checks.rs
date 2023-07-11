@@ -1,3 +1,5 @@
+use std::iter::Scan;
+
 use super::*;
 
 pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
@@ -7,23 +9,9 @@ pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
-            CsvScan {
-                options:
-                    CsvParserOptions {
-                        row_count: Some(_), ..
-                    },
-                ..
-            }
-            | ParquetScan {
-                options:
-                    ParquetOptions {
-                        row_count: Some(_), ..
-                    },
-                ..
-            }
-            | IpcScan {
-                options:
-                    IpcScanOptionsInner {
+            Scan {
+                file_options:
+                    FileScanOptions {
                         row_count: Some(_), ..
                     },
                 ..
@@ -43,13 +31,7 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
             DataFrameScan {
                 selection: Some(_), ..
             }
-            | CsvScan {
-                predicate: Some(_), ..
-            }
-            | ParquetScan {
-                predicate: Some(_), ..
-            }
-            | IpcScan {
+            | Scan {
                 predicate: Some(_), ..
             } => true,
             _ => false,
@@ -89,9 +71,7 @@ fn slice_at_scan(q: LazyFrame) -> bool {
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
-            CsvScan { options, .. } => options.n_rows.is_some(),
-            ParquetScan { options, .. } => options.n_rows.is_some(),
-            IpcScan { options, .. } => options.n_rows.is_some(),
+            Scan { file_options, .. } => file_options.n_rows.is_some(),
             _ => false,
         }
     })

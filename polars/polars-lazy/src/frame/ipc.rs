@@ -42,20 +42,24 @@ impl LazyFileListReader for LazyIpcReader {
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let args = self.args;
         let path = self.path;
+
         let options = IpcScanOptions {
-            n_rows: args.n_rows,
-            cache: args.cache,
-            with_columns: None,
-            row_count: None,
-            rechunk: args.rechunk,
             memmap: args.memmap,
         };
-        let row_count = args.row_count;
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(path, options)?.build().into();
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(
+            path,
+            options,
+            args.n_rows,
+            args.cache,
+            args.row_count.clone(),
+            args.rechunk,
+        )?
+        .build()
+        .into();
         lf.opt_state.file_caching = true;
 
         // it is a bit hacky, but this row_count function updates the schema
-        if let Some(row_count) = row_count {
+        if let Some(row_count) = args.row_count {
             lf = lf.with_row_count(&row_count.name, Some(row_count.offset))
         }
 
