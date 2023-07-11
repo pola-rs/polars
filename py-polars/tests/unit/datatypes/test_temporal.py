@@ -273,11 +273,35 @@ def test_int_to_python_timedelta() -> None:
 
 def test_from_numpy() -> None:
     # note: numpy timeunit support is limited to those supported by polars.
-    # as a result, datetime64[s] will be stored as object.
+    # as a result, datetime64[s] raises
     x = np.asarray(range(100_000, 200_000, 10_000), dtype="datetime64[s]")
-    s = pl.Series(x)
-    assert s[0] == x[0]
-    assert len(s) == 10
+    with pytest.raises(ValueError, match="Please cast to the closest supported unit"):
+        pl.Series(x)
+
+
+@pytest.mark.parametrize(
+    ("numpy_time_unit", "expected_values", "expected_dtype"),
+    [
+        ("ns", ["1970-01-02T01:12:34.123456789"], pl.Datetime("ns")),
+        ("us", ["1970-01-02T01:12:34.123456"], pl.Datetime("us")),
+        ("ms", ["1970-01-02T01:12:34.123"], pl.Datetime("ms")),
+        ("D", ["1970-01-02"], pl.Date),
+    ],
+)
+def test_from_numpy_supported_units(
+    numpy_time_unit: str,
+    expected_values: list[str],
+    expected_dtype: PolarsTemporalType,
+) -> None:
+    values = np.array(
+        ["1970-01-02T01:12:34.123456789123456789"],
+        dtype=f"datetime64[{numpy_time_unit}]",
+    )
+    result = pl.from_numpy(values)
+    expected = (
+        pl.Series("column_0", expected_values).str.strptime(expected_dtype).to_frame()
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_datetime_consistency() -> None:
