@@ -136,30 +136,6 @@ impl LogicalPlan {
                     file_options.n_rows,
                 )
             }
-            #[cfg(feature = "ipc")]
-            IpcScan {
-                path,
-                file_info,
-                options,
-                predicate,
-                ..
-            } => {
-                let n_columns = options
-                    .with_columns
-                    .as_ref()
-                    .map(|columns| columns.len() as i64)
-                    .unwrap_or(-1);
-                write_scan(
-                    f,
-                    "IPC",
-                    path,
-                    sub_indent,
-                    n_columns,
-                    file_info.schema.len(),
-                    predicate,
-                    options.n_rows,
-                )
-            }
             Selection { predicate, input } => {
                 write!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
                 input._format(f, indent)

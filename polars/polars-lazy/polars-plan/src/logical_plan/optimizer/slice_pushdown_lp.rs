@@ -136,25 +136,6 @@ impl SlicePushDown {
                 };
                 Ok(lp)
             }
-            #[cfg(feature = "ipc")]
-            (IpcScan {path,
-                file_info,
-                output_schema,
-                predicate,
-                mut options
-            }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-                options.n_rows = Some(state.len as usize);
-                let lp = IpcScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    options
-                };
-
-                Ok(lp)
-
-            }
             #[cfg(feature = "csv")]
             (Scan {
                 path,

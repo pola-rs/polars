@@ -17,8 +17,6 @@ impl LogicalPlan {
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
-            #[cfg(feature = "ipc")]
-            IpcScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
             AnonymousScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             Selection { input, .. } => input.schema(),
@@ -187,11 +185,6 @@ pub fn set_estimated_row_counts(
             (Some(len), len, _filter_count)
         }
         Scan { file_info, .. } => {
-            let (known_size, estimated_size) = file_info.row_estimation;
-            (known_size, estimated_size, _filter_count)
-        }
-        #[cfg(feature = "ipc")]
-        IpcScan { file_info, .. } => {
             let (known_size, estimated_size) = file_info.row_estimation;
             (known_size, estimated_size, _filter_count)
         }

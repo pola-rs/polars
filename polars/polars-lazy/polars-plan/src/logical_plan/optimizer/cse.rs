@@ -116,25 +116,6 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
                 ..
             },
         ) => Arc::ptr_eq(left_df, right_df),
-        #[cfg(feature = "ipc")]
-        (
-            IpcScan {
-                path: path_left,
-                predicate: predicate_l,
-                options: options_l,
-                ..
-            },
-            IpcScan {
-                path: path_right,
-                predicate: predicate_r,
-                options: options_r,
-                ..
-            },
-        ) => {
-            path_left == path_right
-                && options_l == options_r
-                && predicate_equal(*predicate_l, *predicate_r, expr_arena)
-        }
         (
             Scan {
                 path: path_left,
@@ -150,8 +131,8 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
             },
         ) => {
             path_left == path_right
-                && predicate_left == predicate_right
                 && scan_type_left == scan_type_right
+                && predicate_equal(*predicate_left, *predicate_right, expr_arena)
         }
         (Selection { predicate: l, .. }, Selection { predicate: r, .. }) => {
             node_to_expr(*l, expr_arena) == node_to_expr(*r, expr_arena)

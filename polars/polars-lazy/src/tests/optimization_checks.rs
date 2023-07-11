@@ -15,13 +15,6 @@ pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
                         row_count: Some(_), ..
                     },
                 ..
-            }
-            | IpcScan {
-                options:
-                    IpcScanOptionsInner {
-                        row_count: Some(_), ..
-                    },
-                ..
             } => true,
             _ => false,
         }
@@ -39,9 +32,6 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
                 selection: Some(_), ..
             }
             | Scan {
-                predicate: Some(_), ..
-            }
-            | IpcScan {
                 predicate: Some(_), ..
             } => true,
             _ => false,
@@ -82,7 +72,6 @@ fn slice_at_scan(q: LazyFrame) -> bool {
         use ALogicalPlan::*;
         match lp {
             Scan { file_options, .. } => file_options.n_rows.is_some(),
-            IpcScan { options, .. } => options.n_rows.is_some(),
             _ => false,
         }
     })

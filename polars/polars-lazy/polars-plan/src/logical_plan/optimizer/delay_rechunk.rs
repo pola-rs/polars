@@ -38,11 +38,6 @@ impl OptimizationRule for DelayRechunk {
                             input_node = Some(node);
                             break;
                         }
-                        #[cfg(feature = "ipc")]
-                        IpcScan { .. } => {
-                            input_node = Some(node);
-                            break;
-                        }
                         Union { .. } => {
                             input_node = Some(node);
                             break;
@@ -59,10 +54,6 @@ impl OptimizationRule for DelayRechunk {
                             file_options: options,
                             ..
                         } => {
-                            options.rechunk = false;
-                        }
-                        #[cfg(feature = "ipc")]
-                        IpcScan { options, .. } => {
                             options.rechunk = false;
                         }
                         Union { options, .. } => {

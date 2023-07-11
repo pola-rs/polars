@@ -221,19 +221,6 @@ pub fn to_alp(
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Slice { input, offset, len }
         }
-        #[cfg(feature = "ipc")]
-        LogicalPlan::IpcScan {
-            path,
-            file_info,
-            predicate,
-            options,
-        } => ALogicalPlan::IpcScan {
-            path,
-            file_info,
-            output_schema: None,
-            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            options,
-        },
         LogicalPlan::DataFrameScan {
             df,
             schema,
@@ -693,19 +680,6 @@ impl ALogicalPlan {
                     predicate: p,
                 }
             }
-            #[cfg(feature = "ipc")]
-            ALogicalPlan::IpcScan {
-                path,
-                file_info,
-                output_schema: _,
-                predicate,
-                options,
-            } => LogicalPlan::IpcScan {
-                path,
-                file_info,
-                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-                options,
-            },
             ALogicalPlan::DataFrameScan {
                 df,
                 schema,

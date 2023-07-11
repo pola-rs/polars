@@ -421,38 +421,6 @@ impl ProjectionPushDown {
                 };
                 Ok(lp)
             }
-            #[cfg(feature = "ipc")]
-            IpcScan {
-                path,
-                file_info,
-                predicate,
-                mut options,
-                ..
-            } => {
-                let with_columns =
-                    get_scan_columns(&mut acc_projections, expr_arena, options.row_count.as_ref());
-                let output_schema = if with_columns.is_none() {
-                    None
-                } else {
-                    Some(Arc::new(update_scan_schema(
-                        &acc_projections,
-                        expr_arena,
-                        &file_info.schema,
-                        options.row_count.is_some(),
-                    )?))
-                };
-                options.with_columns = with_columns;
-
-                let lp = IpcScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    options,
-                };
-                Ok(lp)
-            }
-
             #[cfg(feature = "python")]
             PythonScan {
                 mut options,

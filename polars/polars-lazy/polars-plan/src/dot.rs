@@ -362,25 +362,6 @@ impl LogicalPlan {
                     id_map,
                 )
             }
-            #[cfg(feature = "ipc")]
-            IpcScan {
-                path,
-                file_info,
-                options,
-                predicate,
-                ..
-            } => self.write_scan(
-                acc_str,
-                prev_node,
-                "IPC",
-                path.as_ref(),
-                options.with_columns.as_deref().map(|cols| cols.as_slice()),
-                file_info.schema.len(),
-                predicate,
-                branch,
-                id,
-                id_map,
-            ),
             Join {
                 input_left,
                 input_right,

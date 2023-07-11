@@ -71,26 +71,9 @@ pub struct IpcWriterOptions {
     pub maintain_order: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
-    pub cache: bool,
-    pub row_count: Option<RowCount>,
-    pub rechunk: bool,
-    pub memmap: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct IpcScanOptionsInner {
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
-    pub cache: bool,
-    pub row_count: Option<RowCount>,
-    pub rechunk: bool,
-    pub file_counter: FileCount,
     pub memmap: bool,
 }
 
@@ -104,20 +87,6 @@ pub struct FileScanOptions {
     pub row_count: Option<RowCount>,
     pub rechunk: bool,
     pub file_counter: FileCount,
-}
-
-impl From<IpcScanOptions> for IpcScanOptionsInner {
-    fn from(options: IpcScanOptions) -> Self {
-        Self {
-            n_rows: options.n_rows,
-            with_columns: options.with_columns,
-            cache: options.cache,
-            row_count: options.row_count,
-            rechunk: options.rechunk,
-            file_counter: Default::default(),
-            memmap: options.memmap,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]

@@ -165,13 +165,6 @@ pub enum LogicalPlan {
         file_options: FileScanOptions,
         scan_type: FileScan,
     },
-    #[cfg(feature = "ipc")]
-    IpcScan {
-        path: PathBuf,
-        file_info: FileInfo,
-        options: IpcScanOptionsInner,
-        predicate: Option<Expr>,
-    },
     // we keep track of the projection and selection as it is cheaper to first project and then filter
     /// In memory DataFrame
     DataFrameScan {

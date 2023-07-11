@@ -74,22 +74,6 @@ pub fn collect_fingerprints(
             };
             fps.push(fp);
         }
-        #[cfg(feature = "ipc")]
-        IpcScan {
-            path,
-            options,
-            predicate,
-            ..
-        } => {
-            let slice = (0, options.n_rows);
-            let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
-            let fp = FileFingerPrint {
-                path: path.clone(),
-                predicate,
-                slice,
-            };
-            fps.push(fp);
-        }
         lp => {
             for input in lp.get_inputs() {
                 collect_fingerprints(input, fps, lp_arena, expr_arena)
@@ -120,25 +104,6 @@ pub fn find_column_union_and_fingerprints(
             ..
         } => {
             let slice = (scan_type.skip_rows(), options.n_rows);
-            let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
-            process_with_columns(
-                path,
-                options.with_columns.as_deref(),
-                predicate,
-                slice,
-                columns,
-                &file_info.schema,
-            );
-        }
-        #[cfg(feature = "ipc")]
-        IpcScan {
-            path,
-            options,
-            file_info,
-            predicate,
-            ..
-        } => {
-            let slice = (0, options.n_rows);
             let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
             process_with_columns(
                 path,
@@ -271,49 +236,6 @@ impl FileCacher {
                         predicate,
                         file_options: options.clone(),
                         scan_type: scan_type.clone(),
-                    };
-                    let lp = self.finish_rewrite(
-                        lp,
-                        expr_arena,
-                        lp_arena,
-                        &finger_print,
-                        options.with_columns,
-                        behind_cache,
-                    );
-                    lp_arena.replace(root, lp);
-                }
-                #[cfg(feature = "ipc")]
-                ALogicalPlan::IpcScan {
-                    path,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    mut options,
-                } => {
-                    let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
-                    let finger_print = FileFingerPrint {
-                        path,
-                        predicate: predicate_expr,
-                        slice: (0, options.n_rows),
-                    };
-
-                    let with_columns = self.extract_columns_and_count(&finger_print);
-                    options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
-                    let with_columns = with_columns.and_then(|t| {
-                        if t.1.len() != file_info.schema.len() {
-                            Some(t.1)
-                        } else {
-                            None
-                        }
-                    });
-
-                    options.with_columns = with_columns;
-                    let lp = ALogicalPlan::IpcScan {
-                        path: finger_print.path.clone(),
-                        file_info,
-                        output_schema,
-                        predicate,
-                        options: options.clone(),
                     };
                     let lp = self.finish_rewrite(
                         lp,

@@ -182,6 +182,10 @@ impl LogicalPlanBuilder {
     pub fn scan_ipc<P: Into<std::path::PathBuf>>(
         path: P,
         options: IpcScanOptions,
+        n_rows: Option<usize>,
+        cache: bool,
+        row_count: Option<RowCount>,
+        rechunk: bool,
     ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
@@ -190,7 +194,7 @@ impl LogicalPlanBuilder {
         let mut reader = IpcReader::new(file);
 
         let mut schema = reader.schema()?;
-        if let Some(rc) = &options.row_count {
+        if let Some(rc) = &row_count {
             let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
         }
         let schema = Arc::new(schema);
@@ -200,11 +204,21 @@ impl LogicalPlanBuilder {
             schema,
             row_estimation: (None, num_rows),
         };
-        Ok(LogicalPlan::IpcScan {
+
+        let file_options = FileScanOptions {
+            with_columns: None,
+            cache,
+            n_rows,
+            rechunk,
+            row_count,
+            file_counter: Default::default(),
+        };
+        Ok(LogicalPlan::Scan {
             path,
             file_info,
+            file_options,
             predicate: None,
-            options: options.into(),
+            scan_type: FileScan::Ipc { options },
         }
         .into())
     }

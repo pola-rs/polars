@@ -9,8 +9,6 @@ use polars_utils::arena::{Arena, Node};
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
 use crate::logical_plan::FileScan;
-#[cfg(feature = "ipc")]
-use crate::logical_plan::IpcScanOptionsInner;
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 
@@ -47,15 +45,6 @@ pub enum ALogicalPlan {
         scan_type: FileScan,
         /// generic options that can be used for all file types.
         file_options: FileScanOptions,
-    },
-    #[cfg(feature = "ipc")]
-    IpcScan {
-        path: PathBuf,
-        file_info: FileInfo,
-        // schema of the projected file
-        output_schema: Option<SchemaRef>,
-        options: IpcScanOptionsInner,
-        predicate: Option<Node>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -150,8 +139,6 @@ impl ALogicalPlan {
             Scan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "python")]
             PythonScan { options, .. } => &options.schema,
-            #[cfg(feature = "ipc")]
-            IpcScan { file_info, .. } => &file_info.schema,
             AnonymousScan { file_info, .. } => &file_info.schema,
             _ => unreachable!(),
         }
@@ -166,8 +153,6 @@ impl ALogicalPlan {
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
             Selection { .. } => "selection",
-            #[cfg(feature = "ipc")]
-            IpcScan { .. } => "ipc_scan",
             DataFrameScan { .. } => "df",
             Projection { .. } => "projection",
             LocalProjection { .. } => "local_projection",
@@ -196,12 +181,6 @@ impl ALogicalPlan {
             Scan {
                 output_schema,
                 file_info,
-                ..
-            } => output_schema.as_ref().unwrap_or(&file_info.schema),
-            #[cfg(feature = "ipc")]
-            IpcScan {
-                file_info,
-                output_schema,
                 ..
             } => output_schema.as_ref().unwrap_or(&file_info.schema),
             DataFrameScan {
@@ -349,29 +328,6 @@ impl ALogicalPlan {
                     scan_type: scan_type.clone(),
                 }
             }
-            #[cfg(feature = "ipc")]
-            IpcScan {
-                path,
-                file_info,
-                output_schema,
-                options,
-                predicate,
-                ..
-            } => {
-                let mut new_predicate = None;
-                if predicate.is_some() {
-                    new_predicate = exprs.pop()
-                }
-
-                IpcScan {
-                    path: path.clone(),
-                    file_info: file_info.clone(),
-                    output_schema: output_schema.clone(),
-                    predicate: new_predicate,
-                    options: options.clone(),
-                }
-            }
-
             DataFrameScan {
                 df,
                 schema,
@@ -453,12 +409,6 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
-            #[cfg(feature = "ipc")]
-            IpcScan { predicate, .. } => {
-                if let Some(node) = predicate {
-                    container.push(*node)
-                }
-            }
             DataFrameScan { selection, .. } => {
                 if let Some(expr) = selection {
                     container.push(*expr)
@@ -526,8 +476,6 @@ impl ALogicalPlan {
                 *input
             }
             Scan { .. } => return,
-            #[cfg(feature = "ipc")]
-            IpcScan { .. } => return,
             DataFrameScan { .. } => return,
             AnonymousScan { .. } => return,
             #[cfg(feature = "python")]

@@ -11,7 +11,7 @@ pub enum FileScan {
         cloud_options: Option<CloudOptions>,
     },
     #[cfg(feature = "ipc")]
-    Ipc { options: IpcScanOptionsInner },
+    Ipc { options: IpcScanOptions },
 }
 
 impl FileScan {
