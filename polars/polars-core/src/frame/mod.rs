@@ -1073,21 +1073,26 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_cols))
     }
 
+    /// Drop columns that are in `names`.
     pub fn drop_many<S: AsRef<str>>(&self, names: &[S]) -> Self {
         let names: PlHashSet<_> = names.iter().map(|s| s.as_ref()).collect();
-        fn inner(df: &DataFrame, names: PlHashSet<&str>) -> DataFrame {
-            let mut new_cols = Vec::with_capacity(df.columns.len() - names.len());
-            df.columns.iter().for_each(|s| {
-                if !names.contains(&s.name()) {
-                    new_cols.push(s.clone())
-                }
-            });
-
-            DataFrame::new_no_checks(new_cols)
-        }
-        inner(self, names)
+        self.drop_many_amortized(&names)
     }
 
+    /// Drop columns that are in `names` without allocating a `HashSet`.
+    pub fn drop_many_amortized(&self, names: &PlHashSet<&str>) -> DataFrame {
+        let mut new_cols = Vec::with_capacity(self.columns.len() - names.len());
+        self.columns.iter().for_each(|s| {
+            if !names.contains(&s.name()) {
+                new_cols.push(s.clone())
+            }
+        });
+
+        DataFrame::new_no_checks(new_cols)
+    }
+
+    /// Insert a new column at a given index without checking for duplicates.
+    /// This can leave the DataFrame at an invalid state
     fn insert_at_idx_no_name_check(
         &mut self,
         index: usize,
