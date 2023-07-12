@@ -141,7 +141,7 @@ mod test {
         let s = Series::new("a", &[1, 2, 3]);
 
         let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name())?;
-        builder.append_series(&s);
+        builder.append_series(&s).unwrap();
         let expected = builder.finish();
 
         let out = s.implode()?;

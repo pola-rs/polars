@@ -224,15 +224,15 @@ fn test_csv_globbing() -> PolarsResult<()> {
 
     let mut expr_arena = Arena::with_capacity(16);
     let mut lp_arena = Arena::with_capacity(8);
-    let node = lf.clone().optimize(&mut lp_arena, &mut expr_arena)?;
-    assert!(slice_at_union(&mut lp_arena, node));
+    let node = lf.optimize(&mut lp_arena, &mut expr_arena)?;
+    assert!(slice_at_union(&lp_arena, node));
 
     let lf = LazyCsvReader::new(glob)
         .finish()?
         .filter(col("sugars_g").lt(lit(1i32)))
         .slice(0, 100);
     let node = lf.optimize(&mut lp_arena, &mut expr_arena)?;
-    assert!(slice_at_union(&mut lp_arena, node));
+    assert!(slice_at_union(&lp_arena, node));
 
     Ok(())
 }

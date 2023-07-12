@@ -150,7 +150,7 @@ fn test_streaming_aggregate_slice() -> PolarsResult<()> {
         .agg([((lit(1) - col("fats_g")) + col("calories")).sum()])
         .slice(3, 3);
 
-    let q1 = q.clone().with_streaming(true);
+    let q1 = q.with_streaming(true);
     let out_streaming = q1.collect()?;
     assert_eq!(out_streaming.shape(), (3, 2));
     Ok(())
@@ -170,7 +170,6 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
     let q1 = q
         .clone()
         .select([col("calories")])
-        .clone()
         .cross_join(q.clone())
         .filter(col("calories").gt(col("calories_right")));
     let q2 = q1
@@ -182,7 +181,7 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
             col("calories_right_second").alias("calories_right"),
         ]);
 
-    let q2 = q2.clone().with_streaming(true);
+    let q2 = q2.with_streaming(true);
     let out_streaming = q2.collect()?;
 
     assert_eq!(
@@ -264,7 +263,7 @@ fn test_streaming_slice() -> PolarsResult<()> {
     .lazy();
 
     let q = lf_a.clone().cross_join(lf_a).slice(10, 20);
-    let a = q.clone().with_streaming(true).collect().unwrap();
+    let a = q.with_streaming(true).collect().unwrap();
     assert_eq!(a.shape(), (20, 2));
 
     Ok(())
@@ -298,7 +297,7 @@ fn test_streaming_partial() -> PolarsResult<()> {
         .finish();
 
     let q = q.left_join(
-        lf_left.clone().select([all().suffix("_foo")]),
+        lf_left.select([all().suffix("_foo")]),
         col("a"),
         col("a_foo"),
     );
@@ -317,7 +316,7 @@ fn test_streaming_aggregate_join() -> PolarsResult<()> {
         .slice(0, 3);
 
     let q = q.clone().left_join(q, col("sugars_g"), col("sugars_g"));
-    let q1 = q.clone().with_streaming(true);
+    let q1 = q.with_streaming(true);
     let out_streaming = q1.collect()?;
     assert_eq!(out_streaming.shape(), (3, 3));
     Ok(())

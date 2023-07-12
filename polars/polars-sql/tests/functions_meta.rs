@@ -19,7 +19,7 @@ fn test_describe() {
     let lf = lf.select([col("year"), col("country"), col("year").max()]);
     let expected = lf.describe_optimized_plan().unwrap();
 
-    let expected = expected.split("\n").map(Some).collect::<Vec<_>>();
+    let expected = expected.split('\n').map(Some).collect::<Vec<_>>();
     let actual = df
         .column("Logical Plan")
         .unwrap()
