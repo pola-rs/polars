@@ -3122,6 +3122,15 @@ class DataFrame:
             import pyarrow.parquet  # noqa: F401
 
             if use_pyarrow_write_to_dataset:
+                if pyarrow_options is None:
+                    pyarrow_options = {}
+                pyarrow_options["compression"] = (
+                    None if compression == "uncompressed" else compression
+                )
+                pyarrow_options["compression_level"] = compression_level
+                pyarrow_options["write_statistics"] = statistics
+                pyarrow_options["row_group_size"] = row_group_size
+
                 pa.parquet.write_to_dataset(
                     table=tbl,
                     root_path=file,

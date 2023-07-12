@@ -56,16 +56,20 @@ def test_write_parquet_using_pyarrow_write_to_dataset(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_write_parquet_using_pyarrow_write_to_dataset_with_partitioning(
     tmp_path: Path,
+    compression: ParquetCompression,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     df = pl.DataFrame({"a": [1, 2, 3], "watermark": [1, 2, 2]})
     df.write_parquet(
         tmp_path / "test.parquet",
+        statistics=True,
         use_pyarrow=True,
+        row_group_size=128,
         use_pyarrow_write_to_dataset=True,
-        pyarrow_options={"partition_cols": ["watermark"]},
+        pyarrow_options={"partition_cols": ["watermark"], "compression": compression},
     )
 
 
