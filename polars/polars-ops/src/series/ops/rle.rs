@@ -1,4 +1,3 @@
-use polars_arrow::trusted_len::TrustedLenPush;
 use polars_core::prelude::*;
 
 pub fn rle(s: &Series) -> PolarsResult<Series> {
