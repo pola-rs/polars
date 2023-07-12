@@ -71,7 +71,8 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        self.0.append(other.as_ref().as_ref())
+        let other = other.array()?;
+        self.0.append(other)
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
