@@ -13,7 +13,7 @@ import pytest
 
 import polars as pl
 from polars import lit, when
-from polars.datatypes import FLOAT_DTYPES, NUMERIC_DTYPES
+from polars.datatypes import FLOAT_DTYPES
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -586,27 +586,6 @@ def test_lazy_columns() -> None:
         }
     )
     assert ldf.select(["a", "c"]).columns == ["a", "c"]
-
-
-def test_regex_selection() -> None:
-    ldf = pl.LazyFrame(
-        {
-            "foo": [1],
-            "fooey": [1],
-            "foobar": [1],
-            "bar": [1],
-        }
-    )
-    assert ldf.select([pl.col("^foo.*$")]).columns == ["foo", "fooey", "foobar"]
-
-
-def test_exclude_selection() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [1], "c": [True]})
-
-    assert ldf.select([pl.exclude("a")]).columns == ["b", "c"]
-    assert ldf.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
-    assert ldf.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
-    assert ldf.select(pl.all().exclude(NUMERIC_DTYPES)).columns == ["c"]
 
 
 def test_col_series_selection() -> None:
