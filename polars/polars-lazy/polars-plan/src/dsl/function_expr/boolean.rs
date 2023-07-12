@@ -8,8 +8,12 @@ use crate::wrap;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum BooleanFunction {
-    All { drop_nulls: bool },
-    Any { drop_nulls: bool },
+    All {
+        drop_nulls: bool,
+    },
+    Any {
+        drop_nulls: bool,
+    },
     IsNot,
     IsNull,
     IsNotNull,
@@ -63,8 +67,8 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: BooleanFunction) -> Self {
         use BooleanFunction::*;
         match func {
-            All { drop_nulls} => map!(all, drop_nulls),
-            Any { drop_nulls}=> map!(any, drop_nulls),
+            All { drop_nulls } => map!(all, drop_nulls),
+            Any { drop_nulls } => map!(any, drop_nulls),
             IsNot => map!(is_not),
             IsNull => map!(is_null),
             IsNotNull => map!(is_not_null),

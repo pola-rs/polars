@@ -337,7 +337,7 @@ class Expr:
         │ true ┆ false │
         └──────┴───────┘
         >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
-        >>> df.select(pl.col('x').any(True), pl.col('y').any(True))
+        >>> df.select(pl.col("x").any(True), pl.col("y").any(True))
         shape: (1, 2)
         ┌───────┬──────┐
         │ x     ┆ y    │
@@ -346,7 +346,7 @@ class Expr:
         ╞═══════╪══════╡
         │ false ┆ true │
         └───────┴──────┘
-        >>> df.select(pl.col('x').any(False), pl.col('y').any(False))
+        >>> df.select(pl.col("x").any(False), pl.col("y").any(False))
         shape: (1, 2)
         ┌──────┬──────┐
         │ x    ┆ y    │
@@ -370,7 +370,8 @@ class Expr:
         ----------
         drop_nulls
             If False, return None if there are any nulls.
-            
+
+
         Returns
         -------
         Boolean literal
@@ -390,7 +391,7 @@ class Expr:
         │ true ┆ false ┆ false │
         └──────┴───────┴───────┘
         >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
-        >>> df.select(pl.col('x').all(True), pl.col('y').all(True))
+        >>> df.select(pl.col("x").all(True), pl.col("y").all(True))
         shape: (1, 2)
         ┌───────┬───────┐
         │ x     ┆ y     │
@@ -399,7 +400,7 @@ class Expr:
         ╞═══════╪═══════╡
         │ false ┆ false │
         └───────┴───────┘
-        >>> df.select(pl.col('x').all(False), pl.col('y').all(False))
+        >>> df.select(pl.col("x").all(False), pl.col("y").all(False))
         shape: (1, 2)
         ┌──────┬──────┐
         │ x    ┆ y    │
