@@ -676,3 +676,15 @@ def test_streaming_9776() -> None:
     expected = [("a", None, 1), ("a", "a", 999)]
     assert ordered.rows() == expected
     assert unordered.sort(["col_1", "ID"]).rows() == expected
+
+
+def test_streaming_groupby_list_9758() -> None:
+    payload = {"a": [[1, 2]]}
+    assert (
+        pl.LazyFrame(payload)
+        .groupby("a")
+        .first()
+        .collect(streaming=True)
+        .to_dict(False)
+        == payload
+    )
