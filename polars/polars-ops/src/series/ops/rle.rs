@@ -28,7 +28,7 @@ pub fn rleid(s: &Series) -> PolarsResult<Series> {
     Ok(std::iter::once(false)
         .chain(s1.not_equal_missing(&s2)?.into_iter().flatten())
         .scan(0_u32, |acc, x| {
-            *acc = *acc + x as u32;
+            *acc += x as u32;
             Some(*acc)
         })
         .collect())
