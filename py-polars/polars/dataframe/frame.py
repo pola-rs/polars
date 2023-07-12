@@ -3065,6 +3065,7 @@ class DataFrame:
         use_pyarrow_write_to_dataset
             Use ``pyarrow.parquet.write_to_dataset`` instead of pyarrow.write_table.
             Enable features like writing partitioned datasets.
+            Use pyarrow_options to pass arguments to ``parquet.write_to_dataset``.
         pyarrow_options
             Arguments passed to ``pyarrow.parquet.write_table``.
 
