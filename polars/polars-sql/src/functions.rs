@@ -156,6 +156,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT column_2 from df WHERE ENDS_WITH(column_1, 'a');
     /// ```
     EndsWith,
+    /// SQL 'left' function
+    /// ```sql
+    /// SELECT LEFT(column_1, 3) from df;
+    /// ```
+    Left,
     /// SQL 'lower' function
     /// ```sql
     /// SELECT LOWER(column_1) from df;
@@ -184,7 +189,7 @@ pub(crate) enum PolarsSqlFunctions {
     StartsWith,
     /// SQL 'substr' function
     /// ```sql
-    /// SELECT SUBSTR(column_1) from df;
+    /// SELECT SUBSTR(column_1, 3, 5) from df;
     /// ```
     Substring,
     /// SQL 'upper' function
@@ -423,6 +428,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             // String functions
             // ----
             "ends_with" => Self::EndsWith,
+            "left" => Self::Left,
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
             "regexp_like" => Self::RegexpLike,
@@ -518,6 +524,14 @@ impl SqlFunctionVisitor<'_> {
             // String functions
             // ----
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
+            Left => self.try_visit_binary(|e, length| {
+                Ok(e.str().str_slice(0, match length {
+                    Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
+                    _ => {
+                        polars_bail!(InvalidOperation: "Invalid 'length' for Left: {}", function.args[1]);
+                    }
+                }))
+            }),
             Lower => self.visit_unary(|e| e.str().to_lowercase()),
             LTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().lstrip(None)),

@@ -436,6 +436,26 @@ def test_sql_groupby(foods_ipc_path: Path) -> None:
     assert out.to_dict(False) == {"grp": ["c"], "n_dist_attr": [2]}
 
 
+def test_sql_left() -> None:
+    df = pl.DataFrame({"scol": ["abcde", "abc", "a", None]})
+    ctx = pl.SQLContext(df=df)
+    res = ctx.execute(
+        'SELECT scol, LEFT(scol,2) AS "scol:left2" FROM df',
+    ).collect()
+
+    assert res.to_dict(False) == {
+        "scol": ["abcde", "abc", "a", None],
+        "scol:left2": ["ab", "ab", "a", None],
+    }
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="Invalid 'length' for Left: 'xyz'",
+    ):
+        ctx.execute(
+            """SELECT scol, LEFT(scol,'xyz') AS "scol:left2" FROM df"""
+        ).collect()
+
+
 def test_sql_limit_offset() -> None:
     n_values = 11
     lf = pl.LazyFrame({"a": range(n_values), "b": reversed(range(n_values))})
