@@ -61,7 +61,7 @@ fn test_q2() -> PolarsResult<()> {
         .groupby([col("p_partkey")])
         .agg([col("ps_supplycost").min()])
         .join(
-            q1.clone(),
+            q1,
             [col("p_partkey"), col("ps_supplycost")],
             [col("p_partkey"), col("ps_supplycost")],
             JoinType::Inner.into(),

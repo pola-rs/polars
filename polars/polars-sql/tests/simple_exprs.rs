@@ -540,7 +540,7 @@ fn test_sql_expr() {
 #[test]
 fn test_iss_9471() {
     let sql = r#"
-    SELECT 
+    SELECT
         ABS(a,a,a,a,1,2,3,XYZRandomLetters,"XYZRandomLetters") as "abs",
     FROM df"#;
     let df = df! {
@@ -549,7 +549,7 @@ fn test_iss_9471() {
     .unwrap()
     .lazy();
     let mut context = SQLContext::new();
-    context.register("df", df.clone());
+    context.register("df", df);
     let res = context.execute(sql);
     assert!(res.is_err())
 }

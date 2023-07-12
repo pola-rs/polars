@@ -99,7 +99,6 @@ fn test_auto_skew_kurtosis_agg() -> PolarsResult<()> {
     let df = fruits_cars();
 
     let out = df
-        .clone()
         .lazy()
         .groupby([col("fruits")])
         .agg([
@@ -510,7 +509,6 @@ fn test_take_consistency() -> PolarsResult<()> {
     assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
 
     let out_df = df
-        .clone()
         .lazy()
         .groupby_stable([col("cars")])
         .agg([

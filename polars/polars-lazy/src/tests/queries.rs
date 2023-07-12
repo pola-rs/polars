@@ -629,7 +629,7 @@ fn test_type_coercion() {
     lp_top = optimizer
         .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
         .unwrap();
-    let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
+    let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
     if let LogicalPlan::Projection { expr, .. } = lp {
         if let Expr::BinaryExpr { left, right, .. } = &expr[0] {
@@ -1855,7 +1855,7 @@ fn test_partitioned_gb_binary() -> PolarsResult<()> {
 
     assert!(out.frame_equal(&df![
         "col" => [0],
-        "sum" => [200.0 as f32],
+        "sum" => [200.0_f32],
     ]?));
 
     Ok(())
@@ -1866,11 +1866,10 @@ fn test_partitioned_gb_ternary() -> PolarsResult<()> {
     // don't move these to integration tests
     let df = df![
         "col" => (0..20).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
-        "val" => (0..20).map(|i| Some(i)).collect::<Int32Chunked>().into_series(),
+        "val" => (0..20).map(Some).collect::<Int32Chunked>().into_series(),
     ]?;
 
     let out = df
-        .clone()
         .lazy()
         .groupby([col("col")])
         .agg([when(col("val").gt(lit(10)))
