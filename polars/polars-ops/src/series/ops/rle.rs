@@ -1,3 +1,4 @@
+use polars_arrow::trusted_len::TrustedLenPush;
 use polars_core::prelude::*;
 
 pub fn rle(s: &Series) -> PolarsResult<Series> {
@@ -29,8 +30,11 @@ pub fn rle_id(s: &Series) -> PolarsResult<Series> {
     let mut out = Vec::with_capacity(s.len());
     out.push(0); // Run numbers start at zero
     s_neq
-        .into_iter()
-        .enumerate()
-        .for_each(|(i, v)| out.push(out[i] + v.unwrap() as u32));
+        .downcast_iter()
+        .for_each(|a| out.extend(a.values_iter().map(|v| v as u32)));
+    out.iter_mut().fold(0, |a, x| {
+        *x += a;
+        *x
+    });
     Ok(Series::from_vec("id", out))
 }
