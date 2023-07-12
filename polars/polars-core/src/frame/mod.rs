@@ -3338,11 +3338,19 @@ impl DataFrame {
         &self,
         cols: &[String],
         stable: bool,
+        include_key: bool,
     ) -> PolarsResult<Vec<DataFrame>> {
         let groups = if stable {
             self.groupby_stable(cols)?.take_groups()
         } else {
             self.groupby(cols)?.take_groups()
+        };
+
+        // drop key columns prior to calculation if requested
+        let df = if include_key {
+            self.clone()
+        } else {
+            self.drop_many(cols)
         };
 
         // don't parallelize this
@@ -3354,13 +3362,13 @@ impl DataFrame {
                         .into_par_iter()
                         .map(|(_, group)| {
                             // groups are in bounds
-                            unsafe { self._take_unchecked_slice(&group, false) }
+                            unsafe { df._take_unchecked_slice(&group, false) }
                         })
                         .collect())
                 }
                 GroupsProxy::Slice { groups, .. } => Ok(groups
                     .into_par_iter()
-                    .map(|[first, len]| self.slice(first as i64, len as usize))
+                    .map(|[first, len]| df.slice(first as i64, len as usize))
                     .collect()),
             }
         })
@@ -3368,17 +3376,25 @@ impl DataFrame {
 
     /// Split into multiple DataFrames partitioned by groups
     #[cfg(feature = "partition_by")]
-    pub fn partition_by(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
+    pub fn partition_by(
+        &self,
+        cols: impl IntoVec<String>,
+        include_key: bool,
+    ) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
-        self._partition_by_impl(&cols, false)
+        self._partition_by_impl(&cols, false, include_key)
     }
 
     /// Split into multiple DataFrames partitioned by groups
     /// Order of the groups are maintained.
     #[cfg(feature = "partition_by")]
-    pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
+    pub fn partition_by_stable(
+        &self,
+        cols: impl IntoVec<String>,
+        include_key: bool,
+    ) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
-        self._partition_by_impl(&cols, true)
+        self._partition_by_impl(&cols, true, include_key)
     }
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
