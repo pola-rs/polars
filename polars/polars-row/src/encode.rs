@@ -298,7 +298,6 @@ pub fn allocate_rows_buf(
 #[cfg(test)]
 mod test {
     use arrow::array::{Int32Array, Utf8Array};
-    use arrow::datatypes::Field;
 
     use super::*;
     use crate::variable::{decode_binary, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
