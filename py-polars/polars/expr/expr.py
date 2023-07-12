@@ -311,7 +311,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
-    def any(self) -> Self:
+    def any(self, drop_nulls: bool = True) -> Self:
         """
         Check if any boolean value in a Boolean column is `True`.
 
@@ -333,9 +333,9 @@ class Expr:
         └──────┴───────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.any())
+        return self._from_pyexpr(self._pyexpr.any(drop_nulls))
 
-    def all(self) -> Self:
+    def all(self, drop_nulls: bool = True) -> Self:
         """
         Check if all boolean values in a Boolean column are `True`.
 
@@ -362,7 +362,7 @@ class Expr:
         └──────┴───────┴───────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.all())
+        return self._from_pyexpr(self._pyexpr.all(drop_nulls))
 
     def arg_true(self) -> Self:
         """
