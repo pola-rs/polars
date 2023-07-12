@@ -30,7 +30,7 @@ use crate::error::PyPolarsErr;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
-use crate::py_modules::{POLARS, UTILS};
+use crate::py_modules::{POLARS, SERIES, UTILS};
 use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
@@ -692,19 +692,54 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
         }
 
         fn get_list(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+            #[allow(clippy::needless_lifetimes)]
+            fn get_list_with_constructor<'a>(ob: &'a PyAny) -> PyResult<Wrap<AnyValue<'a>>> {
+                // Use the dedicated constructor
+                // this constructor is able to go via dedicated type constructors
+                // so it can be much faster
+                Python::with_gil(|py| {
+                    let s = SERIES.call1(py, (ob,))?;
+                    let out = get_series_el(s.as_ref(py))?;
+
+                    // correct lifetime
+                    // this is safe as we don't borrow anything
+                    unsafe {
+                        Ok(std::mem::transmute::<Wrap<AnyValue<'_>>, Wrap<AnyValue<'a>>>(out))
+                    }
+                })
+            }
+
             if ob.is_empty()? {
                 Ok(Wrap(AnyValue::List(Series::new_empty("", &DataType::Null))))
+            } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
+                let list = ob.downcast::<PySequence>().unwrap();
+
+                let mut avs = Vec::with_capacity(25);
+                let mut iter = list.iter()?;
+
+                for item in (&mut iter).take(25) {
+                    avs.push(item?.extract::<Wrap<AnyValue>>()?.0)
+                }
+
+                let (dtype, n_types) = any_values_to_dtype(&avs).map_err(PyPolarsErr::from)?;
+
+                // we only take this path if there is no question of the data-type
+                if dtype.is_primitive() && n_types == 1 {
+                    get_list_with_constructor(ob)
+                } else {
+                    // push the rest
+                    avs.reserve(list.len()?);
+                    for item in iter {
+                        avs.push(item?.extract::<Wrap<AnyValue>>()?.0)
+                    }
+
+                    let s = Series::from_any_values_and_dtype("", &avs, &dtype, true)
+                        .map_err(PyPolarsErr::from)?;
+                    Ok(Wrap(AnyValue::List(s)))
+                }
             } else {
-                let avs = ob.extract::<Wrap<Row>>()?.0 .0;
-                // use first `n` values to infer datatype
-                // this value is not too large as this will be done with every
-                // anyvalue that has to be converted, which can be many
-                let n = 25;
-                let dtype = any_values_to_dtype(&avs[..std::cmp::min(avs.len(), n)])
-                    .map_err(PyPolarsErr::from)?;
-                let s = Series::from_any_values_and_dtype("", &avs, &dtype, true)
-                    .map_err(PyPolarsErr::from)?;
-                Ok(Wrap(AnyValue::List(s)))
+                // range will take this branch
+                get_list_with_constructor(ob)
             }
         }
 
