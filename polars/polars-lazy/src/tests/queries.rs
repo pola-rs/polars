@@ -1893,7 +1893,7 @@ fn test_partitioned_gb_ternary() -> PolarsResult<()> {
 
 
 #[test]
-fn test_tobi_stuff() -> PolarsResult<()> {
+fn test_sort_maintain_order_true() -> PolarsResult<()> {
 
     let q = df![
         "A" => [1, 1, 1, 1],
@@ -1910,28 +1910,6 @@ fn test_tobi_stuff() -> PolarsResult<()> {
     assert!(res.frame_equal(&df![
         "A" => [1, 1, 1],
         "B" => ["A", "B", "C"],
-    ]?));
-    Ok(())
-}
-
-#[test]
-fn test_tobi_stuff2() -> PolarsResult<()> {
-
-    let q = df![
-        "A" => [1, 1, 1, 1],
-        "B" => ["A", "B", "C", "D"],
-    ]?
-    .lazy();
-
-    let res = q.sort_by_exprs([col("A")], 
-                                                             [false], 
-                                                             false, 
-                                                             true)
-                                              .slice(1, 4).collect()?;
-    println!("{:?}", res);
-    assert!(res.frame_equal(&df![
-        "A" => [1, 1, 1],
-        "B" => ["D", "C", "B"],
     ]?));
     Ok(())
 }

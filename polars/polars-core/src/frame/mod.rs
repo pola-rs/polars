@@ -1841,11 +1841,13 @@ impl DataFrame {
         &mut self,
         by_column: impl IntoVec<SmartString>,
         descending: impl IntoVec<bool>,
+        maintain_order: bool,
     ) -> PolarsResult<&mut Self> {
+        println!("In sort in place");
         let by_column = self.select_series(by_column)?;
         let descending = descending.into_vec();
         self.columns = self
-            .sort_impl(by_column, descending, false, false, None, true)?
+            .sort_impl(by_column, descending, false, maintain_order, None, true)?
             .columns;
         Ok(self)
     }
@@ -1865,6 +1867,7 @@ impl DataFrame {
 
         // therefore when we try to set the first columns as sorted, we ignore the error
         // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
+        eprintln!("In sort impl, maintain_order {}", maintain_order);
         let first_descending = descending[0];
         let first_by_column = by_column[0].name().to_string();
 
@@ -1891,9 +1894,9 @@ impl DataFrame {
         }
 
         if let Some((0, k)) = slice {
-
             return self.top_k_impl(k, descending, by_column, nulls_last, maintain_order);
         }
+        eprintln!("After top_k impl");
 
         #[cfg(feature = "dtype-struct")]
         let has_struct = by_column
@@ -1909,6 +1912,7 @@ impl DataFrame {
         let df = df.as_single_chunk_par();
         let mut take = match (by_column.len(), has_struct) {
             (1, false) => {
+                eprintln!("in take1");
                 let s = &by_column[0];
                 let options = SortOptions {
                     descending: descending[0],
@@ -1930,6 +1934,7 @@ impl DataFrame {
                 s.arg_sort(options)
             }
             _ => {
+                eprintln!("in take2");
                 if nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
                     argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
                 } else {
@@ -1973,9 +1978,10 @@ impl DataFrame {
         &self,
         by_column: impl IntoVec<SmartString>,
         descending: impl IntoVec<bool>,
+        maintain_order: bool,
     ) -> PolarsResult<Self> {
         let mut df = self.clone();
-        df.sort_in_place(by_column, descending)?;
+        df.sort_in_place(by_column, descending, maintain_order)?;
         Ok(df)
     }
 

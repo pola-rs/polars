@@ -58,6 +58,6 @@ impl NodeTimer {
         end.rename("end");
 
         DataFrame::new_no_checks(vec![nodes_s, start.into_series(), end.into_series()])
-            .sort(vec!["start"], vec![false])
+            .sort(vec!["start"], vec![false], false)
     }
 }

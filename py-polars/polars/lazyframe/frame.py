@@ -1116,7 +1116,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         # Fast path for sorting by a single existing column
         if isinstance(by, str) and not more_by:
-            return self._from_pyldf(self._ldf.sort(by, descending, nulls_last))
+            return self._from_pyldf(self._ldf.sort(by, descending, nulls_last, maintain_order))
 
         by = parse_as_list_of_expressions(by, *more_by)
 
@@ -1135,6 +1135,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> Self:
         """
         Return the `k` largest elements.
@@ -1205,7 +1206,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             raise ValueError(
                 f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
             )
-        return self._from_pyldf(self._ldf.top_k(k, by, descending, nulls_last))
+        return self._from_pyldf(self._ldf.top_k(k, by, descending, nulls_last, maintain_order))
 
     def bottom_k(
         self,
@@ -1214,6 +1215,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> Self:
         """
         Return the `k` smallest elements.
@@ -1280,7 +1282,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by = parse_as_list_of_expressions(by)
         if isinstance(descending, bool):
             descending = [descending]
-        return self._from_pyldf(self._ldf.bottom_k(k, by, descending, nulls_last))
+        return self._from_pyldf(self._ldf.bottom_k(k, by, descending, nulls_last, maintain_order))
 
     def profile(
         self,

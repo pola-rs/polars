@@ -354,7 +354,7 @@ impl PyLazyFrame {
         ldf.into()
     }
 
-    fn sort(&self, by_column: &str, descending: bool, nulls_last: bool) -> Self {
+    fn sort(&self, by_column: &str, descending: bool, nulls_last: bool, maintain_order: bool) -> Self {
         let ldf = self.ldf.clone();
         ldf.sort(
             by_column,
@@ -362,6 +362,7 @@ impl PyLazyFrame {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order,
             },
         )
         .into()

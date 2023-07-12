@@ -242,6 +242,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }
@@ -253,6 +254,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }
