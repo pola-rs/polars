@@ -257,7 +257,6 @@ fn test_groupby_on_lists() -> PolarsResult<()> {
     );
 
     let out = df
-        .clone()
         .lazy()
         .groupby([col("groups")])
         .agg([col("arrays").implode()])

@@ -295,7 +295,6 @@ fn test_window_mapping() -> PolarsResult<()> {
     assert!(out.column("foo")?.series_equal(&expected));
 
     let out = df
-        .clone()
         .lazy()
         .select([
             col("fruits"),

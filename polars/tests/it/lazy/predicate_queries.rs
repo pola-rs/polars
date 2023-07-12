@@ -35,7 +35,7 @@ fn filter_true_lit() -> PolarsResult<()> {
     let with_not_true = df
         .clone()
         .lazy()
-        .filter(not(filter.clone()))
+        .filter(not(filter))
         .with_predicate_pushdown(false)
         .with_projection_pushdown(false)
         .collect()?;
@@ -54,7 +54,6 @@ fn filter_true_lit() -> PolarsResult<()> {
 
 fn create_n_filters(col_name: &str, num_filters: usize) -> Vec<Expr> {
     (0..num_filters)
-        .into_iter()
         .map(|i| col(col_name).eq(lit(format!("{}", i))))
         .collect()
 }
@@ -165,7 +164,7 @@ fn test_predicate_pushdown_blocked_by_outer_join() -> PolarsResult<()> {
         "c" => ["c2", "c3"]
     }?;
     let df = df1.lazy().outer_join(df2.lazy(), col("b"), col("b"));
-    let out = df.clone().filter(col("a").eq(lit("a1"))).collect()?;
+    let out = df.filter(col("a").eq(lit("a1"))).collect()?;
     let null: Option<&str> = None;
     let expected = df![
         "a" => ["a1"],
