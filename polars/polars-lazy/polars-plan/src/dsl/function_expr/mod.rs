@@ -65,6 +65,7 @@ pub(super) use list::ListFunction;
 use polars_core::prelude::*;
 #[cfg(feature = "cutqcut")]
 use polars_ops::prelude::{cut, qcut};
+use polars_ops::prelude::{rle, rleid};
 #[cfg(feature = "random")]
 pub(crate) use random::RandomMethod;
 use schema::FieldsMapper;
@@ -215,6 +216,10 @@ pub enum FunctionExpr {
         allow_duplicates: bool,
         include_breaks: bool,
     },
+    #[cfg(feature = "rle")]
+    RLE,
+    #[cfg(feature = "rle")]
+    RLEID,
     ToPhysical,
     #[cfg(feature = "random")]
     Random {
@@ -322,6 +327,10 @@ impl Display for FunctionExpr {
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
             QCut { .. } => "qcut",
+            #[cfg(feature = "rle")]
+            RLE => "rle",
+            #[cfg(feature = "rle")]
+            RLEID => "rleid",
             ToPhysical => "to_physical",
             #[cfg(feature = "random")]
             Random { method, .. } => method.into(),
@@ -579,6 +588,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 allow_duplicates,
                 include_breaks
             ),
+            #[cfg(feature = "rle")]
+            RLE => map!(rle),
+            #[cfg(feature = "rle")]
+            RLEID => map!(rleid),
             ToPhysical => map!(dispatch::to_physical),
             #[cfg(feature = "random")]
             Random {

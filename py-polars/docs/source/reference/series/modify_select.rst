@@ -37,6 +37,8 @@ Manipulation/selection
     Series.rename
     Series.reshape
     Series.reverse
+    Series.rle
+    Series.rleid
     Series.round
     Series.sample
     Series.set
