@@ -1841,11 +1841,12 @@ impl DataFrame {
         &mut self,
         by_column: impl IntoVec<SmartString>,
         descending: impl IntoVec<bool>,
+        maintain_order: bool,
     ) -> PolarsResult<&mut Self> {
         let by_column = self.select_series(by_column)?;
         let descending = descending.into_vec();
         self.columns = self
-            .sort_impl(by_column, descending, false, None, true)?
+            .sort_impl(by_column, descending, false, maintain_order, None, true)?
             .columns;
         Ok(self)
     }
@@ -1856,6 +1857,7 @@ impl DataFrame {
         by_column: Vec<Series>,
         descending: Vec<bool>,
         nulls_last: bool,
+        maintain_order: bool,
         slice: Option<(i64, usize)>,
         parallel: bool,
     ) -> PolarsResult<Self> {
@@ -1890,7 +1892,7 @@ impl DataFrame {
         }
 
         if let Some((0, k)) = slice {
-            return self.top_k_impl(k, descending, by_column, nulls_last);
+            return self.top_k_impl(k, descending, by_column, nulls_last, maintain_order);
         }
 
         #[cfg(feature = "dtype-struct")]
@@ -1912,6 +1914,7 @@ impl DataFrame {
                     descending: descending[0],
                     nulls_last,
                     multithreaded: parallel,
+                    maintain_order,
                 };
                 // fast path for a frame with a single series
                 // no need to compute the sort indices and then take by these indices
@@ -1959,20 +1962,21 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn sort_example(df: &DataFrame, descending: bool) -> PolarsResult<DataFrame> {
-    ///     df.sort(["a"], descending)
+    ///     df.sort(["a"], descending, false)
     /// }
     ///
     /// fn sort_by_multiple_columns_example(df: &DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.sort(&["a", "b"], vec![false, true])
+    ///     df.sort(&["a", "b"], vec![false, true], false)
     /// }
     /// ```
     pub fn sort(
         &self,
         by_column: impl IntoVec<SmartString>,
         descending: impl IntoVec<bool>,
+        maintain_order: bool,
     ) -> PolarsResult<Self> {
         let mut df = self.clone();
-        df.sort_in_place(by_column, descending)?;
+        df.sort_in_place(by_column, descending, maintain_order)?;
         Ok(df)
     }
 
@@ -1986,6 +1990,7 @@ impl DataFrame {
                 by_column,
                 descending,
                 options.nulls_last,
+                options.maintain_order,
                 None,
                 options.multithreaded,
             )?
@@ -3603,7 +3608,7 @@ mod test {
         let df = df
             .unique_stable(None, UniqueKeepStrategy::First, None)
             .unwrap()
-            .sort(["flt"], false)
+            .sort(["flt"], false, false)
             .unwrap();
         let valid = df! {
             "flt" => [1., 2., 3.],

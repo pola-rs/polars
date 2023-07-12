@@ -367,6 +367,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
                 df.columns.clone(),
                 desc,
                 options.nulls_last,
+                options.maintain_order,
                 None,
                 options.multithreaded,
             )
