@@ -385,7 +385,7 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
     let mut has_wildcard = false;
     let mut replace_fill_null_type = false;
     let mut has_selector = false;
-    let mut has_exclude = true;
+    let mut has_exclude = false;
 
     // do a single pass and collect all flags at once.
     // supertypes/modification that can be done in place are also don e in that pass

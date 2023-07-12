@@ -47,6 +47,6 @@ def test_exclude_selection() -> None:
     ldf = pl.LazyFrame({"a": [1], "b": [1], "c": [True]})
 
     assert ldf.select([pl.exclude("a")]).columns == ["b", "c"]
-    assert ldf.select(pl.all_horizontal().exclude(pl.Boolean)).columns == ["a", "b"]
-    assert ldf.select(pl.all_horizontal().exclude([pl.Boolean])).columns == ["a", "b"]
-    assert ldf.select(pl.all_horizontal().exclude(NUMERIC_DTYPES)).columns == ["c"]
+    assert ldf.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
+    assert ldf.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
+    assert ldf.select(pl.all().exclude(NUMERIC_DTYPES)).columns == ["c"]
