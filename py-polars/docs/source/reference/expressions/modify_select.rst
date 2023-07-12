@@ -40,6 +40,8 @@ Manipulation/selection
     Expr.repeat_by
     Expr.reshape
     Expr.reverse
+    Expr.rle
+    Expr.rle_id
     Expr.round
     Expr.sample
     Expr.shift

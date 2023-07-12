@@ -1498,6 +1498,15 @@ impl Expr {
         })
     }
 
+    #[cfg(feature = "rle")]
+    pub fn rle(self) -> Expr {
+        self.apply_private(FunctionExpr::RLE)
+    }
+    #[cfg(feature = "rle")]
+    pub fn rle_id(self) -> Expr {
+        self.apply_private(FunctionExpr::RLEID)
+    }
+
     #[cfg(feature = "diff")]
     pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
         self.apply_private(FunctionExpr::Diff(n, null_behavior))

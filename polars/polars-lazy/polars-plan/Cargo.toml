@@ -122,6 +122,7 @@ fused = []
 list_sets = ["polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all"]
 cutqcut = ["polars-ops/cutqcut"]
+rle = ["polars-ops/rle"]
 
 bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
 
