@@ -3032,6 +3032,7 @@ class DataFrame:
         statistics: bool = False,
         row_group_size: int | None = None,
         use_pyarrow: bool = False,
+        use_pyarrow_write_to_dataset: bool = False,
         pyarrow_options: dict[str, object] | None = None,
     ) -> None:
         """
@@ -3061,11 +3062,15 @@ class DataFrame:
         use_pyarrow
             Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
+        use_pyarrow_write_to_dataset
+            Use ``pyarrow.parquet.write_to_dataset`` instead of pyarrow.write_table.
+            Enable features like writing partitioned datasets.
         pyarrow_options
             Arguments passed to ``pyarrow.parquet.write_table``.
 
         Examples
         --------
+
         >>> import pathlib
         >>>
         >>> df = pl.DataFrame(
@@ -3078,11 +3083,26 @@ class DataFrame:
         >>> path: pathlib.Path = dirpath / "new_file.parquet"
         >>> df.write_parquet(path)
 
+        We can use pyarrow with use_pyarrow_write_to_dataset=True to write partitioned datasets.
+        The following example will write the first row to ../watermark=1/*.parquet and the
+        other rows to ../watermark=2/*.parquet.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "watermark": [1, 2, 2]})
+        >>> df.write_parquet(
+        ...    tmpdir / "test.parquet",
+        ...    use_pyarrow=True,
+        ...    use_pyarrow_write_to_dataset=True,
+        ...    pyarrow_options={"partition_cols": ["watermark"]},
+        ... )
+
         """
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            if use_pyarrow_write_to_dataset:
+                file = normalise_filepath(file, check_not_directory=True)
+            else:
+                file = normalise_filepath(file)
 
         if use_pyarrow:
             tbl = self.to_arrow()
@@ -3100,15 +3120,23 @@ class DataFrame:
             # needed below
             import pyarrow.parquet  # noqa: F401
 
-            pa.parquet.write_table(
-                table=tbl,
-                where=file,
-                row_group_size=row_group_size,
-                compression=None if compression == "uncompressed" else compression,
-                compression_level=compression_level,
-                write_statistics=statistics,
-                **(pyarrow_options or {}),
-            )
+            if use_pyarrow_write_to_dataset:
+                pa.parquet.write_to_dataset(
+                    table=tbl,
+                    root_path=file,
+                    **(pyarrow_options or {}),
+                )
+            else:
+                pa.parquet.write_table(
+                    table=tbl,
+                    where=file,
+                    row_group_size=row_group_size,
+                    compression=None if compression == "uncompressed" else compression,
+                    compression_level=compression_level,
+                    write_statistics=statistics,
+                    **(pyarrow_options or {}),
+                )
+
         else:
             self._df.write_parquet(
                 file, compression, compression_level, statistics, row_group_size
