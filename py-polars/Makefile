@@ -49,7 +49,7 @@ pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
 test: .venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest -n auto --dist worksteal
+	$(VENV_BIN)/pytest -n auto --dist loadgroup
 
 .PHONY: doctest
 doctest: .venv build  ## Run doctests
@@ -57,12 +57,12 @@ doctest: .venv build  ## Run doctests
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests
-	$(VENV_BIN)/pytest -n auto --dist worksteal -m "slow or not slow"
+	$(VENV_BIN)/pytest -n auto --dist loadgroup -m "slow or not slow"
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: coverage
 coverage: .venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov -n auto --dist worksteal -m "not benchmark"
+	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not benchmark"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
