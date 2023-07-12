@@ -336,6 +336,7 @@ pub(crate) fn insert_streaming_nodes(
             #[allow(unused_variables)]
             lp @ Aggregate {
                 input,
+                keys,
                 aggs,
                 maintain_order: false,
                 apply: None,
@@ -369,18 +370,34 @@ pub(crate) fn insert_streaming_nodes(
                     }
                 }
 
-                if can_stream
-                    && aggs.iter().all(|node| {
+                let valid_agg = || {
+                    aggs.iter().all(|node| {
                         polars_pipe::pipeline::can_convert_to_hash_agg(
                             *node,
                             expr_arena,
                             &input_schema,
                         )
                     })
-                    && schema
+                };
+
+                let valid_key = || {
+                    keys.iter().all(|node| {
+                        expr_arena
+                            .get(*node)
+                            .get_type(schema, Context::Default, expr_arena)
+                            // ensure we don't groupby list
+                            .map(|dt| !matches!(dt, DataType::List(_)))
+                            .unwrap_or(false)
+                    })
+                };
+
+                let valid_types = || {
+                    schema
                         .iter_dtypes()
                         .all(|dt| allowed_dtype(dt, string_cache))
-                {
+                };
+
+                if can_stream && valid_agg() && valid_key() && valid_types() {
                     state.streamable = true;
                     state.operators_sinks.push(PipelineNode::Sink(root));
                     stack.push((*input, state, current_idx))
