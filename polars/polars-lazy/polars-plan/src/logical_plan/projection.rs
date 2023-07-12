@@ -258,52 +258,53 @@ fn prepare_excluded(
     keys: &[Expr],
     has_exclude: bool,
 ) -> PolarsResult<PlHashSet<Arc<str>>> {
-    if !has_exclude {
-        return Ok(Default::default());
-    }
     let mut exclude = PlHashSet::new();
-    for e in expr {
-        if let Expr::Exclude(_, to_exclude) = e {
-            #[cfg(feature = "regex")]
-            {
-                // instead of matching the names for regex patterns and
-                // expanding the matches in the schema we reuse the
-                // `replace_regex` func; this is a bit slower but DRY.
-                let mut buf = vec![];
-                for to_exclude_single in to_exclude {
-                    match to_exclude_single {
-                        Excluded::Name(name) => {
-                            let e = Expr::Column(name.clone());
-                            replace_regex(&e, &mut buf, schema, &Default::default())?;
-                            // we cannot loop because of bchck
-                            while let Some(col) = buf.pop() {
-                                if let Expr::Column(name) = col {
-                                    exclude.insert(name);
+
+    // explicit exclude branch
+    if has_exclude {
+        for e in expr {
+            if let Expr::Exclude(_, to_exclude) = e {
+                #[cfg(feature = "regex")]
+                {
+                    // instead of matching the names for regex patterns and
+                    // expanding the matches in the schema we reuse the
+                    // `replace_regex` func; this is a bit slower but DRY.
+                    let mut buf = vec![];
+                    for to_exclude_single in to_exclude {
+                        match to_exclude_single {
+                            Excluded::Name(name) => {
+                                let e = Expr::Column(name.clone());
+                                replace_regex(&e, &mut buf, schema, &Default::default())?;
+                                // we cannot loop because of bchck
+                                while let Some(col) = buf.pop() {
+                                    if let Expr::Column(name) = col {
+                                        exclude.insert(name);
+                                    }
                                 }
                             }
-                        }
-                        Excluded::Dtype(dt) => {
-                            for fld in schema.iter_fields() {
-                                if dtypes_match(fld.data_type(), dt) {
-                                    exclude.insert(Arc::from(fld.name().as_ref()));
+                            Excluded::Dtype(dt) => {
+                                for fld in schema.iter_fields() {
+                                    if dtypes_match(fld.data_type(), dt) {
+                                        exclude.insert(Arc::from(fld.name().as_ref()));
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            #[cfg(not(feature = "regex"))]
-            {
-                for to_exclude_single in to_exclude {
-                    match to_exclude_single {
-                        Excluded::Name(name) => {
-                            exclude.insert(name.clone());
-                        }
-                        Excluded::Dtype(dt) => {
-                            for (name, dtype) in schema.iter() {
-                                if matches!(dtype, dt) {
-                                    exclude.insert(Arc::from(name.as_str()));
+                #[cfg(not(feature = "regex"))]
+                {
+                    for to_exclude_single in to_exclude {
+                        match to_exclude_single {
+                            Excluded::Name(name) => {
+                                exclude.insert(name.clone());
+                            }
+                            Excluded::Dtype(dt) => {
+                                for (name, dtype) in schema.iter() {
+                                    if matches!(dtype, dt) {
+                                        exclude.insert(Arc::from(name.as_str()));
+                                    }
                                 }
                             }
                         }
@@ -312,6 +313,8 @@ fn prepare_excluded(
             }
         }
     }
+
+    // exclude groupby keys
     for mut expr in keys.iter() {
         // Allow a number of aliases of a column expression, still exclude column from aggregation
         loop {
