@@ -23,17 +23,20 @@ pub fn rle(s: &Series) -> PolarsResult<Series> {
 }
 
 pub fn rle_id(s: &Series) -> PolarsResult<Series> {
+    if s.len() == 0 {
+        return Ok(Series::new_empty("id", &DataType::UInt32));
+    }
     let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));
     let s_neq = s1.not_equal_missing(&s2)?;
 
     let mut out = Vec::with_capacity(s.len());
-    out.push(0); // Run numbers start at zero
-    s_neq
-        .downcast_iter()
-        .for_each(|a| out.extend(a.values_iter().map(|v| v as u32)));
-    out.iter_mut().fold(0, |a, x| {
-        *x += a;
-        *x
-    });
+    let mut last = 0;
+    out.push(last); // Run numbers start at zero
+    for a in s_neq.downcast_iter() {
+        for aa in a.values_iter() {
+            last += aa as u32;
+            out.push(last);
+        }
+    }
     Ok(Series::from_vec("id", out))
 }
