@@ -3070,7 +3070,6 @@ class DataFrame:
 
         Examples
         --------
-
         >>> import pathlib
         >>>
         >>> df = pl.DataFrame(
@@ -3083,16 +3082,17 @@ class DataFrame:
         >>> path: pathlib.Path = dirpath / "new_file.parquet"
         >>> df.write_parquet(path)
 
-        We can use pyarrow with use_pyarrow_write_to_dataset=True to write partitioned datasets.
-        The following example will write the first row to ../watermark=1/*.parquet and the
+        We can use pyarrow with use_pyarrow_write_to_dataset=True
+        to write partitioned datasets. The following example will
+        write the first row to ../watermark=1/*.parquet and the
         other rows to ../watermark=2/*.parquet.
 
         >>> df = pl.DataFrame({"a": [1, 2, 3], "watermark": [1, 2, 2]})
         >>> df.write_parquet(
-        ...    tmpdir / "test.parquet",
-        ...    use_pyarrow=True,
-        ...    use_pyarrow_write_to_dataset=True,
-        ...    pyarrow_options={"partition_cols": ["watermark"]},
+        ...     tmpdir / "test.parquet",
+        ...     use_pyarrow=True,
+        ...     use_pyarrow_write_to_dataset=True,
+        ...     pyarrow_options={"partition_cols": ["watermark"]},
         ... )
 
         """
