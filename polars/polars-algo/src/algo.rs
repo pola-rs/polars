@@ -97,5 +97,5 @@ pub fn hist(s: &Series, bins: Option<&Series>, bin_count: Option<usize>) -> Resu
 
     cuts.left_join(&out, [category_str], [category_str])?
         .fill_null(FillNullStrategy::Zero)?
-        .sort(["category"], false)
+        .sort(["category"], false, false)
 }

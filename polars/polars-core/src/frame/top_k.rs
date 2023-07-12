@@ -46,7 +46,7 @@ impl DataFrame {
     ) -> PolarsResult<DataFrame> {
         let by_column = self.select_series(by_column)?;
         let descending = descending.into_vec();
-        self.top_k_impl(k, descending, by_column, false)
+        self.top_k_impl(k, descending, by_column, false, false)
     }
 
     pub(crate) fn top_k_impl(
@@ -55,6 +55,7 @@ impl DataFrame {
         mut descending: Vec<bool>,
         by_column: Vec<Series>,
         nulls_last: bool,
+        maintain_order: bool,
     ) -> PolarsResult<DataFrame> {
         _broadcast_descending(by_column.len(), &mut descending);
         let encoded = _get_rows_encoded(&by_column, &descending, nulls_last)?;
@@ -66,8 +67,16 @@ impl DataFrame {
             .collect::<Vec<_>>();
 
         let sorted = if k >= self.height() {
-            rows.sort_unstable();
+            if maintain_order {
+                rows.sort();
+            } else {
+                rows.sort_unstable();
+            }
             &rows
+        } else if maintain_order {
+            // todo: maybe there is some more efficient method, comparable to select_nth_unstable
+            rows.sort();
+            &rows[..k]
         } else {
             let (lower, _el, _upper) = rows.select_nth_unstable(k);
             lower.sort_unstable();

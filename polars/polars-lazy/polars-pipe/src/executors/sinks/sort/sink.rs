@@ -175,6 +175,7 @@ impl Sink for SortSink {
                 descending: self.sort_args.descending[0],
                 nulls_last: self.sort_args.nulls_last,
                 multithreaded: true,
+                maintain_order: self.sort_args.maintain_order,
             });
 
             block_thread_until_io_thread_done(io_thread);
@@ -216,5 +217,12 @@ pub(super) fn sort_accumulated(
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
     let sort_column = df.get_columns()[sort_idx].clone();
-    df.sort_impl(vec![sort_column], vec![descending], false, slice, true)
+    df.sort_impl(
+        vec![sort_column],
+        vec![descending],
+        false,
+        false,
+        slice,
+        true,
+    )
 }
