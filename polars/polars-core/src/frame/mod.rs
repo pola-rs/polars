@@ -3347,10 +3347,10 @@ impl DataFrame {
         };
 
         // drop key columns prior to calculation if requested
-        let df = if !include_key {
-            self.drop_many(cols)
-        } else {
+        let df = if include_key {
             self.clone()
+        } else {
+            self.drop_many(cols)
         };
 
         // don't parallelize this
