@@ -25,9 +25,12 @@ pub fn rle(s: &Series) -> PolarsResult<Series> {
 pub fn rle_id(s: &Series) -> PolarsResult<Series> {
     let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));
     let s_neq = s1.not_equal_missing(&s2)?;
-    
+
     let mut out = Vec::with_capacity(s.len());
     out.push(0); // Run numbers start at zero
-    s_neq.into_iter().enumerate().for_each(|(i, v)| out.push(out[i] + v.unwrap() as u32));
+    s_neq
+        .into_iter()
+        .enumerate()
+        .for_each(|(i, v)| out.push(out[i] + v.unwrap() as u32));
     Ok(Series::from_vec("id", out))
 }
