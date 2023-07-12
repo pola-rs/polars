@@ -3088,8 +3088,9 @@ class DataFrame:
         other rows to ../watermark=2/*.parquet.
 
         >>> df = pl.DataFrame({"a": [1, 2, 3], "watermark": [1, 2, 2]})
+        >>> path: pathlib.Path = dirpath / "partitioned_object"
         >>> df.write_parquet(
-        ...     tmpdir / "test.parquet",
+        ...     path,
         ...     use_pyarrow=True,
         ...     use_pyarrow_write_to_dataset=True,
         ...     pyarrow_options={"partition_cols": ["watermark"]},
