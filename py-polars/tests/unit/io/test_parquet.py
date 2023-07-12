@@ -46,21 +46,23 @@ def test_write_parquet_using_pyarrow_9753(tmpdir: Path) -> None:
     )
 
 
-def test_write_parquet_using_pyarrow_write_to_dataset(tmpdir: Path) -> None:
+def test_write_parquet_using_pyarrow_write_to_dataset(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
     df = pl.DataFrame({"a": [1, 2, 3]})
     df.write_parquet(
-        tmpdir / "test.parquet",
+        tmp_path / "test.parquet",
         use_pyarrow=True,
         use_pyarrow_write_to_dataset=True,
     )
 
 
 def test_write_parquet_using_pyarrow_write_to_dataset_with_partitioning(
-    tmpdir: Path,
+    tmp_path: Path,
 ) -> None:
+    tmp_path.mkdir(exist_ok=True)
     df = pl.DataFrame({"a": [1, 2, 3], "watermark": [1, 2, 2]})
     df.write_parquet(
-        tmpdir / "test.parquet",
+        tmp_path / "test.parquet",
         use_pyarrow=True,
         use_pyarrow_write_to_dataset=True,
         pyarrow_options={"partition_cols": ["watermark"]},
