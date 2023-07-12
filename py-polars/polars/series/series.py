@@ -1196,7 +1196,7 @@ class Series:
 
         """
 
-    def any(self, drop_nulls: bool = True) -> bool:
+    def any(self, drop_nulls: bool = True) -> bool | None:
         """
         Check if any boolean value in the column is `True`.
 
@@ -1207,7 +1207,7 @@ class Series:
         """
         return self.to_frame().select(F.col(self.name).any(drop_nulls)).to_series()[0]
 
-    def all(self, drop_nulls: bool = True) -> bool:
+    def all(self, drop_nulls: bool = True) -> bool | None:
         """
         Check if all boolean values in the column are `True`.
 
