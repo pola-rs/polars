@@ -107,7 +107,7 @@ fn test_many_aliasing_projections_5070() -> PolarsResult<()> {
         .with_columns([col("val").max().alias("max")])
         .with_column(col("max").alias("diff"))
         .with_column((col("val") / col("diff")).alias("output"))
-        .select([all().exclude(&["max", "diff"])])
+        .select([all().exclude(["max", "diff"])])
         .collect()?;
     let expected = df![
         "date" => [2, 3],

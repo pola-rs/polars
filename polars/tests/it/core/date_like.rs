@@ -8,15 +8,13 @@ fn test_agg_list_type() -> PolarsResult<()> {
 
     let l = unsafe { s.agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])].into())) };
 
-    match l.dtype() {
+    let result = match l.dtype() {
         DataType::List(inner) => {
-            assert!(matches!(
-                &**inner,
-                DataType::Datetime(TimeUnit::Nanoseconds, None)
-            ))
+            matches!(&**inner, DataType::Datetime(TimeUnit::Nanoseconds, None))
         }
-        _ => assert!(false),
-    }
+        _ => false,
+    };
+    assert!(result);
 
     Ok(())
 }

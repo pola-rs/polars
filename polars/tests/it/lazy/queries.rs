@@ -239,8 +239,8 @@ fn test_groupby_on_lists() -> PolarsResult<()> {
 
     let mut builder =
         ListPrimitiveChunkedBuilder::<Int32Type>::new("arrays", 10, 10, DataType::Int32);
-    builder.append_series(&s0);
-    builder.append_series(&s1);
+    builder.append_series(&s0).unwrap();
+    builder.append_series(&s1).unwrap();
     let s2 = builder.finish().into_series();
 
     let df = DataFrame::new(vec![s1, s2])?;
@@ -257,7 +257,6 @@ fn test_groupby_on_lists() -> PolarsResult<()> {
     );
 
     let out = df
-        .clone()
         .lazy()
         .groupby([col("groups")])
         .agg([col("arrays").implode()])

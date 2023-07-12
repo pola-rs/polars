@@ -401,7 +401,7 @@ mod test {
         assert!(out.frame_equal_missing(&expected));
 
         let list = Series::new("foo", [s0.clone(), s1.clear(), s1.clone()]);
-        let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
+        let df = DataFrame::new(vec![list, s0, s1])?;
         let out = df.explode(["foo"])?;
         let expected = df![
             "foo" => [Some(1), Some(2), Some(3), None, Some(1), Some(1), Some(1)],
