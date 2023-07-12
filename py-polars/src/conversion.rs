@@ -692,20 +692,13 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
         }
 
         fn get_list(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
-            #[allow(clippy::needless_lifetimes)]
-            fn get_list_with_constructor<'a>(ob: &'a PyAny) -> PyResult<Wrap<AnyValue<'a>>> {
+            fn get_list_with_constructor(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
                 // Use the dedicated constructor
                 // this constructor is able to go via dedicated type constructors
                 // so it can be much faster
                 Python::with_gil(|py| {
                     let s = SERIES.call1(py, (ob,))?;
-                    let out = get_series_el(s.as_ref(py))?;
-
-                    // correct lifetime
-                    // this is safe as we don't borrow anything
-                    unsafe {
-                        Ok(std::mem::transmute::<Wrap<AnyValue<'_>>, Wrap<AnyValue<'a>>>(out))
-                    }
+                    get_series_el(s.as_ref(py))
                 })
             }
 
@@ -743,7 +736,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             }
         }
 
-        fn get_series_el(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+        fn get_series_el(ob: &PyAny) -> PyResult<Wrap<AnyValue<'static>>> {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
             Ok(Wrap(AnyValue::List(series)))
