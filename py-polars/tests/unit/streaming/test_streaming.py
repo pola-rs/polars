@@ -384,7 +384,7 @@ def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
 @pytest.fixture(scope="module")
 def random_integers() -> pl.Series:
     np.random.seed(1)
-    return pl.Series("a", np.random.randint(0, 10, 100))
+    return pl.Series("a", np.random.randint(0, 10, 100), dtype=pl.Int64)
 
 
 @pytest.mark.write_disk()
