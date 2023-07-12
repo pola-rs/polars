@@ -496,6 +496,7 @@ fn test_groupby_2() -> PolarsResult<()> {
             vec![col("count"), col("category")],
             vec![false, true],
             false,
+            false,
         )
         .limit(2);
     let expected = expected.collect()?;

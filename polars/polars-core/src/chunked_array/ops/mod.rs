@@ -479,6 +479,7 @@ pub struct SortOptions {
     pub descending: bool,
     pub nulls_last: bool,
     pub multithreaded: bool,
+    pub maintain_order: bool,
 }
 
 #[derive(Clone)]
@@ -495,6 +496,7 @@ impl Default for SortOptions {
             descending: false,
             nulls_last: false,
             multithreaded: true,
+            maintain_order: false,
         }
     }
 }

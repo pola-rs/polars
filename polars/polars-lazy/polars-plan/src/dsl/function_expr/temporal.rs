@@ -8,11 +8,13 @@ use super::*;
 
 #[cfg(feature = "date_offset")]
 pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
+    let preserve_sortedness: bool;
     let out = match s.dtype().clone() {
         DataType::Date => {
             let s = s
                 .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
                 .unwrap();
+            preserve_sortedness = true;
             date_offset(s, offset).and_then(|s| s.cast(&DataType::Date))
         }
         DataType::Datetime(tu, tz) => {
@@ -37,16 +39,25 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
                     ca.0.try_apply(|v| offset_fn(&offset, v, None))
                 }
             }?;
+            // Sortedness may not be preserved when crossing daylight savings time boundaries
+            // for calendar-aware durations.
+            // Constant durations (e.g. 2 hours) always preserve sortedness.
+            preserve_sortedness =
+                tz.is_none() || tz.as_deref() == Some("UTC") || offset.is_constant_duration();
             out.cast(&DataType::Datetime(tu, tz))
         }
         dt => polars_bail!(
             ComputeError: "cannot use 'date_offset' on Series of datatype {}", dt,
         ),
     };
-    out.map(|mut out| {
-        out.set_sorted_flag(s.is_sorted_flag());
+    if preserve_sortedness {
+        out.map(|mut out| {
+            out.set_sorted_flag(s.is_sorted_flag());
+            out
+        })
+    } else {
         out
-    })
+    }
 }
 
 pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {

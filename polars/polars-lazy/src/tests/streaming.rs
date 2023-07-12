@@ -100,7 +100,12 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
             (col("fats_g") * lit(10)).sum(),
             col("calories").mean().alias("cal_mean"),
         ])
-        .sort_by_exprs([col("sugars_g"), col("calories")], [false, false], false);
+        .sort_by_exprs(
+            [col("sugars_g"), col("calories")],
+            [false, false],
+            false,
+            false,
+        );
 
     assert_streaming_with_default(q, true, false);
     Ok(())
@@ -130,7 +135,7 @@ fn test_streaming_unique() -> PolarsResult<()> {
     let q = q
         .select([col("sugars_g"), col("calories")])
         .unique(None, Default::default())
-        .sort_by_exprs([cols(["sugars_g", "calories"])], [false], false);
+        .sort_by_exprs([cols(["sugars_g", "calories"])], [false], false, false);
 
     assert_streaming_with_default(q, true, false);
     Ok(())
@@ -362,5 +367,25 @@ fn test_streaming_double_left_join() -> PolarsResult<()> {
         .left_join(q3.slice(0, 0), col("m_id"), col("m_id3"));
 
     assert_streaming_with_default(q, true, false);
+    Ok(())
+}
+
+#[test]
+fn test_sort_maintain_order_streaming() -> PolarsResult<()> {
+    let q = df![
+        "A" => [1, 1, 1, 1],
+        "B" => ["A", "B", "C", "D"],
+    ]?
+    .lazy();
+
+    let res = q
+        .sort_by_exprs([col("A")], [false], false, true)
+        .slice(0, 3)
+        .with_streaming(true)
+        .collect()?;
+    assert!(res.frame_equal(&df![
+        "A" => [1, 1, 1],
+        "B" => ["A", "B", "C"],
+    ]?));
     Ok(())
 }
