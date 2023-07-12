@@ -65,6 +65,7 @@ pub(super) use list::ListFunction;
 use polars_core::prelude::*;
 #[cfg(feature = "cutqcut")]
 use polars_ops::prelude::{cut, qcut};
+#[cfg(feature = "rle")]
 use polars_ops::prelude::{rle, rleid};
 #[cfg(feature = "random")]
 pub(crate) use random::RandomMethod;
