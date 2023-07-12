@@ -1,5 +1,3 @@
-use std::iter::Scan;
-
 use super::*;
 
 pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {

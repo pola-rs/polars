@@ -1449,7 +1449,7 @@ fn test_singleton_broadcast() -> PolarsResult<()> {
 fn test_list_in_select_context() -> PolarsResult<()> {
     let s = Series::new("a", &[1, 2, 3]);
     let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name()).unwrap();
-    builder.append_series(&s);
+    builder.append_series(&s).unwrap();
     let expected = builder.finish().into_series();
 
     let df = DataFrame::new(vec![s])?;
