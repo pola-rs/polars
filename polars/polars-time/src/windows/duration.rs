@@ -338,6 +338,10 @@ impl Duration {
         self.days
     }
 
+    pub fn is_constant_duration(&self) -> bool {
+        self.months == 0 && self.weeks == 0 && self.days == 0
+    }
+
     /// Returns the nanoseconds from the `Duration` without the weeks or months part.
     pub fn nanoseconds(&self) -> i64 {
         self.nsecs
