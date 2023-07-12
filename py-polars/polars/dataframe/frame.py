@@ -6702,6 +6702,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = ...,
+        include_key: bool = ...,
         as_dict: Literal[False] = ...,
     ) -> list[Self]:
         ...
@@ -6712,6 +6713,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = ...,
+        include_key: bool = ...,
         as_dict: Literal[True],
     ) -> dict[Any, Self]:
         ...
@@ -6721,6 +6723,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = True,
+        include_key: bool = True,
         as_dict: bool = False,
     ) -> list[Self] | dict[Any, Self]:
         """
@@ -6735,6 +6738,8 @@ class DataFrame:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default partition by operation.
+        include_key
+            Include the columns used to partition the DataFrame in the output.
         as_dict
             Return a dictionary instead of a list. The dictionary keys are the distinct
             group values that identify that group.
@@ -6855,7 +6860,8 @@ class DataFrame:
             by.extend(more_by)
 
         partitions = [
-            self._from_pydf(_df) for _df in self._df.partition_by(by, maintain_order)
+            self._from_pydf(_df)
+            for _df in self._df.partition_by(by, maintain_order, include_key)
         ]
 
         if as_dict:
