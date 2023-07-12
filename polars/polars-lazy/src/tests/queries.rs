@@ -1601,14 +1601,11 @@ fn test_binary_expr() -> PolarsResult<()> {
             "random"=> [0.1f64, 0.6, 0.2, 0.6, 0.3]
     )?;
 
-    let out = df
-        .lazy()
-        .select([when(col("random").gt(lit(0.5)))
-            .then(lit(2))
-            .otherwise(col("random"))
-            .alias("other")
-            * col("nrs").sum()])
-        .collect()?;
+    let other = when(col("random").gt(lit(0.5)))
+        .then(lit(2))
+        .otherwise(col("random"))
+        .alias("other");
+    let out = df.lazy().select([other * col("nrs").sum()]).collect()?;
     assert_eq!(out.dtypes(), &[DataType::Float64]);
     Ok(())
 }

@@ -349,7 +349,7 @@
 //! // columns to sort by
 //! let by = &["b", "a"];
 //! // do the sort operation
-//! let sorted = df.sort(by, descending)?;
+//! let sorted = df.sort(by, descending, true)?;
 //!
 //! // sorted:
 //!
