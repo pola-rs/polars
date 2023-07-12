@@ -3474,11 +3474,11 @@ class DataFrame:
         │ 1           ┆ 2           ┆ 3           │
         │ 1           ┆ 2           ┆ 3           │
         └─────────────┴─────────────┴─────────────┘
-        
+
         Use an existing column as the new column names
-        
-        >>> df = pl.DataFrame(dict(id=['a', 'b', 'c'], col1=[1, 3, 2], col2=[3, 4, 6]))
-        >>> df.transpose(column_names='id')
+
+        >>> df = pl.DataFrame(dict(id=["a", "b", "c"], col1=[1, 3, 2], col2=[3, 4, 6]))
+        >>> df.transpose(column_names="id")
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -3488,7 +3488,7 @@ class DataFrame:
         │ 1   ┆ 3   ┆ 2   │
         │ 3   ┆ 4   ┆ 6   │
         └─────┴─────┴─────┘
-        >>> df.transpose(include_header=True, header_name='new_id', column_names='id')
+        >>> df.transpose(include_header=True, header_name="new_id", column_names="id")
         shape: (2, 4)
         ┌────────┬─────┬─────┬─────┐
         │ new_id ┆ a   ┆ b   ┆ c   │
