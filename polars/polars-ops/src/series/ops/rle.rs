@@ -22,7 +22,7 @@ pub fn rle(s: &Series) -> PolarsResult<Series> {
     Ok(StructChunked::new("rle", &outvals)?.into_series())
 }
 
-pub fn rleid(s: &Series) -> PolarsResult<Series> {
+pub fn rle_id(s: &Series) -> PolarsResult<Series> {
     let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));
     // Run numbers start at zero
     Ok(std::iter::once(false)

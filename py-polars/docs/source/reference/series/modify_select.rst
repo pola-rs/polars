@@ -38,7 +38,7 @@ Manipulation/selection
     Series.reshape
     Series.reverse
     Series.rle
-    Series.rleid
+    Series.rle_id
     Series.round
     Series.sample
     Series.set

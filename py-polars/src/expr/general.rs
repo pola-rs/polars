@@ -213,8 +213,8 @@ impl PyExpr {
         self.clone().inner.rle().into()
     }
     #[cfg(feature = "rle")]
-    fn rleid(&self) -> Self {
-        self.clone().inner.rleid().into()
+    fn rle_id(&self) -> Self {
+        self.clone().inner.rle_id().into()
     }
 
     fn agg_groups(&self) -> Self {

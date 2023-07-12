@@ -41,7 +41,7 @@ Manipulation/selection
     Expr.reshape
     Expr.reverse
     Expr.rle
-    Expr.rleid
+    Expr.rle_id
     Expr.round
     Expr.sample
     Expr.shift

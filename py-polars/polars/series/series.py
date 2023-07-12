@@ -1874,7 +1874,7 @@ class Series:
         """
         return self.to_frame().select(F.col(self.name).rle()).to_series()
 
-    def rleid(self) -> Series:
+    def rle_id(self) -> Series:
         """
         Map values to run IDs.
 
@@ -1890,7 +1890,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("s", [1, 1, 2, 1, None, 1, 3, 3])
-        >>> s.rleid()
+        >>> s.rle_id()
         shape: (8,)
         Series: 's' [u32]
         [
@@ -1904,7 +1904,7 @@ class Series:
             5
         ]
         """
-        return self.to_frame().select(F.col(self.name).rleid()).to_series()
+        return self.to_frame().select(F.col(self.name).rle_id()).to_series()
 
     def hist(
         self,

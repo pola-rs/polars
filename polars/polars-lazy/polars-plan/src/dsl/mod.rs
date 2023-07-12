@@ -1503,7 +1503,7 @@ impl Expr {
         self.apply_private(FunctionExpr::RLE)
     }
     #[cfg(feature = "rle")]
-    pub fn rleid(self) -> Expr {
+    pub fn rle_id(self) -> Expr {
         self.apply_private(FunctionExpr::RLEID)
     }
 

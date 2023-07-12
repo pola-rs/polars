@@ -66,7 +66,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "cutqcut")]
 use polars_ops::prelude::{cut, qcut};
 #[cfg(feature = "rle")]
-use polars_ops::prelude::{rle, rleid};
+use polars_ops::prelude::{rle, rle_id};
 #[cfg(feature = "random")]
 pub(crate) use random::RandomMethod;
 use schema::FieldsMapper;
@@ -331,7 +331,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "rle")]
             RLE => "rle",
             #[cfg(feature = "rle")]
-            RLEID => "rleid",
+            RLEID => "rle_id",
             ToPhysical => "to_physical",
             #[cfg(feature = "random")]
             Random { method, .. } => method.into(),
@@ -592,7 +592,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "rle")]
             RLE => map!(rle),
             #[cfg(feature = "rle")]
-            RLEID => map!(rleid),
+            RLEID => map!(rle_id),
             ToPhysical => map!(dispatch::to_physical),
             #[cfg(feature = "random")]
             Random {
