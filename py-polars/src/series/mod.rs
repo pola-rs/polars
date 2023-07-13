@@ -656,6 +656,7 @@ impl PySeries {
             descending,
             nulls_last: descending,
             multithreaded: true,
+            maintain_order: false,
         };
         Ok(self.series.is_sorted(options).map_err(PyPolarsErr::from)?)
     }

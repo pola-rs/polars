@@ -254,6 +254,7 @@ pub struct SortArguments {
     pub descending: Vec<bool>,
     pub nulls_last: bool,
     pub slice: Option<(i64, usize)>,
+    pub maintain_order: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

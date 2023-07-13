@@ -147,11 +147,7 @@ fn test_read_ndjson_iss_5875() {
     let mut schema = Schema::new();
     schema.with_column(
         "struct".into(),
-        DataType::Struct(vec![
-            field_int_inner.clone(),
-            field_float_inner.clone(),
-            field_str_inner.clone(),
-        ]),
+        DataType::Struct(vec![field_int_inner, field_float_inner, field_str_inner]),
     );
     schema.with_column("float".into(), DataType::Float64);
 

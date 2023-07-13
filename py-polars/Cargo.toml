@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.18.6"
+version = "0.18.7"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -69,6 +69,7 @@ binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars/list_any_all"]
 cutqcut = ["polars/cutqcut"]
+rle = ["polars/rle"]
 
 all = [
   "json",
@@ -107,6 +108,7 @@ all = [
   "list_sets",
   "list_any_all",
   "cutqcut",
+  "rle",
 ]
 
 # we cannot conditionally activate simd

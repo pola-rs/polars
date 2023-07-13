@@ -186,7 +186,6 @@ impl Display for TreeFmtVisitor {
 mod test {
     use super::*;
     use crate::logical_plan::visitor::TreeWalker;
-    use crate::prelude::*;
 
     #[test]
     fn test_tree_fmt_visit() {
@@ -196,7 +195,7 @@ mod test {
 
         let mut visitor = TreeFmtVisitor::new();
 
-        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor));
+        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
         let expected: &[&[&str]] = &[
             &["sum"],
             &["binary: +"],

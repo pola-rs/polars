@@ -13,30 +13,10 @@ generate_test_files:
 	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o arrow > ../examples/datasets/foods1.ipc
 
 check:
-	cargo check --all-features \
-		-p polars-core \
-		-p polars-io \
-		-p polars-lazy \
-		-p polars-arrow \
-		-p polars-time \
-		-p polars-error \
-		-p polars-ops \
-		-p polars-sql \
-		-p polars-json
+	cargo check --all-targets --all-features
 
 clippy:
-	cargo clippy --all-features \
-		-p polars-core \
-		-p polars-io \
-		-p polars-lazy \
-		-p polars-arrow \
-		-p polars-utils \
-		-p polars-ops \
-		-p polars-error \
-		-p polars-row \
-		-p polars-time \
-		-p polars-sql \
-		-p polars-json
+	cargo clippy --all-targets --all-features
 
 clippy-default:
 	cargo clippy

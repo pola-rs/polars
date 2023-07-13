@@ -57,7 +57,7 @@ fn test_issue_2472() -> PolarsResult<()> {
 
     assert_eq!(out.shape(), (2, 2));
 
-    let out = base.clone().select([extract]).filter(predicate).collect()?;
+    let out = base.select([extract]).filter(predicate).collect()?;
     assert_eq!(out.shape(), (2, 1));
 
     Ok(())
@@ -107,7 +107,7 @@ fn filter_blocked_by_map() -> PolarsResult<()> {
     };
     let q = df
         .lazy()
-        .map(|df| Ok(df), allowed, None, None)
+        .map(Ok, allowed, None, None)
         .filter(col("A").gt(lit(2i32)));
 
     assert!(!predicate_at_scan(q.clone()));
@@ -190,7 +190,7 @@ fn test_filter_nulls_created_by_join() -> PolarsResult<()> {
 
     let out = a
         .lazy()
-        .join(b.clone(), [col("key")], [col("key")], JoinType::Left.into())
+        .join(b, [col("key")], [col("key")], JoinType::Left.into())
         .filter(col("flag").eq(lit(NULL)))
         .with_predicate_pushdown(false)
         .collect()?;
@@ -236,7 +236,7 @@ fn test_predicate_pd_apply() -> PolarsResult<()> {
     ])
     .filter(col("a").lt(lit(3)));
 
-    assert!(predicate_at_scan(q.clone()));
+    assert!(predicate_at_scan(q));
     Ok(())
 }
 #[test]

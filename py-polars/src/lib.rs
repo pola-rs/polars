@@ -23,6 +23,7 @@ pub mod error;
 pub mod expr;
 pub mod file;
 pub mod functions;
+pub(crate) mod gil_once_cell;
 pub mod lazyframe;
 pub mod lazygroupby;
 #[cfg(feature = "object")]

@@ -483,6 +483,24 @@ def test_sort() -> None:
     )
 
 
+def test_sort_maintain_order() -> None:
+    l1 = (
+        pl.LazyFrame({"A": [1] * 4, "B": ["A", "B", "C", "D"]})
+        .sort("A", maintain_order=True)
+        .slice(0, 3)
+        .collect()["B"]
+        .to_list()
+    )
+    l2 = (
+        pl.LazyFrame({"A": [1] * 4, "B": ["A", "B", "C", "D"]})
+        .sort("A")
+        .collect()
+        .slice(0, 3)["B"]
+        .to_list()
+    )
+    assert l1 == l2 == ["A", "B", "C"]
+
+
 def test_replace() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
     s = pl.Series("c", [True, False, True])
@@ -2854,6 +2872,29 @@ def test_partition_by() -> None:
     ] == expected
     assert [
         a.to_dict(False) for a in df.partition_by("foo", "bar", maintain_order=True)
+    ] == expected
+
+    expected = [
+        {
+            "N": [1],
+        },
+        {
+            "N": [2],
+        },
+        {
+            "N": [2, 4],
+        },
+        {
+            "N": [2],
+        },
+    ]
+    assert [
+        a.to_dict(False)
+        for a in df.partition_by(["foo", "bar"], maintain_order=True, include_key=False)
+    ] == expected
+    assert [
+        a.to_dict(False)
+        for a in df.partition_by("foo", "bar", maintain_order=True, include_key=False)
     ] == expected
 
     assert [a.to_dict(False) for a in df.partition_by("foo", maintain_order=True)] == [

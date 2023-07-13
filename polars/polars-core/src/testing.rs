@@ -191,8 +191,7 @@ mod test {
         let b = Series::new("b", [1, 2, 3].as_ref());
 
         let df1 = DataFrame::new(vec![a, b]).unwrap();
-        let df2 = df1.clone();
-        assert!(df1.frame_equal(&df2))
+        assert!(df1.frame_equal(&df1))
     }
 
     #[test]

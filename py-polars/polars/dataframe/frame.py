@@ -4022,6 +4022,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> DataFrame:
         """
         Return the `k` largest elements.
@@ -4040,6 +4041,10 @@ class DataFrame:
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+            Note that if `true` streaming is not possible and performance might be
+            worse since this requires a stable search.
 
         See Also
         --------
@@ -4087,7 +4092,13 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .top_k(k, by=by, descending=descending, nulls_last=nulls_last)
+            .top_k(
+                k,
+                by=by,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+            )
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
@@ -4103,6 +4114,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> DataFrame:
         """
         Return the `k` smallest elements.
@@ -4121,6 +4133,10 @@ class DataFrame:
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+            Note that if `true` streaming is not possible and performance might be
+            worse since this requires a stable search.
 
         See Also
         --------
@@ -4168,7 +4184,13 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .bottom_k(k, by=by, descending=descending, nulls_last=nulls_last)
+            .bottom_k(
+                k,
+                by=by,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+            )
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
@@ -6680,6 +6702,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = ...,
+        include_key: bool = ...,
         as_dict: Literal[False] = ...,
     ) -> list[Self]:
         ...
@@ -6690,6 +6713,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = ...,
+        include_key: bool = ...,
         as_dict: Literal[True],
     ) -> dict[Any, Self]:
         ...
@@ -6699,6 +6723,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = True,
+        include_key: bool = True,
         as_dict: bool = False,
     ) -> list[Self] | dict[Any, Self]:
         """
@@ -6713,6 +6738,8 @@ class DataFrame:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default partition by operation.
+        include_key
+            Include the columns used to partition the DataFrame in the output.
         as_dict
             Return a dictionary instead of a list. The dictionary keys are the distinct
             group values that identify that group.
@@ -6833,7 +6860,8 @@ class DataFrame:
             by.extend(more_by)
 
         partitions = [
-            self._from_pydf(_df) for _df in self._df.partition_by(by, maintain_order)
+            self._from_pydf(_df)
+            for _df in self._df.partition_by(by, maintain_order, include_key)
         ]
 
         if as_dict:

@@ -93,14 +93,15 @@ fn is_nested_null(av: &AnyValue) -> bool {
     }
 }
 
-pub fn any_values_to_dtype(column: &[AnyValue]) -> PolarsResult<DataType> {
+pub fn any_values_to_dtype(column: &[AnyValue]) -> PolarsResult<(DataType, usize)> {
     // we need an index-map as the order of dtypes influences how the
     // struct fields are constructed.
     let mut types_set = PlIndexSet::new();
     for val in column.iter() {
         types_set.insert(val.into());
     }
-    types_set_to_dtype(types_set)
+    let n_types = types_set.len();
+    Ok((types_set_to_dtype(types_set)?, n_types))
 }
 
 fn types_set_to_dtype(types_set: PlIndexSet<DataType>) -> PolarsResult<DataType> {

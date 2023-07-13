@@ -59,6 +59,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
 #[pyfunction]
 pub fn __register_startup_deps() {
     if !registry::is_object_builder_registered() {
+        // register object type builder
         let object_builder = Box::new(|name: &str, capacity: usize| {
             Box::new(ObjectChunkedBuilder::<ObjectValue>::new(name, capacity))
                 as Box<dyn AnonymousObjectBuilder>
@@ -72,7 +73,13 @@ pub fn __register_startup_deps() {
         });
 
         registry::register_object_builder(object_builder, object_converter);
+        // register SERIES UDF
         unsafe { python_udf::CALL_SERIES_UDF_PYTHON = Some(python_function_caller_series) }
+        // register DATAFRAME UDF
         unsafe { python_udf::CALL_DF_UDF_PYTHON = Some(python_function_caller_df) }
+        Python::with_gil(|py| {
+            // init AnyValue LUT
+            crate::conversion::LUT.set(py, Default::default()).unwrap();
+        })
     }
 }

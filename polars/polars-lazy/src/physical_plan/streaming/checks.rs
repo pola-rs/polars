@@ -2,10 +2,17 @@ use polars_core::prelude::{JoinArgs, JoinType};
 use polars_plan::prelude::*;
 
 pub(super) fn is_streamable_sort(args: &SortArguments) -> bool {
-    // check if slice is positive
-    match args.slice {
-        Some((offset, _)) => offset >= 0,
-        None => true,
+    // check if slice is positive or maintain order is true
+    match args {
+        SortArguments {
+            maintain_order: true,
+            ..
+        } => false,
+        SortArguments {
+            slice: Some((offset, _)),
+            ..
+        } => *offset >= 0,
+        SortArguments { slice: None, .. } => true,
     }
 }
 

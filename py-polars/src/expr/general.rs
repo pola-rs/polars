@@ -208,6 +208,15 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "rle")]
+    fn rle(&self) -> Self {
+        self.clone().inner.rle().into()
+    }
+    #[cfg(feature = "rle")]
+    fn rle_id(&self) -> Self {
+        self.clone().inner.rle_id().into()
+    }
+
     fn agg_groups(&self) -> Self {
         self.clone().inner.agg_groups().into()
     }
@@ -242,6 +251,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }
@@ -253,6 +263,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }

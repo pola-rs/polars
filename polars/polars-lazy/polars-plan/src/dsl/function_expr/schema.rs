@@ -238,6 +238,15 @@ impl FunctionExpr {
             Cut { .. } => mapper.with_dtype(DataType::Categorical(None)),
             #[cfg(feature = "cutqcut")]
             QCut { .. } => mapper.with_dtype(DataType::Categorical(None)),
+            #[cfg(feature = "rle")]
+            RLE => mapper.map_dtype(|dt| {
+                DataType::Struct(vec![
+                    Field::new("lengths", DataType::UInt64),
+                    Field::new("values", dt.clone()),
+                ])
+            }),
+            #[cfg(feature = "rle")]
+            RLEID => mapper.with_dtype(DataType::UInt32),
             ToPhysical => mapper.to_physical_type(),
             #[cfg(feature = "random")]
             Random { .. } => mapper.with_same_dtype(),

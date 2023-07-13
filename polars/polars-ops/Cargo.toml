@@ -51,6 +51,7 @@ is_unique = []
 approx_unique = []
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
+rle = ["dtype-struct"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
