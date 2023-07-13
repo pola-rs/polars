@@ -28,7 +28,7 @@ def all(
 @deprecated_alias(columns="exprs")
 def all(
     exprs: IntoExpr | Iterable[IntoExpr] | None = None, *more_exprs: IntoExpr
-) -> Expr | bool:
+) -> Expr | bool | None:
     """
     Either return an expression representing all columns, or evaluate a bitwise AND operation.
 
@@ -115,7 +115,9 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
 
 
 @deprecated_alias(columns="exprs")
-def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | bool:
+def any(
+    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+) -> Expr | bool | None:
     """
     Evaluate a bitwise OR operation.
 
