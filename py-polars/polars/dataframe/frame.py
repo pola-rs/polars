@@ -6865,10 +6865,13 @@ class DataFrame:
         ]
 
         if as_dict:
+            df = self._from_pydf(self._df)
             if len(by) == 1:
-                return {df[by][0, 0]: df for df in partitions}
+                names = df[by[0]].unique(maintain_order=True).to_list()
             else:
-                return {df[by].row(0): df for df in partitions}
+                names = df.select(by).unique(maintain_order=True).rows()
+
+            return dict(zip(names, partitions))
 
         return partitions
 
