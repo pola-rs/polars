@@ -388,6 +388,7 @@ def test_power() -> None:
     # pow
     assert_series_equal(a**2, pl.Series([1.0, 4.0], dtype=Float64))
     assert_series_equal(b**3, pl.Series([None, 8.0], dtype=Float64))
+    assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))
     assert_series_equal(a**a, pl.Series([1.0, 4.0], dtype=Float64))
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
@@ -406,6 +407,8 @@ def test_power() -> None:
 
     # Series.pow() method
     assert_series_equal(a.pow(2), pl.Series([1.0, 4.0], dtype=Float64))
+
+    #
 
 
 def test_add_string() -> None:
