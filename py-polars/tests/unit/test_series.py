@@ -408,8 +408,6 @@ def test_power() -> None:
     # Series.pow() method
     assert_series_equal(a.pow(2), pl.Series([1.0, 4.0], dtype=Float64))
 
-    #
-
 
 def test_add_string() -> None:
     s = pl.Series(["hello", "weird"])
