@@ -40,7 +40,7 @@ def all(
 
     Otherwise, this function computes the bitwise AND horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.all_horizontal`` instead.
 
     Parameters
     ----------
@@ -126,7 +126,7 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
 
     Otherwise, this function computes the bitwise OR horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.any_horizontal`` instead.
 
     Parameters
     ----------
@@ -195,7 +195,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
 
     Otherwise, this function computes the maximum value horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.max_horizontal`` instead.
 
     Parameters
     ----------
@@ -291,7 +291,7 @@ def min(
 
     Otherwise, this function computes the minimum value horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.min_horizontal`` instead.
 
     Parameters
     ----------
@@ -387,7 +387,7 @@ def sum(
     **This functionality is deprecated**.
 
     Otherwise, this function computes the sum horizontally across multiple columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.sum_horizontal`` instead.
 
     Parameters
     ----------
@@ -485,7 +485,7 @@ def cumsum(
 
     Otherwise, this function computes the cumulative sum horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.cumsum_horizontal`` instead.
 
     Parameters
     ----------
