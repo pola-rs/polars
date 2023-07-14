@@ -99,7 +99,7 @@ impl LazyFrame {
         LogicalPlanBuilder::from(self.logical_plan)
     }
 
-    fn get_opt_state(&self) -> OptState {
+    pub fn get_opt_state(&self) -> OptState {
         self.opt_state
     }
 
@@ -108,6 +108,11 @@ impl LazyFrame {
             logical_plan,
             opt_state,
         }
+    }
+
+    /// Get current optimizations
+    pub fn get_current_optimizations(&self) -> OptState {
+        self.opt_state
     }
 
     /// Set allowed optimizations
