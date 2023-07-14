@@ -72,3 +72,9 @@ def test_sort_categoricals_6014() -> None:
     assert out.to_dict(False) == {"key": ["bbb", "aaa", "ccc"]}
     out = df2.sort("key")
     assert out.to_dict(False) == {"key": ["aaa", "bbb", "ccc"]}
+
+
+def test_categorical_get_categories() -> None:
+    assert pl.Series(
+        "cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical
+    ).cat.get_categories().to_list() == ["foo", "bar", "ham"]
