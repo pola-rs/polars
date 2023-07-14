@@ -536,9 +536,9 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
 
     Ok(match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
-            let expr = parse_sql_expr(&expr, &ctx)?;
+            let expr = parse_sql_expr(expr, &ctx)?;
             expr.alias(&alias.value)
-        },
+        }
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &ctx)?,
         _ => polars_bail!(InvalidOperation: "Unable to parse {} as Expr", s.as_ref()),
     })
