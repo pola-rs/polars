@@ -4,26 +4,41 @@ SHELL=/bin/bash
 BASE ?= main
 
 .PHONY: fmt
-fmt:
+fmt:  ## Run rustfmt and dprint
 	cargo fmt --all
 	dprint fmt
 
-.PHONY: generate_test_files
-generate_test_files:
-	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o parquet > ../examples/datasets/foods1.parquet
-	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o arrow > ../examples/datasets/foods1.ipc
-
 .PHONY: check
-check:
+check:  ## Run cargo check with all features
 	cargo check --all-targets --all-features
 
 .PHONY: clippy
-clippy:
+clippy:  ## Run clippy with all features
 	cargo clippy --all-targets --all-features
 
 .PHONY: clippy-default
-clippy-default:
-	cargo clippy
+clippy-default:  ## Run clippy with default features
+	cargo clippy --all-targets
+
+.PHONY: pre-commit
+pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
+
+.PHONY: check-features
+check-features:  ## Run cargo check for feature flag combinations (warning: slow)
+	cargo hack check --each-feature --no-dev-deps
+
+.PHONY: miri
+miri:  ## Run miri
+	# not tested on all features because miri does not support SIMD
+	# some tests are also filtered, because miri cannot deal with the rayon threadpool
+	# we ignore leaks because the thread pool of rayon is never killed.
+	MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows" \
+	POLARS_ALLOW_EXTENSION=1 \
+	cargo miri test \
+	    --no-default-features \
+	    --features object \
+	    -p polars-core \
+	    -p polars-arrow
 
 .PHONY: test
 test:  ## Run tests
@@ -40,24 +55,11 @@ test:  ## Run tests
 		--test-threads=2
 
 .PHONY: integration-tests
-integration-tests:
+integration-tests:  ## Run integration tests
 	cargo test --all-features --test it -- --test-threads=2
 
-.PHONY: miri
-miri:
-	# not tested on all features because miri does not support SIMD
-	# some tests are also filtered, because miri cannot deal with the rayon threadpool
-	# we ignore leaks because the thread pool of rayon is never killed.
-	MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows" \
-	POLARS_ALLOW_EXTENSION=1 \
-	cargo miri test \
-	    --no-default-features \
-	    --features object \
-	    -p polars-core \
-	    -p polars-arrow
-
 .PHONY: test-doc
-test-doc:
+test-doc:  ## Run doc examples
 	cargo test --doc \
 	    -p polars-lazy \
 	    -p polars-io \
@@ -65,23 +67,21 @@ test-doc:
 	    -p polars-arrow \
 		-p polars-sql
 
-.PHONY: pre-commit
-pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
-
-.PHONY: check-features
-check-features:
-	cargo hack check --each-feature --no-dev-deps
+.PHONY: generate_test_files
+generate_test_files:  ## Generate some datasets
+	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o parquet > ../examples/datasets/foods1.parquet
+	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o arrow > ../examples/datasets/foods1.ipc
 
 .PHONY: bench-save
-bench-save:
+bench-save:  ## Run benchmark and save
 	cargo bench --features=random --bench $(BENCH) -- --save-baseline $(SAVE)
 
 .PHONY: bench-cmp
-bench-cmp:
+bench-cmp:  ## Run benchmark and compare
 	cargo bench --features=random --bench $(BENCH) -- --load-baseline $(FEAT) --baseline $(BASE)
 
 .PHONY: doctest
-doctest:
+doctest:  ## Check that documentation builds
 	cargo doc --all-features -p polars-arrow
 	cargo doc --all-features -p polars-utils
 	cargo doc --features=docs-selection -p polars-core
@@ -93,7 +93,7 @@ doctest:
 	cargo doc --all-features -p polars-sql
 
 .PHONY: publish
-publish:
+publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-error
 	cargo publish --allow-dirty -p polars-utils
 	cargo publish --allow-dirty -p polars-row
