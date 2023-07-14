@@ -271,6 +271,7 @@ pub mod read_csv {
                 schema: None,
                 skip_rows_after_header: 0,
                 skip_rows_before_header: 0,
+                #[cfg(feature = "temporal")]
                 try_parse_dates: false,
             }
         }
@@ -444,6 +445,7 @@ pub mod scan_csv {
                 skip_rows_after_header: 0,
                 encoding: CsvEncoding::Utf8,
                 row_count: None,
+                #[cfg(feature = "temporal")]
                 try_parse_dates: false,
             }
         }
