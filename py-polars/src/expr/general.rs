@@ -926,8 +926,8 @@ impl PyExpr {
             by,
             closed_window: closed.map(|c| c.0),
             fn_params: Some(Arc::new(RollingQuantileParams {
-                p: 0.5,
-                interp: QuantileInterpolOptions::Linear,
+                prob: 0.5,
+                interpol: QuantileInterpolOptions::Linear,
             }) as Arc<dyn Any + Send + Sync>),
         };
         self.inner.clone().rolling_quantile(options).into()
@@ -954,8 +954,8 @@ impl PyExpr {
             by,
             closed_window: closed.map(|c| c.0),
             fn_params: Some(Arc::new(RollingQuantileParams {
-                p: quantile,
-                interp: interpolation.0,
+                prob: quantile,
+                interpol: interpolation.0,
             }) as Arc<dyn Any + Send + Sync>),
         };
 

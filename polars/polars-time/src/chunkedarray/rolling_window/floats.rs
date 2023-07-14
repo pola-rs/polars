@@ -86,8 +86,8 @@ where
         // out to the `rolling_quantile` anyway.
         let mut options = options.clone();
         options.fn_params = Some(Arc::new(RollingQuantileParams {
-            p: 0.5,
-            interp: QuantileInterpolOptions::Linear,
+            prob: 0.5,
+            interpol: QuantileInterpolOptions::Linear,
         }) as Arc<dyn std::any::Any + Send + Sync>);
         rolling_agg(
             &self.0,

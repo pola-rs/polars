@@ -314,8 +314,8 @@ fn test_median_quantile_types() {
         .unwrap();
 
     let rq_params = Some(Arc::new(RollingQuantileParams {
-        p: 0.3,
-        interp: Linear,
+        prob: 0.3,
+        interpol: Linear,
     }) as Arc<dyn Any + Send + Sync>);
     let rol_quantile = s
         .rolling_quantile(RollingOptionsImpl {

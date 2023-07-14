@@ -8,8 +8,8 @@ use super::*;
 
 pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     sorted: SortedBuf<'a, T>,
-    p: f64,
-    interp: QuantileInterpolOptions,
+    prob: f64,
+    interpol: QuantileInterpolOptions,
 }
 
 impl<
@@ -33,8 +33,8 @@ impl<
         let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
         Self {
             sorted: SortedBuf::new(slice, start, end),
-            p: params.p,
-            interp: params.interp,
+            prob: params.prob,
+            interpol: params.interpol,
         }
     }
 
@@ -42,19 +42,21 @@ impl<
         let vals = self.sorted.update(start, end);
         let length = vals.len();
 
-        let mut idx = match self.interp {
-            QuantileInterpolOptions::Nearest => ((length as f64) * self.p) as usize,
+        let mut idx = match self.interpol {
+            QuantileInterpolOptions::Nearest => ((length as f64) * self.prob) as usize,
             QuantileInterpolOptions::Lower
             | QuantileInterpolOptions::Midpoint
-            | QuantileInterpolOptions::Linear => ((length as f64 - 1.0) * self.p).floor() as usize,
-            QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * self.p).ceil() as usize,
+            | QuantileInterpolOptions::Linear => {
+                ((length as f64 - 1.0) * self.prob).floor() as usize
+            }
+            QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * self.prob).ceil() as usize,
         };
 
         idx = std::cmp::min(idx, length - 1);
 
-        match self.interp {
+        match self.interpol {
             QuantileInterpolOptions::Midpoint => {
-                let top_idx = ((length as f64 - 1.0) * self.p).ceil() as usize;
+                let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
                 if top_idx == idx {
                     // safety
                     // we are in bounds
@@ -69,7 +71,7 @@ impl<
                 }
             }
             QuantileInterpolOptions::Linear => {
-                let float_idx = (length as f64 - 1.0) * self.p;
+                let float_idx = (length as f64 - 1.0) * self.prob;
                 let top_idx = f64::ceil(float_idx) as usize;
 
                 if top_idx == idx {
@@ -134,8 +136,8 @@ where
             let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
             Ok(rolling_apply_weighted_quantile(
                 values,
-                params.p,
-                params.interp,
+                params.prob,
+                params.interpol,
                 window_size,
                 min_periods,
                 offset_fn,
@@ -250,8 +252,8 @@ mod test {
     fn test_rolling_median() {
         let values = &[1.0, 2.0, 3.0, 4.0];
         let med_pars = Some(Arc::new(RollingQuantileParams {
-            p: 0.5,
-            interp: Linear,
+            prob: 0.5,
+            interpol: Linear,
         }) as Arc<dyn Any + Send + Sync>);
         let out = rolling_quantile(values, 2, 2, false, None, med_pars.clone()).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -293,8 +295,8 @@ mod test {
 
         for interpol in interpol_options {
             let min_pars = Some(Arc::new(RollingQuantileParams {
-                p: 0.0,
-                interp: interpol,
+                prob: 0.0,
+                interpol: interpol,
             }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_min(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -305,8 +307,8 @@ mod test {
             assert_eq!(out1, out2);
 
             let max_pars = Some(Arc::new(RollingQuantileParams {
-                p: 1.0,
-                interp: interpol,
+                prob: 1.0,
+                interpol: interpol,
             }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_max(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();

@@ -145,6 +145,6 @@ pub struct RollingVarParams {
 
 #[derive(Clone, Copy, Debug)]
 pub struct RollingQuantileParams {
-    pub p: f64,
-    pub interp: QuantileInterpolOptions,
+    pub prob: f64,
+    pub interpol: QuantileInterpolOptions,
 }
