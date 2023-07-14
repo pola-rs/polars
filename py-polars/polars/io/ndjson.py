@@ -18,6 +18,7 @@ def read_ndjson(
     source: str | Path | IOBase | bytes,
     *,
     schema: SchemaDefinition | None = None,
+    schema_overrides: SchemaDefinition | None = None,
     ignore_errors: bool = False,
 ) -> DataFrame:
     """
@@ -37,11 +38,20 @@ def read_ndjson(
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
+    schema_overrides : dict, default None
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the schema param will be overridden.
+        underlying data, the names given here will overwrite them.
     ignore_errors
         Return `Null` if parsing fails because of schema mismatches.
 
     """
-    return pl.DataFrame._read_ndjson(source, schema=schema, ignore_errors=ignore_errors)
+    return pl.DataFrame._read_ndjson(
+        source,
+        schema=schema,
+        schema_overrides=schema_overrides,
+        ignore_errors=ignore_errors,
+    )
 
 
 def scan_ndjson(

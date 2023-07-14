@@ -195,6 +195,13 @@ impl Schema {
             .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
     }
 
+    /// Get a mutable reference to the dtype of the field named `name`, or `Err(PolarsErr)` if the field doesn't exist
+    pub fn try_get_mut(&mut self, name: &str) -> PolarsResult<&mut DataType> {
+        self.inner
+            .get_mut(name)
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
+    }
+
     /// Return all data about the field named `name`: its index in the schema, its name, and its dtype
     ///
     /// Returns `Some((index, &name, &dtype))` if the field exists, `None` if it doesn't.

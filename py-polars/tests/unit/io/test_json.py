@@ -173,17 +173,29 @@ def test_ndjson_ignore_errors() -> None:
         ],
     }
 
-    # checks if we can overwrite object schemas
-    # this doesn't yet work for primitive types
-    assert pl.read_ndjson(
-        buf,
-        schema={
-            "Fields": pl.List(
-                pl.Struct([pl.Field("Name", pl.Utf8), pl.Field("Value", pl.Int64)])
-            )
-        },
-        ignore_errors=True,
-    )["Fields"].to_list() == [
-        [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
-        [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
-    ]
+    schema = {
+        "Fields": pl.List(
+            pl.Struct([pl.Field("Name", pl.Utf8), pl.Field("Value", pl.Int64)])
+        )
+    }
+    # schema argument only parses Fields
+    assert pl.read_ndjson(buf, schema=schema, ignore_errors=True).to_dict(False) == {
+        "Fields": [
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+        ]
+    }
+
+    # schema_overrides argument does schema inference, but overrides Fields
+    assert pl.read_ndjson(buf, schema_overrides=schema, ignore_errors=True).to_dict(
+        False
+    ) == {
+        "Type": ["insert", "insert"],
+        "Key": [[1], [1]],
+        "SeqNo": [1, 1],
+        "Timestamp": [1, 1],
+        "Fields": [
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+        ],
+    }

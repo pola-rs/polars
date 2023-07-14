@@ -351,7 +351,11 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    pub fn read_json(py_f: &PyAny, schema: Option<Wrap<Schema>>) -> PyResult<Self> {
+    pub fn read_json(
+        py_f: &PyAny,
+        schema: Option<Wrap<Schema>>,
+        schema_overrides: Option<Wrap<Schema>>,
+    ) -> PyResult<Self> {
         // memmap the file first
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
         let mmap_read: ReaderBytes = (&mmap_bytes_r).into();
@@ -379,6 +383,10 @@ impl PyDataFrame {
                         builder = builder.with_schema(Arc::new(schema.0));
                     }
 
+                    if let Some(schema) = schema_overrides.as_ref() {
+                        builder = builder.with_schema_overwrite(&schema.0);
+                    }
+
                     let out = builder
                         .finish()
                         .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
@@ -394,6 +402,7 @@ impl PyDataFrame {
         py_f: &PyAny,
         ignore_errors: bool,
         schema: Option<Wrap<Schema>>,
+        schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
 
@@ -403,6 +412,10 @@ impl PyDataFrame {
 
         if let Some(schema) = schema {
             builder = builder.with_schema(Arc::new(schema.0));
+        }
+
+        if let Some(schema) = schema_overrides.as_ref() {
+            builder = builder.with_schema_overwrite(&schema.0);
         }
 
         let out = builder

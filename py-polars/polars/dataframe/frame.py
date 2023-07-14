@@ -996,6 +996,7 @@ class DataFrame:
         source: str | Path | IOBase | bytes,
         *,
         schema: SchemaDefinition | None = None,
+        schema_overrides: SchemaDefinition | None = None,
     ) -> Self:
         """
         Read into a DataFrame from a JSON file.
@@ -1013,7 +1014,9 @@ class DataFrame:
             source = normalise_filepath(source)
 
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_json(source, schema=schema)
+        self._df = PyDataFrame.read_json(
+            source, schema=schema, schema_overrides=schema_overrides
+        )
         return self
 
     @classmethod
@@ -1022,6 +1025,7 @@ class DataFrame:
         source: str | Path | IOBase | bytes,
         *,
         schema: SchemaDefinition | None = None,
+        schema_overrides: SchemaDefinition | None = None,
         ignore_errors: bool = False,
     ) -> Self:
         """
@@ -1041,7 +1045,10 @@ class DataFrame:
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_ndjson(
-            source, ignore_errors=ignore_errors, schema=schema
+            source,
+            ignore_errors=ignore_errors,
+            schema=schema,
+            schema_overrides=schema_overrides,
         )
         return self
 

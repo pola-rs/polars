@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -30,7 +29,8 @@ where
     n_threads: Option<usize>,
     infer_schema_len: Option<usize>,
     chunk_size: usize,
-    schema: Option<&'a Schema>,
+    schema: Option<SchemaRef>,
+    schema_overwrite: Option<&'a Schema>,
     path: Option<PathBuf>,
     low_memory: bool,
     ignore_errors: bool,
@@ -44,10 +44,16 @@ where
         self.n_rows = num_rows;
         self
     }
-    pub fn with_schema(mut self, schema: &'a Schema) -> Self {
+    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
         self.schema = Some(schema);
         self
     }
+
+    pub fn with_schema_overwrite(mut self, schema: &'a Schema) -> Self {
+        self.schema_overwrite = Some(schema);
+        self
+    }
+
     pub fn with_rechunk(mut self, rechunk: bool) -> Self {
         self.rechunk = rechunk;
         self
@@ -103,6 +109,7 @@ where
             n_threads: None,
             infer_schema_len: Some(128),
             schema: None,
+            schema_overwrite: None,
             path: None,
             chunk_size: 1 << 18,
             low_memory: false,
@@ -116,6 +123,7 @@ where
             reader_bytes,
             self.n_rows,
             self.schema,
+            self.schema_overwrite,
             self.n_threads,
             1024, // sample size
             self.chunk_size,
@@ -135,7 +143,7 @@ where
 pub(crate) struct CoreJsonReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     n_rows: Option<usize>,
-    schema: Cow<'a, Schema>,
+    schema: SchemaRef,
     n_threads: Option<usize>,
     sample_size: usize,
     chunk_size: usize,
@@ -147,7 +155,8 @@ impl<'a> CoreJsonReader<'a> {
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,
-        schema: Option<&'a Schema>,
+        schema: Option<SchemaRef>,
+        schema_overwrite: Option<&Schema>,
         n_threads: Option<usize>,
         sample_size: usize,
         chunk_size: usize,
@@ -157,8 +166,8 @@ impl<'a> CoreJsonReader<'a> {
     ) -> PolarsResult<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
 
-        let schema = match schema {
-            Some(schema) => Cow::Borrowed(schema),
+        let mut schema = match schema {
+            Some(schema) => schema,
             None => {
                 let bytes: &[u8] = &reader_bytes;
                 let mut cursor = Cursor::new(bytes);
@@ -166,9 +175,14 @@ impl<'a> CoreJsonReader<'a> {
                 let data_type = polars_json::ndjson::infer(&mut cursor, infer_schema_len)?;
                 let schema = StructArray::get_fields(&data_type).iter().collect();
 
-                Cow::Owned(schema)
+                Arc::new(schema)
             }
         };
+        if let Some(overwriting_schema) = schema_overwrite {
+            let schema = Arc::make_mut(&mut schema);
+            overwrite_schema(schema, overwriting_schema)?;
+        }
+
         Ok(CoreJsonReader {
             reader_bytes: Some(reader_bytes),
             schema,
