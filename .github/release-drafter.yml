@@ -14,8 +14,8 @@ categories:
   - title: 🛠️ Other improvements
     labels:
       - build
-      - chore
       - documentation
+      - internal
 
 exclude-labels:
   - skip-changelog
@@ -49,7 +49,7 @@ autolabeler:
   - label: build
     title:
       - '/^build/'
-  - label: chore
+  - label: internal
     title:
       - '/^chore/'
   - label: deprecation
