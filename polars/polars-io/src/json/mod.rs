@@ -271,7 +271,7 @@ where
 {
     /// Set the JSON file's schema
     pub fn with_schema(mut self, schema: SchemaRef) -> Self {
-        self.schema = Some(schema.clone());
+        self.schema = Some(schema);
         self
     }
 
