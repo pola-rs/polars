@@ -271,6 +271,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
 {
     let invalid_quantile = !(0.0..=1.0).contains(&quantile);
     if invalid_quantile {
@@ -303,7 +304,7 @@ where
                         offset_iter,
                         Some(Arc::new(RollingQuantileParams { p: quantile, interp: interpol })),
                     ),
-                    Some(validity) => _rolling_apply_agg_window_nulls::<QuantileWindow<_>, _, _>(
+                    Some(validity) => _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _>(
                         values,
                         validity,
                         offset_iter,
@@ -340,6 +341,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
 {
     match groups {
         GroupsProxy::Idx(groups) => {

@@ -80,9 +80,12 @@ where
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be weighted according to the `weights` vector.
     fn rolling_median(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
-        if options.fn_params.unwrap().downcast_ref::<RollingQuantileParams>().unwrap() != 0.5 {
-            panic!("You've somehow called rolling median with p != 0.5. Something has gone horribly wrong.")
-        }
+        // At the last possible second, right before we do computations, make sure we're using the
+        // right quantile parameters to get a median. This also lets us have the convenience of
+        // calling `rolling_median` from Rust without a bunch of dedicated functions that just call
+        // out to the `rolling_quantile` anyway.
+        let mut options = options.clone();
+        options.fn_params = Some(Arc::new(RollingQuantileParams { p: 0.5, interp: Linear }) as Arc<dyn Any + Send + Sync>);
         rolling_agg(
             &self.0,
             options,
