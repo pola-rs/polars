@@ -2020,7 +2020,7 @@ class DataFrame:
 
         return out
 
-    def to_pandas(  # noqa: D417
+    def to_pandas(
         self,
         *args: Any,
         use_pyarrow_extension_array: bool = False,

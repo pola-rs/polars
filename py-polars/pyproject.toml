@@ -124,22 +124,13 @@ select = [
 ignore = [
   # Line length regulated by black
   "E501",
-  # pydocstyle: http://www.pydocstyle.org/en/stable/error_codes.html
-  # numpy convention with a few additional lints
-  "D107",
-  "D203",
-  "D212",
-  "D401",
-  "D402",
-  "D415",
-  "D416",
   # flake8-pytest-style:
   "PT011", # pytest.raises({exception}) is too broad, set the match parameter or use a more specific exception
   # flake8-simplify
   "SIM102", # Use a single `if` statement instead of nested `if` statements
   # ruff
   "RUF005", # unpack-instead-of-concatenating-to-collection-literal
-  # pycodestyle
+  # pydocstyle
   # TODO: Remove errors below to further improve docstring linting
   # Ordered from most common to least common errors.
   "D105",
@@ -148,10 +139,14 @@ ignore = [
   "D102",
   "D104",
   "D101",
+  "D401",  # First line of docstring should be in imperative mood
 ]
 
 [tool.ruff.pycodestyle]
 max-doc-length = 88
+
+[tool.ruff.pydocstyle]
+convention = "numpy"
 
 [tool.ruff.flake8-tidy-imports]
 ban-relative-imports = "all"

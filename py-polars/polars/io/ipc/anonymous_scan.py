@@ -26,7 +26,7 @@ def _scan_ipc_fsspec(
     return pl.LazyFrame._scan_python_function(schema, func_serialized)
 
 
-def _scan_ipc_impl(  # noqa: D417
+def _scan_ipc_impl(
     source: str,
     columns: list[str] | None,
     predicate: str | None,

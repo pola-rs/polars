@@ -3605,7 +3605,7 @@ class Series:
         """
         return self._s.to_arrow()
 
-    def to_pandas(  # noqa: D417
+    def to_pandas(
         self, *args: Any, use_pyarrow_extension_array: bool = False, **kwargs: Any
     ) -> pd.Series[Any]:
         """
