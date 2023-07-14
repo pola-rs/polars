@@ -142,3 +142,9 @@ where
 pub struct RollingVarParams {
     pub ddof: u8,
 }
+
+#[derive(Clone, Copy, Debug)]
+pub struct RollingQuantileParams {
+    pub p: f64,
+    pub interp: QuantileInterpolOptions,
+}

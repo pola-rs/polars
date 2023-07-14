@@ -1352,17 +1352,12 @@ impl Expr {
     ///
     /// See: [`RollingAgg::rolling_quantile`]
     #[cfg(feature = "rolling_window")]
-    pub fn rolling_quantile(
-        self,
-        quantile: f64,
-        interpolation: QuantileInterpolOptions,
-        options: RollingOptions,
-    ) -> Expr {
+    pub fn rolling_quantile(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
             options,
             "rolling_quantile",
             "rolling_quantile_by",
-            Arc::new(move |s, options| s.rolling_quantile(quantile, interpolation, options)),
+            Arc::new(|s, options| s.rolling_quantile(options)),
             GetOutput::float_type(),
         )
     }

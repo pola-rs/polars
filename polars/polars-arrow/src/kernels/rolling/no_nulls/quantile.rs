@@ -5,53 +5,42 @@ use polars_error::polars_ensure;
 
 use super::QuantileInterpolOptions::*;
 use super::*;
-use crate::index::IdxSize;
-use crate::trusted_len::TrustedLen;
 
-// used by agg_quantile
-pub fn rolling_quantile_by_iter<T, O>(
-    values: &[T],
-    quantile: f64,
-    interpolation: QuantileInterpolOptions,
-    offsets: O,
-) -> ArrayRef
-where
-    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
-    T: std::iter::Sum<T>
-        + NativeType
-        + Copy
-        + PartialOrd
-        + ToPrimitive
-        + NumCast
-        + Add<Output = T>
-        + Sub<Output = T>
+pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
+    sorted: SortedBuf<'a, T>,
+    p: f64,
+    interp: QuantileInterpolOptions
+}
+
+impl<'a,
+    T: NativeType
+        + IsFloat
+        + Float
+        + std::iter::Sum
+        + AddAssign
+        + SubAssign
         + Div<Output = T>
-        + Mul<Output = T>
-        + IsFloat,
+        + NumCast
+        + One
+        + Zero
+        + PartialOrd
+        + Sub<Output = T>,
+    > RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
-    if values.is_empty() {
-        let out: Vec<T> = vec![];
-        return Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None));
+    fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
+        let params = params.unwrap();
+        let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
+        Self {
+            sorted: SortedBuf::new(slice, start, end),
+            p: params.p,
+            interp: params.interp,
+        }
     }
 
-    let mut sorted_window = SortedBuf::new(values, 0, 1);
-
-    let out = offsets
-        .map(|(start, len)| {
-            let end = start + len;
-
-            // safety:
-            // we are in bounds
-            if start == end {
-                None
-            } else {
-                let window = unsafe { sorted_window.update(start as usize, end as usize) };
-                Some(compute_quantile2(window, quantile, interpolation))
-            }
-        })
-        .collect::<PrimitiveArray<T>>();
-
-    Box::new(out)
+    unsafe fn update(&mut self, start: usize, end: usize) -> T {
+        let window = self.sorted.update(start, end);
+        compute_quantile2(window, self.p, self.interp)
+    }
 }
 
 pub(crate) fn compute_quantile2<T>(
@@ -120,84 +109,53 @@ where
     }
 }
 
-pub fn rolling_median<T>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-    _params: DynArgs,
-) -> PolarsResult<ArrayRef>
-where
-    T: NativeType
-        + std::iter::Sum<T>
-        + PartialOrd
-        + ToPrimitive
-        + NumCast
-        + Add<Output = T>
-        + Sub<Output = T>
-        + Div<Output = T>
-        + Mul<Output = T>
-        + Zero
-        + IsFloat,
-{
-    rolling_quantile(
-        values,
-        0.5,
-        QuantileInterpolOptions::Linear,
-        window_size,
-        min_periods,
-        center,
-        weights,
-    )
-}
 
 pub fn rolling_quantile<T>(
     values: &[T],
-    quantile: f64,
-    interpolation: QuantileInterpolOptions,
     window_size: usize,
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
+    params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType
-        + std::iter::Sum<T>
-        + PartialOrd
-        + ToPrimitive
-        + NumCast
-        + Add<Output = T>
-        + Sub<Output = T>
+        + IsFloat
+        + Float
+        + std::iter::Sum
+        + AddAssign
+        + SubAssign
         + Div<Output = T>
-        + Mul<Output = T>
+        + NumCast
+        + One
         + Zero
-        + IsFloat,
+        + PartialOrd
+        + Sub<Output = T>,
 {
     let offset_fn = match center {
         true => det_offsets_center,
         false => det_offsets,
     };
     match weights {
-        None => Ok(rolling_apply_quantile(
+        None => rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
             values,
-            quantile,
-            interpolation,
             window_size,
             min_periods,
             offset_fn,
-            compute_quantile2,
-        )),
+            params,
+        ),
         Some(weights) => {
             let wsum = weights.iter().sum();
             polars_ensure!(
                 wsum != 0.0,
                 ComputeError: "Weighted quantile is undefined if weights sum to 0"
             );
+            let params = params.unwrap();
+            let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
             Ok(rolling_apply_weighted_quantile(
                 values,
-                quantile,
-                interpolation,
+                params.p,
+                params.interp,
                 window_size,
                 min_periods,
                 offset_fn,
@@ -206,43 +164,6 @@ where
             ))
         }
     }
-}
-
-fn rolling_apply_quantile<T, Fo, Fa>(
-    values: &[T],
-    quantile: f64,
-    interpolation: QuantileInterpolOptions,
-    window_size: usize,
-    min_periods: usize,
-    det_offsets_fn: Fo,
-    aggregator: Fa,
-) -> ArrayRef
-where
-    Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Fa: Fn(&[T], f64, QuantileInterpolOptions) -> T,
-    T: Debug + NativeType + IsFloat + PartialOrd,
-{
-    let len = values.len();
-    let (start, end) = det_offsets_fn(0, window_size, len);
-    let mut sorted_window = SortedBuf::new(values, start, end);
-
-    let out = (0..len)
-        .map(|idx| {
-            let (start, end) = det_offsets_fn(idx, window_size, len);
-
-            // Safety:
-            // we are in bounds
-            let window = unsafe { sorted_window.update(start, end) };
-            aggregator(window, quantile, interpolation)
-        })
-        .collect_trusted::<Vec<T>>();
-
-    let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
-    Box::new(PrimitiveArray::new(
-        T::PRIMITIVE.into(),
-        out.into(),
-        validity.map(|b| b.into()),
-    ))
 }
 
 #[inline]
@@ -348,15 +269,14 @@ mod test {
     #[test]
     fn test_rolling_median() {
         let values = &[1.0, 2.0, 3.0, 4.0];
-
+        let med_pars = Some(Arc::new(RollingQuantileParams { p: 0.5, interp: Linear }) as Arc<dyn Any + Send + Sync>);
         let out = rolling_quantile(
             values,
-            0.5,
-            QuantileInterpolOptions::Linear,
             2,
             2,
             false,
             None,
+            med_pars.clone(),
         )
         .unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -365,12 +285,11 @@ mod test {
 
         let out = rolling_quantile(
             values,
-            0.5,
-            QuantileInterpolOptions::Linear,
             2,
             1,
             false,
             None,
+            med_pars.clone()
         )
         .unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -379,12 +298,11 @@ mod test {
 
         let out = rolling_quantile(
             values,
-            0.5,
-            QuantileInterpolOptions::Linear,
             4,
             1,
             false,
             None,
+            med_pars.clone()
         )
         .unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -393,12 +311,11 @@ mod test {
 
         let out = rolling_quantile(
             values,
-            0.5,
-            QuantileInterpolOptions::Linear,
             4,
             1,
             true,
             None,
+            med_pars.clone()
         )
         .unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -407,12 +324,11 @@ mod test {
 
         let out = rolling_quantile(
             values,
-            0.5,
-            QuantileInterpolOptions::Linear,
             4,
             4,
             true,
             None,
+            med_pars.clone()
         )
         .unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -433,18 +349,20 @@ mod test {
         ];
 
         for interpol in interpol_options {
+            let min_pars = Some(Arc::new(RollingQuantileParams { p: 0.0, interp: interpol }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_min(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-            let out2 = rolling_quantile(values, 0.0, interpol, 2, 2, false, None).unwrap();
+            let out2 = rolling_quantile(values, 2, 2, false, None, min_pars).unwrap();
             let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);
 
+            let max_pars = Some(Arc::new(RollingQuantileParams { p: 1.0, interp: interpol }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_max(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-            let out2 = rolling_quantile(values, 1.0, interpol, 2, 2, false, None).unwrap();
+            let out2 = rolling_quantile(values, 2, 2, false, None, max_pars).unwrap();
             let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);

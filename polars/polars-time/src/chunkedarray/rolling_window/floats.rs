@@ -80,58 +80,29 @@ where
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be weighted according to the `weights` vector.
     fn rolling_median(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
-        if options.by.is_some() {
-            panic!("'rolling by' not yet supported for 'rolling_median', consider using 'groupby_rolling'")
+        if options.fn_params.unwrap().downcast_ref::<RollingQuantileParams>().unwrap() != 0.5 {
+            panic!("You've somehow called rolling median with p != 0.5. Something has gone horribly wrong.")
         }
         rolling_agg(
             &self.0,
             options,
-            &rolling::no_nulls::rolling_median,
-            &rolling::nulls::rolling_median,
-            None,
+            &rolling::no_nulls::rolling_quantile,
+            &rolling::nulls::rolling_quantile,
+            Some(&super::rolling_kernels::no_nulls::rolling_quantile),
         )
     }
 
     /// Apply a rolling quantile (moving quantile) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be weighted according to the `weights` vector.
-    fn rolling_quantile(
-        &self,
-        quantile: f64,
-        interpolation: QuantileInterpolOptions,
-        options: RollingOptionsImpl,
-    ) -> PolarsResult<Series> {
-        if options.by.is_some() {
-            panic!("'rolling by' not yet supported for 'rolling_quantile', consider using 'groupby_rolling'")
-        }
-
-        let options: RollingOptionsFixedWindow = options.into();
-        check_input(options.window_size, options.min_periods)?;
-        let ca = self.0.rechunk();
-
-        let arr = ca.downcast_iter().next().unwrap();
-        let arr = match self.0.has_validity() {
-            false => rolling::no_nulls::rolling_quantile(
-                arr.values(),
-                quantile,
-                interpolation,
-                options.window_size,
-                options.min_periods,
-                options.center,
-                options.weights.as_deref(),
-            )
-            .unwrap(),
-            _ => rolling::nulls::rolling_quantile(
-                arr,
-                quantile,
-                interpolation,
-                options.window_size,
-                options.min_periods,
-                options.center,
-                options.weights.as_deref(),
-            ),
-        };
-        Series::try_from((self.0.name(), arr))
+    fn rolling_quantile(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
+        rolling_agg(
+            &self.0,
+            options,
+            &rolling::no_nulls::rolling_quantile,
+            &rolling::nulls::rolling_quantile,
+            Some(&super::rolling_kernels::no_nulls::rolling_quantile),
+        )
     }
 
     fn rolling_var(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {

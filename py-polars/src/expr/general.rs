@@ -925,9 +925,9 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default()
+            fn_params: Some(Arc::new(RollingQuantileParams { p: 0.5, interp: Linear }) as Arc<dyn Any + Send + Sync>)
         };
-        self.inner.clone().rolling_median(options).into()
+        self.inner.clone().rolling_quantile(options).into()
     }
 
     #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center, by, closed))]
@@ -950,13 +950,10 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default()
+            fn_params: Some(Arc::new(RollingQuantileParams { p: quantile, interp: interpolation.0 }) as Arc<dyn Any + Send + Sync>),
         };
 
-        self.inner
-            .clone()
-            .rolling_quantile(quantile, interpolation.0, options)
-            .into()
+        self.inner.clone().rolling_quantile(options).into()
     }
 
     fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {

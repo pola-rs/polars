@@ -1,139 +1,45 @@
 use super::*;
-use crate::index::IdxSize;
-use crate::trusted_len::TrustedLen;
 
-// used by agg_quantile
-#[allow(clippy::too_many_arguments)]
-pub fn rolling_quantile_by_iter<T, O>(
-    values: &[T],
-    bitmap: &Bitmap,
-    quantile: f64,
-    interpolation: QuantileInterpolOptions,
-    offsets: O,
-) -> ArrayRef
-where
-    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
-    T: std::iter::Sum<T>
-        + NativeType
-        + Copy
-        + PartialOrd
-        + ToPrimitive
-        + NumCast
-        + Add<Output = T>
-        + Sub<Output = T>
-        + Div<Output = T>
-        + Mul<Output = T>
-        + IsFloat
-        + AddAssign
-        + Zero,
-{
-    if values.is_empty() {
-        let out: Vec<T> = vec![];
-        return Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None));
-    }
-
-    let len = values.len();
-    // Safety
-    // we are in bounds
-    let mut sorted_window = unsafe { SortedBufNulls::new(values, bitmap, 0, 1) };
-
-    let mut validity = MutableBitmap::with_capacity(len);
-    validity.extend_constant(len, true);
-
-    let out = offsets
-        .enumerate()
-        .map(|(idx, (start, len))| {
-            let end = start + len;
-
-            if start == end {
-                validity.set(idx, false);
-                T::default()
-            } else {
-                // safety
-                // we are in bounds
-                unsafe { sorted_window.update(start as usize, end as usize) };
-                let null_count = sorted_window.null_count;
-                let window = sorted_window.window();
-
-                match compute_quantile(window, null_count, quantile, interpolation, 1) {
-                    Some(val) => val,
-                    None => {
-                        validity.set(idx, false);
-                        T::default()
-                    }
-                }
-            }
-        })
-        .collect_trusted::<Vec<T>>();
-
-    Box::new(PrimitiveArray::new(
-        T::PRIMITIVE.into(),
-        out.into(),
-        Some(validity.into()),
-    ))
+pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
+    sorted: SortedBufNulls<'a, T>,
+    p: f64,
+    interp: QuantileInterpolOptions
 }
 
-#[allow(clippy::too_many_arguments)]
-fn rolling_apply_quantile<T, Fo, Fa>(
-    values: &[T],
-    bitmap: &Bitmap,
-    quantile: f64,
-    interpolation: QuantileInterpolOptions,
-    window_size: usize,
-    min_periods: usize,
-    det_offsets_fn: Fo,
-    aggregator: Fa,
-) -> ArrayRef
-where
-    Fo: Fn(Idx, WindowSize, Len) -> (Start, End) + Copy,
-    // &[Option<T>] -> window values
-    // usize -> null_count
-    // f764 ->  quantile
-    // QuantileInterpolOptions -> Interpolation option
-    // usize -> min_periods
-    Fa: Fn(&[Option<T>], usize, f64, QuantileInterpolOptions, usize) -> Option<T>,
-    T: Default + NativeType + IsFloat + PartialOrd,
+impl<'a,
+    T: NativeType
+        + IsFloat
+        + Float
+        + std::iter::Sum
+        + AddAssign
+        + SubAssign
+        + Div<Output = T>
+        + NumCast
+        + One
+        + Zero
+        + PartialOrd
+        + Sub<Output = T>,
+    > RollingAggWindowNulls<'a, T> for QuantileWindow<'a, T>
 {
-    let len = values.len();
-    let (start, end) = det_offsets_fn(0, window_size, len);
-    // Safety
-    // we are in bounds
-    let mut sorted_window = unsafe { SortedBufNulls::new(values, bitmap, start, end) };
-
-    let mut validity = match create_validity(min_periods, len, window_size, det_offsets_fn) {
-        Some(v) => v,
-        None => {
-            let mut validity = MutableBitmap::with_capacity(len);
-            validity.extend_constant(len, true);
-            validity
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: DynArgs) -> Self {
+        let params = params.unwrap();
+        let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
+        Self {
+            sorted: SortedBufNulls::new(slice, validity, start, end),
+            p: params.p,
+            interp: params.interp,
         }
-    };
+    }
 
-    let out = (0..len)
-        .map(|idx| {
-            let (start, end) = det_offsets_fn(idx, window_size, len);
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+        let null_count = self.sorted.null_count.clone(); // That borrow checker, man
+        let values = self.sorted.update(start, end);
+        compute_quantile(values, null_count, self.p, self.interp)
+    }
 
-            // safety
-            // we are in bounds
-            unsafe { sorted_window.update(start, end) };
-            let null_count = sorted_window.null_count;
-            let window = sorted_window.window();
-
-            match aggregator(window, null_count, quantile, interpolation, min_periods) {
-                Some(val) => val,
-                None => {
-                    validity.set(idx, false);
-                    T::default()
-                }
-            }
-        })
-        .collect_trusted::<Vec<T>>();
-
-    Box::new(PrimitiveArray::new(
-        T::PRIMITIVE.into(),
-        out.into(),
-        Some(validity.into()),
-    ))
+    fn is_valid(&self, min_periods: usize) -> bool {
+        self.sorted.is_valid(min_periods)
+    }
 }
 
 fn compute_quantile<T>(
@@ -141,7 +47,6 @@ fn compute_quantile<T>(
     null_count: usize,
     quantile: f64,
     interpolation: QuantileInterpolOptions,
-    min_periods: usize,
 ) -> Option<T>
 where
     T: NativeType
@@ -158,7 +63,8 @@ where
         + Mul<Output = T>
         + IsFloat,
 {
-    if (values.len() - null_count) < min_periods {
+    // The min periods_issue will be taken care of when actually rolling
+    if null_count == values.len() {
         return None;
     }
     // slice off nulls
@@ -200,92 +106,45 @@ where
         _ => Some(values[idx].unwrap()),
     }
 }
-pub fn rolling_median<T>(
-    arr: &PrimitiveArray<T>,
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-    _params: DynArgs,
-) -> ArrayRef
-where
-    T: NativeType
-        + std::iter::Sum
-        + Zero
-        + AddAssign
-        + Copy
-        + PartialOrd
-        + ToPrimitive
-        + NumCast
-        + Default
-        + Add<Output = T>
-        + Sub<Output = T>
-        + Div<Output = T>
-        + Mul<Output = T>
-        + IsFloat,
-{
-    rolling_quantile(
-        arr,
-        0.5,
-        QuantileInterpolOptions::Linear,
-        window_size,
-        min_periods,
-        center,
-        weights,
-    )
-}
+
 
 pub fn rolling_quantile<T>(
     arr: &PrimitiveArray<T>,
-    quantile: f64,
-    interpolation: QuantileInterpolOptions,
     window_size: usize,
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
+    params: DynArgs
 ) -> ArrayRef
 where
     T: NativeType
+        + IsFloat
+        + Float
         + std::iter::Sum
-        + Zero
         + AddAssign
-        + Copy
-        + PartialOrd
-        + ToPrimitive
-        + NumCast
-        + Default
-        + Add<Output = T>
-        + Sub<Output = T>
+        + SubAssign
         + Div<Output = T>
-        + Mul<Output = T>
-        + IsFloat,
-{
+        + NumCast
+        + One
+        + Zero
+        + PartialOrd
+        + Sub<Output = T>,
+    {
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }
-    if center {
-        rolling_apply_quantile(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            quantile,
-            interpolation,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_quantile,
-        )
-    } else {
-        rolling_apply_quantile(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            quantile,
-            interpolation,
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_quantile,
-        )
-    }
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
+    };
+    rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
+        arr.values().as_slice(),
+        arr.validity().as_ref().unwrap(),
+        window_size,
+        min_periods,
+        offset_fn,
+        params,
+    )
 }
 
 #[cfg(test)]
@@ -304,28 +163,29 @@ mod test {
             buf,
             Some(Bitmap::from(&[true, false, true, true])),
         );
+        let med_pars = Some(Arc::new(RollingQuantileParams { p: 0.5, interp: QuantileInterpolOptions::Linear }) as Arc<dyn Any + Send + Sync>);
 
-        let out = rolling_quantile(arr, 0.5, QuantileInterpolOptions::Linear, 2, 2, false, None);
+        let out = rolling_quantile(arr, 2, 2, false, None, med_pars.clone());
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, Some(3.5)]);
 
-        let out = rolling_quantile(arr, 0.5, QuantileInterpolOptions::Linear, 2, 1, false, None);
+        let out = rolling_quantile(arr, 2, 1, false, None, med_pars.clone());
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(3.0), Some(3.5)]);
 
-        let out = rolling_quantile(arr, 0.5, QuantileInterpolOptions::Linear, 4, 1, false, None);
+        let out = rolling_quantile(arr, 4, 1, false, None, med_pars.clone());
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(2.0), Some(3.0)]);
 
-        let out = rolling_quantile(arr, 0.5, QuantileInterpolOptions::Linear, 4, 1, true, None);
+        let out = rolling_quantile(arr, 4, 1, true, None, med_pars.clone());
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(2.0), Some(3.0), Some(3.5)]);
 
-        let out = rolling_quantile(arr, 0.5, QuantileInterpolOptions::Linear, 4, 4, true, None);
+        let out = rolling_quantile(arr, 4, 4, true, None, med_pars.clone());
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, None]);
@@ -350,18 +210,20 @@ mod test {
         ];
 
         for interpol in interpol_options {
+            let min_pars = Some(Arc::new(RollingQuantileParams { p: 0.0, interp: interpol }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_min(values, 2, 1, false, None, None);
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-            let out2 = rolling_quantile(values, 0.0, interpol, 2, 1, false, None);
+            let out2 = rolling_quantile(values, 2, 1, false, None, min_pars);
             let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);
-
+            
+            let max_pars = Some(Arc::new(RollingQuantileParams { p: 1.0, interp: interpol }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_max(values, 2, 1, false, None, None);
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-            let out2 = rolling_quantile(values, 1.0, interpol, 2, 1, false, None);
+            let out2 = rolling_quantile(values, 2, 1, false, None, max_pars);
             let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);
