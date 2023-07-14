@@ -230,6 +230,7 @@ pub enum FunctionExpr {
         seed: Option<u64>,
         fixed_seed: bool,
     },
+    SetSortedFlag(IsSorted),
 }
 
 impl Display for FunctionExpr {
@@ -335,6 +336,7 @@ impl Display for FunctionExpr {
             ToPhysical => "to_physical",
             #[cfg(feature = "random")]
             Random { method, .. } => method.into(),
+            SetSortedFlag(_) => "set_sorted",
         };
         write!(f, "{s}")
     }
@@ -607,6 +609,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 seed,
                 fixed_seed
             ),
+            SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
         }
     }
 }

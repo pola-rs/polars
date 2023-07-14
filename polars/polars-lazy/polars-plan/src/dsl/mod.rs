@@ -1746,13 +1746,7 @@ impl Expr {
     /// This can lead to incorrect results if this `Series` is not sorted!!
     /// Use with care!
     pub fn set_sorted_flag(self, sorted: IsSorted) -> Expr {
-        self.apply(
-            move |mut s| {
-                s.set_sorted_flag(sorted);
-                Ok(Some(s))
-            },
-            GetOutput::same_type(),
-        )
+        self.apply_private(FunctionExpr::SetSortedFlag(sorted))
     }
 
     /// Cache this expression, so that it is executed only once per context.
