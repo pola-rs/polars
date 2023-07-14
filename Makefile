@@ -1,5 +1,6 @@
 .DEFAULT_GOAL := help
 
+SHELL=/bin/bash
 BASE ?= main
 
 .PHONY: fmt check check-features clippy clippy-default test test-doc integration-tests
