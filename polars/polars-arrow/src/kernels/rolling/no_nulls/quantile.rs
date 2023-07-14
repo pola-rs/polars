@@ -296,7 +296,7 @@ mod test {
         for interpol in interpol_options {
             let min_pars = Some(Arc::new(RollingQuantileParams {
                 prob: 0.0,
-                interpol: interpol,
+                interpol,
             }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_min(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -308,7 +308,7 @@ mod test {
 
             let max_pars = Some(Arc::new(RollingQuantileParams {
                 prob: 1.0,
-                interpol: interpol,
+                interpol,
             }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_max(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();

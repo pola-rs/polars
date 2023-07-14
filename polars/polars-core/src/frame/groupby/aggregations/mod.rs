@@ -304,7 +304,7 @@ where
                         offset_iter,
                         Some(Arc::new(RollingQuantileParams {
                             prob: quantile,
-                            interpol: interpol,
+                            interpol,
                         })),
                     ),
                     Some(validity) => {
@@ -314,7 +314,7 @@ where
                             offset_iter,
                             Some(Arc::new(RollingQuantileParams {
                                 prob: quantile,
-                                interpol: interpol,
+                                interpol,
                             })),
                         )
                     }
