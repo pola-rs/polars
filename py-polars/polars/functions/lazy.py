@@ -2067,6 +2067,16 @@ def rolling_corr(
     )
 
 
+@overload
+def sql_expr(sql: str) -> Expr:  # type: ignore[misc]
+    ...
+
+
+@overload
+def sql_expr(sql: Sequence[str]) -> list[Expr]:
+    ...
+
+
 def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
     """
     Parse one or more SQL expressions to polars expression(s).
