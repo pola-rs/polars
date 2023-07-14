@@ -5,11 +5,16 @@ use crate::map;
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum CategoricalFunction {
     SetOrdering { lexical: bool },
+    GetCategories,
 }
 
 impl CategoricalFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
-        mapper.with_dtype(DataType::Boolean)
+        use CategoricalFunction::*;
+        match self {
+            SetOrdering { .. } => mapper.with_same_dtype(),
+            GetCategories => mapper.with_dtype(DataType::Utf8),
+        }
     }
 }
 
@@ -18,6 +23,7 @@ impl Display for CategoricalFunction {
         use CategoricalFunction::*;
         let s = match self {
             SetOrdering { .. } => "set_ordering",
+            GetCategories => "get_categories",
         };
         write!(f, "{s}")
     }
@@ -28,6 +34,7 @@ impl From<CategoricalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         use CategoricalFunction::*;
         match func {
             SetOrdering { lexical } => map!(set_ordering, lexical),
+            GetCategories => map!(get_categories),
         }
     }
 }
@@ -42,4 +49,12 @@ fn set_ordering(s: &Series, lexical: bool) -> PolarsResult<Series> {
     let mut ca = s.categorical()?.clone();
     ca.set_lexical_sorted(lexical);
     Ok(ca.into_series())
+}
+
+fn get_categories(s: &Series) -> PolarsResult<Series> {
+    // categorical check
+    let ca = s.categorical()?;
+    let DataType::Categorical(Some(rev_map)) = ca.dtype() else { unreachable!()  };
+    let arr = rev_map.get_categories().clone().boxed();
+    Series::try_from((ca.name(), arr))
 }
