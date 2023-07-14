@@ -12,13 +12,13 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     let dtype = T::get_dtype();
-    let exponent = exponent.cast(&dtype)?;
+    let exponent = exponent.strict_cast(&dtype)?;
     let exponent = base.unpack_series_matching_type(&exponent).unwrap();
 
     if exponent.len() == 1 {
-        let exponent_value = exponent
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "exponent is null"))?;
+        let Some(exponent_value) = exponent.get(0) else {
+            return Ok(Some(Series::full_null(base.name(), base.len(), &dtype)))
+        };
         let s = match exponent_value.to_f64().unwrap() {
             a if a == 1.0 => base.clone().into_series(),
             // specialized sqrt will ensure (-inf)^0.5 = NaN
