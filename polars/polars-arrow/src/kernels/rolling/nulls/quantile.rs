@@ -39,78 +39,54 @@ impl<
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let null_count = self.sorted.null_count.clone(); // That borrow checker, man
-        let values = self.sorted.update(start, end);
-        compute_quantile(values, null_count, self.p, self.interp)
+        let (values, null_count) = self.sorted.update(start, end);
+        // The min periods_issue will be taken care of when actually rolling
+        if null_count == values.len() {
+            return None;
+        }
+        // Nulls are guaranteed to be at the front
+        let values = &values[null_count..];
+        let length = values.len();
+
+        let mut idx = match self.interp {
+            QuantileInterpolOptions::Nearest => ((length as f64) * self.p) as usize,
+            QuantileInterpolOptions::Lower
+            | QuantileInterpolOptions::Midpoint
+            | QuantileInterpolOptions::Linear => ((length as f64 - 1.0) * self.p).floor() as usize,
+            QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * self.p).ceil() as usize,
+        };
+
+        idx = std::cmp::min(idx, length - 1);
+
+        // we can unwrap because we sliced of the nulls
+        match self.interp {
+            QuantileInterpolOptions::Midpoint => {
+                let top_idx = ((length as f64 - 1.0) * self.p).ceil() as usize;
+                Some(
+                    (values[idx].unwrap() + values[top_idx].unwrap())
+                        / T::from::<f64>(2.0f64).unwrap(),
+                )
+            }
+            QuantileInterpolOptions::Linear => {
+                let float_idx = (length as f64 - 1.0) * self.p;
+                let top_idx = f64::ceil(float_idx) as usize;
+
+                if top_idx == idx {
+                    Some(values[idx].unwrap())
+                } else {
+                    let proportion = T::from(float_idx - idx as f64).unwrap();
+                    Some(
+                        proportion * (values[top_idx].unwrap() - values[idx].unwrap())
+                            + values[idx].unwrap(),
+                    )
+                }
+            }
+            _ => Some(values[idx].unwrap()),
+        }
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
         self.sorted.is_valid(min_periods)
-    }
-}
-
-fn compute_quantile<T>(
-    values: &[Option<T>],
-    null_count: usize,
-    quantile: f64,
-    interpolation: QuantileInterpolOptions,
-) -> Option<T>
-where
-    T: NativeType
-        + std::iter::Sum<T>
-        + Zero
-        + AddAssign
-        + PartialOrd
-        + ToPrimitive
-        + NumCast
-        + Default
-        + Add<Output = T>
-        + Sub<Output = T>
-        + Div<Output = T>
-        + Mul<Output = T>
-        + IsFloat,
-{
-    // The min periods_issue will be taken care of when actually rolling
-    if null_count == values.len() {
-        return None;
-    }
-    // slice off nulls
-    let values = &values[null_count..];
-    let length = values.len();
-
-    let mut idx = match interpolation {
-        QuantileInterpolOptions::Nearest => ((length as f64) * quantile) as usize,
-        QuantileInterpolOptions::Lower
-        | QuantileInterpolOptions::Midpoint
-        | QuantileInterpolOptions::Linear => ((length as f64 - 1.0) * quantile).floor() as usize,
-        QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * quantile).ceil() as usize,
-    };
-
-    idx = std::cmp::min(idx, length - 1);
-
-    // we can unwrap because we sliced of the nulls
-    match interpolation {
-        QuantileInterpolOptions::Midpoint => {
-            let top_idx = ((length as f64 - 1.0) * quantile).ceil() as usize;
-            Some(
-                (values[idx].unwrap() + values[top_idx].unwrap()) / T::from::<f64>(2.0f64).unwrap(),
-            )
-        }
-        QuantileInterpolOptions::Linear => {
-            let float_idx = (length as f64 - 1.0) * quantile;
-            let top_idx = f64::ceil(float_idx) as usize;
-
-            if top_idx == idx {
-                Some(values[idx].unwrap())
-            } else {
-                let proportion = T::from(float_idx - idx as f64).unwrap();
-                Some(
-                    proportion * (values[top_idx].unwrap() - values[idx].unwrap())
-                        + values[idx].unwrap(),
-                )
-            }
-        }
-        _ => Some(values[idx].unwrap()),
     }
 }
 

@@ -39,73 +39,53 @@ impl<
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        let window = self.sorted.update(start, end);
-        compute_quantile2(window, self.p, self.interp)
-    }
-}
+        let vals = self.sorted.update(start, end);
+        let length = vals.len();
 
-pub(crate) fn compute_quantile2<T>(
-    vals: &[T],
-    quantile: f64,
-    interpolation: QuantileInterpolOptions,
-) -> T
-where
-    T: std::iter::Sum<T>
-        + Copy
-        + PartialOrd
-        + ToPrimitive
-        + NumCast
-        + Add<Output = T>
-        + Sub<Output = T>
-        + Div<Output = T>
-        + Mul<Output = T>
-        + IsFloat,
-{
-    let length = vals.len();
+        let mut idx = match self.interp {
+            QuantileInterpolOptions::Nearest => ((length as f64) * self.p) as usize,
+            QuantileInterpolOptions::Lower
+            | QuantileInterpolOptions::Midpoint
+            | QuantileInterpolOptions::Linear => ((length as f64 - 1.0) * self.p).floor() as usize,
+            QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * self.p).ceil() as usize,
+        };
 
-    let mut idx = match interpolation {
-        QuantileInterpolOptions::Nearest => ((length as f64) * quantile) as usize,
-        QuantileInterpolOptions::Lower
-        | QuantileInterpolOptions::Midpoint
-        | QuantileInterpolOptions::Linear => ((length as f64 - 1.0) * quantile).floor() as usize,
-        QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * quantile).ceil() as usize,
-    };
+        idx = std::cmp::min(idx, length - 1);
 
-    idx = std::cmp::min(idx, length - 1);
+        match self.interp {
+            QuantileInterpolOptions::Midpoint => {
+                let top_idx = ((length as f64 - 1.0) * self.p).ceil() as usize;
+                if top_idx == idx {
+                    // safety
+                    // we are in bounds
+                    unsafe { *vals.get_unchecked(idx) }
+                } else {
+                    // safety
+                    // we are in bounds
+                    let (mid, mid_plus_1) =
+                        unsafe { (*vals.get_unchecked(idx), *vals.get_unchecked(idx + 1)) };
 
-    match interpolation {
-        QuantileInterpolOptions::Midpoint => {
-            let top_idx = ((length as f64 - 1.0) * quantile).ceil() as usize;
-            if top_idx == idx {
+                    (mid + mid_plus_1) / T::from::<f64>(2.0f64).unwrap()
+                }
+            }
+            QuantileInterpolOptions::Linear => {
+                let float_idx = (length as f64 - 1.0) * self.p;
+                let top_idx = f64::ceil(float_idx) as usize;
+
+                if top_idx == idx {
+                    // safety
+                    // we are in bounds
+                    unsafe { *vals.get_unchecked(idx) }
+                } else {
+                    let proportion = T::from(float_idx - idx as f64).unwrap();
+                    proportion * (vals[top_idx] - vals[idx]) + vals[idx]
+                }
+            }
+            _ => {
                 // safety
                 // we are in bounds
                 unsafe { *vals.get_unchecked(idx) }
-            } else {
-                // safety
-                // we are in bounds
-                let (mid, mid_plus_1) =
-                    unsafe { (*vals.get_unchecked(idx), *vals.get_unchecked(idx + 1)) };
-
-                (mid + mid_plus_1) / T::from::<f64>(2.0f64).unwrap()
             }
-        }
-        QuantileInterpolOptions::Linear => {
-            let float_idx = (length as f64 - 1.0) * quantile;
-            let top_idx = f64::ceil(float_idx) as usize;
-
-            if top_idx == idx {
-                // safety
-                // we are in bounds
-                unsafe { *vals.get_unchecked(idx) }
-            } else {
-                let proportion = T::from(float_idx - idx as f64).unwrap();
-                proportion * (vals[top_idx] - vals[idx]) + vals[idx]
-            }
-        }
-        _ => {
-            // safety
-            // we are in bounds
-            unsafe { *vals.get_unchecked(idx) }
         }
     }
 }

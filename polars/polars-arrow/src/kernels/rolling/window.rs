@@ -170,7 +170,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBufNulls<'a, T> {
     /// # Safety
     /// The caller must ensure that `start` and `end` are within bounds of `self.slice`
     ///
-    pub(super) unsafe fn update(&mut self, start: usize, end: usize) -> &[Option<T>] {
+    pub(super) unsafe fn update(&mut self, start: usize, end: usize) -> (&[Option<T>], usize) {
         // swap the whole buffer
         if start >= self.last_end {
             self.fill_and_sort_buf(start, end);
@@ -217,7 +217,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBufNulls<'a, T> {
         }
         self.last_start = start;
         self.last_end = end;
-        &self.buf
+        (&self.buf, self.null_count)
     }
 
     pub(super) fn is_valid(&self, min_periods: usize) -> bool {
