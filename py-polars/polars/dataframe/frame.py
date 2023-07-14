@@ -4641,6 +4641,15 @@ class DataFrame:
             Settings this to ``True`` blocks the possibility
             to run on the streaming engine.
 
+            .. note::
+                Within each group, the order of rows is always preserved, regardless
+                of this argument.
+
+        Returns
+        -------
+        GroupBy
+            Object which can be used to perform aggregations.
+
         Examples
         --------
         Group by one column and call ``agg`` to compute the grouped sum of another
