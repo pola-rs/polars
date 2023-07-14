@@ -1,4 +1,3 @@
-use polars_arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
 #[cfg(feature = "dtype-struct")]

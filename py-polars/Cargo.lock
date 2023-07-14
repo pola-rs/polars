@@ -1733,6 +1733,7 @@ dependencies = [
  "polars",
  "polars-algo",
  "polars-core",
+ "polars-error",
  "polars-lazy",
  "pyo3",
  "pyo3-built",
