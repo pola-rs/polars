@@ -183,6 +183,7 @@ wasm-timer = "0.2.5"
 
 [dev-dependencies]
 bincode = "1"
+serde_json = "1"
 
 [package.metadata.docs.rs]
 # not all because arrow 4.3 does not compile with simd

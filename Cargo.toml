@@ -3,25 +3,12 @@ resolver = "2"
 members = [
   "polars",
   "polars-cli",
-  "polars/polars-core",
-  "polars/polars-io",
-  "polars/polars-time",
-  "polars/polars-utils",
-  "polars/polars-ops",
-  "polars/polars-algo",
-  "polars/polars-lazy",
-  "polars/polars-lazy/polars-plan",
-  "polars/polars-lazy/polars-pipe",
-  "polars/polars-sql",
-  "polars/polars-error",
-  "polars/polars-row",
-  "polars/polars-json",
-  "examples/read_csv",
-  "examples/read_json",
-  "examples/read_parquet",
-  "examples/read_parquet_cloud",
-  "examples/string_filter",
-  "examples/python_rust_compiled_function",
+  "polars/polars-*",
+  "polars/polars-lazy/polars-*",
+  "examples/*",
+]
+exclude = [
+  "examples/datasets",
 ]
 
 [workspace.package]
