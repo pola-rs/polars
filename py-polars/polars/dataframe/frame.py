@@ -3032,7 +3032,6 @@ class DataFrame:
         statistics: bool = False,
         row_group_size: int | None = None,
         use_pyarrow: bool = False,
-        use_pyarrow_write_to_dataset: bool = False,
         pyarrow_options: dict[str, object] | None = None,
     ) -> None:
         """
@@ -3062,14 +3061,13 @@ class DataFrame:
         use_pyarrow
             Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
-        use_pyarrow_write_to_dataset
-            Use ``pyarrow.parquet.write_to_dataset`` instead of pyarrow.write_table.
-            Enable features like writing partitioned datasets.
-            Use pyarrow_options to pass arguments to ``parquet.write_to_dataset``.
-            This function will always write the dataset to a directory.
-            Similar to Spark's partitioned datasets.
         pyarrow_options
             Arguments passed to ``pyarrow.parquet.write_table``.
+
+            If you pass ``partition_cols`` here, the dataset will be written
+            using ``pyarrow.parquet.write_to_dataset``.
+            The ``partition_cols`` parameter leads to write the dataset to a directory.
+            Similar to Spark's partitioned datasets.
 
         Examples
         --------
@@ -3095,7 +3093,6 @@ class DataFrame:
         >>> df.write_parquet(
         ...     path,
         ...     use_pyarrow=True,
-        ...     use_pyarrow_write_to_dataset=True,
         ...     pyarrow_options={"partition_cols": ["watermark"]},
         ... )
 
@@ -3103,7 +3100,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            if use_pyarrow_write_to_dataset:
+            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
                 file = normalise_filepath(file, check_not_directory=True)
             else:
                 file = normalise_filepath(file)
@@ -3124,9 +3121,7 @@ class DataFrame:
             # needed below
             import pyarrow.parquet  # noqa: F401
 
-            if use_pyarrow_write_to_dataset:
-                if pyarrow_options is None:
-                    pyarrow_options = {}
+            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
                 pyarrow_options["compression"] = (
                     None if compression == "uncompressed" else compression
                 )
