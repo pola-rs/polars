@@ -14,8 +14,6 @@ use polars_arrow::data_types::IsFloat;
 use polars_arrow::export::arrow;
 #[cfg(feature = "rolling_window")]
 use polars_arrow::kernels::rolling;
-#[cfg(feature = "rolling_window")]
-use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
 
 #[cfg(feature = "rolling_window")]

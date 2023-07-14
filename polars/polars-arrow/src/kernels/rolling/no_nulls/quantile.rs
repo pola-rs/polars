@@ -9,22 +9,23 @@ use super::*;
 pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     sorted: SortedBuf<'a, T>,
     p: f64,
-    interp: QuantileInterpolOptions
+    interp: QuantileInterpolOptions,
 }
 
-impl<'a,
-    T: NativeType
-        + IsFloat
-        + Float
-        + std::iter::Sum
-        + AddAssign
-        + SubAssign
-        + Div<Output = T>
-        + NumCast
-        + One
-        + Zero
-        + PartialOrd
-        + Sub<Output = T>,
+impl<
+        'a,
+        T: NativeType
+            + IsFloat
+            + Float
+            + std::iter::Sum
+            + AddAssign
+            + SubAssign
+            + Div<Output = T>
+            + NumCast
+            + One
+            + Zero
+            + PartialOrd
+            + Sub<Output = T>,
     > RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
@@ -108,7 +109,6 @@ where
         }
     }
 }
-
 
 pub fn rolling_quantile<T>(
     values: &[T],
@@ -269,68 +269,31 @@ mod test {
     #[test]
     fn test_rolling_median() {
         let values = &[1.0, 2.0, 3.0, 4.0];
-        let med_pars = Some(Arc::new(RollingQuantileParams { p: 0.5, interp: Linear }) as Arc<dyn Any + Send + Sync>);
-        let out = rolling_quantile(
-            values,
-            2,
-            2,
-            false,
-            None,
-            med_pars.clone(),
-        )
-        .unwrap();
+        let med_pars = Some(Arc::new(RollingQuantileParams {
+            p: 0.5,
+            interp: Linear,
+        }) as Arc<dyn Any + Send + Sync>);
+        let out = rolling_quantile(values, 2, 2, false, None, med_pars.clone()).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(1.5), Some(2.5), Some(3.5)]);
 
-        let out = rolling_quantile(
-            values,
-            2,
-            1,
-            false,
-            None,
-            med_pars.clone()
-        )
-        .unwrap();
+        let out = rolling_quantile(values, 2, 1, false, None, med_pars.clone()).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.5), Some(3.5)]);
 
-        let out = rolling_quantile(
-            values,
-            4,
-            1,
-            false,
-            None,
-            med_pars.clone()
-        )
-        .unwrap();
+        let out = rolling_quantile(values, 4, 1, false, None, med_pars.clone()).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.0), Some(2.5)]);
 
-        let out = rolling_quantile(
-            values,
-            4,
-            1,
-            true,
-            None,
-            med_pars.clone()
-        )
-        .unwrap();
+        let out = rolling_quantile(values, 4, 1, true, None, med_pars.clone()).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.5), Some(2.0), Some(2.5), Some(3.0)]);
 
-        let out = rolling_quantile(
-            values,
-            4,
-            4,
-            true,
-            None,
-            med_pars.clone()
-        )
-        .unwrap();
+        let out = rolling_quantile(values, 4, 4, true, None, med_pars.clone()).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, Some(2.5), None]);
@@ -349,7 +312,10 @@ mod test {
         ];
 
         for interpol in interpol_options {
-            let min_pars = Some(Arc::new(RollingQuantileParams { p: 0.0, interp: interpol }) as Arc<dyn Any + Send + Sync>);
+            let min_pars = Some(Arc::new(RollingQuantileParams {
+                p: 0.0,
+                interp: interpol,
+            }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_min(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
@@ -358,7 +324,10 @@ mod test {
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);
 
-            let max_pars = Some(Arc::new(RollingQuantileParams { p: 1.0, interp: interpol }) as Arc<dyn Any + Send + Sync>);
+            let max_pars = Some(Arc::new(RollingQuantileParams {
+                p: 1.0,
+                interp: interpol,
+            }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_max(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();

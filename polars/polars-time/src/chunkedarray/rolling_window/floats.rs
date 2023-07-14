@@ -1,6 +1,9 @@
+use std::any::Any;
+
 use num::pow::Pow;
 use num::Float;
 use polars_core::export::num;
+use polars_core::prelude::QuantileInterpolOptions::Linear;
 
 use super::*;
 
@@ -85,7 +88,10 @@ where
         // calling `rolling_median` from Rust without a bunch of dedicated functions that just call
         // out to the `rolling_quantile` anyway.
         let mut options = options.clone();
-        options.fn_params = Some(Arc::new(RollingQuantileParams { p: 0.5, interp: Linear }) as Arc<dyn Any + Send + Sync>);
+        options.fn_params = Some(Arc::new(RollingQuantileParams {
+            p: 0.5,
+            interp: Linear,
+        }) as Arc<dyn Any + Send + Sync>);
         rolling_agg(
             &self.0,
             options,

@@ -15,7 +15,7 @@ use polars_arrow::kernels::rolling::no_nulls::{
     MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
 use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
-use polars_arrow::kernels::rolling::{DynArgs, RollingVarParams, RollingQuantileParams};
+use polars_arrow::kernels::rolling::{DynArgs, RollingQuantileParams, RollingVarParams};
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::TrustedLenPush;
@@ -302,14 +302,22 @@ where
                     None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _>(
                         values,
                         offset_iter,
-                        Some(Arc::new(RollingQuantileParams { p: quantile, interp: interpol })),
+                        Some(Arc::new(RollingQuantileParams {
+                            p: quantile,
+                            interp: interpol,
+                        })),
                     ),
-                    Some(validity) => _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _>(
-                        values,
-                        validity,
-                        offset_iter,
-                        Some(Arc::new(RollingQuantileParams { p: quantile, interp: interpol })),
-                    ),
+                    Some(validity) => {
+                        _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _>(
+                            values,
+                            validity,
+                            offset_iter,
+                            Some(Arc::new(RollingQuantileParams {
+                                p: quantile,
+                                interp: interpol,
+                            })),
+                        )
+                    }
                 };
                 // the rolling kernels works on the dtype, this is not yet the float
                 // output type we need.

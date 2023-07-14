@@ -3,25 +3,32 @@ use super::*;
 pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     sorted: SortedBufNulls<'a, T>,
     p: f64,
-    interp: QuantileInterpolOptions
+    interp: QuantileInterpolOptions,
 }
 
-impl<'a,
-    T: NativeType
-        + IsFloat
-        + Float
-        + std::iter::Sum
-        + AddAssign
-        + SubAssign
-        + Div<Output = T>
-        + NumCast
-        + One
-        + Zero
-        + PartialOrd
-        + Sub<Output = T>,
+impl<
+        'a,
+        T: NativeType
+            + IsFloat
+            + Float
+            + std::iter::Sum
+            + AddAssign
+            + SubAssign
+            + Div<Output = T>
+            + NumCast
+            + One
+            + Zero
+            + PartialOrd
+            + Sub<Output = T>,
     > RollingAggWindowNulls<'a, T> for QuantileWindow<'a, T>
 {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: DynArgs) -> Self {
+    unsafe fn new(
+        slice: &'a [T],
+        validity: &'a Bitmap,
+        start: usize,
+        end: usize,
+        params: DynArgs,
+    ) -> Self {
         let params = params.unwrap();
         let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
         Self {
@@ -107,14 +114,13 @@ where
     }
 }
 
-
 pub fn rolling_quantile<T>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: DynArgs
+    params: DynArgs,
 ) -> ArrayRef
 where
     T: NativeType
@@ -129,7 +135,7 @@ where
         + Zero
         + PartialOrd
         + Sub<Output = T>,
-    {
+{
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }
@@ -163,7 +169,10 @@ mod test {
             buf,
             Some(Bitmap::from(&[true, false, true, true])),
         );
-        let med_pars = Some(Arc::new(RollingQuantileParams { p: 0.5, interp: QuantileInterpolOptions::Linear }) as Arc<dyn Any + Send + Sync>);
+        let med_pars = Some(Arc::new(RollingQuantileParams {
+            p: 0.5,
+            interp: QuantileInterpolOptions::Linear,
+        }) as Arc<dyn Any + Send + Sync>);
 
         let out = rolling_quantile(arr, 2, 2, false, None, med_pars.clone());
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -210,7 +219,10 @@ mod test {
         ];
 
         for interpol in interpol_options {
-            let min_pars = Some(Arc::new(RollingQuantileParams { p: 0.0, interp: interpol }) as Arc<dyn Any + Send + Sync>);
+            let min_pars = Some(Arc::new(RollingQuantileParams {
+                p: 0.0,
+                interp: interpol,
+            }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_min(values, 2, 1, false, None, None);
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
@@ -218,8 +230,11 @@ mod test {
             let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);
-            
-            let max_pars = Some(Arc::new(RollingQuantileParams { p: 1.0, interp: interpol }) as Arc<dyn Any + Send + Sync>);
+
+            let max_pars = Some(Arc::new(RollingQuantileParams {
+                p: 1.0,
+                interp: interpol,
+            }) as Arc<dyn Any + Send + Sync>);
             let out1 = rolling_max(values, 2, 1, false, None, None);
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
