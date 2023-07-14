@@ -17,6 +17,7 @@ impl<'a> AggregationContext<'a> {
                 Box::new(LitIter::new(
                     s.array_ref(0).clone(),
                     self.groups.len(),
+                    s._dtype(),
                     name,
                 ))
             }
@@ -59,8 +60,14 @@ struct LitIter<'a> {
 }
 
 impl<'a> LitIter<'a> {
-    fn new(array: ArrayRef, len: usize, name: &str) -> Self {
-        let mut series_container = Box::pin(Series::try_from((name, array.clone())).unwrap());
+    fn new(array: ArrayRef, len: usize, logical: &DataType, name: &str) -> Self {
+        let mut series_container = Box::pin(
+            Series::try_from((name, array.clone()))
+                .unwrap()
+                .cast(logical)
+                .unwrap(),
+        );
+
         let ref_s = &mut *series_container as *mut Series;
         Self {
             offset: 0,
