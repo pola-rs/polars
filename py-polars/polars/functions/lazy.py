@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
@@ -26,6 +27,7 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -320,6 +322,11 @@ def count(column: str | Series | None = None) -> Expr | int:
         return wrap_expr(plr.count())
 
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `count` is deprecated. Use `Series.len()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.len()
     return col(column).count()
 
@@ -377,6 +384,11 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `std` is deprecated. Use `Series.std()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.std(ddof)
     return col(column).std(ddof)
 
@@ -421,6 +433,11 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `var` is deprecated. Use `Series.var()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.var(ddof)
     return col(column).var(ddof)
 
@@ -451,11 +468,14 @@ def mean(column: str | Series) -> Expr | float | None:
     ╞═════╡
     │ 4.0 │
     └─────┘
-    >>> pl.mean(df["a"])
-    4.0
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `mean` is deprecated. Use `Series.mean()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.mean()
     return col(column).mean()
 
@@ -486,8 +506,6 @@ def avg(column: str | Series) -> Expr | float:
     ╞═════╡
     │ 4.0 │
     └─────┘
-    >>> pl.avg(df["a"])
-    4.0
 
     """
     return mean(column)
@@ -519,11 +537,14 @@ def median(column: str | Series) -> Expr | float | int | None:
     ╞═════╡
     │ 3.0 │
     └─────┘
-    >>> pl.median(df["a"])
-    3.0
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `median` is deprecated. Use `Series.median()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.median()
     return col(column).median()
 
@@ -554,11 +575,14 @@ def n_unique(column: str | Series) -> Expr | int:
     ╞═════╡
     │ 2   │
     └─────┘
-    >>> pl.n_unique(df["a"])
-    2
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `n_unique` is deprecated. Use `Series.n_unique()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.n_unique()
     return col(column).n_unique()
 
@@ -643,14 +667,17 @@ def first(column: str | Series | None = None) -> Expr | Any:
     ╞═════╡
     │ 1   │
     └─────┘
-    >>> pl.first(df["a"])
-    1
 
     """
     if column is None:
         return wrap_expr(plr.first())
 
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `first` is deprecated. Use `series[0]` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         if column.len() > 0:
             return column[0]
         else:
@@ -706,14 +733,17 @@ def last(column: str | Series | None = None) -> Expr:
     ╞═════╡
     │ 3   │
     └─────┘
-    >>> pl.last(df["a"])
-    3
 
     """
     if column is None:
         return wrap_expr(plr.last())
 
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `last` is deprecated. Use `series[-1]` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         if column.len() > 0:
             return column[-1]
         else:
@@ -766,16 +796,14 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
     │ 1   │
     │ 8   │
     └─────┘
-    >>> pl.head(df["a"], 2)
-    shape: (2,)
-    Series: 'a' [i64]
-    [
-        1
-        8
-    ]
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `head` is deprecated. Use `Series.head()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.head(n)
     return col(column).head(n)
 
@@ -825,16 +853,14 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
     │ 8   │
     │ 3   │
     └─────┘
-    >>> pl.tail(df["a"], 2)
-    shape: (2,)
-    Series: 'a' [i64]
-    [
-        8
-        3
-    ]
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `tail` is deprecated. Use `Series.tail()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.tail(n)
     return col(column).tail(n)
 
