@@ -11,9 +11,15 @@ if TYPE_CHECKING:
     from io import IOBase
 
     from polars import DataFrame, LazyFrame
+    from polars.type_aliases import SchemaDefinition
 
 
-def read_ndjson(source: str | Path | IOBase | bytes) -> DataFrame:
+def read_ndjson(
+    source: str | Path | IOBase | bytes,
+    *,
+    schema: SchemaDefinition | None = None,
+    ignore_errors: bool = False,
+) -> DataFrame:
     """
     Read into a DataFrame from a newline delimited JSON file.
 
@@ -21,9 +27,21 @@ def read_ndjson(source: str | Path | IOBase | bytes) -> DataFrame:
     ----------
     source
         Path to a file or a file-like object.
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
+    ignore_errors
+        Return `Null` if parsing fails because of schema mismatches.
 
     """
-    return pl.DataFrame._read_ndjson(source)
+    return pl.DataFrame._read_ndjson(source, schema=schema, ignore_errors=ignore_errors)
 
 
 def scan_ndjson(

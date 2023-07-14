@@ -33,6 +33,7 @@ where
     schema: Option<&'a Schema>,
     path: Option<PathBuf>,
     low_memory: bool,
+    ignore_errors: bool,
 }
 
 impl<'a, R> JsonLineReader<'a, R>
@@ -105,6 +106,7 @@ where
             path: None,
             chunk_size: 1 << 18,
             low_memory: false,
+            ignore_errors: false,
         }
     }
     fn finish(mut self) -> PolarsResult<DataFrame> {
@@ -119,6 +121,7 @@ where
             self.chunk_size,
             self.low_memory,
             self.infer_schema_len,
+            self.ignore_errors,
         )?;
 
         let mut df: DataFrame = json_reader.as_df()?;
@@ -137,6 +140,7 @@ pub(crate) struct CoreJsonReader<'a> {
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
+    ignore_errors: bool,
 }
 impl<'a> CoreJsonReader<'a> {
     #[allow(clippy::too_many_arguments)]
@@ -149,6 +153,7 @@ impl<'a> CoreJsonReader<'a> {
         chunk_size: usize,
         low_memory: bool,
         infer_schema_len: Option<usize>,
+        ignore_errors: bool,
     ) -> PolarsResult<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
 
@@ -172,6 +177,7 @@ impl<'a> CoreJsonReader<'a> {
             n_threads,
             chunk_size,
             low_memory,
+            ignore_errors,
         })
     }
     fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> PolarsResult<DataFrame> {
@@ -212,7 +218,7 @@ impl<'a> CoreJsonReader<'a> {
             file_chunks
                 .into_par_iter()
                 .map(|(start_pos, stop_at_nbytes)| {
-                    let mut buffers = init_buffers(&self.schema, capacity)?;
+                    let mut buffers = init_buffers(&self.schema, capacity, self.ignore_errors)?;
                     parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers)?;
                     DataFrame::new(
                         buffers

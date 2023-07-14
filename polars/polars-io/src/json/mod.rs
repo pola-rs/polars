@@ -163,10 +163,11 @@ where
 {
     reader: R,
     rechunk: bool,
+    ignore_errors: bool,
     infer_schema_len: Option<usize>,
     batch_size: usize,
     projection: Option<Vec<String>>,
-    schema: Option<ArrowSchema>,
+    schema: Option<SchemaRef>,
     json_format: JsonFormat,
 }
 
@@ -178,6 +179,7 @@ where
         JsonReader {
             reader,
             rechunk: true,
+            ignore_errors: false,
             infer_schema_len: Some(100),
             batch_size: 8192,
             projection: None,
@@ -201,6 +203,7 @@ where
 
         let out = match self.json_format {
             JsonFormat::Json => {
+                polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");
                 let mut bytes = rb.deref().to_vec();
                 let json_value =
                     simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?;
@@ -237,12 +240,13 @@ where
                 let mut json_reader = CoreJsonReader::new(
                     rb,
                     None,
-                    None,
+                    self.schema.as_deref(),
                     None,
                     1024, // sample size
                     1 << 18,
                     false,
                     self.infer_schema_len,
+                    self.ignore_errors,
                 )?;
                 let mut df: DataFrame = json_reader.as_df()?;
                 if self.rechunk {
@@ -252,6 +256,7 @@ where
             }
         }?;
 
+        // TODO! Ensure we don't materialize the columns we don't need
         if let Some(proj) = &self.projection {
             out.select(proj)
         } else {
@@ -265,8 +270,8 @@ where
     R: MmapBytesReader,
 {
     /// Set the JSON file's schema
-    pub fn with_schema(mut self, schema: &Schema) -> Self {
-        self.schema = Some(schema.to_arrow());
+    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
+        self.schema = Some(schema.clone());
         self
     }
 
@@ -303,6 +308,12 @@ where
 
     pub fn with_json_format(mut self, format: JsonFormat) -> Self {
         self.json_format = format;
+        self
+    }
+
+    /// Return a `null` if an error occurs during parsing.
+    pub fn with_ignore_errors(mut self, ignore: bool) -> Self {
+        self.ignore_errors = ignore;
         self
     }
 }
