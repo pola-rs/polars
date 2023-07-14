@@ -139,7 +139,7 @@ ignore = [
   "D102",
   "D104",
   "D101",
-  "D401",  # First line of docstring should be in imperative mood
+  "D401", # First line of docstring should be in imperative mood
 ]
 
 [tool.ruff.pycodestyle]
