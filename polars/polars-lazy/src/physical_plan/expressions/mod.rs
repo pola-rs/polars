@@ -30,7 +30,6 @@ pub(crate) use count::*;
 pub(crate) use filter::*;
 pub(crate) use literal::*;
 use polars_arrow::utils::CustomIterTools;
-use polars_core::error::polars_warn;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
