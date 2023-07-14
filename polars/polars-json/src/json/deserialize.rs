@@ -378,21 +378,13 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
     }
 }
 
-/// Deserializes a `json` [`Value`][Value] into an [`Array`] of [`DataType`]
-/// This is CPU-bounded.
-/// # Error
-/// This function errors iff either:
-/// * `json` is not an [`Array`]
-/// * `data_type` is neither [`DataType::List`] nor [`DataType::LargeList`]
-///
-/// [Value]: simd_json::value::Value
 pub fn deserialize(json: &BorrowedValue, data_type: DataType) -> Result<Box<dyn Array>, Error> {
     match json {
         BorrowedValue::Array(rows) => match data_type {
             DataType::LargeList(inner) => Ok(_deserialize(rows, inner.data_type)),
             _ => todo!("read an Array from a non-Array data type"),
         },
-        _ => todo!("read an Array from a non-Array JSON"),
+        _ => Ok(_deserialize(&[json], data_type)),
     }
 }
 

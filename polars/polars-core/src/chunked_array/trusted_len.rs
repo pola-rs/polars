@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::bit_util::{set_bit_raw, unset_bit_raw};
-use polars_arrow::trusted_len::{FromIteratorReversed, PushUnchecked};
+use polars_arrow::trusted_len::{FromIteratorReversed, TrustedLenPush};
 
 use crate::chunked_array::upstream_traits::PolarsAsRef;
 use crate::prelude::*;

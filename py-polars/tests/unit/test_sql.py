@@ -8,13 +8,67 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 # TODO: Do not rely on I/O for these tests
 @pytest.fixture()
 def foods_ipc_path() -> str:
     return str(Path(os.path.dirname(__file__)) / "io" / "files" / "foods1.ipc")
+
+
+def test_sql_cast() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": [1.1, 2.2, 3.3, 4.4, 5.5],
+            "c": ["a", "b", "c", "d", "e"],
+            "d": [True, False, True, False, True],
+        }
+    )
+    # test various dtype casts, using standard ("CAST <col> AS <dtype>")
+    # and postgres-specific ("<col>::<dtype>") cast syntax
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              -- float
+              CAST(a AS DOUBLE PRECISION) AS a_f64,
+              a::real AS a_f32,
+              -- integer
+              CAST(b AS TINYINT) AS b_i8,
+              CAST(b AS SMALLINT) AS b_i16,
+              b::bigint AS b_i64,
+              d::tinyint AS d_i8,
+              -- string/binary
+              CAST(a AS CHAR) AS a_char,
+              CAST(b AS VARCHAR) AS b_varchar,
+              c::blob AS c_blob,
+              c::VARBINARY AS c_varbinary,
+              CAST(d AS CHARACTER VARYING) AS d_charvar,
+            FROM df
+            """
+        )
+    assert res.schema == {
+        "a_f64": pl.Float64,
+        "a_f32": pl.Float32,
+        "b_i8": pl.Int8,
+        "b_i16": pl.Int16,
+        "b_i64": pl.Int64,
+        "d_i8": pl.Int8,
+        "a_char": pl.Utf8,
+        "b_varchar": pl.Utf8,
+        "c_blob": pl.Binary,
+        "c_varbinary": pl.Binary,
+        "d_charvar": pl.Utf8,
+    }
+    assert res.rows() == [
+        (1.0, 1.0, 1, 1, 1, 1, "1", "1.1", b"a", b"a", "true"),
+        (2.0, 2.0, 2, 2, 2, 0, "2", "2.2", b"b", b"b", "false"),
+        (3.0, 3.0, 3, 3, 3, 1, "3", "3.3", b"c", b"c", "true"),
+        (4.0, 4.0, 4, 4, 4, 0, "4", "4.4", b"d", b"d", "false"),
+        (5.0, 5.0, 5, 5, 5, 1, "5", "5.5", b"e", b"e", "true"),
+    ]
 
 
 def test_sql_distinct() -> None:
@@ -113,6 +167,225 @@ def test_sql_equal_not_equal() -> None:
     }
 
 
+def test_sql_trig() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [-4, -3, -2, -1.00001, 0, 1.00001, 2, 3, 4],
+        }
+    )
+
+    c = pl.SQLContext(df=df)
+    res = c.execute(
+        """
+        SELECT
+        asin(1.0)/a as "pi values",
+        cos(asin(1.0)/a) AS "cos",
+        cot(asin(1.0)/a) AS "cot",
+        sin(asin(1.0)/a) AS "sin",
+        tan(asin(1.0)/a) AS "tan",
+
+        cosd(asind(1.0)/a) AS "cosd",
+        cotd(asind(1.0)/a) AS "cotd",
+        sind(asind(1.0)/a) AS "sind",
+        tand(asind(1.0)/a) AS "tand",
+
+        1.0/a as "inverse pi values",
+        acos(1.0/a) AS "acos",
+        asin(1.0/a) AS "asin",
+        atan(1.0/a) AS "atan",
+
+        acosd(1.0/a) AS "acosd",
+        asind(1.0/a) AS "asind",
+        atand(1.0/a) AS "atand"
+        FROM df
+        """,
+        eager=True,
+    )
+
+    df_result = pl.DataFrame(
+        {
+            "pi values": [
+                -0.392699,
+                -0.523599,
+                -0.785398,
+                -1.570781,
+                float("inf"),
+                1.570781,
+                0.785398,
+                0.523599,
+                0.392699,
+            ],
+            "cos": [
+                0.92388,
+                0.866025,
+                0.707107,
+                0.000016,
+                float("NaN"),
+                0.000016,
+                0.707107,
+                0.866025,
+                0.92388,
+            ],
+            "cot": [
+                -2.414214,
+                -1.732051,
+                -1.0,
+                -0.000016,
+                float("NaN"),
+                0.000016,
+                1.0,
+                1.732051,
+                2.414214,
+            ],
+            "sin": [
+                -0.382683,
+                -0.5,
+                -0.707107,
+                -1.0,
+                float("NaN"),
+                1,
+                0.707107,
+                0.5,
+                0.382683,
+            ],
+            "tan": [
+                -0.414214,
+                -0.57735,
+                -1,
+                -63662.613851,
+                float("NaN"),
+                63662.613851,
+                1,
+                0.57735,
+                0.414214,
+            ],
+            "cosd": [
+                0.92388,
+                0.866025,
+                0.707107,
+                0.000016,
+                float("NaN"),
+                0.000016,
+                0.707107,
+                0.866025,
+                0.92388,
+            ],
+            "cotd": [
+                -2.414214,
+                -1.732051,
+                -1.0,
+                -0.000016,
+                float("NaN"),
+                0.000016,
+                1.0,
+                1.732051,
+                2.414214,
+            ],
+            "sind": [
+                -0.382683,
+                -0.5,
+                -0.707107,
+                -1.0,
+                float("NaN"),
+                1,
+                0.707107,
+                0.5,
+                0.382683,
+            ],
+            "tand": [
+                -0.414214,
+                -0.57735,
+                -1,
+                -63662.613851,
+                float("NaN"),
+                63662.613851,
+                1,
+                0.57735,
+                0.414214,
+            ],
+            "inverse pi values": [
+                -0.25,
+                -0.333333,
+                -0.5,
+                -0.99999,
+                float("inf"),
+                0.99999,
+                0.5,
+                0.333333,
+                0.25,
+            ],
+            "acos": [
+                1.823477,
+                1.910633,
+                2.094395,
+                3.137121,
+                float("NaN"),
+                0.004472,
+                1.047198,
+                1.230959,
+                1.318116,
+            ],
+            "asin": [
+                -0.25268,
+                -0.339837,
+                -0.523599,
+                -1.566324,
+                float("NaN"),
+                1.566324,
+                0.523599,
+                0.339837,
+                0.25268,
+            ],
+            "atan": [
+                -0.244979,
+                -0.321751,
+                -0.463648,
+                -0.785393,
+                1.570796,
+                0.785393,
+                0.463648,
+                0.321751,
+                0.244979,
+            ],
+            "acosd": [
+                104.477512,
+                109.471221,
+                120.0,
+                179.743767,
+                float("NaN"),
+                0.256233,
+                60.0,
+                70.528779,
+                75.522488,
+            ],
+            "asind": [
+                -14.477512,
+                -19.471221,
+                -30.0,
+                -89.743767,
+                float("NaN"),
+                89.743767,
+                30.0,
+                19.471221,
+                14.477512,
+            ],
+            "atand": [
+                -14.036243,
+                -18.434949,
+                -26.565051,
+                -44.999714,
+                90.0,
+                44.999714,
+                26.565051,
+                18.434949,
+                14.036243,
+            ],
+        }
+    )
+
+    assert_frame_equal(left=df_result, right=res, atol=1e-5)
+
+
 def test_sql_groupby(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
@@ -161,6 +434,26 @@ def test_sql_groupby(foods_ipc_path: Path) -> None:
         """
     )
     assert out.to_dict(False) == {"grp": ["c"], "n_dist_attr": [2]}
+
+
+def test_sql_left() -> None:
+    df = pl.DataFrame({"scol": ["abcde", "abc", "a", None]})
+    ctx = pl.SQLContext(df=df)
+    res = ctx.execute(
+        'SELECT scol, LEFT(scol,2) AS "scol:left2" FROM df',
+    ).collect()
+
+    assert res.to_dict(False) == {
+        "scol": ["abcde", "abc", "a", None],
+        "scol:left2": ["ab", "ab", "a", None],
+    }
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="Invalid 'length' for Left: 'xyz'",
+    ):
+        ctx.execute(
+            """SELECT scol, LEFT(scol,'xyz') AS "scol:left2" FROM df"""
+        ).collect()
 
 
 def test_sql_limit_offset() -> None:
@@ -277,7 +570,7 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         ("!~*", "[aeiOU]", None),
     ],
 )
-def test_sql_regex(
+def test_sql_regex_operators(
     foods_ipc_path: Path, op: str, pattern: str, expected: str | None
 ) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
@@ -292,7 +585,7 @@ def test_sql_regex(
         assert out.rows() == ([(expected,)] if expected else [])
 
 
-def test_sql_regex_error() -> None:
+def test_sql_regex_operators_error() -> None:
     df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
         with pytest.raises(
@@ -304,6 +597,140 @@ def test_sql_regex_error() -> None:
             match=r"""Invalid pattern for '!~\*' operator: col\("abcde"\)""",
         ):
             ctx.execute("SELECT * FROM df WHERE sval !~* abcde")
+
+
+@pytest.mark.parametrize(
+    ("not_", "pattern", "flags", "expected"),
+    [
+        ("", "^veg", None, "vegetables"),
+        ("", "^VEG", None, None),
+        ("", "(?i)^VEG", None, "vegetables"),
+        ("NOT", "(t|s)$", None, "seafood"),
+        ("NOT", "T|S$", "i", "seafood"),
+        ("NOT", "^.E", "i", "fruit"),
+        ("NOT", "[aeiOU]", "i", None),
+    ],
+)
+def test_sql_regexp_like(
+    foods_ipc_path: Path,
+    not_: str,
+    pattern: str,
+    flags: str | None,
+    expected: str | None,
+) -> None:
+    lf = pl.scan_ipc(foods_ipc_path)
+    flags = "" if flags is None else f",'{flags}'"
+    with pl.SQLContext(foods=lf, eager_execution=True) as ctx:
+        out = ctx.execute(
+            f"""
+            SELECT DISTINCT category FROM foods
+            WHERE {not_} REGEXP_LIKE(category,'{pattern}'{flags})
+            """
+        )
+        assert out.rows() == ([(expected,)] if expected else [])
+
+
+def test_sql_regexp_like_errors() -> None:
+    with pl.SQLContext(df=pl.DataFrame({"scol": ["xyz"]})) as ctx:
+        with pytest.raises(
+            pl.InvalidOperationError,
+            match="Invalid/empty 'flags' for RegexpLike",
+        ):
+            ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,'[x-z]+','')")
+
+        with pytest.raises(
+            pl.InvalidOperationError,
+            match="Invalid arguments for RegexpLike",
+        ):
+            ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,999,999)")
+
+        with pytest.raises(
+            pl.InvalidOperationError,
+            match="Invalid number of arguments for RegexpLike",
+        ):
+            ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol)")
+
+
+@pytest.mark.parametrize(
+    ("decimals", "expected"),
+    [
+        (0, [-8192.0, -4.0, -2.0, 2.0, 4.0, 8193.0]),
+        (1, [-8192.5, -4.0, -1.5, 2.5, 3.6, 8192.5]),
+        (2, [-8192.5, -3.96, -1.54, 2.46, 3.6, 8192.5]),
+        (3, [-8192.499, -3.955, -1.543, 2.457, 3.599, 8192.5]),
+        (4, [-8192.499, -3.955, -1.5432, 2.4568, 3.599, 8192.5001]),
+    ],
+)
+def test_sql_round_ndigits(decimals: int, expected: list[float]) -> None:
+    df = pl.DataFrame(
+        {"n": [-8192.499, -3.9550, -1.54321, 2.45678, 3.59901, 8192.5001]},
+    )
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        if decimals == 0:
+            out = ctx.execute("SELECT ROUND(n) AS n FROM df")
+            assert_series_equal(out["n"], pl.Series("n", values=expected))
+
+        out = ctx.execute(f'SELECT ROUND("n",{decimals}) AS n FROM df')
+        assert_series_equal(out["n"], pl.Series("n", values=expected))
+
+
+def test_sql_round_ndigits_errors() -> None:
+    df = pl.DataFrame({"n": [99.999]})
+    with pl.SQLContext(df=df, eager_execution=True) as ctx, pytest.raises(
+        pl.InvalidOperationError, match="Invalid 'decimals' for Round: -1"
+    ):
+        ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
+
+
+def test_sql_string_lengths() -> None:
+    df = pl.DataFrame({"words": ["Café", None, "東京"]})
+
+    with pl.SQLContext(frame=df) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              words,
+              LENGTH(words) AS n_chars,
+              OCTET_LENGTH(words) AS n_bytes
+            FROM frame
+            """
+        ).collect()
+
+    assert res.to_dict(False) == {
+        "words": ["Café", None, "東京"],
+        "n_chars": [4, None, 2],
+        "n_bytes": [5, None, 6],
+    }
+
+
+def test_sql_substr() -> None:
+    df = pl.DataFrame(
+        {
+            "scol": ["abcdefg", "abcde", "abc", None],
+        }
+    )
+    with pl.SQLContext(df=df) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              SUBSTR(scol,1) AS s1,
+              SUBSTR(scol,2) AS s2,
+              SUBSTR(scol,3) AS s3,
+              SUBSTR(scol,1,5) AS s1_5,
+              SUBSTR(scol,2,2) AS s2_2,
+              SUBSTR(scol,3,1) AS s3_1,
+            FROM df
+            """
+        ).collect()
+
+    assert res.to_dict(False) == {
+        "s1": ["bcdefg", "bcde", "bc", None],
+        "s2": ["cdefg", "cde", "c", None],
+        "s3": ["defg", "de", "", None],
+        "s1_5": ["bcdef", "bcde", "bc", None],
+        "s2_2": ["cd", "cd", "c", None],
+        "s3_1": ["d", "d", "", None],
+    }
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
@@ -343,7 +770,22 @@ def test_register_context() -> None:
 
 
 def test_sql_expr() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]})
-    sql_expr = pl.sql_expr("MIN(a)")
-    expected = pl.DataFrame({"a": [1]})
-    assert df.select(sql_expr).frame_equal(expected)
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["xyz", "abcde", None]})
+    sql_exprs = pl.sql_expr(
+        [
+            "MIN(a)",
+            "POWER(a,a) AS aa",
+            "SUBSTR(b,1,2) AS b2",
+        ]
+    )
+    expected = pl.DataFrame(
+        {"a": [1, 1, 1], "aa": [1, 4, 27], "b2": ["yz", "bc", None]}
+    )
+    assert df.select(*sql_exprs).frame_equal(expected)
+
+    # expect expressions that can't reasonably be parsed as expressions to raise
+    # (for example: those that explicitly reference tables and/or use wildcards)
+    with pytest.raises(
+        pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
+    ):
+        pl.sql_expr("xyz.*")

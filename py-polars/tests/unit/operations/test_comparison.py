@@ -1,5 +1,3 @@
-import typing
-
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -122,7 +120,6 @@ def test_comparison_expr_series() -> None:
     )
 
 
-@typing.no_type_check
 def test_offset_handling_arg_where_7863() -> None:
     df_check = pl.DataFrame({"a": [0, 1]})
     df_check.select((pl.lit(0).append(pl.col("a")).append(0)) != 0)
@@ -132,3 +129,18 @@ def test_offset_handling_arg_where_7863() -> None:
         .item()
         == 2
     )
+
+
+def test_missing_equality_on_bools() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [True, None, False],
+        }
+    )
+
+    assert df.select(pl.col("a").ne_missing(True))["a"].to_list() == [False, True, True]
+    assert df.select(pl.col("a").ne_missing(False))["a"].to_list() == [
+        True,
+        True,
+        False,
+    ]

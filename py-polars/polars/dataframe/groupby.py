@@ -155,7 +155,7 @@ class GroupBy:
 
         Examples
         --------
-        Compute the sum of a column for each group.
+        Compute the aggregation of the columns for each group.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -164,6 +164,22 @@ class GroupBy:
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
+        >>> df.groupby("a").agg([pl.col("b"), pl.col("c")])  # doctest: +IGNORE_RESULT
+        shape: (3, 3)
+        ┌─────┬───────────┬───────────┐
+        │ a   ┆ b         ┆ c         │
+        │ --- ┆ ---       ┆ ---       │
+        │ str ┆ list[i64] ┆ list[i64] │
+        ╞═════╪═══════════╪═══════════╡
+        │ a   ┆ [1, 1]    ┆ [5, 3]    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b   ┆ [2, 3]    ┆ [4, 2]    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ c   ┆ [3]       ┆ [1]       │
+        └─────┴───────────┴───────────┘
+
+        Compute the sum of a column for each group.
+
         >>> df.groupby("a").agg(pl.col("b").sum())  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
@@ -300,7 +316,7 @@ class GroupBy:
         It is better to implement this with an expression:
 
         >>> df.filter(
-        ...     pl.arange(0, pl.count()).shuffle().over("color") < 2
+        ...     pl.int_range(0, pl.count()).shuffle().over("color") < 2
         ... )  # doctest: +IGNORE_RESULT
 
         """
@@ -915,7 +931,7 @@ class RollingGroupBy:
 
         >>> (
         ...     df.lazy()
-        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .filter(pl.int_range(0, pl.count()).shuffle().over("color") < 2)
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 
@@ -1120,7 +1136,7 @@ class DynamicGroupBy:
 
         >>> (
         ...     df.lazy()
-        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .filter(pl.int_range(0, pl.count()).shuffle().over("color") < 2)
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 

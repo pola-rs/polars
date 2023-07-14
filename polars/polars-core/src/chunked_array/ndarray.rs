@@ -1,8 +1,18 @@
 use ndarray::prelude::*;
 use rayon::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 use crate::POOL;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum IndexOrder {
+    C,
+    #[default]
+    Fortran,
+}
 
 impl<T> ChunkedArray<T>
 where
@@ -77,16 +87,16 @@ impl DataFrame {
     /// let b = Float64Chunked::new("b", &[10., 8., 6.]).into_series();
     ///
     /// let df = DataFrame::new(vec![a, b]).unwrap();
-    /// let ndarray = df.to_ndarray::<Float64Type>().unwrap();
+    /// let ndarray = df.to_ndarray::<Float64Type>(IndexOrder::Fortran).unwrap();
     /// println!("{:?}", ndarray);
     /// ```
     /// Outputs:
     /// ```text
     /// [[1.0, 10.0],
     ///  [2.0, 8.0],
-    ///  [3.0, 6.0]], shape=[3, 2], strides=[2, 1], layout=C (0x1), const ndim=2/
+    ///  [3.0, 6.0]], shape=[3, 2], strides=[1, 3], layout=Ff (0xa), const ndim=2
     /// ```
-    pub fn to_ndarray<N>(&self) -> PolarsResult<Array2<N::Native>>
+    pub fn to_ndarray<N>(&self, ordering: IndexOrder) -> PolarsResult<Array2<N::Native>>
     where
         N: PolarsNumericType,
     {
@@ -131,18 +141,30 @@ impl DataFrame {
                     let ca = s.unpack::<N>()?;
                     let vals = ca.cont_slice().unwrap();
 
+                    // Depending on the desired order, we add items to the buffer.
                     // Safety:
-                    // we get parallel access to the vector
-                    // but we make sure that we don't get aliased access by offsetting the column indices + length
-                    unsafe {
-                        let offset_ptr = (ptr as *mut N::Native).add(col_idx * height);
-                        // Safety:
-                        // this is uninitialized memory, so we must never read from this data
-                        // copy_from_slice does not read
-                        let buf = std::slice::from_raw_parts_mut(offset_ptr, height);
-                        buf.copy_from_slice(vals)
+                    // We get parallel access to the vector by offsetting index access accordingly.
+                    // For C-order, we only operate on every num-col-th element, starting from the
+                    // column index. For Fortran-order we only operate on n contiguous elements,
+                    // offset by n * the column index.
+                    match ordering {
+                        IndexOrder::C => unsafe {
+                            let num_cols = columns.len();
+                            let mut offset = (ptr as *mut N::Native).add(col_idx);
+                            for v in vals.iter() {
+                                *offset = *v;
+                                offset = offset.add(num_cols);
+                            }
+                        },
+                        IndexOrder::Fortran => unsafe {
+                            let offset_ptr = (ptr as *mut N::Native).add(col_idx * height);
+                            // Safety:
+                            // this is uninitialized memory, so we must never read from this data
+                            // copy_from_slice does not read
+                            let buf = std::slice::from_raw_parts_mut(offset_ptr, height);
+                            buf.copy_from_slice(vals)
+                        },
                     }
-
                     Ok(())
                 })
                 .collect::<PolarsResult<Vec<_>>>()
@@ -153,8 +175,15 @@ impl DataFrame {
         unsafe {
             membuf.set_len(shape.0 * shape.1);
         }
-        let ndarr = Array2::from_shape_vec((shape.1, shape.0), membuf).unwrap();
-        Ok(ndarr.reversed_axes())
+        // Depending on the desired order, we can either return the array buffer as-is or reverse
+        // the axes.
+        match ordering {
+            IndexOrder::C => Ok(Array2::from_shape_vec((shape.0, shape.1), membuf).unwrap()),
+            IndexOrder::Fortran => {
+                let ndarr = Array2::from_shape_vec((shape.1, shape.0), membuf).unwrap();
+                Ok(ndarr.reversed_axes())
+            }
+        }
     }
 }
 
@@ -191,13 +220,28 @@ mod test {
     }
 
     #[test]
-    fn test_ndarray_from_df() -> PolarsResult<()> {
+    fn test_ndarray_from_df_order_fortran() -> PolarsResult<()> {
         let df = df!["a"=> [1.0, 2.0, 3.0],
             "b" => [2.0, 3.0, 4.0]
         ]?;
 
-        let ndarr = df.to_ndarray::<Float64Type>()?;
+        let ndarr = df.to_ndarray::<Float64Type>(IndexOrder::Fortran)?;
         let expected = array![[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]];
+        assert!(!ndarr.is_standard_layout());
+        assert_eq!(ndarr, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ndarray_from_df_order_c() -> PolarsResult<()> {
+        let df = df!["a"=> [1.0, 2.0, 3.0],
+            "b" => [2.0, 3.0, 4.0]
+        ]?;
+
+        let ndarr = df.to_ndarray::<Float64Type>(IndexOrder::C)?;
+        let expected = array![[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]];
+        assert!(ndarr.is_standard_layout());
         assert_eq!(ndarr, expected);
 
         Ok(())

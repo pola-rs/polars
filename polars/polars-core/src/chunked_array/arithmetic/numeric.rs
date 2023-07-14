@@ -19,7 +19,7 @@ where
                 .zip(rhs.downcast_iter())
                 .map(|(lhs, rhs)| Box::new(kernel(lhs, rhs)) as ArrayRef)
                 .collect();
-            lhs.copy_with_chunks(chunks, false, false)
+            unsafe { lhs.copy_with_chunks(chunks, false, false) }
         }
         // broadcast right path
         (_, 1) => {

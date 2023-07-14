@@ -17,6 +17,8 @@ use crate::chunked_array::cast::cast_chunks;
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::EXTENSION_NAME;
+#[cfg(feature = "timezones")]
+use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(all(feature = "dtype-decimal", feature = "python"))]
 use crate::config::decimal_is_active;
 use crate::config::verbose;
@@ -198,8 +200,12 @@ impl Series {
                 let mut tz = tz.clone();
                 if tz.as_deref() == Some("") {
                     tz = None;
+                } else if tz.as_deref() == Some("+00:00") {
+                    tz = Some("UTC".to_string());
+                } else if let Some(_tz) = &tz {
+                    #[cfg(feature = "timezones")]
+                    validate_time_zone(_tz)?;
                 }
-                // we still drop timezone for now
                 let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_datetime(tu.into(), tz)

@@ -1,6 +1,8 @@
 mod drop;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
+#[cfg(feature = "python")]
+mod python_udf;
 mod rename;
 
 use std::borrow::Cow;
@@ -14,6 +16,8 @@ use polars_core::IUseStringCache;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
+#[cfg(feature = "python")]
+use crate::dsl::python_udf::PythonFunction;
 #[cfg(feature = "merge_sorted")]
 use crate::logical_plan::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
@@ -21,6 +25,17 @@ use crate::prelude::*;
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FunctionNode {
+    #[cfg(feature = "python")]
+    OpaquePython {
+        function: PythonFunction,
+        schema: Option<SchemaRef>,
+        ///  allow predicate pushdown optimizations
+        predicate_pd: bool,
+        ///  allow projection pushdown optimizations
+        projection_pd: bool,
+        streamable: bool,
+        validate_output: bool,
+    },
     #[cfg_attr(feature = "serde", serde(skip))]
     Opaque {
         function: Arc<dyn DataFrameUdf>,
@@ -76,6 +91,11 @@ pub enum FunctionNode {
         args: Arc<MeltArgs>,
         schema: SchemaRef,
     },
+    RowCount {
+        name: Arc<str>,
+        schema: SchemaRef,
+        offset: Option<IdxSize>,
+    },
 }
 
 impl PartialEq for FunctionNode {
@@ -100,6 +120,7 @@ impl PartialEq for FunctionNode {
             (Drop { names: l }, Drop { names: r }) => l == r,
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
+            (RowCount { name: l, .. }, RowCount { name: r, .. }) => l == r,
             _ => false,
         }
     }
@@ -121,6 +142,9 @@ impl FunctionNode {
             | Drop { .. } => true,
             Melt { args, .. } => args.streamable,
             Opaque { streamable, .. } => *streamable,
+            #[cfg(feature = "python")]
+            OpaquePython { streamable, .. } => *streamable,
+            RowCount { .. } => false,
         }
     }
 
@@ -148,6 +172,11 @@ impl FunctionNode {
                     Ok(Cow::Owned(output_schema))
                 }
             },
+            #[cfg(feature = "python")]
+            OpaquePython { schema, .. } => Ok(schema
+                .as_ref()
+                .map(|schema| Cow::Owned(schema.clone()))
+                .unwrap_or_else(|| Cow::Borrowed(input_schema))),
             Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
             FastProjection { columns } => {
                 let schema = columns
@@ -193,8 +222,9 @@ impl FunctionNode {
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
             Drop { names } => drop::drop_schema(input_schema, names),
-            Explode { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            Melt { schema, .. } => Ok(Cow::Owned(schema.clone())),
+            Explode { schema, .. } | RowCount { schema, .. } | Melt { schema, .. } => {
+                Ok(Cow::Owned(schema.clone()))
+            }
         }
     }
 
@@ -202,6 +232,8 @@ impl FunctionNode {
         use FunctionNode::*;
         match self {
             Opaque { predicate_pd, .. } => *predicate_pd,
+            #[cfg(feature = "python")]
+            OpaquePython { predicate_pd, .. } => *predicate_pd,
             FastProjection { .. }
             | DropNulls { .. }
             | Rechunk
@@ -212,6 +244,7 @@ impl FunctionNode {
             | Drop { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
+            RowCount { .. } => false,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -220,6 +253,8 @@ impl FunctionNode {
         use FunctionNode::*;
         match self {
             Opaque { projection_pd, .. } => *projection_pd,
+            #[cfg(feature = "python")]
+            OpaquePython { projection_pd, .. } => *projection_pd,
             FastProjection { .. }
             | DropNulls { .. }
             | Rechunk
@@ -230,6 +265,7 @@ impl FunctionNode {
             | Drop { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
+            RowCount { .. } => true,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -249,6 +285,13 @@ impl FunctionNode {
         use FunctionNode::*;
         match self {
             Opaque { function, .. } => function.call_udf(df),
+            #[cfg(feature = "python")]
+            OpaquePython {
+                function,
+                validate_output,
+                schema,
+                ..
+            } => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
             FastProjection { columns } => df.select(columns.as_ref()),
             DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
             Rechunk => {
@@ -271,7 +314,7 @@ impl FunctionNode {
                 // we use a global string cache here as streaming chunks all have different rev maps
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    let _hold = IUseStringCache::new();
+                    let _hold = IUseStringCache::hold();
                     Arc::get_mut(function).unwrap().call_udf(df)
                 }
 
@@ -287,6 +330,7 @@ impl FunctionNode {
                 let args = (**args).clone();
                 df.melt2(args)
             }
+            RowCount { name, offset, .. } => df.with_row_count(name.as_ref(), *offset),
         }
     }
 }
@@ -302,6 +346,8 @@ impl Display for FunctionNode {
         use FunctionNode::*;
         match self {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
+            #[cfg(feature = "python")]
+            OpaquePython { .. } => write!(f, "python dataframe udf"),
             FastProjection { columns } => {
                 write!(f, "FAST_PROJECT: ")?;
                 let columns = columns.as_ref();
@@ -334,6 +380,7 @@ impl Display for FunctionNode {
             Drop { .. } => write!(f, "DROP"),
             Explode { .. } => write!(f, "EXPLODE"),
             Melt { .. } => write!(f, "MELT"),
+            RowCount { .. } => write!(f, "WITH ROW COUNT"),
         }
     }
 }

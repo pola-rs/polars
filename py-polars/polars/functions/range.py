@@ -2,17 +2,15 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from datetime import datetime, time, timedelta
+from datetime import time, timedelta
 from typing import TYPE_CHECKING, overload
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import Date, Int64
-from polars.expr.datetime import TIME_ZONE_DEPRECATION_MESSAGE
+from polars.datatypes import Int64
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_s
 from polars.utils.convert import (
-    _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_duration,
 )
@@ -23,16 +21,17 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    import sys
-    from datetime import date
+    from datetime import date, datetime
+    from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import ClosedInterval, PolarsDataType, TimeUnit
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
+    from polars.type_aliases import (
+        ClosedInterval,
+        IntoExpr,
+        PolarsDataType,
+        PolarsIntegerType,
+        TimeUnit,
+    )
 
 
 @overload
@@ -49,8 +48,8 @@ def arange(
 
 @overload
 def arange(
-    start: int | Expr | Series,
-    end: int | Expr | Series,
+    start: int | IntoExpr,
+    end: int | IntoExpr,
     step: int = ...,
     *,
     dtype: PolarsDataType | None = ...,
@@ -61,8 +60,8 @@ def arange(
 
 @overload
 def arange(
-    start: int | Expr | Series,
-    end: int | Expr | Series,
+    start: int | IntoExpr,
+    end: int | IntoExpr,
     step: int = ...,
     *,
     dtype: PolarsDataType | None = ...,
@@ -73,32 +72,40 @@ def arange(
 
 @deprecated_alias(low="start", high="end")
 def arange(
-    start: int | Expr | Series,
-    end: int | Expr | Series,
+    start: int | IntoExpr,
+    end: int | IntoExpr,
     step: int = 1,
     *,
     dtype: PolarsDataType | None = None,
     eager: bool = False,
 ) -> Expr | Series:
     """
-    Create a range expression (or Series).
+    Generate a range of integers.
 
-    This can be used in a `select`, `with_column` etc. Be sure that the resulting
-    range size is equal to the length of the DataFrame you are collecting.
+    .. deprecated:: 0.18.5
+        ``arange`` has been replaced by two new functions: ``int_range`` for generating
+        a single range, and ``int_ranges`` for generating a list column with multiple
+        ranges. ``arange`` will remain available as an alias for `int_range`, which
+        means it will lose the functionality to generate multiple ranges.
 
     Parameters
     ----------
     start
-        Lower bound of range.
+        Lower bound of the range (inclusive).
     end
-        Upper bound of range.
+        Upper bound of the range (exclusive).
     step
         Step size of the range.
     dtype
-        Apply an explicit integer dtype to the resulting expression (default is Int64).
+        Data type of the resulting column. Defaults to ``Int64``.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
+
+    See Also
+    --------
+    int_range : Generate a range of integers.
+    int_ranges : Generate a range of integers for each row of the input columns.
 
     Examples
     --------
@@ -111,29 +118,214 @@ def arange(
             2
     ]
 
-    >>> df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    >>> df.select(pl.arange(pl.col("a"), pl.col("b")))
-    shape: (2, 1)
-    ┌───────────┐
-    │ arange    │
-    │ ---       │
-    │ list[i64] │
-    ╞═══════════╡
-    │ [1, 2]    │
-    │ [2, 3]    │
-    └───────────┘
+    """
+    # This check is not water-proof, but we cannot check for literal expressions here
+    if not (isinstance(start, int) and isinstance(end, int)):
+        warnings.warn(
+            " `arange` has been replaced by two new functions:"
+            " `int_range` for generating a single range,"
+            " and `int_ranges` for generating a list column with multiple ranges."
+            " `arange` will remain available as an alias for `int_range`, which means its behaviour will change."
+            " To silence this warning, use either of the new functions.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
+
+    start = parse_as_expression(start)
+    end = parse_as_expression(end)
+    result = wrap_expr(plr.arange(start, end, step))
+
+    if dtype is not None and dtype != Int64:
+        result = result.cast(dtype)
+    if eager:
+        return F.select(result).to_series()
+
+    return result
+
+
+@overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: Literal[False] = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: Literal[True],
+) -> Series:
+    ...
+
+
+@overload
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: bool,
+) -> Expr | Series:
+    ...
+
+
+def int_range(
+    start: int | IntoExpr,
+    end: int | IntoExpr,
+    step: int = 1,
+    *,
+    dtype: PolarsIntegerType = Int64,
+    eager: bool = False,
+) -> Expr | Series:
+    """
+    Generate a range of integers.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the range (inclusive).
+    end
+        Upper bound of the range (exclusive).
+    step
+        Step size of the range.
+    dtype
+        Data type of the range. Defaults to ``Int64``.
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
+
+    Returns
+    -------
+    Column of data type ``Int64``.
+
+    See Also
+    --------
+    int_ranges : Generate a range of integers for each row of the input columns.
+
+    Examples
+    --------
+    >>> pl.int_range(0, 3, eager=True)
+    shape: (3,)
+    Series: 'int' [i64]
+    [
+            0
+            1
+            2
+    ]
 
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
-    range_expr = wrap_expr(plr.arange(start, end, step))
+    result = wrap_expr(plr.int_range(start, end, step, dtype))
 
-    if dtype is not None and dtype != Int64:
-        range_expr = range_expr.cast(dtype)
-    if not eager:
-        return range_expr
-    else:
-        return pl.DataFrame().select(range_expr.alias("arange")).to_series()
+    if eager:
+        return F.select(result).to_series()
+
+    return result
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: Literal[False] = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: Literal[True],
+) -> Series:
+    ...
+
+
+@overload
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = ...,
+    *,
+    dtype: PolarsIntegerType = ...,
+    eager: bool,
+) -> Expr | Series:
+    ...
+
+
+def int_ranges(
+    start: IntoExpr,
+    end: IntoExpr,
+    step: int = 1,
+    *,
+    dtype: PolarsIntegerType = Int64,
+    eager: bool = False,
+) -> Expr | Series:
+    """
+    Generate a range of integers for each row of the input columns.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the range (inclusive).
+    end
+        Upper bound of the range (exclusive).
+    step
+        Step size of the range.
+    dtype
+        Integer data type of the ranges. Defaults to ``Int64``.
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
+
+    Returns
+    -------
+    Column of data type ``List(dtype)``.
+
+    See Also
+    --------
+    int_range : Generate a single range of integers.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"start": [1, -1], "end": [3, 2]})
+    >>> df.with_columns(pl.int_ranges("start", "end"))
+    shape: (2, 3)
+    ┌───────┬─────┬────────────┐
+    │ start ┆ end ┆ int_range  │
+    │ ---   ┆ --- ┆ ---        │
+    │ i64   ┆ i64 ┆ list[i64]  │
+    ╞═══════╪═════╪════════════╡
+    │ 1     ┆ 3   ┆ [1, 2]     │
+    │ -1    ┆ 2   ┆ [-1, 0, 1] │
+    └───────┴─────┴────────────┘
+
+    """
+    start = parse_as_expression(start)
+    end = parse_as_expression(end)
+    result = wrap_expr(plr.int_ranges(start, end, step, dtype))
+
+    if eager:
+        return F.select(result).to_series()
+
+    return result
 
 
 @overload
@@ -205,13 +397,19 @@ def date_range(
     interval
         Interval of the range periods; can be a python timedelta object like
         ``timedelta(days=10)`` or a polars duration string, such as ``3d12h4m25s``
-        (representing 3 days, 12 hours, 4 minutes, and 25 seconds).
+        (representing 3 days, 12 hours, 4 minutes, and 25 seconds). Append
+        ``_saturating`` to the interval string to restrict resulting invalid dates to
+        valid ranges.
+
+        It is common to attempt to create a month-end date series by using the "1mo"
+        offset string with a start date at the end of the month. This will not produce
+        the desired results. See Note #2 below for further information.
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
     time_unit : {None, 'ns', 'us', 'ms'}
-        Set the time unit.
+        Set the time unit. Only takes effect if output is of ``Datetime`` type.
     time_zone:
-        Optional timezone
+        Optional timezone. Only takes effect if output is of ``Datetime`` type.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
@@ -224,9 +422,43 @@ def date_range(
 
     Notes
     -----
-    If both ``start`` and ``end`` are passed as date types (not datetime), and the
+    1) If both ``start`` and ``end`` are passed as date types (not datetime), and the
     interval granularity is no finer than 1d, the returned range is also of
     type date. All other permutations return a datetime Series.
+
+    2) Because different months of the year have differing numbers of days, the offset
+    strings "1mo" and "1y" are not well-defined units of time, and vary according to
+    their starting point. For example, February 1st offset by one month returns a time
+    28 days later (in a non-leap year), whereas May 1st offset by one month returns a
+    time 31 days later. In general, an offset of one month selects the same day in the
+    following month. However, this is not always intended: when one begins Febrary 28th
+    and offsets by 1 month, does the user intend to target March 28th (the next month
+    but same day), or March 31st (the end of the month)?
+
+    Polars uses the first approach: February 28th offset by 1 month is March 28th. When
+    a date-series is generated, each date is offset as of the prior date, meaning that
+    if one began January 31st, 2023, and offset by ``1mo_saturating`` until May 31st,
+    the following dates would be generated:
+
+    ``2023-01-31``, ``2023-02-28``, ``2023-03-28``, ``2023-04-28``, ``2023-05-28``.
+
+    This is almost never the intended result. Instead, it is recommended to begin with
+    the first day of the month and use the ``.dt.month_end()`` conversion routine, as
+    in:
+
+    >>> from datetime import date
+    >>> pl.date_range(
+    ...     date(2023, 1, 1), date(2023, 5, 1), "1mo", eager=True
+    ... ).dt.month_end()
+    shape: (5,)
+    Series: 'date' [date]
+    [
+            2023-01-31
+            2023-02-28
+            2023-03-31
+            2023-04-30
+            2023-05-31
+    ]
 
     Returns
     -------
@@ -308,86 +540,35 @@ def date_range(
             stacklevel=find_stacklevel(),
         )
 
-    from polars.dependencies import zoneinfo
-
-    if time_zone is not None and time_zone not in zoneinfo.available_timezones():
-        warnings.warn(
-            TIME_ZONE_DEPRECATION_MESSAGE,
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
-        )
-
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
     elif " " in interval:
         interval = interval.replace(" ", "")
 
-    if (
-        not eager
-        or isinstance(start, (str, pl.Expr))
-        or isinstance(end, (str, pl.Expr))
-    ):
-        start = parse_as_expression(start)
-        end = parse_as_expression(end)
-        expr = wrap_expr(plr.date_range_lazy(start, end, interval, closed, time_zone))
-        if name is not None:
-            expr = expr.alias(name)
-        return expr
-
-    start, start_is_date = _ensure_datetime(start)
-    end, end_is_date = _ensure_datetime(end)
-
-    if start.tzinfo is not None or time_zone is not None:
-        if start.tzinfo != end.tzinfo:
-            raise ValueError(
-                "Cannot mix different timezone aware datetimes."
-                f" Got: '{start.tzinfo}' and '{end.tzinfo}'."
-            )
-
-        if time_zone is not None and start.tzinfo is not None:
-            if str(start.tzinfo) != time_zone:
-                raise ValueError(
-                    "Given time_zone is different from that of timezone aware datetimes."
-                    f" Given: '{time_zone}', got: '{start.tzinfo}'."
-                )
-        if time_zone is None and start.tzinfo is not None:
-            time_zone = str(start.tzinfo)
-
-    time_unit_: TimeUnit
+    time_unit_: TimeUnit | None
     if time_unit is not None:
         time_unit_ = time_unit
     elif "ns" in interval:
         time_unit_ = "ns"
     else:
-        time_unit_ = "us"
+        time_unit_ = None
 
-    start_pl = _datetime_to_pl_timestamp(start, time_unit_)
-    end_pl = _datetime_to_pl_timestamp(end, time_unit_)
-    dt_range = wrap_s(
-        plr.date_range_eager(start_pl, end_pl, interval, closed, time_unit_, time_zone)
+    start_pl = parse_as_expression(start)
+    end_pl = parse_as_expression(end)
+    dt_range = wrap_expr(
+        plr.date_range_lazy(start_pl, end_pl, interval, closed, time_unit_, time_zone)
     )
-    if (
-        start_is_date
-        and end_is_date
-        and not _interval_granularity(interval).endswith(("h", "m", "s"))
-    ):
-        dt_range = dt_range.cast(Date)
-
     if name is not None:
         dt_range = dt_range.alias(name)
-    return dt_range
 
-
-def _ensure_datetime(value: date | datetime) -> tuple[datetime, bool]:
-    is_date_type = False
-    if not isinstance(value, datetime):
-        value = datetime(value.year, value.month, value.day)
-        is_date_type = True
-    return value, is_date_type
-
-
-def _interval_granularity(interval: str) -> str:
-    return interval[-2:].lstrip("0123456789")
+    if (
+        not eager
+        or isinstance(start_pl, (str, pl.Expr))
+        or isinstance(end_pl, (str, pl.Expr))
+    ):
+        return dt_range
+    res = F.select(dt_range).to_series().explode().set_sorted()
+    return res
 
 
 @overload

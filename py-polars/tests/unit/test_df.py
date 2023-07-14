@@ -25,7 +25,7 @@ from polars.testing.parametric import columns
 from polars.utils._construction import iterable_to_pydf
 
 if TYPE_CHECKING:
-    from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
+    from polars.type_aliases import IndexOrder, JoinStrategy, UniqueKeepStrategy
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -455,6 +455,17 @@ def test_from_dict_with_scalars() -> None:
     assert dfx[-10:-5].rows() == dfx[-5:].rows()
     assert dfx.row(n_range // 2, named=True) == mixed_dtype_data
 
+    # misc generators/iterables
+    df9 = pl.DataFrame(
+        {
+            "a": iter([0, 1, 2]),
+            "b": (2, 1, 0).__iter__(),
+            "c": (v for v in (0, 0, 0)),
+            "d": "x",
+        }
+    )
+    assert df9.rows() == [(0, 2, 0, "x"), (1, 1, 0, "x"), (2, 0, 0, "x")]
+
 
 def test_dataframe_membership_operator() -> None:
     # cf. issue #4032
@@ -470,6 +481,24 @@ def test_sort() -> None:
     assert_frame_equal(
         df.sort(["a", "b"]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
     )
+
+
+def test_sort_maintain_order() -> None:
+    l1 = (
+        pl.LazyFrame({"A": [1] * 4, "B": ["A", "B", "C", "D"]})
+        .sort("A", maintain_order=True)
+        .slice(0, 3)
+        .collect()["B"]
+        .to_list()
+    )
+    l2 = (
+        pl.LazyFrame({"A": [1] * 4, "B": ["A", "B", "C", "D"]})
+        .sort("A")
+        .collect()
+        .slice(0, 3)["B"]
+        .to_list()
+    )
+    assert l1 == l2 == ["A", "B", "C"]
 
 
 def test_replace() -> None:
@@ -818,14 +847,6 @@ def test_shift() -> None:
     assert_frame_equal(a, b)
 
 
-def test_to_dummies() -> None:
-    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
-    dummies = df.to_dummies()
-    assert dummies["A_a"].to_list() == [1, 0, 0]
-    assert dummies["A_b"].to_list() == [0, 1, 0]
-    assert dummies["A_c"].to_list() == [0, 0, 1]
-
-
 def test_custom_groupby() -> None:
     df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = df.groupby("b", maintain_order=True).agg(
@@ -877,9 +898,17 @@ def test_arg_where() -> None:
     assert_series_equal(pl.arg_where(s, eager=True).cast(int), pl.Series([0, 2]))
 
 
-def test_to_dummies2() -> None:
+def test_to_dummies() -> None:
+    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    dummies = df.to_dummies()
+
+    assert dummies["A_a"].to_list() == [1, 0, 0]
+    assert dummies["A_b"].to_list() == [0, 1, 0]
+    assert dummies["A_c"].to_list() == [0, 0, 1]
+
     df = pl.DataFrame({"a": [1, 2, 3]})
     res = df.to_dummies()
+
     expected = pl.DataFrame(
         {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]}
     ).with_columns(pl.all().cast(pl.UInt8))
@@ -904,6 +933,27 @@ def test_to_dummies2() -> None:
     assert pl.DataFrame({"x": pl.arange(0, 3, eager=True)}).to_dummies("x").to_dict(
         False
     ) == {"x_0": [1, 0, 0], "x_1": [0, 1, 0], "x_2": [0, 0, 1]}
+
+
+def test_to_dummies_drop_first() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [0, 1, 2],
+            "bar": [3, 4, 5],
+            "baz": ["x", "y", "z"],
+        }
+    )
+    dm = df.to_dummies()
+    dd = df.to_dummies(drop_first=True)
+
+    assert dd.columns == ["foo_1", "foo_2", "bar_4", "bar_5", "baz_y", "baz_z"]
+    assert set(dm.columns) - set(dd.columns) == {"foo_0", "bar_3", "baz_x"}
+    assert dm.select(dd.columns).frame_equal(dd)
+    assert dd.rows() == [
+        (0, 0, 0, 0, 0, 0),
+        (1, 0, 1, 0, 1, 0),
+        (0, 1, 0, 1, 0, 1),
+    ]
 
 
 def test_to_pandas(df: pl.DataFrame) -> None:
@@ -1100,69 +1150,6 @@ def test_head_groupby() -> None:
         out,
         pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]}),
     )
-
-
-def test_lazy_functions() -> None:
-    df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.select([pl.count("a")])
-    assert list(out["a"]) == [3]
-    assert pl.count(df["a"]) == 3
-    out = df.select(
-        [
-            pl.var("b").alias("1"),
-            pl.std("b").alias("2"),
-            pl.max("b").alias("3"),
-            pl.min("b").alias("4"),
-            pl.sum("b").alias("5"),
-            pl.mean("b").alias("6"),
-            pl.median("b").alias("7"),
-            pl.n_unique("b").alias("8"),
-            pl.first("b").alias("9"),
-            pl.last("b").alias("10"),
-        ]
-    )
-    expected = 1.0
-    assert np.isclose(out.to_series(0), expected)
-    assert np.isclose(pl.var(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 1.0
-    assert np.isclose(out.to_series(1), expected)
-    assert np.isclose(pl.std(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 3
-    assert np.isclose(out.to_series(2), expected)
-    assert np.isclose(pl.max(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 1
-    assert np.isclose(out.to_series(3), expected)
-    assert np.isclose(pl.min(df["b"]), expected)  # type: ignore[arg-type]
-    expected = 6
-    assert np.isclose(out.to_series(4), expected)
-    assert np.isclose(pl.sum(df["b"]), expected)
-    expected = 2
-    assert np.isclose(out.to_series(5), expected)
-    assert np.isclose(pl.mean(df["b"]), expected)
-    expected = 2
-    assert np.isclose(out.to_series(6), expected)
-    assert np.isclose(pl.median(df["b"]), expected)
-    expected = 3
-    assert np.isclose(out.to_series(7), expected)
-    assert np.isclose(pl.n_unique(df["b"]), expected)
-    expected = 1
-    assert np.isclose(out.to_series(8), expected)
-    assert np.isclose(pl.first(df["b"]), expected)
-    expected = 3
-    assert np.isclose(out.to_series(9), expected)
-    assert np.isclose(pl.last(df["b"]), expected)
-
-    # regex selection
-    out = df.select(
-        [
-            pl.struct(pl.max("^a|b$")).alias("x"),
-            pl.struct(pl.min("^.*[bc]$")).alias("y"),
-            pl.struct(pl.sum("^[^b]$")).alias("z"),
-        ]
-    )
-    assert out.rows() == [
-        ({"a": "foo", "b": 3}, {"b": 1, "c": 1.0}, {"a": None, "c": 6.0})
-    ]
 
 
 def test_is_null_is_not_null() -> None:
@@ -1411,20 +1398,25 @@ def test_assign() -> None:
     assert list(df["a"]) == [2, 4, 6]
 
 
-def test_to_numpy() -> None:
+@pytest.mark.parametrize(
+    ("order", "f_contiguous", "c_contiguous"),
+    [("fortran", True, False), ("c", False, True)],
+)
+def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
 
-    out_array = df.to_numpy()
+    out_array = df.to_numpy(order=order)
     expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
     assert_array_equal(out_array, expected_array)
-    assert out_array.flags["F_CONTIGUOUS"] is True
+    assert out_array.flags["F_CONTIGUOUS"] == f_contiguous
+    assert out_array.flags["C_CONTIGUOUS"] == c_contiguous
 
-    structured_array = df.to_numpy(structured=True)
+    structured_array = df.to_numpy(structured=True, order=order)
     expected_array = np.array(
         [(1, 1.0), (2, 2.0), (3, 3.0)], dtype=[("a", "<i8"), ("b", "<f8")]
     )
     assert_array_equal(structured_array, expected_array)
-    assert structured_array.flags["F_CONTIGUOUS"] is True
+    assert structured_array.flags["F_CONTIGUOUS"]
 
 
 def test_to_numpy_structured() -> None:
@@ -2388,13 +2380,6 @@ def test_n_unique_subsets() -> None:
     )
 
 
-def test_sample() -> None:
-    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
-
-    assert df.sample(n=2, seed=0).shape == (2, 3)
-    assert df.sample(fraction=0.4, seed=0).shape == (1, 3)
-
-
 def test_shrink_to_fit() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
@@ -2545,9 +2530,22 @@ def test_getitem() -> None:
     # slice. Below an example of taking every second row
     assert_frame_equal(df[1::2], pl.DataFrame({"a": [2.0, 4.0], "b": [4, 6]}))
 
+    # slice, empty slice
+    assert df[:0].columns == ["a", "b"]
+    assert len(df[:0]) == 0
+
+    # make mypy happy
+    empty: list[int] = []
+
+    # empty list with column selector drops rows but keeps columns
+    assert_frame_equal(df[empty, :], df[:0])
+
+    # empty list without column select return empty frame
+    assert_frame_equal(df[empty], pl.DataFrame({}))
+
     # numpy array: assumed to be row indices if integers, or columns if strings
 
-    # numpy array: positive idxs.
+    # numpy array: positive idxs and empty idx
     for np_dtype in (
         np.int8,
         np.int16,
@@ -2564,6 +2562,7 @@ def test_getitem() -> None:
                 {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
             ),
         )
+        assert df[np.array([], dtype=np_dtype)].columns == ["a", "b"]
 
     # numpy array: positive and negative idxs.
     for np_dtype in (np.int8, np.int16, np.int32, np.int64):
@@ -2593,7 +2592,7 @@ def test_getitem() -> None:
     # pl.Series: strings for column selections.
     assert_frame_equal(df[pl.Series("", ["a", "b"])], df)
 
-    # pl.Series: positive idxs for row selection.
+    # pl.Series: positive idxs or empty idxs for row selection.
     for pl_dtype in (
         pl.Int8,
         pl.Int16,
@@ -2610,6 +2609,7 @@ def test_getitem() -> None:
                 {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
             ),
         )
+        assert df[pl.Series("", [], dtype=pl_dtype)].columns == ["a", "b"]
 
     # pl.Series: positive and negative idxs for row selection.
     for pl_dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64):
@@ -2852,7 +2852,6 @@ def test_asof_by_multiple_keys() -> None:
     assert_frame_equal(result, expected)
 
 
-@typing.no_type_check
 def test_partition_by() -> None:
     df = pl.DataFrame(
         {
@@ -2875,6 +2874,29 @@ def test_partition_by() -> None:
         a.to_dict(False) for a in df.partition_by("foo", "bar", maintain_order=True)
     ] == expected
 
+    expected = [
+        {
+            "N": [1],
+        },
+        {
+            "N": [2],
+        },
+        {
+            "N": [2, 4],
+        },
+        {
+            "N": [2],
+        },
+    ]
+    assert [
+        a.to_dict(False)
+        for a in df.partition_by(["foo", "bar"], maintain_order=True, include_key=False)
+    ] == expected
+    assert [
+        a.to_dict(False)
+        for a in df.partition_by("foo", "bar", maintain_order=True, include_key=False)
+    ] == expected
+
     assert [a.to_dict(False) for a in df.partition_by("foo", maintain_order=True)] == [
         {"foo": ["A", "A"], "N": [1, 2], "bar": ["k", "l"]},
         {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
@@ -2892,17 +2914,16 @@ def test_partition_by() -> None:
     }
 
 
-@typing.no_type_check
 def test_list_of_list_of_struct() -> None:
     expected = [{"list_of_list_of_struct": [[{"a": 1}, {"a": 2}]]}]
     pa_df = pa.Table.from_pylist(expected)
 
     df = pl.from_arrow(pa_df)
-    assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
-    assert df.to_dicts() == expected
+    assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]  # type: ignore[union-attr]
+    assert df.to_dicts() == expected  # type: ignore[union-attr]
 
     df = pl.from_arrow(pa_df[:0])
-    assert df.to_dicts() == []
+    assert df.to_dicts() == []  # type: ignore[union-attr]
 
 
 def test_concat_to_empty() -> None:
@@ -2946,45 +2967,6 @@ def test_fill_null_limits() -> None:
     }
 
 
-def test_max_min_multiple_columns(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.select(pl.max(["A", "B"]).alias("max"))
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-
-    res = fruits_cars.select(pl.min(["A", "B"]).alias("min"))
-    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
-
-
-def test_max_min_wildcard_columns(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.min(["*"]))
-    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.min([pl.all()]))
-    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
-
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.max(["*"]))
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.max([pl.all()]))
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-
-    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(
-        pl.max([pl.all(), "A", "*"])
-    )
-    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
-
-
-def test_head_tail(fruits_cars: pl.DataFrame) -> None:
-    res_expr = fruits_cars.select([pl.head("A", 2)])
-    res_series = pl.head(fruits_cars["A"], 2)
-    expected = pl.Series("A", [1, 2])
-    assert_series_equal(res_expr.to_series(0), expected)
-    assert_series_equal(res_series, expected)
-
-    res_expr = fruits_cars.select([pl.tail("A", 2)])
-    res_series = pl.tail(fruits_cars["A"], 2)
-    expected = pl.Series("A", [4, 5])
-    assert_series_equal(res_expr.to_series(0), expected)
-    assert_series_equal(res_series, expected)
-
-
 def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select(pl.col("A").lower_bound())
     assert res_expr.item() == -9223372036854775808
@@ -2994,14 +2976,6 @@ def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
 
     with pytest.raises(pl.ComputeError):
         fruits_cars.select(pl.col("fruits").upper_bound())
-
-
-def test_nested_min_max() -> None:
-    df = pl.DataFrame({"a": [1], "b": [2], "c": [3], "d": [4]})
-    out = df.with_columns(pl.max([pl.min(["a", "b"]), pl.min(["c", "d"])]).alias("t"))
-    assert out.shape == (1, 5)
-    assert out.row(0) == (1, 2, 3, 4, 3)
-    assert out.columns == ["a", "b", "c", "d", "t"]
 
 
 def test_selection_misc() -> None:
@@ -3569,17 +3543,7 @@ def test_round() -> None:
 
 def test_dot() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]})
-    assert cast(float, df.select(pl.col("a").dot(pl.col("b"))).item()) == 12.96
-
-
-def test_all_expr() -> None:
-    df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
-    assert_frame_equal(df.select([pl.all()]), df)
-
-
-def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.with_columns(pl.col("A").cast(bool)).select(pl.any("A"))[0, 0]
-    assert fruits_cars.select(pl.any([pl.col("A"), pl.col("B")]))[0, 0]
+    assert df.select(pl.col("a").dot(pl.col("b"))).item() == 12.96
 
 
 def test_rolling_apply() -> None:
@@ -3652,32 +3616,22 @@ def test_rolling_apply() -> None:
     roll_app_std = s.rolling_apply(
         function=lambda s: s.std(),
         window_size=4,
-        weights=[1.0, 2.0, 3.0, 0.1],
         min_periods=3,
         center=False,
     )
 
-    roll_std = s.rolling_std(
-        window_size=4, weights=[1.0, 2.0, 3.0, 0.1], min_periods=3, center=False
-    )
+    roll_std = s.rolling_std(window_size=4, min_periods=3, center=False)
 
     assert (roll_app_std - roll_std).abs().sum() < 0.0001
 
 
 def test_ufunc() -> None:
-    # NOTE: unfortunately we must use cast instead of a type: ignore comment
-    #   1. CI job with Python 3.10, numpy==1.23.1 -> mypy complains about arg-type
-    #   2. so we try to resolve it with type: ignore[arg-type]
-    #   3. CI job with Python 3.7, numpy==1.21.6 -> mypy complains about
-    #       unused type: ignore comment
-    # for more information, see: https://github.com/python/mypy/issues/8823
-
     df = pl.DataFrame([pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt8)])
     out = df.select(
         [
-            np.power(cast(Any, pl.col("a")), 2).alias("power_uint8"),
-            np.power(cast(Any, pl.col("a")), 2.0).alias("power_float64"),
-            np.power(cast(Any, pl.col("a")), 2, dtype=np.uint16).alias("power_uint16"),
+            np.power(pl.col("a"), 2).alias("power_uint8"),  # type: ignore[call-overload]
+            np.power(pl.col("a"), 2.0).alias("power_float64"),  # type: ignore[call-overload]
+            np.power(pl.col("a"), 2, dtype=np.uint16).alias("power_uint16"),  # type: ignore[call-overload]
         ]
     )
     expected = pl.DataFrame(

@@ -22,11 +22,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from types import TracebackType
-
-    if sys.version_info >= (3, 8):
-        from typing import Final, Literal
-    else:
-        from typing_extensions import Final, Literal
+    from typing import Final, Literal
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -171,7 +167,7 @@ class SQLContext(Generic[FrameType]):
 
     @overload
     def execute(
-        self: SQLContext[DataFrame], query: str, eager: Literal[None] = None
+        self: SQLContext[DataFrame], query: str, eager: None = ...
     ) -> DataFrame:
         ...
 
@@ -189,7 +185,7 @@ class SQLContext(Generic[FrameType]):
 
     @overload
     def execute(
-        self: SQLContext[LazyFrame], query: str, eager: Literal[None] = None
+        self: SQLContext[LazyFrame], query: str, eager: None = ...
     ) -> LazyFrame:
         ...
 

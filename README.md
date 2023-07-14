@@ -4,12 +4,6 @@
 </h1>
 
 <div align="center">
-  <a href="https://docs.rs/polars/latest/polars/">
-    <img src="https://docs.rs/polars/badge.svg" alt="rust docs"/>
-  </a>
-  <a href="https://github.com/pola-rs/polars/actions">
-    <img src="https://github.com/pola-rs/polars/workflows/Build%20and%20test/badge.svg" alt="Build and test"/>
-  </a>
   <a href="https://crates.io/crates/polars">
     <img src="https://img.shields.io/crates/v/polars.svg"/>
   </a>
@@ -31,7 +25,7 @@
   <b>Documentation</b>:
   <a href="https://pola-rs.github.io/polars/py-polars/html/reference/index.html">Python</a>
   -
-  <a href="https://pola-rs.github.io/polars/polars/index.html">Rust</a>
+  <a href="https://docs.rs/polars/latest/polars/">Rust</a>
   -
   <a href="https://pola-rs.github.io/nodejs-polars/index.html">Node.js</a>
   -
@@ -270,7 +264,7 @@ Don't use this unless you hit the row boundary as the default polars is faster a
 
 ## Legacy
 
-Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `pip polars-lts-cpu`. This polars project is
+Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `pip install polars-lts-cpu`. This polars project is
 compiled without [avx](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
 
 ## Acknowledgements

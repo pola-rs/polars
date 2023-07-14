@@ -6,12 +6,22 @@ use crate::py_modules::POLARS;
 use crate::series::PySeries;
 use crate::{PyExpr, Wrap};
 
-trait ToSeries {
-    fn to_series(&self, py: Python, py_polars_module: &PyObject, name: &str) -> Series;
+pub(crate) trait ToSeries {
+    fn to_series(
+        &self,
+        py: Python,
+        py_polars_module: &PyObject,
+        name: &str,
+    ) -> PolarsResult<Series>;
 }
 
 impl ToSeries for PyObject {
-    fn to_series(&self, py: Python, py_polars_module: &PyObject, name: &str) -> Series {
+    fn to_series(
+        &self,
+        py: Python,
+        py_polars_module: &PyObject,
+        name: &str,
+    ) -> PolarsResult<Series> {
         let py_pyseries = match self.getattr(py, "_s") {
             Ok(s) => s,
             // the lambda did not return a series, we try to create a new python Series
@@ -24,7 +34,7 @@ impl ToSeries for PyObject {
                 match res {
                     Ok(python_s) => python_s.getattr(py, "_s").unwrap(),
                     Err(_) => {
-                        panic!(
+                        polars_bail!(ComputeError:
                             "expected a something that could convert to a `Series` but got: {}",
                             self.as_ref(py).get_type()
                         )
@@ -34,7 +44,7 @@ impl ToSeries for PyObject {
         };
         let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
         // Finally get the actual Series
-        pyseries.series
+        Ok(pyseries.series)
     }
 }
 
@@ -42,9 +52,8 @@ pub(crate) fn call_lambda_with_series(
     py: Python,
     s: Series,
     lambda: &PyObject,
-    polars_module: &PyObject,
 ) -> PyResult<PyObject> {
-    let pypolars = polars_module.downcast::<PyModule>(py).unwrap();
+    let pypolars = POLARS.downcast::<PyModule>(py).unwrap();
 
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(s);
@@ -105,11 +114,8 @@ pub(crate) fn binary_lambda(
             let s = out.select_at_idx(0).unwrap().clone();
             PySeries::new(s)
         } else {
-            return Ok(Some(result_series_wrapper.to_series(
-                py,
-                &pypolars.into_py(py),
-                "",
-            )));
+            return Some(result_series_wrapper.to_series(py, &pypolars.into_py(py), ""))
+                .transpose();
         };
 
         // Finally get the actual Series
@@ -125,38 +131,8 @@ pub fn map_single(
 ) -> PyExpr {
     let output_type = output_type.map(|wrap| wrap.0);
 
-    let output_type2 = output_type.clone();
-    let function = move |s: Series| {
-        Python::with_gil(|py| {
-            let output_type = output_type2.clone().unwrap_or(DataType::Unknown);
-
-            // this is a python Series
-            let out = call_lambda_with_series(py, s.clone(), &lambda, &POLARS)
-                .map_err(|e| polars_err!(ComputeError: "{}", e))?;
-            let s = out.to_series(py, &POLARS, s.name());
-            polars_ensure!(
-                matches!(output_type, DataType::Unknown) || s.dtype() == &output_type,
-                SchemaMismatch:
-                "expected output type '{:?}', got '{:?}'; set `return_dtype` to the proper datatype",
-                output_type, s.dtype(),
-            );
-            Ok(Some(s))
-        })
-    };
-
-    let output_map = GetOutput::map_field(move |fld| match output_type {
-        Some(ref dt) => Field::new(fld.name(), dt.clone()),
-        None => {
-            let mut fld = fld.clone();
-            fld.coerce(DataType::Unknown);
-            fld
-        }
-    });
-    if agg_list {
-        pyexpr.clone().inner.map_list(function, output_map).into()
-    } else {
-        pyexpr.clone().inner.map(function, output_map).into()
-    }
+    let func = python_udf::PythonUdfExpression::new(lambda, output_type);
+    pyexpr.inner.clone().map_python(func, agg_list).into()
 }
 
 pub(crate) fn call_lambda_with_series_slice(
@@ -207,7 +183,7 @@ pub fn map_mul(
                 return Ok(None);
             }
 
-            Ok(Some(out.to_series(py, &pypolars, "")))
+            Ok(Some(out.to_series(py, &pypolars, "")?))
         })
     };
 

@@ -3,8 +3,7 @@
 # -------------------------------------------------
 from __future__ import annotations
 
-# from decimal import Decimal as D
-from typing import no_type_check
+from typing import Any
 
 import numpy as np
 from hypothesis import given, settings
@@ -41,7 +40,6 @@ def alpha_guard(**decay_param: float) -> bool:
     adjust=booleans(),
     bias=booleans(),
 )
-@no_type_check
 def test_ewm_methods(
     s: pl.Series,
     com: float | None,
@@ -52,7 +50,7 @@ def test_ewm_methods(
     bias: bool,
 ) -> None:
     # validate a large set of varied EWM calculations
-    for decay_param in ({"com": com}, {"span": span}, {"half_life": half_life}):
+    for decay_param in [{"com": com}, {"span": span}, {"half_life": half_life}]:
         alpha = _prepare_alpha(**decay_param)
 
         # convert parametrically-generated series to pandas, then use that as a
@@ -63,7 +61,7 @@ def test_ewm_methods(
         # https://github.com/pola-rs/polars/issues/5006#issuecomment-1259477178
         for mp in range(2, len(s), len(s) // 3):
             # consolidate ewm parameters
-            pl_params = {
+            pl_params: dict[str, Any] = {
                 "min_periods": mp,
                 "adjust": adjust,
                 "ignore_nulls": ignore_nulls,

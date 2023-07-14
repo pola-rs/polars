@@ -13,6 +13,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     rechunk: bool,
     parallel: bool,
     from_partitioned_ds: bool,
+    convert_supertypes: bool,
 ) -> PolarsResult<LazyFrame> {
     let mut inputs = inputs.as_ref().to_vec();
 
@@ -30,7 +31,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
         ..Default::default()
     };
 
-    match &mut lf.logical_plan {
+    let lf = match &mut lf.logical_plan {
         // re-use the same union
         LogicalPlan::Union {
             inputs: existing_inputs,
@@ -42,7 +43,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
                 let lp = std::mem::take(&mut lf.logical_plan);
                 existing_inputs.push(lp)
             }
-            Ok(lf)
+            lf
         }
         _ => {
             let mut lps = Vec::with_capacity(inputs.len());
@@ -62,8 +63,49 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
             let mut lf = LazyFrame::from(lp);
             lf.opt_state = opt_state;
 
-            Ok(lf)
+            lf
         }
+    };
+
+    if convert_supertypes {
+        let LogicalPlan::Union {mut inputs, options} = lf.logical_plan else { unreachable!()} ;
+        let mut schema = inputs[0].schema()?.as_ref().as_ref().clone();
+
+        let mut changed = false;
+        for input in inputs[1..].iter() {
+            changed |= schema.to_supertype(input.schema()?.as_ref().as_ref())?;
+        }
+
+        let mut placeholder = LogicalPlan::default();
+        if changed {
+            let mut exprs = vec![];
+            for input in &mut inputs {
+                std::mem::swap(input, &mut placeholder);
+                let input_schema = placeholder.schema()?;
+
+                exprs.clear();
+                let to_cast = input_schema.iter().zip(schema.iter_dtypes()).flat_map(
+                    |((left_name, left_type), st)| {
+                        if left_type != st {
+                            Some(col(left_name.as_ref()).cast(st.clone()))
+                        } else {
+                            None
+                        }
+                    },
+                );
+                exprs.extend(to_cast);
+                let mut lf = LazyFrame::from(placeholder);
+                if !exprs.is_empty() {
+                    lf = lf.with_columns(exprs.as_slice());
+                }
+
+                placeholder = lf.logical_plan;
+                std::mem::swap(&mut placeholder, input);
+            }
+        }
+        Ok(LazyFrame::from(LogicalPlan::Union { inputs, options }))
+    } else {
+        Ok(lf)
     }
 }
 
@@ -120,16 +162,42 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    concat(lfs_with_all_columns, rechunk, parallel)
+    concat(
+        lfs_with_all_columns,
+        UnionArgs {
+            rechunk,
+            parallel,
+            to_supertypes: false,
+        },
+    )
+}
+
+#[derive(Clone, Copy)]
+pub struct UnionArgs {
+    pub parallel: bool,
+    pub rechunk: bool,
+    pub to_supertypes: bool,
+}
+
+impl Default for UnionArgs {
+    fn default() -> Self {
+        Self {
+            parallel: true,
+            rechunk: true,
+            to_supertypes: false,
+        }
+    }
 }
 
 /// Concat multiple
-pub fn concat<L: AsRef<[LazyFrame]>>(
-    inputs: L,
-    rechunk: bool,
-    parallel: bool,
-) -> PolarsResult<LazyFrame> {
-    concat_impl(inputs, rechunk, parallel, false)
+pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, args: UnionArgs) -> PolarsResult<LazyFrame> {
+    concat_impl(
+        inputs,
+        args.rechunk,
+        args.parallel,
+        false,
+        args.to_supertypes,
+    )
 }
 
 /// Collect all `LazyFrame` computations.

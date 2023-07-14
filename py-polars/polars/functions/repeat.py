@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
 from polars.datatypes import Float64
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.various import find_stacklevel
 
@@ -14,20 +15,19 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    import sys
+    from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import PolarsDataType, PolarsExprType, PythonLiteral
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
+    from polars.type_aliases import (
+        IntoExpr,
+        PolarsDataType,
+        PolarsExprType,
+    )
 
 
 @overload
 def repeat(
-    value: PythonLiteral | None,
+    value: IntoExpr | None,
     n: int | PolarsExprType,
     *,
     dtype: PolarsDataType | None = ...,
@@ -39,7 +39,7 @@ def repeat(
 
 @overload
 def repeat(
-    value: PythonLiteral | None,
+    value: IntoExpr | None,
     n: int | PolarsExprType,
     *,
     dtype: PolarsDataType | None = ...,
@@ -51,7 +51,7 @@ def repeat(
 
 @overload
 def repeat(
-    value: PythonLiteral | None,
+    value: IntoExpr | None,
     n: int | PolarsExprType,
     *,
     dtype: PolarsDataType | None = ...,
@@ -62,7 +62,7 @@ def repeat(
 
 
 def repeat(
-    value: PythonLiteral | None,
+    value: IntoExpr | None,
     n: int | PolarsExprType,
     *,
     dtype: PolarsDataType | None = None,
@@ -134,6 +134,7 @@ def repeat(
 
     if isinstance(n, int):
         n = F.lit(n)
+    value = parse_as_expression(value, str_as_lit=True)
     expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))
     if name is not None:
         expr = expr.alias(name)

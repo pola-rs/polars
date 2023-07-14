@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use polars_core::prelude::*;
 
 use super::*;
@@ -13,7 +15,19 @@ use crate::logical_plan::functions::FunctionNode;
 /// It is important that this optimization is ran after projection pushdown.
 ///
 /// The schema reported after this optimization is also
-pub(super) struct FastProjectionAndCollapse {}
+pub(super) struct FastProjectionAndCollapse {
+    /// keep track of nodes that are already processed when they
+    /// can be expensive. Schema materialization can be for instance.
+    processed: BTreeSet<Node>,
+}
+
+impl FastProjectionAndCollapse {
+    pub(super) fn new() -> Self {
+        Self {
+            processed: Default::default(),
+        }
+    }
+}
 
 fn impl_fast_projection(
     input: Node,
@@ -78,8 +92,13 @@ impl OptimizationRule for FastProjectionAndCollapse {
                     }),
                     // cleanup projections set in projection pushdown just above caches
                     // they are not needed.
-                    cache_lp @ Cache { .. } => {
-                        if cache_lp.schema(lp_arena).len() == columns.len() {
+                    cache_lp @ Cache { .. } if self.processed.insert(node) => {
+                        let cache_schema = cache_lp.schema(lp_arena);
+                        if cache_schema.len() == columns.len()
+                            && cache_schema.iter_names().zip(columns.iter()).all(
+                                |(left_name, right_name)| left_name.as_str() == right_name.as_ref(),
+                            )
+                        {
                             Some(cache_lp.clone())
                         } else {
                             None

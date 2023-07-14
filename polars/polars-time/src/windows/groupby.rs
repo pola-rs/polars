@@ -223,8 +223,8 @@ pub fn groupby_windows(
     (groups, lower_bound, upper_bound)
 }
 
-// this assumes that the starting point is alwa
-pub(crate) fn groupby_values_iter_full_lookbehind(
+// this assumes that the given time point is the right endpoint of the window
+pub(crate) fn groupby_values_iter_lookbehind(
     period: Duration,
     offset: Duration,
     time: &[i64],
@@ -233,7 +233,7 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
     tz: Option<Tz>,
     start_offset: usize,
 ) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
-    debug_assert!(offset.duration_ns() >= period.duration_ns());
+    debug_assert!(offset.duration_ns() == period.duration_ns());
     debug_assert!(offset.negative);
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
@@ -456,56 +456,16 @@ pub(crate) fn groupby_values_iter_full_lookahead(
 #[cfg(feature = "rolling_window")]
 pub(crate) fn groupby_values_iter<'a>(
     period: Duration,
-    offset: Duration,
     time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
-    // we have a (partial) lookbehind window
-    if offset.negative {
-        // only lookbehind
-        if offset.nanoseconds() == period.nanoseconds() {
-            let iter =
-                groupby_values_iter_full_lookbehind(period, offset, time, closed_window, tu, tz, 0);
-            Box::new(iter)
-        }
-        // partial lookbehind
-        else {
-            let iter =
-                groupby_values_iter_partial_lookbehind(period, offset, time, closed_window, tu, tz);
-            Box::new(iter)
-        }
-    } else if offset != Duration::parse("0ns")
-        || closed_window == ClosedWindow::Right
-        || closed_window == ClosedWindow::None
-    {
-        // only lookahead
-        let iter = groupby_values_iter_full_lookahead(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            tz,
-            0,
-            None,
-        );
-        Box::new(iter)
-    } else {
-        // partial lookahead
-        let iter = groupby_values_iter_partial_lookahead(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            tz,
-            0,
-            None,
-        );
-        Box::new(iter)
-    }
+    let mut offset = period;
+    offset.negative = true;
+    // t is at the right endpoint of the window
+    let iter = groupby_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
+    Box::new(iter)
 }
 
 /// Different from `groupby_windows`, where define window buckets and search which values fit that
@@ -525,49 +485,44 @@ pub fn groupby_values(
 
     // we have a (partial) lookbehind window
     if offset.negative {
-        if offset.duration_ns() >= period.duration_ns() {
-            // lookbehind
-            // window is within 2 periods length of t
+        // lookbehind
+        if offset.duration_ns() == period.duration_ns() {
+            // t is right at the end of the window
             // ------t---
             // [------]
-            if offset.duration_ns() < period.duration_ns() * 2 {
-                POOL.install(|| {
-                    let vals = thread_offsets
-                        .par_iter()
-                        .copied()
-                        .map(|(base_offset, len)| {
-                            let upper_bound = base_offset + len;
-                            let iter = groupby_values_iter_full_lookbehind(
-                                period,
-                                offset,
-                                &time[..upper_bound],
-                                closed_window,
-                                tu,
-                                tz,
-                                base_offset,
-                            );
-                            iter.map(|result| result.map(|(offset, len)| [offset, len]))
-                                .collect::<PolarsResult<Vec<_>>>()
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()?;
-                    Ok(flatten_par(&vals))
-                })
-            }
+            POOL.install(|| {
+                let vals = thread_offsets
+                    .par_iter()
+                    .copied()
+                    .map(|(base_offset, len)| {
+                        let upper_bound = base_offset + len;
+                        let iter = groupby_values_iter_lookbehind(
+                            period,
+                            offset,
+                            &time[..upper_bound],
+                            closed_window,
+                            tu,
+                            tz,
+                            base_offset,
+                        );
+                        iter.map(|result| result.map(|(offset, len)| [offset, len]))
+                            .collect::<PolarsResult<Vec<_>>>()
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                Ok(flatten_par(&vals))
+            })
+        } else if ((offset.duration_ns() >= period.duration_ns())
+            && matches!(closed_window, ClosedWindow::Left | ClosedWindow::None))
+            || ((offset.duration_ns() > period.duration_ns())
+                && matches!(closed_window, ClosedWindow::Right | ClosedWindow::Both))
+        {
             // window is completely behind t and t itself is not a member
             // ---------------t---
             //  [---]
-            else {
-                let iter = groupby_values_iter_window_behind_t(
-                    period,
-                    offset,
-                    time,
-                    closed_window,
-                    tu,
-                    tz,
-                );
-                iter.map(|result| result.map(|(offset, len)| [offset, len]))
-                    .collect::<PolarsResult<_>>()
-            }
+            let iter =
+                groupby_values_iter_window_behind_t(period, offset, time, closed_window, tu, tz);
+            iter.map(|result| result.map(|(offset, len)| [offset, len]))
+                .collect::<PolarsResult<_>>()
         }
         // partial lookbehind
         // this one is still single threaded
@@ -612,7 +567,7 @@ pub fn groupby_values(
             Ok(flatten_par(&vals))
         })
     } else {
-        // Duration is 0 and window is closed on the left:
+        // Offset is 0 and window is closed on the left:
         // it must be that the window starts at t and t is a member
         // --t-----------
         //  [---]

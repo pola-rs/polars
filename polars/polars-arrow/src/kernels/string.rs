@@ -3,7 +3,7 @@ use arrow::buffer::Buffer;
 use arrow::datatypes::DataType;
 
 use crate::prelude::*;
-use crate::trusted_len::PushUnchecked;
+use crate::trusted_len::TrustedLenPush;
 
 pub fn string_lengths(array: &Utf8Array<i64>) -> ArrayRef {
     let values = array

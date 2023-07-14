@@ -34,13 +34,29 @@ def test_select_args_kwargs() -> None:
     assert_frame_equal(result, expected)
 
     # Mixed
-    result = ldf.select(["bar"], "foo", oof="foo")
+    result = ldf.select("bar", "foo", oof="foo")
     expected = pl.LazyFrame({"bar": [3, 4], "foo": [1, 2], "oof": [1, 2]})
+    assert_frame_equal(result, expected)
+
+
+def test_select_mixed_deprecated() -> None:
+    ldf = pl.LazyFrame({"foo": [1, 2], "bar": [3, 4], "ham": ["a", "b"]})
+
+    with pytest.deprecated_call():
+        result = ldf.select(["bar"], "foo")
+    expected = pl.LazyFrame({"bar": [3, 4], "foo": [1, 2]})
     assert_frame_equal(result, expected)
 
 
 def test_select_empty() -> None:
     result = pl.select()
+    expected = pl.DataFrame()
+    assert_frame_equal(result, expected)
+
+
+def test_select_none() -> None:
+    with pytest.deprecated_call():
+        result = pl.select(None)
     expected = pl.DataFrame()
     assert_frame_equal(result, expected)
 

@@ -31,7 +31,7 @@ rayon.workspace = true
 smartstring.workspace = true
 
 [features]
-nightly = ["polars-core/nightly", "polars-pipe/nightly"]
+nightly = ["polars-core/nightly", "polars-pipe/nightly", "polars-plan/nightly"]
 compile = ["polars-plan/compile"]
 streaming = ["chunked_ids", "polars-pipe/compile", "polars-plan/streaming"]
 default = ["compile"]
@@ -71,6 +71,7 @@ list_take = ["polars-ops/list_take", "polars-plan/list_take"]
 list_count = ["polars-ops/list_count", "polars-plan/list_count"]
 
 true_div = ["polars-plan/true_div"]
+extract_jsonpath = ["polars-plan/extract_jsonpath", "polars-ops/extract_jsonpath"]
 
 # operations
 approx_unique = ["polars-plan/approx_unique"]
@@ -82,7 +83,7 @@ is_unique = ["polars-plan/is_unique"]
 cross_join = ["polars-plan/cross_join", "polars-pipe/cross_join", "polars-ops/cross_join"]
 asof_join = ["polars-plan/asof_join", "polars-time"]
 concat_str = ["polars-plan/concat_str"]
-arange = ["polars-plan/arange"]
+range = ["polars-plan/range"]
 mode = ["polars-plan/mode"]
 cum_agg = ["polars-plan/cum_agg"]
 interpolate = ["polars-plan/interpolate"]
@@ -106,7 +107,7 @@ list_eval = []
 cumulative_eval = []
 chunked_ids = ["polars-plan/chunked_ids", "polars-core/chunked_ids"]
 list_to_struct = ["polars-plan/list_to_struct"]
-python = ["pyo3", "polars-plan/python"]
+python = ["pyo3", "polars-plan/python", "polars-core/python"]
 row_hash = ["polars-plan/row_hash"]
 string_justify = ["polars-plan/string_justify"]
 string_from_radix = ["polars-plan/string_from_radix"]
@@ -130,6 +131,10 @@ serde = [
   "polars-ops/serde",
 ]
 fused = ["polars-plan/fused", "polars-ops/fused"]
+list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
+list_any_all = ["polars-ops/list_any_all", "polars-plan/list_any_all"]
+cutqcut = ["polars-plan/cutqcut", "polars-ops/cutqcut"]
+rle = ["polars-plan/rle", "polars-ops/rle"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 

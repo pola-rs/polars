@@ -69,6 +69,98 @@ def test_rows() -> None:
     ]
 
 
+def test_rows_by_key() -> None:
+    df = pl.DataFrame(
+        {
+            "w": ["a", "b", "b", "a"],
+            "x": ["q", "q", "q", "k"],
+            "y": [1.0, 2.5, 3.0, 4.5],
+            "z": [9, 8, 7, 6],
+        }
+    )
+
+    # tuple (unnamed) rows
+    assert df.rows_by_key("w") == {
+        "a": [("q", 1.0, 9), ("k", 4.5, 6)],
+        "b": [("q", 2.5, 8), ("q", 3.0, 7)],
+    }
+    assert df.rows_by_key("w", unique=True) == {
+        "a": ("k", 4.5, 6),
+        "b": ("q", 3.0, 7),
+    }
+    assert df.rows_by_key("w", include_key=True) == {
+        "a": [("a", "q", 1.0, 9), ("a", "k", 4.5, 6)],
+        "b": [("b", "q", 2.5, 8), ("b", "q", 3.0, 7)],
+    }
+    assert df.rows_by_key("w", include_key=True) == {
+        key: grp.rows() for key, grp in df.groupby("w")
+    }
+    assert df.rows_by_key("w", include_key=True, unique=True) == {
+        "a": ("a", "k", 4.5, 6),
+        "b": ("b", "q", 3.0, 7),
+    }
+    assert df.rows_by_key(["x", "w"]) == {
+        ("a", "q"): [(1.0, 9)],
+        ("b", "q"): [(2.5, 8), (3.0, 7)],
+        ("a", "k"): [(4.5, 6)],
+    }
+    assert df.rows_by_key(["w", "x"], include_key=True) == {
+        ("a", "q"): [("a", "q", 1.0, 9)],
+        ("a", "k"): [("a", "k", 4.5, 6)],
+        ("b", "q"): [("b", "q", 2.5, 8), ("b", "q", 3.0, 7)],
+    }
+    assert df.rows_by_key(["w", "x"], include_key=True, unique=True) == {
+        ("a", "q"): ("a", "q", 1.0, 9),
+        ("b", "q"): ("b", "q", 3.0, 7),
+        ("a", "k"): ("a", "k", 4.5, 6),
+    }
+
+    # dict (named) rows
+    assert df.rows_by_key("w", named=True) == {
+        "a": [{"x": "q", "y": 1.0, "z": 9}, {"x": "k", "y": 4.5, "z": 6}],
+        "b": [{"x": "q", "y": 2.5, "z": 8}, {"x": "q", "y": 3.0, "z": 7}],
+    }
+    assert df.rows_by_key("w", named=True, unique=True) == {
+        "a": {"x": "k", "y": 4.5, "z": 6},
+        "b": {"x": "q", "y": 3.0, "z": 7},
+    }
+    assert df.rows_by_key("w", named=True, include_key=True) == {
+        "a": [
+            {"w": "a", "x": "q", "y": 1.0, "z": 9},
+            {"w": "a", "x": "k", "y": 4.5, "z": 6},
+        ],
+        "b": [
+            {"w": "b", "x": "q", "y": 2.5, "z": 8},
+            {"w": "b", "x": "q", "y": 3.0, "z": 7},
+        ],
+    }
+    assert df.rows_by_key("w", named=True, include_key=True) == {
+        key: grp.rows(named=True) for key, grp in df.groupby("w")
+    }
+    assert df.rows_by_key("w", named=True, include_key=True, unique=True) == {
+        "a": {"w": "a", "x": "k", "y": 4.5, "z": 6},
+        "b": {"w": "b", "x": "q", "y": 3.0, "z": 7},
+    }
+    assert df.rows_by_key(["x", "w"], named=True) == {
+        ("q", "a"): [{"y": 1.0, "z": 9}],
+        ("q", "b"): [{"y": 2.5, "z": 8}, {"y": 3.0, "z": 7}],
+        ("k", "a"): [{"y": 4.5, "z": 6}],
+    }
+    assert df.rows_by_key(["w", "x"], named=True, include_key=True) == {
+        ("a", "q"): [{"w": "a", "x": "q", "y": 1.0, "z": 9}],
+        ("a", "k"): [{"w": "a", "x": "k", "y": 4.5, "z": 6}],
+        ("b", "q"): [
+            {"w": "b", "x": "q", "y": 2.5, "z": 8},
+            {"w": "b", "x": "q", "y": 3.0, "z": 7},
+        ],
+    }
+    assert df.rows_by_key(["w", "x"], named=True, include_key=True, unique=True) == {
+        ("a", "q"): {"w": "a", "x": "q", "y": 1.0, "z": 9},
+        ("b", "q"): {"w": "b", "x": "q", "y": 3.0, "z": 7},
+        ("a", "k"): {"w": "a", "x": "k", "y": 4.5, "z": 6},
+    }
+
+
 def test_iter_rows() -> None:
     df = pl.DataFrame(
         {

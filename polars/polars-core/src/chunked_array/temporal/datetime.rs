@@ -13,16 +13,10 @@ use polars_arrow::kernels::replace_timezone;
 
 use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
+#[cfg(feature = "timezones")]
+use crate::chunked_array::temporal::validate_time_zone;
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
-
-#[cfg(feature = "timezones")]
-fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
-    match tz.parse::<Tz>() {
-        Ok(_) => Ok(()),
-        Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", tz),
-    }
-}
 
 fn apply_datefmt_f<'a>(
     arr: &PrimitiveArray<i64>,
@@ -112,7 +106,7 @@ impl DatetimeChunked {
             let chunks = self
                 .downcast_iter()
                 .map(|arr| {
-                    replace_timezone(arr, self.time_unit().to_arrow(), to, from, use_earliest)
+                    replace_timezone(arr, self.time_unit().to_arrow(), from, to, use_earliest)
                 })
                 .collect::<PolarsResult<_>>()?;
             let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
@@ -262,7 +256,7 @@ impl DatetimeChunked {
     /// Change the underlying [`TimeZone`]. This does not modify the data.
     #[cfg(feature = "timezones")]
     pub fn set_time_zone(&mut self, time_zone: TimeZone) -> PolarsResult<()> {
-        validate_time_zone(time_zone.to_string())?;
+        validate_time_zone(&time_zone)?;
         self.2 = Some(Datetime(self.time_unit(), Some(time_zone)));
         Ok(())
     }

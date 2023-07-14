@@ -24,7 +24,7 @@ use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "asof_join")]
-pub(crate) use single_keys::create_probe_table;
+pub(crate) use single_keys::build_tables;
 #[cfg(feature = "asof_join")]
 pub(crate) use single_keys_dispatch::prepare_bytes;
 use single_keys_left::*;
@@ -93,11 +93,7 @@ use crate::series::IsSorted;
 #[cfg(feature = "dtype-categorical")]
 pub fn _check_categorical_src(l: &DataType, r: &DataType) -> PolarsResult<()> {
     if let (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) = (l, r) {
-        polars_ensure!(
-            l.same_src(r),
-            ComputeError: "joins/or comparisons on categoricals can only happen if they were \
-            created under the same global string cache"
-        );
+        polars_ensure!(l.same_src(r), string_cache_mismatch);
     }
     Ok(())
 }

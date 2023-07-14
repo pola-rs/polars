@@ -5,7 +5,7 @@ use num_traits::NumCast;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer};
+use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer, TryFromWithUnit};
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::utf8::Pattern;
 use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
@@ -20,19 +20,23 @@ impl<'a> Hash for BufferKey<'a> {
     }
 }
 
-pub(crate) struct Buffer<'a>(&'a str, AnyValueBuffer<'a>);
+pub(crate) struct Buffer<'a> {
+    name: &'a str,
+    ignore_errors: bool,
+    buf: AnyValueBuffer<'a>,
+}
 
 impl Buffer<'_> {
     pub fn into_series(self) -> Series {
-        let mut s = self.1.into_series();
-        s.rename(self.0);
+        let mut s = self.buf.into_series();
+        s.rename(self.name);
         s
     }
 
     #[inline]
     pub(crate) fn add(&mut self, value: &Value) -> PolarsResult<()> {
         use AnyValueBuffer::*;
-        match &mut self.1 {
+        match &mut self.buf {
             Boolean(buf) => {
                 match value {
                     Value::Static(StaticNode::Bool(b)) => buf.append_value(*b),
@@ -109,7 +113,7 @@ impl Buffer<'_> {
                 Ok(())
             }
             All(dtype, buf) => {
-                let av = deserialize_all(value, dtype)?;
+                let av = deserialize_all(value, dtype, self.ignore_errors)?;
                 buf.push(av);
                 Ok(())
             }
@@ -117,19 +121,27 @@ impl Buffer<'_> {
         }
     }
     pub fn add_null(&mut self) {
-        self.1.add(AnyValue::Null).expect("should not fail");
+        self.buf.add(AnyValue::Null).expect("should not fail");
     }
 }
 pub(crate) fn init_buffers(
     schema: &Schema,
     capacity: usize,
+    ignore_errors: bool,
 ) -> PolarsResult<PlIndexMap<BufferKey, Buffer>> {
     schema
         .iter()
         .map(|(name, dtype)| {
             let av_buf = (dtype, capacity).into();
             let key = KnownKey::from(name.as_str());
-            Ok((BufferKey(key), Buffer(name, av_buf)))
+            Ok((
+                BufferKey(key),
+                Buffer {
+                    name,
+                    buf: av_buf,
+                    ignore_errors,
+                },
+            ))
         })
         .collect()
 }
@@ -148,21 +160,26 @@ fn deserialize_number<T: NativeType + NumCast>(value: &Value) -> Option<T> {
 fn deserialize_datetime<T>(value: &Value) -> Option<T::Native>
 where
     T: PolarsNumericType,
-    DatetimeInfer<T::Native>: TryFrom<Pattern>,
+    DatetimeInfer<T::Native>: TryFromWithUnit<Pattern>,
 {
     let val = match value {
         Value::String(s) => s,
         _ => return None,
     };
     infer_pattern_single(val).and_then(|pattern| {
-        match DatetimeInfer::<T::Native>::try_from(pattern) {
+        match DatetimeInfer::<T::Native>::try_from_with_unit(pattern, Some(TimeUnit::Microseconds))
+        {
             Ok(mut infer) => infer.parse(val),
             Err(_) => None,
         }
     })
 }
 
-fn deserialize_all<'a>(json: &Value, dtype: &DataType) -> PolarsResult<AnyValue<'a>> {
+fn deserialize_all<'a>(
+    json: &Value,
+    dtype: &DataType,
+    ignore_errors: bool,
+) -> PolarsResult<AnyValue<'a>> {
     let out = match json {
         Value::Static(StaticNode::Bool(b)) => AnyValue::Boolean(*b),
         Value::Static(StaticNode::I64(i)) => AnyValue::Int64(*i),
@@ -172,11 +189,14 @@ fn deserialize_all<'a>(json: &Value, dtype: &DataType) -> PolarsResult<AnyValue<
         Value::String(s) => AnyValue::Utf8Owned(s.as_ref().into()),
         Value::Array(arr) => {
             let Some(inner_dtype) = dtype.inner_dtype() else {
+                if ignore_errors {
+                    return Ok(AnyValue::Null)
+                }
                 polars_bail!(ComputeError: "expected list/array in json value, got {}", dtype);
             };
             let vals: Vec<AnyValue> = arr
                 .iter()
-                .map(|val| deserialize_all(val, inner_dtype))
+                .map(|val| deserialize_all(val, inner_dtype, ignore_errors))
                 .collect::<PolarsResult<_>>()?;
             let s = Series::from_any_values_and_dtype("", &vals, inner_dtype, false)?;
             AnyValue::List(s)
@@ -190,7 +210,7 @@ fn deserialize_all<'a>(json: &Value, dtype: &DataType) -> PolarsResult<AnyValue<
                     .iter()
                     .map(|field| {
                         if let Some(value) = document.get(field.name.as_str()) {
-                            deserialize_all(value, &field.dtype)
+                            deserialize_all(value, &field.dtype, ignore_errors)
                         } else {
                             Ok(AnyValue::Null)
                         }
@@ -198,8 +218,11 @@ fn deserialize_all<'a>(json: &Value, dtype: &DataType) -> PolarsResult<AnyValue<
                     .collect::<PolarsResult<Vec<_>>>()?;
                 AnyValue::StructOwned(Box::new((vals, fields.clone())))
             } else {
+                if ignore_errors {
+                    return Ok(AnyValue::Null);
+                }
                 polars_bail!(
-                    ComputeError: "expected {dtype} in json value, got object",
+                    ComputeError: "expected {} in json value, got object", dtype,
                 );
             }
         }

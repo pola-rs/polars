@@ -269,11 +269,37 @@ def test_infer_tz_aware_with_utc(time_unit: TimeUnit) -> None:
 
 
 def test_infer_tz_aware_raises() -> None:
-    msg = "cannot parse tz-aware values with tz-aware dtype - please drop the time zone from the dtype"
+    msg = "Please either drop the time zone from the function call, or set it to UTC"
     with pytest.raises(ComputeError, match=msg):
         pl.Series(["2020-01-02T04:00:00+02:00"]).str.to_datetime(
             time_unit="us", time_zone="Europe/Vienna"
         )
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(
+            pl.Datetime("us", "UTC"), format="%Y-%m-%dT%H:%M:%S%z"
+        ),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(
+            pl.Datetime("us"), format="%Y-%m-%dT%H:%M:%S%z"
+        ),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(pl.Datetime("us", "UTC")),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(pl.Datetime("us")),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(
+            time_zone="UTC", format="%Y-%m-%dT%H:%M:%S%z"
+        ),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(
+            format="%Y-%m-%dT%H:%M:%S%z"
+        ),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(time_zone="UTC"),
+        pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(),
+    ],
+)
+def test_parsing_offset_aware_with_utc_dtype(result: pl.Series) -> None:
+    expected = pl.Series([datetime(2020, 1, 1, tzinfo=timezone.utc)])
+    assert_series_equal(result, expected)
 
 
 def test_datetime_strptime_patterns_consistent() -> None:
@@ -417,12 +443,7 @@ def test_invalid_date_parsing_4898() -> None:
 
 def test_strptime_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime("%Y-%m-%d %H:%M:%S%z")
-    with pytest.raises(
-        ComputeError, match=r"unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        DeprecationWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(ComputeError, match=r"unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("foo")
 
 
@@ -507,12 +528,72 @@ def test_strptime_subseconds_datetime(data: str, format: str, expected: time) ->
     assert result == expected
 
 
-def test_strptime_hour_without_minute_8849() -> None:
+@pytest.mark.parametrize(
+    ("string", "fmt"),
+    [
+        pytest.param("2023-05-04|7", "%Y-%m-%d|%H", id="hour but no minute"),
+        pytest.param("2023-05-04|7", "%Y-%m-%d|%k", id="padded hour but no minute"),
+        pytest.param("2023-05-04|10", "%Y-%m-%d|%M", id="minute but no hour"),
+        pytest.param("2023-05-04|10", "%Y-%m-%d|%S", id="second but no hour"),
+        pytest.param(
+            "2000-Jan-01 01 00 01", "%Y-%b-%d %I %M %S", id="12-hour clock but no AM/PM"
+        ),
+        pytest.param(
+            "2000-Jan-01 01 00 01",
+            "%Y-%b-%d %l %M %S",
+            id="padded 12-hour clock but no AM/PM",
+        ),
+    ],
+)
+def test_strptime_incomplete_formats(string: str, fmt: str) -> None:
     with pytest.raises(
         ComputeError,
-        match="Invalid format string: found hour, but no minute directive",
+        match="Invalid format string",
     ):
-        pl.Series(["2023-05-04|7", "2023-05-04|10"]).str.to_datetime("%Y-%m-%d|%H")
+        pl.Series([string]).str.to_datetime(fmt)
+
+
+@pytest.mark.parametrize(
+    ("string", "fmt", "expected"),
+    [
+        ("2023-05-04|7:3", "%Y-%m-%d|%H:%M", datetime(2023, 5, 4, 7, 3)),
+        ("2023-05-04|10:03", "%Y-%m-%d|%H:%M", datetime(2023, 5, 4, 10, 3)),
+        (
+            "2000-Jan-01 01 00 01 am",
+            "%Y-%b-%d %I %M %S %P",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+        (
+            "2000-Jan-01 01 00 01 am",
+            "%Y-%b-%d %_I %M %S %P",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+        (
+            "2000-Jan-01 01 00 01 am",
+            "%Y-%b-%d %l %M %S %P",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+        (
+            "2000-Jan-01 01 00 01 AM",
+            "%Y-%b-%d %I %M %S %p",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+        (
+            "2000-Jan-01 01 00 01 AM",
+            "%Y-%b-%d %_I %M %S %p",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+        (
+            "2000-Jan-01 01 00 01 AM",
+            "%Y-%b-%d %l %M %S %p",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+    ],
+)
+def test_strptime_complete_formats(string: str, fmt: str, expected: datetime) -> None:
+    # Similar to the above, but these formats are complete and should work
+    result = pl.Series([string]).str.to_datetime(fmt).item()
+    assert result == expected
 
 
 @pytest.mark.parametrize(

@@ -354,7 +354,8 @@ pub trait ChunkApply<'a, A, B> {
 /// Aggregation operations
 pub trait ChunkAgg<T> {
     /// Aggregate the sum of the ChunkedArray.
-    /// Returns `None` if the array is empty or only contains null values.
+    /// Returns `None` if not implemented for `T`.
+    /// If the array is empty, `0` is returned
     fn sum(&self) -> Option<T> {
         None
     }
@@ -478,6 +479,7 @@ pub struct SortOptions {
     pub descending: bool,
     pub nulls_last: bool,
     pub multithreaded: bool,
+    pub maintain_order: bool,
 }
 
 #[derive(Clone)]
@@ -494,6 +496,7 @@ impl Default for SortOptions {
             descending: false,
             nulls_last: false,
             multithreaded: true,
+            maintain_order: false,
         }
     }
 }

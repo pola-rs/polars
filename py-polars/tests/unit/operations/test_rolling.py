@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import sys
-import typing
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
 from numpy import nan
+
+from polars.exceptions import ComputeError
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -70,6 +71,96 @@ def test_rolling_kernels_and_groupby_rolling(
     assert_frame_equal(out1, out2)
 
 
+@pytest.mark.parametrize(
+    ("offset", "closed", "expected_values"),
+    [
+        pytest.param(
+            "-1d",
+            "left",
+            [[1], [1, 2], [2, 3], [3, 4]],
+            id="partial lookbehind, left",
+        ),
+        pytest.param(
+            "-1d",
+            "right",
+            [[1, 2], [2, 3], [3, 4], [4]],
+            id="partial lookbehind, right",
+        ),
+        pytest.param(
+            "-1d",
+            "both",
+            [[1, 2], [1, 2, 3], [2, 3, 4], [3, 4]],
+            id="partial lookbehind, both",
+        ),
+        pytest.param(
+            "-1d",
+            "none",
+            [[1], [2], [3], [4]],
+            id="partial lookbehind, none",
+        ),
+        pytest.param(
+            "-2d",
+            "left",
+            [[], [1], [1, 2], [2, 3]],
+            id="full lookbehind, left",
+        ),
+        pytest.param(
+            "-3d",
+            "left",
+            [[], [], [1], [1, 2]],
+            id="full lookbehind, offset > period, left",
+        ),
+        pytest.param(
+            "-3d",
+            "right",
+            [[], [1], [1, 2], [2, 3]],
+            id="full lookbehind, right",
+        ),
+        pytest.param(
+            "-3d",
+            "both",
+            [[], [1], [1, 2], [1, 2, 3]],
+            id="full lookbehind, both",
+        ),
+        pytest.param(
+            "-2d",
+            "none",
+            [[], [1], [2], [3]],
+            id="full lookbehind, none",
+        ),
+        pytest.param(
+            "-3d",
+            "none",
+            [[], [], [1], [2]],
+            id="full lookbehind, offset > period, none",
+        ),
+    ],
+)
+def test_rolling_negative_offset(
+    offset: str, closed: ClosedInterval, expected_values: list[list[int]]
+) -> None:
+    df = pl.DataFrame(
+        {
+            "ts": pl.date_range(
+                datetime(2021, 1, 1), datetime(2021, 1, 4), "1d", eager=True
+            ),
+            "value": [1, 2, 3, 4],
+        }
+    )
+    result = df.groupby_rolling("ts", period="2d", offset=offset, closed=closed).agg(
+        pl.col("value")
+    )
+    expected = pl.DataFrame(
+        {
+            "ts": pl.date_range(
+                datetime(2021, 1, 1), datetime(2021, 1, 4), "1d", eager=True
+            ),
+            "value": expected_values,
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_rolling_skew() -> None:
     s = pl.Series([1, 2, 3, 3, 2, 10, 8])
     assert s.rolling_skew(window_size=4, bias=True).to_list() == pytest.approx(
@@ -116,7 +207,9 @@ def test_rolling_crossing_dst(
         datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC", eager=True
     ).dt.replace_time_zone(time_zone)
     df = pl.DataFrame({"ts": ts, "value": [1, 2, 3, 4, 5, 6]})
-    result = df.with_columns(getattr(pl.col("value"), rolling_fn)("1d", by="ts"))
+    result = df.with_columns(
+        getattr(pl.col("value"), rolling_fn)("1d", by="ts", closed="left")
+    )
     expected = pl.DataFrame({"ts": ts, "value": expected_values})
     assert_frame_equal(result, expected)
 
@@ -126,13 +219,13 @@ def test_rolling_extrema() -> None:
     df = (
         pl.DataFrame(
             {
-                "col1": pl.arange(0, 7, eager=True),
-                "col2": pl.arange(0, 7, eager=True).reverse(),
+                "col1": pl.int_range(0, 7, eager=True),
+                "col2": pl.int_range(0, 7, eager=True).reverse(),
             }
         )
     ).with_columns(
         [
-            pl.when(pl.arange(0, pl.count(), eager=False) < 2)
+            pl.when(pl.int_range(0, pl.count(), eager=False) < 2)
             .then(None)
             .otherwise(pl.all())
             .suffix("_nulls")
@@ -154,7 +247,7 @@ def test_rolling_extrema() -> None:
     }
 
     # shuffled data triggers other kernels
-    df = df.select([pl.all().shuffle(0)])
+    df = df.select([pl.all().shuffle(0, fixed_seed=True)])
     assert df.select([pl.all().rolling_min(3)]).to_dict(False) == {
         "col1": [None, None, 0, 0, 1, 2, 2],
         "col2": [None, None, 0, 2, 1, 1, 1],
@@ -406,8 +499,16 @@ def test_rolling_var_numerical_stability_5197() -> None:
     assert res[:4] == [None] * 4
 
 
-@typing.no_type_check
-def test_dynamic_groupby_timezone_awareness() -> None:
+@pytest.mark.parametrize(
+    ("every", "offset"),
+    [
+        ("3d", "-1d"),
+        (timedelta(days=3), timedelta(days=-1)),
+    ],
+)
+def test_dynamic_groupby_timezone_awareness(
+    every: str | timedelta, offset: str | timedelta
+) -> None:
     df = pl.DataFrame(
         (
             pl.date_range(
@@ -423,17 +524,16 @@ def test_dynamic_groupby_timezone_awareness() -> None:
         )
     )
 
-    for every, offset in (("3d", "-1d"), (timedelta(days=3), timedelta(days=-1))):
-        assert (
-            df.groupby_dynamic(
-                "datetime",
-                every=every,
-                offset=offset,
-                closed="right",
-                include_boundaries=True,
-                truncate=False,
-            ).agg(pl.col("value").last())
-        ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
+    assert (
+        df.groupby_dynamic(
+            "datetime",
+            every=every,
+            offset=offset,
+            closed="right",
+            include_boundaries=True,
+            truncate=False,
+        ).agg(pl.col("value").last())
+    ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
 
 
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
@@ -611,6 +711,30 @@ def test_groupby_rolling_iter() -> None:
     assert result2 == expected2
 
 
+def test_groupby_rolling_negative_period() -> None:
+    df = pl.DataFrame({"ts": [datetime(2020, 1, 1)], "value": [1]}).with_columns(
+        pl.col("ts").set_sorted()
+    )
+    with pytest.raises(
+        ComputeError, match="rolling window period should be strictly positive"
+    ):
+        df.groupby_rolling("ts", period="-1d", offset="-1d").agg(pl.col("value"))
+    with pytest.raises(
+        ComputeError, match="rolling window period should be strictly positive"
+    ):
+        df.lazy().groupby_rolling("ts", period="-1d", offset="-1d").agg(
+            pl.col("value")
+        ).collect()
+    with pytest.raises(ComputeError, match="window size should be strictly positive"):
+        df.select(
+            pl.col("value").rolling_min(by="ts", window_size="-1d", closed="left")
+        )
+    with pytest.raises(ComputeError, match="window size should be strictly positive"):
+        df.lazy().select(
+            pl.col("value").rolling_min(by="ts", window_size="-1d", closed="left")
+        ).collect()
+
+
 def test_rolling_skew_window_offset() -> None:
     assert (pl.arange(0, 20, eager=True) ** 2).rolling_skew(20)[
         -1
@@ -658,3 +782,34 @@ def test_rolling_window_size_9160() -> None:
     assert pl.Series([1]).rolling_apply(
         lambda x: sum(x), window_size=2, min_periods=1
     ).to_list() == [1]
+
+
+def test_rolling_empty_window_9406() -> None:
+    datecol = pl.Series(
+        "d",
+        [datetime(2019, 1, x) for x in [16, 17, 18, 22, 23]],
+        dtype=pl.Datetime(time_unit="us", time_zone=None),
+    )
+    rawdata = pl.Series("x", [1.1, 1.2, 1.3, 1.15, 1.25], dtype=pl.Float64)
+    rmin = pl.Series("x", [None, 1.1, 1.1, None, 1.15], dtype=pl.Float64)
+    rmax = pl.Series("x", [None, 1.1, 1.2, None, 1.15], dtype=pl.Float64)
+    df = pl.DataFrame([datecol, rawdata])
+
+    assert_frame_equal(
+        pl.DataFrame([datecol, rmax]),
+        df.select(
+            [
+                pl.col("d"),
+                pl.col("x").rolling_max(by="d", window_size="3d", closed="left"),
+            ]
+        ),
+    )
+    assert_frame_equal(
+        pl.DataFrame([datecol, rmin]),
+        df.select(
+            [
+                pl.col("d"),
+                pl.col("x").rolling_min(by="d", window_size="3d", closed="left"),
+            ]
+        ),
+    )

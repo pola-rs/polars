@@ -780,10 +780,12 @@ fn test_infer_schema_eol() -> PolarsResult<()> {
 #[test]
 fn test_whitespace_delimiters() -> PolarsResult<()> {
     let tsv = "\ta\tb\tc\n1\ta1\tb1\tc1\n2\ta2\tb2\tc2\n".to_string();
-    let mut contents = Vec::with_capacity(3);
-    contents.push((tsv.replace('\t', " "), b' '));
-    contents.push((tsv.replace('\t', "-"), b'-'));
-    contents.push((tsv, b'\t'));
+
+    let contents = vec![
+        (tsv.replace('\t', " "), b' '),
+        (tsv.replace('\t', "-"), b'-'),
+        (tsv, b'\t'),
+    ];
 
     for (content, sep) in contents {
         let file = Cursor::new(&content);

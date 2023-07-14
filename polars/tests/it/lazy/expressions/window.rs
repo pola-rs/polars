@@ -268,7 +268,7 @@ fn test_window_mapping() -> PolarsResult<()> {
 
     // now sorted
     // this will trigger a fast path
-    let df = df.sort(["fruits"], vec![false])?;
+    let df = df.sort(["fruits"], vec![false], false)?;
 
     let out = df
         .clone()
@@ -295,7 +295,6 @@ fn test_window_mapping() -> PolarsResult<()> {
     assert!(out.column("foo")?.series_equal(&expected));
 
     let out = df
-        .clone()
         .lazy()
         .select([
             col("fruits"),

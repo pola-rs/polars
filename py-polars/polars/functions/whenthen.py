@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import typing
 from typing import TYPE_CHECKING, Any
 
 from polars.utils._parse_expr_input import parse_as_expression
@@ -141,10 +140,9 @@ class WhenThen:
         expr = parse_as_expression(expr, str_as_lit=True)
         return wrap_expr(self._pywhenthen.otherwise(expr))
 
-    @typing.no_type_check
-    def __getattr__(self, item) -> Expr:
-        expr = self.otherwise(None)  # noqa: F841
-        return eval(f"expr.{item}")
+    def __getattr__(self, item: str) -> Any:
+        expr = self.otherwise(None)
+        return getattr(expr, item)
 
 
 class WhenThenThen:
@@ -182,7 +180,6 @@ class WhenThenThen:
         expr = parse_as_expression(expr, str_as_lit=True)
         return wrap_expr(self.pywhenthenthen.otherwise(expr))
 
-    @typing.no_type_check
-    def __getattr__(self, item) -> Expr:
-        expr = self.otherwise(None)  # noqa: F841
-        return eval(f"expr.{item}")
+    def __getattr__(self, item: str) -> Any:
+        expr = self.otherwise(None)
+        return getattr(expr, item)

@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use polars_arrow::array::PolarsArray;
-use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::trusted_len::TrustedLenPush;
 
 use crate::prelude::*;
 use crate::series::IsSorted;

@@ -108,7 +108,8 @@ fn test_cast_exprs() {
             cast(a as FLOAT) as floats,
             cast(a as INT) as ints,
             cast(a as BIGINT) as bigints,
-            cast(a as STRING) as strings
+            cast(a as STRING) as strings,
+            cast(a as BLOB) as binary
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let df_pl = df
@@ -118,6 +119,7 @@ fn test_cast_exprs() {
             col("a").cast(DataType::Int32).alias("ints"),
             col("a").cast(DataType::Int64).alias("bigints"),
             col("a").cast(DataType::Utf8).alias("strings"),
+            col("a").cast(DataType::Binary).alias("binary"),
         ])
         .collect()
         .unwrap();
@@ -494,6 +496,7 @@ fn test_groupby_2() -> PolarsResult<()> {
             vec![col("count"), col("category")],
             vec![false, true],
             false,
+            false,
         )
         .limit(2);
     let expected = expected.collect()?;
@@ -532,4 +535,21 @@ fn test_sql_expr() {
     let actual = df.clone().lazy().select(&[expr]).collect().unwrap();
     let expected = df.lazy().select(&[col("a").min()]).collect().unwrap();
     assert!(actual.frame_equal(&expected));
+}
+
+#[test]
+fn test_iss_9471() {
+    let sql = r#"
+    SELECT
+        ABS(a,a,a,a,1,2,3,XYZRandomLetters,"XYZRandomLetters") as "abs",
+    FROM df"#;
+    let df = df! {
+        "a" => [-4, -3, -2, -1, 0, 1, 2, 3, 4],
+    }
+    .unwrap()
+    .lazy();
+    let mut context = SQLContext::new();
+    context.register("df", df);
+    let res = context.execute(sql);
+    assert!(res.is_err())
 }

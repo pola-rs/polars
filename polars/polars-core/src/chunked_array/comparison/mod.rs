@@ -1,6 +1,6 @@
 mod scalar;
 
-use std::ops::Not;
+use std::ops::{BitOr, Not};
 
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
@@ -363,11 +363,30 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
-                    if value {
-                        self.not()
+                    let chunks = if value {
+                        self.downcast_iter()
+                            .map(|arr| {
+                                let values = match arr.validity() {
+                                    None => arr.values().not(),
+                                    Some(validity) => validity.not().bitor(&arr.values().not()),
+                                };
+                                BooleanArray::from_data_default(values, None).boxed()
+                            })
+                            .collect()
                     } else {
-                        self.clone()
-                    }
+                        self.downcast_iter()
+                            .map(|arr| {
+                                let values = match arr.validity() {
+                                    None => arr.values().clone(),
+                                    Some(validity) => validity.not().bitor(arr.values()),
+                                };
+                                BooleanArray::from_data_default(values, None).boxed()
+                            })
+                            .collect()
+                    };
+
+                    // safety: arrays are of dtype boolean
+                    unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
                 } else {
                     self.is_not_null()
                 }
@@ -854,7 +873,6 @@ impl ChunkCompare<&StructChunked> for StructChunked {
     }
 
     fn not_equal(&self, rhs: &StructChunked) -> BooleanChunked {
-        use std::ops::BitOr;
         if self.len() != rhs.len() || self.fields().len() != rhs.fields().len() {
             BooleanChunked::full("", true, self.len())
         } else {
@@ -868,7 +886,6 @@ impl ChunkCompare<&StructChunked> for StructChunked {
     }
 
     fn not_equal_missing(&self, rhs: &StructChunked) -> BooleanChunked {
-        use std::ops::BitOr;
         if self.len() != rhs.len() || self.fields().len() != rhs.fields().len() {
             BooleanChunked::full("", true, self.len())
         } else {

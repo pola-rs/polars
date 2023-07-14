@@ -22,6 +22,10 @@ mod list;
 mod meta;
 pub(crate) mod names;
 mod options;
+#[cfg(feature = "python")]
+pub mod python_udf;
+#[cfg(feature = "random")]
+mod random;
 mod selector;
 #[cfg(feature = "strings")]
 pub mod string;
@@ -1460,6 +1464,49 @@ impl Expr {
         .with_fmt("rank")
     }
 
+    #[cfg(feature = "cutqcut")]
+    pub fn cut(
+        self,
+        breaks: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        include_breaks: bool,
+    ) -> Expr {
+        self.apply_private(FunctionExpr::Cut {
+            breaks,
+            labels,
+            left_closed,
+            include_breaks,
+        })
+    }
+
+    #[cfg(feature = "cutqcut")]
+    pub fn qcut(
+        self,
+        probs: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    ) -> Expr {
+        self.apply_private(FunctionExpr::QCut {
+            probs,
+            labels,
+            left_closed,
+            allow_duplicates,
+            include_breaks,
+        })
+    }
+
+    #[cfg(feature = "rle")]
+    pub fn rle(self) -> Expr {
+        self.apply_private(FunctionExpr::RLE)
+    }
+    #[cfg(feature = "rle")]
+    pub fn rle_id(self) -> Expr {
+        self.apply_private(FunctionExpr::RLEID)
+    }
+
     #[cfg(feature = "diff")]
     pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
         self.apply_private(FunctionExpr::Diff(n, null_behavior))
@@ -1555,45 +1602,6 @@ impl Expr {
         };
         self.apply(move |s| s.reshape(&dims).map(Some), output_type)
             .with_fmt("reshape")
-    }
-
-    #[cfg(feature = "random")]
-    pub fn shuffle(self, seed: Option<u64>) -> Self {
-        self.apply(move |s| Ok(Some(s.shuffle(seed))), GetOutput::same_type())
-            .with_fmt("shuffle")
-    }
-
-    #[cfg(feature = "random")]
-    pub fn sample_n(
-        self,
-        n: usize,
-        with_replacement: bool,
-        shuffle: bool,
-        seed: Option<u64>,
-    ) -> Self {
-        self.apply(
-            move |s| s.sample_n(n, with_replacement, shuffle, seed).map(Some),
-            GetOutput::same_type(),
-        )
-        .with_fmt("sample_n")
-    }
-
-    #[cfg(feature = "random")]
-    pub fn sample_frac(
-        self,
-        frac: f64,
-        with_replacement: bool,
-        shuffle: bool,
-        seed: Option<u64>,
-    ) -> Self {
-        self.apply(
-            move |s| {
-                s.sample_frac(frac, with_replacement, shuffle, seed)
-                    .map(Some)
-            },
-            GetOutput::same_type(),
-        )
-        .with_fmt("sample_frac")
     }
 
     #[cfg(feature = "ewma")]
@@ -1738,13 +1746,7 @@ impl Expr {
     /// This can lead to incorrect results if this `Series` is not sorted!!
     /// Use with care!
     pub fn set_sorted_flag(self, sorted: IsSorted) -> Expr {
-        self.apply(
-            move |mut s| {
-                s.set_sorted_flag(sorted);
-                Ok(Some(s))
-            },
-            GetOutput::same_type(),
-        )
+        self.apply_private(FunctionExpr::SetSortedFlag(sorted))
     }
 
     /// Cache this expression, so that it is executed only once per context.

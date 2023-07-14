@@ -4,7 +4,7 @@ use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
 
-use crate::trusted_len::{FromIteratorReversed, PushUnchecked, TrustedLen};
+use crate::trusted_len::{FromIteratorReversed, TrustedLen, TrustedLenPush};
 
 #[derive(Clone)]
 pub struct TrustMyLength<I: Iterator<Item = J>, J> {

@@ -2,7 +2,7 @@ use arrow::array::{BinaryArray, Utf8Array};
 use arrow::datatypes::DataType;
 use arrow::offset::Offsets;
 
-use crate::trusted_len::PushUnchecked;
+use crate::trusted_len::TrustedLenPush;
 
 #[inline]
 unsafe fn extend_from_trusted_len_values_iter<I, P>(

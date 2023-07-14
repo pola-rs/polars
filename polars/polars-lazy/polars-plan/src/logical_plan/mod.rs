@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-#[cfg(any(feature = "ipc", feature = "csv", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -20,6 +19,7 @@ mod builder;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
+mod file_scan;
 mod format;
 mod functions;
 pub(crate) mod iterator;
@@ -30,6 +30,9 @@ pub(crate) mod projection;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;
+#[cfg(feature = "meta")]
+pub(crate) mod tree_format;
+pub mod visitor;
 
 pub use aexpr::*;
 pub use alp::*;
@@ -37,6 +40,7 @@ pub use anonymous_scan::*;
 pub use apply::*;
 pub use builder::*;
 pub use conversion::*;
+pub use file_scan::*;
 pub use functions::*;
 pub use iterator::*;
 pub use lit::*;
@@ -44,6 +48,7 @@ pub use optimizer::*;
 pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
 pub use crate::logical_plan::optimizer::file_caching::{
@@ -152,30 +157,12 @@ pub enum LogicalPlan {
         id: usize,
         count: usize,
     },
-    /// Scan a CSV file
-    #[cfg(feature = "csv")]
-    CsvScan {
-        path: PathBuf,
-        file_info: FileInfo,
-        options: CsvParserOptions,
-        /// Filters at the scan level
-        predicate: Option<Expr>,
-    },
-    #[cfg(feature = "parquet")]
-    /// Scan a Parquet file
-    ParquetScan {
+    Scan {
         path: PathBuf,
         file_info: FileInfo,
         predicate: Option<Expr>,
-        options: ParquetOptions,
-        cloud_options: Option<CloudOptions>,
-    },
-    #[cfg(feature = "ipc")]
-    IpcScan {
-        path: PathBuf,
-        file_info: FileInfo,
-        options: IpcScanOptionsInner,
-        predicate: Option<Expr>,
+        file_options: FileScanOptions,
+        scan_type: FileScan,
     },
     // we keep track of the projection and selection as it is cheaper to first project and then filter
     /// In memory DataFrame

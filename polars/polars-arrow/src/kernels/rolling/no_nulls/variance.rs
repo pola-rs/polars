@@ -1,5 +1,5 @@
 use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
-use num_traits::pow::Pow;
+use polars_error::polars_ensure;
 
 use super::mean::MeanWindow;
 use super::*;
@@ -155,121 +155,36 @@ where
         + Zero
         + Sub<Output = T>,
 {
-    match (center, weights) {
-        (true, None) => rolling_apply_agg_window::<VarWindow<_>, _, _>(
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
+    };
+    match weights {
+        None => rolling_apply_agg_window::<VarWindow<_>, _, _>(
             values,
             window_size,
             min_periods,
-            det_offsets_center,
+            offset_fn,
             params,
         ),
-        (false, None) => rolling_apply_agg_window::<VarWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            det_offsets,
-            params,
-        ),
-        (true, Some(weights)) => {
-            let weights = coerce_weights(weights);
+        Some(weights) => {
+            // Validate and standardize the weights like we do for the mean. This definition is fine
+            // because frequency weights and unbiasing don't make sense for rolling operations.
+            let mut wts = no_nulls::coerce_weights(weights);
+            let wsum = wts.iter().fold(T::zero(), |acc, x| acc + *x);
+            polars_ensure!(
+                wsum != T::zero(),
+                ComputeError: "Weighted variance is undefined if weights sum to 0"
+            );
+            wts.iter_mut().for_each(|w| *w = *w / wsum);
             super::rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
-                det_offsets_center,
+                offset_fn,
                 compute_var_weights,
-                &weights,
+                &wts,
             )
-        }
-        (false, Some(weights)) => {
-            let weights = coerce_weights(weights);
-            super::rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets,
-                compute_var_weights,
-                &weights,
-            )
-        }
-    }
-}
-
-// E[(xi - E[x])^2]
-// can be expanded to
-// E[x^2] - E[x]^2
-pub struct StdWindow<'a, T> {
-    var: VarWindow<'a, T>,
-}
-
-impl<
-        'a,
-        T: NativeType
-            + IsFloat
-            + Float
-            + std::iter::Sum
-            + AddAssign
-            + SubAssign
-            + Div<Output = T>
-            + NumCast
-            + One
-            + Zero
-            + Sub<Output = T>
-            + PartialOrd
-            + Pow<T, Output = T>,
-    > RollingAggWindowNoNulls<'a, T> for StdWindow<'a, T>
-{
-    fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
-        Self {
-            var: VarWindow::new(slice, start, end, params),
-        }
-    }
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        let var = self.var.update(start, end);
-        var.pow(NumCast::from(0.5).unwrap())
-    }
-}
-
-pub fn rolling_std<T>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-    params: DynArgs,
-) -> PolarsResult<ArrayRef>
-where
-    T: NativeType
-        + Float
-        + IsFloat
-        + std::iter::Sum
-        + AddAssign
-        + SubAssign
-        + Div<Output = T>
-        + NumCast
-        + One
-        + Zero
-        + Sub<Output = T>
-        + Pow<T, Output = T>,
-{
-    match (center, weights) {
-        (true, None) => rolling_apply_agg_window::<StdWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            params,
-        ),
-        (false, None) => rolling_apply_agg_window::<StdWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            det_offsets,
-            params,
-        ),
-        (_, Some(_)) => {
-            panic!("weights not yet supported for rolling_std")
         }
     }
 }

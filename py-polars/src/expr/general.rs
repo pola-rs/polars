@@ -177,6 +177,46 @@ impl PyExpr {
             .quantile(quantile.inner, interpolation.0)
             .into()
     }
+
+    #[pyo3(signature = (breaks, labels, left_closed, include_breaks))]
+    #[cfg(feature = "cutqcut")]
+    fn cut(
+        &self,
+        breaks: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .cut(breaks, labels, left_closed, include_breaks)
+            .into()
+    }
+    #[pyo3(signature = (probs, labels, left_closed, allow_duplicates, include_breaks))]
+    #[cfg(feature = "cutqcut")]
+    fn qcut(
+        &self,
+        probs: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .qcut(probs, labels, left_closed, allow_duplicates, include_breaks)
+            .into()
+    }
+
+    #[cfg(feature = "rle")]
+    fn rle(&self) -> Self {
+        self.clone().inner.rle().into()
+    }
+    #[cfg(feature = "rle")]
+    fn rle_id(&self) -> Self {
+        self.clone().inner.rle_id().into()
+    }
+
     fn agg_groups(&self) -> Self {
         self.clone().inner.agg_groups().into()
     }
@@ -211,6 +251,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }
@@ -222,6 +263,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }
@@ -459,6 +501,16 @@ impl PyExpr {
         self.clone().inner.arctanh().into()
     }
 
+    #[cfg(feature = "trigonometry")]
+    pub fn degrees(&self) -> Self {
+        self.clone().inner.degrees().into()
+    }
+
+    #[cfg(feature = "trigonometry")]
+    pub fn radians(&self) -> Self {
+        self.clone().inner.radians().into()
+    }
+
     #[cfg(feature = "sign")]
     fn sign(&self) -> Self {
         self.clone().inner.sign().into()
@@ -529,7 +581,6 @@ impl PyExpr {
     #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
     fn rolling_apply(
         &self,
-        py: Python,
         lambda: PyObject,
         window_size: usize,
         weights: Option<Vec<f64>>,
@@ -543,13 +594,9 @@ impl PyExpr {
             center,
             ..Default::default()
         };
-        // get the pypolars module
-        // do the import outside of the function.
-        let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
-
         let function = move |s: &Series| {
             Python::with_gil(|py| {
-                let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars)
+                let out = call_lambda_with_series(py, s.clone(), &lambda)
                     .expect("python function failed");
                 match out.getattr(py, "_s") {
                     Ok(pyseries) => {
@@ -967,27 +1014,38 @@ impl PyExpr {
         self.inner.clone().to_physical().into()
     }
 
-    fn shuffle(&self, seed: Option<u64>) -> Self {
-        self.inner.clone().shuffle(seed).into()
+    #[pyo3(signature = (seed, fixed_seed))]
+    fn shuffle(&self, seed: Option<u64>, fixed_seed: bool) -> Self {
+        self.inner.clone().shuffle(seed, fixed_seed).into()
     }
 
-    fn sample_n(&self, n: usize, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
+    #[pyo3(signature = (n, with_replacement, shuffle, seed, fixed_seed))]
+    fn sample_n(
+        &self,
+        n: usize,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+        fixed_seed: bool,
+    ) -> Self {
         self.inner
             .clone()
-            .sample_n(n, with_replacement, shuffle, seed)
+            .sample_n(n, with_replacement, shuffle, seed, fixed_seed)
             .into()
     }
 
+    #[pyo3(signature = (frac, with_replacement, shuffle, seed, fixed_seed))]
     fn sample_frac(
         &self,
         frac: f64,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
+        fixed_seed: bool,
     ) -> Self {
         self.inner
             .clone()
-            .sample_frac(frac, with_replacement, shuffle, seed)
+            .sample_frac(frac, with_replacement, shuffle, seed, fixed_seed)
             .into()
     }
 

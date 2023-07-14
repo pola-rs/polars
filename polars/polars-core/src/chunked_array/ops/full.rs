@@ -89,7 +89,7 @@ impl ChunkFull<&Series> for ListChunked {
         let mut builder =
             get_list_builder(value.dtype(), value.len() * length, length, name).unwrap();
         for _ in 0..length {
-            builder.append_series(value)
+            builder.append_series(value).unwrap();
         }
         builder.finish()
     }

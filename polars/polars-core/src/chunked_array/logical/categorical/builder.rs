@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use arrow::array::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
-use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::trusted_len::TrustedLenPush;
 
 use crate::datatypes::PlHashMap;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
@@ -92,12 +92,17 @@ impl RevMapping {
         !self.is_global()
     }
 
+    /// Get the categories in this RevMapping
+    pub fn get_categories(&self) -> &Utf8Array<i64> {
+        match self {
+            Self::Global(_, a, _) => a,
+            Self::Local(a) => a,
+        }
+    }
+
     /// Get the length of the [`RevMapping`]
     pub fn len(&self) -> usize {
-        match self {
-            Self::Global(_, a, _) => a.len(),
-            Self::Local(a) => a.len(),
-        }
+        self.get_categories().len()
     }
 
     /// Categorical to str

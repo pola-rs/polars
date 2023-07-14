@@ -15,19 +15,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    import sys
-
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars.type_aliases import (
-        ConcatMethod,
-        JoinStrategy,
-        PolarsType,
-    )
-
-    if sys.version_info >= (3, 8):
-        pass
-    else:
-        pass
+    from polars.type_aliases import ConcatMethod, JoinStrategy, PolarsType
 
 
 def concat(
@@ -49,6 +38,8 @@ def concat(
         LazyFrames do not support the `horizontal` strategy.
 
         * vertical: Applies multiple `vstack` operations.
+        * vertical_relaxed: Applies multiple `vstack` operations and coerces column
+          dtypes that are not equal to their supertypes.
         * diagonal: Finds a union between the column schemas and fills missing column
           values with ``null``.
         * horizontal: Stacks Series from DataFrames horizontally and fills with ``null``
@@ -162,23 +153,29 @@ def concat(
     if isinstance(first, pl.DataFrame):
         if how == "vertical":
             out = wrap_df(plr.concat_df(elems))
+        elif how == "vertical_relaxed":
+            out = wrap_ldf(
+                plr.concat_lf([df.lazy() for df in elems], rechunk, parallel, True)
+            ).collect(no_optimization=True)
         elif how == "diagonal":
             out = wrap_df(plr.diag_concat_df(elems))
         elif how == "horizontal":
             out = wrap_df(plr.hor_concat_df(elems))
         else:
             raise ValueError(
-                f"`how` must be one of {{'vertical','diagonal','horizontal','align'}}, "
+                f"`how` must be one of {{'vertical','vertical_relaxed','diagonal','horizontal','align'}}, "
                 f"got {how!r}"
             )
     elif isinstance(first, pl.LazyFrame):
         if how == "vertical":
-            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel))
+            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel, False))
+        if how == "vertical_relaxed":
+            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel, True))
         if how == "diagonal":
             return wrap_ldf(plr.diag_concat_lf(elems, rechunk, parallel))
         else:
             raise ValueError(
-                "'LazyFrame' only allows {'vertical','diagonal','align'} concat strategies."
+                "'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies."
             )
     elif isinstance(first, pl.Series):
         if how == "vertical":
@@ -322,7 +319,7 @@ def align_frames(
 
     Now data is aligned, and you can easily calculate the row-wise dot product:
 
-    >>> (af1 * af2 * af3).fill_null(0).select(pl.sum(pl.col("*")).alias("dot"))
+    >>> (af1 * af2 * af3).fill_null(0).select(pl.sum_horizontal("*").alias("dot"))
     shape: (3, 1)
     ┌───────┐
     │ dot   │

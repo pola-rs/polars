@@ -22,9 +22,13 @@ def assert_expr_equal(result: pl.Expr, expected: pl.Expr) -> None:
     assert_frame_equal(df.select(result), df.select(expected))
 
 
-@pytest.mark.parametrize("input", [None, []])
-def test_first_input_to_list_empty(input: Any) -> None:
-    assert _first_input_to_list(input) == []
+def test_first_input_to_list_empty() -> None:
+    assert _first_input_to_list([]) == []
+
+
+def test_first_input_to_list_none() -> None:
+    with pytest.deprecated_call():
+        assert _first_input_to_list(None) == []
 
 
 @pytest.mark.parametrize(

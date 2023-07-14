@@ -371,16 +371,6 @@ def test_arithmetic(s: pl.Series) -> None:
         +a
 
 
-def test_arithmetic_empty() -> None:
-    series = pl.Series("a", [])
-    assert series.sum() == 0
-
-
-def test_arithmetic_null() -> None:
-    series = pl.Series("a", [None])
-    assert series.sum() is None
-
-
 def test_power() -> None:
     a = pl.Series([1, 2], dtype=Int64)
     b = pl.Series([None, 2.0], dtype=Float64)
@@ -392,6 +382,7 @@ def test_power() -> None:
     assert_series_equal(a**a, pl.Series([1.0, 4.0], dtype=Float64))
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
+    assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))
     with pytest.raises(ValueError):
         c**2
     with pytest.raises(pl.ColumnNotFoundError):
@@ -568,7 +559,7 @@ def test_to_pandas() -> None:
         if a.dtype == pl.List:
             vals_b = [(None if x is None else x.tolist()) for x in b]
         else:
-            vals_b = b.replace({np.nan: None}).values.tolist()  # type: ignore[union-attr]
+            vals_b = b.replace({np.nan: None}).values.tolist()
 
         assert vals_b == test_data
 
@@ -812,10 +803,15 @@ def test_get() -> None:
     neg_and_pos_idxs = pl.Series(
         "neg_and_pos_idxs", [-2, 1, 0, -1, 2, -3], dtype=pl.Int8
     )
+    empty_idxs = pl.Series("idxs", [], dtype=pl.Int8)
+    empty_ints: list[int] = []
     assert a[0] == 1
     assert a[:2].to_list() == [1, 2]
     assert a[range(1)].to_list() == [1]
     assert a[range(0, 4, 2)].to_list() == [1, 3]
+    assert a[:0].to_list() == []
+    assert a[empty_ints].to_list() == []
+    assert a[neg_and_pos_idxs.to_list()].to_list() == [2, 2, 1, 3, 3, 1]
     for dtype in (
         pl.UInt8,
         pl.UInt16,
@@ -828,6 +824,8 @@ def test_get() -> None:
     ):
         assert a[pos_idxs.cast(dtype)].to_list() == [3, 1, 2, 1]
         assert a[pos_idxs.cast(dtype).to_numpy()].to_list() == [3, 1, 2, 1]
+        assert a[empty_idxs.cast(dtype)].to_list() == []
+        assert a[empty_idxs.cast(dtype).to_numpy()].to_list() == []
 
     for dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64):
         nps = a[neg_and_pos_idxs.cast(dtype).to_numpy()]
@@ -1287,13 +1285,6 @@ def test_rank() -> None:
     assert_series_equal(
         s.rank("dense", descending=True),
         pl.Series("a", [3, 2, 1, 2, 2, 1, 4], dtype=UInt32),
-    )
-
-
-def test_rank_random() -> None:
-    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
-    assert_series_equal(
-        s.rank("random", seed=1), pl.Series("a", [2, 4, 7, 3, 5, 6, 1], dtype=UInt32)
     )
 
 
@@ -1817,21 +1808,6 @@ def test_dot() -> None:
         s1 @ [4, 5, 6, 7, 8]
 
 
-def test_sample() -> None:
-    s = pl.Series("a", [1, 2, 3, 4, 5])
-
-    assert len(s.sample(n=2, seed=0)) == 2
-    assert len(s.sample(fraction=0.4, seed=0)) == 2
-
-    assert len(s.sample(n=2, with_replacement=True, seed=0)) == 2
-
-    # on a series of length 5, you cannot sample more than 5 items
-    with pytest.raises(pl.ShapeError):
-        s.sample(n=10, with_replacement=False, seed=0)
-    # unless you use with_replacement=True
-    assert len(s.sample(n=10, with_replacement=True, seed=0)) == 10
-
-
 def test_peak_max_peak_min() -> None:
     s = pl.Series("a", [4, 1, 3, 2, 5])
     result = s.peak_min()
@@ -1950,16 +1926,6 @@ def test_log_exp() -> None:
 
     expected = pl.Series("a", np.log1p(a.to_numpy()))
     assert_series_equal(a.log1p(), expected)
-
-
-def test_shuffle() -> None:
-    a = pl.Series("a", [1, 2, 3])
-    out = a.shuffle(2)
-    expected = pl.Series("a", [2, 1, 3])
-    assert_series_equal(out, expected)
-
-    out = pl.select(pl.lit(a).shuffle(2)).to_series()
-    assert_series_equal(out, expected)
 
 
 def test_to_physical() -> None:

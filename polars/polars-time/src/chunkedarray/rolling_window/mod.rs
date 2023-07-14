@@ -247,7 +247,6 @@ fn rolling_agg<T>(
         &dyn Fn(
             &[T::Native],
             Duration,
-            Duration,
             &[i64],
             ClosedWindow,
             TimeUnit,
@@ -294,11 +293,10 @@ where
         }
         let values = arr.values().as_slice();
         let duration = options.window_size;
+        polars_ensure!(duration.duration_ns() > 0 && !duration.negative, ComputeError:"window size should be strictly positive");
         let tu = options.tu.unwrap();
         let by = options.by.unwrap();
         let closed_window = options.closed_window.expect("closed window  must be set");
-        let mut offset = duration;
-        offset.negative = true;
         let func = rolling_agg_fn_dynamic.expect(
             "'rolling by' not yet supported for this expression, consider using 'groupby_rolling'",
         );
@@ -306,7 +304,6 @@ where
         func(
             values,
             duration,
-            offset,
             by,
             closed_window,
             tu,

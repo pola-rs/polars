@@ -52,6 +52,10 @@ impl FunctionExpr {
                     MonthStart => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "date_offset")]
                     MonthEnd => mapper.with_same_dtype().unwrap().dtype,
+                    #[cfg(feature = "timezones")]
+                    BaseUtcOffset => DataType::Duration(TimeUnit::Milliseconds),
+                    #[cfg(feature = "timezones")]
+                    DSTOffset => DataType::Duration(TimeUnit::Milliseconds),
                     Round(..) => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "timezones")]
                     CastTimezone(tz, _use_earliest) => {
@@ -59,8 +63,18 @@ impl FunctionExpr {
                     }
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return mapper.map_datetime_dtype_timezone(Some(tz)),
-                    DateRange { .. } => return mapper.map_to_supertype(),
-                    TimeRange { .. } => DataType::Time,
+                    DateRange {
+                        every,
+                        closed: _,
+                        time_unit,
+                        tz,
+                    } => {
+                        // output dtype may change based on `every`, `tz`, and `time_unit`
+                        return mapper.map_to_date_range_dtype(every, time_unit, tz);
+                    }
+                    TimeRange { .. } => {
+                        return Ok(Field::new("time", DataType::List(Box::new(DataType::Time))));
+                    }
                     Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
                         DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),
                         DataType::Date => DataType::Datetime(*tu, None),
@@ -72,6 +86,18 @@ impl FunctionExpr {
                 mapper.with_dtype(dtype)
             }
 
+            #[cfg(feature = "range")]
+            Range(fun) => {
+                use RangeFunction::*;
+                let field = match fun {
+                    ARange { .. } => Field::new("arange", DataType::Int64), // This is not always correct
+                    IntRange { .. } => Field::new("int", DataType::Int64),
+                    IntRanges { .. } => {
+                        Field::new("int_range", DataType::List(Box::new(DataType::Int64)))
+                    }
+                };
+                Ok(field)
+            }
             #[cfg(feature = "date_offset")]
             DateOffset(_) => mapper.with_same_dtype(),
             #[cfg(feature = "trigonometry")]
@@ -98,6 +124,12 @@ impl FunctionExpr {
                     #[cfg(feature = "list_count")]
                     CountMatch => mapper.with_dtype(IDX_DTYPE),
                     Sum => mapper.nested_sum_type(),
+                    #[cfg(feature = "list_sets")]
+                    SetOperation(_) => mapper.with_same_dtype(),
+                    #[cfg(feature = "list_any_all")]
+                    Any => mapper.with_dtype(DataType::Boolean),
+                    #[cfg(feature = "list_any_all")]
+                    All => mapper.with_dtype(DataType::Boolean),
                 }
             }
             #[cfg(feature = "dtype-array")]
@@ -202,7 +234,23 @@ impl FunctionExpr {
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr(_) => mapper.map_to_supertype(),
             Correlation { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "cutqcut")]
+            Cut { .. } => mapper.with_dtype(DataType::Categorical(None)),
+            #[cfg(feature = "cutqcut")]
+            QCut { .. } => mapper.with_dtype(DataType::Categorical(None)),
+            #[cfg(feature = "rle")]
+            RLE => mapper.map_dtype(|dt| {
+                DataType::Struct(vec![
+                    Field::new("lengths", DataType::UInt64),
+                    Field::new("values", dt.clone()),
+                ])
+            }),
+            #[cfg(feature = "rle")]
+            RLEID => mapper.with_dtype(DataType::UInt32),
             ToPhysical => mapper.to_physical_type(),
+            #[cfg(feature = "random")]
+            Random { .. } => mapper.with_same_dtype(),
+            SetSortedFlag(_) => mapper.with_same_dtype(),
         }
     }
 }
@@ -290,6 +338,65 @@ impl<'a> FieldsMapper<'a> {
         Ok(first)
     }
 
+    #[cfg(feature = "temporal")]
+    pub(super) fn map_to_date_range_dtype(
+        &self,
+        every: &Duration,
+        time_unit: &Option<TimeUnit>,
+        tz: &Option<String>,
+    ) -> PolarsResult<Field> {
+        let inner_dtype = match (&self.map_to_supertype()?.dtype, time_unit, tz, every) {
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, Some(field_tz)), time_unit, Some(tz), _) => {
+                if field_tz != tz {
+                    polars_bail!(ComputeError: format!("Given time_zone is different from that of timezone aware datetimes. \
+                    Given: '{}', got: '{}'.", tz, field_tz))
+                }
+                if let Some(time_unit) = time_unit {
+                    DataType::Datetime(*time_unit, Some(tz.to_string()))
+                } else {
+                    DataType::Datetime(*tu, Some(tz.to_string()))
+                }
+            }
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(_, Some(tz)), Some(time_unit), _, _) => {
+                DataType::Datetime(*time_unit, Some(tz.to_string()))
+            }
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, Some(tz)), None, _, _) => {
+                DataType::Datetime(*tu, Some(tz.to_string()))
+            }
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(_, _), Some(time_unit), Some(tz), _) => {
+                DataType::Datetime(*time_unit, Some(tz.to_string()))
+            }
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, _), None, Some(tz), _) => {
+                DataType::Datetime(*tu, Some(tz.to_string()))
+            }
+            (DataType::Datetime(_, _), Some(time_unit), _, _) => {
+                DataType::Datetime(*time_unit, None)
+            }
+            (DataType::Datetime(tu, _), None, _, _) => DataType::Datetime(*tu, None),
+            (DataType::Date, time_unit, time_zone, every) => {
+                let nsecs = every.nanoseconds();
+                if nsecs == 0 {
+                    DataType::Date
+                } else if let Some(tu) = time_unit {
+                    DataType::Datetime(*tu, time_zone.clone())
+                } else if nsecs % 1000 != 0 {
+                    DataType::Datetime(TimeUnit::Nanoseconds, time_zone.clone())
+                } else {
+                    DataType::Datetime(TimeUnit::Microseconds, time_zone.clone())
+                }
+            }
+            (dtype, _, _, _) => {
+                polars_bail!(ComputeError: "expected Date or Datetime, got {}", dtype)
+            }
+        };
+        Ok(Field::new("date", DataType::List(Box::new(inner_dtype))))
+    }
+
     /// Map the dtypes to the "supertype" of a list of lists.
     pub(super) fn map_to_list_supertype(&self) -> PolarsResult<Field> {
         self.try_map_dtypes(|dts| {
@@ -338,5 +445,11 @@ impl<'a> FieldsMapper<'a> {
             first.coerce(dt);
         }
         Ok(first)
+    }
+
+    #[cfg(feature = "extract_jsonpath")]
+    pub(super) fn with_opt_dtype(&self, dtype: Option<DataType>) -> PolarsResult<Field> {
+        let dtype = dtype.unwrap_or(DataType::Unknown);
+        self.with_dtype(dtype)
     }
 }

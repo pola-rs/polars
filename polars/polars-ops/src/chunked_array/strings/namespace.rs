@@ -380,6 +380,14 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         case::to_uppercase(ca)
     }
 
+    /// Modify the strings to their titlecase equivalent
+    #[must_use]
+    #[cfg(feature = "nightly")]
+    fn to_titlecase(&self) -> Utf8Chunked {
+        let ca = self.as_utf8();
+        case::to_titlecase(ca)
+    }
+
     /// Concat with the values from a second Utf8Chunked
     #[must_use]
     fn concat(&self, other: &Utf8Chunked) -> Utf8Chunked {

@@ -79,17 +79,18 @@ def test_with_columns() -> None:
     assert_frame_equal(dx, expected)
 
     # mixed
-    dx = df.with_columns(
-        [(pl.col("a") * pl.col("b")).alias("d")],
-        ~pl.col("c").alias("e"),
-        f=srs_unnamed,
-        g=True,
-        h=1,
-        i=3.2,
-        j="a",  # Note: string interpreted as column name, resolves to `pl.col("a")`
-        k=None,
-        l=datetime.datetime(2001, 1, 1, 0, 0),
-    )
+    with pytest.deprecated_call():
+        dx = df.with_columns(
+            [(pl.col("a") * pl.col("b")).alias("d")],
+            ~pl.col("c").alias("e"),
+            f=srs_unnamed,
+            g=True,
+            h=1,
+            i=3.2,
+            j="a",  # Note: string interpreted as column name, resolves to `pl.col("a")`
+            k=None,
+            l=datetime.datetime(2001, 1, 1, 0, 0),
+        )
     assert_frame_equal(dx, expected)
 
     # automatically upconvert multi-output expressions to struct

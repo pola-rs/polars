@@ -64,11 +64,15 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
     }
 
     /// Extracts a typed-JSON value for each row in the Utf8Chunked
-    fn json_extract(&self, dtype: Option<DataType>) -> PolarsResult<Series> {
+    fn json_extract(
+        &self,
+        dtype: Option<DataType>,
+        infer_schema_len: Option<usize>,
+    ) -> PolarsResult<Series> {
         let ca = self.as_utf8();
         let dtype = match dtype {
             Some(dt) => dt,
-            None => ca.json_infer(None)?,
+            None => ca.json_infer(infer_schema_len)?,
         };
 
         let buf_size = ca.get_values_size() + ca.null_count() * "null".len();
@@ -92,9 +96,14 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             .apply_on_opt(|opt_s| opt_s.and_then(|s| select_json(&pat, s))))
     }
 
-    fn json_path_extract(&self, json_path: &str, dtype: Option<DataType>) -> PolarsResult<Series> {
+    fn json_path_extract(
+        &self,
+        json_path: &str,
+        dtype: Option<DataType>,
+        infer_schema_len: Option<usize>,
+    ) -> PolarsResult<Series> {
         let selected_json = self.as_utf8().json_path_select(json_path)?;
-        selected_json.json_extract(dtype)
+        selected_json.json_extract(dtype, infer_schema_len)
     }
 }
 
@@ -178,11 +187,11 @@ mod tests {
         let expected_dtype = expected_series.dtype().clone();
 
         assert!(ca
-            .json_extract(None)
+            .json_extract(None, None)
             .unwrap()
             .series_equal_missing(&expected_series));
         assert!(ca
-            .json_extract(Some(expected_dtype))
+            .json_extract(Some(expected_dtype), None)
             .unwrap()
             .series_equal_missing(&expected_series));
     }
@@ -253,7 +262,7 @@ mod tests {
         );
 
         assert!(ca
-            .json_path_extract("$.b[:].c", None)
+            .json_path_extract("$.b[:].c", None, None)
             .unwrap()
             .into_series()
             .series_equal_missing(&c_series));

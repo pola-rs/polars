@@ -6,7 +6,7 @@ from functools import lru_cache
 from importlib import import_module
 from importlib.util import find_spec
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, Hashable, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
@@ -32,7 +32,7 @@ class _LazyModule(ModuleType):
 
     __lazy__ = True
 
-    _mod_pfx: dict[str, str] = {
+    _mod_pfx: ClassVar[dict[str, str]] = {
         "numpy": "np.",
         "pandas": "pd.",
         "pyarrow": "pa.",

@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -30,9 +29,11 @@ where
     n_threads: Option<usize>,
     infer_schema_len: Option<usize>,
     chunk_size: usize,
-    schema: Option<&'a Schema>,
+    schema: Option<SchemaRef>,
+    schema_overwrite: Option<&'a Schema>,
     path: Option<PathBuf>,
     low_memory: bool,
+    ignore_errors: bool,
 }
 
 impl<'a, R> JsonLineReader<'a, R>
@@ -43,10 +44,16 @@ where
         self.n_rows = num_rows;
         self
     }
-    pub fn with_schema(mut self, schema: &'a Schema) -> Self {
+    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
         self.schema = Some(schema);
         self
     }
+
+    pub fn with_schema_overwrite(mut self, schema: &'a Schema) -> Self {
+        self.schema_overwrite = Some(schema);
+        self
+    }
+
     pub fn with_rechunk(mut self, rechunk: bool) -> Self {
         self.rechunk = rechunk;
         self
@@ -102,9 +109,11 @@ where
             n_threads: None,
             infer_schema_len: Some(128),
             schema: None,
+            schema_overwrite: None,
             path: None,
             chunk_size: 1 << 18,
             low_memory: false,
+            ignore_errors: false,
         }
     }
     fn finish(mut self) -> PolarsResult<DataFrame> {
@@ -114,11 +123,13 @@ where
             reader_bytes,
             self.n_rows,
             self.schema,
+            self.schema_overwrite,
             self.n_threads,
             1024, // sample size
             self.chunk_size,
             self.low_memory,
             self.infer_schema_len,
+            self.ignore_errors,
         )?;
 
         let mut df: DataFrame = json_reader.as_df()?;
@@ -132,28 +143,31 @@ where
 pub(crate) struct CoreJsonReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     n_rows: Option<usize>,
-    schema: Cow<'a, Schema>,
+    schema: SchemaRef,
     n_threads: Option<usize>,
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
+    ignore_errors: bool,
 }
 impl<'a> CoreJsonReader<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,
-        schema: Option<&'a Schema>,
+        schema: Option<SchemaRef>,
+        schema_overwrite: Option<&Schema>,
         n_threads: Option<usize>,
         sample_size: usize,
         chunk_size: usize,
         low_memory: bool,
         infer_schema_len: Option<usize>,
+        ignore_errors: bool,
     ) -> PolarsResult<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
 
-        let schema = match schema {
-            Some(schema) => Cow::Borrowed(schema),
+        let mut schema = match schema {
+            Some(schema) => schema,
             None => {
                 let bytes: &[u8] = &reader_bytes;
                 let mut cursor = Cursor::new(bytes);
@@ -161,9 +175,14 @@ impl<'a> CoreJsonReader<'a> {
                 let data_type = polars_json::ndjson::infer(&mut cursor, infer_schema_len)?;
                 let schema = StructArray::get_fields(&data_type).iter().collect();
 
-                Cow::Owned(schema)
+                Arc::new(schema)
             }
         };
+        if let Some(overwriting_schema) = schema_overwrite {
+            let schema = Arc::make_mut(&mut schema);
+            overwrite_schema(schema, overwriting_schema)?;
+        }
+
         Ok(CoreJsonReader {
             reader_bytes: Some(reader_bytes),
             schema,
@@ -172,6 +191,7 @@ impl<'a> CoreJsonReader<'a> {
             n_threads,
             chunk_size,
             low_memory,
+            ignore_errors,
         })
     }
     fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> PolarsResult<DataFrame> {
@@ -212,7 +232,7 @@ impl<'a> CoreJsonReader<'a> {
             file_chunks
                 .into_par_iter()
                 .map(|(start_pos, stop_at_nbytes)| {
-                    let mut buffers = init_buffers(&self.schema, capacity)?;
+                    let mut buffers = init_buffers(&self.schema, capacity, self.ignore_errors)?;
                     parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers)?;
                     DataFrame::new(
                         buffers

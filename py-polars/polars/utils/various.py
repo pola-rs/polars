@@ -4,9 +4,10 @@ import inspect
 import os
 import re
 import sys
+import warnings
 from collections.abc import MappingView, Sized
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, TypeVar
 
 import polars as pl
 from polars import functions as F
@@ -19,19 +20,16 @@ from polars.datatypes import (
     Time,
     Utf8,
     is_polars_dtype,
+    unpack_dtypes,
 )
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
+from polars.dependencies import _PYARROW_AVAILABLE
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
     from pathlib import Path
 
     from polars import DataFrame, Series
-    from polars.type_aliases import PolarsDataType, SizeUnit
+    from polars.type_aliases import PolarsDataType, PolarsIntegerType, SizeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec, TypeGuard
@@ -99,10 +97,11 @@ def is_str_sequence(
 
 
 def range_to_series(
-    name: str, rng: range, dtype: PolarsDataType | None = None
+    name: str, rng: range, dtype: PolarsIntegerType | None = None
 ) -> Series:
     """Fast conversion of the given range to a Series."""
-    return F.arange(
+    dtype = dtype or Int64
+    return F.int_range(
         start=rng.start,
         end=rng.stop,
         step=rng.step,
@@ -174,6 +173,18 @@ def arrlen(obj: Any) -> int | None:
         return None if isinstance(obj, str) else len(obj)
     except TypeError:
         return None
+
+
+def can_create_dicts_with_pyarrow(dtypes: Sequence[PolarsDataType]) -> bool:
+    """Check if the given dtypes can be used to create dicts with pyarrow fast path."""
+    # TODO: have our own fast-path for dict iteration in Rust
+    return (
+        _PYARROW_AVAILABLE
+        # note: 'ns' precision instantiates values as pandas types - avoid
+        and not any(
+            (getattr(tp, "time_unit", None) == "ns") for tp in unpack_dtypes(*dtypes)
+        )
+    )
 
 
 def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> str:
@@ -394,3 +405,11 @@ def _get_stack_locals(
                     return objects
         stack_frame = stack_frame.f_back
     return objects
+
+
+# this is called from rust
+def _polars_warn(msg: str) -> None:
+    warnings.warn(
+        msg,
+        stacklevel=find_stacklevel(),
+    )

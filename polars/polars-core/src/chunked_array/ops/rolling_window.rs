@@ -36,7 +36,7 @@ mod inner_mod {
     use num_traits::{Float, Zero};
     use polars_arrow::bit_util::unset_bit_raw;
     use polars_arrow::data_types::IsFloat;
-    use polars_arrow::trusted_len::PushUnchecked;
+    use polars_arrow::trusted_len::TrustedLenPush;
 
     use crate::prelude::*;
 

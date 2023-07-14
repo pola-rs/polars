@@ -12,7 +12,12 @@ use polars_io::ipc::IpcReader;
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
-#[cfg(any(feature = "parquet", feature = "parquet_async", feature = "csv"))]
+#[cfg(any(
+    feature = "parquet",
+    feature = "parquet_async",
+    feature = "csv",
+    feature = "ipc"
+))]
 use polars_io::RowCount;
 #[cfg(feature = "csv")]
 use polars_io::{
@@ -24,6 +29,8 @@ use polars_io::{
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
+#[cfg(feature = "python")]
+use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
 use crate::utils;
 
@@ -36,7 +43,7 @@ pub(crate) fn prepare_projection(
     Ok((exprs, schema))
 }
 
-pub struct LogicalPlanBuilder(LogicalPlan);
+pub struct LogicalPlanBuilder(pub LogicalPlan);
 
 impl From<LogicalPlan> for LogicalPlanBuilder {
     fn from(lp: LogicalPlan) -> Self {
@@ -125,7 +132,7 @@ impl LogicalPlanBuilder {
         use polars_io::{is_cloud_url, SerReader as _};
 
         let path = path.into();
-        let file_info: PolarsResult<FileInfo> = if is_cloud_url(&path) {
+        let (mut schema, num_rows) = if is_cloud_url(&path) {
             #[cfg(not(feature = "async"))]
             panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
@@ -134,41 +141,44 @@ impl LogicalPlanBuilder {
             #[cfg(feature = "async")]
             {
                 let uri = path.to_string_lossy();
-                let (schema, num_rows) =
-                    ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?;
-                Ok(FileInfo {
-                    schema: Arc::new(schema),
-                    row_estimation: (Some(num_rows), num_rows),
-                })
+                ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?
             }
         } else {
             let file = std::fs::File::open(&path)?;
             let mut reader = ParquetReader::new(file);
-            let schema = Arc::new(reader.schema()?);
-            let num_rows = reader.num_rows()?;
-            Ok(FileInfo {
-                schema,
-                row_estimation: (Some(num_rows), num_rows),
-            })
+            (reader.schema()?, reader.num_rows()?)
         };
-        let file_info = file_info?;
 
-        Ok(LogicalPlan::ParquetScan {
+        if let Some(rc) = &row_count {
+            let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+        }
+
+        let file_info = FileInfo {
+            schema: Arc::new(schema),
+            row_estimation: (Some(num_rows), num_rows),
+        };
+
+        let options = FileScanOptions {
+            with_columns: None,
+            cache,
+            n_rows,
+            rechunk,
+            row_count,
+            file_counter: Default::default(),
+        };
+        Ok(LogicalPlan::Scan {
             path,
             file_info,
+            file_options: options,
             predicate: None,
-            options: ParquetOptions {
-                n_rows,
-                with_columns: None,
-                cache,
-                parallel,
-                row_count,
-                rechunk,
-                file_counter: Default::default(),
-                low_memory,
-                use_statistics,
+            scan_type: FileScan::Parquet {
+                options: ParquetOptions {
+                    parallel,
+                    low_memory,
+                    use_statistics,
+                },
+                cloud_options,
             },
-            cloud_options,
         }
         .into())
     }
@@ -177,24 +187,43 @@ impl LogicalPlanBuilder {
     pub fn scan_ipc<P: Into<std::path::PathBuf>>(
         path: P,
         options: IpcScanOptions,
+        n_rows: Option<usize>,
+        cache: bool,
+        row_count: Option<RowCount>,
+        rechunk: bool,
     ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
         let path = path.into();
         let file = std::fs::File::open(&path)?;
         let mut reader = IpcReader::new(file);
-        let schema = Arc::new(reader.schema()?);
+
+        let mut schema = reader.schema()?;
+        if let Some(rc) = &row_count {
+            let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+        }
+        let schema = Arc::new(schema);
 
         let num_rows = reader._num_rows()?;
         let file_info = FileInfo {
             schema,
             row_estimation: (None, num_rows),
         };
-        Ok(LogicalPlan::IpcScan {
+
+        let file_options = FileScanOptions {
+            with_columns: None,
+            cache,
+            n_rows,
+            rechunk,
+            row_count,
+            file_counter: Default::default(),
+        };
+        Ok(LogicalPlan::Scan {
             path,
             file_info,
+            file_options,
             predicate: None,
-            options: options.into(),
+            scan_type: FileScan::Ipc { options },
         }
         .into())
     }
@@ -209,7 +238,7 @@ impl LogicalPlanBuilder {
         mut skip_rows: usize,
         n_rows: Option<usize>,
         cache: bool,
-        schema: Option<Arc<Schema>>,
+        mut schema: Option<Arc<Schema>>,
         schema_overwrite: Option<&Schema>,
         low_memory: bool,
         comment_char: Option<u8>,
@@ -237,7 +266,7 @@ impl LogicalPlanBuilder {
 
         // TODO! delay inferring schema until absolutely necessary
         // this needs a way to estimated bytes/rows.
-        let (inferred_schema, rows_read, bytes_read) = infer_file_schema(
+        let (mut inferred_schema, rows_read, bytes_read) = infer_file_schema(
             &reader_bytes,
             delimiter,
             infer_schema_length,
@@ -252,6 +281,21 @@ impl LogicalPlanBuilder {
             try_parse_dates,
         )?;
 
+        if let Some(rc) = &row_count {
+            match schema {
+                None => {
+                    let _ = inferred_schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+                }
+                Some(inner) => {
+                    schema = Some(Arc::new(
+                        inner
+                            .new_inserting_at_index(0, rc.name.as_str().into(), IDX_DTYPE)
+                            .unwrap(),
+                    ));
+                }
+            }
+        }
+
         let schema = schema.unwrap_or_else(|| Arc::new(inferred_schema));
         let n_bytes = reader_bytes.len();
         let estimated_n_rows = (rows_read as f64 / bytes_read as f64 * n_bytes as f64) as usize;
@@ -261,29 +305,35 @@ impl LogicalPlanBuilder {
             schema,
             row_estimation: (None, estimated_n_rows),
         };
-        Ok(LogicalPlan::CsvScan {
+
+        let options = FileScanOptions {
+            with_columns: None,
+            cache,
+            n_rows,
+            rechunk,
+            row_count,
+            file_counter: Default::default(),
+        };
+        Ok(LogicalPlan::Scan {
             path,
             file_info,
-            options: CsvParserOptions {
-                has_header,
-                delimiter,
-                ignore_errors,
-                skip_rows,
-                n_rows,
-                with_columns: None,
-                low_memory,
-                cache,
-                comment_char,
-                quote_char,
-                eol_char,
-                null_values,
-                rechunk,
-                encoding,
-                row_count,
-                try_parse_dates,
-                file_counter: Default::default(),
-            },
+            file_options: options,
             predicate: None,
+            scan_type: FileScan::Csv {
+                options: CsvParserOptions {
+                    has_header,
+                    delimiter,
+                    ignore_errors,
+                    skip_rows,
+                    low_memory,
+                    comment_char,
+                    quote_char,
+                    eol_char,
+                    null_values,
+                    encoding,
+                    try_parse_dates,
+                },
+            },
         }
         .into())
     }
@@ -460,7 +510,7 @@ impl LogicalPlanBuilder {
                             This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
                     } else {
                         format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all_exprs' or `any_exprs' expression.")
+                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression.")
                     };
                     return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
                 }
@@ -583,7 +633,13 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn sort(self, by_column: Vec<Expr>, descending: Vec<bool>, null_last: bool) -> Self {
+    pub fn sort(
+        self,
+        by_column: Vec<Expr>,
+        descending: Vec<bool>,
+        null_last: bool,
+        maintain_order: bool,
+    ) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let by_column = try_delayed!(rewrite_projections(by_column, &schema, &[]), &self.0, into);
         LogicalPlan::Sort {
@@ -593,6 +649,7 @@ impl LogicalPlanBuilder {
                 descending,
                 nulls_last: null_last,
                 slice: None,
+                maintain_order,
             },
         }
         .into()
@@ -701,6 +758,28 @@ impl LogicalPlanBuilder {
         LogicalPlan::MapFunction {
             input: Box::new(self.0),
             function,
+        }
+        .into()
+    }
+
+    #[cfg(feature = "python")]
+    pub fn map_python(
+        self,
+        function: PythonFunction,
+        optimizations: AllowedOptimizations,
+        schema: Option<SchemaRef>,
+        validate_output: bool,
+    ) -> Self {
+        LogicalPlan::MapFunction {
+            input: Box::new(self.0),
+            function: FunctionNode::OpaquePython {
+                function,
+                schema,
+                predicate_pd: optimizations.predicate_pushdown,
+                projection_pd: optimizations.projection_pushdown,
+                streamable: optimizations.streaming,
+                validate_output,
+            },
         }
         .into()
     }

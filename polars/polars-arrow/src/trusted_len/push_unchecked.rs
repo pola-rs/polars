@@ -1,6 +1,6 @@
 use super::*;
 
-pub trait PushUnchecked<T> {
+pub trait TrustedLenPush<T> {
     /// Will push an item and not check if there is enough capacity
     ///
     /// # Safety
@@ -32,7 +32,7 @@ pub trait PushUnchecked<T> {
     unsafe fn from_trusted_len_iter_unchecked<I: IntoIterator<Item = T>>(iter: I) -> Self;
 }
 
-impl<T> PushUnchecked<T> for Vec<T> {
+impl<T> TrustedLenPush<T> for Vec<T> {
     #[inline]
     unsafe fn push_unchecked(&mut self, value: T) {
         debug_assert!(self.capacity() > self.len());

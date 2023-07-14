@@ -247,14 +247,30 @@ pub fn read_parquet<R: MmapBytesReader>(
     let file_metadata = metadata
         .map(Ok)
         .unwrap_or_else(|| read::read_metadata(&mut reader))?;
-    let row_group_len = file_metadata.row_groups.len();
+    let n_row_groups = file_metadata.row_groups.len();
+
+    // if there are multiple row groups and categorical data
+    // we need a string cache
+    // we keep it alive until the end of the function
+    let _string_cache = if n_row_groups > 1 {
+        #[cfg(feature = "dtype-categorical")]
+        {
+            Some(polars_core::IUseStringCache::hold())
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        {
+            Some(0u8)
+        }
+    } else {
+        None
+    };
 
     let projection = projection
         .map(Cow::Borrowed)
         .unwrap_or_else(|| Cow::Owned((0usize..schema.fields.len()).collect::<Vec<_>>()));
 
     if let ParallelStrategy::Auto = parallel {
-        if row_group_len > projection.len() || row_group_len > POOL.current_num_threads() {
+        if n_row_groups > projection.len() || n_row_groups > POOL.current_num_threads() {
             parallel = ParallelStrategy::RowGroups;
         } else {
             parallel = ParallelStrategy::Columns;
@@ -273,7 +289,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             &store,
             &mut 0,
             0,
-            row_group_len,
+            n_row_groups,
             &mut limit,
             &file_metadata,
             schema,

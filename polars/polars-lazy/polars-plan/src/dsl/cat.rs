@@ -20,4 +20,9 @@ impl CategoricalNameSpace {
         self.0
             .map_private(CategoricalFunction::SetOrdering { lexical }.into())
     }
+
+    pub fn get_categories(self) -> Expr {
+        self.0
+            .map_private(CategoricalFunction::GetCategories.into())
+    }
 }

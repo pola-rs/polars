@@ -2,6 +2,7 @@ from datetime import date, datetime
 from typing import Any
 
 import numpy as np
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -486,3 +487,12 @@ def test_asof_join_nearest_by_date() -> None:
 
     out = df1.join_asof(df2, on="asof_key", by="group", strategy="nearest")
     assert_frame_equal(out, expected)
+
+
+def test_asof_join_string_err() -> None:
+    left = pl.DataFrame({"date_str": ["2023/02/15"]}).sort("date_str")
+    right = pl.DataFrame(
+        {"date_str": ["2023/01/31", "2023/02/28"], "value": [0, 1]}
+    ).sort("date_str")
+    with pytest.raises(pl.InvalidOperationError):
+        left.join_asof(right, on="date_str")

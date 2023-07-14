@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars import col
 
 
 def test_meta_pop_and_cmp() -> None:
@@ -64,3 +65,11 @@ def test_meta_is_regex_projection() -> None:
     e = pl.col("^.*$").alias("bar")
     assert e.meta.is_regex_projection()
     assert e.meta.has_multiple_outputs()
+
+
+def test_meta_tree_format() -> None:
+    e = (col("foo") * col("bar")).sum().over(col("ham")) / 2
+    assert (
+        e.meta.tree_format(return_as_string=True)
+        == """    binary: /    \n\n      |              |       \n\n    lit(2)           window      \n\n                     |               |        \n\n                     col(ham)        sum          \n\n                                     |        \n\n                                     binary: *    \n\n                                     |                |       \n\n                                     col(bar)         col(foo)    \n"""
+    )

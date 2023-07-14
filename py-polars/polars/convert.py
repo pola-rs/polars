@@ -110,8 +110,8 @@ def from_dicts(
 
         If you want to drop some of the fields found in the input dictionaries, a
         _partial_ schema can be declared, in which case omitted fields will not be
-        loaded. Similarly you can extend the loaded frame with empty columns by adding
-        them to the schema.
+        loaded. Similarly, you can extend the loaded frame with empty columns by
+        adding them to the schema.
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
     infer_schema_length
@@ -185,7 +185,7 @@ def from_dicts(
 
 
 def from_records(
-    data: Sequence[Sequence[Any]],
+    data: Sequence[Any],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -639,7 +639,7 @@ def from_pandas(
 
 @overload
 def from_pandas(
-    data: pd.Series | pd.DatetimeIndex,
+    data: pd.Series[Any] | pd.Index,
     *,
     schema_overrides: SchemaDict | None = ...,
     rechunk: bool = ...,
@@ -650,7 +650,7 @@ def from_pandas(
 
 
 def from_pandas(
-    data: pd.DataFrame | pd.Series | pd.DatetimeIndex,
+    data: pd.DataFrame | pd.Series[Any] | pd.Index,
     *,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,

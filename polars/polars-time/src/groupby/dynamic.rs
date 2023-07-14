@@ -129,6 +129,11 @@ impl Wrap<&DataFrame> {
         by: Vec<Series>,
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+        polars_ensure!(
+                        options.period.duration_ns()>0 && !options.period.negative,
+                        ComputeError:
+                        "rolling window period should be strictly positive",
+        );
         let time = self.0.column(&options.index_column)?.clone();
         if by.is_empty() {
             // if by is given, the column must be sorted in the 'by' arg, which we can not check now
@@ -755,17 +760,11 @@ mod test {
             "",
             [0.0, 8.0, 4.000000000000002, 6.666666666666667, 24.5, 0.0],
         );
-        assert_eq!(
-            (var - expected).abs().unwrap().lt(1e-12).unwrap().all(),
-            true
-        );
+        assert!((var - expected).abs().unwrap().lt(1e-12).unwrap().all());
 
         let var = unsafe { nulls.agg_var(&groups, 1) };
         let expected = Series::new("", [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
-        assert_eq!(
-            (var - expected).abs().unwrap().lt(1e-12).unwrap().all(),
-            true
-        );
+        assert!((var - expected).abs().unwrap().lt(1e-12).unwrap().all());
 
         let quantile = unsafe { a.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
         let expected = Series::new("", [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);

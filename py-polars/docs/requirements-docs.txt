@@ -4,7 +4,8 @@ numpy
 pandas
 pyarrow
 
-hypothesis==6.75.1
+hypothesis==6.79.4; python_version < '3.8'
+hypothesis==6.80.0; python_version >= '3.8'
 
 autodocsumm==0.2.10
 commonmark==0.9.1

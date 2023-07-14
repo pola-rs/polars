@@ -92,12 +92,18 @@ impl Duration {
     /// * `d`:  day
     /// * `w`:  week
     /// * `mo`: calendar month
+    /// * `q`: calendar quarter
     /// * `y`:  calendar year
     /// * `i`:  index value (only for {Int32, Int64} dtypes)
     ///
     /// Suffix with `"_saturating"` to indicate that dates too large for
     /// their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
     /// instead of erroring.
+    ///
+    /// By "calendar day", we mean the corresponding time on the next
+    /// day (which may not be 24 hours, depending on daylight savings).
+    /// Similarly for "calendar week", "calendar month", "calendar quarter",
+    /// and "calendar year".
     ///
     /// # Panics
     /// If the given str is invalid for any reason.
@@ -330,6 +336,10 @@ impl Duration {
 
     pub fn days(&self) -> i64 {
         self.days
+    }
+
+    pub fn is_constant_duration(&self) -> bool {
+        self.months == 0 && self.weeks == 0 && self.days == 0
     }
 
     /// Returns the nanoseconds from the `Duration` without the weeks or months part.

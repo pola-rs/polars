@@ -96,11 +96,12 @@ fn expand_regex(
     result: &mut Vec<Expr>,
     schema: &Schema,
     pattern: &str,
+    exclude: &PlHashSet<Arc<str>>,
 ) -> PolarsResult<()> {
     let re =
         regex::Regex::new(pattern).map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
     for name in schema.iter_names() {
-        if re.is_match(name) {
+        if re.is_match(name) && !exclude.contains(name.as_str()) {
             let mut new_expr = expr.clone();
 
             new_expr.mutate().apply(|e| match &e {
@@ -125,7 +126,12 @@ pub(crate) fn is_regex_projection(name: &str) -> bool {
 #[cfg(feature = "regex")]
 /// This function searches for a regex expression in `col("..")` and expands the columns
 /// that are selected by that regex in `result`. The regex should start with `^` and end with `$`.
-fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) -> PolarsResult<()> {
+fn replace_regex(
+    expr: &Expr,
+    result: &mut Vec<Expr>,
+    schema: &Schema,
+    exclude: &PlHashSet<Arc<str>>,
+) -> PolarsResult<()> {
     let roots = expr_to_leaf_column_names(expr);
     let mut regex = None;
     for name in &roots {
@@ -133,11 +139,23 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) -> Polars
             match regex {
                 None => {
                     regex = Some(name);
-                    expand_regex(expr, result, schema, name)?
+                    if exclude.is_empty() {
+                        expand_regex(expr, result, schema, name, exclude)?
+                    } else {
+                        // iterate until we find the Exclude node
+                        // we remove that node from the expression
+                        for e in expr.into_iter() {
+                            if let Expr::Exclude(e, _) = e {
+                                expand_regex(e, result, schema, name, exclude)?;
+                                break;
+                            }
+                        }
+                    }
                 }
                 Some(r) => {
-                    assert_eq!(
-                        r, name,
+                    polars_ensure!(
+                        r == name,
+                        ComputeError:
                         "an expression is not allowed to have different regexes"
                     )
                 }
@@ -195,6 +213,20 @@ pub(super) fn replace_dtype_with_column(mut expr: Expr, column_name: Arc<str>) -
     expr
 }
 
+fn dtypes_match(d1: &DataType, d2: &DataType) -> bool {
+    match (d1, d2) {
+        // note: allow Datetime "*" wildcard for timezones...
+        (DataType::Datetime(tu_l, tz_l), DataType::Datetime(tu_r, tz_r)) => {
+            tu_l == tu_r
+                && (tz_l == tz_r
+                    || tz_r.is_some() && (tz_l.as_deref().unwrap_or("") == "*")
+                    || tz_l.is_some() && (tz_r.as_deref().unwrap_or("") == "*"))
+        }
+        // ...but otherwise require exact match
+        _ => d1 == d2,
+    }
+}
+
 /// replace `DtypeColumn` with `col("foo")..col("bar")`
 fn expand_dtypes(
     expr: &Expr,
@@ -205,10 +237,10 @@ fn expand_dtypes(
 ) -> PolarsResult<()> {
     // note: we loop over the schema to guarantee that we return a stable
     // field-order, irrespective of which dtypes are filtered against
-    for field in schema
-        .iter_fields()
-        .filter(|f| (dtypes.contains(&f.dtype) && !exclude.contains(f.name().as_str())))
-    {
+    for field in schema.iter_fields().filter(|f| {
+        dtypes.iter().any(|dtype| dtypes_match(dtype, &f.dtype))
+            && !exclude.contains(f.name().as_str())
+    }) {
         let name = field.name();
         let new_expr = expr.clone();
         let new_expr = replace_dtype_with_column(new_expr, Arc::from(name.as_str()));
@@ -224,51 +256,55 @@ fn prepare_excluded(
     expr: &Expr,
     schema: &Schema,
     keys: &[Expr],
+    has_exclude: bool,
 ) -> PolarsResult<PlHashSet<Arc<str>>> {
     let mut exclude = PlHashSet::new();
-    for e in expr {
-        if let Expr::Exclude(_, to_exclude) = e {
-            #[cfg(feature = "regex")]
-            {
-                // instead of matching the names for regex patterns
-                // and expanding the matches in the schema we
-                // reuse the `replace_regex` function. This is a bit
-                // slower but DRY.
-                let mut buf = vec![];
-                for to_exclude_single in to_exclude {
-                    match to_exclude_single {
-                        Excluded::Name(name) => {
-                            let e = Expr::Column(name.clone());
-                            replace_regex(&e, &mut buf, schema)?;
-                            // we cannot loop because of bchck
-                            while let Some(col) = buf.pop() {
-                                if let Expr::Column(name) = col {
-                                    exclude.insert(name);
+
+    // explicit exclude branch
+    if has_exclude {
+        for e in expr {
+            if let Expr::Exclude(_, to_exclude) = e {
+                #[cfg(feature = "regex")]
+                {
+                    // instead of matching the names for regex patterns and
+                    // expanding the matches in the schema we reuse the
+                    // `replace_regex` func; this is a bit slower but DRY.
+                    let mut buf = vec![];
+                    for to_exclude_single in to_exclude {
+                        match to_exclude_single {
+                            Excluded::Name(name) => {
+                                let e = Expr::Column(name.clone());
+                                replace_regex(&e, &mut buf, schema, &Default::default())?;
+                                // we cannot loop because of bchck
+                                while let Some(col) = buf.pop() {
+                                    if let Expr::Column(name) = col {
+                                        exclude.insert(name);
+                                    }
                                 }
                             }
-                        }
-                        Excluded::Dtype(dt) => {
-                            for fld in schema.iter_fields() {
-                                if fld.data_type() == dt {
-                                    exclude.insert(Arc::from(fld.name().as_ref()));
+                            Excluded::Dtype(dt) => {
+                                for fld in schema.iter_fields() {
+                                    if dtypes_match(fld.data_type(), dt) {
+                                        exclude.insert(Arc::from(fld.name().as_ref()));
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            #[cfg(not(feature = "regex"))]
-            {
-                for to_exclude_single in to_exclude {
-                    match to_exclude_single {
-                        Excluded::Name(name) => {
-                            exclude.insert(name.clone());
-                        }
-                        Excluded::Dtype(dt) => {
-                            for (name, dtype) in schema.iter() {
-                                if matches!(dtype, dt) {
-                                    exclude.insert(Arc::from(name.as_str()));
+                #[cfg(not(feature = "regex"))]
+                {
+                    for to_exclude_single in to_exclude {
+                        match to_exclude_single {
+                            Excluded::Name(name) => {
+                                exclude.insert(name.clone());
+                            }
+                            Excluded::Dtype(dt) => {
+                                for (name, dtype) in schema.iter() {
+                                    if matches!(dtype, dt) {
+                                        exclude.insert(Arc::from(name.as_str()));
+                                    }
                                 }
                             }
                         }
@@ -277,6 +313,8 @@ fn prepare_excluded(
             }
         }
     }
+
+    // exclude groupby keys
     for mut expr in keys.iter() {
         // Allow a number of aliases of a column expression, still exclude column from aggregation
         loop {
@@ -341,6 +379,7 @@ struct ExpansionFlags {
     has_wildcard: bool,
     replace_fill_null_type: bool,
     has_selector: bool,
+    has_exclude: bool,
 }
 
 fn find_flags(expr: &Expr) -> ExpansionFlags {
@@ -349,6 +388,7 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
     let mut has_wildcard = false;
     let mut replace_fill_null_type = false;
     let mut has_selector = false;
+    let mut has_exclude = false;
 
     // do a single pass and collect all flags at once.
     // supertypes/modification that can be done in place are also don e in that pass
@@ -362,6 +402,7 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
                 function: FunctionExpr::FillNull { .. },
                 ..
             } => replace_fill_null_type = true,
+            Expr::Exclude(_, _) => has_exclude = true,
             _ => {}
         }
     }
@@ -371,6 +412,7 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
         has_wildcard,
         replace_fill_null_type,
         has_selector,
+        has_exclude,
     }
 }
 
@@ -449,7 +491,7 @@ fn replace_and_add_to_results(
                 Expr::Columns(names) => expand_columns(&expr, result, names)?,
                 Expr::DtypeColumn(dtypes) => {
                     // keep track of column excluded from the dtypes
-                    let exclude = prepare_excluded(&expr, schema, keys)?;
+                    let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
                     expand_dtypes(&expr, result, schema, dtypes, &exclude)?
                 }
                 _ => {}
@@ -459,7 +501,7 @@ fn replace_and_add_to_results(
     // has multiple column names due to wildcards
     else if flags.has_wildcard {
         // keep track of column excluded from the wildcard
-        let exclude = prepare_excluded(&expr, schema, keys)?;
+        let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
         // this path prepares the wildcard as input for the Function Expr
         replace_wildcard(&expr, result, &exclude, schema)?;
     }
@@ -468,7 +510,9 @@ fn replace_and_add_to_results(
         #[allow(clippy::collapsible_else_if)]
         #[cfg(feature = "regex")]
         {
-            replace_regex(&expr, result, schema)?
+            // keep track of column excluded from the dtypes
+            let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
+            replace_regex(&expr, result, schema, &exclude)?;
         }
         #[cfg(not(feature = "regex"))]
         {

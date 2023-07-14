@@ -2,6 +2,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.selectors import selector_column_names
 from polars.testing import assert_frame_equal
 
 
@@ -86,6 +87,101 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
     all_columns = set(df.columns)
     assert set(df.select(~cs.datetime()).columns) == all_columns - {"opp"}
 
+    df = pl.DataFrame(
+        schema={
+            "d1": pl.Datetime("ns", "Asia/Tokyo"),
+            "d2": pl.Datetime("ns", "UTC"),
+            "d3": pl.Datetime("us", "UTC"),
+            "d4": pl.Datetime("us"),
+            "d5": pl.Datetime("ms"),
+        },
+    )
+    assert df.select(cs.datetime()).columns == ["d1", "d2", "d3", "d4", "d5"]
+    assert df.select(~cs.datetime()).schema == {}
+
+    assert df.select(cs.datetime(["ms", "ns"])).columns == ["d1", "d2", "d5"]
+    assert df.select(cs.datetime(["ms", "ns"], time_zone="*")).columns == ["d1", "d2"]
+
+    assert df.select(~cs.datetime(["ms", "ns"])).columns == ["d3", "d4"]
+    assert df.select(~cs.datetime(["ms", "ns"], time_zone="*")).columns == [
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(
+        cs.datetime(time_zone=["UTC", "Asia/Tokyo", "Europe/London"])
+    ).columns == ["d1", "d2", "d3"]
+
+    assert df.select(cs.datetime(time_zone="*")).columns == ["d1", "d2", "d3"]
+    assert df.select(cs.datetime("ns", time_zone="*")).columns == ["d1", "d2"]
+    assert df.select(cs.datetime(time_zone="UTC")).columns == ["d2", "d3"]
+    assert df.select(cs.datetime("us", time_zone="UTC")).columns == ["d3"]
+    assert df.select(cs.datetime(time_zone="Asia/Tokyo")).columns == ["d1"]
+    assert df.select(cs.datetime("us", time_zone="Asia/Tokyo")).columns == []
+    assert df.select(cs.datetime(time_zone=None)).columns == ["d4", "d5"]
+    assert df.select(cs.datetime("ns", time_zone=None)).columns == []
+
+    assert df.select(~cs.datetime(time_zone="*")).columns == ["d4", "d5"]
+    assert df.select(~cs.datetime("ns", time_zone="*")).columns == ["d3", "d4", "d5"]
+    assert df.select(~cs.datetime(time_zone="UTC")).columns == ["d1", "d4", "d5"]
+    assert df.select(~cs.datetime("us", time_zone="UTC")).columns == [
+        "d1",
+        "d2",
+        "d4",
+        "d5",
+    ]
+    assert df.select(~cs.datetime(time_zone="Asia/Tokyo")).columns == [
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(~cs.datetime("us", time_zone="Asia/Tokyo")).columns == [
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(~cs.datetime(time_zone=None)).columns == ["d1", "d2", "d3"]
+    assert df.select(~cs.datetime("ns", time_zone=None)).columns == [
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(cs.datetime("ns")).columns == ["d1", "d2"]
+    assert df.select(cs.datetime("us")).columns == ["d3", "d4"]
+    assert df.select(cs.datetime("ms")).columns == ["d5"]
+
+    # bonus check; significantly more verbose, but equivalent to a selector -
+    assert (
+        df.select(
+            pl.all().exclude(
+                pl.Datetime("ms", time_zone="*"), pl.Datetime("ns", time_zone="*")
+            )
+        ).columns
+        == df.select(~cs.datetime(["ms", "ns"], time_zone="*")).columns
+    )
+
+
+def test_selector_duration(df: pl.DataFrame) -> None:
+    assert df.select(cs.duration("ms")).columns == []
+    assert df.select(cs.duration(["ms", "ns"])).columns == []
+    assert selector_column_names(df, cs.duration()) == ("Lmn",)
+
+    df = pl.DataFrame(
+        schema={
+            "d1": pl.Duration("ns"),
+            "d2": pl.Duration("us"),
+            "d3": pl.Duration("ms"),
+        },
+    )
+    assert selector_column_names(df, cs.duration()) == ("d1", "d2", "d3")
+    assert selector_column_names(df, cs.duration("us")) == ("d2",)
+    assert selector_column_names(df, cs.duration(["ms", "ns"])) == ("d1", "d3")
+
 
 def test_selector_ends_with(df: pl.DataFrame) -> None:
     assert df.select(cs.ends_with("e")).columns == ["cde", "eee"]
@@ -109,6 +205,10 @@ def test_selector_ends_with(df: pl.DataFrame) -> None:
 def test_selector_first_last(df: pl.DataFrame) -> None:
     assert df.select(cs.first()).columns == ["abc"]
     assert df.select(cs.last()).columns == ["qqR"]
+
+    all_columns = set(df.columns)
+    assert set(df.select(~cs.first()).columns) == (all_columns - {"abc"})
+    assert set(df.select(~cs.last()).columns) == (all_columns - {"qqR"})
 
 
 def test_selector_float(df: pl.DataFrame) -> None:
@@ -225,6 +325,15 @@ def test_selector_expansion() -> None:
     assert df.select(s).columns == ["b", "c"]
 
 
+def test_selector_repr() -> None:
+    assert repr(cs.all() - cs.first()) == "cs.all() - cs.first()"
+    assert repr(~cs.starts_with("a", "b")) == "~cs.starts_with('a', 'b')"
+    assert repr(cs.float() | cs.by_name("x")) == "cs.float() | cs.by_name('x')"
+    assert (
+        repr(cs.integer() & cs.matches("z")) == "cs.integer() & cs.matches(pattern='z')"
+    )
+
+
 def test_selector_sets(df: pl.DataFrame) -> None:
     # or
     assert df.select(cs.temporal() | cs.string() | cs.starts_with("e")).schema == {
@@ -272,3 +381,49 @@ def test_selector_dispatch_default_operator() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_selector_expr_dispatch() -> None:
+    df = pl.DataFrame(
+        data={
+            "colx": [float("inf"), -1, float("nan"), 25],
+            "coly": [1, float("-inf"), 10, float("nan")],
+        },
+        schema={"colx": pl.Float64, "coly": pl.Float32},
+    )
+    expected = pl.DataFrame(
+        data={
+            "colx": [0.0, -1.0, 0.0, 25.0],
+            "coly": [1.0, 0.0, 10.0, 0.0],
+        },
+        schema={"colx": pl.Float64, "coly": pl.Float32},
+    )
+
+    # basic selector-broadcast expression
+    assert_frame_equal(
+        expected,
+        df.with_columns(
+            pl.when(cs.float().is_finite()).then(cs.float()).otherwise(0.0).keep_name()
+        ),
+    )
+
+    # inverted selector-broadcast expression
+    assert_frame_equal(
+        expected,
+        df.with_columns(
+            pl.when(~cs.float().is_finite()).then(0.0).otherwise(cs.float()).keep_name()
+        ),
+    )
+
+    # check that "as_expr" behaves, both explicitly and implicitly
+    for nan_or_inf in (
+        cs.float().is_nan().as_expr() | cs.float().is_infinite().as_expr(),
+        cs.float().is_nan().as_expr() | cs.float().is_infinite(),
+        cs.float().is_nan() | cs.float().is_infinite(),
+    ):
+        assert_frame_equal(
+            expected,
+            df.with_columns(
+                pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).keep_name()
+            ).fill_null(0),
+        )

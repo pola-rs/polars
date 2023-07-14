@@ -1,4 +1,3 @@
-import typing
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -20,7 +19,8 @@ def test_predicate_4906() -> None:
     ).lazy()
 
     assert ldf.filter(
-        pl.min([(pl.col("dt") + one_day), date(2022, 9, 30)]) > date(2022, 9, 10)
+        pl.min_horizontal((pl.col("dt") + one_day), date(2022, 9, 30))
+        > date(2022, 9, 10)
     ).collect().to_dict(False) == {"dt": [date(2022, 9, 10), date(2022, 9, 20)]}
 
 
@@ -90,7 +90,6 @@ def test_predicate_null_block_asof_join() -> None:
     }
 
 
-@typing.no_type_check
 def test_streaming_empty_df() -> None:
     df = pl.DataFrame(
         [
@@ -99,9 +98,14 @@ def test_streaming_empty_df() -> None:
         ]
     )
 
-    assert df.lazy().join(df.lazy(), on="a", how="inner").filter(2 == 1).collect(
-        streaming=True
-    ).to_dict(False) == {"a": [], "b": [], "b_right": []}
+    result = (
+        df.lazy()
+        .join(df.lazy(), on="a", how="inner")
+        .filter(False)
+        .collect(streaming=True)
+    )
+
+    assert result.to_dict(False) == {"a": [], "b": [], "b_right": []}
 
 
 def test_when_then_empty_list_5547() -> None:
@@ -157,3 +161,11 @@ def test_predicate_pushdown_block_8661() -> None:
     assert df.lazy().sort(["g", "t"]).filter(
         (pl.col("x").shift() > 20).over("g")
     ).collect().to_dict(False) == {"g": [1, 2, 2], "t": [4, 2, 3], "x": [40, 30, 20]}
+
+
+def test_predicate_pushdown_cumsum_9566() -> None:
+    df = pl.DataFrame({"A": range(10), "B": ["b"] * 5 + ["a"] * 5})
+
+    q = df.lazy().sort(["B", "A"]).filter(pl.col("A").is_in([8, 2]).cumsum() == 1)
+
+    assert q.collect()["A"].to_list() == [8, 9, 0, 1]

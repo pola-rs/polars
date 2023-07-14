@@ -65,10 +65,7 @@ pub fn date_range(
 ) -> PolarsResult<DatetimeChunked> {
     let (start, stop) = match tu {
         TimeUnit::Nanoseconds => (start.timestamp_nanos(), stop.timestamp_nanos()),
-        TimeUnit::Microseconds => (
-            start.timestamp() + start.timestamp_subsec_micros() as i64,
-            stop.timestamp() + stop.timestamp_subsec_millis() as i64,
-        ),
+        TimeUnit::Microseconds => (start.timestamp_micros(), stop.timestamp_micros()),
         TimeUnit::Milliseconds => (start.timestamp_millis(), stop.timestamp_millis()),
     };
     date_range_impl(name, start, stop, every, closed, tu, tz.as_ref())

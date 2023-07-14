@@ -5,7 +5,6 @@ use serde::de::{MapAccess, Visitor};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::prelude::*;
-use crate::serde::DeDataType;
 
 impl Serialize for Series {
     fn serialize<S>(
@@ -15,64 +14,58 @@ impl Serialize for Series {
     where
         S: Serializer,
     {
-        if let Ok(ca) = self.i32() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.u32() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.i64() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.u64() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.f32() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.f64() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.utf8() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.bool() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.list() {
-            ca.serialize(serializer)
-        } else {
-            match self.dtype() {
-                DataType::Binary => {
-                    let ca = self.binary().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-struct")]
-                DataType::Struct(_) => {
-                    let ca = self.struct_().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-date")]
-                DataType::Date => {
-                    let ca = self.date().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-datetime")]
-                DataType::Datetime(_, _) => {
-                    let ca = self.datetime().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(_) => {
-                    let ca = self.categorical().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-duration")]
-                DataType::Duration(_) => {
-                    let ca = self.duration().unwrap();
-                    ca.serialize(serializer)
-                }
-                #[cfg(feature = "dtype-time")]
-                DataType::Time => {
-                    let ca = self.time().unwrap();
-                    ca.serialize(serializer)
-                }
-                _ => {
-                    // cast small integers to i32
-                    self.cast(&DataType::Int32).unwrap().serialize(serializer)
-                }
+        match self.dtype() {
+            DataType::Binary => {
+                let ca = self.binary().unwrap();
+                ca.serialize(serializer)
+            }
+            DataType::List(_) => {
+                let ca = self.list().unwrap();
+                ca.serialize(serializer)
+            }
+            DataType::Boolean => {
+                let ca = self.bool().unwrap();
+                ca.serialize(serializer)
+            }
+            DataType::Utf8 => {
+                let ca = self.utf8().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {
+                let ca = self.struct_().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => {
+                let ca = self.date().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => {
+                let ca = self.datetime().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => {
+                let ca = self.categorical().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(_) => {
+                let ca = self.duration().unwrap();
+                ca.serialize(serializer)
+            }
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => {
+                let ca = self.time().unwrap();
+                ca.serialize(serializer)
+            }
+            dt => {
+                with_match_physical_numeric_polars_type!(dt, |$T| {
+                let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
+                ca.serialize(serializer)
+                })
             }
         }
     }
@@ -136,81 +129,91 @@ impl<'de> Deserialize<'de> for Series {
 
                 match dtype {
                     #[cfg(feature = "dtype-i8")]
-                    DeDataType::Int8 => {
+                    DataType::Int8 => {
                         let values: Vec<Option<i8>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
                     #[cfg(feature = "dtype-u8")]
-                    DeDataType::UInt8 => {
+                    DataType::UInt8 => {
                         let values: Vec<Option<u8>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    DeDataType::Int32 => {
+                    #[cfg(feature = "dtype-i16")]
+                    DataType::Int16 => {
+                        let values: Vec<Option<i16>> = map.next_value()?;
+                        Ok(Series::new(&name, values))
+                    }
+                    #[cfg(feature = "dtype-u16")]
+                    DataType::UInt16 => {
+                        let values: Vec<Option<u16>> = map.next_value()?;
+                        Ok(Series::new(&name, values))
+                    }
+                    DataType::Int32 => {
                         let values: Vec<Option<i32>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    DeDataType::UInt32 => {
+                    DataType::UInt32 => {
                         let values: Vec<Option<u32>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    DeDataType::Int64 => {
+                    DataType::Int64 => {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    DeDataType::UInt64 => {
+                    DataType::UInt64 => {
                         let values: Vec<Option<u64>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
                     #[cfg(feature = "dtype-date")]
-                    DeDataType::Date => {
+                    DataType::Date => {
                         let values: Vec<Option<i32>> = map.next_value()?;
                         Ok(Series::new(&name, values).cast(&DataType::Date).unwrap())
                     }
                     #[cfg(feature = "dtype-datetime")]
-                    DeDataType::Datetime(tu, tz) => {
+                    DataType::Datetime(tu, tz) => {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values)
                             .cast(&DataType::Datetime(tu, tz))
                             .unwrap())
                     }
                     #[cfg(feature = "dtype-duration")]
-                    DeDataType::Duration(tu) => {
+                    DataType::Duration(tu) => {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values)
                             .cast(&DataType::Duration(tu))
                             .unwrap())
                     }
                     #[cfg(feature = "dtype-time")]
-                    DeDataType::Time => {
+                    DataType::Time => {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values).cast(&DataType::Time).unwrap())
                     }
-                    DeDataType::Boolean => {
+                    DataType::Boolean => {
                         let values: Vec<Option<bool>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    DeDataType::Float32 => {
+                    DataType::Float32 => {
                         let values: Vec<Option<f32>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    DeDataType::Float64 => {
+                    DataType::Float64 => {
                         let values: Vec<Option<f64>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    DeDataType::Utf8 => {
+                    DataType::Utf8 => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    DeDataType::List => {
+                    DataType::List(_) => {
                         let values: Vec<Option<Series>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    DeDataType::Binary => {
+                    DataType::Binary => {
                         let values: Vec<Option<Cow<[u8]>>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
                     #[cfg(feature = "dtype-struct")]
-                    DeDataType::Struct => {
+                    DataType::Struct(_) => {
                         let values: Vec<Series> = map.next_value()?;
                         let ca = StructChunked::new(&name, &values).unwrap();
                         let mut s = ca.into_series();
@@ -218,7 +221,7 @@ impl<'de> Deserialize<'de> for Series {
                         Ok(s)
                     }
                     #[cfg(feature = "dtype-categorical")]
-                    DeDataType::Categorical => {
+                    DataType::Categorical(_) => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
                         Ok(Series::new(&name, values)
                             .cast(&DataType::Categorical(None))

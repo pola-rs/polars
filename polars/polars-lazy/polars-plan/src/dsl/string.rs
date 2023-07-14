@@ -1,4 +1,3 @@
-use polars_arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
 #[cfg(feature = "dtype-struct")]
@@ -448,13 +447,32 @@ impl StringNameSpace {
             .map_private(FunctionExpr::StringExpr(StringFunction::Uppercase))
     }
 
+    /// Convert all characters to titlecase.
+    #[cfg(feature = "nightly")]
+    pub fn to_titlecase(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Titlecase))
+    }
+
     #[cfg(feature = "string_from_radix")]
-    /// Parse string in base radix into decimal
+    /// Parse string in base radix into decimal.
     pub fn from_radix(self, radix: u32, strict: bool) -> Expr {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::FromRadix(
                 radix, strict,
             )))
+    }
+
+    /// Return the number of characters in the string (not bytes).
+    pub fn n_chars(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::NChars))
+    }
+
+    /// Return the number of bytes in the string (not characters).
+    pub fn lengths(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Length))
     }
 
     /// Slice the string values.
@@ -468,5 +486,14 @@ impl StringNameSpace {
     pub fn explode(self) -> Expr {
         self.0
             .apply_private(FunctionExpr::StringExpr(StringFunction::Explode))
+    }
+
+    #[cfg(feature = "extract_jsonpath")]
+    pub fn json_extract(self, dtype: Option<DataType>, infer_schema_len: Option<usize>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::JsonExtract {
+                dtype,
+                infer_schema_len,
+            }))
     }
 }

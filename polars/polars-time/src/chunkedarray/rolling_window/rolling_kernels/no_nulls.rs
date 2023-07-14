@@ -1,7 +1,6 @@
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use polars_arrow::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
-use polars_core::export::num;
 
 use super::*;
 
@@ -51,7 +50,6 @@ where
 pub(crate) fn rolling_min<T>(
     values: &[T],
     period: Duration,
-    offset: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
@@ -63,15 +61,8 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            tz.parse::<Tz>().ok(),
-        ),
-        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
+        Some(tz) => groupby_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
+        _ => groupby_values_iter(period, time, closed_window, tu, None),
     };
     rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(values, offset_iter, None)
 }
@@ -80,7 +71,6 @@ where
 pub(crate) fn rolling_max<T>(
     values: &[T],
     period: Duration,
-    offset: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
@@ -92,15 +82,8 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            tz.parse::<Tz>().ok(),
-        ),
-        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
+        Some(tz) => groupby_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
+        _ => groupby_values_iter(period, time, closed_window, tu, None),
     };
     rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(values, offset_iter, None)
 }
@@ -109,7 +92,6 @@ where
 pub(crate) fn rolling_sum<T>(
     values: &[T],
     period: Duration,
-    offset: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
@@ -121,15 +103,8 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            tz.parse::<Tz>().ok(),
-        ),
-        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
+        Some(tz) => groupby_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
+        _ => groupby_values_iter(period, time, closed_window, tu, None),
     };
     rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(values, offset_iter, None)
 }
@@ -138,7 +113,6 @@ where
 pub(crate) fn rolling_mean<T>(
     values: &[T],
     period: Duration,
-    offset: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
@@ -150,15 +124,8 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            tz.parse::<Tz>().ok(),
-        ),
-        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
+        Some(tz) => groupby_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
+        _ => groupby_values_iter(period, time, closed_window, tu, None),
     };
     rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(values, offset_iter, None)
 }
@@ -167,7 +134,6 @@ where
 pub(crate) fn rolling_var<T>(
     values: &[T],
     period: Duration,
-    offset: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
@@ -179,54 +145,8 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            tz.parse::<Tz>().ok(),
-        ),
-        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
+        Some(tz) => groupby_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
+        _ => groupby_values_iter(period, time, closed_window, tu, None),
     };
     rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter, params)
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn rolling_std<T>(
-    values: &[T],
-    period: Duration,
-    offset: Duration,
-    time: &[i64],
-    closed_window: ClosedWindow,
-    tu: TimeUnit,
-    tz: Option<&TimeZone>,
-    params: DynArgs,
-) -> PolarsResult<ArrayRef>
-where
-    T: NativeType
-        + Float
-        + IsFloat
-        + std::iter::Sum
-        + AddAssign
-        + SubAssign
-        + Div<Output = T>
-        + NumCast
-        + One
-        + Sub<Output = T>
-        + num::pow::Pow<T, Output = T>,
-{
-    let offset_iter = match tz {
-        #[cfg(feature = "timezones")]
-        Some(tz) => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            tz.parse::<Tz>().ok(),
-        ),
-        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
-    };
-    rolling_apply_agg_window::<no_nulls::StdWindow<_>, _, _>(values, offset_iter, params)
 }

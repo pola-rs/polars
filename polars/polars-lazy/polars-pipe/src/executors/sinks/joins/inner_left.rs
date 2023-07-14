@@ -1,17 +1,19 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use polars_arrow::export::arrow::array::BinaryArray;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::hash_join::{ChunkId, _finish_join};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_row::RowsEncoded;
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use smartstring::alias::String as SmartString;
 
 use crate::executors::sinks::joins::generic_build::*;
-use crate::executors::sinks::utils::hash_series;
+use crate::executors::sinks::utils::hash_rows;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
@@ -27,7 +29,7 @@ pub struct GenericJoinProbe {
     // columns
     //      * chunk_offset = (idx * n_join_keys)
     //      * end = (offset + n_join_keys)
-    materialized_join_cols: Arc<Vec<ArrayRef>>,
+    materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,
     suffix: Arc<str>,
     hb: RandomState,
     // partitioned tables that will be used for probing
@@ -38,7 +40,8 @@ pub struct GenericJoinProbe {
     join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
 
     // amortize allocations
-    join_series: Vec<Series>,
+    current_rows: RowsEncoded,
+    join_columns: Vec<ArrayRef>,
     // in inner join these are the left table
     // in left join there are the right table
     join_tuples_a: Vec<ChunkId>,
@@ -61,14 +64,14 @@ impl GenericJoinProbe {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         mut df_a: DataFrame,
-        materialized_join_cols: Arc<Vec<ArrayRef>>,
+        materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,
         suffix: Arc<str>,
         hb: RandomState,
         hash_tables: Arc<Vec<PlIdHashMap<Key, Vec<ChunkId>>>>,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         swapped_or_left: bool,
-        join_series: Vec<Series>,
+        join_columns: Vec<ArrayRef>,
         hashes: Vec<u64>,
         context: &PExecutionContext,
         how: JoinType,
@@ -99,12 +102,13 @@ impl GenericJoinProbe {
             hb,
             hash_tables,
             join_columns_right,
-            join_series,
+            join_columns,
             join_tuples_a: vec![],
             join_tuples_a_left_join: vec![],
             join_tuples_b: vec![],
             hashes,
             swapped_or_left,
+            current_rows: Default::default(),
             join_column_idx: None,
             output_names: None,
             how,
@@ -114,30 +118,68 @@ impl GenericJoinProbe {
         &mut self,
         context: &PExecutionContext,
         chunk: &DataChunk,
-    ) -> PolarsResult<&[Series]> {
-        self.join_series.clear();
+    ) -> PolarsResult<BinaryArray<i64>> {
+        debug_assert!(self.join_columns.is_empty());
+
+        let determine_idx = !self.swapped_or_left && self.join_column_idx.is_none();
+        let mut names = vec![];
+
         for phys_e in self.join_columns_right.iter() {
             let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
-            let s = s.to_physical_repr();
-            self.join_series.push(s.rechunk());
+            let s = s.to_physical_repr().rechunk();
+            if determine_idx {
+                names.push(s.name().to_string());
+            }
+            self.join_columns.push(s.array_ref(0).clone());
         }
 
         // we determine the indices of the columns that have to be removed
         // if swapped the join column is already removed from the `build_df` as that will
         // be the rhs one.
         if !self.swapped_or_left && self.join_column_idx.is_none() {
-            let mut idx = self
-                .join_series
+            let mut idx = names
                 .iter()
-                .filter_map(|s| chunk.data.find_idx_by_name(s.name()))
+                .filter_map(|name| chunk.data.find_idx_by_name(name))
                 .collect::<Vec<_>>();
             // ensure that it is sorted so that we can later remove columns in
             // a predictable order
             idx.sort_unstable();
             self.join_column_idx = Some(idx);
         }
+        polars_row::convert_columns_amortized_no_order(&self.join_columns, &mut self.current_rows);
 
-        Ok(&self.join_series)
+        // safety: we keep rows-encode alive
+        unsafe { Ok(self.current_rows.borrow_array()) }
+    }
+
+    fn finish_join(
+        &mut self,
+        mut left_df: DataFrame,
+        right_df: DataFrame,
+    ) -> PolarsResult<DataFrame> {
+        Ok(match &self.output_names {
+            None => {
+                let out = _finish_join(left_df, right_df, Some(self.suffix.as_ref()))?;
+                self.output_names = Some(out.get_column_names_owned());
+                out
+            }
+            Some(names) => unsafe {
+                // safety:
+                // if we have duplicate names, we overwrite
+                // them in the next snippet
+                left_df
+                    .get_columns_mut()
+                    .extend_from_slice(right_df.get_columns());
+                left_df
+                    .get_columns_mut()
+                    .iter_mut()
+                    .zip(names)
+                    .for_each(|(s, name)| {
+                        s.rename(name);
+                    });
+                left_df
+            },
+        })
     }
 
     fn execute_left(
@@ -152,14 +194,12 @@ impl GenericJoinProbe {
         self.join_tuples_a_left_join.clear();
         self.join_tuples_b.clear();
         let mut hashes = std::mem::take(&mut self.hashes);
-        self.set_join_series(context, chunk)?;
-        hash_series(&self.join_series, &mut hashes, &self.hb);
+        let rows = self.set_join_series(context, chunk)?;
+        hash_rows(&rows, &mut hashes, &self.hb);
         self.hashes = hashes;
-        let mut keys_iter = KeysIter::new(&self.join_series);
 
-        for (i, h) in self.hashes.iter().enumerate() {
+        for (i, (h, row)) in self.hashes.iter().zip(rows.values_iter()).enumerate() {
             let df_idx_left = i as IdxSize;
-            let current_tuple = unsafe { keys_iter.lend_next() };
             // get the hashtable belonging by this hash partition
             let partition = hash_to_partition(*h, self.hash_tables.len());
             let current_table = unsafe { self.hash_tables.get_unchecked_release(partition) };
@@ -167,13 +207,7 @@ impl GenericJoinProbe {
             let entry = current_table
                 .raw_entry()
                 .from_hash(*h, |key| {
-                    compare_fn(
-                        key,
-                        *h,
-                        &self.materialized_join_cols,
-                        current_tuple,
-                        current_tuple.len(),
-                    )
+                    compare_fn(key, *h, &self.materialized_join_cols, row)
                 })
                 .map(|key_val| key_val.1);
 
@@ -190,36 +224,17 @@ impl GenericJoinProbe {
                 }
             }
         }
-        // tuples_b = left
-        // tuples_a = right
-        // left_df = right_df
-
         let right_df = self.df_a.as_ref();
 
-        let mut left_df = unsafe { chunk.data._take_unchecked_slice(&self.join_tuples_b, false) };
+        let left_df = unsafe { chunk.data._take_unchecked_slice(&self.join_tuples_b, false) };
         let right_df =
             unsafe { right_df._take_opt_chunked_unchecked_seq(&self.join_tuples_a_left_join) };
 
-        let out = match &self.output_names {
-            None => {
-                let out = _finish_join(left_df, right_df, Some(self.suffix.as_ref()))?;
-                self.output_names = Some(out.get_column_names_owned());
-                out
-            }
-            Some(names) => unsafe {
-                left_df
-                    .get_columns_mut()
-                    .extend_from_slice(right_df.get_columns());
-                left_df
-                    .get_columns_mut()
-                    .iter_mut()
-                    .zip(names)
-                    .for_each(|(s, name)| {
-                        s.rename(name);
-                    });
-                left_df
-            },
-        };
+        let out = self.finish_join(left_df, right_df)?;
+
+        // clear memory
+        self.join_columns.clear();
+        self.hashes.clear();
 
         Ok(OperatorResult::Finished(chunk.with_data(out)))
     }
@@ -232,14 +247,12 @@ impl GenericJoinProbe {
         self.join_tuples_a.clear();
         self.join_tuples_b.clear();
         let mut hashes = std::mem::take(&mut self.hashes);
-        self.set_join_series(context, chunk)?;
-        hash_series(&self.join_series, &mut hashes, &self.hb);
+        let rows = self.set_join_series(context, chunk)?;
+        hash_rows(&rows, &mut hashes, &self.hb);
         self.hashes = hashes;
-        let mut keys_iter = KeysIter::new(&self.join_series);
 
-        for (i, h) in self.hashes.iter().enumerate() {
+        for (i, (h, row)) in self.hashes.iter().zip(rows.values_iter()).enumerate() {
             let df_idx_right = i as IdxSize;
-            let current_tuple = unsafe { keys_iter.lend_next() };
             // get the hashtable belonging by this hash partition
             let partition = hash_to_partition(*h, self.hash_tables.len());
             let current_table = unsafe { self.hash_tables.get_unchecked_release(partition) };
@@ -247,13 +260,7 @@ impl GenericJoinProbe {
             let entry = current_table
                 .raw_entry()
                 .from_hash(*h, |key| {
-                    compare_fn(
-                        key,
-                        *h,
-                        &self.materialized_join_cols,
-                        current_tuple,
-                        current_tuple.len(),
-                    )
+                    compare_fn(key, *h, &self.materialized_join_cols, row)
                 })
                 .map(|key_val| key_val.1);
 
@@ -283,30 +290,16 @@ impl GenericJoinProbe {
             df._take_unchecked_slice(&self.join_tuples_b, false)
         };
 
-        let (mut a, b) = if self.swapped_or_left {
+        let (a, b) = if self.swapped_or_left {
             (right_df, left_df)
         } else {
             (left_df, right_df)
         };
-        let out = match &self.output_names {
-            None => {
-                let out = _finish_join(a, b, Some(self.suffix.as_ref()))?;
-                self.output_names = Some(out.get_column_names_owned());
-                out
-            }
-            Some(names) => {
-                a.hstack_mut(b.get_columns()).unwrap();
-                unsafe {
-                    a.get_columns_mut()
-                        .iter_mut()
-                        .zip(names)
-                        .for_each(|(s, name)| {
-                            s.rename(name);
-                        });
-                }
-                a
-            }
-        };
+        let out = self.finish_join(a, b)?;
+
+        // clear memory
+        self.join_columns.clear();
+        self.hashes.clear();
 
         Ok(OperatorResult::Finished(chunk.with_data(out)))
     }

@@ -28,6 +28,7 @@ from hypothesis.strategies import (
     integers,
     lists,
     sampled_from,
+    sets,
     text,
     timedeltas,
     times,
@@ -109,6 +110,8 @@ strategy_duration = timedeltas(
     min_value=timedelta(microseconds=-(2**46)),
     max_value=timedelta(microseconds=(2**46) - 1),
 )
+strategy_closed = sampled_from(["left", "right", "both", "none"])
+strategy_time_unit = sampled_from(["ns", "us", "ms"])
 
 
 @composite
@@ -126,6 +129,40 @@ def strategy_decimal(draw: DrawFn) -> PyDecimal:
             places=places,
         )
     )
+
+
+@composite
+def strategy_datetime_format(draw: DrawFn) -> str:
+    """Draw a random datetime format string."""
+    fmt = draw(
+        sets(
+            sampled_from(
+                [
+                    "%m",
+                    "%b",
+                    "%B",
+                    "%d",
+                    "%j",
+                    "%a",
+                    "%A",
+                    "%w",
+                    "%H",
+                    "%I",
+                    "%p",
+                    "%M",
+                    "%S",
+                    "%U",
+                    "%W",
+                    "%%",
+                ]
+            ),
+        )
+    )
+
+    # Make sure year is always present
+    fmt.add("%Y")
+
+    return " ".join(fmt)
 
 
 class StrategyLookup(MutableMapping[PolarsDataType, SearchStrategy[Any]]):
@@ -224,6 +261,9 @@ scalar_strategies: StrategyLookup = StrategyLookup(
         Datetime("ns"): strategy_datetime_ns,
         Datetime("us"): strategy_datetime_us,
         Datetime("ms"): strategy_datetime_ms,
+        # Datetime("ns", "*"): strategy_datetime_ns_tz,
+        # Datetime("us", "*"): strategy_datetime_us_tz,
+        # Datetime("ms", "*"): strategy_datetime_ms_tz,
         Datetime: strategy_datetime_us,
         Duration("ns"): strategy_duration,
         Duration("us"): strategy_duration,

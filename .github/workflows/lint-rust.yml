@@ -39,8 +39,8 @@ jobs:
         with:
           save-if: ${{ github.ref_name == 'main' }}
 
-      - name: Run cargo clippy on all features
-        run: cargo clippy --all-features -- -D warnings
+      - name: Run cargo clippy with all features enabled
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   # Default feature set should compile on the stable toolchain
   clippy-stable:
@@ -60,7 +60,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
   rustfmt:
     if: github.ref_name != 'main'

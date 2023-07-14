@@ -349,7 +349,7 @@
 //! // columns to sort by
 //! let by = &["b", "a"];
 //! // do the sort operation
-//! let sorted = df.sort(by, descending)?;
+//! let sorted = df.sort(by, descending, true)?;
 //!
 //! // sorted:
 //!
@@ -392,7 +392,7 @@
 //! temp.outer_join(&rain, ["days"], ["days"]);
 //!
 //! // join on multiple columns
-//! temp.join(&rain, vec!["days", "other"], vec!["days", "other"], JoinType::Left, None);
+//! temp.join(&rain, vec!["days", "other"], vec!["days", "other"], JoinArgs::new(JoinType::Left));
 //!
 //! # Ok(())
 //! # }
@@ -435,9 +435,7 @@
 //!      )?;
 //!
 //! // groupby "foo" | pivot "bar" column | aggregate "N"
-//!  let pivoted = df.groupby(["foo"])?
-//!     .pivot(["bar"], ["N"])
-//!     .first();
+//!  let pivoted = pivot::pivot(&df, ["foo"], ["bar"], ["N"], false, Some(first()), None);
 //!
 //! // pivoted:
 //! // +-----+------+------+------+------+------+
@@ -631,7 +629,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &mut DataFrame) -> PolarsResult<()> {
+//! # fn example(df: &mut DataFrame) -> PolarsResult<u64> {
 //! // create a file
 //! let file = File::create("example.parquet").expect("could not create file");
 //!

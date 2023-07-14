@@ -119,7 +119,8 @@ where
                 options.min_periods,
                 options.center,
                 options.weights.as_deref(),
-            ),
+            )
+            .unwrap(),
             _ => rolling::nulls::rolling_quantile(
                 arr,
                 quantile,
@@ -148,40 +149,26 @@ where
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their std.
     fn rolling_std(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
-        if options.window_size.parsed_int {
-            let options_fixed: RollingOptionsFixedWindow = options.clone().into();
-            check_input(options_fixed.window_size, options.min_periods)?;
-        }
-
-        // weights is only implemented by var kernel
-        if options.weights.is_some() {
-            return self
-                .0
-                .clone()
-                .into_series()
-                .rolling_var(options)
-                .map(|mut s| {
-                    match s.dtype().clone() {
-                        DataType::Float32 => {
-                            let ca: &mut ChunkedArray<Float32Type> = s._get_inner_mut().as_mut();
-                            ca.apply_mut(|v| v.powf(0.5))
-                        }
-                        DataType::Float64 => {
-                            let ca: &mut ChunkedArray<Float64Type> = s._get_inner_mut().as_mut();
-                            ca.apply_mut(|v| v.powf(0.5))
-                        }
-                        _ => unreachable!(),
-                    }
-                    s
-                });
-        }
-
         rolling_agg(
             &self.0,
             options,
-            &rolling::no_nulls::rolling_std,
-            &rolling::nulls::rolling_std,
-            Some(&super::rolling_kernels::no_nulls::rolling_std),
+            &rolling::no_nulls::rolling_var,
+            &rolling::nulls::rolling_var,
+            Some(&super::rolling_kernels::no_nulls::rolling_var),
         )
+        .map(|mut s| {
+            match s.dtype().clone() {
+                DataType::Float32 => {
+                    let ca: &mut ChunkedArray<Float32Type> = s._get_inner_mut().as_mut();
+                    ca.apply_mut(|v| v.powf(0.5))
+                }
+                DataType::Float64 => {
+                    let ca: &mut ChunkedArray<Float64Type> = s._get_inner_mut().as_mut();
+                    ca.apply_mut(|v| v.powf(0.5))
+                }
+                _ => unreachable!(),
+            }
+            s
+        })
     }
 }

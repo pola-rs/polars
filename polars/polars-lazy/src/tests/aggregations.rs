@@ -99,7 +99,6 @@ fn test_auto_skew_kurtosis_agg() -> PolarsResult<()> {
     let df = fruits_cars();
 
     let out = df
-        .clone()
         .lazy()
         .groupby([col("fruits")])
         .agg([
@@ -236,8 +235,8 @@ fn test_binary_agg_context_0() -> PolarsResult<()> {
         .lazy()
         .groupby_stable([col("groups")])
         .agg([when(col("vals").first().neq(lit(1)))
-            .then(repeat("a", count()))
-            .otherwise(repeat("b", count()))
+            .then(repeat(lit("a"), count()))
+            .otherwise(repeat(lit("b"), count()))
             .alias("foo")])
         .collect()
         .unwrap();
@@ -443,6 +442,7 @@ fn take_aggregations() -> PolarsResult<()> {
                             descending: true,
                             nulls_last: false,
                             multithreaded: true,
+                            maintain_order: false,
                         })
                         .head(Some(2)),
                 )
@@ -481,6 +481,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 descending: true,
                 nulls_last: false,
                 multithreaded: true,
+                maintain_order: false,
             })
             .take(lit(0))])
         .collect()?;
@@ -498,6 +499,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 descending: true,
                 nulls_last: false,
                 multithreaded: true,
+                maintain_order: false,
             })
             .take(lit(0))])
         .collect()?;
@@ -507,7 +509,6 @@ fn test_take_consistency() -> PolarsResult<()> {
     assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
 
     let out_df = df
-        .clone()
         .lazy()
         .groupby_stable([col("cars")])
         .agg([
@@ -517,6 +518,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                     descending: true,
                     nulls_last: false,
                     multithreaded: true,
+                    maintain_order: false,
                 })
                 .take(lit(0))
                 .alias("1"),
@@ -527,6 +529,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                             descending: true,
                             nulls_last: false,
                             multithreaded: true,
+                            maintain_order: false,
                         })
                         .take(lit(0)),
                 )

@@ -16,6 +16,12 @@ pub enum ListFunction {
     #[cfg(feature = "list_count")]
     CountMatch,
     Sum,
+    #[cfg(feature = "list_sets")]
+    SetOperation(SetOperation),
+    #[cfg(feature = "list_any_all")]
+    Any,
+    #[cfg(feature = "list_any_all")]
+    All,
 }
 
 impl Display for ListFunction {
@@ -33,6 +39,12 @@ impl Display for ListFunction {
             #[cfg(feature = "list_count")]
             CountMatch => "count",
             Sum => "sum",
+            #[cfg(feature = "list_sets")]
+            SetOperation(s) => return write!(f, "{s}"),
+            #[cfg(feature = "list_any_all")]
+            Any => "any",
+            #[cfg(feature = "list_any_all")]
+            All => "all",
         };
         write!(f, "{name}")
     }
@@ -240,4 +252,21 @@ pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
 
 pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
     Ok(s.list()?.lst_sum())
+}
+
+#[cfg(feature = "list_sets")]
+pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResult<Series> {
+    let s0 = &s[0];
+    let s1 = &s[1];
+    Ok(list_set_operation(s0.list()?, s1.list()?, set_type).into_series())
+}
+
+#[cfg(feature = "list_any_all")]
+pub(super) fn lst_any(s: &Series) -> PolarsResult<Series> {
+    s.list()?.lst_any()
+}
+
+#[cfg(feature = "list_any_all")]
+pub(super) fn lst_all(s: &Series) -> PolarsResult<Series> {
+    s.list()?.lst_all()
 }

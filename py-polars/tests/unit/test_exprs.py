@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import random
 import sys
-import typing
 from datetime import date, datetime, time, timedelta, timezone
 from itertools import permutations
 from typing import Any, cast
@@ -65,15 +63,6 @@ def test_col_select() -> None:
     ]
 
 
-def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
-    df = fruits_cars
-    out = df.select(pl.max([pl.col("A"), pl.col("B")]))
-    assert out[:, 0].to_list() == [5, 4, 3, 4, 5]
-
-    out = df.select(pl.min([pl.col("A"), pl.col("B")]))
-    assert out[:, 0].to_list() == [1, 2, 3, 2, 1]
-
-
 def test_suffix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select([pl.all().suffix("_reverse")])
@@ -125,17 +114,6 @@ def test_filter_where() -> None:
     assert_frame_equal(result_filter, expected)
 
 
-def test_min_nulls_consistency() -> None:
-    df = pl.DataFrame({"a": [None, 2, 3], "b": [4, None, 6], "c": [7, 5, 0]})
-    out = df.select([pl.min(["a", "b", "c"])]).to_series()
-    expected = pl.Series("min", [4, 2, 0])
-    assert_series_equal(out, expected)
-
-    out = df.select([pl.max(["a", "b", "c"])]).to_series()
-    expected = pl.Series("max", [7, 5, 6])
-    assert_series_equal(out, expected)
-
-
 def test_list_join_strings() -> None:
     s = pl.Series("a", [["ab", "c", "d"], ["e", "f"], ["g"], []])
     expected = pl.Series("a", ["ab-c-d", "e-f", "g", ""])
@@ -152,43 +130,6 @@ def test_count_expr() -> None:
     out = df.groupby("b", maintain_order=True).agg(pl.count())
     assert out["b"].to_list() == ["a", "b"]
     assert out["count"].to_list() == [4, 1]
-
-
-def test_shuffle() -> None:
-    # setting 'random.seed' should lead to reproducible results
-    s = pl.Series("a", range(20))
-    s_list = s.to_list()
-
-    random.seed(1)
-    result1 = pl.select(pl.lit(s).shuffle()).to_series()
-
-    random.seed(1)
-    result2 = pl.select(a=pl.lit(s_list).shuffle()).to_series()
-    assert_series_equal(result1, result2)
-
-
-def test_sample() -> None:
-    a = pl.Series("a", range(0, 20))
-    out = pl.select(
-        pl.lit(a).sample(fraction=0.5, with_replacement=False, seed=1)
-    ).to_series()
-
-    assert out.shape == (10,)
-    assert out.to_list() != out.sort().to_list()
-    assert out.unique().shape == (10,)
-    assert set(out).issubset(set(a))
-
-    out = pl.select(pl.lit(a).sample(n=10, with_replacement=False, seed=1)).to_series()
-    assert out.shape == (10,)
-    assert out.to_list() != out.sort().to_list()
-    assert out.unique().shape == (10,)
-
-    # Setting random.seed should lead to reproducible results
-    random.seed(1)
-    result1 = pl.select(pl.lit(a).sample(n=10)).to_series()
-    random.seed(1)
-    result2 = pl.select(pl.lit(a).sample(n=10)).to_series()
-    assert_series_equal(result1, result2)
 
 
 def test_map_alias() -> None:
@@ -397,24 +338,6 @@ def test_expression_appends() -> None:
     assert out.to_series().to_list() == [None, None, None, 1, 1, 2]
 
 
-def test_regex_in_filter() -> None:
-    df = pl.DataFrame(
-        {
-            "nrs": [1, 2, 3, None, 5],
-            "names": ["foo", "ham", "spam", "egg", None],
-            "flt": [1.0, None, 3.0, 1.0, None],
-        }
-    )
-
-    res = df.filter(
-        pl.fold(
-            acc=False, function=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3)
-        )
-    ).row(0)
-    expected = (1, "foo", 1.0)
-    assert res == expected
-
-
 def test_arr_contains() -> None:
     df_groups = pl.DataFrame(
         {
@@ -460,35 +383,20 @@ def test_rank_so_4109() -> None:
     }
 
 
-def test_rank_random() -> None:
-    df = pl.from_dict(
-        {"a": [1] * 5, "b": [1, 2, 3, 4, 5], "c": [200, 100, 100, 50, 100]}
-    )
-
-    df_ranks1 = df.with_columns(
-        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
-    )
-    df_ranks2 = df.with_columns(
-        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
-    )
-    assert_frame_equal(df_ranks1, df_ranks2)
-
-
 def test_unique_empty() -> None:
     for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
         s = pl.Series([], dtype=dt)
         assert_series_equal(s.unique(), s)
 
 
-@typing.no_type_check
 def test_search_sorted() -> None:
     for seed in [1, 2, 3]:
         np.random.seed(seed)
-        a = np.sort(np.random.randn(10) * 100)
-        s = pl.Series(a)
+        arr = np.sort(np.random.randn(10) * 100)
+        s = pl.Series(arr)
 
-        for v in range(int(np.min(a)), int(np.max(a)), 20):
-            assert np.searchsorted(a, v) == s.search_sorted(v)
+        for v in range(int(np.min(arr)), int(np.max(arr)), 20):
+            assert np.searchsorted(arr, v) == s.search_sorted(v)
 
     a = pl.Series([1, 2, 3])
     b = pl.Series([1, 2, 2, -1])
@@ -923,11 +831,27 @@ def test_lit_dtypes() -> None:
 
 
 def test_incompatible_lit_dtype() -> None:
-    with pytest.raises(TypeError, match="Cannot cast tz-aware value to tz-aware dtype"):
+    with pytest.raises(
+        TypeError,
+        match=r"Time zone of dtype \(Asia/Kathmandu\) differs from time zone of value \(UTC\).",
+    ):
         pl.lit(
             datetime(2020, 1, 1, tzinfo=timezone.utc),
             dtype=pl.Datetime("us", "Asia/Kathmandu"),
         )
+
+
+def test_lit_dtype_utc() -> None:
+    result = pl.select(
+        pl.lit(
+            datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu")),
+            dtype=pl.Datetime("us", "Asia/Kathmandu"),
+        )
+    )
+    expected = pl.DataFrame(
+        {"literal": [datetime(2019, 12, 31, 18, 15, tzinfo=timezone.utc)]}
+    ).select(pl.col("literal").dt.convert_time_zone("Asia/Kathmandu"))
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -1066,7 +990,7 @@ def test_cache_expr(monkeypatch: Any, capfd: Any) -> None:
         "x": [[27000, 27000, 27000, 125000, 512000]],
     }
     _, err = capfd.readouterr()
-    assert """cache hit: CACHE [(col("x")) * (10)]""" in err
+    assert """cache hit: [(col("x")) * (10)].cache()""" in err
 
 
 @pytest.mark.parametrize(

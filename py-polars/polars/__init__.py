@@ -4,9 +4,13 @@ import os
 with contextlib.suppress(ImportError):  # Module not available when building docs
     # ensure the object constructor is known by polars
     # we set this once on import
-    from polars.polars import register_object_builder
 
-    register_object_builder()
+    # we also set other function pointers needed
+    # on the rust side. This function is highly
+    # unsafe and should only be called once.
+    from polars.polars import __register_startup_deps
+
+    __register_startup_deps()
 
 from polars import api
 from polars.config import Config
@@ -74,7 +78,9 @@ from polars.expr import Expr
 from polars.functions import (
     align_frames,
     all,
+    all_horizontal,
     any,
+    any_horizontal,
     apply,
     approx_unique,
     arange,
@@ -93,6 +99,7 @@ from polars.functions import (
     cumfold,
     cumreduce,
     cumsum,
+    cumsum_horizontal,
     date,
     date_range,
     datetime,
@@ -106,13 +113,17 @@ from polars.functions import (
     groups,
     head,
     implode,
+    int_range,
+    int_ranges,
     last,
     lit,
     map,
     max,
+    max_horizontal,
     mean,
     median,
     min,
+    min_horizontal,
     n_unique,
     ones,
     quantile,
@@ -125,6 +136,7 @@ from polars.functions import (
     std,
     struct,
     sum,
+    sum_horizontal,
     tail,
     time,
     time_range,
@@ -275,9 +287,20 @@ __all__ = [
     "repeat",
     "time_range",
     "zeros",
-    # polars.functions.lazy
+    # polars.functions.aggregation
     "all",
     "any",
+    "cumsum",
+    "max",
+    "min",
+    "sum",
+    "all_horizontal",
+    "any_horizontal",
+    "cumsum_horizontal",
+    "max_horizontal",
+    "min_horizontal",
+    "sum_horizontal",
+    # polars.functions.lazy
     "apply",
     "arange",
     "arg_sort_by",
@@ -292,7 +315,6 @@ __all__ = [
     "cov",
     "cumfold",
     "cumreduce",
-    "cumsum",
     "date",  # named date_, see import above
     "datetime",  # named datetime_, see import above
     "duration",
@@ -304,13 +326,13 @@ __all__ = [
     "groups",
     "head",
     "implode",
+    "int_range",
+    "int_ranges",
     "last",
     "lit",
     "map",
-    "max",
     "mean",
     "median",
-    "min",
     "n_unique",
     "approx_unique",
     "quantile",
@@ -320,7 +342,6 @@ __all__ = [
     "select",
     "std",
     "struct",
-    "sum",
     "tail",
     "time",  # named time_, see import above
     "var",

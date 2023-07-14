@@ -774,6 +774,7 @@ impl<'df> GroupBy<'df> {
     }
 
     fn prepare_apply(&self) -> PolarsResult<DataFrame> {
+        polars_ensure!(self.df.height() > 0, ComputeError: "cannot groupby + apply on empty 'DataFrame'");
         if let Some(agg) = &self.selected_agg {
             if agg.is_empty() {
                 Ok(self.df.clone())
@@ -1079,7 +1080,7 @@ mod test {
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]
         let res = df.groupby(["flt"]).unwrap().sum().unwrap();
-        let res = res.sort(["flt"], false).unwrap();
+        let res = res.sort(["flt"], false, false).unwrap();
         assert_eq!(
             Vec::from(res.column("val_sum").unwrap().i32().unwrap()),
             &[Some(2), Some(2), Some(1)]

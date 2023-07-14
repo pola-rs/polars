@@ -1,13 +1,19 @@
+from __future__ import annotations
+
 import time
-import typing
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from polars.type_aliases import JoinStrategy
 
 
 def test_streaming_groupby_types() -> None:
@@ -375,61 +381,84 @@ def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
     assert "df -> sort" in err
 
 
-@pytest.mark.write_disk()
-def test_streaming_groupby_ooc(monkeypatch: Any) -> None:
+@pytest.fixture(scope="module")
+def random_integers() -> pl.Series:
     np.random.seed(1)
-    s = pl.Series("a", np.random.randint(0, 10, 100))
+    return pl.Series("a", np.random.randint(0, 10, 100), dtype=pl.Int64)
 
-    for env in ["POLARS_FORCE_OOC", "_NO_OP"]:
-        monkeypatch.setenv(env, "1")
-        q = (
-            s.to_frame()
-            .lazy()
-            .groupby("a")
-            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
-            .sort("a")
-        )
 
-        assert q.collect(streaming=True).to_dict(False) == {
+@pytest.mark.write_disk()
+def test_streaming_groupby_ooc_q1(monkeypatch: Any, random_integers: pl.Series) -> None:
+    s = random_integers
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+
+    result = (
+        s.to_frame()
+        .lazy()
+        .groupby("a")
+        .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
+        .sort("a")
+        .collect(streaming=True)
+    )
+
+    expected = pl.DataFrame(
+        {
             "a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             "a_first": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             "a_last": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         }
+    )
+    assert_frame_equal(result, expected)
 
-        q = (
-            s.cast(str)
-            .to_frame()
-            .lazy()
-            .groupby("a")
-            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
-            .sort("a")
-        )
 
-        assert q.collect(streaming=True).to_dict(False) == {
+@pytest.mark.write_disk()
+def test_streaming_groupby_ooc_q2(monkeypatch: Any, random_integers: pl.Series) -> None:
+    s = random_integers
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+
+    result = (
+        s.cast(str)
+        .to_frame()
+        .lazy()
+        .groupby("a")
+        .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
+        .sort("a")
+        .collect(streaming=True)
+    )
+
+    expected = pl.DataFrame(
+        {
             "a": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
             "a_first": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
             "a_last": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
         }
+    )
+    assert_frame_equal(result, expected)
 
-        q = (
-            pl.DataFrame(
-                {
-                    "a": s,
-                    "b": s.rename("b"),
-                }
-            )
-            .lazy()
-            .groupby(["a", "b"])
-            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
-            .sort("a")
-        )
 
-        assert q.collect(streaming=True).to_dict(False) == {
+@pytest.mark.write_disk()
+def test_streaming_groupby_ooc_q3(monkeypatch: Any, random_integers: pl.Series) -> None:
+    s = random_integers
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+
+    result = (
+        pl.DataFrame({"a": s, "b": s})
+        .lazy()
+        .groupby(["a", "b"])
+        .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
+        .sort("a")
+        .collect(streaming=True)
+    )
+
+    expected = pl.DataFrame(
+        {
             "a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             "b": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             "a_first": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             "a_last": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_streaming_groupby_struct_key() -> None:
@@ -474,7 +503,6 @@ def test_streaming_groupby_all_numeric_types_stability_8570() -> None:
             assert dfd["z_sum"].sum() == dfc["z"].sum()
 
 
-@typing.no_type_check
 def test_streaming_groupby_categorical_aggregate() -> None:
     with pl.StringCache():
         out = (
@@ -512,3 +540,151 @@ def test_streaming_groupby_categorical_aggregate() -> None:
         ],
         "sum": ["a", "a", "b", "b", "c", "c", None, None],
     }
+
+
+def test_streaming_restart_non_streamable_groupby() -> None:
+    df = pl.DataFrame({"id": [1], "id2": [1], "id3": [1], "value": [1]})
+    res = (
+        df.lazy()
+        .join(df.lazy(), on=["id", "id2"], how="left")
+        .filter(
+            (pl.col("id3") > pl.col("id3_right"))
+            & (pl.col("id3") - pl.col("id3_right") < 30)
+        )
+        .groupby(["id2", "id3", "id3_right"])
+        .agg(
+            pl.col("value").apply(lambda x: x).sum() * pl.col("value").sum()
+        )  # non-streamable UDF + nested_agg
+    )
+
+    assert """--- PIPELINE""" in res.explain(streaming=True)
+
+
+def test_streaming_sortedness_propagation_9494() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "when": [date(2023, 5, 10), date(2023, 5, 20), date(2023, 6, 10)],
+                "what": [1, 2, 3],
+            }
+        )
+        .lazy()
+        .sort("when")
+        .groupby_dynamic("when", every="1mo")
+        .agg(pl.col("what").sum())
+        .collect(streaming=True)
+    ).to_dict(False) == {"when": [date(2023, 5, 1), date(2023, 6, 1)], "what": [3, 3]}
+
+
+@pytest.mark.write_disk()
+def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    np.random.seed(0)
+
+    num_rows = 1_00_000
+    num_columns = 2
+    num_tables = 10
+
+    # ensure we create many chunks
+    # this will ensure we create more files
+    # and that creates contention while dumping
+    q = pl.concat(
+        [
+            pl.DataFrame(
+                [
+                    pl.Series(np.random.randint(0, 10000, size=num_rows))
+                    for _ in range(num_columns)
+                ]
+            )
+            for _ in range(num_tables)
+        ],
+        rechunk=False,
+    ).lazy()
+    q = q.sort(q.columns)
+    df = q.collect(streaming=True)
+    assert df.shape == (1_000_000, 2)
+    assert df["column_0"].flags["SORTED_ASC"]
+    assert df.head(20).to_dict(False) == {
+        "column_0": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        "column_1": [
+            242,
+            245,
+            588,
+            618,
+            732,
+            902,
+            925,
+            945,
+            1009,
+            1161,
+            1352,
+            1365,
+            1451,
+            1581,
+            1778,
+            1836,
+            1976,
+            2091,
+            2120,
+            2124,
+        ],
+    }
+
+
+@pytest.mark.write_disk()
+@pytest.mark.slow()
+def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    p0 = tmp_path / "df0.parquet"
+    p1 = tmp_path / "df1.parquet"
+    # by loading from disk, we get different chunks
+    n = 200_000
+    k = 100
+
+    d0: dict[str, np.ndarray[Any, Any]] = {
+        f"x{i}": np.random.random(n) for i in range(k)
+    }
+    d0.update({"id": np.arange(n)})
+
+    df0 = pl.DataFrame(d0)
+    df1 = df0.clone().select(pl.all().shuffle(111))
+
+    df0.write_parquet(p0)
+    df1.write_parquet(p1)
+
+    lf0 = pl.scan_parquet(p0)
+    lf1 = pl.scan_parquet(p1).select(pl.all().suffix("_r"))
+
+    join_strategies: list[JoinStrategy] = ["left", "inner"]
+    for how in join_strategies:
+        q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
+        assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+
+
+def test_streaming_9776() -> None:
+    df = pl.DataFrame({"col_1": ["a"] * 1000, "ID": [None] + ["a"] * 999})
+    ordered = (
+        df.groupby("col_1", "ID", maintain_order=True)
+        .count()
+        .filter(pl.col("col_1") == "a")
+    )
+    unordered = (
+        df.groupby("col_1", "ID", maintain_order=False)
+        .count()
+        .filter(pl.col("col_1") == "a")
+    )
+    expected = [("a", None, 1), ("a", "a", 999)]
+    assert ordered.rows() == expected
+    assert unordered.sort(["col_1", "ID"]).rows() == expected
+
+
+def test_streaming_groupby_list_9758() -> None:
+    payload = {"a": [[1, 2]]}
+    assert (
+        pl.LazyFrame(payload)
+        .groupby("a")
+        .first()
+        .collect(streaming=True)
+        .to_dict(False)
+        == payload
+    )

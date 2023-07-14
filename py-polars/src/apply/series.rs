@@ -1130,10 +1130,12 @@ fn append_series(
                 .getattr("_s")
                 .expect("could net get series attribute '_s'");
             let pyseries = py_pyseries.extract::<PySeries>()?;
-            builder.append_series(&pyseries.series);
+            builder
+                .append_series(&pyseries.series)
+                .map_err(PyPolarsErr::from)?;
         }
         Err(_) => {
-            builder.append_opt_series(None);
+            builder.append_opt_series(None).map_err(PyPolarsErr::from)?;
         }
     };
     Ok(())
@@ -1211,7 +1213,9 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         let dt = out_series.dtype();
                         builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
                             .map_err(PyPolarsErr::from)?;
-                        builder.append_opt_series(Some(&out_series));
+                        builder
+                            .append_opt_series(Some(&out_series))
+                            .map_err(PyPolarsErr::from)?;
                     } else {
                         let mut builder =
                             get_list_builder(dt, 0, 1, self.name()).map_err(PyPolarsErr::from)?;
@@ -1234,20 +1238,22 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                             let dt = out_series.dtype();
                             builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
                                 .map_err(PyPolarsErr::from)?;
-                            builder.append_opt_series(Some(&out_series));
+                            builder
+                                .append_opt_series(Some(&out_series))
+                                .map_err(PyPolarsErr::from)?;
                             break;
                         } else {
                             nulls += 1;
                         }
                     }
                     for _ in 0..nulls {
-                        builder.append_opt_series(None);
+                        builder.append_opt_series(None).map_err(PyPolarsErr::from)?;
                     }
                     for opt_series in it {
                         if let Some(series) = opt_series {
                             append_series(pypolars, &mut *builder, lambda, series)?;
                         } else {
-                            builder.append_opt_series(None)
+                            builder.append_opt_series(None).unwrap()
                         }
                     }
                 };
@@ -2158,11 +2164,19 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
     fn apply_to_struct(
         &'a self,
         _py: Python,
-        _lambda: &'a PyAny,
-        _init_null_count: usize,
-        _first_value: AnyValue<'a>,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: AnyValue<'a>,
     ) -> PyResult<PySeries> {
-        todo!()
+        let skip = 1;
+        let it = self
+            .into_iter()
+            .skip(init_null_count + skip)
+            .map(|object_value| {
+                let out = lambda.call1((object_value.map(|v| &v.inner),)).unwrap();
+                Some(out)
+            });
+        iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
     }
 
     fn apply_lambda_with_primitive_out_type<D>(

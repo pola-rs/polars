@@ -35,7 +35,7 @@ fn filter_true_lit() -> PolarsResult<()> {
     let with_not_true = df
         .clone()
         .lazy()
-        .filter(not(filter.clone()))
+        .filter(not(filter))
         .with_predicate_pushdown(false)
         .with_projection_pushdown(false)
         .collect()?;
@@ -54,7 +54,6 @@ fn filter_true_lit() -> PolarsResult<()> {
 
 fn create_n_filters(col_name: &str, num_filters: usize) -> Vec<Expr> {
     (0..num_filters)
-        .into_iter()
         .map(|i| col(col_name).eq(lit(format!("{}", i))))
         .collect()
 }
@@ -165,7 +164,7 @@ fn test_predicate_pushdown_blocked_by_outer_join() -> PolarsResult<()> {
         "c" => ["c2", "c3"]
     }?;
     let df = df1.lazy().outer_join(df2.lazy(), col("b"), col("b"));
-    let out = df.clone().filter(col("a").eq(lit("a1"))).collect()?;
+    let out = df.filter(col("a").eq(lit("a1"))).collect()?;
     let null: Option<&str> = None;
     let expected = df![
         "a" => ["a1"],
@@ -196,9 +195,16 @@ fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
     ]?;
 
     for rechunk in [true, false] {
-        let out = concat([lf1.clone(), lf2.clone()], rechunk, true)?
-            .filter(count().over([col("k")]).gt(lit(1)))
-            .collect()?;
+        let out = concat(
+            [lf1.clone(), lf2.clone()],
+            UnionArgs {
+                rechunk,
+                parallel: true,
+                ..Default::default()
+            },
+        )?
+        .filter(count().over([col("k")]).gt(lit(1)))
+        .collect()?;
 
         assert!(out.frame_equal(&expected));
     }

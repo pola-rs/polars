@@ -1,8 +1,11 @@
+use std::fmt::Display;
 use std::ops::BitAnd;
 
 use super::*;
 use crate::dsl::selector::Selector;
 use crate::logical_plan::projection::is_regex_projection;
+use crate::logical_plan::tree_format::TreeFmtVisitor;
+use crate::logical_plan::visitor::{AexprNode, TreeWalker};
 
 /// Specialized expressions for Categorical dtypes.
 pub struct MetaNameSpace(pub(crate) Expr);
@@ -56,6 +59,7 @@ impl MetaNameSpace {
         self.0
     }
 
+    /// Whether this expression expands to multiple expressions.
     pub fn has_multiple_outputs(&self) -> bool {
         self.0.into_iter().any(|e| match e {
             Expr::Selector(_) | Expr::Wildcard | Expr::Columns(_) | Expr::DtypeColumn(_) => true,
@@ -64,6 +68,7 @@ impl MetaNameSpace {
         })
     }
 
+    /// Whether this expression expands to multiple expressions with regex expansion.
     pub fn is_regex_projection(&self) -> bool {
         self.0.into_iter().any(|e| match e {
             Expr::Column(name) => is_regex_projection(name),
@@ -116,5 +121,15 @@ impl MetaNameSpace {
         } else {
             Expr::Selector(Selector::new(self.0))
         }
+    }
+
+    /// Get a hold to an implementor of the `Display` trait that will format as
+    /// the expression as a tree
+    pub fn into_tree_formatter(self) -> PolarsResult<impl Display> {
+        let mut arena = Default::default();
+        let node = to_aexpr(self.0, &mut arena);
+        let mut visitor = TreeFmtVisitor::new();
+        AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor))?;
+        Ok(visitor)
     }
 }

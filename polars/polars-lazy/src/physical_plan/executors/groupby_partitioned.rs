@@ -253,6 +253,7 @@ impl PartitionGroupByExec {
             &mut expr_arena,
             &mut vec![],
             false,
+            false,
         )
         .unwrap();
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import typing
 from datetime import date, datetime
 
 import numpy as np
@@ -255,7 +254,6 @@ def test_list_slice() -> None:
     }
 
 
-@typing.no_type_check
 def test_list_sliced_get_5186() -> None:
     # https://github.com/pola-rs/polars/issues/5186
     n = 30
@@ -454,3 +452,59 @@ def test_list_count_match_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
 
     assert a.select(pl.col("a").list.count_match(True))["a"].to_list() == [1]
+
+
+def test_list_set_operations() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 3], [1, 1, 1], [4]], "b": [[4, 2, 1], [2, 1, 12], [4]]}
+    )
+
+    assert df.select(pl.col("a").list.union("b"))["a"].to_list() == [
+        [1, 2, 3, 4],
+        [1, 2, 12],
+        [4],
+    ]
+    assert df.select(pl.col("a").list.intersection("b"))["a"].to_list() == [
+        [1, 2],
+        [1],
+        [4],
+    ]
+    assert df.select(pl.col("a").list.difference("b"))["a"].to_list() == [[3], [], []]
+    assert df.select(pl.col("b").list.difference("a"))["b"].to_list() == [
+        [4],
+        [2, 12],
+        [],
+    ]
+
+    # check logical types
+    dtype = pl.List(pl.Date)
+    assert (
+        df.select(pl.col("b").cast(dtype).list.difference(pl.col("a").cast(dtype)))[
+            "b"
+        ].dtype
+        == dtype
+    )
+
+    df = pl.DataFrame(
+        {
+            "a": [["a", "b", "c"], ["b", "e", "z"]],
+            "b": [["b", "s", "a"], ["a", "e", "f"]],
+        }
+    )
+
+    assert df.select(pl.col("a").list.union("b"))["a"].to_list() == [
+        ["a", "b", "c", "s"],
+        ["b", "e", "z", "a", "f"],
+    ]
+
+    df = pl.DataFrame(
+        {
+            "a": [[2, 3, 3], [3, 1], [1, 2, 3]],
+            "b": [[2, 3, 4], [3, 3, 1], [3, 3]],
+        }
+    )
+    r1 = df.with_columns(pl.col("a").list.intersection("b"))["a"].to_list()
+    r2 = df.with_columns(pl.col("b").list.intersection("a"))["b"].to_list()
+    exp = [[2, 3], [3, 1], [3]]
+    assert r1 == exp
+    assert r2 == exp

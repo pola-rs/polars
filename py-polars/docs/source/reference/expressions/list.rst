@@ -9,17 +9,21 @@ The following methods are available under the `expr.list` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Expr.list.all
+    Expr.list.any
     Expr.list.arg_max
     Expr.list.arg_min
     Expr.list.concat
     Expr.list.contains
     Expr.list.count_match
     Expr.list.diff
+    Expr.list.difference
     Expr.list.eval
     Expr.list.explode
     Expr.list.first
     Expr.list.get
     Expr.list.head
+    Expr.list.intersection
     Expr.list.join
     Expr.list.last
     Expr.list.lengths
@@ -34,4 +38,5 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.tail
     Expr.list.take
     Expr.list.to_struct
+    Expr.list.union
     Expr.list.unique
