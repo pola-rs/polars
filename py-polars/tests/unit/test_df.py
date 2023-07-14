@@ -2967,20 +2967,6 @@ def test_fill_null_limits() -> None:
     }
 
 
-def test_head_tail(fruits_cars: pl.DataFrame) -> None:
-    res_expr = fruits_cars.select([pl.head("A", 2)])
-    res_series = pl.head(fruits_cars["A"], 2)
-    expected = pl.Series("A", [1, 2])
-    assert_series_equal(res_expr.to_series(0), expected)
-    assert_series_equal(res_series, expected)
-
-    res_expr = fruits_cars.select([pl.tail("A", 2)])
-    res_series = pl.tail(fruits_cars["A"], 2)
-    expected = pl.Series("A", [4, 5])
-    assert_series_equal(res_expr.to_series(0), expected)
-    assert_series_equal(res_series, expected)
-
-
 def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select(pl.col("A").lower_bound())
     assert res_expr.item() == -9223372036854775808

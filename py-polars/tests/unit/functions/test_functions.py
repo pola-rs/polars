@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_concat_align() -> None:
@@ -375,7 +375,8 @@ def test_lazy_functions() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.select(pl.count("a"))
     assert list(out["a"]) == [3]
-    assert pl.count(df["a"]) == 3
+    with pytest.deprecated_call():
+        assert pl.count(df["a"]) == 3
     out = df.select(
         [
             pl.var("b").alias("1"),
@@ -392,10 +393,12 @@ def test_lazy_functions() -> None:
     )
     expected = 1.0
     assert np.isclose(out.to_series(0), expected)
-    assert np.isclose(pl.var(df["b"]), expected)  # type: ignore[arg-type]
+    with pytest.deprecated_call():
+        assert np.isclose(pl.var(df["b"]), expected)  # type: ignore[arg-type]
     expected = 1.0
     assert np.isclose(out.to_series(1), expected)
-    assert np.isclose(pl.std(df["b"]), expected)  # type: ignore[arg-type]
+    with pytest.deprecated_call():
+        assert np.isclose(pl.std(df["b"]), expected)  # type: ignore[arg-type]
     expected = 3
     assert np.isclose(out.to_series(2), expected)
     with pytest.deprecated_call():
@@ -410,19 +413,24 @@ def test_lazy_functions() -> None:
         assert np.isclose(pl.sum(df["b"]), expected)
     expected = 2
     assert np.isclose(out.to_series(5), expected)
-    assert np.isclose(pl.mean(df["b"]), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.mean(df["b"]), expected)
     expected = 2
     assert np.isclose(out.to_series(6), expected)
-    assert np.isclose(pl.median(df["b"]), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.median(df["b"]), expected)
     expected = 3
     assert np.isclose(out.to_series(7), expected)
-    assert np.isclose(pl.n_unique(df["b"]), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.n_unique(df["b"]), expected)
     expected = 1
     assert np.isclose(out.to_series(8), expected)
-    assert np.isclose(pl.first(df["b"]), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.first(df["b"]), expected)
     expected = 3
     assert np.isclose(out.to_series(9), expected)
-    assert np.isclose(pl.last(df["b"]), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.last(df["b"]), expected)
 
     # regex selection
     out = df.select(
@@ -435,3 +443,19 @@ def test_lazy_functions() -> None:
     assert out.rows() == [
         ({"a": "foo", "b": 3}, {"b": 1, "c": 1.0}, {"a": None, "c": 6.0})
     ]
+
+
+def test_head_tail(fruits_cars: pl.DataFrame) -> None:
+    res_expr = fruits_cars.select([pl.head("A", 2)])
+    with pytest.deprecated_call():
+        res_series = pl.head(fruits_cars["A"], 2)
+    expected = pl.Series("A", [1, 2])
+    assert_series_equal(res_expr.to_series(0), expected)
+    assert_series_equal(res_series, expected)
+
+    res_expr = fruits_cars.select([pl.tail("A", 2)])
+    with pytest.deprecated_call():
+        res_series = pl.tail(fruits_cars["A"], 2)
+    expected = pl.Series("A", [4, 5])
+    assert_series_equal(res_expr.to_series(0), expected)
+    assert_series_equal(res_series, expected)
