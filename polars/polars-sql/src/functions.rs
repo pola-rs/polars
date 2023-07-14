@@ -380,6 +380,7 @@ impl PolarsSqlFunctions {
             "min",
             "octet_length",
             "pow",
+            "power",
             "radians",
             "round",
             "rtrim",
@@ -432,7 +433,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "log10" => Self::Log10,
             "log1p" => Self::Log1p,
             "log2" => Self::Log2,
-            "pow" => Self::Pow,
+            "pow" | "power" => Self::Pow,
             "round" => Self::Round,
 
             // ----
