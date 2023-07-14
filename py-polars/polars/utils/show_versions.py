@@ -14,21 +14,25 @@ def show_versions() -> None:
     --------
     >>> pl.show_versions()  # doctest: +SKIP
     --------Version info---------
-    Polars:      0.17.11
-    Index type:  UInt32
-    Platform:    Linux-5.15.90.1-microsoft-standard-WSL2-x86_64-with-glibc2.35
-    Python:      3.11.3 (main, Apr 15 2023, 14:44:51) [GCC 11.3.0]
+    Polars:              0.18.7
+    Index type:          UInt32
+    Platform:            Linux-6.3.0-1-amd64-x86_64-with-glibc2.36
+    Python:              3.11.3 (main, May  7 2023, 13:19:39) [GCC 12.2.0]
     \b
     ----Optional dependencies----
-    numpy:       1.24.2
-    pandas:      2.0.0
-    pyarrow:     11.0.0
-    connectorx:  <not installed>
-    deltalake:   0.8.1
-    fsspec:      2023.4.0
-    matplotlib:  3.7.1
-    xlsx2csv:    0.8.1
-    xlsxwriter:  3.1.0
+    adbc_driver_sqlite:  0.5.1
+    connectorx:          <not installed>
+    deltalake:           0.10.0
+    fsspec:              2023.6.0
+    hypothesis:          6.80.0
+    matplotlib:          <not installed>
+    numpy:               1.25.0
+    pandas:              2.0.3
+    pyarrow:             12.0.1
+    pydantic:            2.0
+    sqlalchemy:          <not installed>
+    xlsx2csv:            0.8.1
+    xlsxwriter:          3.1.2
     """
     # note: we import 'platform' here as a micro-optimisation for initial import
     import platform
@@ -55,27 +59,43 @@ def show_versions() -> None:
         print(f"{name:{keylen}s} {v}")
 
 
+def _is_stdlib_module(module: str) -> bool:
+    if sys.version_info >= (3, 10):  # not available in older versions
+        return module in sys.stdlib_module_names
+
+    import importlib.util
+
+    if spec := importlib.util.find_spec(module):
+        if origin := spec.origin:
+            return origin.startswith(sys.base_prefix)
+
+    return False
+
+
 def _get_dependency_info() -> dict[str, str]:
-    # see the list of dependencies in pyproject.toml
-    opt_deps = [
+    import polars.dependencies
+
+    third_party_lazy = [
+        s
+        for s in polars.dependencies.__all__
+        if not s.startswith("_") and not _is_stdlib_module(s)
+    ]
+
+    third_party_eager = [
         "adbc_driver_sqlite",
         "connectorx",
-        "deltalake",
-        "fsspec",
         "matplotlib",
-        "numpy",
-        "pandas",
-        "pyarrow",
-        "pydantic",
         "sqlalchemy",
         "xlsx2csv",
         "xlsxwriter",
     ]
-    return {f"{name}:": _get_dependency_version(name) for name in opt_deps}
+
+    third_party_deps = sorted(third_party_lazy + third_party_eager)
+    return {f"{name}:": _get_dependency_version(name) for name in third_party_deps}
 
 
 def _get_dependency_version(dep_name: str) -> str:
-    # note: we import 'importlib' here as a significiant optimisation for initial import
+    # note: we import 'importlib' here as a significant optimisation for initial import
     import importlib
     import importlib.metadata
 
