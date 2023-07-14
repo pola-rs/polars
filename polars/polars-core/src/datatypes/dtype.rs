@@ -332,7 +332,7 @@ impl Display for DataType {
             DataType::Categorical(_) => "cat",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
-            DataType::Unknown => unreachable!(),
+            DataType::Unknown => "unknown",
         };
         f.write_str(s)
     }
