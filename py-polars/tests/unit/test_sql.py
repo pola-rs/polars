@@ -682,6 +682,27 @@ def test_sql_round_ndigits_errors() -> None:
         ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 
 
+def test_sql_string_lengths() -> None:
+    df = pl.DataFrame({"words": ["Café", None, "東京"]})
+
+    with pl.SQLContext(frame=df) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              words,
+              LENGTH(words) AS n_chars,
+              OCTET_LENGTH(words) AS n_bytes
+            FROM frame
+            """
+        ).collect()
+
+    assert res.to_dict(False) == {
+        "words": ["Café", None, "東京"],
+        "n_chars": [4, None, 2],
+        "n_bytes": [5, None, 6],
+    }
+
+
 def test_sql_substr() -> None:
     df = pl.DataFrame(
         {
