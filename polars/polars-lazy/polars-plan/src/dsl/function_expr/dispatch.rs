@@ -26,3 +26,9 @@ pub(super) fn interpolate(s: &Series, method: InterpolationMethod) -> PolarsResu
 pub(super) fn to_physical(s: &Series) -> PolarsResult<Series> {
     Ok(s.to_physical_repr().into_owned())
 }
+
+pub(super) fn set_sorted_flag(s: &Series, sorted: IsSorted) -> PolarsResult<Series> {
+    let mut s = s.clone();
+    s.set_sorted_flag(sorted);
+    Ok(s)
+}
