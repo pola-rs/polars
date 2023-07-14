@@ -4642,7 +4642,6 @@ class DataFrame:
             to run on the streaming engine.
 
             .. note::
-
                 Within each group, the order of rows is always preserved, regardless
                 of this argument.
 
