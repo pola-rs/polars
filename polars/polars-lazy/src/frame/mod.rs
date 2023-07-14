@@ -99,7 +99,7 @@ impl LazyFrame {
         LogicalPlanBuilder::from(self.logical_plan)
     }
 
-    pub fn get_opt_state(&self) -> OptState {
+    fn get_opt_state(&self) -> OptState {
         self.opt_state
     }
 
