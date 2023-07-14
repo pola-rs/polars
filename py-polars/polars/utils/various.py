@@ -4,6 +4,7 @@ import inspect
 import os
 import re
 import sys
+import warnings
 from collections.abc import MappingView, Sized
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, TypeVar
@@ -404,3 +405,11 @@ def _get_stack_locals(
                     return objects
         stack_frame = stack_frame.f_back
     return objects
+
+
+# this is called from rust
+def _polars_warn(msg: str) -> None:
+    warnings.warn(
+        msg,
+        stacklevel=find_stacklevel(),
+    )

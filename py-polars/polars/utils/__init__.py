@@ -19,7 +19,7 @@ from polars.utils.convert import (
 )
 from polars.utils.meta import get_idx_type, get_index_type, threadpool_size
 from polars.utils.show_versions import show_versions
-from polars.utils.various import NoDefault, no_default
+from polars.utils.various import NoDefault, _polars_warn, no_default
 
 __all__ = [
     "NoDefault",
@@ -41,4 +41,5 @@ __all__ = [
     "_to_python_timedelta",
     "_datetime_for_anyvalue",
     "_datetime_for_anyvalue_windows",
+    "_polars_warn",
 ]

@@ -32,7 +32,9 @@ pub use crate::chunked_array::temporal::conversion::*;
 pub use crate::chunked_array::ChunkedArray;
 pub(crate) use crate::chunked_array::{to_array, ChunkIdIter};
 pub use crate::datatypes::*;
-pub use crate::error::{polars_bail, polars_ensure, polars_err, PolarsError, PolarsResult};
+pub use crate::error::{
+    polars_bail, polars_ensure, polars_err, polars_warn, PolarsError, PolarsResult,
+};
 #[cfg(feature = "asof_join")]
 pub use crate::frame::asof_join::*;
 pub use crate::frame::explode::MeltArgs;
