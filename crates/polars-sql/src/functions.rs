@@ -182,6 +182,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT column_2 from df WHERE ENDS_WITH(column_1, 'a');
     /// ```
     EndsWith,
+    /// SQL 'initcap' function
+    /// ```sql
+    /// SELECT INITCAP(column_1) from df;
+    /// ```
+    InitCap,
     /// SQL 'left' function
     /// ```sql
     /// SELECT LEFT(column_1, 3) from df;
@@ -499,6 +504,7 @@ impl PolarsSqlFunctions {
             // String functions
             // ----
             "ends_with" => Self::EndsWith,
+            "initcap" => Self::InitCap,
             "length" => Self::Length,
             "left" => Self::Left,
             "lower" => Self::Lower,
@@ -616,6 +622,7 @@ impl SqlFunctionVisitor<'_> {
             // String functions
             // ----
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
+            InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
                 Ok(e.str().str_slice(0, match length {
                     Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
