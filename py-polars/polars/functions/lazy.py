@@ -468,8 +468,6 @@ def mean(column: str | Series) -> Expr | float | None:
     ╞═════╡
     │ 4.0 │
     └─────┘
-    >>> pl.mean(df["a"])
-    4.0
 
     """
     if isinstance(column, pl.Series):
@@ -508,8 +506,6 @@ def avg(column: str | Series) -> Expr | float:
     ╞═════╡
     │ 4.0 │
     └─────┘
-    >>> pl.avg(df["a"])
-    4.0
 
     """
     return mean(column)
@@ -541,8 +537,6 @@ def median(column: str | Series) -> Expr | float | int | None:
     ╞═════╡
     │ 3.0 │
     └─────┘
-    >>> pl.median(df["a"])
-    3.0
 
     """
     if isinstance(column, pl.Series):
@@ -581,8 +575,6 @@ def n_unique(column: str | Series) -> Expr | int:
     ╞═════╡
     │ 2   │
     └─────┘
-    >>> pl.n_unique(df["a"])
-    2
 
     """
     if isinstance(column, pl.Series):
@@ -675,8 +667,6 @@ def first(column: str | Series | None = None) -> Expr | Any:
     ╞═════╡
     │ 1   │
     └─────┘
-    >>> pl.first(df["a"])
-    1
 
     """
     if column is None:
@@ -743,8 +733,6 @@ def last(column: str | Series | None = None) -> Expr:
     ╞═════╡
     │ 3   │
     └─────┘
-    >>> pl.last(df["a"])
-    3
 
     """
     if column is None:
@@ -808,13 +796,6 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
     │ 1   │
     │ 8   │
     └─────┘
-    >>> pl.head(df["a"], 2)
-    shape: (2,)
-    Series: 'a' [i64]
-    [
-        1
-        8
-    ]
 
     """
     if isinstance(column, pl.Series):
@@ -872,13 +853,6 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
     │ 8   │
     │ 3   │
     └─────┘
-    >>> pl.tail(df["a"], 2)
-    shape: (2,)
-    Series: 'a' [i64]
-    [
-        8
-        3
-    ]
 
     """
     if isinstance(column, pl.Series):
