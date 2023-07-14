@@ -1,8 +1,10 @@
 categories:
   - title: 🏆 Highlights
     labels: highlight
-  - title: ⚠️ Breaking changes
+  - title: 💥 Breaking changes
     labels: breaking
+  - title: ⚠️ Deprecations
+    labels: deprecation
   - title: 🚀 Performance improvements
     labels: performance
   - title: ✨ Enhancements
@@ -28,7 +30,7 @@ change-template: '- $TITLE (#$NUMBER)'
 change-title-escapes: '\<*_&'
 replacers:
   # Remove conventional commits from titles
-  - search: '/- (build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)(\(.*\))?(\!)?\: /g'
+  - search: '/- (build|chore|ci|depr|docs|feat|fix|perf|refactor|release|revert|style|test)(\(.*\))?(\!)?\: /g'
     replace: '- '
 
 version-resolver:
@@ -39,13 +41,13 @@ version-resolver:
 autolabeler:
   - label: rust
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)\(.*rust.*\)/'
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|revert|style|test)\(.*rust.*\)/'
   - label: python
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)\(.*python.*\)/'
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|revert|style|test)\(.*python.*\)/'
   - label: breaking
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)(\(.*\))?\!\: /'
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|revert|style|test)(\(.*\))?\!\: /'
   - label: build
     title:
       - '/^build/'
@@ -55,6 +57,9 @@ autolabeler:
   - label: ci
     title:
       - '/^ci/'
+  - label: deprecation
+    title:
+      - '/^depr/'
   - label: documentation
     title:
       - '/^docs/'
