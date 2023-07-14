@@ -4568,7 +4568,7 @@ class Expr:
         """
         return self.__truediv__(other)
 
-    def pow(self, exponent: int | float | Series | Expr) -> Self:
+    def pow(self, exponent: int | float | None | Series | Expr) -> Self:
         """
         Method equivalent of exponentiation operator ``expr ** exponent``.
 

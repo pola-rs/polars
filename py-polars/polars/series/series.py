@@ -828,7 +828,7 @@ class Series:
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
-    def __pow__(self, exponent: int | float | Series) -> Series:
+    def __pow__(self, exponent: int | float | None | Series) -> Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
@@ -1421,7 +1421,7 @@ class Series:
         """Reduce this Series to the product value."""
         return self.to_frame().select(F.col(self.name).product()).to_series().item()
 
-    def pow(self, exponent: int | float | Series) -> Series:
+    def pow(self, exponent: int | float | None | Series) -> Series:
         """
         Raise to the power of the given exponent.
 
