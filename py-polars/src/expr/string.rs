@@ -89,27 +89,11 @@ impl PyExpr {
     }
 
     fn str_lengths(&self) -> Self {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(Some(ca.str_lengths().into_series()))
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.lengths")
-            .into()
+        self.inner.clone().str().lengths().into()
     }
 
     fn str_n_chars(&self) -> Self {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(Some(ca.str_n_chars().into_series()))
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.n_chars")
-            .into()
+        self.inner.clone().str().n_chars().into()
     }
 
     #[cfg(feature = "lazy_regex")]
