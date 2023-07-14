@@ -110,6 +110,11 @@ impl LazyFrame {
         }
     }
 
+    /// Get current optimizations
+    pub fn get_current_optimizations(&self) -> OptState {
+        self.opt_state
+    }
+
     /// Set allowed optimizations
     pub fn with_optimizations(mut self, opt_state: OptState) -> Self {
         self.opt_state = opt_state;
