@@ -69,8 +69,8 @@ test-doc:  ## Run doc examples
 
 .PHONY: generate_test_files
 generate_test_files:  ## Generate some datasets
-	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o parquet > ../examples/datasets/foods1.parquet
-	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o arrow > ../examples/datasets/foods1.ipc
+	cargo run -p polars-cli "select * from read_csv('examples/datasets/foods1.csv')" -o parquet > examples/datasets/foods1.parquet
+	cargo run -p polars-cli "select * from read_csv('examples/datasets/foods1.csv')" -o arrow > examples/datasets/foods1.ipc
 
 .PHONY: bench-save
 bench-save:  ## Run benchmark and save
