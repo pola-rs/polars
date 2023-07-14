@@ -2093,17 +2093,29 @@ def rolling_corr(
     )
 
 
-def sql_expr(sql: str) -> Expr:
+@overload
+def sql_expr(sql: str) -> Expr:  # type: ignore[misc]
+    ...
+
+
+@overload
+def sql_expr(sql: Sequence[str]) -> list[Expr]:
+    ...
+
+
+def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
     """
-    Parse a SQL expression to a polars expression.
+    Parse one or more SQL expressions to polars expression(s).
 
     Parameters
     ----------
     sql
-        SQL expression
+        One or more SQL expressions.
 
     Examples
     --------
+    Parse a single SQL expression:
+
     >>> df = pl.DataFrame({"a": [2, 1]})
     >>> expr = pl.sql_expr("MAX(a)")
     >>> df.select(expr)
@@ -2115,5 +2127,23 @@ def sql_expr(sql: str) -> Expr:
     ╞═════╡
     │ 2   │
     └─────┘
+
+    Parse multiple SQL expressions:
+
+    >>> df.with_columns(
+    ...     *pl.sql_expr(["POWER(a,a) AS a_a", "CAST(a AS TEXT) AS a_txt"]),
+    ... )
+    shape: (2, 3)
+    ┌─────┬─────┬───────┐
+    │ a   ┆ a_a ┆ a_txt │
+    │ --- ┆ --- ┆ ---   │
+    │ i64 ┆ f64 ┆ str   │
+    ╞═════╪═════╪═══════╡
+    │ 2   ┆ 4.0 ┆ 2     │
+    │ 1   ┆ 1.0 ┆ 1     │
+    └─────┴─────┴───────┘
     """
-    return wrap_expr(plr.sql_expr(sql))
+    if isinstance(sql, str):
+        return wrap_expr(plr.sql_expr(sql))
+    else:
+        return [wrap_expr(plr.sql_expr(q)) for q in sql]
