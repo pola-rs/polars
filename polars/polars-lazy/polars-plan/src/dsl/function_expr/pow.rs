@@ -12,7 +12,7 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     let dtype = T::get_dtype();
-    let exponent = exponent.cast(&dtype)?;
+    let exponent = exponent.strict_cast(&dtype)?;
     let exponent = base.unpack_series_matching_type(&exponent).unwrap();
 
     if exponent.len() == 1 {
