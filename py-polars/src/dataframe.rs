@@ -351,41 +351,46 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    pub fn read_json(py_f: &PyAny, json_lines: bool) -> PyResult<Self> {
+    pub fn read_json(
+        py_f: &PyAny,
+        schema: Option<Wrap<Schema>>,
+        schema_overrides: Option<Wrap<Schema>>,
+    ) -> PyResult<Self> {
+        // memmap the file first
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
-        if json_lines {
-            let out = JsonReader::new(mmap_bytes_r)
-                .with_json_format(JsonFormat::JsonLines)
-                .finish()
-                .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-            Ok(out.into())
-        } else {
-            // memmap the file first
-            let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
-            let mmap_read: ReaderBytes = (&mmap_bytes_r).into();
-            let bytes = mmap_read.deref();
+        let mmap_read: ReaderBytes = (&mmap_bytes_r).into();
+        let bytes = mmap_read.deref();
 
-            // Happy path is our column oriented json as that is most performant
-            // on failure we try
-            match serde_json::from_slice::<DataFrame>(bytes) {
-                Ok(df) => Ok(df.into()),
-                Err(e) => {
-                    let msg = format!("{e}");
-                    // parsing succeeded, but the dataframe was invalid
-                    if msg.contains("successful parse invalid data") {
-                        let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
-                        Err(PyErr::from(e))
+        // Happy path is our column oriented json as that is most performant
+        // on failure we try
+        match serde_json::from_slice::<DataFrame>(bytes) {
+            Ok(df) => Ok(df.into()),
+            Err(e) => {
+                let msg = format!("{e}");
+                // parsing succeeded, but the dataframe was invalid
+                if msg.contains("successful parse invalid data") {
+                    let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
+                    Err(PyErr::from(e))
+                }
+                // parsing error
+                // try arrow json reader instead
+                // this is row oriented
+                else {
+                    let mut builder =
+                        JsonReader::new(mmap_bytes_r).with_json_format(JsonFormat::Json);
+
+                    if let Some(schema) = schema {
+                        builder = builder.with_schema(Arc::new(schema.0));
                     }
-                    // parsing error
-                    // try arrow json reader instead
-                    // this is row oriented
-                    else {
-                        let out = JsonReader::new(mmap_bytes_r)
-                            .with_json_format(JsonFormat::Json)
-                            .finish()
-                            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-                        Ok(out.into())
+
+                    if let Some(schema) = schema_overrides.as_ref() {
+                        builder = builder.with_schema_overwrite(&schema.0);
                     }
+
+                    let out = builder
+                        .finish()
+                        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+                    Ok(out.into())
                 }
             }
         }
@@ -393,11 +398,27 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    pub fn read_ndjson(py_f: &PyAny) -> PyResult<Self> {
+    pub fn read_ndjson(
+        py_f: &PyAny,
+        ignore_errors: bool,
+        schema: Option<Wrap<Schema>>,
+        schema_overrides: Option<Wrap<Schema>>,
+    ) -> PyResult<Self> {
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
 
-        let out = JsonReader::new(mmap_bytes_r)
+        let mut builder = JsonReader::new(mmap_bytes_r)
             .with_json_format(JsonFormat::JsonLines)
+            .with_ignore_errors(ignore_errors);
+
+        if let Some(schema) = schema {
+            builder = builder.with_schema(Arc::new(schema.0));
+        }
+
+        if let Some(schema) = schema_overrides.as_ref() {
+            builder = builder.with_schema_overwrite(&schema.0);
+        }
+
+        let out = builder
             .finish()
             .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
         Ok(out.into())
