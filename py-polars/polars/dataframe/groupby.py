@@ -252,6 +252,10 @@ class GroupBy:
         """
         Apply a custom/user-defined function (UDF) over the groups as a sub-DataFrame.
 
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
+
         Implementing logic using a Python function is almost always _significantly_
         slower and more memory intensive than implementing the same logic using
         the native expression API because:

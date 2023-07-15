@@ -4364,6 +4364,10 @@ class Series:
         """
         Apply a custom/user-defined function (UDF) over elements in this Series.
 
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
+
         If the function returns a different datatype, the return_dtype arg should
         be set, otherwise the method will fail.
 

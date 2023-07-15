@@ -163,6 +163,10 @@ class LazyGroupBy:
         """
         Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
 
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
+
         Using this is considered an anti-pattern. This will be very slow because:
 
         - it forces the engine to materialize the whole `DataFrames` for the groups.
