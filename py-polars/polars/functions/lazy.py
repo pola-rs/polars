@@ -1164,6 +1164,10 @@ def apply(
     """
     Apply a custom/user-defined function (UDF) in a GroupBy context.
 
+    .. warning::
+        This method is much slower than the native expressions API.
+        Only use it if you cannot implement your logic otherwise.
+
     Depending on the context it has the following behavior:
 
     * Select

@@ -5682,6 +5682,10 @@ class DataFrame:
         """
         Apply a custom/user-defined function (UDF) over the rows of the DataFrame.
 
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
+
         The UDF will receive each row as a tuple of values: ``udf(row)``.
 
         Implementing logic using a Python function is almost always _significantly_
