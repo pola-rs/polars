@@ -23,7 +23,7 @@ def test_vstack(df1: pl.DataFrame, df2: pl.DataFrame) -> None:
 
 
 def test_vstack_in_place(df1: pl.DataFrame, df2: pl.DataFrame) -> None:
-    df1.vstack(df2)
+    df1.vstack(df2, in_place=True)
     expected = pl.DataFrame(
         {"foo": [1, 2, 3, 4], "bar": [6, 7, 8, 9], "ham": ["a", "b", "c", "d"]}
     )
@@ -39,7 +39,7 @@ def test_vstack_self(df1: pl.DataFrame) -> None:
 
 
 def test_vstack_self_in_place(df1: pl.DataFrame) -> None:
-    df1.vstack(df1)
+    df1.vstack(df1, in_place=True)
     expected = pl.DataFrame(
         {"foo": [1, 2, 1, 2], "bar": [6, 7, 6, 7], "ham": ["a", "b", "a", "b"]}
     )
