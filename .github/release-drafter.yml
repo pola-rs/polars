@@ -36,13 +36,13 @@ version-resolver:
 autolabeler:
   - label: rust
     title:
-      - '/^(build|chore|depr|docs|feat|fix|perf|release)(\(.*rust.*\))?\!?\:) /'
+      - '/^(build|chore|depr|docs|feat|fix|perf|release)(\(.*rust.*\))?\!?\: /'
   - label: python
     title:
-      - '/^(build|chore|depr|docs|feat|fix|perf|release)(\(.*python.*\))?\!?\:) /'
+      - '/^(build|chore|depr|docs|feat|fix|perf|release)(\(.*python.*\))?\!?\: /'
   - label: cli
     title:
-      - '/^(build|chore|depr|docs|feat|fix|perf|release)\(.*cli.*\)\!?\:) /'  # CLI tag not in global scope
+      - '/^(build|chore|depr|docs|feat|fix|perf|release)\(.*cli.*\)\!?\: /'  # CLI tag not in global scope
   - label: breaking
     title:
       - '/^(build|chore|depr|docs|feat|fix|perf|release)(\(.*\))?\!\: /'
