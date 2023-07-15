@@ -100,11 +100,7 @@ def all(
         elif isinstance(exprs, str):
             return F.col(exprs).all()
 
-    warnings.warn(
-        "using `all` for horizontal computation is deprecated. Use `all_horizontal` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
+    _warn_for_deprecated_horizontal_use("all")
     return F.all_horizontal(exprs, *more_exprs)
 
 
@@ -174,11 +170,7 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
         elif isinstance(exprs, str):
             return F.col(exprs).any()
 
-    warnings.warn(
-        "using `any` for horizontal computation is deprecated. Use `any_horizontal` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
+    _warn_for_deprecated_horizontal_use("any")
     return F.any_horizontal(exprs, *more_exprs)
 
 
@@ -272,11 +264,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
         elif isinstance(exprs, str):
             return F.col(exprs).max()
 
-    warnings.warn(
-        "using `max` for horizontal computation is deprecated. Use `max_horizontal` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
+    _warn_for_deprecated_horizontal_use("max")
     return F.max_horizontal(exprs, *more_exprs)
 
 
@@ -372,11 +360,7 @@ def min(
         elif isinstance(exprs, str):
             return F.col(exprs).min()
 
-    warnings.warn(
-        "using `min` for horizontal computation is deprecated. Use `min_horizontal` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
+    _warn_for_deprecated_horizontal_use("min")
     return F.min_horizontal(exprs, *more_exprs)
 
 
@@ -473,11 +457,7 @@ def sum(
         elif isinstance(exprs, str):
             return F.col(exprs).sum()
 
-    warnings.warn(
-        "using `sum` for horizontal computation is deprecated. Use `sum_horizontal` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
+    _warn_for_deprecated_horizontal_use("sum")
     return F.sum_horizontal(exprs, *more_exprs)
 
 
@@ -551,9 +531,13 @@ def cumsum(
         elif isinstance(exprs, str):
             return F.col(exprs).cumsum()
 
+    _warn_for_deprecated_horizontal_use("cumsum")
+    return F.cumsum_horizontal(exprs, *more_exprs)
+
+
+def _warn_for_deprecated_horizontal_use(name: str) -> None:
     warnings.warn(
-        "using `cumsum` for horizontal computation is deprecated. Use `cumsum_horizontal` instead.",
+        f"using `{name}` for horizontal computation is deprecated. Use `{name}_horizontal` instead.",
         DeprecationWarning,
         stacklevel=find_stacklevel(),
     )
-    return F.cumsum_horizontal(exprs, *more_exprs)
