@@ -70,13 +70,13 @@ where
 
 #[inline]
 fn n_sorted_past_min<T: NativeType + IsFloat + PartialOrd>(slice: &[T]) -> usize {
-    slice.windows(2).position(|x| compare_fn_nan_min(&x[0], &x[1]).is_gt()).unwrap_or(slice.len())
+    slice.windows(2).position(|x| compare_fn_nan_min(&x[0], &x[1]).is_gt()).unwrap_or(slice.len() - 1)
 }
 
 
 #[inline]
 fn n_sorted_past_max<T: NativeType + IsFloat + PartialOrd>(slice: &[T]) -> usize {
-    slice.windows(2).position(|x| compare_fn_nan_max(&x[0], &x[1]).is_lt()).unwrap_or(slice.len())
+    slice.windows(2).position(|x| compare_fn_nan_max(&x[0], &x[1]).is_lt()).unwrap_or(slice.len() - 1)
 }
 
 macro_rules! minmax_window {
@@ -92,13 +92,13 @@ macro_rules! minmax_window {
 
         impl<'a, T: NativeType + IsFloat + PartialOrd> $mw<'a, T> {
             #[inline]
-            fn update_m_and_m_idx(&mut self, m_and_idx: (usize, &T)) {
+            unsafe fn update_m_and_m_idx(&mut self, m_and_idx: (usize, &T)) {
                 self.m = *m_and_idx.1;
                 self.m_idx = m_and_idx.0;
-                if self.sorted_to < self.m_idx {
+                if self.sorted_to <= self.m_idx {
                     // Track how far past the current extremum values are sorted. Direction depends on min/max
                     // Tracking sorted ranges lets us only do comparisons when we have to.
-                    self.sorted_to = self.m_idx + $n_sorted_past(&self.slice[self.m_idx..]);
+                    self.sorted_to = self.m_idx + 1 + $n_sorted_past(&self.slice.get_unchecked(self.m_idx..));
                 }
             }
         }
@@ -122,11 +122,13 @@ macro_rules! minmax_window {
                 self.last_start = start; // Don't care where the last one started
                 let old_last_end = self.last_end; // But we need this
                 self.last_end = end;
-
+                //println!("start: {}, end: {}, m: {}, m_idx: {}, sorted_to: {}", start, end, self.m, self.m_idx, self.sorted_to);
                 let entering_start = std::cmp::max(old_last_end, start);
                 let entering = if end - entering_start == 1 {
                     // Faster in the special, but common, case of a fixed window rolling by one
                     Some((entering_start, self.slice.get_unchecked(entering_start)))
+                } else if old_last_end == end{
+                    None
                 } else {
                     $get_m_and_idx(self.slice, entering_start, end, self.sorted_to)
                 };
