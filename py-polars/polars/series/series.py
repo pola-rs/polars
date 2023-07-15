@@ -1604,9 +1604,10 @@ class Series:
         """
         return wrap_df(self._s.to_dummies(separator))
 
+    @deprecated_alias(bins="breaks")
     def cut(
         self,
-        bins: list[float],
+        breaks: list[float],
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
@@ -1620,8 +1621,8 @@ class Series:
 
         Parameters
         ----------
-        bins
-            Bins to create.
+        breaks
+            A list of unique cut points.
         labels
             Labels to assign to the bins. If given the length of labels must be
             len(bins) + 1.
@@ -1707,14 +1708,14 @@ class Series:
             return (
                 self.to_frame()
                 .with_columns(
-                    F.col(n).cut(bins, labels, left_closed, True).alias(n + "_bin")
+                    F.col(n).cut(breaks, labels, left_closed, True).alias(n + "_bin")
                 )
                 .unnest(n + "_bin")
                 .rename({"brk": break_point_label, n + "_bin": category_label})
             )
         res = (
             self.to_frame()
-            .select(F.col(n).cut(bins, labels, left_closed, include_breaks))
+            .select(F.col(n).cut(breaks, labels, left_closed, include_breaks))
             .to_series()
         )
         if include_breaks:
