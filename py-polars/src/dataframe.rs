@@ -940,31 +940,31 @@ impl PyDataFrame {
         self.df.width()
     }
 
-    pub fn hstack_mut(&mut self, columns: Vec<PySeries>) -> PyResult<()> {
-        let columns = columns.to_series();
-        self.df.hstack_mut(&columns).map_err(PyPolarsErr::from)?;
-        Ok(())
-    }
-
     pub fn hstack(&self, columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = columns.to_series();
         let df = self.df.hstack(&columns).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
-    pub fn extend(&mut self, df: &PyDataFrame) -> PyResult<()> {
-        self.df.extend(&df.df).map_err(PyPolarsErr::from)?;
+    pub fn hstack_mut(&mut self, columns: Vec<PySeries>) -> PyResult<()> {
+        let columns = columns.to_series();
+        self.df.hstack_mut(&columns).map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
-    pub fn vstack_mut(&mut self, df: &PyDataFrame) -> PyResult<()> {
-        self.df.vstack_mut(&df.df).map_err(PyPolarsErr::from)?;
-        Ok(())
-    }
-
-    pub fn vstack(&mut self, df: &PyDataFrame) -> PyResult<Self> {
-        let df = self.df.vstack(&df.df).map_err(PyPolarsErr::from)?;
+    pub fn vstack(&self, other: &PyDataFrame) -> PyResult<Self> {
+        let df = self.df.vstack(&other.df).map_err(PyPolarsErr::from)?;
         Ok(df.into())
+    }
+
+    pub fn vstack_mut(&mut self, other: &PyDataFrame) -> PyResult<()> {
+        self.df.vstack_mut(&other.df).map_err(PyPolarsErr::from)?;
+        Ok(())
+    }
+
+    pub fn extend(&mut self, other: &PyDataFrame) -> PyResult<()> {
+        self.df.extend(&other.df).map_err(PyPolarsErr::from)?;
+        Ok(())
     }
 
     pub fn drop_in_place(&mut self, name: &str) -> PyResult<PySeries> {

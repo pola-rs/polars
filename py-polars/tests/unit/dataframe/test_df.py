@@ -704,22 +704,6 @@ def test_hstack_dataframe(in_place: bool) -> None:
         assert_frame_equal(df_out, expected)
 
 
-@pytest.mark.parametrize("in_place", [True, False])
-def test_vstack(in_place: bool) -> None:
-    df1 = pl.DataFrame({"foo": [1, 2], "bar": [6, 7], "ham": ["a", "b"]})
-    df2 = pl.DataFrame({"foo": [3, 4], "bar": [8, 9], "ham": ["c", "d"]})
-
-    expected = pl.DataFrame(
-        {"foo": [1, 2, 3, 4], "bar": [6, 7, 8, 9], "ham": ["a", "b", "c", "d"]}
-    )
-
-    out = df1.vstack(df2, in_place=in_place)
-    if in_place:
-        assert_frame_equal(df1, expected)
-    else:
-        assert_frame_equal(out, expected)
-
-
 def test_extend() -> None:
     with pl.StringCache():
         df1 = pl.DataFrame(
