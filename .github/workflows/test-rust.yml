@@ -112,19 +112,3 @@ jobs:
 
       - name: Run cargo hack
         run: cargo hack check -p polars --each-feature --no-dev-deps
-
-  test-docs-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up Rust
-        run: rustup show
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref_name == 'main' }}
-
-      - name: Run make doctest
-        run: cd polars && make doctest

@@ -32,7 +32,8 @@ jobs:
       - name: Build Rust documentation
         env:
           RUSTDOCFLAGS: --cfg docsrs -D warnings
-        run: cargo doc --features=docs-selection --package polars
+        working-directory: polars
+        run: make doctest
 
       - name: Create redirect to Polars crate and set no-jekyll
         if: ${{ github.ref_name == 'main' }}
