@@ -38,7 +38,7 @@ where
             .min_by(|&a, &b| compare_fn_nan_min(a.1, b.1))
             .map(|v| (v.0 + start, v.1))
     } else {
-        // Sorted in start..sorted_to. Compare value at start to min over sorted_to..end
+        // It's sorted in range start..sorted_to. Compare slice[start] to min over sorted_to..end
         let s = (start, slice.get_unchecked(start));
         slice
             .get_unchecked(sorted_to..end)
@@ -108,9 +108,11 @@ fn n_sorted_past_max<T: NativeType + IsFloat + PartialOrd>(slice: &[T]) -> usize
         .unwrap_or(slice.len() - 1)
 }
 
+// Min and max really are the same thing up to a difference in comparison direction, as represented
+// here by helpers we pass in. Making both with a macro helps keep behavior synchronized
 macro_rules! minmax_window {
-    ($mw:tt, $get_m_and_idx:ident, $new_is_m:ident, $n_sorted_past:ident) => {
-        pub struct $mw<'a, T: NativeType + PartialOrd + IsFloat> {
+    ($m_window:tt, $get_m_and_idx:ident, $new_is_m:ident, $n_sorted_past:ident) => {
+        pub struct $m_window<'a, T: NativeType + PartialOrd + IsFloat> {
             slice: &'a [T],
             m: T,
             m_idx: usize,
@@ -119,7 +121,7 @@ macro_rules! minmax_window {
             last_end: usize,
         }
 
-        impl<'a, T: NativeType + IsFloat + PartialOrd> $mw<'a, T> {
+        impl<'a, T: NativeType + IsFloat + PartialOrd> $m_window<'a, T> {
             #[inline]
             unsafe fn update_m_and_m_idx(&mut self, m_and_idx: (usize, &T)) {
                 self.m = *m_and_idx.1;
@@ -134,7 +136,7 @@ macro_rules! minmax_window {
         }
 
         impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T>
-            for $mw<'a, T>
+            for $m_window<'a, T>
         {
             fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
                 let (idx, m) =
@@ -143,7 +145,7 @@ macro_rules! minmax_window {
                     slice,
                     m: *m,
                     m_idx: idx,
-                    sorted_to: idx + $n_sorted_past(&slice[idx..]),
+                    sorted_to: idx + 1 + $n_sorted_past(&slice[idx..]),
                     last_start: start,
                     last_end: end,
                 }
@@ -154,12 +156,12 @@ macro_rules! minmax_window {
                 self.last_start = start; // Don't care where the last one started
                 let old_last_end = self.last_end; // But we need this
                 self.last_end = end;
-                //println!("start: {}, end: {}, m: {}, m_idx: {}, sorted_to: {}", start, end, self.m, self.m_idx, self.sorted_to);
                 let entering_start = std::cmp::max(old_last_end, start);
                 let entering = if end - entering_start == 1 {
                     // Faster in the special, but common, case of a fixed window rolling by one
                     Some((entering_start, self.slice.get_unchecked(entering_start)))
                 } else if old_last_end == end {
+                    // Edge case for shrinking windows
                     None
                 } else {
                     $get_m_and_idx(self.slice, entering_start, end, self.sorted_to)
@@ -230,6 +232,7 @@ where
     max
 }
 
+// Same as the window definition. The dispatch is identical up to the name.
 macro_rules! rolling_minmax_func {
     ($rolling_m:ident, $window:tt, $wtd_f:ident) => {
         pub fn $rolling_m<T>(
