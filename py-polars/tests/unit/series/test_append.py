@@ -4,20 +4,46 @@ import polars as pl
 from polars.testing import assert_series_equal
 
 
-def test_append_extend() -> None:
+def test_append() -> None:
     a = pl.Series("a", [1, 2])
     b = pl.Series("b", [8, 9, None])
 
-    a.append(b, append_chunks=False)
-    expected = pl.Series("a", [1, 2, 8, 9, None])
+    result = a.append(b)
 
+    expected = pl.Series("a", [1, 2, 8, 9, None])
+    assert_series_equal(a, expected)
+    assert_series_equal(result, expected)
+    assert a.n_chunks() == 2
+
+
+def test_append_deprecated_append_chunks() -> None:
+    a = pl.Series("a", [1, 2])
+    b = pl.Series("b", [8, 9, None])
+
+    with pytest.deprecated_call():
+        a.append(b, append_chunks=False)
+
+    expected = pl.Series("a", [1, 2, 8, 9, None])
     assert_series_equal(a, expected)
     assert a.n_chunks() == 1
 
 
 def test_append_self_3915() -> None:
-    s = pl.Series("s", [1, 2, 3])
-    assert s.append(s).to_list() == [1, 2, 3, 1, 2, 3]
+    a = pl.Series("a", [1, 2])
+
+    a.append(a)
+
+    expected = pl.Series("a", [1, 2, 1, 2])
+    assert_series_equal(a, expected)
+    assert a.n_chunks() == 2
+
+
+def test_append_bad_input() -> None:
+    a = pl.Series("a", [1, 2])
+    b = a.to_frame()
+
+    with pytest.raises(AttributeError):
+        a.append(b)
 
 
 def test_struct_schema_on_append_extend_3452() -> None:
@@ -58,7 +84,8 @@ def test_struct_schema_on_append_extend_3452() -> None:
             'to struct with field name "city"'
         ),
     ):
-        housing1.append(housing2, append_chunks=True)
+        housing1.append(housing2)
+
     with pytest.raises(
         pl.SchemaError,
         match=(
@@ -66,4 +93,4 @@ def test_struct_schema_on_append_extend_3452() -> None:
             'to struct with field name "city"'
         ),
     ):
-        housing1.append(housing2, append_chunks=False)
+        housing1.extend(housing2)
