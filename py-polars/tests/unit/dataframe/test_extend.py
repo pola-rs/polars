@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -61,3 +63,19 @@ def test_extend_self() -> None:
 
     expected = pl.DataFrame({"a": [1, 2, 1, 2], "b": [True, False, True, False]})
     assert_frame_equal(df, expected)
+
+
+def test_extend_column_number_mismatch() -> None:
+    df1 = pl.DataFrame({"a": [1, 2], "b": [True, False]})
+    df2 = df1.drop("a")
+
+    with pytest.raises(pl.ShapeError):
+        df1.extend(df2)
+
+
+def test_extend_column_name_mismatch() -> None:
+    df1 = pl.DataFrame({"a": [1, 2], "b": [True, False]})
+    df2 = df1.with_columns(pl.col("a").alias("c"))
+
+    with pytest.raises(pl.ShapeError):
+        df1.extend(df2)
