@@ -10,7 +10,7 @@ macro_rules! impl_unit_setter {
     };
 }
 
-/// Arguments used by [`datetime`] in order to produce an `Expr` of `Datetime`
+/// Arguments used by `datetime` in order to produce an `Expr` of `Datetime`
 ///
 /// Construct a `DatetimeArgs` with `DatetimeArgs::new(y, m, d)`. This will set the other time units to `lit(0)`. You
 /// can then set the other fields with the `with_*` methods, or use `with_hms` to set `hour`, `minute`, and `second` all
@@ -175,7 +175,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     .alias("datetime")
 }
 
-/// Arguments used by [`duration`] in order to produce an `Expr` of `Duration`
+/// Arguments used by `duration` in order to produce an `Expr` of `Duration`
 ///
 /// To construct a `DurationArgs`, use struct literal syntax with `..Default::default()` to leave unspecified fields at
 /// their default value of `lit(0)`, as demonstrated below.

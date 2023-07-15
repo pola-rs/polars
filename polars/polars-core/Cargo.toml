@@ -128,6 +128,7 @@ docs-selection = [
   "diff",
   "moment",
   "dtype-categorical",
+  "dtype-decimal",
   "rank",
   "diagonal_concat",
   "horizontal_concat",
