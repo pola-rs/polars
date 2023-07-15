@@ -12,7 +12,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.30.0"
+version = "0.31.0"
 
 [workspace.dependencies]
 rayon = "1.6"
