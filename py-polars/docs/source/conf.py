@@ -20,7 +20,7 @@ from pathlib import Path
 import sphinx_autosummary_accessors
 
 # add polars directory
-sys.path.insert(0, str(Path.resolve("../..")))
+sys.path.insert(0, str(Path("../..").resolve()))
 
 # -- Project information -----------------------------------------------------
 
