@@ -25,7 +25,7 @@ pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 .PHONY: check-features
 check-features:  ## Run cargo check for feature flag combinations (warning: slow)
-	cargo hack check -p polars --each-feature --no-dev-deps
+	cargo hack check --each-feature --no-dev-deps
 
 .PHONY: miri
 miri:  ## Run miri
@@ -56,7 +56,7 @@ test:  ## Run tests
 
 .PHONY: integration-tests
 integration-tests:  ## Run integration tests
-	cargo test -p polars --all-features --test it
+	cargo test --all-features --test it
 
 .PHONY: test-doc
 test-doc:  ## Run doc examples
@@ -69,8 +69,8 @@ test-doc:  ## Run doc examples
 
 .PHONY: generate_test_files
 generate_test_files:  ## Generate some datasets
-	cargo run -p polars-cli "select * from read_csv('examples/datasets/foods1.csv')" -o parquet > examples/datasets/foods1.parquet
-	cargo run -p polars-cli "select * from read_csv('examples/datasets/foods1.csv')" -o arrow > examples/datasets/foods1.ipc
+	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o parquet > ../examples/datasets/foods1.parquet
+	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o arrow > ../examples/datasets/foods1.ipc
 
 .PHONY: bench-save
 bench-save:  ## Run benchmark and save
@@ -109,7 +109,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-algo
 	cargo publish --allow-dirty -p polars-sql
 	cargo publish --allow-dirty -p polars
-	cargo publish --allow-dirty -p polars-cli
+	cd .. && cargo publish --allow-dirty -p polars-cli
 
 .PHONY: help
 help:  ## Display this help screen
