@@ -43,7 +43,7 @@ def test_append_bad_input() -> None:
     b = a.to_frame()
 
     with pytest.raises(AttributeError):
-        a.append(b)
+        a.append(b)  # type: ignore[arg-type]
 
 
 def test_struct_schema_on_append_extend_3452() -> None:

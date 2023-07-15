@@ -409,7 +409,6 @@ def test_add_string() -> None:
     assert_series_equal(result, pl.Series(["pfx:hello", "pfx:weird"]))
 
 
-
 @pytest.mark.parametrize(
     ("data", "expected_dtype"),
     [
@@ -2295,7 +2294,6 @@ def test_n_unique() -> None:
 def test_clip() -> None:
     s = pl.Series("foo", [-50, 5, None, 50])
     assert s.clip(1, 10).to_list() == [1, 5, None, 10]
-
 
 
 def test_set_at_idx() -> None:

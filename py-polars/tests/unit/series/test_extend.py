@@ -31,4 +31,4 @@ def test_extend_bad_input() -> None:
     b = a.to_frame()
 
     with pytest.raises(AttributeError):
-        a.extend(b)
+        a.extend(b)  # type: ignore[arg-type]
