@@ -160,6 +160,7 @@ class ExprDateTimeNameSpace:
         ...     .dt.offset_by("15m")
         ...     .to_frame()
         ... )
+        >>> df
         shape: (7, 1)
         ┌─────────────────────────────┐
         │ date                        │
@@ -176,9 +177,9 @@ class ExprDateTimeNameSpace:
         └─────────────────────────────┘
 
         >>> df.select(
-        ...     pl.when(ser.dt.dst_offset() == pl.duration(hours=1))
-        ...     .then(ser.dt.truncate("30m", use_earliest=True))
-        ...     .otherwise(ser.dt.truncate("30m", use_earliest=False))
+        ...     pl.when(pl.col("date").dt.dst_offset() == pl.duration(hours=1))
+        ...     .then(pl.col("date").dt.truncate("30m", use_earliest=True))
+        ...     .otherwise(pl.col("date").dt.truncate("30m", use_earliest=False))
         ... )
         shape: (7, 1)
         ┌─────────────────────────────┐

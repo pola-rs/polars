@@ -1696,6 +1696,7 @@ class DateTimeNameSpace:
         ...     eager=True,
         ...     time_zone="Europe/London",
         ... ).dt.offset_by("15m")
+        >>> ser
         shape: (7,)
         Series: 'date' [datetime[μs, Europe/London]]
         [
