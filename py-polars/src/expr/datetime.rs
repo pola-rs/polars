@@ -56,8 +56,12 @@ impl PyExpr {
         self.inner.clone().dt().tz_localize(time_zone).into()
     }
 
-    fn dt_truncate(&self, every: &str, offset: &str) -> Self {
-        self.inner.clone().dt().truncate(every, offset).into()
+    fn dt_truncate(&self, every: &str, offset: &str, use_earliest: Option<bool>) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .truncate(every, offset, use_earliest)
+            .into()
     }
 
     fn dt_month_start(&self) -> Self {

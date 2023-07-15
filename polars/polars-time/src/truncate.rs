@@ -6,14 +6,26 @@ use polars_core::prelude::*;
 use crate::prelude::*;
 
 pub trait PolarsTruncate {
-    fn truncate(&self, every: Duration, offset: Duration, tz: Option<&Tz>) -> PolarsResult<Self>
+    fn truncate(
+        &self,
+        every: Duration,
+        offset: Duration,
+        tz: Option<&Tz>,
+        use_earliest: Option<bool>,
+    ) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 #[cfg(feature = "dtype-datetime")]
 impl PolarsTruncate for DatetimeChunked {
-    fn truncate(&self, every: Duration, offset: Duration, tz: Option<&Tz>) -> PolarsResult<Self> {
+    fn truncate(
+        &self,
+        every: Duration,
+        offset: Duration,
+        tz: Option<&Tz>,
+        use_earliest: Option<bool>,
+    ) -> PolarsResult<Self> {
         let w = Window::new(every, every, offset);
 
         let func = match self.time_unit() {
@@ -23,19 +35,25 @@ impl PolarsTruncate for DatetimeChunked {
         };
 
         Ok(self
-            .try_apply(|t| func(&w, t, tz))?
+            .try_apply(|t| func(&w, t, tz, use_earliest))?
             .into_datetime(self.time_unit(), self.time_zone().clone()))
     }
 }
 
 #[cfg(feature = "dtype-date")]
 impl PolarsTruncate for DateChunked {
-    fn truncate(&self, every: Duration, offset: Duration, _tz: Option<&Tz>) -> PolarsResult<Self> {
+    fn truncate(
+        &self,
+        every: Duration,
+        offset: Duration,
+        _tz: Option<&Tz>,
+        _use_earliest: Option<bool>,
+    ) -> PolarsResult<Self> {
         let w = Window::new(every, every, offset);
         Ok(self
             .try_apply(|t| {
                 const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-                Ok((w.truncate_ms(MSECS_IN_DAY * t as i64, None)? / MSECS_IN_DAY) as i32)
+                Ok((w.truncate_ms(MSECS_IN_DAY * t as i64, None, None)? / MSECS_IN_DAY) as i32)
             })?
             .into_date())
     }
