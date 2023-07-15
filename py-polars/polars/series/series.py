@@ -1625,7 +1625,7 @@ class Series:
             A list of unique cut points.
         labels
             Labels to assign to the bins. If given the length of labels must be
-            len(bins) + 1.
+            len(breaks) + 1.
         break_point_label
             Name given to the breakpoint column/field. Only used if series == False or
             include_breaks == True
@@ -1744,7 +1744,7 @@ class Series:
             We expect quantiles ``0.0 <= quantile <= 1``
         labels
             Labels to assign to the quantiles. If given the length of labels must be
-            len(bins) + 1.
+            len(breaks) + 1.
         break_point_label
             Name given to the breakpoint column/field. Only used if series == False or
             include_breaks == True
