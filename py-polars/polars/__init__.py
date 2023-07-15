@@ -146,6 +146,7 @@ from polars.functions import (
 )
 from polars.io import (
     read_avro,
+    read_clipboard,
     read_csv,
     read_csv_batched,
     read_database,
@@ -250,6 +251,7 @@ __all__ = [
     "PolarsDataType",
     # polars.io
     "read_avro",
+    "read_clipboard",
     "read_csv",
     "read_csv_batched",
     "read_database",
@@ -268,6 +270,7 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    "write_clipboard",
     # polars.stringcache
     "StringCache",
     "enable_string_cache",

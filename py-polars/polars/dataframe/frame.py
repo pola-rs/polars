@@ -61,6 +61,7 @@ from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 from polars.functions.lazy import col, lit
 from polars.io._utils import _is_glob_pattern, _is_local_file
+from polars.io.clipboard import _write_clipboard
 from polars.io.excel._write_utils import (
     _unpack_multi_column_dict,
     _xl_apply_conditional_formats,
@@ -2487,6 +2488,23 @@ class DataFrame:
             null_value,
         )
         return None
+
+    def write_clipboard(self) -> None:
+        """
+        Write dataframe to clipboard using tab separator.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> df.write_clipboard()
+        """
+        _write_clipboard(self.write_csv(separator="\t"))
 
     def write_avro(
         self,
