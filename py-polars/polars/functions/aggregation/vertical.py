@@ -50,6 +50,10 @@ def all(
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
 
+    See Also
+    --------
+    all_horizontal
+
     Examples
     --------
     Selecting all columns.
@@ -128,6 +132,10 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
     columns.
     **This functionality is deprecated**, use ``pl.any_horizontal`` instead.
 
+    See Also
+    --------
+    any_horizontal
+
     Parameters
     ----------
     exprs
@@ -204,6 +212,10 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    max_horizontal
 
     Examples
     --------
@@ -301,6 +313,10 @@ def min(
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
 
+    See Also
+    --------
+    min_horizontal
+
     Examples
     --------
     Get the minimum value of a column by passing a single column name.
@@ -396,6 +412,10 @@ def sum(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    sum_horizontal
 
     Examples
     --------
@@ -494,6 +514,10 @@ def cumsum(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    cumsum_horizontal
 
     Examples
     --------
