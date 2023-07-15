@@ -3,7 +3,6 @@ use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 
 use super::*;
 
-
 #[inline]
 fn new_is_min<T: NativeType + IsFloat + PartialOrd>(old: &T, new: &T) -> bool {
     compare_fn_nan_min(old, new).is_ge()
@@ -15,7 +14,12 @@ fn new_is_max<T: NativeType + IsFloat + PartialOrd>(old: &T, new: &T) -> bool {
 }
 
 #[inline]
-unsafe fn get_min_and_idx<T>(slice: &[T], start: usize, end: usize, sorted_to: usize) -> Option<(usize, &T)>
+unsafe fn get_min_and_idx<T>(
+    slice: &[T],
+    start: usize,
+    end: usize,
+    sorted_to: usize,
+) -> Option<(usize, &T)>
 where
     T: NativeType + IsFloat + PartialOrd,
 {
@@ -26,7 +30,8 @@ where
     } else if sorted_to <= start {
         // We have to inspect the whole range
         // Reversed because min_by returns the first min if there's a tie but we want the last
-        slice.get_unchecked(start..end)
+        slice
+            .get_unchecked(start..end)
             .iter()
             .enumerate()
             .rev()
@@ -35,48 +40,72 @@ where
     } else {
         // Sorted in start..sorted_to. Compare value at start to min over sorted_to..end
         let s = (start, slice.get_unchecked(start));
-        slice.get_unchecked(sorted_to..end)
+        slice
+            .get_unchecked(sorted_to..end)
             .iter()
             .enumerate()
             .rev()
             .min_by(|&a, &b| compare_fn_nan_min(a.1, b.1))
-            .map(|v| if new_is_min(s.1, v.1) { (v.0 + sorted_to, v.1) } else { s })
+            .map(|v| {
+                if new_is_min(s.1, v.1) {
+                    (v.0 + sorted_to, v.1)
+                } else {
+                    s
+                }
+            })
     }
 }
 
-
 #[inline]
-unsafe fn get_max_and_idx<T>(slice: &[T], start: usize, end: usize, sorted_to: usize) -> Option<(usize, &T)>
+unsafe fn get_max_and_idx<T>(
+    slice: &[T],
+    start: usize,
+    end: usize,
+    sorted_to: usize,
+) -> Option<(usize, &T)>
 where
     T: NativeType + IsFloat + PartialOrd,
 {
     if sorted_to >= end {
         Some((start, slice.get_unchecked(start)))
     } else if sorted_to <= start {
-        slice.get_unchecked(start..end)
+        slice
+            .get_unchecked(start..end)
             .iter()
             .enumerate()
             .max_by(|&a, &b| compare_fn_nan_max(a.1, b.1))
             .map(|v| (v.0 + start, v.1))
     } else {
         let s = (start, slice.get_unchecked(start));
-        slice.get_unchecked(sorted_to..end)
+        slice
+            .get_unchecked(sorted_to..end)
             .iter()
             .enumerate()
             .max_by(|&a, &b| compare_fn_nan_max(a.1, b.1))
-            .map(|v| if new_is_max(s.1, v.1) { (v.0 + sorted_to, v.1) } else { s })
+            .map(|v| {
+                if new_is_max(s.1, v.1) {
+                    (v.0 + sorted_to, v.1)
+                } else {
+                    s
+                }
+            })
     }
 }
 
 #[inline]
 fn n_sorted_past_min<T: NativeType + IsFloat + PartialOrd>(slice: &[T]) -> usize {
-    slice.windows(2).position(|x| compare_fn_nan_min(&x[0], &x[1]).is_gt()).unwrap_or(slice.len() - 1)
+    slice
+        .windows(2)
+        .position(|x| compare_fn_nan_min(&x[0], &x[1]).is_gt())
+        .unwrap_or(slice.len() - 1)
 }
-
 
 #[inline]
 fn n_sorted_past_max<T: NativeType + IsFloat + PartialOrd>(slice: &[T]) -> usize {
-    slice.windows(2).position(|x| compare_fn_nan_max(&x[0], &x[1]).is_lt()).unwrap_or(slice.len() - 1)
+    slice
+        .windows(2)
+        .position(|x| compare_fn_nan_max(&x[0], &x[1]).is_lt())
+        .unwrap_or(slice.len() - 1)
 }
 
 macro_rules! minmax_window {
@@ -98,12 +127,15 @@ macro_rules! minmax_window {
                 if self.sorted_to <= self.m_idx {
                     // Track how far past the current extremum values are sorted. Direction depends on min/max
                     // Tracking sorted ranges lets us only do comparisons when we have to.
-                    self.sorted_to = self.m_idx + 1 + $n_sorted_past(&self.slice.get_unchecked(self.m_idx..));
+                    self.sorted_to =
+                        self.m_idx + 1 + $n_sorted_past(&self.slice.get_unchecked(self.m_idx..));
                 }
             }
         }
 
-        impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for $mw<'a, T> {
+        impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T>
+            for $mw<'a, T>
+        {
             fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
                 let (idx, m) =
                     unsafe { $get_m_and_idx(slice, start, end, 0).unwrap_or((0, &slice[start])) };
@@ -127,7 +159,7 @@ macro_rules! minmax_window {
                 let entering = if end - entering_start == 1 {
                     // Faster in the special, but common, case of a fixed window rolling by one
                     Some((entering_start, self.slice.get_unchecked(entering_start)))
-                } else if old_last_end == end{
+                } else if old_last_end == end {
                     None
                 } else {
                     $get_m_and_idx(self.slice, entering_start, end, self.sorted_to)
@@ -143,7 +175,10 @@ macro_rules! minmax_window {
                     return self.m;
                 }
                 // Otherwise get the min of the overlapping window and the entering min
-                match ($get_m_and_idx(self.slice, start, old_last_end, self.sorted_to), entering) {
+                match (
+                    $get_m_and_idx(self.slice, start, old_last_end, self.sorted_to),
+                    entering,
+                ) {
                     (Some(pm), Some(em)) => {
                         if $new_is_m(pm.1, em.1) {
                             self.update_m_and_m_idx(em);
