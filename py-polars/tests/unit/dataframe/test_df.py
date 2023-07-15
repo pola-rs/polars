@@ -704,7 +704,6 @@ def test_hstack_dataframe(in_place: bool) -> None:
         assert_frame_equal(df_out, expected)
 
 
-
 def test_file_buffer() -> None:
     f = BytesIO()
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
