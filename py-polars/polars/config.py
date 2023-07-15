@@ -10,7 +10,7 @@ from polars.utils.various import normalise_filepath
 
 
 # dummy func required (so docs build)
-def _get_float_fmt() -> str:
+def _get_float_fmt() -> str:  # pragma: no cover
     return "n/a"
 
 
