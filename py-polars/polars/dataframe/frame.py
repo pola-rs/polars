@@ -2502,7 +2502,7 @@ class DataFrame:
         ...         "ham": ["a", "b", "c", "d", "e"],
         ...     }
         ... )
-        >>> df.write_clipboard()
+        >>> df.write_clipboard()  # doctest: +SKIP
         """
         _write_clipboard(self.write_csv(separator="\t"))
 
