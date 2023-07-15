@@ -5823,6 +5823,10 @@ class DataFrame:
         in_place
             Modify in place.
 
+        See Also
+        --------
+        extend
+
         Examples
         --------
         >>> df1 = pl.DataFrame(
@@ -5895,6 +5899,10 @@ class DataFrame:
         --------
         This method modifies the dataframe in-place. The dataframe is returned for
         convenience only.
+
+        See Also
+        --------
+        vstack
 
         Examples
         --------
