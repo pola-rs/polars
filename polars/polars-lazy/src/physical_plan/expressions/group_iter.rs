@@ -64,7 +64,7 @@ struct LitIter<'a> {
 
 impl<'a> LitIter<'a> {
     /// # Safety
-    /// Caller must ensrue the goven `logical` dtype belongs to `array`.
+    /// Caller must ensure the given `logical` dtype belongs to `array`.
     unsafe fn new(array: ArrayRef, len: usize, logical: &DataType, name: &str) -> Self {
         let mut series_container = Box::pin(Series::from_chunks_and_dtype_unchecked(
             name,
