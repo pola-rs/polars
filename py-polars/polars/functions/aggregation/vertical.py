@@ -40,7 +40,7 @@ def all(
 
     Otherwise, this function computes the bitwise AND horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.all_horizontal`` instead.
 
     Parameters
     ----------
@@ -49,6 +49,10 @@ def all(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    all_horizontal
 
     Examples
     --------
@@ -126,7 +130,11 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
 
     Otherwise, this function computes the bitwise OR horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.any_horizontal`` instead.
+
+    See Also
+    --------
+    any_horizontal
 
     Parameters
     ----------
@@ -195,7 +203,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
 
     Otherwise, this function computes the maximum value horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.max_horizontal`` instead.
 
     Parameters
     ----------
@@ -204,6 +212,10 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    max_horizontal
 
     Examples
     --------
@@ -291,7 +303,7 @@ def min(
 
     Otherwise, this function computes the minimum value horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.min_horizontal`` instead.
 
     Parameters
     ----------
@@ -300,6 +312,10 @@ def min(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    min_horizontal
 
     Examples
     --------
@@ -387,7 +403,7 @@ def sum(
     **This functionality is deprecated**.
 
     Otherwise, this function computes the sum horizontally across multiple columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.sum_horizontal`` instead.
 
     Parameters
     ----------
@@ -396,6 +412,10 @@ def sum(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    sum_horizontal
 
     Examples
     --------
@@ -485,7 +505,7 @@ def cumsum(
 
     Otherwise, this function computes the cumulative sum horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.cumsum_horizontal`` instead.
 
     Parameters
     ----------
@@ -494,6 +514,10 @@ def cumsum(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    cumsum_horizontal
 
     Examples
     --------
