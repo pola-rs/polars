@@ -12,10 +12,10 @@ use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::data_types::IsFloat;
 use polars_arrow::kernels::rolling;
 use polars_arrow::kernels::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
+    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
 use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
-use polars_arrow::kernels::rolling::{DynArgs, RollingVarParams};
+use polars_arrow::kernels::rolling::{DynArgs, RollingQuantileParams, RollingVarParams};
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::TrustedLenPush;
@@ -271,6 +271,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
 {
     let invalid_quantile = !(0.0..=1.0).contains(&quantile);
     if invalid_quantile {
@@ -298,19 +299,25 @@ where
                 let values = arr.values().as_slice();
                 let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
-                    None => rolling::no_nulls::rolling_quantile_by_iter(
+                    None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _>(
                         values,
-                        quantile,
-                        interpol,
                         offset_iter,
+                        Some(Arc::new(RollingQuantileParams {
+                            prob: quantile,
+                            interpol,
+                        })),
                     ),
-                    Some(validity) => rolling::nulls::rolling_quantile_by_iter(
-                        values,
-                        validity,
-                        quantile,
-                        interpol,
-                        offset_iter,
-                    ),
+                    Some(validity) => {
+                        _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _>(
+                            values,
+                            validity,
+                            offset_iter,
+                            Some(Arc::new(RollingQuantileParams {
+                                prob: quantile,
+                                interpol,
+                            })),
+                        )
+                    }
                 };
                 // the rolling kernels works on the dtype, this is not yet the float
                 // output type we need.
@@ -342,6 +349,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
 {
     match groups {
         GroupsProxy::Idx(groups) => {

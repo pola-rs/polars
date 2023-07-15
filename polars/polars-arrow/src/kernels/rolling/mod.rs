@@ -10,7 +10,7 @@ use std::sync::Arc;
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
-use num_traits::{Bounded, Float, NumCast, One, ToPrimitive, Zero};
+use num_traits::{Bounded, Float, NumCast, One, Zero};
 use window::*;
 
 use crate::data_types::IsFloat;
@@ -141,4 +141,10 @@ where
 #[derive(Clone, Copy, Debug)]
 pub struct RollingVarParams {
     pub ddof: u8,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RollingQuantileParams {
+    pub prob: f64,
+    pub interpol: QuantileInterpolOptions,
 }
