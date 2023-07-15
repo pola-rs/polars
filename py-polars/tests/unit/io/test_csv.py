@@ -486,9 +486,8 @@ def test_compressed_csv(io_files_path: Path) -> None:
 
 def test_partial_decompression(foods_file_path: Path) -> None:
     f_out = io.BytesIO()
-    with foods_file_path.open("rb") as f_read:  # noqa: SIM117
-        with gzip.GzipFile(fileobj=f_out, mode="w") as f:
-            f.write(f_read.read())
+    with gzip.GzipFile(fileobj=f_out, mode="w") as f:
+        f.write(foods_file_path.read_bytes())
 
     csv_bytes = f_out.getvalue()
     for n_rows in [1, 5, 26]:
