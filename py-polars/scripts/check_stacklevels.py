@@ -7,6 +7,7 @@ import ast
 import subprocess
 import sys
 from ast import NodeVisitor
+from pathlib import Path
 
 # Files in which it's OK to set the stacklevel manually.
 # `git ls-files` lists files with forwards-slashes
@@ -38,10 +39,9 @@ if __name__ == "__main__":
     for file in files:
         if file in EXCLUDE:
             continue
-        if not file.endswith(".py"):
+        if Path(file).suffix != ".py":
             continue
-        with open(file) as fd:
-            content = fd.read()
+        content = Path(file).read_text()
         tree = ast.parse(content)
         stacklevel_checker = StackLevelChecker(file)
         stacklevel_checker.visit(tree)

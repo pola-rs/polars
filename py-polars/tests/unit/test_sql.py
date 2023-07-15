@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import warnings
 from pathlib import Path
 
@@ -13,8 +12,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 # TODO: Do not rely on I/O for these tests
 @pytest.fixture()
-def foods_ipc_path() -> str:
-    return str(Path(os.path.dirname(__file__)) / "io" / "files" / "foods1.ipc")
+def foods_ipc_path() -> Path:
+    return Path(__file__).parent / "io" / "files" / "foods1.ipc"
 
 
 def test_sql_cast() -> None:

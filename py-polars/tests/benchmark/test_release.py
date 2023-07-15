@@ -5,7 +5,6 @@ Tests in this module will be run in the CI using a release build of Polars.
 
 To run these tests: pytest -m benchmark
 """
-import os
 import time
 from pathlib import Path
 from typing import cast
@@ -21,12 +20,12 @@ pytestmark = pytest.mark.benchmark
 
 
 @pytest.mark.skipif(
-    not (Path(os.path.dirname(__file__)) / "G1_1e7_1e2_5_0.csv").is_file(),
+    not (Path(__file__).parent / "G1_1e7_1e2_5_0.csv").is_file(),
     reason="Dataset must be generated before running this test.",
 )
 def test_read_scan_large_csv() -> None:
     filename = "G1_1e7_1e2_5_0.csv"
-    path = Path(os.path.dirname(__file__)) / filename
+    path = Path(__file__).parent / filename
 
     predicate = pl.col("v2") < 5
 

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import io
-import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -19,8 +19,6 @@ from polars.testing import (
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars.type_aliases import ParquetCompression
 
 
@@ -513,7 +511,7 @@ def test_parquet_string_cache() -> None:
 
 def test_tz_aware_parquet_9586() -> None:
     result = pl.read_parquet(
-        os.path.join("tests", "unit", "io", "files", "tz_aware.parquet")
+        Path("tests") / "unit" / "io" / "files" / "tz_aware.parquet"
     )
     expected = pl.DataFrame(
         {"UTC_DATETIME_ID": [datetime(2023, 6, 26, 14, 15, 0, tzinfo=timezone.utc)]}

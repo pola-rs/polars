@@ -8,19 +8,19 @@
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
+# documentation root, use Path.relative_to to make it absolute, like shown here.
 
 import datetime
 import inspect
-import os
 import re
 import sys
 import warnings
+from pathlib import Path
 
 import sphinx_autosummary_accessors
 
 # add polars directory
-sys.path.insert(0, os.path.abspath("../.."))
+sys.path.insert(0, Path.resolve("../.."))
 
 # -- Project information -----------------------------------------------------
 
@@ -200,10 +200,10 @@ def linkcode_resolve(domain, info):
 
     linespec = f"#L{lineno}-L{lineno + len(source) - 1}" if lineno else ""
 
-    conf_dir_path = os.path.dirname(os.path.realpath(__file__))
-    polars_root = os.path.abspath(f"{conf_dir_path}/../../polars")
+    conf_dir_path = Path(__file__).absolute().parent
+    polars_root = conf_dir_path.parent.parent / "polars"
 
-    fn = os.path.relpath(fn, start=polars_root)
+    fn = Path(fn).relative_to(polars_root)
     return f"{github_root}/blob/main/py-polars/polars/{fn}{linespec}"
 
 

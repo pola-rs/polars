@@ -119,6 +119,7 @@ select = [
   "UP", # pyupgrade
   "PT", # flake8-pytest-style
   "RUF", # Ruff-specific rules
+  "PTH", # flake8-use-pathlib
 ]
 
 ignore = [
