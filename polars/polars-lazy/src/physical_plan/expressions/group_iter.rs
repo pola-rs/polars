@@ -14,12 +14,15 @@ impl<'a> AggregationContext<'a> {
                 self.groups();
                 let s = self.series().rechunk();
                 let name = if keep_names { s.name() } else { "" };
-                Box::new(LitIter::new(
-                    s.array_ref(0).clone(),
-                    self.groups.len(),
-                    s._dtype(),
-                    name,
-                ))
+                // safety: dtype is correct
+                unsafe {
+                    Box::new(LitIter::new(
+                        s.array_ref(0).clone(),
+                        self.groups.len(),
+                        s._dtype(),
+                        name,
+                    ))
+                }
             }
             AggState::AggregatedFlat(_) => {
                 self.groups();
@@ -60,13 +63,14 @@ struct LitIter<'a> {
 }
 
 impl<'a> LitIter<'a> {
-    fn new(array: ArrayRef, len: usize, logical: &DataType, name: &str) -> Self {
-        let mut series_container = Box::pin(
-            Series::try_from((name, array.clone()))
-                .unwrap()
-                .cast(logical)
-                .unwrap(),
-        );
+    /// # Safety
+    /// Caller must ensrue the goven `logical` dtype belongs to `array`.
+    unsafe fn new(array: ArrayRef, len: usize, logical: &DataType, name: &str) -> Self {
+        let mut series_container = Box::pin(Series::from_chunks_and_dtype_unchecked(
+            name,
+            vec![array],
+            logical,
+        ));
 
         let ref_s = &mut *series_container as *mut Series;
         Self {
