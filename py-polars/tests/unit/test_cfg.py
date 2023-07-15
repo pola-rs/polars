@@ -513,7 +513,7 @@ def test_string_cache() -> None:
 
 @pytest.mark.write_disk()
 def test_config_load_save(tmp_path: Path) -> None:
-    for file in (None, tmp_path / "polars.config"):
+    for file in (None, tmp_path / "polars.config", str(tmp_path / "polars.config")):
         # set some config options...
         pl.Config.set_tbl_cols(12)
         pl.Config.set_verbose(True)
@@ -577,3 +577,44 @@ def test_config_scope() -> None:
 
     # expect scope-exit to restore original state
     assert pl.Config.state() == initial_state
+
+
+def test_config_raise_error_if_not_exist() -> None:
+    with pytest.raises(AttributeError), pl.Config(i_do_not_exist=True):
+        pass
+
+
+def test_config_state_env_only() -> None:
+    pl.Config.set_verbose(False)
+    pl.Config.set_fmt_float("full")
+
+    state_all = pl.Config.state(env_only=False)
+    state_env_only = pl.Config.state(env_only=True)
+    assert len(state_env_only) < len(state_all)
+    assert "set_fmt_float" in state_all
+    assert "set_fmt_float" not in state_env_only
+
+
+def test_activate_decimals() -> None:
+    with pl.Config() as cfg:
+        cfg.activate_decimals(True)
+        assert os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1"
+        cfg.activate_decimals(False)
+        assert "POLARS_ACTIVATE_DECIMAL" not in os.environ
+
+
+def test_set_streaming_chunk_size() -> None:
+    with pl.Config() as cfg:
+        cfg.set_streaming_chunk_size(8)
+        assert os.environ.get("POLARS_STREAMING_CHUNK_SIZE") == "8"
+
+    with pytest.raises(ValueError), pl.Config() as cfg:
+        cfg.set_streaming_chunk_size(0)
+
+
+def test_set_fmt_str_lengths_invalid_length() -> None:
+    with pl.Config() as cfg:
+        with pytest.raises(ValueError):
+            cfg.set_fmt_str_lengths(0)
+        with pytest.raises(ValueError):
+            cfg.set_fmt_str_lengths(-2)

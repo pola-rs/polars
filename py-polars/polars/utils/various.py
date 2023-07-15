@@ -19,7 +19,6 @@ from polars.datatypes import (
     Int64,
     Time,
     Utf8,
-    is_polars_dtype,
     unpack_dtypes,
 )
 from polars.dependencies import _PYARROW_AVAILABLE
@@ -70,11 +69,6 @@ def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> b
 def is_bool_sequence(val: object) -> TypeGuard[Sequence[bool]]:
     """Check whether the given sequence is a sequence of booleans."""
     return isinstance(val, Sequence) and _is_iterable_of(val, bool)
-
-
-def is_dtype_sequence(val: object) -> TypeGuard[Sequence[PolarsDataType]]:
-    """Check whether the given object is a sequence of polars DataTypes."""
-    return isinstance(val, Sequence) and all(is_polars_dtype(x) for x in val)
 
 
 def is_int_sequence(val: object) -> TypeGuard[Sequence[int]]:

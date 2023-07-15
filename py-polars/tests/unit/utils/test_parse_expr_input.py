@@ -92,3 +92,11 @@ def test_parse_as_expression_structify() -> None:
     result = wrap_expr(parse_as_expression(pl.col("a", "b"), structify=True))
     expected = pl.struct("a", "b")
     assert_expr_equal(result, expected)
+
+
+def test_parse_as_expression_structify_multiple_outputs() -> None:
+    # note: this only works because assert_expr_equal evaluates on a dataframe with
+    # columns "a" and "b"
+    result = wrap_expr(parse_as_expression(pl.col("*"), structify=True))
+    expected = pl.struct("a", "b")
+    assert_expr_equal(result, expected)
