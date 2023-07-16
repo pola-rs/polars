@@ -56,7 +56,8 @@ impl ALogicalPlanNode {
     }
 
     pub fn to_alp_mut(&mut self) -> &mut ALogicalPlan {
-        self.with_arena_mut(|arena| arena.get_mut(self.node))
+        let node = self.node;
+        self.with_arena_mut(|arena| arena.get_mut(node))
     }
 }
 

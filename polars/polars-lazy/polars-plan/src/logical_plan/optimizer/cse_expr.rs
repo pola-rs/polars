@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use super::*;
 use crate::constants::CSE_REPLACED;
+use crate::logical_plan::projection_expr::ProjectionExprs;
 use crate::logical_plan::visitor::{RewriteRecursion, VisitRecursion};
 use crate::prelude::visitor::{AexprNode, ALogicalPlanNode, RewritingVisitor, Visitor, TreeWalker};
 
@@ -10,6 +11,10 @@ type Identifier = Rc<str>;
 type SubExprCount = PlHashMap<Identifier, (Node, usize)>;
 /// (post_visit_idx, identifier);
 type IdentifierArray = Vec<(usize, Identifier)>;
+
+fn replace_name(id: &str) -> String {
+    format!("{}{}", CSE_REPLACED, id)
+}
 
 #[derive(Debug)]
 enum VisitRecord {
@@ -72,7 +77,9 @@ struct ExprIdentifierVisitor<'a> {
     visit_stack: &'a mut Vec<VisitRecord>,
     /// Offset in the identifier array
     /// this allows us to use a single `vec` on multiple expressions
-    id_array_offset: usize
+    id_array_offset: usize,
+    // whether the expression replaced a subexpression
+    has_sub_expr: bool
 }
 
 impl ExprIdentifierVisitor<'_> {
@@ -88,7 +95,8 @@ impl ExprIdentifierVisitor<'_> {
             pre_visit_idx: 0,
             post_visit_idx: 0,
             visit_stack,
-            id_array_offset
+            id_array_offset,
+            has_sub_expr: false
         }
     }
 
@@ -156,10 +164,13 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         // is available for the parent expression
         self.visit_stack.push(VisitRecord::SubExprId(id.clone()));
 
-        self.se_count
+        let (_, se_count) = self.se_count
             .entry(id)
-            .or_insert_with(|| (node.node(), 0))
-            .1 += 1;
+            .or_insert_with(|| (node.node(), 0));
+
+        *se_count += 1;
+        self.has_sub_expr |= *se_count > 1;
+
         Ok(VisitRecursion::Continue)
     }
 }
@@ -274,7 +285,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             self.visited_idx += 1;
         }
 
-        let name = format!("{}{}", CSE_REPLACED, id.as_ref());
+        let name = replace_name(id.as_ref());
         node.assign(AExpr::col(name.as_ref()));
 
         Ok(node)
@@ -302,14 +313,15 @@ impl<'a> CommonSubExprOptimizer<'a> {
             se_count: Default::default(),
             id_array: Default::default(),
             visit_stack: Default::default(),
-            id_array_offsets: Default::default()
+            id_array_offsets: Default::default(),
+            replaced_identifiers: Default::default()
         }
     }
 
-    fn visit_expression(&mut self, ae_node: AexprNode) -> PolarsResult<usize>{
+    fn visit_expression(&mut self, ae_node: AexprNode) -> PolarsResult<(usize, bool)> {
         let mut visitor = ExprIdentifierVisitor::new(&mut self.se_count, &mut self.id_array, &mut self.visit_stack);
         ae_node.visit(&mut visitor).map(|_| ())?;
-        Ok(visitor.id_array_offset)
+        Ok((visitor.id_array_offset, visitor.has_sub_expr))
     }
     fn mutate_expression(&mut self, ae_node: AexprNode, id_array_offset: usize) -> PolarsResult<AexprNode>{
         let mut rewriter = CommonSubExprRewriter::new(&self.se_count, &self.id_array, &mut self.replaced_identifiers, id_array_offset);
@@ -320,14 +332,17 @@ impl<'a> CommonSubExprOptimizer<'a> {
 impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
     type Node = ALogicalPlanNode;
 
-    fn mutate(&mut self, node: Self::Node) -> PolarsResult<Self::Node> {
+    fn mutate(&mut self, mut node: Self::Node) -> PolarsResult<Self::Node> {
         let mut expr_arena = Arena::new();
         std::mem::swap(self.expr_arena, &mut expr_arena);
+        let mut id_array_offsets = std::mem::take(&mut self.id_array_offsets);
 
         self.se_count.clear();
         self.id_array.clear();
-        self.id_array_offsets.clear();
+        id_array_offsets.clear();
+        self.replaced_identifiers.clear();
 
+        // todo! check if we can take mut
         let out = match node.to_alp() {
             ALogicalPlan::Projection {
                 input,
@@ -336,30 +351,55 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
             } => {
                 debug_assert!(!expr.has_sub_exprs());
 
+                let mut has_sub_expr = false;
+
                 // first get all cse's
                 for node in expr {
-                    let id_array_offset = AexprNode::with_context(*node, &mut expr_arena, |ae_node| {
+                    let (id_array_offset, this_expr_has_se) = AexprNode::with_context(*node, &mut expr_arena, |ae_node| {
                         self.visit_expression(ae_node)
                     })?;
                     self.id_array_offsets.push(id_array_offset as u32);
+                    has_sub_expr |= this_expr_has_se;
                     debug_assert!(self.visit_stack.is_empty());
                 }
-                // then rewrite the expressions that have a cse count > 1
-                for (node, offset) in expr.iter().zip(self.id_array_offsets) {
-                    AexprNode::with_context(*node, &mut expr_arena, |ae_node| {
-                        self.mutate_expression(ae_node, offset)
-                    })?;
 
+
+                if has_sub_expr {
+                    let mut new_expr = Vec::with_capacity(expr.len() * 2);
+
+                    // then rewrite the expressions that have a cse count > 1
+                    for (node, offset) in expr.iter().zip(id_array_offsets.iter()) {
+                        let new_node = AexprNode::with_context(*node, &mut expr_arena, |ae_node| {
+                            self.mutate_expression(ae_node, *offset as usize)
+                        })?;
+                        new_expr.push(new_node.node())
+                    }
+                    // TODO! check somewhere the nodes are truly equal
+
+                    // Add the tmp columns
+                    for id in &self.replaced_identifiers {
+                        let (node, _count) = self.se_count.get(id).unwrap();
+                        let name = replace_name(id.as_ref());
+                        let ae = AExpr::Alias(*node, Arc::from(name));
+                        let node = expr_arena.add(ae);
+                        new_expr.push(node)
+                    }
+                    let expr = ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.len());
+                    let lp = ALogicalPlan::Projection {
+                        input: *input,
+                        expr,
+                        schema: schema.clone()
+                    };
+
+                    node.assign(lp);
                 }
+                Ok(node)
 
-
-
-
-                todo!()
             },
             _ => Ok(node)
         };
         std::mem::swap(self.expr_arena, &mut expr_arena);
+        self.id_array_offsets = id_array_offsets;
         out
     }
 }

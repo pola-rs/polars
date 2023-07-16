@@ -4,6 +4,9 @@ use std::ops::Deref;
 #[derive(Debug, Clone)]
 pub struct ProjectionExprs {
     expr: Vec<Node>,
+    /// offset from the back
+    /// `expr[expr.len() - common_sub_offset..]`
+    /// are the common sub expressions
     common_sub_offset: usize
 }
 
@@ -32,9 +35,13 @@ impl FromIterator<Node> for ProjectionExprs {
 
 impl ProjectionExprs {
     pub(crate) fn new(expr: Vec<Node>) -> Self {
+        Self::new_with_cse(expr, 0)
+    }
+
+    pub(crate) fn new_with_cse(expr: Vec<Node>, common_sub_offset: usize) -> Self {
         Self {
             expr,
-            common_sub_offset: 0
+            common_sub_offset
         }
     }
 
