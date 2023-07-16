@@ -2,7 +2,6 @@ use polars_arrow::error::PolarsResult;
 
 use crate::prelude::*;
 
-#[macro_export]
 macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
         use Expr::*;
@@ -137,8 +136,7 @@ impl<'a> ExprMut<'a> {
             if !f(current_expr)? {
                 break;
             }
-            let mut push = |e: &'a mut Expr| self.stack.push(e);
-            push_expr!(current_expr, push, iter_mut);
+            current_expr.nodes_mut(&mut self.stack)
         }
         Ok(())
     }
@@ -153,11 +151,21 @@ impl<'a> Iterator for ExprIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.stack.pop().map(|current_expr| {
-            let mut push = |e: &'a Expr| self.stack.push(e);
-
-            push_expr!(current_expr, push, iter);
+            current_expr.nodes(&mut self.stack);
             current_expr
         })
+    }
+}
+
+impl Expr {
+    pub fn nodes<'a>(&'a self, container: &mut Vec<&'a Expr>) {
+        let mut push = |e: &'a Expr| container.push(e);
+        push_expr!(self, push, iter);
+    }
+
+    pub fn nodes_mut<'a>(&'a mut self, container: &mut Vec<&'a mut Expr>) {
+        let mut push = |e: &'a mut Expr| container.push(e);
+        push_expr!(self, push, iter_mut);
     }
 }
 

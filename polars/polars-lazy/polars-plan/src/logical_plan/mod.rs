@@ -30,7 +30,7 @@ pub(crate) mod projection;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;
-#[cfg(feature = "meta")]
+#[cfg(any(feature = "meta", feature = "cse"))]
 pub(crate) mod tree_format;
 pub mod visitor;
 

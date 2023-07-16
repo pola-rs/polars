@@ -1,11 +1,12 @@
 use std::rc::Rc;
 
 use super::*;
+use crate::constants::CSE_REPLACED;
 use crate::logical_plan::visitor::{RewriteRecursion, TreeWalker, VisitRecursion};
 use crate::prelude::visitor::{AexprNode, RewritingVisitor, Visitor};
 
 type Identifier = Rc<str>;
-type SubExprMap = PlHashMap<Identifier, (Node, usize)>;
+type SubExprCount = PlHashMap<Identifier, (Node, usize)>;
 type IdentifierArray = Vec<(usize, Identifier)>;
 
 #[derive(Debug)]
@@ -61,7 +62,7 @@ enum VisitRecord {
 /// post-visit: binary: *	      EEII                     EI                           id: binary: *!min!col(f00)!col(bar)
 /// post-visit: sum               EI                       I                            id: sum!binary: *!min!col(f00)!col(bar)
 struct ExprIdentifierVisitor<'a> {
-    expr_set: &'a mut SubExprMap,
+    se_count: &'a mut SubExprCount,
     identifier_array: &'a mut IdentifierArray,
     // index in pre-visit traversal order
     pre_visit_idx: usize,
@@ -71,11 +72,11 @@ struct ExprIdentifierVisitor<'a> {
 
 impl ExprIdentifierVisitor<'_> {
     fn new<'a>(
-        expr_set: &'a mut SubExprMap,
+        se_count: &'a mut SubExprCount,
         identifier_array: &'a mut IdentifierArray,
     ) -> ExprIdentifierVisitor<'a> {
         ExprIdentifierVisitor {
-            expr_set,
+            se_count,
             identifier_array,
             pre_visit_idx: 0,
             post_visit_idx: 0,
@@ -147,7 +148,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         // is available for the parent expression
         self.visit_stack.push(VisitRecord::SubExprId(id.clone()));
 
-        self.expr_set
+        self.se_count
             .entry(id)
             .or_insert_with(|| (node.node(), 0))
             .1 += 1;
@@ -156,7 +157,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 }
 
 struct CommonSubExprRewriter<'a> {
-    sub_expr_map: &'a SubExprMap,
+    sub_expr_map: &'a SubExprCount,
     identifier_array: &'a IdentifierArray,
     /// keep track of the replaced identifiers
     replaced_identifiers: &'a mut PlHashSet<Identifier>,
@@ -169,7 +170,7 @@ struct CommonSubExprRewriter<'a> {
 
 impl<'a> CommonSubExprRewriter<'a> {
     fn new(
-        sub_expr_map: &'a mut SubExprMap,
+        sub_expr_map: &'a mut SubExprCount,
         identifier_array: &'a IdentifierArray,
         replaced_identifiers: &'a mut PlHashSet<Identifier>,
     ) -> Self {
@@ -260,7 +261,8 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             self.visited_idx += 1;
         }
 
-        node.assign(AExpr::col(id.as_ref()));
+        let name = format!("{}{}", CSE_REPLACED, id.as_ref());
+        node.assign(AExpr::col(name.as_ref()));
 
         Ok(node)
     }
@@ -335,15 +337,15 @@ mod test {
         let mut arena = Arena::new();
         let node = to_aexpr(e, &mut arena);
 
-        let mut expr_set = Default::default();
+        let mut se_count = Default::default();
         let mut id_array = vec![];
-        let mut visitor = ExprIdentifierVisitor::new(&mut expr_set, &mut id_array);
+        let mut visitor = ExprIdentifierVisitor::new(&mut se_count, &mut id_array);
 
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
 
         let mut replaced_ids = Default::default();
         let mut rewriter =
-            CommonSubExprRewriter::new(&mut expr_set, &mut id_array, &mut replaced_ids);
+            CommonSubExprRewriter::new(&mut se_count, &mut id_array, &mut replaced_ids);
         let ae_node =
             AexprNode::with_context(node, &mut arena, |ae_node| ae_node.rewrite(&mut rewriter))
                 .unwrap();
@@ -351,7 +353,12 @@ mod test {
         let e = node_to_expr(ae_node.node(), &arena);
         assert_eq!(
             format!("{}", e),
-            r#"[(col("sum!col(f00)")) + ([(col("bar")) * (col("sum!col(f00)"))].sum())]"#
+            r#"[(col("__POLARS_CSER_sum!col(f00)")) + ([(col("bar")) * (col("__POLARS_CSER_sum!col(f00)"))].sum())]"#
         );
+
+        for k in replaced_ids {
+            let (node, count) = se_count.get(&k).unwrap();
+            dbg!(node_to_expr(*node, &arena), count);
+        }
     }
 }

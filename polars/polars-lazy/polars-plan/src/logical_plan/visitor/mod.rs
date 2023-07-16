@@ -2,6 +2,7 @@
 
 use polars_arrow::error::PolarsResult;
 mod expr;
+mod lp;
 mod visitors;
 
 pub use expr::*;

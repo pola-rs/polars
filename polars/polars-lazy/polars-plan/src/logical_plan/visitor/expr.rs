@@ -1,6 +1,5 @@
 use super::*;
 use crate::prelude::*;
-use crate::push_expr;
 
 impl TreeWalker for Expr {
     fn apply_children<'a>(
@@ -9,8 +8,7 @@ impl TreeWalker for Expr {
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = vec![];
 
-        let mut push = |e: &'a Expr| scratch.push(e);
-        push_expr!(self, push, iter);
+        self.nodes(&mut scratch);
 
         for child in scratch {
             match op(child)? {
