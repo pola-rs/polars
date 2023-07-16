@@ -11,6 +11,11 @@ use crate::logical_plan::FileScan;
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 
+struct ProjectedExpr {
+    expr: Vec<Node>,
+    common_sub_offset: usize
+}
+
 /// ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
 pub enum ALogicalPlan {
@@ -56,6 +61,7 @@ pub enum ALogicalPlan {
     Projection {
         input: Node,
         expr: Vec<Node>,
+        common_sub_expr: Vec<Node>,
         schema: SchemaRef,
     },
     LocalProjection {
@@ -254,6 +260,7 @@ impl ALogicalPlan {
             Projection { schema, .. } => Projection {
                 input: inputs[0],
                 expr: exprs,
+                common_sub_expr: vec![],
                 schema: schema.clone(),
             },
             Aggregate {
@@ -553,6 +560,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         if !exprs.is_empty() {
             let lp = ALogicalPlan::Projection {
                 expr: exprs,
+                common_sub_expr: vec![],
                 input: self.root,
                 schema: Arc::new(schema),
             };

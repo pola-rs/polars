@@ -326,17 +326,17 @@ impl SlicePushDown {
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
             }
             // there is state, inspect the projection to determine how to deal with it
-            (Projection {input, expr, schema}, Some(_)) => {
+            (Projection {input, expr, common_sub_expr, schema}, Some(_)) => {
                 // The slice operation may only pass on simple projections. col("foo").alias("bar")
                 if expr.iter().all(|root|  {
                     aexpr_is_elementwise(*root, expr_arena)
                 }) {
-                    let lp = Projection {input, expr, schema};
+                    let lp = Projection {input, expr, common_sub_expr, schema};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
                 }
                 // don't push down slice, but restart optimization
                 else {
-                    let lp = Projection {input, expr, schema};
+                    let lp = Projection {input, expr, common_sub_expr, schema};
                     self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
                 }
             }

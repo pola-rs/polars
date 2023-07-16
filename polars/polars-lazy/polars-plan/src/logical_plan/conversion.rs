@@ -243,6 +243,7 @@ pub fn to_alp(
             let i = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Projection {
                 expr: exp,
+                common_sub_expr: vec![],
                 input: i,
                 schema,
             }
@@ -695,9 +696,11 @@ impl ALogicalPlan {
             },
             ALogicalPlan::Projection {
                 expr,
+                common_sub_expr,
                 input,
                 schema,
             } => {
+                assert!(common_sub_expr.is_empty());
                 let i = convert_to_lp(input, lp_arena);
 
                 LogicalPlan::Projection {

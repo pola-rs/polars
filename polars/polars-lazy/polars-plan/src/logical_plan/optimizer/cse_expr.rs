@@ -3,10 +3,12 @@ use std::rc::Rc;
 use super::*;
 use crate::constants::CSE_REPLACED;
 use crate::logical_plan::visitor::{RewriteRecursion, VisitRecursion};
-use crate::prelude::visitor::{AexprNode, RewritingVisitor, Visitor};
+use crate::prelude::visitor::{AexprNode, ALogicalPlanNode, RewritingVisitor, Visitor, TreeWalker};
 
 type Identifier = Rc<str>;
+/// Identifier maps to Expr Node and count.
 type SubExprCount = PlHashMap<Identifier, (Node, usize)>;
+/// (post_visit_idx, identifier);
 type IdentifierArray = Vec<(usize, Identifier)>;
 
 #[derive(Debug)]
@@ -67,20 +69,21 @@ struct ExprIdentifierVisitor<'a> {
     // index in pre-visit traversal order
     pre_visit_idx: usize,
     post_visit_idx: usize,
-    visit_stack: Vec<VisitRecord>,
+    visit_stack: &'a mut Vec<VisitRecord>,
 }
 
 impl ExprIdentifierVisitor<'_> {
     fn new<'a>(
         se_count: &'a mut SubExprCount,
         identifier_array: &'a mut IdentifierArray,
+        visit_stack: &'a mut Vec<VisitRecord>
     ) -> ExprIdentifierVisitor<'a> {
         ExprIdentifierVisitor {
             se_count,
             identifier_array,
             pre_visit_idx: 0,
             post_visit_idx: 0,
-            visit_stack: vec![],
+            visit_stack
         }
     }
 
@@ -268,6 +271,68 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
     }
 }
 
+struct CommonSubExprOptimizer<'a> {
+    expr_arena: &'a mut Arena<AExpr>,
+    // amortize allocations
+    // amortized per lp
+    se_count: SubExprCount,
+    // amortized per expr
+    id_array: IdentifierArray,
+    visit_stack: Vec<VisitRecord>,
+}
+
+impl<'a> CommonSubExprOptimizer<'a> {
+    fn new(
+        expr_arena: &'a mut Arena<AExpr>
+    ) -> Self {
+        Self {
+            expr_arena,
+            se_count: Default::default(),
+            id_array: Default::default(),
+            visit_stack: Default::default(),
+        }
+    }
+
+    fn visit_expression(&mut self, ae_node: AexprNode) -> PolarsResult<()>{
+        let mut visitor = ExprIdentifierVisitor::new(&mut self.se_count, &mut self.id_array, &mut self.visit_stack);
+        ae_node.visit(&mut visitor).map(|_| ())
+    }
+}
+
+impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
+    type Node = ALogicalPlanNode;
+
+    fn mutate(&mut self, node: Self::Node) -> PolarsResult<Self::Node> {
+        let mut expr_arena = Arena::new();
+        std::mem::swap(self.expr_arena, &mut expr_arena);
+        let out = match node.to_alp() {
+            ALogicalPlan::Projection {
+                input,
+                expr,
+                common_sub_expr,
+                schema
+            } => {
+                self.se_count.clear();
+                debug_assert!(common_sub_expr.is_empty());
+
+                for node in expr {
+                    self.id_array.clear();
+                    AexprNode::with_context(*node, &mut expr_arena, |ae_node| {
+                        self.visit_expression(ae_node)
+                    })?
+                }
+
+
+
+                todo!()
+            },
+            _ => Ok(node)
+        };
+        std::mem::swap(self.expr_arena, &mut expr_arena);
+        out
+    }
+}
+
 // struct CommonSubExprElimination {
 //     processed: PlHashSet<Node>,
 //     sub_expr_map: SubExprMap,
@@ -339,7 +404,8 @@ mod test {
 
         let mut se_count = Default::default();
         let mut id_array = vec![];
-        let mut visitor = ExprIdentifierVisitor::new(&mut se_count, &mut id_array);
+        let mut visit_stack = vec![];
+        let mut visitor = ExprIdentifierVisitor::new(&mut se_count, &mut id_array, &mut visit_stack);
 
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
 
