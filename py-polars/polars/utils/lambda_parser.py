@@ -38,7 +38,7 @@ def _process_operand(
     """
     import ast
 
-    if isinstance(operand, ast.Subscript):
+    if isinstance(operand, ast.Subscript) and not is_expr:
         return _process_subscript(operand, arg, names)
     elif isinstance(operand, ast.BinOp):
         ret = _process_binop(operand, arg, names, level=level, is_expr=is_expr)
@@ -57,7 +57,6 @@ def _process_operand(
 def _process_operator(op: ast.operator) -> str | None:
     """Return the string representation of some simple operators."""
     import ast
-
     if isinstance(op, ast.Add):
         return "+"
     elif isinstance(op, ast.Mult):
@@ -84,9 +83,9 @@ def _process_operator(op: ast.operator) -> str | None:
         return "=="
     elif isinstance(op, ast.NotEq):
         return "!="
-    elif isinstance(op, ast.And):
+    elif isinstance(op, ast.BitAnd):
         return "&"
-    elif isinstance(op, ast.Or):
+    elif isinstance(op, ast.BitOr):
         return "|"
     return None
 
@@ -150,7 +149,7 @@ def _extract_lambda(function: Callable[[Any], Any]) -> str | None:
 
     try:
         src = inspect.getsource(function)
-    except TypeError:
+    except Exception:
         return None
     src = src[src.find("lambda") :]
     parens = 1
@@ -198,6 +197,7 @@ def _parse_tree(src: str) -> ast.Lambda | None:
     args = lambda_.args.args
     if len(args) != 1:
         return None
+    # todo: allow ast.Compare
     if not isinstance(lambda_.body, ast.BinOp):
         return None
     return lambda_
