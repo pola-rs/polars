@@ -50,7 +50,6 @@ from polars.utils._parse_expr_input import (
 )
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias, warn_closed_future_change
-from polars.utils.lambda_parser import maybe_warn_about_expr_apply_function
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
 
@@ -3773,6 +3772,8 @@ class Expr:
 
         """
         # input x: Series of type list containing the group values
+        from polars.utils.lambda_parser import maybe_warn_about_expr_apply_function
+
         try:
             root_names = self.meta.root_names()
         except PolarsPanicError:

@@ -1,18 +1,34 @@
 """Try to suggest faster alternatives to simple lambda expressions used in `apply`."""
 from __future__ import annotations
 
+import ast
 import warnings
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.various import find_stacklevel
 
-if TYPE_CHECKING:
-    import ast
+AST_OP_TO_STR = {
+    ast.Add: "+",
+    ast.Mult: "*",
+    ast.Div: "/",
+    ast.Sub: "-",
+    ast.Mod: "%",
+    ast.FloorDiv: "//",
+    ast.Pow: "**",
+    ast.Lt: "<",
+    ast.LtE: "<=",
+    ast.Gt: ">",
+    ast.GtE: "<=",
+    ast.Eq: "==",
+    ast.NotEq: "!=",
+    ast.BitAnd: "&",
+    ast.BitOr: "|",
+}
 
 
-def _process_operand(
-    operand: ast.AST, arg: str, names: list[str], level: int, is_expr: bool
+def _process_ast_expr(
+    operand: ast.AST, arg: str, names: list[str], *, level: int, is_expr: bool
 ) -> str | None:
     """
     Process an operand of a binary operation.
@@ -56,37 +72,9 @@ def _process_operand(
 
 def _process_operator(op: ast.operator) -> str | None:
     """Return the string representation of some simple operators."""
-    import ast
-    if isinstance(op, ast.Add):
-        return "+"
-    elif isinstance(op, ast.Mult):
-        return "*"
-    elif isinstance(op, ast.Div):
-        return "/"
-    elif isinstance(op, ast.Sub):
-        return "-"
-    elif isinstance(op, ast.Mod):
-        return "%"
-    elif isinstance(op, ast.FloorDiv):
-        return "//"
-    elif isinstance(op, ast.Pow):
-        return "**"
-    elif isinstance(op, ast.Lt):
-        return "<"
-    elif isinstance(op, ast.LtE):
-        return "<="
-    elif isinstance(op, ast.Gt):
-        return ">"
-    elif isinstance(op, ast.GtE):
-        return "<="
-    elif isinstance(op, ast.Eq):
-        return "=="
-    elif isinstance(op, ast.NotEq):
-        return "!="
-    elif isinstance(op, ast.BitAnd):
-        return "&"
-    elif isinstance(op, ast.BitOr):
-        return "|"
+    for ast_op, str_op in AST_OP_TO_STR.items():
+        if isinstance(op, ast_op):
+            return str_op
     return None
 
 
@@ -107,10 +95,12 @@ def _process_binop(
     op = _process_operator(binop.op)
     if op is None:
         return None
-    left = _process_operand(binop.left, arg, columns, level + 1, is_expr)
+    left = _process_ast_expr(binop.left, arg, columns, level=level + 1, is_expr=is_expr)
     if left is None:
         return None
-    right = _process_operand(binop.right, arg, columns, level + 1, is_expr)
+    right = _process_ast_expr(
+        binop.right, arg, columns, level=level + 1, is_expr=is_expr
+    )
     if right is None:
         return None
     return f"{left} {op} {right}"
@@ -138,7 +128,7 @@ def _process_subscript(
     return f'pl.col("{columns[subscript.slice.value]}")'
 
 
-def _extract_lambda(function: Callable[[Any], Any]) -> str | None:
+def _parse_lambda_from_function(function: Callable[[Any], Any]) -> str | None:
     """
     Extract the lambda expression from a function.
 
@@ -206,13 +196,13 @@ def _parse_tree(src: str) -> ast.Lambda | None:
 def maybe_warn_about_dataframe_apply_function(
     function: Callable[[Any], Any], columns: list[str]
 ) -> None:
-    src = _extract_lambda(function)
+    src = _parse_lambda_from_function(function)
     if src is None:
         return None
     lambda_ = _parse_tree(src)
     if lambda_ is None:
         return
-    out = _process_operand(
+    out = _process_ast_expr(
         lambda_.body, lambda_.args.args[0].arg, columns, level=0, is_expr=False
     )
 
@@ -233,13 +223,13 @@ def maybe_warn_about_dataframe_apply_function(
 def maybe_warn_about_expr_apply_function(
     function: Callable[[Any], Any], columns: list[str]
 ) -> None:
-    src = _extract_lambda(function)
+    src = _parse_lambda_from_function(function)
     if src is None:
         return None
     lambda_ = _parse_tree(src)
     if lambda_ is None:
         return
-    out = _process_operand(
+    out = _process_ast_expr(
         lambda_.body, lambda_.args.args[0].arg, columns, level=0, is_expr=True
     )
 
