@@ -27,7 +27,7 @@ def test_corr() -> None:
 
 def test_cut() -> None:
     a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-    out = cast(pl.DataFrame, a.cut(bins=[-1, 1], series=False))
+    out = cast(pl.DataFrame, a.cut(breaks=[-1, 1], series=False))
 
     assert out.shape == (12, 3)
     assert out.filter(pl.col("break_point") < 1e9).to_dict(False) == {
@@ -50,7 +50,7 @@ def test_cut() -> None:
     inf = float("inf")
     df = pl.DataFrame({"a": list(range(5))})
     ser = df.select("a").to_series()
-    assert cast(pl.DataFrame, ser.cut(bins=[-1, 1], series=False)).rows() == [
+    assert cast(pl.DataFrame, ser.cut(breaks=[-1, 1], series=False)).rows() == [
         (0.0, 1.0, "(-1, 1]"),
         (1.0, 1.0, "(-1, 1]"),
         (2.0, inf, "(1, inf]"),
@@ -78,8 +78,8 @@ def test_cut() -> None:
     )
     np.random.seed(1)
     a = pl.Series("a", np.random.randint(0, 10, 10))
-    out = cast(pl.DataFrame, a.cut(bins=[-1, 1], series=False))
-    out_s = cast(pl.Series, a.cut(bins=[-1, 1], series=True))
+    out = cast(pl.DataFrame, a.cut(breaks=[-1, 1], series=False))
+    out_s = cast(pl.Series, a.cut(breaks=[-1, 1], series=True))
     assert out["a"].cast(int).series_equal(a)
     # Compare strings and categoricals without a hassle
     assert_frame_equal(expected_df, out, check_dtype=False)

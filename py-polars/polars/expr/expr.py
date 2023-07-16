@@ -3298,7 +3298,7 @@ class Expr:
         breaks
             A list of unique cut points.
         labels
-            Labels to assign to bins. If given, the length must be len(probs) + 1.
+            Labels to assign to bins. If given, the length must be len(breaks) + 1.
         left_closed
             Whether intervals should be [) instead of the default of (]
         include_breaks
