@@ -153,8 +153,9 @@ def test_pickle_lazyframe_udf() -> None:
     q = pickle.loads(b)
     assert q.collect()["a"].to_list() == [2, 4, 6]
 
+
 def test_pickle_lazyframe_nested_function_udf() -> None:
-    df = pl.DataFrame({"a": [1,2,3]})
+    df = pl.DataFrame({"a": [1, 2, 3]})
 
     # NOTE: This is only possible when we're using cloudpickle.
     def inner_df_times2(df: pl.DataFrame) -> pl.DataFrame:
@@ -162,7 +163,6 @@ def test_pickle_lazyframe_nested_function_udf() -> None:
 
     q = df.lazy().map(inner_df_times2)
     b = pickle.dumps(q)
-    
+
     q = pickle.loads(b)
     assert q.collect()["a"].to_list() == [2, 4, 6]
-
