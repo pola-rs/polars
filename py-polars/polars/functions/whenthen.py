@@ -3,11 +3,12 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any
 
+import polars._reexport as pl
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import when as _when
+    import polars.polars as plr
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -93,7 +94,7 @@ def when(expr: IntoExpr) -> When:
 
     """
     expr = parse_as_expression(expr)
-    pywhen = _when(expr)
+    pywhen = plr.when(expr)
     return When(pywhen)
 
 
@@ -114,14 +115,15 @@ class When:
         """
         expr = parse_as_expression(expr, str_as_lit=True)
         pywhenthen = self._pywhen.then(expr)
-        return WhenThen(pywhenthen)
+        return pl.WhenThen(pywhenthen)
 
 
-class WhenThen:
+class WhenThen(pl.Expr):
     """Utility class. See the `when` function."""
 
     def __init__(self, pywhenthen: Any):
         self._pywhenthen = pywhenthen
+        self._pyexpr = pywhenthen.otherwise(None)
 
     def when(self, predicate: IntoExpr) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
@@ -140,16 +142,13 @@ class WhenThen:
         expr = parse_as_expression(expr, str_as_lit=True)
         return wrap_expr(self._pywhenthen.otherwise(expr))
 
-    def __getattr__(self, item: str) -> Any:
-        expr = self.otherwise(None)
-        return getattr(expr, item)
 
-
-class WhenThenThen:
+class WhenThenThen(pl.Expr):
     """Utility class. See the `when` function."""
 
     def __init__(self, pywhenthenthen: Any):
         self.pywhenthenthen = pywhenthenthen
+        self._pyexpr = pywhenthenthen.otherwise(None)
 
     def when(self, predicate: IntoExpr) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
@@ -179,7 +178,3 @@ class WhenThenThen:
         """
         expr = parse_as_expression(expr, str_as_lit=True)
         return wrap_expr(self.pywhenthenthen.otherwise(expr))
-
-    def __getattr__(self, item: str) -> Any:
-        expr = self.otherwise(None)
-        return getattr(expr, item)
