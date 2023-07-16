@@ -195,32 +195,11 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
             return BytesIO(f.read().decode(encoding).encode("utf8"))
         
 
-@overload
 def _prepare_write_file_arg(
-    file: str | list[str] | Path | BinaryIO | bytes, **kwargs: Any
-) -> ContextManager[str | BinaryIO]:
-    ...
-
-
-@overload
-def _prepare_write_file_arg(
-    file: str | TextIO | Path | BinaryIO | bytes, **kwargs: Any
-) -> ContextManager[str | BinaryIO]:
-    ...
-
-
-@overload
-def _prepare_write_file_arg(
-    file: str | list[str] | TextIO | Path | BinaryIO | bytes, **kwargs: Any
-) -> ContextManager[str | list[str] | BinaryIO | list[BinaryIO]]:
-    ...
-
-
-def _prepare_write_file_arg(
-    file: str | list[str] | TextIO | Path | BinaryIO | bytes,
+    file: str | BytesIO | Path,
     encoding: str | None = None,
     **kwargs: Any,
-) -> ContextManager[str | BinaryIO | list[str] | list[BinaryIO]]:
+) -> ContextManager[str | BinaryIO | list[BinaryIO]]:
     """
     Prepare file argument.
 
@@ -278,20 +257,6 @@ def _prepare_write_file_arg(
             kwargs["mode"] = 'wb'
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
-
-    if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
-        if _FSSPEC_AVAILABLE:
-            from fsspec.utils import infer_storage_options
-            
-
-            if not has_non_utf8_non_utf8_lossy_encoding:
-                if all(infer_storage_options(f)["protocol"] == "file" for f in file):
-                    return managed_file(
-                        [normalise_filepath(f, False) for f in file]
-                    )
-            kwargs["mode"] = 'wb'
-            kwargs["encoding"] = encoding
-            return fsspec.open_files(file, **kwargs)
 
     if isinstance(file, str):
         file = normalise_filepath(file, False)
