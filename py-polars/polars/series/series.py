@@ -2303,7 +2303,7 @@ class Series:
 
         """
 
-    def append(self, other: Series, *, append_chunks: bool = True) -> Series:
+    def append(self, other: Series, *, append_chunks: bool | None = None) -> Self:
         """
         Append a Series to this one.
 
@@ -2312,6 +2312,11 @@ class Series:
         other
             Series to append.
         append_chunks
+            .. deprecated:: 0.18.8
+                This argument will be removed and ``append`` will change to always
+                behave like ``append_chunks=True`` (the previous default). For the
+                behavior of ``append_chunks=False``, use ``Series.extend``.
+
             If set to `True` the append operation will add the chunks from `other` to
             self. This is super cheap.
 
@@ -2335,13 +2340,21 @@ class Series:
             to store them in a single `Series`. In the latter case, finish the sequence
             of `append_chunks` operations with a `rechunk`.
 
+        Warnings
+        --------
+        This method modifies the series in-place. The series is returned for
+        convenience only.
+
+        See Also
+        --------
+        extend
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s2 = pl.Series("b", [4, 5, 6])
-        >>> s.append(s2)
-        shape: (6,)
+        >>> a = pl.Series("a", [1, 2, 3])
+        >>> b = pl.Series("b", [4, 5])
+        >>> a.append(b)
+        shape: (5,)
         Series: 'a' [i64]
         [
             1
@@ -2349,21 +2362,100 @@ class Series:
             3
             4
             5
-            6
         ]
+
+        The resulting series will consist of multiple chunks.
+
+        >>> a.n_chunks()
+        2
+
+        """
+        if append_chunks is not None:
+            warnings.warn(
+                "the `append_chunks` argument will be removed and `append` will change"
+                " to always behave like `append_chunks=True` (the previous default)."
+                " For the behavior of `append_chunks=False`, use `Series.extend`.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
+        else:
+            append_chunks = True
+
+        if not append_chunks:
+            return self.extend(other)
+
+        try:
+            self._s.append(other._s)
+        except RuntimeError as exc:
+            if str(exc) == "Already mutably borrowed":
+                self._s.append(other._s.clone())
+            else:
+                raise exc
+        return self
+
+    def extend(self, other: Series) -> Self:
+        """
+        Extend the memory backed by this Series with the values from another.
+
+        Different from ``append``, which adds the chunks from ``other`` to the chunks of
+        this series, ``extend`` appends the data from ``other`` to the underlying memory
+        locations and thus may cause a reallocation (which is expensive).
+
+        If this does `not` cause a reallocation, the resulting data structure will not
+        have any extra chunks and thus will yield faster queries.
+
+        Prefer ``extend`` over ``append`` when you want to do a query after a single
+        append. For instance, during online operations where you add `n` rows
+        and rerun a query.
+
+        Prefer ``append`` over ``extend`` when you want to append many times
+        before doing a query. For instance, when you read in multiple files and want
+        to store them in a single ``Series``. In the latter case, finish the sequence
+        of ``append`` operations with a `rechunk`.
+
+        Parameters
+        ----------
+        other
+            Series to extend the series with.
+
+        Warnings
+        --------
+        This method modifies the series in-place. The series is returned for
+        convenience only.
+
+        See Also
+        --------
+        append
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [1, 2, 3])
+        >>> b = pl.Series("b", [4, 5])
+        >>> a.extend(b)
+        shape: (5,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+            4
+            5
+        ]
+
+        The resulting series will consist of a single chunk.
+
+        >>> a.n_chunks()
+        1
 
         """
         try:
-            if append_chunks:
-                self._s.append(other._s)
-            else:
-                self._s.extend(other._s)
-            return self
+            self._s.extend(other._s)
         except RuntimeError as exc:
             if str(exc) == "Already mutably borrowed":
-                return self.append(other.clone(), append_chunks=append_chunks)
+                self._s.extend(other._s.clone())
             else:
                 raise exc
+        return self
 
     def filter(self, predicate: Series | list[bool]) -> Self:
         """

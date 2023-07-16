@@ -438,7 +438,7 @@ def series(
                 s = s.cast(Categorical)
             if series_size and (chunked or (chunked is None and draw(booleans()))):
                 split_at = series_size // 2
-                s = s[:split_at].append(s[split_at:], append_chunks=True)
+                s = s[:split_at].append(s[split_at:])
             return s
 
     return draw_series()
