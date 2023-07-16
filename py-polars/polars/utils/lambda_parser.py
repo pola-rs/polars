@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import sys
 import warnings
 from typing import Any, Callable
 
@@ -168,11 +169,16 @@ def _ast_subscript_to_str(
         return None
     if subscript.value.id != arg:
         return None
-    if not isinstance(subscript.slice, ast.Constant):
+    if sys.version_info < (3, 9):
+        # ast.Index was deprecated in Python 3.9.
+        slice_ = subscript.slice.value
+    else:
+        slice_ = subscript.slice
+    if not isinstance(slice_, ast.Constant):
         return None
-    if not isinstance(subscript.slice.value, int):
+    if not isinstance(slice_.value, int):
         return None
-    return f'pl.col("{columns[subscript.slice.value]}")'
+    return f'pl.col("{columns[slice_.value]}")'
 
 
 def _parse_lambda_from_function(function: Callable[[Any], Any]) -> str | None:
