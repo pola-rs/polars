@@ -3032,6 +3032,7 @@ class DataFrame:
         statistics: bool = False,
         row_group_size: int | None = None,
         use_pyarrow: bool = False,
+        storage_options: dict[str, Any] | None = None,
         pyarrow_options: dict[str, object] | None = None,
     ) -> None:
         """
@@ -3079,40 +3080,43 @@ class DataFrame:
         >>> df.write_parquet(path)
 
         """
+        from polars.io._utils import _prepare_write_file_arg
+
         if compression is None:
             compression = "uncompressed"
-        if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
 
-        if use_pyarrow:
-            tbl = self.to_arrow()
-            data = {}
+        storage_options = storage_options or {}
 
-            for i, column in enumerate(tbl):
-                # extract the name before casting
-                name = f"column_{i}" if column._name is None else column._name
+        with _prepare_write_file_arg(file, **storage_options) as file:
+            if use_pyarrow:
+                tbl = self.to_arrow()
+                data = {}
 
-                data[name] = column
+                for i, column in enumerate(tbl):
+                    # extract the name before casting
+                    name = f"column_{i}" if column._name is None else column._name
 
-            tbl = pa.table(data)
+                    data[name] = column
 
-            # do not remove this import!
-            # needed below
-            import pyarrow.parquet  # noqa: F401
+                tbl = pa.table(data)
 
-            pa.parquet.write_table(
-                table=tbl,
-                where=file,
-                row_group_size=row_group_size,
-                compression=None if compression == "uncompressed" else compression,
-                compression_level=compression_level,
-                write_statistics=statistics,
-                **(pyarrow_options or {}),
-            )
-        else:
-            self._df.write_parquet(
-                file, compression, compression_level, statistics, row_group_size
-            )
+                # do not remove this import!
+                # needed below
+                import pyarrow.parquet  # noqa: F401
+
+                pa.parquet.write_table(
+                    table=tbl,
+                    where=file,
+                    row_group_size=row_group_size,
+                    compression=None if compression == "uncompressed" else compression,
+                    compression_level=compression_level,
+                    write_statistics=statistics,
+                    **(pyarrow_options or {}),
+                )
+            else:
+                self._df.write_parquet(
+                    file, compression, compression_level, statistics, row_group_size
+                )
 
     def write_database(
         self,
