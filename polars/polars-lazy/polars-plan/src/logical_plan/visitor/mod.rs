@@ -6,6 +6,7 @@ mod lp;
 mod visitors;
 
 pub use expr::*;
+pub use lp::*;
 pub use visitors::*;
 
 /// Controls how the [`TreeWalker`] recursion should proceed for [`TreeWalker::visit`].

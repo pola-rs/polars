@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use super::*;
 use crate::constants::CSE_REPLACED;
-use crate::logical_plan::visitor::{RewriteRecursion, TreeWalker, VisitRecursion};
+use crate::logical_plan::visitor::{RewriteRecursion, VisitRecursion};
 use crate::prelude::visitor::{AexprNode, RewritingVisitor, Visitor};
 
 type Identifier = Rc<str>;
@@ -127,7 +127,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         let ae = node.to_aexpr();
         self.post_visit_idx += 1;
 
-        let (pre_visit_idx, mut sub_expr_id) = self.pop_until_entered();
+        let (pre_visit_idx, sub_expr_id) = self.pop_until_entered();
 
         // if we don't store this node
         // we only push the visit_stack, so the parents know the trail
