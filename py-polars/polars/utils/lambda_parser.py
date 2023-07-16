@@ -171,7 +171,7 @@ def _ast_subscript_to_str(
         return None
     if sys.version_info < (3, 9):
         # ast.Index was deprecated in Python 3.9.
-        slice_ = subscript.slice.value
+        slice_ = subscript.slice.value  # type: ignore[attr-defined]
     else:
         slice_ = subscript.slice
     if not isinstance(slice_, ast.Constant):
