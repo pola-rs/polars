@@ -56,8 +56,8 @@ impl Serialize for PythonFunction {
         S: Serializer,
     {
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "pickle")
-                .expect("Unable to import 'pickle'")
+            let pickle = PyModule::import(py, "cloudpickle").or(PyModule::import(py, "pickle"))
+                .expect("Unable to import 'cloudpickle' or 'pickle'")
                 .getattr("dumps")
                 .unwrap();
 
@@ -83,7 +83,7 @@ impl<'a> Deserialize<'a> for PythonFunction {
         let bytes = Vec::<u8>::deserialize(deserializer)?;
 
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "pickle")
+            let pickle = PyModule::import(py, "cloudpickle").or(PyModule::import(py, "pickle"))
                 .expect("Unable to import 'pickle'")
                 .getattr("loads")
                 .unwrap();
@@ -122,7 +122,7 @@ impl PythonUdfExpression {
         let remainder = &buf[reader.position() as usize..];
 
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "pickle")
+            let pickle = PyModule::import(py, "cloudpickle").or(PyModule::import(py, "pickle"))
                 .expect("Unable to import 'pickle'")
                 .getattr("loads")
                 .unwrap();
@@ -169,7 +169,7 @@ impl SeriesUdf for PythonUdfExpression {
         ciborium::ser::into_writer(&self.output_type, &mut *buf).unwrap();
 
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "pickle")
+            let pickle = PyModule::import(py, "cloudpickle").or(PyModule::import(py, "pickle"))
                 .expect("Unable to import 'pickle'")
                 .getattr("dumps")
                 .unwrap();
