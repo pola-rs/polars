@@ -33,6 +33,7 @@ mod schema;
 #[cfg(any(feature = "meta", feature = "cse"))]
 pub(crate) mod tree_format;
 pub mod visitor;
+mod projection_expr;
 
 pub use aexpr::*;
 pub use alp::*;

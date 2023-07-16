@@ -9,6 +9,7 @@ mod cse;
 mod delay_rechunk;
 mod drop_nulls;
 
+#[cfg(feature="cse")]
 mod cse_expr;
 mod fast_projection;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]

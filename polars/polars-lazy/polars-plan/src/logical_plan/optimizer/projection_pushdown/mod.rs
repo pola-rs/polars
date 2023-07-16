@@ -326,7 +326,7 @@ impl ProjectionPushDown {
             Projection { expr, input, .. } => process_projection(
                 self,
                 input,
-                expr,
+                expr.exprs(),
                 acc_projections,
                 projected_names,
                 projections_seen,
@@ -628,7 +628,7 @@ impl ProjectionPushDown {
             HStack { input, exprs, .. } => process_hstack(
                 self,
                 input,
-                exprs,
+                exprs.exprs(),
                 acc_projections,
                 projected_names,
                 projections_seen,

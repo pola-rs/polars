@@ -309,11 +309,10 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
             ALogicalPlan::Projection {
                 input,
                 expr,
-                common_sub_expr,
                 schema
             } => {
                 self.se_count.clear();
-                debug_assert!(common_sub_expr.is_empty());
+                debug_assert!(!expr.has_sub_exprs());
 
                 for node in expr {
                     self.id_array.clear();

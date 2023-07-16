@@ -10,11 +10,8 @@ use crate::logical_plan::schema::{det_join_schema, FileInfo};
 use crate::logical_plan::FileScan;
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
+use super::projection_expr::*;
 
-struct ProjectedExpr {
-    expr: Vec<Node>,
-    common_sub_offset: usize
-}
 
 /// ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
@@ -60,8 +57,7 @@ pub enum ALogicalPlan {
     },
     Projection {
         input: Node,
-        expr: Vec<Node>,
-        common_sub_expr: Vec<Node>,
+        expr: ProjectionExprs,
         schema: SchemaRef,
     },
     LocalProjection {
@@ -98,7 +94,7 @@ pub enum ALogicalPlan {
     },
     HStack {
         input: Node,
-        exprs: Vec<Node>,
+        exprs: ProjectionExprs,
         schema: SchemaRef,
     },
     Distinct {
@@ -259,8 +255,7 @@ impl ALogicalPlan {
             },
             Projection { schema, .. } => Projection {
                 input: inputs[0],
-                expr: exprs,
-                common_sub_expr: vec![],
+                expr: ProjectionExprs::new(exprs),
                 schema: schema.clone(),
             },
             Aggregate {
@@ -310,7 +305,7 @@ impl ALogicalPlan {
             },
             HStack { schema, .. } => HStack {
                 input: inputs[0],
-                exprs,
+                exprs: ProjectionExprs::new(exprs),
                 schema: schema.clone(),
             },
             Scan {
@@ -559,8 +554,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         // if len == 0, no projection has to be done. This is a select all operation.
         if !exprs.is_empty() {
             let lp = ALogicalPlan::Projection {
-                expr: exprs,
-                common_sub_expr: vec![],
+                expr: exprs.into(),
                 input: self.root,
                 schema: Arc::new(schema),
             };
@@ -599,7 +593,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
         let lp = ALogicalPlan::HStack {
             input: self.root,
-            exprs,
+            exprs: ProjectionExprs::new(exprs),
             schema: Arc::new(new_schema),
         };
         let root = self.lp_arena.add(lp);
