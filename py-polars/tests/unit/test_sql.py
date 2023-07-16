@@ -597,7 +597,7 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         ("!~*", "[aeiOU]", None),
     ],
 )
-def test_sql_regex(
+def test_sql_regex_operators(
     foods_ipc_path: Path, op: str, pattern: str, expected: str | None
 ) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
@@ -612,7 +612,7 @@ def test_sql_regex(
         assert out.rows() == ([(expected,)] if expected else [])
 
 
-def test_sql_regex_error() -> None:
+def test_sql_regex_operators_error() -> None:
     df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
         with pytest.raises(
