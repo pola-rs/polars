@@ -1196,7 +1196,7 @@ class Series:
 
         """
 
-    def any(self) -> bool:
+    def any(self, drop_nulls: bool = True) -> bool | None:
         """
         Check if any boolean value in the column is `True`.
 
@@ -1205,9 +1205,9 @@ class Series:
         Boolean literal
 
         """
-        return self.to_frame().select(F.col(self.name).any()).to_series()[0]
+        return self.to_frame().select(F.col(self.name).any(drop_nulls)).to_series()[0]
 
-    def all(self) -> bool:
+    def all(self, drop_nulls: bool = True) -> bool | None:
         """
         Check if all boolean values in the column are `True`.
 
@@ -1216,7 +1216,7 @@ class Series:
         Boolean literal
 
         """
-        return self.to_frame().select(F.col(self.name).all()).to_series()[0]
+        return self.to_frame().select(F.col(self.name).all(drop_nulls)).to_series()[0]
 
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""

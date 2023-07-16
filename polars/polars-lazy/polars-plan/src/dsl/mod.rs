@@ -1639,8 +1639,8 @@ impl Expr {
     }
 
     /// Check if any boolean value is `true`
-    pub fn any(self) -> Self {
-        self.apply_private(BooleanFunction::Any.into())
+    pub fn any(self, drop_nulls: bool) -> Self {
+        self.apply_private(BooleanFunction::Any { drop_nulls }.into())
             .with_function_options(|mut opt| {
                 opt.auto_explode = true;
                 opt
@@ -1655,8 +1655,8 @@ impl Expr {
     }
 
     /// Check if all boolean values are `true`
-    pub fn all(self) -> Self {
-        self.apply_private(BooleanFunction::All.into())
+    pub fn all(self, drop_nulls: bool) -> Self {
+        self.apply_private(BooleanFunction::All { drop_nulls }.into())
             .with_function_options(|mut opt| {
                 opt.auto_explode = true;
                 opt

@@ -364,8 +364,8 @@ fn test_window_exprs_any_all() -> PolarsResult<()> {
     ]?
     .lazy()
     .select([
-        col("var2").any().over([col("var1")]).alias("any"),
-        col("var2").all().over([col("var1")]).alias("all"),
+        col("var2").any(true).over([col("var1")]).alias("any"),
+        col("var2").all(true).over([col("var1")]).alias("all"),
     ])
     .collect()?;
 
