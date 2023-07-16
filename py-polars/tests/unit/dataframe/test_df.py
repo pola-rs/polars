@@ -704,61 +704,6 @@ def test_hstack_dataframe(in_place: bool) -> None:
         assert_frame_equal(df_out, expected)
 
 
-def test_extend() -> None:
-    with pl.StringCache():
-        df1 = pl.DataFrame(
-            {
-                "foo": [1, 2],
-                "bar": [True, False],
-                "ham": ["a", "b"],
-                "cat": ["A", "B"],
-                "dates": [datetime(2021, 1, 1), datetime(2021, 2, 1)],
-            }
-        ).with_columns(
-            [
-                pl.col("cat").cast(pl.Categorical),
-            ]
-        )
-        df2 = pl.DataFrame(
-            {
-                "foo": [3, 4],
-                "bar": [True, None],
-                "ham": ["c", "d"],
-                "cat": ["C", "B"],
-                "dates": [datetime(2022, 9, 1), datetime(2021, 2, 1)],
-            }
-        ).with_columns(
-            [
-                pl.col("cat").cast(pl.Categorical),
-            ]
-        )
-
-        df1.extend(df2)
-        expected = pl.DataFrame(
-            {
-                "foo": [1, 2, 3, 4],
-                "bar": [True, False, True, None],
-                "ham": ["a", "b", "c", "d"],
-                "cat": ["A", "B", "C", "B"],
-                "dates": [
-                    datetime(2021, 1, 1),
-                    datetime(2021, 2, 1),
-                    datetime(2022, 9, 1),
-                    datetime(2021, 2, 1),
-                ],
-            }
-        ).with_columns(
-            pl.col("cat").cast(pl.Categorical),
-        )
-        assert_frame_equal(df1, expected)
-
-        # 8745
-        df = pl.DataFrame([{"age": 1}, {"age": 2}, {"age": 3}])
-        df = df[:-1]
-        tail = pl.DataFrame([{"age": 8}])
-        assert df.extend(tail).to_dict(False) == {"age": [1, 2, 8]}
-
-
 def test_file_buffer() -> None:
     f = BytesIO()
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")

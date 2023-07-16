@@ -5827,6 +5827,10 @@ class DataFrame:
         in_place
             Modify in place.
 
+        See Also
+        --------
+        extend
+
         Examples
         --------
         >>> df1 = pl.DataFrame(
@@ -5874,25 +5878,35 @@ class DataFrame:
         """
         Extend the memory backed by this `DataFrame` with the values from `other`.
 
-        Different from `vstack` which adds the chunks from `other` to the chunks of this
-        `DataFrame` `extend` appends the data from `other` to the underlying memory
-        locations and thus may cause a reallocation.
+        Different from ``vstack`` which adds the chunks from ``other`` to the chunks of
+        this ``DataFrame``, ``extend`` appends the data from `other` to the underlying
+        memory locations and thus may cause a reallocation.
 
         If this does not cause a reallocation, the resulting data structure will not
         have any extra chunks and thus will yield faster queries.
 
-        Prefer `extend` over `vstack` when you want to do a query after a single append.
-        For instance during online operations where you add `n` rows and rerun a query.
+        Prefer ``extend`` over ``vstack`` when you want to do a query after a single
+        append. For instance, during online operations where you add `n` rows and rerun
+        a query.
 
-        Prefer `vstack` over `extend` when you want to append many times before doing a
-        query. For instance when you read in multiple files and when to store them in a
-        single `DataFrame`. In the latter case, finish the sequence of `vstack`
-        operations with a `rechunk`.
+        Prefer ``vstack`` over ``extend`` when you want to append many times before
+        doing a query. For instance, when you read in multiple files and want to store
+        them in a single ``DataFrame``. In the latter case, finish the sequence of
+        ``vstack`` operations with a ``rechunk``.
 
         Parameters
         ----------
         other
             DataFrame to vertically add.
+
+        Warnings
+        --------
+        This method modifies the dataframe in-place. The dataframe is returned for
+        convenience only.
+
+        See Also
+        --------
+        vstack
 
         Examples
         --------
@@ -5914,7 +5928,13 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        self._df.extend(other._df)
+        try:
+            self._df.extend(other._df)
+        except RuntimeError as exc:
+            if str(exc) == "Already mutably borrowed":
+                self._df.extend(other._df.clone())
+            else:
+                raise exc
         return self
 
     def drop(self, columns: str | Collection[str], *more_columns: str) -> DataFrame:
