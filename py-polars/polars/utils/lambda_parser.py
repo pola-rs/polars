@@ -214,7 +214,7 @@ def maybe_warn_about_dataframe_apply_function(
             f"\033[31m-    .apply({str_lambda})\033[0m\n"
             "\n"
             "with:\n"
-            f"\033[32m+    .select({out}.alias(\"apply\"))\033[0m\n",
+            f'\033[32m+    .select({out}.alias("apply"))\033[0m\n',
             PolarsInefficientApplyWarning,
             stacklevel=find_stacklevel(),
         )

@@ -3777,6 +3777,7 @@ class Expr:
         try:
             root_names = self.meta.root_names()
         except PolarsPanicError:
+            # no root names for pl.col('*')
             pass
         else:
             maybe_warn_about_expr_apply_function(function, root_names)
