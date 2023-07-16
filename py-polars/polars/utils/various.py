@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import inspect
-import os
 import re
 import sys
 import warnings
 from collections.abc import MappingView, Sized
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, TypeVar
 
 import polars as pl
@@ -25,7 +25,6 @@ from polars.dependencies import _PYARROW_AVAILABLE
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
-    from pathlib import Path
 
     from polars import DataFrame, Series
     from polars.type_aliases import PolarsDataType, PolarsIntegerType, SizeUnit
@@ -183,10 +182,10 @@ def can_create_dicts_with_pyarrow(dtypes: Sequence[PolarsDataType]) -> bool:
 
 def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> str:
     """Create a string path, expanding the home directory if present."""
-    path = os.path.expanduser(path)
-    if check_not_directory and os.path.exists(path) and os.path.isdir(path):
+    path = Path(path).expanduser()
+    if check_not_directory and path.exists() and path.is_dir():
         raise IsADirectoryError(f"Expected a file path; {path!r} is a directory")
-    return path
+    return str(path)
 
 
 def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
@@ -358,15 +357,15 @@ def find_stacklevel() -> int:
     Taken from:
     https://github.com/pandas-dev/pandas/blob/ab89c53f48df67709a533b6a95ce3d911871a0a8/pandas/util/_exceptions.py#L30-L51
     """
-    pkg_dir = os.path.dirname(pl.__file__)
-    test_dir = os.path.join(pkg_dir, "tests")
+    pkg_dir = Path(pl.__file__).parent
+    test_dir = pkg_dir / "tests"
 
     # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
     frame = inspect.currentframe()
     n = 0
     while frame:
         fname = inspect.getfile(frame)
-        if fname.startswith(pkg_dir) and not fname.startswith(test_dir):
+        if fname.startswith(str(pkg_dir)) and not fname.startswith(str(test_dir)):
             frame = frame.f_back
             n += 1
         else:

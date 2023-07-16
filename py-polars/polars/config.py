@@ -156,7 +156,7 @@ class Config(contextlib.ContextDecorator):
         """
         options = json.loads(
             Path(normalise_filepath(cfg)).read_text()
-            if isinstance(cfg, Path) or os.path.exists(cfg)
+            if isinstance(cfg, Path) or Path(cfg).exists()
             else cfg
         )
         os.environ.update(options.get("environment", {}))
@@ -221,9 +221,9 @@ class Config(contextlib.ContextDecorator):
             separators=(",", ":"),
         )
         if isinstance(file, (str, Path)):
-            file = os.path.abspath(normalise_filepath(file))
-            Path(file).write_text(options)
-            return file
+            file = Path(normalise_filepath(file)).resolve()
+            file.write_text(options)
+            return str(file)
 
         return options
 
