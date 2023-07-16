@@ -13,7 +13,7 @@ import pytest
 
 import polars as pl
 from polars import lit, when
-from polars.datatypes import FLOAT_DTYPES, NUMERIC_DTYPES
+from polars.datatypes import FLOAT_DTYPES
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -567,23 +567,6 @@ def test_sort() -> None:
     assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 2, 2, 3]))
 
 
-def test_all_expr() -> None:
-    ldf = pl.LazyFrame({"nrs": [1, 2, 3, 4, 5, None]})
-    assert_frame_equal(ldf.select([pl.all()]), ldf)
-
-
-def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert (
-        fruits_cars.lazy()
-        .with_columns(pl.col("A").cast(bool))
-        .select(pl.any("A"))
-        .collect()[0, 0]
-    ) is True
-    assert (
-        fruits_cars.lazy().select(pl.any([pl.col("A"), pl.col("B")])).collect()[0, 0]
-    ) is True
-
-
 def test_custom_groupby() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = (
@@ -603,27 +586,6 @@ def test_lazy_columns() -> None:
         }
     )
     assert ldf.select(["a", "c"]).columns == ["a", "c"]
-
-
-def test_regex_selection() -> None:
-    ldf = pl.LazyFrame(
-        {
-            "foo": [1],
-            "fooey": [1],
-            "foobar": [1],
-            "bar": [1],
-        }
-    )
-    assert ldf.select([pl.col("^foo.*$")]).columns == ["foo", "fooey", "foobar"]
-
-
-def test_exclude_selection() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [1], "c": [True]})
-
-    assert ldf.select([pl.exclude("a")]).columns == ["b", "c"]
-    assert ldf.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
-    assert ldf.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
-    assert ldf.select(pl.all().exclude(NUMERIC_DTYPES)).columns == ["c"]
 
 
 def test_col_series_selection() -> None:
@@ -1137,7 +1099,7 @@ def test_lazy_concat(df: pl.DataFrame) -> None:
 
     out = pl.concat([df.lazy(), df.lazy()]).collect()
     assert out.shape == shape
-    assert_frame_equal(out, df.vstack(df.clone()))
+    assert_frame_equal(out, df.vstack(df))
 
 
 def test_self_join() -> None:
@@ -1291,24 +1253,6 @@ def test_type_coercion_unknown_4190() -> None:
     ).collect()
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 1), (2, 2), (3, 3)]
-
-
-def test_all_any_accept_expr() -> None:
-    ldf = pl.LazyFrame(
-        {
-            "a": [1, None, 2],
-            "b": [1, 2, None],
-        }
-    )
-    assert ldf.select(
-        [
-            pl.any(pl.all().is_null()).alias("null_in_row"),
-            pl.all(pl.all().is_null()).alias("all_null_in_row"),
-        ]
-    ).collect().to_dict(False) == {
-        "null_in_row": [False, True, True],
-        "all_null_in_row": [False, False, False],
-    }
 
 
 def test_lazy_cache_same_key() -> None:

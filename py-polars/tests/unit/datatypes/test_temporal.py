@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, Any, cast, no_type_check
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -273,11 +273,35 @@ def test_int_to_python_timedelta() -> None:
 
 def test_from_numpy() -> None:
     # note: numpy timeunit support is limited to those supported by polars.
-    # as a result, datetime64[s] will be stored as object.
+    # as a result, datetime64[s] raises
     x = np.asarray(range(100_000, 200_000, 10_000), dtype="datetime64[s]")
-    s = pl.Series(x)
-    assert s[0] == x[0]
-    assert len(s) == 10
+    with pytest.raises(ValueError, match="Please cast to the closest supported unit"):
+        pl.Series(x)
+
+
+@pytest.mark.parametrize(
+    ("numpy_time_unit", "expected_values", "expected_dtype"),
+    [
+        ("ns", ["1970-01-02T01:12:34.123456789"], pl.Datetime("ns")),
+        ("us", ["1970-01-02T01:12:34.123456"], pl.Datetime("us")),
+        ("ms", ["1970-01-02T01:12:34.123"], pl.Datetime("ms")),
+        ("D", ["1970-01-02"], pl.Date),
+    ],
+)
+def test_from_numpy_supported_units(
+    numpy_time_unit: str,
+    expected_values: list[str],
+    expected_dtype: PolarsTemporalType,
+) -> None:
+    values = np.array(
+        ["1970-01-02T01:12:34.123456789123456789"],
+        dtype=f"datetime64[{numpy_time_unit}]",
+    )
+    result = pl.from_numpy(values)
+    expected = (
+        pl.Series("column_0", expected_values).str.strptime(expected_dtype).to_frame()
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_datetime_consistency() -> None:
@@ -1461,16 +1485,17 @@ def test_agg_logical() -> None:
     assert s.min() == dates[0]
 
 
-@no_type_check
 def test_from_time_arrow() -> None:
     pa_times = pa.table([pa.array([10, 20, 30], type=pa.time32("s"))], names=["times"])
 
-    assert pl.from_arrow(pa_times).to_series().to_list() == [
+    result: pl.DataFrame = pl.from_arrow(pa_times)  # type: ignore[assignment]
+
+    assert result.to_series().to_list() == [
         time(0, 0, 10),
         time(0, 0, 20),
         time(0, 0, 30),
     ]
-    assert pl.from_arrow(pa_times).rows() == [
+    assert result.rows() == [
         (time(0, 0, 10),),
         (time(0, 0, 20),),
         (time(0, 0, 30),),

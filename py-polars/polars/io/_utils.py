@@ -18,6 +18,10 @@ from polars.exceptions import NoDataError
 from polars.utils.various import normalise_filepath
 
 
+def _is_glob_pattern(file: str) -> bool:
+    return any(char in file for char in ["*", "?", "["])
+
+
 def _is_local_file(file: str) -> bool:
     try:
         next(glob.iglob(file, recursive=True))
@@ -162,7 +166,7 @@ def _prepare_file_arg(
     if isinstance(file, str):
         file = normalise_filepath(file, check_not_dir)
         if has_non_utf8_non_utf8_lossy_encoding:
-            with open(file, encoding=encoding_str) as f:
+            with Path(file).open(encoding=encoding_str) as f:
                 return _check_empty(
                     BytesIO(f.read().encode("utf8")), context=f"{file!r}"
                 )

@@ -85,6 +85,7 @@ mod test {
         struct VisitPath {
             pre_idx: usize,
             pre_stack: Vec<usize>,
+            #[allow(dead_code)]
             post_idx: usize,
             post_stack: Vec<usize>,
         }

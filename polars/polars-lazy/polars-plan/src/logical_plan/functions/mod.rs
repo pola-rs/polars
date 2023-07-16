@@ -91,6 +91,11 @@ pub enum FunctionNode {
         args: Arc<MeltArgs>,
         schema: SchemaRef,
     },
+    RowCount {
+        name: Arc<str>,
+        schema: SchemaRef,
+        offset: Option<IdxSize>,
+    },
 }
 
 impl PartialEq for FunctionNode {
@@ -115,6 +120,7 @@ impl PartialEq for FunctionNode {
             (Drop { names: l }, Drop { names: r }) => l == r,
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
+            (RowCount { name: l, .. }, RowCount { name: r, .. }) => l == r,
             _ => false,
         }
     }
@@ -138,6 +144,7 @@ impl FunctionNode {
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
             OpaquePython { streamable, .. } => *streamable,
+            RowCount { .. } => false,
         }
     }
 
@@ -189,15 +196,23 @@ impl FunctionNode {
                     let mut new_schema = Schema::with_capacity(input_schema.len() * 2);
                     for (name, dtype) in input_schema.iter() {
                         if _columns.iter().any(|item| item.as_ref() == name.as_str()) {
-                            if let DataType::Struct(flds) = dtype {
-                                for fld in flds {
-                                    new_schema
-                                        .with_column(fld.name().clone(), fld.data_type().clone());
+                            match dtype {
+                                DataType::Struct(flds) => {
+                                    for fld in flds {
+                                        new_schema.with_column(
+                                            fld.name().clone(),
+                                            fld.data_type().clone(),
+                                        );
+                                    }
                                 }
-                            } else {
-                                polars_bail!(
-                                    SchemaMismatch: "expected struct dtype, got: `{}`", dtype
-                                );
+                                DataType::Unknown => {
+                                    // pass through unknown
+                                }
+                                _ => {
+                                    polars_bail!(
+                                        SchemaMismatch: "expected struct dtype, got: `{}`", dtype
+                                    );
+                                }
                             }
                         } else {
                             new_schema.with_column(name.clone(), dtype.clone());
@@ -215,8 +230,9 @@ impl FunctionNode {
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
             Drop { names } => drop::drop_schema(input_schema, names),
-            Explode { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            Melt { schema, .. } => Ok(Cow::Owned(schema.clone())),
+            Explode { schema, .. } | RowCount { schema, .. } | Melt { schema, .. } => {
+                Ok(Cow::Owned(schema.clone()))
+            }
         }
     }
 
@@ -236,6 +252,7 @@ impl FunctionNode {
             | Drop { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
+            RowCount { .. } => false,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -256,6 +273,7 @@ impl FunctionNode {
             | Drop { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
+            RowCount { .. } => true,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -320,6 +338,7 @@ impl FunctionNode {
                 let args = (**args).clone();
                 df.melt2(args)
             }
+            RowCount { name, offset, .. } => df.with_row_count(name.as_ref(), *offset),
         }
     }
 }
@@ -369,6 +388,7 @@ impl Display for FunctionNode {
             Drop { .. } => write!(f, "DROP"),
             Explode { .. } => write!(f, "EXPLODE"),
             Melt { .. } => write!(f, "MELT"),
+            RowCount { .. } => write!(f, "WITH ROW COUNT"),
         }
     }
 }

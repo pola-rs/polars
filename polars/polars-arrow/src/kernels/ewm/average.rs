@@ -147,7 +147,7 @@ mod test {
             EPS
         );
         assert_allclose!(
-            ewm_mean(xs1.clone(), 0.5, false, 0, false),
+            ewm_mean(xs1, 0.5, false, 0, false),
             PrimitiveArray::from([
                 None,
                 None,

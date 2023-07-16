@@ -422,9 +422,11 @@ mod test {
     fn test_explode_list() -> PolarsResult<()> {
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a")?;
 
-        builder.append_series(&Series::new("", &[1, 2, 3, 3]));
-        builder.append_series(&Series::new("", &[1]));
-        builder.append_series(&Series::new("", &[2]));
+        builder
+            .append_series(&Series::new("", &[1, 2, 3, 3]))
+            .unwrap();
+        builder.append_series(&Series::new("", &[1])).unwrap();
+        builder.append_series(&Series::new("", &[2])).unwrap();
 
         let ca = builder.finish();
         assert!(ca._can_fast_explode());
@@ -472,9 +474,11 @@ mod test {
     fn test_explode_empty_list_slot() -> PolarsResult<()> {
         // primitive
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a")?;
-        builder.append_series(&Series::new("", &[1i32, 2]));
-        builder.append_series(&Int32Chunked::from_slice("", &[]).into_series());
-        builder.append_series(&Series::new("", &[3i32]));
+        builder.append_series(&Series::new("", &[1i32, 2])).unwrap();
+        builder
+            .append_series(&Int32Chunked::from_slice("", &[]).into_series())
+            .unwrap();
+        builder.append_series(&Series::new("", &[3i32])).unwrap();
 
         let ca = builder.finish();
         let exploded = ca.explode()?;
@@ -485,11 +489,15 @@ mod test {
 
         // more primitive
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a")?;
-        builder.append_series(&Series::new("", &[1i32]));
-        builder.append_series(&Int32Chunked::from_slice("", &[]).into_series());
-        builder.append_series(&Series::new("", &[2i32]));
-        builder.append_series(&Int32Chunked::from_slice("", &[]).into_series());
-        builder.append_series(&Series::new("", &[3, 4i32]));
+        builder.append_series(&Series::new("", &[1i32])).unwrap();
+        builder
+            .append_series(&Int32Chunked::from_slice("", &[]).into_series())
+            .unwrap();
+        builder.append_series(&Series::new("", &[2i32])).unwrap();
+        builder
+            .append_series(&Int32Chunked::from_slice("", &[]).into_series())
+            .unwrap();
+        builder.append_series(&Series::new("", &[3, 4i32])).unwrap();
 
         let ca = builder.finish();
         let exploded = ca.explode()?;
@@ -500,18 +508,27 @@ mod test {
 
         // utf8
         let mut builder = get_list_builder(&DataType::Utf8, 5, 5, "a")?;
-        builder.append_series(&Series::new("", &["abc"]));
-        builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
-        );
-        builder.append_series(&Series::new("", &["de"]));
-        builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
-        );
-        builder.append_series(&Series::new("", &["fg"]));
-        builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
-        );
+        builder.append_series(&Series::new("", &["abc"])).unwrap();
+        builder
+            .append_series(
+                &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                    .into_series(),
+            )
+            .unwrap();
+        builder.append_series(&Series::new("", &["de"])).unwrap();
+        builder
+            .append_series(
+                &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                    .into_series(),
+            )
+            .unwrap();
+        builder.append_series(&Series::new("", &["fg"])).unwrap();
+        builder
+            .append_series(
+                &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
+                    .into_series(),
+            )
+            .unwrap();
 
         let ca = builder.finish();
         let exploded = ca.explode()?;
@@ -522,11 +539,17 @@ mod test {
 
         // boolean
         let mut builder = get_list_builder(&DataType::Boolean, 5, 5, "a")?;
-        builder.append_series(&Series::new("", &[true]));
-        builder.append_series(&BooleanChunked::from_slice("", &[]).into_series());
-        builder.append_series(&Series::new("", &[false]));
-        builder.append_series(&BooleanChunked::from_slice("", &[]).into_series());
-        builder.append_series(&Series::new("", &[true, true]));
+        builder.append_series(&Series::new("", &[true])).unwrap();
+        builder
+            .append_series(&BooleanChunked::from_slice("", &[]).into_series())
+            .unwrap();
+        builder.append_series(&Series::new("", &[false])).unwrap();
+        builder
+            .append_series(&BooleanChunked::from_slice("", &[]).into_series())
+            .unwrap();
+        builder
+            .append_series(&Series::new("", &[true, true]))
+            .unwrap();
 
         let ca = builder.finish();
         let exploded = ca.explode()?;

@@ -11,6 +11,7 @@ mod parquet;
 mod python;
 
 mod anonymous_scan;
+mod err;
 mod file_list_reader;
 #[cfg(feature = "pivot")]
 pub mod pivot;
@@ -43,6 +44,7 @@ use polars_plan::logical_plan::optimize;
 use polars_plan::utils::expr_to_leaf_column_names;
 use smartstring::alias::String as SmartString;
 
+use crate::fallible;
 use crate::physical_plan::executors::Executor;
 use crate::physical_plan::planner::create_physical_plan;
 use crate::physical_plan::state::ExecutionState;
@@ -106,6 +108,11 @@ impl LazyFrame {
             logical_plan,
             opt_state,
         }
+    }
+
+    /// Get current optimizations
+    pub fn get_current_optimizations(&self) -> OptState {
+        self.opt_state
     }
 
     /// Set allowed optimizations
@@ -218,11 +225,17 @@ impl LazyFrame {
     pub fn sort(self, by_column: &str, options: SortOptions) -> Self {
         let descending = options.descending;
         let nulls_last = options.nulls_last;
+        let maintain_order = options.maintain_order;
 
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(vec![col(by_column)], vec![descending], nulls_last)
+            .sort(
+                vec![col(by_column)],
+                vec![descending],
+                nulls_last,
+                maintain_order,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -238,7 +251,7 @@ impl LazyFrame {
     /// /// Sort DataFrame by 'sepal.width' column
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .sort_by_exprs(vec![col("sepal.width")], vec![false], false)
+    ///         .sort_by_exprs(vec![col("sepal.width")], vec![false], false, false)
     /// }
     /// ```
     pub fn sort_by_exprs<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
@@ -246,6 +259,7 @@ impl LazyFrame {
         by_exprs: E,
         descending: B,
         nulls_last: bool,
+        maintain_order: bool,
     ) -> Self {
         let by_exprs = by_exprs.as_ref().to_vec();
         let descending = descending.as_ref().to_vec();
@@ -255,7 +269,7 @@ impl LazyFrame {
             let opt_state = self.get_opt_state();
             let lp = self
                 .get_plan_builder()
-                .sort(by_exprs, descending, nulls_last)
+                .sort(by_exprs, descending, nulls_last, maintain_order)
                 .build();
             Self::from_logical_plan(lp, opt_state)
         }
@@ -267,6 +281,7 @@ impl LazyFrame {
         by_exprs: E,
         descending: B,
         nulls_last: bool,
+        maintain_order: bool,
     ) -> Self {
         let mut descending = descending.as_ref().to_vec();
         // top-k is reverse from sort
@@ -274,7 +289,7 @@ impl LazyFrame {
             *v = !*v;
         }
         // this will optimize to top-k
-        self.sort_by_exprs(by_exprs, descending, nulls_last)
+        self.sort_by_exprs(by_exprs, descending, nulls_last, maintain_order)
             .slice(0, k)
     }
 
@@ -284,10 +299,11 @@ impl LazyFrame {
         by_exprs: E,
         descending: B,
         nulls_last: bool,
+        maintain_order: bool,
     ) -> Self {
         let descending = descending.as_ref().to_vec();
         // this will optimize to bottom-k
-        self.sort_by_exprs(by_exprs, descending, nulls_last)
+        self.sort_by_exprs(by_exprs, descending, nulls_last, maintain_order)
             .slice(0, k)
     }
 
@@ -471,7 +487,7 @@ impl LazyFrame {
         let streaming = self.opt_state.streaming;
         #[cfg(feature = "cse")]
         if streaming && self.opt_state.common_subplan_elimination {
-            eprintln!("Cannot combine 'streaming' with 'common_subplan_elimination'. CSE will be turned off.");
+            polars_warn!("Cannot combine 'streaming' with 'common_subplan_elimination'. CSE will be turned off.");
             opt_state.common_subplan_elimination = false;
         }
         let lp_top = optimize(self.logical_plan, opt_state, lp_arena, expr_arena, scratch)?;
@@ -1092,9 +1108,9 @@ impl LazyFrame {
     /// Equal to `LazyFrame::filter(col("*").is_not_null())`
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
         match subset {
-            None => self.filter(all_exprs([col("*").is_not_null()])),
+            None => self.filter(all_horizontal([col("*").is_not_null()])),
             Some(subset) => {
-                let predicate = all_exprs(
+                let predicate = all_horizontal(
                     subset
                         .into_iter()
                         .map(|e| e.is_not_null())
@@ -1200,69 +1216,40 @@ impl LazyFrame {
     /// This may for instance block predicate pushdown optimization.
     pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
         let add_row_count_in_map = match &mut self.logical_plan {
-            // Do the row count at scan
-            #[cfg(feature = "csv")]
-            LogicalPlan::CsvScan { options, .. } => {
+            LogicalPlan::Scan {
+                file_options: options,
+                file_info,
+                ..
+            } => {
                 options.row_count = Some(RowCount {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
-                false
-            }
-            #[cfg(feature = "ipc")]
-            LogicalPlan::IpcScan { options, .. } => {
-                options.row_count = Some(RowCount {
-                    name: name.to_string(),
-                    offset: offset.unwrap_or(0),
-                });
-                false
-            }
-            #[cfg(feature = "parquet")]
-            LogicalPlan::ParquetScan { options, .. } => {
-                options.row_count = Some(RowCount {
-                    name: name.to_string(),
-                    offset: offset.unwrap_or(0),
-                });
+                file_info.schema = Arc::new(
+                    file_info
+                        .schema
+                        .new_inserting_at_index(0, name.into(), IDX_DTYPE)
+                        .unwrap(),
+                );
                 false
             }
             _ => true,
         };
 
-        let name2: SmartString = name.into();
-        let udf_schema = move |s: &Schema| {
-            // Can't error, index 0 is always in bounds
-            let new = s
-                .new_inserting_at_index(0, name2.clone(), IDX_DTYPE)
+        if add_row_count_in_map {
+            let schema = fallible!(self.schema(), &self);
+            let schema = schema
+                .new_inserting_at_index(0, name.into(), IDX_DTYPE)
                 .unwrap();
-            Ok(Arc::new(new))
-        };
 
-        let name = name.to_owned();
-
-        // if we do the row count at scan we add a dummy map, to update the schema
-        let opt = if add_row_count_in_map {
-            AllowedOptimizations {
-                slice_pushdown: false,
-                predicate_pushdown: false,
-                streaming: false,
-                ..Default::default()
-            }
+            self.map_private(FunctionNode::RowCount {
+                name: Arc::from(name),
+                offset,
+                schema: Arc::new(schema),
+            })
         } else {
-            AllowedOptimizations::default()
-        };
-
-        self.map(
-            move |df: DataFrame| {
-                if add_row_count_in_map {
-                    df.with_row_count(&name, offset)
-                } else {
-                    Ok(df)
-                }
-            },
-            opt,
-            Some(Arc::new(udf_schema)),
-            Some("WITH ROW COUNT"),
-        )
+            self
+        }
     }
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be

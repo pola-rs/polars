@@ -145,6 +145,7 @@ pub(super) fn predicate_to_pa(
             let input = predicate_to_pa(*input, expr_arena, args)?;
             Some(format!("~({input}).is_null()"))
         }
+        #[cfg(feature = "is_in")]
         AExpr::Function {
             function: FunctionExpr::Boolean(BooleanFunction::IsIn),
             input,

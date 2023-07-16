@@ -1,4 +1,7 @@
-import typing
+from __future__ import annotations
+
+from datetime import date, timedelta
+from typing import Any
 
 import pytest
 
@@ -185,7 +188,8 @@ def test_fold_all_schema() -> None:
         }
     )
     # divide because of overflow
-    assert df.select(pl.sum(pl.all().hash(seed=1) // int(1e8))).dtypes == [pl.UInt64]
+    result = df.select(pl.sum_horizontal(pl.all().hash(seed=1) // int(1e8)))
+    assert result.dtypes == [pl.UInt64]
 
 
 def test_fill_null_static_schema_4843() -> None:
@@ -212,6 +216,9 @@ def test_shrink_dtype() -> None:
             "f": ["a", "b", "c"],
             "g": [0.1, 1.32, 0.12],
             "h": [True, None, False],
+            "i": pl.Series([None, None, None], dtype=pl.UInt64),
+            "j": pl.Series([None, None, None], dtype=pl.Int64),
+            "k": pl.Series([None, None, None], dtype=pl.Float64),
         }
     ).select(pl.all().shrink_dtype())
     assert out.dtypes == [
@@ -223,6 +230,9 @@ def test_shrink_dtype() -> None:
         pl.Utf8,
         pl.Float32,
         pl.Boolean,
+        pl.UInt8,
+        pl.Int8,
+        pl.Float32,
     ]
 
     assert out.to_dict(False) == {
@@ -234,6 +244,9 @@ def test_shrink_dtype() -> None:
         "f": ["a", "b", "c"],
         "g": [0.10000000149011612, 1.3200000524520874, 0.11999999731779099],
         "h": [True, None, False],
+        "i": [None, None, None],
+        "j": [None, None, None],
+        "k": [None, None, None],
     }
 
 
@@ -414,37 +427,40 @@ def test_absence_off_null_prop_8224() -> None:
     ]
 
 
-@typing.no_type_check
-def test_schemas() -> None:
-    # add all expression output tests here:
-    args = [
-        # coalesce
-        {
-            "data": {"x": ["x"], "y": ["y"]},
-            "expr": pl.coalesce(pl.col("x"), pl.col("y")),
-            "expected_select": {"x": pl.Utf8},
-            "expected_gb": {"x": pl.List(pl.Utf8)},
-        },
-        # boolean sum
-        {
-            "data": {"x": [True]},
-            "expr": pl.col("x").sum(),
-            "expected_select": {"x": pl.UInt32},
-            "expected_gb": {"x": pl.UInt32},
-        },
-    ]
-    for arg in args:
-        df = pl.DataFrame(arg["data"])
+@pytest.mark.parametrize(
+    ("data", "expr", "expected_select", "expected_gb"),
+    [
+        (
+            {"x": ["x"], "y": ["y"]},
+            pl.coalesce(pl.col("x"), pl.col("y")),
+            {"x": pl.Utf8},
+            {"x": pl.List(pl.Utf8)},
+        ),
+        (
+            {"x": [True]},
+            pl.col("x").sum(),
+            {"x": pl.UInt32},
+            {"x": pl.UInt32},
+        ),
+    ],
+)
+def test_schemas(
+    data: dict[str, list[Any]],
+    expr: pl.Expr,
+    expected_select: dict[str, pl.PolarsDataType],
+    expected_gb: dict[str, pl.PolarsDataType],
+) -> None:
+    df = pl.DataFrame(data)
 
-        # test selection schema
-        schema = df.select(arg["expr"]).schema
-        for key, dtype in arg["expected_select"].items():
-            assert schema[key] == dtype
+    # test selection schema
+    schema = df.select(expr).schema
+    for key, dtype in expected_select.items():
+        assert schema[key] == dtype
 
-        # test groupby schema
-        schema = df.groupby(pl.lit(1)).agg(arg["expr"]).schema
-        for key, dtype in arg["expected_gb"].items():
-            assert schema[key] == dtype
+    # test groupby schema
+    schema = df.groupby(pl.lit(1)).agg(expr).schema
+    for key, dtype in expected_gb.items():
+        assert schema[key] == dtype
 
 
 def test_list_null_constructor_schema() -> None:
@@ -463,24 +479,59 @@ def test_schema_ne_missing_9256() -> None:
 
 def test_concat_vertically_relaxed() -> None:
     a = pl.DataFrame(
-        {
-            "a": [1, 2, 3],
-            "b": [True, False, None],
-        },
+        data={"a": [1, 2, 3], "b": [True, False, None]},
         schema={"a": pl.Int8, "b": pl.Boolean},
     )
-
     b = pl.DataFrame(
-        {
-            "a": [43, 2, 3],
-            "b": [32, 1, None],
-        },
+        data={"a": [43, 2, 3], "b": [32, 1, None]},
         schema={"a": pl.Int16, "b": pl.Int64},
     )
-
     out = pl.concat([a, b], how="vertical_relaxed")
     assert out.schema == {"a": pl.Int16, "b": pl.Int64}
     assert out.to_dict(False) == {
         "a": [1, 2, 3, 43, 2, 3],
         "b": [1, 0, None, 32, 1, None],
+    }
+    out = pl.concat([b, a], how="vertical_relaxed")
+    assert out.schema == {"a": pl.Int16, "b": pl.Int64}
+    assert out.to_dict(False) == {
+        "a": [43, 2, 3, 1, 2, 3],
+        "b": [32, 1, None, 1, 0, None],
+    }
+
+    c = pl.DataFrame({"a": [1, 2], "b": [2, 1]})
+    d = pl.DataFrame({"a": [1.0, 0.2], "b": [None, 0.1]})
+
+    out = pl.concat([c, d], how="vertical_relaxed")
+    assert out.schema == {"a": pl.Float64, "b": pl.Float64}
+    assert out.to_dict(False) == {
+        "a": [1.0, 2.0, 1.0, 0.2],
+        "b": [2.0, 1.0, None, 0.1],
+    }
+    out = pl.concat([d, c], how="vertical_relaxed")
+    assert out.schema == {"a": pl.Float64, "b": pl.Float64}
+    assert out.to_dict(False) == {
+        "a": [1.0, 0.2, 1.0, 2.0],
+        "b": [None, 0.1, 2.0, 1.0],
+    }
+
+
+def test_lit_iter_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["A", "A", "A", "A"],
+            "dates": [
+                date(1970, 1, 1),
+                date(1970, 1, 1),
+                date(1970, 1, 2),
+                date(1970, 1, 3),
+            ],
+        }
+    )
+
+    assert df.groupby("key").agg(pl.col("dates").unique() + timedelta(days=1)).to_dict(
+        False
+    ) == {
+        "key": ["A"],
+        "dates": [[date(1970, 1, 2), date(1970, 1, 3), date(1970, 1, 4)]],
     }

@@ -311,9 +311,14 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
-    def any(self) -> Self:
+    def any(self, drop_nulls: bool = True) -> Self:
         """
         Check if any boolean value in a Boolean column is `True`.
+
+        Parameters
+        ----------
+        drop_nulls
+            If False, return None if there are nulls but no Trues.
 
         Returns
         -------
@@ -331,16 +336,41 @@ class Expr:
         ╞══════╪═══════╡
         │ true ┆ false │
         └──────┴───────┘
+        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
+        >>> df.select(pl.col("x").any(True), pl.col("y").any(True))
+        shape: (1, 2)
+        ┌───────┬──────┐
+        │ x     ┆ y    │
+        │ ---   ┆ ---  │
+        │ bool  ┆ bool │
+        ╞═══════╪══════╡
+        │ false ┆ true │
+        └───────┴──────┘
+        >>> df.select(pl.col("x").any(False), pl.col("y").any(False))
+        shape: (1, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ bool ┆ bool │
+        ╞══════╪══════╡
+        │ null ┆ true │
+        └──────┴──────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.any())
+        return self._from_pyexpr(self._pyexpr.any(drop_nulls))
 
-    def all(self) -> Self:
+    def all(self, drop_nulls: bool = True) -> Self:
         """
         Check if all boolean values in a Boolean column are `True`.
 
         This method is an expression - not to be confused with
         :func:`polars.all` which is a function to select all columns.
+
+        Parameters
+        ----------
+        drop_nulls
+            If False, return None if there are any nulls.
+
 
         Returns
         -------
@@ -360,9 +390,28 @@ class Expr:
         ╞══════╪═══════╪═══════╡
         │ true ┆ false ┆ false │
         └──────┴───────┴───────┘
+        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
+        >>> df.select(pl.col("x").all(True), pl.col("y").all(True))
+        shape: (1, 2)
+        ┌───────┬───────┐
+        │ x     ┆ y     │
+        │ ---   ┆ ---   │
+        │ bool  ┆ bool  │
+        ╞═══════╪═══════╡
+        │ false ┆ false │
+        └───────┴───────┘
+        >>> df.select(pl.col("x").all(False), pl.col("y").all(False))
+        shape: (1, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ bool ┆ bool │
+        ╞══════╪══════╡
+        │ null ┆ null │
+        └──────┴──────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.all())
+        return self._from_pyexpr(self._pyexpr.all(drop_nulls))
 
     def arg_true(self) -> Self:
         """
@@ -3234,6 +3283,237 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
+    def cut(
+        self,
+        breaks: list[float],
+        labels: list[str] | None = None,
+        left_closed: bool = False,
+        include_breaks: bool = False,
+    ) -> Self:
+        """
+        Bin continuous values into discrete categories.
+
+        Parameters
+        ----------
+        breaks
+            A list of unique cut points.
+        labels
+            Labels to assign to bins. If given, the length must be len(probs) + 1.
+        left_closed
+            Whether intervals should be [) instead of the default of (]
+        include_breaks
+            Include the the right endpoint of the bin each observation falls in.
+            If True, the resulting column will be a Struct.
+
+        Examples
+        --------
+        >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
+        >>> df = pl.DataFrame(dict(g=g, x=range(10)))
+        >>> df.with_columns(q=pl.col("x").cut([2, 5]))
+        shape: (10, 3)
+        ┌─────┬─────┬───────────┐
+        │ g   ┆ x   ┆ q         │
+        │ --- ┆ --- ┆ ---       │
+        │ str ┆ i64 ┆ cat       │
+        ╞═════╪═════╪═══════════╡
+        │ a   ┆ 0   ┆ (-inf, 2] │
+        │ a   ┆ 1   ┆ (-inf, 2] │
+        │ a   ┆ 2   ┆ (-inf, 2] │
+        │ a   ┆ 3   ┆ (2, 5]    │
+        │ …   ┆ …   ┆ …         │
+        │ b   ┆ 6   ┆ (5, inf]  │
+        │ b   ┆ 7   ┆ (5, inf]  │
+        │ b   ┆ 8   ┆ (5, inf]  │
+        │ b   ┆ 9   ┆ (5, inf]  │
+        └─────┴─────┴───────────┘
+        >>> df.with_columns(q=pl.col("x").cut([2, 5], left_closed=True))
+        shape: (10, 3)
+        ┌─────┬─────┬───────────┐
+        │ g   ┆ x   ┆ q         │
+        │ --- ┆ --- ┆ ---       │
+        │ str ┆ i64 ┆ cat       │
+        ╞═════╪═════╪═══════════╡
+        │ a   ┆ 0   ┆ [-inf, 2) │
+        │ a   ┆ 1   ┆ [-inf, 2) │
+        │ a   ┆ 2   ┆ [2, 5)    │
+        │ a   ┆ 3   ┆ [2, 5)    │
+        │ …   ┆ …   ┆ …         │
+        │ b   ┆ 6   ┆ [5, inf)  │
+        │ b   ┆ 7   ┆ [5, inf)  │
+        │ b   ┆ 8   ┆ [5, inf)  │
+        │ b   ┆ 9   ┆ [5, inf)  │
+        └─────┴─────┴───────────┘
+        """
+        return self._from_pyexpr(
+            self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
+        )
+
+    def qcut(
+        self,
+        probs: list[float],
+        labels: list[str] | None = None,
+        left_closed: bool = False,
+        allow_duplicates: bool = False,
+        include_breaks: bool = False,
+    ) -> Self:
+        """
+        Bin continuous values into discrete categories based on their quantiles.
+
+        Parameters
+        ----------
+        probs
+            Probabilities for which to find the corresponding quantiles
+            For p in probs, we assume 0 <= p <= 1
+        labels
+            Labels to assign to bins. If given, the length must be len(probs) + 1.
+            If computing over groups this must be set for now.
+        left_closed
+            Whether intervals should be [) instead of the default of (]
+        allow_duplicates
+            If True, the resulting quantile breaks don't have to be unique. This can
+            happen even with unique probs depending on the data. Duplicates will be
+            dropped, resulting in fewer bins.
+        include_breaks
+            Include the the right endpoint of the bin each observation falls in.
+            If True, the resulting column will be a Struct.
+
+
+        Examples
+        --------
+        >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
+        >>> df = pl.DataFrame(dict(g=g, x=range(10)))
+        >>> df.with_columns(q=pl.col("x").qcut([0.5]))
+        shape: (10, 3)
+        ┌─────┬─────┬─────────────┐
+        │ g   ┆ x   ┆ q           │
+        │ --- ┆ --- ┆ ---         │
+        │ str ┆ i64 ┆ cat         │
+        ╞═════╪═════╪═════════════╡
+        │ a   ┆ 0   ┆ (-inf, 4.5] │
+        │ a   ┆ 1   ┆ (-inf, 4.5] │
+        │ a   ┆ 2   ┆ (-inf, 4.5] │
+        │ a   ┆ 3   ┆ (-inf, 4.5] │
+        │ …   ┆ …   ┆ …           │
+        │ b   ┆ 6   ┆ (4.5, inf]  │
+        │ b   ┆ 7   ┆ (4.5, inf]  │
+        │ b   ┆ 8   ┆ (4.5, inf]  │
+        │ b   ┆ 9   ┆ (4.5, inf]  │
+        └─────┴─────┴─────────────┘
+        >>> df.with_columns(q=pl.col("x").qcut([0.5], ["lo", "hi"]).over("g"))
+        shape: (10, 3)
+        ┌─────┬─────┬─────┐
+        │ g   ┆ x   ┆ q   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ cat │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 0   ┆ lo  │
+        │ a   ┆ 1   ┆ lo  │
+        │ a   ┆ 2   ┆ lo  │
+        │ a   ┆ 3   ┆ hi  │
+        │ …   ┆ …   ┆ …   │
+        │ b   ┆ 6   ┆ lo  │
+        │ b   ┆ 7   ┆ lo  │
+        │ b   ┆ 8   ┆ hi  │
+        │ b   ┆ 9   ┆ hi  │
+        └─────┴─────┴─────┘
+        >>> df.with_columns(q=pl.col("x").qcut([0.5], ["lo", "hi"], True).over("g"))
+        shape: (10, 3)
+        ┌─────┬─────┬─────┐
+        │ g   ┆ x   ┆ q   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ cat │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 0   ┆ lo  │
+        │ a   ┆ 1   ┆ lo  │
+        │ a   ┆ 2   ┆ hi  │
+        │ a   ┆ 3   ┆ hi  │
+        │ …   ┆ …   ┆ …   │
+        │ b   ┆ 6   ┆ lo  │
+        │ b   ┆ 7   ┆ hi  │
+        │ b   ┆ 8   ┆ hi  │
+        │ b   ┆ 9   ┆ hi  │
+        └─────┴─────┴─────┘
+        >>> df.with_columns(q=pl.col("x").qcut([0.25, 0.5], include_breaks=True))
+        shape: (10, 3)
+        ┌─────┬─────┬───────────────────────┐
+        │ g   ┆ x   ┆ q                     │
+        │ --- ┆ --- ┆ ---                   │
+        │ str ┆ i64 ┆ struct[2]             │
+        ╞═════╪═════╪═══════════════════════╡
+        │ a   ┆ 0   ┆ {2.25,"(-inf, 2.25]"} │
+        │ a   ┆ 1   ┆ {2.25,"(-inf, 2.25]"} │
+        │ a   ┆ 2   ┆ {2.25,"(-inf, 2.25]"} │
+        │ a   ┆ 3   ┆ {4.5,"(2.25, 4.5]"}   │
+        │ …   ┆ …   ┆ …                     │
+        │ b   ┆ 6   ┆ {inf,"(4.5, inf]"}    │
+        │ b   ┆ 7   ┆ {inf,"(4.5, inf]"}    │
+        │ b   ┆ 8   ┆ {inf,"(4.5, inf]"}    │
+        │ b   ┆ 9   ┆ {inf,"(4.5, inf]"}    │
+        └─────┴─────┴───────────────────────┘
+        """
+        return self._from_pyexpr(
+            self._pyexpr.qcut(
+                probs, labels, left_closed, allow_duplicates, include_breaks
+            )
+        )
+
+    def rle(self) -> Self:
+        """
+        Get the lengths of runs of identical values.
+
+        Returns
+        -------
+            A Struct Series containing "lengths" and "values" Fields
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(pl.Series("s", [1, 1, 2, 1, None, 1, 3, 3]))
+        >>> df.select(pl.col("s").rle()).unnest("s")
+        shape: (6, 2)
+        ┌─────────┬────────┐
+        │ lengths ┆ values │
+        │ ---     ┆ ---    │
+        │ i32     ┆ i64    │
+        ╞═════════╪════════╡
+        │ 2       ┆ 1      │
+        │ 1       ┆ 2      │
+        │ 1       ┆ 1      │
+        │ 1       ┆ null   │
+        │ 1       ┆ 1      │
+        │ 2       ┆ 3      │
+        └─────────┴────────┘
+        """
+        return self._from_pyexpr(self._pyexpr.rle())
+
+    def rle_id(self) -> Self:
+        """
+        Map values to run IDs.
+
+        Similar to RLE, but it maps each value to an ID corresponding to the run into
+        which it falls. This is especially useful when you want to define groups by
+        runs of identical values rather than the values themselves.
+
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(dict(a=[1, 2, 1, 1, 1], b=["x", "x", None, "y", "y"]))
+        >>> # It works on structs of multiple values too!
+        >>> df.with_columns(a_r=pl.col("a").rle_id(), ab_r=pl.struct("a", "b").rle_id())
+        shape: (5, 4)
+        ┌─────┬──────┬─────┬──────┐
+        │ a   ┆ b    ┆ a_r ┆ ab_r │
+        │ --- ┆ ---  ┆ --- ┆ ---  │
+        │ i64 ┆ str  ┆ u32 ┆ u32  │
+        ╞═════╪══════╪═════╪══════╡
+        │ 1   ┆ x    ┆ 0   ┆ 0    │
+        │ 2   ┆ x    ┆ 1   ┆ 1    │
+        │ 1   ┆ null ┆ 2   ┆ 2    │
+        │ 1   ┆ y    ┆ 2   ┆ 3    │
+        │ 1   ┆ y    ┆ 2   ┆ 3    │
+        └─────┴──────┴─────┴──────┘
+        """
+        return self._from_pyexpr(self._pyexpr.rle_id())
+
     def filter(self, predicate: Expr) -> Self:
         """
         Filter a single column.
@@ -3261,14 +3541,14 @@ class Expr:
         ...     ]
         ... ).sort("group_col")
         shape: (2, 3)
-        ┌───────────┬──────┬─────┐
-        │ group_col ┆ lt   ┆ gte │
-        │ ---       ┆ ---  ┆ --- │
-        │ str       ┆ i64  ┆ i64 │
-        ╞═══════════╪══════╪═════╡
-        │ g1        ┆ 1    ┆ 2   │
-        │ g2        ┆ null ┆ 3   │
-        └───────────┴──────┴─────┘
+        ┌───────────┬─────┬─────┐
+        │ group_col ┆ lt  ┆ gte │
+        │ ---       ┆ --- ┆ --- │
+        │ str       ┆ i64 ┆ i64 │
+        ╞═══════════╪═════╪═════╡
+        │ g1        ┆ 1   ┆ 2   │
+        │ g2        ┆ 0   ┆ 3   │
+        └───────────┴─────┴─────┘
 
         """
         return self._from_pyexpr(self._pyexpr.filter(predicate._pyexpr))
@@ -3299,14 +3579,14 @@ class Expr:
         ...     ]
         ... ).sort("group_col")
         shape: (2, 3)
-        ┌───────────┬──────┬─────┐
-        │ group_col ┆ lt   ┆ gte │
-        │ ---       ┆ ---  ┆ --- │
-        │ str       ┆ i64  ┆ i64 │
-        ╞═══════════╪══════╪═════╡
-        │ g1        ┆ 1    ┆ 2   │
-        │ g2        ┆ null ┆ 3   │
-        └───────────┴──────┴─────┘
+        ┌───────────┬─────┬─────┐
+        │ group_col ┆ lt  ┆ gte │
+        │ ---       ┆ --- ┆ --- │
+        │ str       ┆ i64 ┆ i64 │
+        ╞═══════════╪═════╪═════╡
+        │ g1        ┆ 1   ┆ 2   │
+        │ g2        ┆ 0   ┆ 3   │
+        └───────────┴─────┴─────┘
 
         """
         return self.filter(predicate)
@@ -3381,6 +3661,10 @@ class Expr:
     ) -> Self:
         """
         Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
+
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
 
         Depending on the context it has the following behavior:
 
@@ -4337,7 +4621,7 @@ class Expr:
         """
         return self.__truediv__(other)
 
-    def pow(self, exponent: int | float | Series | Expr) -> Self:
+    def pow(self, exponent: int | float | None | Series | Expr) -> Self:
         """
         Method equivalent of exponentiation operator ``expr ** exponent``.
 

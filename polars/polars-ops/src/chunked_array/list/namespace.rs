@@ -408,7 +408,7 @@ pub trait ListNameSpaceImpl: AsList {
                     }
                     s
                 });
-                builder.append_opt_series(opt_s.as_ref())
+                builder.append_opt_series(opt_s.as_ref()).unwrap();
             });
             builder.finish()
         } else {
@@ -470,7 +470,7 @@ pub trait ListNameSpaceImpl: AsList {
                     // nothing
                     _ => {}
                 }
-                builder.append_series(&acc);
+                builder.append_series(&acc).unwrap();
             }
             builder.finish()
         };

@@ -268,7 +268,7 @@ fn test_window_mapping() -> PolarsResult<()> {
 
     // now sorted
     // this will trigger a fast path
-    let df = df.sort(["fruits"], vec![false])?;
+    let df = df.sort(["fruits"], vec![false], false)?;
 
     let out = df
         .clone()
@@ -295,7 +295,6 @@ fn test_window_mapping() -> PolarsResult<()> {
     assert!(out.column("foo")?.series_equal(&expected));
 
     let out = df
-        .clone()
         .lazy()
         .select([
             col("fruits"),
@@ -365,8 +364,8 @@ fn test_window_exprs_any_all() -> PolarsResult<()> {
     ]?
     .lazy()
     .select([
-        col("var2").any().over([col("var1")]).alias("any"),
-        col("var2").all().over([col("var1")]).alias("all"),
+        col("var2").any(true).over([col("var1")]).alias("any"),
+        col("var2").all(true).over([col("var1")]).alias("all"),
     ])
     .collect()?;
 

@@ -3,29 +3,16 @@ resolver = "2"
 members = [
   "polars",
   "polars-cli",
-  "polars/polars-core",
-  "polars/polars-io",
-  "polars/polars-time",
-  "polars/polars-utils",
-  "polars/polars-ops",
-  "polars/polars-algo",
-  "polars/polars-lazy",
-  "polars/polars-lazy/polars-plan",
-  "polars/polars-lazy/polars-pipe",
-  "polars/polars-sql",
-  "polars/polars-error",
-  "polars/polars-row",
-  "polars/polars-json",
-  "examples/read_csv",
-  "examples/read_json",
-  "examples/read_parquet",
-  "examples/read_parquet_cloud",
-  "examples/string_filter",
-  "examples/python_rust_compiled_function",
+  "polars/polars-*",
+  "polars/polars-lazy/polars-*",
+  "examples/*",
+]
+exclude = [
+  "examples/datasets",
 ]
 
 [workspace.package]
-version = "0.30.0"
+version = "0.31.1"
 
 [workspace.dependencies]
 rayon = "1.6"
@@ -46,11 +33,11 @@ strum_macros = "0.25"
 [workspace.dependencies.arrow]
 package = "arrow2"
 # git = "https://github.com/jorgecarleitao/arrow2"
-git = "https://github.com/ritchie46/arrow2"
+# git = "https://github.com/ritchie46/arrow2"
 # rev = "2d2e7053f9a50810bfe9cecff25ab39089aef98e"
 # path = "../arrow2"
-branch = "polars_2023-06-26"
-version = "0.17"
+# branch = "polars_2023-06-26"
+version = "0.17.2"
 default-features = false
 features = [
   "compute_aggregate",

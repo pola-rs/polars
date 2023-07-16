@@ -31,7 +31,7 @@ use crate::error::{PolarsError, PolarsResult};
 #[allow(dead_code)]
 type Configs<T> = Vec<(T, String)>;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {

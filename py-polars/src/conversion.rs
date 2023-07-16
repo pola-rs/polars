@@ -20,15 +20,17 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyList, PySequence, PyString, PyTuple};
-use pyo3::{PyAny, PyResult};
+use pyo3::types::{
+    PyBool, PyBytes, PyDict, PyFloat, PyList, PySequence, PyString, PyTuple, PyType,
+};
+use pyo3::{intern, PyAny, PyResult};
 use smartstring::alias::String as SmartString;
 
 use crate::error::PyPolarsErr;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
-use crate::py_modules::{POLARS, UTILS};
+use crate::py_modules::{POLARS, SERIES, UTILS};
 use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
@@ -69,17 +71,17 @@ impl<T> From<T> for Wrap<T> {
 
 // extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
 pub(crate) fn get_df(obj: &PyAny) -> PyResult<DataFrame> {
-    let pydf = obj.getattr("_df")?;
+    let pydf = obj.getattr(intern!(obj.py(), "_df"))?;
     Ok(pydf.extract::<PyDataFrame>()?.df)
 }
 
 pub(crate) fn get_lf(obj: &PyAny) -> PyResult<LazyFrame> {
-    let pydf = obj.getattr("_ldf")?;
+    let pydf = obj.getattr(intern!(obj.py(), "_ldf"))?;
     Ok(pydf.extract::<PyLazyFrame>()?.ldf)
 }
 
 pub(crate) fn get_series(obj: &PyAny) -> PyResult<Series> {
-    let pydf = obj.getattr("_s")?;
+    let pydf = obj.getattr(intern!(obj.py(), "_s"))?;
     Ok(pydf.extract::<PySeries>()?.series)
 }
 
@@ -224,11 +226,11 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 s.into_py(py)
             }
             AnyValue::Date(v) => {
-                let convert = utils.getattr("_to_python_date").unwrap();
+                let convert = utils.getattr(intern!(py, "_to_python_date")).unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             }
             AnyValue::Datetime(v, time_unit, time_zone) => {
-                let convert = utils.getattr("_to_python_datetime").unwrap();
+                let convert = utils.getattr(intern!(py, "_to_python_datetime")).unwrap();
                 let time_unit = time_unit.to_ascii();
                 convert
                     .call1((v, time_unit, time_zone.as_ref().map(|s| s.as_str())))
@@ -236,12 +238,12 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     .into_py(py)
             }
             AnyValue::Duration(v, time_unit) => {
-                let convert = utils.getattr("_to_python_timedelta").unwrap();
+                let convert = utils.getattr(intern!(py, "_to_python_timedelta")).unwrap();
                 let time_unit = time_unit.to_ascii();
                 convert.call1((v, time_unit)).unwrap().into_py(py)
             }
             AnyValue::Time(v) => {
-                let convert = utils.getattr("_to_python_time").unwrap();
+                let convert = utils.getattr(intern!(py, "_to_python_time")).unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             }
             AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
@@ -260,7 +262,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Binary(v) => v.into_py(py),
             AnyValue::BinaryOwned(v) => v.into_py(py),
             AnyValue::Decimal(v, scale) => {
-                let convert = utils.getattr("_to_python_decimal").unwrap();
+                let convert = utils.getattr(intern!(py, "_to_python_decimal")).unwrap();
                 const N: usize = 3;
                 let mut buf = [0_u128; N];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);
@@ -285,84 +287,88 @@ impl ToPyObject for Wrap<DataType> {
         let pl = POLARS.as_ref(py);
 
         match &self.0 {
-            DataType::Int8 => pl.getattr("Int8").unwrap().into(),
-            DataType::Int16 => pl.getattr("Int16").unwrap().into(),
-            DataType::Int32 => pl.getattr("Int32").unwrap().into(),
-            DataType::Int64 => pl.getattr("Int64").unwrap().into(),
-            DataType::UInt8 => pl.getattr("UInt8").unwrap().into(),
-            DataType::UInt16 => pl.getattr("UInt16").unwrap().into(),
-            DataType::UInt32 => pl.getattr("UInt32").unwrap().into(),
-            DataType::UInt64 => pl.getattr("UInt64").unwrap().into(),
-            DataType::Float32 => pl.getattr("Float32").unwrap().into(),
-            DataType::Float64 => pl.getattr("Float64").unwrap().into(),
+            DataType::Int8 => pl.getattr(intern!(py, "Int8")).unwrap().into(),
+            DataType::Int16 => pl.getattr(intern!(py, "Int16")).unwrap().into(),
+            DataType::Int32 => pl.getattr(intern!(py, "Int32")).unwrap().into(),
+            DataType::Int64 => pl.getattr(intern!(py, "Int64")).unwrap().into(),
+            DataType::UInt8 => pl.getattr(intern!(py, "UInt8")).unwrap().into(),
+            DataType::UInt16 => pl.getattr(intern!(py, "UInt16")).unwrap().into(),
+            DataType::UInt32 => pl.getattr(intern!(py, "UInt32")).unwrap().into(),
+            DataType::UInt64 => pl.getattr(intern!(py, "UInt64")).unwrap().into(),
+            DataType::Float32 => pl.getattr(intern!(py, "Float32")).unwrap().into(),
+            DataType::Float64 => pl.getattr(intern!(py, "Float64")).unwrap().into(),
             DataType::Decimal(precision, scale) => pl
-                .getattr("Decimal")
+                .getattr(intern!(py, "Decimal"))
                 .unwrap()
                 .call1((*scale, *precision))
                 .unwrap()
                 .into(),
-            DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
-            DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
-            DataType::Binary => pl.getattr("Binary").unwrap().into(),
+            DataType::Boolean => pl.getattr(intern!(py, "Boolean")).unwrap().into(),
+            DataType::Utf8 => pl.getattr(intern!(py, "Utf8")).unwrap().into(),
+            DataType::Binary => pl.getattr(intern!(py, "Binary")).unwrap().into(),
             DataType::Array(inner, size) => {
                 let inner = Wrap(*inner.clone()).to_object(py);
-                let list_class = pl.getattr("Array").unwrap();
+                let list_class = pl.getattr(intern!(py, "Array")).unwrap();
                 list_class.call1((*size, inner)).unwrap().into()
             }
             DataType::List(inner) => {
                 let inner = Wrap(*inner.clone()).to_object(py);
-                let list_class = pl.getattr("List").unwrap();
+                let list_class = pl.getattr(intern!(py, "List")).unwrap();
                 list_class.call1((inner,)).unwrap().into()
             }
-            DataType::Date => pl.getattr("Date").unwrap().into(),
+            DataType::Date => pl.getattr(intern!(py, "Date")).unwrap().into(),
             DataType::Datetime(tu, tz) => {
-                let datetime_class = pl.getattr("Datetime").unwrap();
+                let datetime_class = pl.getattr(intern!(py, "Datetime")).unwrap();
                 datetime_class
                     .call1((tu.to_ascii(), tz.clone()))
                     .unwrap()
                     .into()
             }
             DataType::Duration(tu) => {
-                let duration_class = pl.getattr("Duration").unwrap();
+                let duration_class = pl.getattr(intern!(py, "Duration")).unwrap();
                 duration_class.call1((tu.to_ascii(),)).unwrap().into()
             }
             #[cfg(feature = "object")]
-            DataType::Object(_) => pl.getattr("Object").unwrap().into(),
-            DataType::Categorical(_) => pl.getattr("Categorical").unwrap().into(),
-            DataType::Time => pl.getattr("Time").unwrap().into(),
+            DataType::Object(_) => pl.getattr(intern!(py, "Object")).unwrap().into(),
+            DataType::Categorical(_) => pl.getattr(intern!(py, "Categorical")).unwrap().into(),
+            DataType::Time => pl.getattr(intern!(py, "Time")).unwrap().into(),
             DataType::Struct(fields) => {
-                let field_class = pl.getattr("Field").unwrap();
+                let field_class = pl.getattr(intern!(py, "Field")).unwrap();
                 let iter = fields.iter().map(|fld| {
                     let name = fld.name().as_str();
                     let dtype = Wrap(fld.data_type().clone()).to_object(py);
                     field_class.call1((name, dtype)).unwrap()
                 });
                 let fields = PyList::new(py, iter);
-                let struct_class = pl.getattr("Struct").unwrap();
+                let struct_class = pl.getattr(intern!(py, "Struct")).unwrap();
                 struct_class.call1((fields,)).unwrap().into()
             }
-            DataType::Null => pl.getattr("Null").unwrap().into(),
-            DataType::Unknown => pl.getattr("Unknown").unwrap().into(),
+            DataType::Null => pl.getattr(intern!(py, "Null")).unwrap().into(),
+            DataType::Unknown => pl.getattr(intern!(py, "Unknown")).unwrap().into(),
         }
     }
 }
 
 impl FromPyObject<'_> for Wrap<Field> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let name = ob.getattr("name")?.str()?.to_str()?;
-        let dtype = ob.getattr("dtype")?.extract::<Wrap<DataType>>()?;
+        let py = ob.py();
+        let name = ob.getattr(intern!(py, "name"))?.str()?.to_str()?;
+        let dtype = ob
+            .getattr(intern!(py, "dtype"))?
+            .extract::<Wrap<DataType>>()?;
         Ok(Wrap(Field::new(name, dtype.0)))
     }
 }
 
 impl FromPyObject<'_> for Wrap<DataType> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
+        let py = ob.py();
         let type_name = ob.get_type().name()?;
 
         let dtype = match type_name {
             "DataTypeClass" => {
                 // just the class, not an object
-                let name = ob.getattr("__name__")?.str()?.to_str()?;
+                let name = ob.getattr(intern!(py, "__name__"))?.str()?.to_str()?;
                 match name {
                     "UInt8" => DataType::UInt8,
                     "UInt16" => DataType::UInt16,
@@ -398,36 +404,36 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 }
             }
             "Duration" => {
-                let time_unit = ob.getattr("time_unit").unwrap();
+                let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
                 DataType::Duration(time_unit)
             }
             "Datetime" => {
-                let time_unit = ob.getattr("time_unit").unwrap();
+                let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
-                let time_zone = ob.getattr("time_zone").unwrap();
+                let time_zone = ob.getattr(intern!(py, "time_zone")).unwrap();
                 let time_zone = time_zone.extract()?;
                 DataType::Datetime(time_unit, time_zone)
             }
             "Decimal" => {
-                let precision = ob.getattr("precision")?.extract()?;
-                let scale = ob.getattr("scale")?.extract()?;
+                let precision = ob.getattr(intern!(py, "precision"))?.extract()?;
+                let scale = ob.getattr(intern!(py, "scale"))?.extract()?;
                 DataType::Decimal(precision, Some(scale))
             }
             "List" => {
-                let inner = ob.getattr("inner").unwrap();
+                let inner = ob.getattr(intern!(py, "inner")).unwrap();
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 DataType::List(Box::new(inner.0))
             }
             "Array" => {
-                let inner = ob.getattr("inner").unwrap();
-                let width = ob.getattr("width").unwrap();
+                let inner = ob.getattr(intern!(py, "inner")).unwrap();
+                let width = ob.getattr(intern!(py, "width")).unwrap();
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 let width = width.extract::<usize>()?;
                 DataType::Array(Box::new(inner.0), width)
             }
             "Struct" => {
-                let fields = ob.getattr("fields")?;
+                let fields = ob.getattr(intern!(py, "fields"))?;
                 let fields = fields
                     .extract::<Vec<Wrap<Field>>>()?
                     .into_iter()
@@ -501,7 +507,7 @@ impl ToPyObject for Wrap<&StructChunked> {
 impl ToPyObject for Wrap<&DurationChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
-        let convert = utils.getattr("_to_python_timedelta").unwrap();
+        let convert = utils.getattr(intern!(py, "_to_python_timedelta")).unwrap();
         let time_unit = Wrap(self.0.time_unit()).to_object(py);
         let iter = self
             .0
@@ -514,7 +520,7 @@ impl ToPyObject for Wrap<&DurationChunked> {
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
-        let convert = utils.getattr("_to_python_datetime").unwrap();
+        let convert = utils.getattr(intern!(py, "_to_python_datetime")).unwrap();
         let time_unit = Wrap(self.0.time_unit()).to_object(py);
         let time_zone = self.0.time_zone().to_object(py);
         let iter = self
@@ -528,7 +534,7 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
 impl ToPyObject for Wrap<&TimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
-        let convert = utils.getattr("_to_python_time").unwrap();
+        let convert = utils.getattr(intern!(py, "_to_python_time")).unwrap();
         let iter = self
             .0
             .into_iter()
@@ -540,7 +546,7 @@ impl ToPyObject for Wrap<&TimeChunked> {
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
-        let convert = utils.getattr("_to_python_date").unwrap();
+        let convert = utils.getattr(intern!(py, "_to_python_date")).unwrap();
         let iter = self
             .0
             .into_iter()
@@ -552,7 +558,7 @@ impl ToPyObject for Wrap<&DateChunked> {
 impl ToPyObject for Wrap<&DecimalChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
-        let convert = utils.getattr("_to_python_decimal").unwrap();
+        let convert = utils.getattr(intern!(py, "_to_python_decimal")).unwrap();
         let py_scale = (-(self.0.scale() as i32)).to_object(py);
         // if we don't know precision, the only safe bet is to set it to 39
         let py_precision = self.0.precision().unwrap_or(39).to_object(py);
@@ -605,28 +611,11 @@ fn abs_decimal_from_digits(
     (v <= MAX_ABS_DEC).then_some((v, scale))
 }
 
-fn materialize_list(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
-    if ob.is_empty()? {
-        Ok(Wrap(AnyValue::List(Series::new_empty("", &DataType::Null))))
-    } else {
-        let avs = ob.extract::<Wrap<Row>>()?.0 .0;
-        // use first `n` values to infer datatype
-        // this value is not too large as this will be done with every
-        // anyvalue that has to be converted, which can be many
-        let n = 25;
-        let dtype =
-            any_values_to_dtype(&avs[..std::cmp::min(avs.len(), n)]).map_err(PyPolarsErr::from)?;
-        let s =
-            Series::from_any_values_and_dtype("", &avs, &dtype, true).map_err(PyPolarsErr::from)?;
-        Ok(Wrap(AnyValue::List(s)))
-    }
-}
-
 fn convert_date(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
     Python::with_gil(|py| {
         let date = UTILS
             .as_ref(py)
-            .getattr("_date_to_pl_date")
+            .getattr(intern!(py, "_date_to_pl_date"))
             .unwrap()
             .call1((ob,))
             .unwrap();
@@ -639,7 +628,9 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
         // windows
         #[cfg(target_arch = "windows")]
         let (seconds, microseconds) = {
-            let convert = UTILS.getattr(py, "_datetime_for_anyvalue_windows").unwrap();
+            let convert = UTILS
+                .getattr(py, intern!(py, "_datetime_for_anyvalue_windows"))
+                .unwrap();
             let out = convert.call1(py, (ob,)).unwrap();
             let out: (i64, i64) = out.extract(py).unwrap();
             out
@@ -647,7 +638,9 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
         // unix
         #[cfg(not(target_arch = "windows"))]
         let (seconds, microseconds) = {
-            let convert = UTILS.getattr(py, "_datetime_for_anyvalue").unwrap();
+            let convert = UTILS
+                .getattr(py, intern!(py, "_datetime_for_anyvalue"))
+                .unwrap();
             let out = convert.call1(py, (ob,)).unwrap();
             let out: (i64, i64) = out.extract(py).unwrap();
             out
@@ -662,21 +655,36 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
     })
 }
 
+type TypeObjectPtr = usize;
+type InitFn = fn(&PyAny) -> PyResult<Wrap<AnyValue<'_>>>;
+pub(crate) static LUT: crate::gil_once_cell::GILOnceCell<PlHashMap<TypeObjectPtr, InitFn>> =
+    crate::gil_once_cell::GILOnceCell::new();
+
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        if ob.is_instance_of::<PyBool>() {
+        // conversion functions
+        fn get_bool(ob: &PyAny) -> PyResult<Wrap<AnyValue<'_>>> {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
-        } else if let Ok(value) = ob.extract::<i64>() {
-            Ok(AnyValue::Int64(value).into())
-        } else if ob.is_instance_of::<PyFloat>() {
-            let value = ob.extract::<f64>().unwrap();
-            Ok(AnyValue::Float64(value).into())
-        } else if ob.is_instance_of::<PyString>() {
-            let value = ob.extract::<&'s str>().unwrap();
+        }
+
+        fn get_int(ob: &PyAny) -> PyResult<Wrap<AnyValue<'_>>> {
+            // can overflow
+            match ob.extract::<i64>() {
+                Ok(v) => Ok(AnyValue::Int64(v).into()),
+                Err(_) => Ok(AnyValue::UInt64(ob.extract::<u64>()?).into()),
+            }
+        }
+
+        fn get_float(ob: &PyAny) -> PyResult<Wrap<AnyValue<'_>>> {
+            Ok(AnyValue::Float64(ob.extract::<f64>().unwrap()).into())
+        }
+
+        fn get_str(ob: &PyAny) -> PyResult<Wrap<AnyValue<'_>>> {
+            let value = ob.extract::<&str>().unwrap();
             Ok(AnyValue::Utf8(value).into())
-        } else if ob.is_none() {
-            Ok(AnyValue::Null.into())
-        } else if ob.is_instance_of::<PyDict>() {
+        }
+
+        fn get_struct(ob: &PyAny) -> PyResult<Wrap<AnyValue<'_>>> {
             let dict = ob.downcast::<PyDict>().unwrap();
             let len = dict.len();
             let mut keys = Vec::with_capacity(len);
@@ -689,86 +697,197 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 vals.push(val)
             }
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
-        } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
-            materialize_list(ob)
-        } else if let Ok(value) = ob.extract::<u64>() {
-            Ok(AnyValue::UInt64(value).into())
-        } else if ob.hasattr("_s")? {
-            let py_pyseries = ob.getattr("_s").unwrap();
-            let series = py_pyseries.extract::<PySeries>().unwrap().series;
-            Ok(Wrap(AnyValue::List(series)))
-        } else if let Ok(v) = ob.extract::<&'s [u8]>() {
-            Ok(AnyValue::Binary(v).into())
-        } else {
-            let type_name = ob.get_type().name()?;
-            match type_name {
-                "datetime" => convert_datetime(ob),
-                "date" => convert_date(ob),
-                "timedelta" => Python::with_gil(|py| {
-                    let td = UTILS
-                        .as_ref(py)
-                        .getattr("_timedelta_to_pl_timedelta")
-                        .unwrap()
-                        .call1((ob, "us"))
-                        .unwrap();
-                    let v = td.extract::<i64>().unwrap();
-                    Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
-                }),
-                "time" => Python::with_gil(|py| {
-                    let time = UTILS
-                        .as_ref(py)
-                        .getattr("_time_to_pl_time")
-                        .unwrap()
-                        .call1((ob,))
-                        .unwrap();
-                    let v = time.extract::<i64>().unwrap();
-                    Ok(Wrap(AnyValue::Time(v)))
-                }),
-                "Decimal" => {
-                    let (sign, digits, exp): (i8, Vec<u8>, i32) =
-                        ob.call_method0("as_tuple").unwrap().extract().unwrap();
-                    // note: using Vec<u8> is not the most efficient thing here (input is a tuple)
-                    let (mut v, scale) = abs_decimal_from_digits(digits, exp).ok_or_else(|| {
-                        PyErr::from(PyPolarsErr::Other(
-                            "Decimal is too large to fit in Decimal128".into(),
-                        ))
-                    })?;
-                    if sign > 0 {
-                        v = -v; // won't overflow since -i128::MAX > i128::MIN
-                    }
-                    Ok(Wrap(AnyValue::Decimal(v, scale)))
+        }
+
+        fn get_list(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+            fn get_list_with_constructor(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+                // Use the dedicated constructor
+                // this constructor is able to go via dedicated type constructors
+                // so it can be much faster
+                Python::with_gil(|py| {
+                    let s = SERIES.call1(py, (ob,))?;
+                    get_series_el(s.as_ref(py))
+                })
+            }
+
+            if ob.is_empty()? {
+                Ok(Wrap(AnyValue::List(Series::new_empty("", &DataType::Null))))
+            } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
+                let list = ob.downcast::<PySequence>().unwrap();
+
+                let mut avs = Vec::with_capacity(25);
+                let mut iter = list.iter()?;
+
+                for item in (&mut iter).take(25) {
+                    avs.push(item?.extract::<Wrap<AnyValue>>()?.0)
                 }
-                "range" => materialize_list(ob),
-                _ => {
-                    // special branch for np.float as this fails isinstance float
-                    if let Ok(value) = ob.extract::<f64>() {
-                        return Ok(AnyValue::Float64(value).into());
+
+                let (dtype, n_types) = any_values_to_dtype(&avs).map_err(PyPolarsErr::from)?;
+
+                // we only take this path if there is no question of the data-type
+                if dtype.is_primitive() && n_types == 1 {
+                    get_list_with_constructor(ob)
+                } else {
+                    // push the rest
+                    avs.reserve(list.len()?);
+                    for item in iter {
+                        avs.push(item?.extract::<Wrap<AnyValue>>()?.0)
                     }
 
-                    // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
-                    // so need this workaround instead of `isinstance(ob, datetime)`.
-                    let bases = ob.get_type().getattr("__bases__")?.iter()?;
-                    for base in bases {
-                        let parent_type = base.unwrap().str().unwrap().to_str().unwrap();
-                        match parent_type {
-                            "<class 'datetime.datetime'>" => {
-                                // `datetime.datetime` is a subclass of `datetime.date`,
-                                // so need to check `datetime.datetime` first
-                                return convert_datetime(ob);
-                            }
-                            "<class 'datetime.date'>" => {
-                                return convert_date(ob);
-                            }
-                            _ => (),
-                        }
-                    }
-
-                    // this is slow, but hey don't use objects
-                    let v = &ObjectValue { inner: ob.into() };
-                    Ok(Wrap(AnyValue::ObjectOwned(OwnedObject(v.to_boxed()))))
+                    let s = Series::from_any_values_and_dtype("", &avs, &dtype, true)
+                        .map_err(PyPolarsErr::from)?;
+                    Ok(Wrap(AnyValue::List(s)))
                 }
+            } else {
+                // range will take this branch
+                get_list_with_constructor(ob)
             }
         }
+
+        fn get_series_el(ob: &PyAny) -> PyResult<Wrap<AnyValue<'static>>> {
+            let py_pyseries = ob.getattr(intern!(ob.py(), "_s")).unwrap();
+            let series = py_pyseries.extract::<PySeries>().unwrap().series;
+            Ok(Wrap(AnyValue::List(series)))
+        }
+
+        fn get_bin(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+            let value = ob.extract::<&[u8]>().unwrap();
+            Ok(AnyValue::Binary(value).into())
+        }
+
+        fn get_null(_ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+            Ok(AnyValue::Null.into())
+        }
+
+        fn get_timedelta(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+            Python::with_gil(|py| {
+                let td = UTILS
+                    .as_ref(py)
+                    .getattr(intern!(py, "_timedelta_to_pl_timedelta"))
+                    .unwrap()
+                    .call1((ob, intern!(py, "us")))
+                    .unwrap();
+                let v = td.extract::<i64>().unwrap();
+                Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
+            })
+        }
+
+        fn get_time(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+            Python::with_gil(|py| {
+                let time = UTILS
+                    .as_ref(py)
+                    .getattr(intern!(py, "_time_to_pl_time"))
+                    .unwrap()
+                    .call1((ob,))
+                    .unwrap();
+                let v = time.extract::<i64>().unwrap();
+                Ok(Wrap(AnyValue::Time(v)))
+            })
+        }
+
+        fn get_decimal(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+            let (sign, digits, exp): (i8, Vec<u8>, i32) = ob
+                .call_method0(intern!(ob.py(), "as_tuple"))
+                .unwrap()
+                .extract()
+                .unwrap();
+            // note: using Vec<u8> is not the most efficient thing here (input is a tuple)
+            let (mut v, scale) = abs_decimal_from_digits(digits, exp).ok_or_else(|| {
+                PyErr::from(PyPolarsErr::Other(
+                    "Decimal is too large to fit in Decimal128".into(),
+                ))
+            })?;
+            if sign > 0 {
+                v = -v; // won't overflow since -i128::MAX > i128::MIN
+            }
+            Ok(Wrap(AnyValue::Decimal(v, scale)))
+        }
+
+        fn get_object(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+            // this is slow, but hey don't use objects
+            let v = &ObjectValue { inner: ob.into() };
+            Ok(Wrap(AnyValue::ObjectOwned(OwnedObject(v.to_boxed()))))
+        }
+
+        // TYPE key
+        let type_object_ptr = PyType::as_type_ptr(ob.get_type()) as usize;
+
+        Python::with_gil(|py| {
+            LUT.with_gil(py, |lut| {
+                // get the conversion function
+                let convert_fn = lut.entry(type_object_ptr).or_insert_with(
+                    // This only runs if type is not in LUT
+                    || {
+                        if ob.is_instance_of::<PyBool>() {
+                            get_bool
+                            // TODO: this heap allocs on failure
+                        } else if ob.extract::<i64>().is_ok() {
+                            get_int
+                        } else if ob.is_instance_of::<PyFloat>() {
+                            get_float
+                        } else if ob.is_instance_of::<PyString>() {
+                            get_str
+                        } else if ob.is_instance_of::<PyDict>() {
+                            get_struct
+                        } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
+                            get_list
+                        } else if ob.hasattr(intern!(py, "_s")).unwrap() {
+                            get_series_el
+                        }
+                        // TODO: this heap allocs on failure
+                        else if ob.extract::<&'s [u8]>().is_ok() {
+                            get_bin
+                        } else if ob.is_none() {
+                            get_null
+                        } else {
+                            let type_name = ob.get_type().name().unwrap();
+                            match type_name {
+                                "datetime" => convert_datetime,
+                                "date" => convert_date,
+                                "timedelta" => get_timedelta,
+                                "time" => get_time,
+                                "Decimal" => get_decimal,
+                                "range" => get_list,
+                                _ => {
+                                    // special branch for np.float as this fails isinstance float
+                                    if ob.extract::<f64>().is_ok() {
+                                        return get_float;
+                                    }
+
+                                    // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
+                                    // so need this workaround instead of `isinstance(ob, datetime)`.
+                                    let bases = ob
+                                        .get_type()
+                                        .getattr(intern!(py, "__bases__"))
+                                        .unwrap()
+                                        .iter()
+                                        .unwrap();
+                                    for base in bases {
+                                        let parent_type =
+                                            base.unwrap().str().unwrap().to_str().unwrap();
+                                        match parent_type {
+                                            "<class 'datetime.datetime'>" => {
+                                                // `datetime.datetime` is a subclass of `datetime.date`,
+                                                // so need to check `datetime.datetime` first
+                                                return convert_datetime;
+                                            }
+                                            "<class 'datetime.date'>" => {
+                                                return convert_date;
+                                            }
+                                            _ => (),
+                                        }
+                                    }
+
+                                    get_object
+                                }
+                            }
+                        }
+                    },
+                );
+
+                convert_fn(ob)
+            })
+        })
     }
 }
 
@@ -1307,7 +1426,7 @@ impl FromPyObject<'_> for Wrap<SetOperation> {
             "union" => SetOperation::Union,
             "difference" => SetOperation::Difference,
             "intersection" => SetOperation::Intersection,
-            "symmetric_difference" => SetOperation::Difference,
+            "symmetric_difference" => SetOperation::SymmetricDifference,
             v => {
                 return Err(PyValueError::new_err(format!(
                     "validate must be one of {{'union', 'difference', 'intersection', 'symmetric_difference'}}, got {v}",

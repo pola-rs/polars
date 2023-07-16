@@ -6,30 +6,16 @@ pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
 
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use ALogicalPlan::*;
-        match lp {
-            CsvScan {
-                options:
-                    CsvParserOptions {
-                        row_count: Some(_), ..
-                    },
+        matches!(
+            lp,
+            Scan {
+                file_options: FileScanOptions {
+                    row_count: Some(_),
+                    ..
+                },
                 ..
             }
-            | ParquetScan {
-                options:
-                    ParquetOptions {
-                        row_count: Some(_), ..
-                    },
-                ..
-            }
-            | IpcScan {
-                options:
-                    IpcScanOptionsInner {
-                        row_count: Some(_), ..
-                    },
-                ..
-            } => true,
-            _ => false,
-        }
+        )
     })
 }
 
@@ -39,21 +25,16 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
 
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use ALogicalPlan::*;
-        match lp {
+        matches!(
+            lp,
             DataFrameScan {
-                selection: Some(_), ..
+                selection: Some(_),
+                ..
+            } | Scan {
+                predicate: Some(_),
+                ..
             }
-            | CsvScan {
-                predicate: Some(_), ..
-            }
-            | ParquetScan {
-                predicate: Some(_), ..
-            }
-            | IpcScan {
-                predicate: Some(_), ..
-            } => true,
-            _ => false,
-        }
+        )
     })
 }
 
@@ -89,9 +70,7 @@ fn slice_at_scan(q: LazyFrame) -> bool {
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
-            CsvScan { options, .. } => options.n_rows.is_some(),
-            ParquetScan { options, .. } => options.n_rows.is_some(),
-            IpcScan { options, .. } => options.n_rows.is_some(),
+            Scan { file_options, .. } => file_options.n_rows.is_some(),
             _ => false,
         }
     })
@@ -531,14 +510,14 @@ fn test_with_column_prune() -> PolarsResult<()> {
     // check if with_column is pruned
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use ALogicalPlan::*;
-        match lp {
+
+        matches!(
+            lp,
             ALogicalPlan::MapFunction {
                 function: FunctionNode::FastProjection { .. },
                 ..
-            }
-            | DataFrameScan { .. } => true,
-            _ => false,
-        }
+            } | DataFrameScan { .. }
+        )
     }));
     assert_eq!(
         q.schema().unwrap().as_ref(),
@@ -579,8 +558,8 @@ fn test_flatten_unions() -> PolarsResult<()> {
         ..Default::default()
     };
     let lf2 = concat(&[lf.clone(), lf.clone()], args).unwrap();
-    let lf3 = concat(&[lf.clone(), lf.clone(), lf.clone()], args).unwrap();
-    let lf4 = concat(&[lf2.clone(), lf3], args).unwrap();
+    let lf3 = concat(&[lf.clone(), lf.clone(), lf], args).unwrap();
+    let lf4 = concat(&[lf2, lf3], args).unwrap();
     let root = lf4.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     let lp = lp_arena.get(root);
     match lp {

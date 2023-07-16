@@ -16,7 +16,7 @@ fallible-streaming-iterator = "0.1"
 hashbrown.workspace = true
 indexmap.workspace = true
 num-traits.workspace = true
-polars-arrow = { version = "0.30.0", path = "../polars-arrow", default-features = false }
-polars-error = { version = "0.30.0", path = "../polars-error" }
-polars-utils = { version = "0.30.0", path = "../polars-utils" }
+polars-arrow = { version = "0.31.1", path = "../polars-arrow", default-features = false }
+polars-error = { version = "0.31.1", path = "../polars-error" }
+polars-utils = { version = "0.31.1", path = "../polars-utils" }
 simd-json = { version = "0.10", features = ["allow-non-simd", "known-key"] }

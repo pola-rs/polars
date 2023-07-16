@@ -1,4 +1,4 @@
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 /// State of the allowed optimizations
 pub struct OptState {
     pub projection_pushdown: bool,

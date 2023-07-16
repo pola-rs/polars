@@ -29,30 +29,18 @@ pub struct CsvParserOptions {
     pub eol_char: u8,
     pub has_header: bool,
     pub skip_rows: usize,
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
     pub low_memory: bool,
     pub ignore_errors: bool,
-    pub cache: bool,
     pub null_values: Option<NullValues>,
-    pub rechunk: bool,
     pub encoding: CsvEncoding,
-    pub row_count: Option<RowCount>,
     pub try_parse_dates: bool,
-    pub file_counter: FileCount,
 }
 
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
-    pub cache: bool,
     pub parallel: polars_io::parquet::ParallelStrategy,
-    pub rechunk: bool,
-    pub row_count: Option<RowCount>,
-    pub file_counter: FileCount,
     pub low_memory: bool,
     pub use_statistics: bool,
 }
@@ -83,41 +71,22 @@ pub struct IpcWriterOptions {
     pub maintain_order: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
-    pub cache: bool,
-    pub row_count: Option<RowCount>,
-    pub rechunk: bool,
     pub memmap: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct IpcScanOptionsInner {
+/// Generic options for all file types
+pub struct FileScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<Vec<String>>>,
     pub cache: bool,
     pub row_count: Option<RowCount>,
     pub rechunk: bool,
     pub file_counter: FileCount,
-    pub memmap: bool,
-}
-
-impl From<IpcScanOptions> for IpcScanOptionsInner {
-    fn from(options: IpcScanOptions) -> Self {
-        Self {
-            n_rows: options.n_rows,
-            with_columns: options.with_columns,
-            cache: options.cache,
-            row_count: options.row_count,
-            rechunk: options.rechunk,
-            file_counter: Default::default(),
-            memmap: options.memmap,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
@@ -190,6 +159,9 @@ pub struct FunctionOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
     pub collect_groups: ApplyOptions,
+    // used for formatting, (only for anonymous functions)
+    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
+    pub fmt_str: &'static str,
     /// There can be two ways of expanding wildcards:
     ///
     /// Say the schema is 'a', 'b' and there is a function f
@@ -205,7 +177,6 @@ pub struct FunctionOptions {
     ///
     /// this also accounts for regex expansion
     pub input_wildcard_expansion: bool,
-
     /// automatically explode on unit length it ran as final aggregation.
     ///
     /// this is the case for aggregations like sum, min, covariance etc.
@@ -217,10 +188,6 @@ pub struct FunctionOptions {
     /// head_1(x) -> {1}
     /// sum(x) -> {4}
     pub auto_explode: bool,
-    // used for formatting, (only for anonymous functions)
-    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
-    pub fmt_str: &'static str,
-
     // if the expression and its inputs should be cast to supertypes
     pub cast_to_supertypes: bool,
     // apply physical expression may rename the output of this function
@@ -233,6 +200,7 @@ pub struct FunctionOptions {
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
+    pub allow_group_aware: bool,
 }
 
 impl FunctionOptions {
@@ -265,6 +233,7 @@ impl Default for FunctionOptions {
             pass_name_to_apply: false,
             changes_length: false,
             check_lengths: UnsafeBool(true),
+            allow_group_aware: true,
         }
     }
 }
@@ -285,6 +254,7 @@ pub struct SortArguments {
     pub descending: Vec<bool>,
     pub nulls_last: bool,
     pub slice: Option<(i64, usize)>,
+    pub maintain_order: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

@@ -17,7 +17,7 @@ pub trait SeriesMethods: SeriesSealed {
         let cols = vec![values, counts.into_series()];
         let df = DataFrame::new_no_checks(cols);
         if sorted {
-            df.sort(["counts"], true)
+            df.sort(["counts"], true, false)
         } else {
             Ok(df)
         }
@@ -39,7 +39,7 @@ pub trait SeriesMethods: SeriesSealed {
         }
     }
 
-    fn is_sorted(&self, options: SortOptions) -> bool {
+    fn is_sorted(&self, options: SortOptions) -> PolarsResult<bool> {
         let s = self.as_series();
 
         // fast paths
@@ -50,12 +50,30 @@ pub trait SeriesMethods: SeriesSealed {
                 && !options.nulls_last
                 && matches!(s.is_sorted_flag(), IsSorted::Ascending))
         {
-            return true;
+            return Ok(true);
         }
-
-        // TODO! optimize
-        let out = s.sort_with(options);
-        out.eq(s)
+        let nc = s.null_count();
+        let slen = s.len() - nc - 1; // Number of comparisons we might have to do
+        if nc == s.len() {
+            // All nulls is all equal
+            return Ok(true);
+        }
+        if nc > 0 {
+            let nulls = s.chunks().iter().flat_map(|c| c.validity().unwrap());
+            let mut npairs = nulls.clone().zip(nulls.skip(1));
+            // A null never precedes (follows) a non-null iff all nulls are at the end (beginning)
+            if (options.nulls_last && npairs.any(|(a, b)| !a && b)) || npairs.any(|(a, b)| a && !b)
+            {
+                return Ok(false);
+            }
+        }
+        // Compare adjacent elements with no-copy slices that don't include any nulls
+        let offset = !options.nulls_last as i64 * nc as i64;
+        let (s1, s2) = (s.slice(offset, slen), s.slice(offset + 1, slen));
+        match options.descending {
+            true => Ok(Series::gt_eq(&s1, &s2)?.all()),
+            false => Ok(Series::lt_eq(&s1, &s2)?.all()),
+        }
     }
 }
 

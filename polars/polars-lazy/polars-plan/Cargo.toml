@@ -16,12 +16,12 @@ chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2", optional = true }
 futures = { version = "0.3.25", optional = true }
 once_cell.workspace = true
-polars-arrow = { version = "0.30.0", path = "../../polars-arrow" }
-polars-core = { version = "0.30.0", path = "../../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.30.0", path = "../../polars-io", features = ["lazy", "csv"], default-features = false }
-polars-ops = { version = "0.30.0", path = "../../polars-ops", default-features = false }
-polars-time = { version = "0.30.0", path = "../../polars-time", optional = true }
-polars-utils = { version = "0.30.0", path = "../../polars-utils" }
+polars-arrow = { version = "0.31.1", path = "../../polars-arrow" }
+polars-core = { version = "0.31.1", path = "../../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.31.1", path = "../../polars-io", features = ["lazy", "csv"], default-features = false }
+polars-ops = { version = "0.31.1", path = "../../polars-ops", default-features = false }
+polars-time = { version = "0.31.1", path = "../../polars-time", optional = true }
+polars-utils = { version = "0.31.1", path = "../../polars-utils" }
 pyo3 = { version = "0.19", optional = true }
 rayon.workspace = true
 regex = { version = "1.6", optional = true }
@@ -82,7 +82,7 @@ is_unique = ["polars-ops/is_unique"]
 cross_join = ["polars-core/cross_join"]
 asof_join = ["polars-core/asof_join", "polars-time", "polars-ops/asof_join"]
 concat_str = ["polars-core/concat_str"]
-arange = []
+range = []
 mode = ["polars-core/mode"]
 cum_agg = ["polars-core/cum_agg"]
 interpolate = ["polars-ops/interpolate"]
@@ -121,6 +121,8 @@ coalesce = []
 fused = []
 list_sets = ["polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all"]
+cutqcut = ["polars-ops/cutqcut"]
+rle = ["polars-ops/rle"]
 
 bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
 

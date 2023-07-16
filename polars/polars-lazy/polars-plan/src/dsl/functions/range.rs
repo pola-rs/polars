@@ -3,7 +3,7 @@ use super::*;
 /// Create list entries that are range arrays
 /// - if `start` and `end` are a column, every element will expand into an array in a list column.
 /// - if `start` and `end` are literals the output will be of `Int64`.
-#[cfg(feature = "arange")]
+#[cfg(feature = "range")]
 pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
     let input = vec![start, end];
 
@@ -17,7 +17,7 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
     }
 }
 
-#[cfg(feature = "arange")]
+#[cfg(feature = "range")]
 /// Generate a range of integers.
 pub fn int_range(start: Expr, end: Expr, step: i64) -> Expr {
     let input = vec![start, end];
@@ -32,7 +32,7 @@ pub fn int_range(start: Expr, end: Expr, step: i64) -> Expr {
     }
 }
 
-#[cfg(feature = "arange")]
+#[cfg(feature = "range")]
 /// Generate a range of integers for each row of the input columns.
 pub fn int_ranges(start: Expr, end: Expr, step: i64) -> Expr {
     let input = vec![start, end];

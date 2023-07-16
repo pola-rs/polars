@@ -482,7 +482,7 @@ impl AggList for StructChunked {
                 );
                 for idx in groups.all().iter() {
                     let taken = s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize));
-                    builder.append_series(&taken)
+                    builder.append_series(&taken).unwrap();
                 }
                 builder.finish().into_series()
             }
@@ -494,7 +494,7 @@ impl AggList for StructChunked {
                 );
                 for [first, len] in groups {
                     let taken = s.slice(*first as i64, *len as usize);
-                    builder.append_series(&taken)
+                    builder.append_series(&taken).unwrap();
                 }
                 builder.finish().into_series()
             }

@@ -16,6 +16,7 @@ Manipulation/selection
     Expr.clip
     Expr.clip_max
     Expr.clip_min
+    Expr.cut
     Expr.drop_nans
     Expr.drop_nulls
     Expr.explode
@@ -33,11 +34,14 @@ Manipulation/selection
     Expr.lower_bound
     Expr.map_dict
     Expr.pipe
+    Expr.qcut
     Expr.rechunk
     Expr.reinterpret
     Expr.repeat_by
     Expr.reshape
     Expr.reverse
+    Expr.rle
+    Expr.rle_id
     Expr.round
     Expr.sample
     Expr.shift

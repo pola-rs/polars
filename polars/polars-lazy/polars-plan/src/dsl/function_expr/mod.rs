@@ -27,7 +27,7 @@ mod nan;
 mod pow;
 #[cfg(feature = "random")]
 mod random;
-#[cfg(feature = "arange")]
+#[cfg(feature = "range")]
 mod range;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
 mod rolling;
@@ -63,6 +63,10 @@ pub(crate) use correlation::CorrelationMethod;
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
+#[cfg(feature = "cutqcut")]
+use polars_ops::prelude::{cut, qcut};
+#[cfg(feature = "rle")]
+use polars_ops::prelude::{rle, rle_id};
 #[cfg(feature = "random")]
 pub(crate) use random::RandomMethod;
 use schema::FieldsMapper;
@@ -75,7 +79,7 @@ pub use self::boolean::BooleanFunction;
 pub(crate) use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
-#[cfg(feature = "arange")]
+#[cfg(feature = "range")]
 pub(super) use self::range::RangeFunction;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
@@ -103,7 +107,7 @@ pub enum FunctionExpr {
     BinaryExpr(BinaryFunction),
     #[cfg(feature = "temporal")]
     TemporalExpr(TemporalFunction),
-    #[cfg(feature = "arange")]
+    #[cfg(feature = "range")]
     Range(RangeFunction),
     #[cfg(feature = "date_offset")]
     DateOffset(polars_time::Duration),
@@ -198,6 +202,25 @@ pub enum FunctionExpr {
         method: correlation::CorrelationMethod,
         ddof: u8,
     },
+    #[cfg(feature = "cutqcut")]
+    Cut {
+        breaks: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        include_breaks: bool,
+    },
+    #[cfg(feature = "cutqcut")]
+    QCut {
+        probs: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    },
+    #[cfg(feature = "rle")]
+    RLE,
+    #[cfg(feature = "rle")]
+    RLEID,
     ToPhysical,
     #[cfg(feature = "random")]
     Random {
@@ -207,6 +230,7 @@ pub enum FunctionExpr {
         seed: Option<u64>,
         fixed_seed: bool,
     },
+    SetSortedFlag(IsSorted),
 }
 
 impl Display for FunctionExpr {
@@ -229,7 +253,7 @@ impl Display for FunctionExpr {
             BinaryExpr(b) => return write!(f, "{b}"),
             #[cfg(feature = "temporal")]
             TemporalExpr(fun) => return write!(f, "{fun}"),
-            #[cfg(feature = "arange")]
+            #[cfg(feature = "range")]
             Range(func) => return write!(f, "{func}"),
             #[cfg(feature = "date_offset")]
             DateOffset(_) => "dt.offset_by",
@@ -301,9 +325,18 @@ impl Display for FunctionExpr {
             ArrayExpr(af) => return Display::fmt(af, f),
             ConcatExpr(_) => "concat_expr",
             Correlation { method, .. } => return Display::fmt(method, f),
+            #[cfg(feature = "cutqcut")]
+            Cut { .. } => "cut",
+            #[cfg(feature = "cutqcut")]
+            QCut { .. } => "qcut",
+            #[cfg(feature = "rle")]
+            RLE => "rle",
+            #[cfg(feature = "rle")]
+            RLEID => "rle_id",
             ToPhysical => "to_physical",
             #[cfg(feature = "random")]
             Random { method, .. } => method.into(),
+            SetSortedFlag(_) => "set_sorted",
         };
         write!(f, "{s}")
     }
@@ -415,7 +448,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             BinaryExpr(s) => s.into(),
             #[cfg(feature = "temporal")]
             TemporalExpr(func) => func.into(),
-            #[cfg(feature = "arange")]
+            #[cfg(feature = "range")]
             Range(func) => func.into(),
 
             #[cfg(feature = "date_offset")]
@@ -530,6 +563,38 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
             Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            #[cfg(feature = "cutqcut")]
+            Cut {
+                breaks,
+                labels,
+                left_closed,
+                include_breaks,
+            } => map!(
+                cut,
+                breaks.clone(),
+                labels.clone(),
+                left_closed,
+                include_breaks
+            ),
+            #[cfg(feature = "cutqcut")]
+            QCut {
+                probs,
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
+            } => map!(
+                qcut,
+                probs.clone(),
+                labels.clone(),
+                left_closed,
+                allow_duplicates,
+                include_breaks
+            ),
+            #[cfg(feature = "rle")]
+            RLE => map!(rle),
+            #[cfg(feature = "rle")]
+            RLEID => map!(rle_id),
             ToPhysical => map!(dispatch::to_physical),
             #[cfg(feature = "random")]
             Random {
@@ -544,6 +609,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 seed,
                 fixed_seed
             ),
+            SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
         }
     }
 }
@@ -555,6 +621,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         match func {
             #[cfg(feature = "regex")]
             Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
+            CountMatch(pat) => {
+                map!(strings::count_match, &pat)
+            }
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
             Extract { pat, group_index } => {
@@ -563,9 +632,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ExtractAll => {
                 map_as_slice!(strings::extract_all)
             }
-            CountMatch(pat) => {
-                map!(strings::count_match, &pat)
-            }
+            NChars => map!(strings::n_chars),
+            Length => map!(strings::lengths),
             #[cfg(feature = "string_justify")]
             Zfill(alignment) => {
                 map!(strings::zfill, alignment)
@@ -698,7 +766,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     }
 }
 
-#[cfg(feature = "arange")]
+#[cfg(feature = "range")]
 impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: RangeFunction) -> Self {
         use RangeFunction::*;

@@ -61,7 +61,7 @@ fn test_q2() -> PolarsResult<()> {
         .groupby([col("p_partkey")])
         .agg([col("ps_supplycost").min()])
         .join(
-            q1.clone(),
+            q1,
             [col("p_partkey"), col("ps_supplycost")],
             [col("p_partkey"), col("ps_supplycost")],
             JoinType::Inner.into(),
@@ -79,6 +79,7 @@ fn test_q2() -> PolarsResult<()> {
         .sort_by_exprs(
             [cols(["s_acctbal", "n_name", "s_name", "p_partkey"])],
             [true, false, false, false],
+            false,
             false,
         )
         .limit(100)

@@ -77,8 +77,6 @@ unsafe fn encode_one(
                 EMPTY_SENTINEL
             };
             *out.get_unchecked_release_mut(0) = MaybeUninit::new(byte);
-            // write remainder as zeros
-            out.get_unchecked_release_mut(1..).fill(MaybeUninit::new(0));
             1
         }
         Some(val) => {
@@ -106,17 +104,17 @@ unsafe fn encode_one(
                     MaybeUninit::new(BLOCK_CONTINUATION_TOKEN);
             }
 
+            // exactly BLOCK_SIZE bytes
+            // this means we only need to set the length
+            // all other bytes are already initialized
             if src_remainder.is_empty() {
-                // get the last block
-                let start_offset = 1 + (block_count - 1) * (BLOCK_SIZE + 1);
-                let last_dst = dst.get_unchecked_release_mut(start_offset..);
-                last_dst.fill(MaybeUninit::new(0));
-
                 // overwrite the latest continuation marker.
                 // replace the "there is another block" with
                 // "we are finished this, this is the length of this block"
                 *dst.last_mut().unwrap_unchecked() = MaybeUninit::new(BLOCK_SIZE as u8);
-            } else {
+            }
+            // there are remainder bytes
+            else {
                 // get the last block
                 let start_offset = 1 + (block_count - 1) * (BLOCK_SIZE + 1);
                 let last_dst = dst.get_unchecked_release_mut(start_offset..);
@@ -143,8 +141,8 @@ unsafe fn encode_one(
         }
         None => {
             *out.get_unchecked_release_mut(0) = MaybeUninit::new(get_null_sentinel(field));
-            // write remainder as zeros
-            out.get_unchecked_release_mut(1..).fill(MaybeUninit::new(0));
+            // // write remainder as zeros
+            // out.get_unchecked_release_mut(1..).fill(MaybeUninit::new(0));
             1
         }
     }
@@ -161,6 +159,10 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
         let written_len = encode_one(dst, opt_value.map(|v| v.as_uninit()), field);
         *offset += written_len;
     }
+    let offset = out.offsets.last().unwrap();
+    let dst = values.get_unchecked_release_mut(*offset..);
+    // write remainder as zeros
+    dst.fill(MaybeUninit::new(0));
     out.values.set_len(out.values.capacity())
 }
 

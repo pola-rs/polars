@@ -4,6 +4,8 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_arrow::prelude::QuantileInterpolOptions;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
@@ -11,6 +13,7 @@ pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum IsSorted {
     Ascending,
     Descending,

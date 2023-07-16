@@ -402,7 +402,7 @@ impl<'a> AggregationContext<'a> {
                 #[cfg(debug_assertions)]
                 {
                     if self.groups.len() > s.len() {
-                        eprintln!("groups may be out of bounds; more groups than elements in a series is only possible in dynamic groupby")
+                        polars_warn!("groups may be out of bounds; more groups than elements in a series is only possible in dynamic groupby")
                     }
                 }
 

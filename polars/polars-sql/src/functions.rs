@@ -2,6 +2,7 @@ use polars_core::prelude::{polars_bail, polars_err, PolarsError, PolarsResult};
 use polars_lazy::dsl::Expr;
 use polars_plan::dsl::count;
 use polars_plan::logical_plan::LiteralValue;
+use polars_plan::prelude::lit;
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
     WindowSpec, WindowType,
@@ -145,24 +146,46 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ROUND(column_1, 3) from df;
     /// ```
     Round,
+
     // ----
     // String functions
     // ----
+    /// SQL 'ends_with' function
+    /// ```sql
+    /// SELECT ENDS_WITH(column_1, 'a') from df;
+    /// SELECT column_2 from df WHERE ENDS_WITH(column_1, 'a');
+    /// ```
+    EndsWith,
+    /// SQL 'left' function
+    /// ```sql
+    /// SELECT LEFT(column_1, 3) from df;
+    /// ```
+    Left,
+    /// SQL 'length' function (characters)
+    /// ```sql
+    /// SELECT LENGTH(column_1) from df;
+    /// ```
+    Length,
     /// SQL 'lower' function
     /// ```sql
     /// SELECT LOWER(column_1) from df;
     /// ```
     Lower,
-    /// SQL 'upper' function
-    /// ```sql
-    /// SELECT UPPER(column_1) from df;
-    /// ```
-    Upper,
     /// SQL 'ltrim' function
     /// ```sql
     /// SELECT LTRIM(column_1) from df;
     /// ```
     LTrim,
+    /// SQL 'octet_length' function (bytes)
+    /// ```sql
+    /// SELECT OCTET_LENGTH(column_1) from df;
+    /// ```
+    OctetLength,
+    /// SQL 'regexp_like' function
+    /// ```sql
+    /// SELECT REGEXP_LIKE(column_1,'xyz', 'i') from df;
+    /// ```
+    RegexpLike,
     /// SQL 'rtrim' function
     /// ```sql
     /// SELECT RTRIM(column_1) from df;
@@ -174,12 +197,17 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT column_2 from df WHERE STARTS_WITH(column_1, 'a');
     /// ```
     StartsWith,
-    /// SQL 'ends_with' function
+    /// SQL 'substr' function
     /// ```sql
-    /// SELECT ENDS_WITH(column_1, 'a') from df;
-    /// SELECT column_2 from df WHERE ENDS_WITH(column_1, 'a');
+    /// SELECT SUBSTR(column_1, 3, 5) from df;
     /// ```
-    EndsWith,
+    Substring,
+    /// SQL 'upper' function
+    /// ```sql
+    /// SELECT UPPER(column_1) from df;
+    /// ```
+    Upper,
+
     // ----
     // Aggregate functions
     // ----
@@ -231,6 +259,7 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT LAST(column_1) from df;
     /// ```
     Last,
+
     // ----
     // Array functions
     // ----
@@ -349,7 +378,9 @@ impl PolarsSqlFunctions {
             "ltrim",
             "max",
             "min",
+            "octet_length",
             "pow",
+            "power",
             "radians",
             "round",
             "rtrim",
@@ -402,17 +433,24 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "log10" => Self::Log10,
             "log1p" => Self::Log1p,
             "log2" => Self::Log2,
-            "pow" => Self::Pow,
+            "pow" | "power" => Self::Pow,
             "round" => Self::Round,
+
             // ----
             // String functions
             // ----
             "ends_with" => Self::EndsWith,
+            "length" => Self::Length,
+            "left" => Self::Left,
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
+            "octet_length" => Self::OctetLength,
+            "regexp_like" => Self::RegexpLike,
             "rtrim" => Self::RTrim,
             "starts_with" => Self::StartsWith,
+            "substr" => Self::Substring,
             "upper" => Self::Upper,
+
             // ----
             // Aggregate functions
             // ----
@@ -425,6 +463,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "stddev" | "stddev_samp" => Self::StdDev,
             "sum" => Self::Sum,
             "variance" | "var_samp" => Self::Variance,
+
             // ----
             // Array functions
             // ----
@@ -438,6 +477,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "array_unique" => Self::ArrayUnique,
             "array_upper" => Self::ArrayMax,
             "unnest" => Self::Explode,
+
             other => polars_bail!(InvalidOperation: "unsupported SQL function: {}", other),
         })
     }
@@ -498,6 +538,15 @@ impl SqlFunctionVisitor<'_> {
             // String functions
             // ----
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
+            Left => self.try_visit_binary(|e, length| {
+                Ok(e.str().str_slice(0, match length {
+                    Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
+                    _ => {
+                        polars_bail!(InvalidOperation: "Invalid 'length' for Left: {}", function.args[1]);
+                    }
+                }))
+            }),
+            Length => self.visit_unary(|e| e.str().n_chars()),
             Lower => self.visit_unary(|e| e.str().to_lowercase()),
             LTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().lstrip(None)),
@@ -506,6 +555,24 @@ impl SqlFunctionVisitor<'_> {
                     "Invalid number of arguments for LTrim: {}",
                     function.args.len()
                 ),
+            },
+            OctetLength => self.visit_unary(|e| e.str().lengths()),
+            RegexpLike => match function.args.len() {
+                2 => self.visit_binary(|e, s| e.str().contains(s, true)),
+                3 => self.try_visit_ternary(|e, pat, flags| {
+                    Ok(e.str().contains(
+                        match (pat, flags) {
+                            (Expr::Literal(LiteralValue::Utf8(s)), Expr::Literal(LiteralValue::Utf8(f))) => {
+                                if f.is_empty() { polars_bail!(InvalidOperation: "Invalid/empty 'flags' for RegexpLike: {}", function.args[2]); };
+                                lit(format!("(?{}){}", f, s))
+                            },
+                            _ => {
+                                polars_bail!(InvalidOperation: "Invalid arguments for RegexpLike: {}, {}", function.args[1], function.args[2]);
+                            },
+                        },
+                        true))
+                }),
+                _ => polars_bail!(InvalidOperation:"Invalid number of arguments for RegexpLike: {}",function.args.len()),
             },
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().rstrip(None)),
@@ -516,6 +583,34 @@ impl SqlFunctionVisitor<'_> {
                 ),
             },
             StartsWith => self.visit_binary(|e, s| e.str().starts_with(s)),
+            Substring => match function.args.len() {
+                2 => self.try_visit_binary(|e, start| {
+                    Ok(e.str().str_slice(match start {
+                        Expr::Literal(LiteralValue::Int64(n)) => n,
+                        _ => {
+                            polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
+                        }
+                    }, None))
+                }),
+                3 => self.try_visit_ternary(|e, start, length| {
+                    Ok(e.str().str_slice(
+                        match start {
+                            Expr::Literal(LiteralValue::Int64(n)) => n,
+                            _ => {
+                                polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
+                            }
+                        }, match length {
+                            Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
+                            _ => {
+                                polars_bail!(InvalidOperation: "Invalid 'length' for Substring: {}", function.args[2]);
+                            }
+                        }))
+                }),
+                _ => polars_bail!(InvalidOperation:
+                    "Invalid number of arguments for Substring: {}",
+                    function.args.len()
+                ),
+            }
             Upper => self.visit_unary(|e| e.str().to_uppercase()),
             // ----
             // Aggregate functions
@@ -627,10 +722,35 @@ impl SqlFunctionVisitor<'_> {
         let function = self.func;
         let args = extract_args(function);
         match args.as_slice() {
-            [FunctionArgExpr::Expr(sql_expr), FunctionArgExpr::Expr(sql_expr2)] => {
-                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+            [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2)] => {
+                let expr1 = parse_sql_expr(sql_expr1, self.ctx)?;
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
-                f(expr, expr2)
+                f(expr1, expr2)
+            }
+            _ => self.not_supported_error(),
+        }
+    }
+
+    // fn visit_ternary<Arg: FromSqlExpr>(
+    //     &self,
+    //     f: impl Fn(Expr, Arg, Arg) -> Expr,
+    // ) -> PolarsResult<Expr> {
+    //     self.try_visit_ternary(|e, a1, a2| Ok(f(e, a1, a2)))
+    // }
+
+    fn try_visit_ternary<Arg: FromSqlExpr>(
+        &self,
+        f: impl Fn(Expr, Arg, Arg) -> PolarsResult<Expr>,
+    ) -> PolarsResult<Expr> {
+        let function = self.func;
+        let args = extract_args(function);
+        match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2), FunctionArgExpr::Expr(sql_expr3)] =>
+            {
+                let expr1 = parse_sql_expr(sql_expr1, self.ctx)?;
+                let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
+                let expr3 = Arg::from_sql_expr(sql_expr3, self.ctx)?;
+                f(expr1, expr2, expr3)
             }
             _ => self.not_supported_error(),
         }

@@ -34,19 +34,7 @@ impl OptimizationRule for DelayRechunk {
                 let mut input_node = None;
                 for (node, lp) in (&*lp_arena).iter(*input) {
                     match lp {
-                        // we get the input node
-                        #[cfg(feature = "parquet")]
-                        ParquetScan { .. } => {
-                            input_node = Some(node);
-                            break;
-                        }
-                        #[cfg(feature = "csv")]
-                        CsvScan { .. } => {
-                            input_node = Some(node);
-                            break;
-                        }
-                        #[cfg(feature = "ipc")]
-                        IpcScan { .. } => {
+                        Scan { .. } => {
                             input_node = Some(node);
                             break;
                         }
@@ -62,14 +50,10 @@ impl OptimizationRule for DelayRechunk {
 
                 if let Some(node) = input_node {
                     match lp_arena.get_mut(node) {
-                        #[cfg(feature = "csv")]
-                        CsvScan { options, .. } => {
-                            options.rechunk = false;
-                        }
-                        #[cfg(feature = "parquet")]
-                        ParquetScan { options, .. } => options.rechunk = false,
-                        #[cfg(feature = "ipc")]
-                        IpcScan { options, .. } => {
+                        Scan {
+                            file_options: options,
+                            ..
+                        } => {
                             options.rechunk = false;
                         }
                         Union { options, .. } => {

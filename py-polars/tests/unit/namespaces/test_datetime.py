@@ -139,6 +139,32 @@ def test_local_time_sortedness(time_zone: str | None) -> None:
     assert result.flags["SORTED_DESC"] is False
 
 
+@pytest.mark.parametrize(
+    ("time_zone", "offset", "expected"),
+    [
+        (None, "1d", True),
+        ("Asia/Kathmandu", "1d", False),
+        ("UTC", "1d", True),
+        (None, "1mo", True),
+        ("Asia/Kathmandu", "1mo", False),
+        ("UTC", "1mo", True),
+        (None, "1w", True),
+        ("Asia/Kathmandu", "1w", False),
+        ("UTC", "1w", True),
+        (None, "1h", True),
+        ("Asia/Kathmandu", "1h", True),
+        ("UTC", "1h", True),
+    ],
+)
+def test_offset_by_sortedness(
+    time_zone: str | None, offset: str, expected: bool
+) -> None:
+    ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
+    result = ser.dt.offset_by(offset)
+    assert result.flags["SORTED_ASC"] == expected
+    assert result.flags["SORTED_DESC"] is False
+
+
 def test_dt_datetime_date_time_invalid() -> None:
     with pytest.raises(ComputeError, match="expected Datetime"):
         pl.Series([date(2021, 1, 2)]).dt.datetime()

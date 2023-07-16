@@ -14,7 +14,7 @@ fn cached_before_root(q: LazyFrame) {
 fn test_cse_self_joins() -> PolarsResult<()> {
     let lf = scan_foods_ipc();
 
-    let lf = lf.clone().with_column(col("category").str().to_uppercase());
+    let lf = lf.with_column(col("category").str().to_uppercase());
 
     let lf = lf
         .clone()
@@ -48,8 +48,8 @@ fn test_cse_unions() -> PolarsResult<()> {
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
-            IpcScan { options, .. } => {
-                if let Some(columns) = &options.with_columns {
+            Scan { file_options, .. } => {
+                if let Some(columns) = &file_options.with_columns {
                     columns.len() == 2
                 } else {
                     false
@@ -74,10 +74,7 @@ fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
     .lazy();
 
     let q1 = q.clone().filter(col("a").eq(lit(1))).select([col("a")]);
-    let q2 = q
-        .clone()
-        .filter(col("a").eq(lit(1)))
-        .select([col("a"), col("b")]);
+    let q2 = q.filter(col("a").eq(lit(1))).select([col("a"), col("b")]);
     let q = q1
         .left_join(q2, col("a"), col("a"))
         .with_common_subplan_elimination(true);
@@ -174,7 +171,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
     .lazy();
 
     let a = x.left_join(z.clone(), col("a"), col("a"));
-    let b = y.left_join(z.clone(), col("a"), col("a"));
+    let b = y.left_join(z, col("a"), col("a"));
     let c = a.join(
         b,
         &[col("a"), col("b")],
@@ -239,7 +236,7 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
             JoinType::Semi.into(),
         )
         .join(
-            lf1.clone().filter(col("x").neq(lit(8))),
+            lf1.filter(col("x").neq(lit(8))),
             [col("id")],
             [col("id")],
             JoinType::Semi.into(),

@@ -201,21 +201,20 @@ pub(crate) fn insert_streaming_nodes(
                     )
                 }
             }
-            #[cfg(feature = "csv")]
-            CsvScan { options, .. } => {
+            Scan {
+                file_options: options,
+                scan_type,
+                ..
+            } if scan_type.streamable() => {
                 if state.streamable {
-                    // the batched csv reader doesn't stop exactly at n_rows
-                    if let Some(n_rows) = options.n_rows {
-                        insert_slice(root, 0, n_rows as IdxSize, lp_arena, &mut state);
+                    #[cfg(feature = "csv")]
+                    if matches!(scan_type, FileScan::Csv { .. }) {
+                        // the batched csv reader doesn't stop exactly at n_rows
+                        if let Some(n_rows) = options.n_rows {
+                            insert_slice(root, 0, n_rows as IdxSize, lp_arena, &mut state);
+                        }
                     }
 
-                    state.sources.push(root);
-                    pipeline_trees[current_idx].push(state)
-                }
-            }
-            #[cfg(feature = "parquet")]
-            ParquetScan { .. } => {
-                if state.streamable {
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)
                 }
@@ -267,20 +266,11 @@ pub(crate) fn insert_streaming_nodes(
             Union { inputs, options }
                 if options.slice.is_none()
                     && inputs.iter().all(|node| match lp_arena.get(*node) {
-                        #[cfg(feature = "parquet")]
-                        ParquetScan { .. } => true,
-                        #[cfg(feature = "csv")]
-                        CsvScan { .. } => true,
+                        Scan { .. } => true,
                         MapFunction {
                             input,
                             function: FunctionNode::Rechunk,
-                        } => match lp_arena.get(*input) {
-                            #[cfg(feature = "parquet")]
-                            ParquetScan { .. } => true,
-                            #[cfg(feature = "csv")]
-                            CsvScan { .. } => true,
-                            _ => false,
-                        },
+                        } => matches!(lp_arena.get(*input), Scan { .. }),
                         _ => false,
                     }) =>
             {
@@ -346,6 +336,7 @@ pub(crate) fn insert_streaming_nodes(
             #[allow(unused_variables)]
             lp @ Aggregate {
                 input,
+                keys,
                 aggs,
                 maintain_order: false,
                 apply: None,
@@ -379,18 +370,34 @@ pub(crate) fn insert_streaming_nodes(
                     }
                 }
 
-                if can_stream
-                    && aggs.iter().all(|node| {
+                let valid_agg = || {
+                    aggs.iter().all(|node| {
                         polars_pipe::pipeline::can_convert_to_hash_agg(
                             *node,
                             expr_arena,
                             &input_schema,
                         )
                     })
-                    && schema
+                };
+
+                let valid_key = || {
+                    keys.iter().all(|node| {
+                        expr_arena
+                            .get(*node)
+                            .get_type(schema, Context::Default, expr_arena)
+                            // ensure we don't groupby list
+                            .map(|dt| !matches!(dt, DataType::List(_)))
+                            .unwrap_or(false)
+                    })
+                };
+
+                let valid_types = || {
+                    schema
                         .iter_dtypes()
                         .all(|dt| allowed_dtype(dt, string_cache))
-                {
+                };
+
+                if can_stream && valid_agg() && valid_key() && valid_types() {
                     state.streamable = true;
                     state.operators_sinks.push(PipelineNode::Sink(root));
                     stack.push((*input, state, current_idx))

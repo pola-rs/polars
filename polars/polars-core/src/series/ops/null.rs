@@ -7,8 +7,19 @@ impl Series {
             DataType::List(inner_dtype) => {
                 ListChunked::full_null_with_dtype(name, size, inner_dtype).into_series()
             }
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner_dtype, width) => {
+                ArrayChunked::full_null_with_dtype(name, size, inner_dtype, *width).into_series()
+            }
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => CategoricalChunked::full_null(name, size).into_series(),
+            DataType::Categorical(rev_map) => {
+                let mut ca = CategoricalChunked::full_null(name, size);
+                // ensure we keep the rev-map of a cleared series
+                if let Some(rev_map) = rev_map {
+                    unsafe { ca.set_rev_map(rev_map.clone(), false) }
+                }
+                ca.into_series()
+            }
             #[cfg(feature = "dtype-date")]
             DataType::Date => Int32Chunked::full_null(name, size)
                 .into_date()

@@ -270,7 +270,7 @@ class Series:
             self._s = series_to_pyseries(name, values)
 
         elif isinstance(values, range):
-            self._s = range_to_series(name, values, dtype=dtype)._s
+            self._s = range_to_series(name, values, dtype=dtype)._s  # type: ignore[arg-type]
 
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
@@ -828,7 +828,7 @@ class Series:
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
-    def __pow__(self, exponent: int | float | Series) -> Series:
+    def __pow__(self, exponent: int | float | None | Series) -> Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
@@ -868,6 +868,13 @@ class Series:
 
     def __deepcopy__(self, memo: None = None) -> Self:
         return self.clone()
+
+    def __contains__(self, item: Any) -> bool:
+        # TODO! optimize via `is_in` and `SORTED` flags
+        try:
+            return (self == item).any()
+        except ValueError:
+            return False
 
     def __iter__(self) -> Generator[Any, None, None]:
         if self.dtype == List:
@@ -1189,7 +1196,7 @@ class Series:
 
         """
 
-    def any(self) -> bool:
+    def any(self, drop_nulls: bool = True) -> bool | None:
         """
         Check if any boolean value in the column is `True`.
 
@@ -1198,9 +1205,9 @@ class Series:
         Boolean literal
 
         """
-        return self.to_frame().select(F.col(self.name).any()).to_series()[0]
+        return self.to_frame().select(F.col(self.name).any(drop_nulls)).to_series()[0]
 
-    def all(self) -> bool:
+    def all(self, drop_nulls: bool = True) -> bool | None:
         """
         Check if all boolean values in the column are `True`.
 
@@ -1209,7 +1216,7 @@ class Series:
         Boolean literal
 
         """
-        return self.to_frame().select(F.col(self.name).all()).to_series()[0]
+        return self.to_frame().select(F.col(self.name).all(drop_nulls)).to_series()[0]
 
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
@@ -1414,7 +1421,7 @@ class Series:
         """Reduce this Series to the product value."""
         return self.to_frame().select(F.col(self.name).product()).to_series().item()
 
-    def pow(self, exponent: int | float | Series) -> Series:
+    def pow(self, exponent: int | float | None | Series) -> Series:
         """
         Raise to the power of the given exponent.
 
@@ -1604,10 +1611,12 @@ class Series:
         break_point_label: str = "break_point",
         category_label: str = "category",
         *,
-        maintain_order: bool = False,
-    ) -> DataFrame:
+        series: bool = True,
+        left_closed: bool = False,
+        include_breaks: bool = False,
+    ) -> DataFrame | Series:
         """
-        Bin values into discrete values.
+        Bin continuous values into discrete categories.
 
         Parameters
         ----------
@@ -1617,47 +1626,100 @@ class Series:
             Labels to assign to the bins. If given the length of labels must be
             len(bins) + 1.
         break_point_label
-            Name given to the breakpoint column.
+            Name given to the breakpoint column/field. Only used if series == False or
+            include_breaks == True
         category_label
-            Name given to the category column.
+            Name given to the category column. Only used if series == False
         maintain_order
-            Keep the order of the original `Series`.
+            Keep the order of the original `Series`. Only used if series == False
+        series
+            If True, return the a categorical series in the data's original order.
+        left_closed
+            Whether intervals should be [) instead of (]
+        include_breaks
+            Include the the right endpoint of the bin each observation falls in.
+            If returning a DataFrame, it will be a column, and if returning a Series
+            it will be a field in a Struct
 
         Returns
         -------
-        DataFrame
+        DataFrame or Series
 
         Examples
         --------
         >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-        >>> a.cut([-1, 1])
+        >>> a.cut([-1, 1], series=False)
         shape: (12, 3)
-        ┌──────┬─────────────┬──────────────┐
-        │ a    ┆ break_point ┆ category     │
-        │ ---  ┆ ---         ┆ ---          │
-        │ f64  ┆ f64         ┆ cat          │
-        ╞══════╪═════════════╪══════════════╡
-        │ -3.0 ┆ -1.0        ┆ (-inf, -1.0] │
-        │ -2.5 ┆ -1.0        ┆ (-inf, -1.0] │
-        │ -2.0 ┆ -1.0        ┆ (-inf, -1.0] │
-        │ -1.5 ┆ -1.0        ┆ (-inf, -1.0] │
-        │ …    ┆ …           ┆ …            │
-        │ 1.0  ┆ 1.0         ┆ (-1.0, 1.0]  │
-        │ 1.5  ┆ inf         ┆ (1.0, inf]   │
-        │ 2.0  ┆ inf         ┆ (1.0, inf]   │
-        │ 2.5  ┆ inf         ┆ (1.0, inf]   │
-        └──────┴─────────────┴──────────────┘
-
+        ┌──────┬─────────────┬────────────┐
+        │ a    ┆ break_point ┆ category   │
+        │ ---  ┆ ---         ┆ ---        │
+        │ f64  ┆ f64         ┆ cat        │
+        ╞══════╪═════════════╪════════════╡
+        │ -3.0 ┆ -1.0        ┆ (-inf, -1] │
+        │ -2.5 ┆ -1.0        ┆ (-inf, -1] │
+        │ -2.0 ┆ -1.0        ┆ (-inf, -1] │
+        │ -1.5 ┆ -1.0        ┆ (-inf, -1] │
+        │ …    ┆ …           ┆ …          │
+        │ 1.0  ┆ 1.0         ┆ (-1, 1]    │
+        │ 1.5  ┆ inf         ┆ (1, inf]   │
+        │ 2.0  ┆ inf         ┆ (1, inf]   │
+        │ 2.5  ┆ inf         ┆ (1, inf]   │
+        └──────┴─────────────┴────────────┘
+        >>> a.cut([-1, 1], series=True)
+        shape: (12,)
+        Series: 'a' [cat]
+        [
+            "(-inf, -1]"
+            "(-inf, -1]"
+            "(-inf, -1]"
+            "(-inf, -1]"
+            "(-inf, -1]"
+            "(-1, 1]"
+            "(-1, 1]"
+            "(-1, 1]"
+            "(-1, 1]"
+            "(1, inf]"
+            "(1, inf]"
+            "(1, inf]"
+        ]
+        >>> a.cut([-1, 1], series=True, left_closed=True)
+        shape: (12,)
+        Series: 'a' [cat]
+        [
+            "[-inf, -1)"
+            "[-inf, -1)"
+            "[-inf, -1)"
+            "[-inf, -1)"
+            "[-1, 1)"
+            "[-1, 1)"
+            "[-1, 1)"
+            "[-1, 1)"
+            "[1, inf)"
+            "[1, inf)"
+            "[1, inf)"
+            "[1, inf)"
+        ]
         """
-        return wrap_df(
-            self._s.cut(
-                Series(break_point_label, bins, dtype=Float64)._s,
-                labels,
-                break_point_label,
-                category_label,
-                maintain_order,
+        n = self._s.name()
+
+        if not series:
+            # "Old style" always includes breaks
+            return (
+                self.to_frame()
+                .with_columns(
+                    F.col(n).cut(bins, labels, left_closed, True).alias(n + "_bin")
+                )
+                .unnest(n + "_bin")
+                .rename({"brk": break_point_label, n + "_bin": category_label})
             )
+        res = (
+            self.to_frame()
+            .select(F.col(n).cut(bins, labels, left_closed, include_breaks))
+            .to_series()
         )
+        if include_breaks:
+            return res.struct.rename_fields([break_point_label, category_label])
+        return res
 
     def qcut(
         self,
@@ -1666,10 +1728,13 @@ class Series:
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
-        maintain_order: bool = False,
-    ) -> DataFrame:
+        series: bool = False,
+        left_closed: bool = False,
+        allow_duplicates: bool = False,
+        include_breaks: bool = False,
+    ) -> DataFrame | Series:
         """
-        Bin values into discrete values based on their quantiles.
+        Bin continuous values into discrete categories based on their quantiles.
 
         Parameters
         ----------
@@ -1680,15 +1745,28 @@ class Series:
             Labels to assign to the quantiles. If given the length of labels must be
             len(bins) + 1.
         break_point_label
-            Name given to the breakpoint column.
+            Name given to the breakpoint column/field. Only used if series == False or
+            include_breaks == True
         category_label
-            Name given to the category column.
+            Name given to the category column. Only used if series == False.
         maintain_order
-            Keep the order of the original `Series`.
+            Keep the order of the original `Series`. Only used if series == False.
+        series
+            If True, return a categorical series in the data's original order
+        left_closed
+            Whether intervals should be [) instead of (]
+        allow_duplicates
+            If True, the resulting quantile breaks don't have to be unique. This can
+            happen even with unique probs depending on the data. Duplicates will be
+            dropped, resulting in fewer bins.
+        include_breaks
+            Include the the right endpoint of the bin each observation falls in.
+            If returning a DataFrame, it will be a column, and if returning a Series
+            it will be a field in a Struct
 
         Returns
         -------
-        DataFrame
+        DataFrame or Series
 
         Warnings
         --------
@@ -1698,33 +1776,135 @@ class Series:
         Examples
         --------
         >>> a = pl.Series("a", range(-5, 3))
-        >>> a.qcut([0.0, 0.25, 0.75])
+        >>> a.qcut([0.0, 0.25, 0.75], series=False)
         shape: (8, 3)
-        ┌──────┬─────────────┬───────────────┐
-        │ a    ┆ break_point ┆ category      │
-        │ ---  ┆ ---         ┆ ---           │
-        │ f64  ┆ f64         ┆ cat           │
-        ╞══════╪═════════════╪═══════════════╡
-        │ -5.0 ┆ -5.0        ┆ (-inf, -5.0]  │
-        │ -4.0 ┆ -3.25       ┆ (-5.0, -3.25] │
-        │ -3.0 ┆ 0.25        ┆ (-3.25, 0.25] │
-        │ -2.0 ┆ 0.25        ┆ (-3.25, 0.25] │
-        │ -1.0 ┆ 0.25        ┆ (-3.25, 0.25] │
-        │ 0.0  ┆ 0.25        ┆ (-3.25, 0.25] │
-        │ 1.0  ┆ inf         ┆ (0.25, inf]   │
-        │ 2.0  ┆ inf         ┆ (0.25, inf]   │
-        └──────┴─────────────┴───────────────┘
-
+        ┌─────┬─────────────┬───────────────┐
+        │ a   ┆ break_point ┆ category      │
+        │ --- ┆ ---         ┆ ---           │
+        │ i64 ┆ f64         ┆ cat           │
+        ╞═════╪═════════════╪═══════════════╡
+        │ -5  ┆ -5.0        ┆ (-inf, -5]    │
+        │ -4  ┆ -3.25       ┆ (-5, -3.25]   │
+        │ -3  ┆ 0.25        ┆ (-3.25, 0.25] │
+        │ -2  ┆ 0.25        ┆ (-3.25, 0.25] │
+        │ -1  ┆ 0.25        ┆ (-3.25, 0.25] │
+        │ 0   ┆ 0.25        ┆ (-3.25, 0.25] │
+        │ 1   ┆ inf         ┆ (0.25, inf]   │
+        │ 2   ┆ inf         ┆ (0.25, inf]   │
+        └─────┴─────────────┴───────────────┘
+        >>> a.qcut([0.0, 0.25, 0.75], series=True)
+        shape: (8,)
+        Series: 'a' [cat]
+        [
+            "(-inf, -5]"
+            "(-5, -3.25]"
+            "(-3.25, 0.25]"
+            "(-3.25, 0.25]"
+            "(-3.25, 0.25]"
+            "(-3.25, 0.25]"
+            "(0.25, inf]"
+            "(0.25, inf]"
+        ]
+        >>> a.qcut([0.0, 0.25, 0.75], series=True, left_closed=True)
+        shape: (8,)
+        Series: 'a' [cat]
+        [
+            "[-5, -3.25)"
+            "[-5, -3.25)"
+            "[-3.25, 0.25)"
+            "[-3.25, 0.25)"
+            "[-3.25, 0.25)"
+            "[-3.25, 0.25)"
+            "[0.25, inf)"
+            "[0.25, inf)"
+        ]
         """
-        return wrap_df(
-            self._s.qcut(
-                Series(quantiles, dtype=Float64)._s,
-                labels,
-                break_point_label,
-                category_label,
-                maintain_order,
+        n = self._s.name()
+
+        if not series:
+            # "Old style" always includes breaks
+            return (
+                self.to_frame()
+                .with_columns(
+                    F.col(n)
+                    .qcut(quantiles, labels, left_closed, allow_duplicates, True)
+                    .alias(n + "_bin")
+                )
+                .unnest(n + "_bin")
+                .rename({"brk": break_point_label, n + "_bin": category_label})
             )
+        res = (
+            self.to_frame()
+            .select(
+                F.col(n).qcut(
+                    quantiles, labels, left_closed, allow_duplicates, include_breaks
+                )
+            )
+            .to_series()
         )
+        if include_breaks:
+            return res.struct.rename_fields([break_point_label, category_label])
+        return res
+
+    def rle(self) -> Series:
+        """
+        Get the lengths of runs of identical values.
+
+        Returns
+        -------
+            A Struct Series containing "lengths" and "values" Fields
+
+        Examples
+        --------
+        >>> s = pl.Series("s", [1, 1, 2, 1, None, 1, 3, 3])
+        >>> s.rle().struct.unnest()
+        shape: (6, 2)
+        ┌─────────┬────────┐
+        │ lengths ┆ values │
+        │ ---     ┆ ---    │
+        │ i32     ┆ i64    │
+        ╞═════════╪════════╡
+        │ 2       ┆ 1      │
+        │ 1       ┆ 2      │
+        │ 1       ┆ 1      │
+        │ 1       ┆ null   │
+        │ 1       ┆ 1      │
+        │ 2       ┆ 3      │
+        └─────────┴────────┘
+        """
+        return self.to_frame().select(F.col(self.name).rle()).to_series()
+
+    def rle_id(self) -> Series:
+        """
+        Map values to run IDs.
+
+        Similar to RLE, but it maps each value to an ID corresponding to the run into
+        which it falls. This is especially useful when you want to define groups by
+        runs of identical values rather than the values themselves.
+
+        Returns
+        -------
+            Series
+
+
+        Examples
+        --------
+        >>> s = pl.Series("s", [1, 1, 2, 1, None, 1, 3, 3])
+        >>> s.rle_id()
+        shape: (8,)
+        Series: 's' [u32]
+        [
+            0
+            0
+            1
+            2
+            3
+            4
+            5
+            5
+        ]
+        """
+        return self.to_frame().select(F.col(self.name).rle_id()).to_series()
 
     def hist(
         self,
@@ -2123,7 +2303,7 @@ class Series:
 
         """
 
-    def append(self, other: Series, *, append_chunks: bool = True) -> Series:
+    def append(self, other: Series, *, append_chunks: bool | None = None) -> Self:
         """
         Append a Series to this one.
 
@@ -2132,6 +2312,11 @@ class Series:
         other
             Series to append.
         append_chunks
+            .. deprecated:: 0.18.8
+                This argument will be removed and ``append`` will change to always
+                behave like ``append_chunks=True`` (the previous default). For the
+                behavior of ``append_chunks=False``, use ``Series.extend``.
+
             If set to `True` the append operation will add the chunks from `other` to
             self. This is super cheap.
 
@@ -2155,13 +2340,21 @@ class Series:
             to store them in a single `Series`. In the latter case, finish the sequence
             of `append_chunks` operations with a `rechunk`.
 
+        Warnings
+        --------
+        This method modifies the series in-place. The series is returned for
+        convenience only.
+
+        See Also
+        --------
+        extend
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s2 = pl.Series("b", [4, 5, 6])
-        >>> s.append(s2)
-        shape: (6,)
+        >>> a = pl.Series("a", [1, 2, 3])
+        >>> b = pl.Series("b", [4, 5])
+        >>> a.append(b)
+        shape: (5,)
         Series: 'a' [i64]
         [
             1
@@ -2169,18 +2362,97 @@ class Series:
             3
             4
             5
-            6
         ]
+
+        The resulting series will consist of multiple chunks.
+
+        >>> a.n_chunks()
+        2
+
+        """
+        if append_chunks is not None:
+            warnings.warn(
+                "the `append_chunks` argument will be removed and `append` will change"
+                " to always behave like `append_chunks=True` (the previous default)."
+                " For the behavior of `append_chunks=False`, use `Series.extend`.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
+        else:
+            append_chunks = True
+
+        if not append_chunks:
+            return self.extend(other)
+
+        try:
+            self._s.append(other._s)
+        except RuntimeError as exc:
+            if str(exc) == "Already mutably borrowed":
+                self._s.append(other._s.clone())
+            else:
+                raise exc
+        return self
+
+    def extend(self, other: Series) -> Self:
+        """
+        Extend the memory backed by this Series with the values from another.
+
+        Different from ``append``, which adds the chunks from ``other`` to the chunks of
+        this series, ``extend`` appends the data from ``other`` to the underlying memory
+        locations and thus may cause a reallocation (which is expensive).
+
+        If this does `not` cause a reallocation, the resulting data structure will not
+        have any extra chunks and thus will yield faster queries.
+
+        Prefer ``extend`` over ``append`` when you want to do a query after a single
+        append. For instance, during online operations where you add `n` rows
+        and rerun a query.
+
+        Prefer ``append`` over ``extend`` when you want to append many times
+        before doing a query. For instance, when you read in multiple files and want
+        to store them in a single ``Series``. In the latter case, finish the sequence
+        of ``append`` operations with a `rechunk`.
+
+        Parameters
+        ----------
+        other
+            Series to extend the series with.
+
+        Warnings
+        --------
+        This method modifies the series in-place. The series is returned for
+        convenience only.
+
+        See Also
+        --------
+        append
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [1, 2, 3])
+        >>> b = pl.Series("b", [4, 5])
+        >>> a.extend(b)
+        shape: (5,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+            4
+            5
+        ]
+
+        The resulting series will consist of a single chunk.
+
+        >>> a.n_chunks()
+        1
 
         """
         try:
-            if append_chunks:
-                self._s.append(other._s)
-            else:
-                self._s.extend(other._s)
+            self._s.extend(other._s)
         except RuntimeError as exc:
             if str(exc) == "Already mutably borrowed":
-                self.append(other.clone(), append_chunks=append_chunks)
+                self._s.extend(other._s.clone())
             else:
                 raise exc
         return self
@@ -4184,6 +4456,10 @@ class Series:
         """
         Apply a custom/user-defined function (UDF) over elements in this Series.
 
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
+
         If the function returns a different datatype, the return_dtype arg should
         be set, otherwise the method will fail.
 
@@ -5983,4 +6259,6 @@ def _resolve_datetime_dtype(
             dtype = Datetime("us")
         elif time_unit == "ms":
             dtype = Datetime("ms")
+        elif time_unit == "D":
+            dtype = Date
     return dtype

@@ -300,7 +300,7 @@ mod test {
     use arrow::array::{Int32Array, Utf8Array};
 
     use super::*;
-    use crate::variable::{BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
+    use crate::variable::{decode_binary, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
 
     #[test]
     fn test_fixed_and_variable_encode() {
@@ -361,5 +361,28 @@ mod test {
         let row5 = rows_encoded.get(4);
         let expected = &[0u8];
         assert_eq!(row5, expected);
+    }
+
+    #[test]
+    fn test_str_encode_block_size() {
+        // create a key of exactly block size
+        // and check the round trip
+        let mut val = String::new();
+        for i in 0..BLOCK_SIZE {
+            val.push(char::from_u32(i as u32).unwrap())
+        }
+
+        let a = [val.as_str(), val.as_str(), val.as_str()];
+
+        let field = SortField {
+            descending: false,
+            nulls_last: false,
+        };
+        let arr = BinaryArray::<i64>::from_iter_values(a.iter());
+        let rows_encoded = convert_columns_no_order(&[arr.clone().boxed()]);
+
+        let mut rows = rows_encoded.iter().collect::<Vec<_>>();
+        let decoded = unsafe { decode_binary(&mut rows, &field) };
+        assert_eq!(decoded, arr);
     }
 }

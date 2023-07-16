@@ -78,7 +78,7 @@ impl PartialEq for DataType {
                 #[cfg(feature = "object")]
                 (Object(lhs), Object(rhs)) => lhs == rhs,
                 #[cfg(feature = "dtype-struct")]
-                (Struct(lhs), Struct(rhs)) => lhs == rhs,
+                (Struct(lhs), Struct(rhs)) => Vec::as_ptr(lhs) == Vec::as_ptr(rhs) || lhs == rhs,
                 #[cfg(feature = "dtype-array")]
                 (Array(left_inner, left_width), Array(right_inner, right_width)) => {
                     left_width == right_width && left_inner == right_inner
@@ -332,7 +332,7 @@ impl Display for DataType {
             DataType::Categorical(_) => "cat",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
-            DataType::Unknown => unreachable!(),
+            DataType::Unknown => "unknown",
         };
         f.write_str(s)
     }
@@ -344,7 +344,7 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
     Ok(match (left, right) {
         #[cfg(feature = "dtype-categorical")]
         (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r))) => {
-            let rev_map = merge_categorical_map(rev_map_l, rev_map_r)?;
+            let rev_map = merge_rev_map(rev_map_l, rev_map_r)?;
             Categorical(Some(rev_map))
         }
         (List(inner_l), List(inner_r)) => {

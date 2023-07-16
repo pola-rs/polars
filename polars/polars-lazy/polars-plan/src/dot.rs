@@ -340,63 +340,28 @@ impl LogicalPlan {
                     self.write_dot(acc_str, prev_node, current_node, id_map)
                 }
             }
-            #[cfg(feature = "csv")]
-            CsvScan {
-                path,
-                options,
-                file_info,
-                predicate,
-                ..
-            } => self.write_scan(
-                acc_str,
-                prev_node,
-                "CSV",
-                path.as_ref(),
-                options.with_columns.as_deref().map(|cols| cols.as_slice()),
-                file_info.schema.len(),
-                predicate,
-                branch,
-                id,
-                id_map,
-            ),
-            #[cfg(feature = "parquet")]
-            ParquetScan {
+            Scan {
                 path,
                 file_info,
                 predicate,
-                options,
-                ..
-            } => self.write_scan(
-                acc_str,
-                prev_node,
-                "PARQUET",
-                path.as_ref(),
-                options.with_columns.as_deref().map(|cols| cols.as_slice()),
-                file_info.schema.len(),
-                predicate,
-                branch,
-                id,
-                id_map,
-            ),
-            #[cfg(feature = "ipc")]
-            IpcScan {
-                path,
-                file_info,
-                options,
-                predicate,
-                ..
-            } => self.write_scan(
-                acc_str,
-                prev_node,
-                "IPC",
-                path.as_ref(),
-                options.with_columns.as_deref().map(|cols| cols.as_slice()),
-                file_info.schema.len(),
-                predicate,
-                branch,
-                id,
-                id_map,
-            ),
+                scan_type,
+                file_options: options,
+            } => {
+                let name: &str = scan_type.into();
+
+                self.write_scan(
+                    acc_str,
+                    prev_node,
+                    name,
+                    path.as_ref(),
+                    options.with_columns.as_ref().map(|cols| cols.as_slice()),
+                    file_info.schema.len(),
+                    predicate,
+                    branch,
+                    id,
+                    id_map,
+                )
+            }
             Join {
                 input_left,
                 input_right,

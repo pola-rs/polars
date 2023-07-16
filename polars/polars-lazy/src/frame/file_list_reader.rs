@@ -117,7 +117,7 @@ pub trait LazyFileListReader: Clone {
     /// Returns [None] if path is not a glob pattern.
     fn glob(&self) -> PolarsResult<Option<GlobIterator>> {
         let path_str = self.path().to_string_lossy();
-        if path_str.contains('*') {
+        if path_str.contains('*') || path_str.contains('?') || path_str.contains('[') {
             polars_glob(&path_str, self.cloud_options()).map(Some)
         } else {
             Ok(None)
