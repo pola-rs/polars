@@ -158,7 +158,7 @@ def _parse_lambda_from_function(function: Callable[[Any], Any]) -> str | None:
     return src
 
 
-def _parse_tree(src: str) -> ast.Lambda | None:
+def _parse_str_to_ast_lambda(src: str) -> ast.Lambda | None:
     """
     Parse a lambda expression into an AST tree.
 
@@ -196,14 +196,14 @@ def _parse_tree(src: str) -> ast.Lambda | None:
 def maybe_warn_about_dataframe_apply_function(
     function: Callable[[Any], Any], columns: list[str]
 ) -> None:
-    src = _parse_lambda_from_function(function)
-    if src is None:
+    str_lambda = _parse_lambda_from_function(function)
+    if str_lambda is None:
         return None
-    lambda_ = _parse_tree(src)
-    if lambda_ is None:
+    ast_lambda = _parse_str_to_ast_lambda(str_lambda)
+    if ast_lambda is None:
         return
     out = _process_ast_expr(
-        lambda_.body, lambda_.args.args[0].arg, columns, level=0, is_expr=False
+        ast_lambda.body, ast_lambda.args.args[0].arg, columns, level=0, is_expr=False
     )
 
     if out:
@@ -211,7 +211,7 @@ def maybe_warn_about_dataframe_apply_function(
             "DataFrame.apply is much slower than the native expressions API. Only use "
             "it if you cannot implement your logic otherwise.\n"
             "In this simple case, you can replace:\n"
-            f"\033[31m-    .apply({src})\033[0m\n"
+            f"\033[31m-    .apply({str_lambda})\033[0m\n"
             "\n"
             "with:\n"
             f"\033[32m+    .select({out})\033[0m\n",
@@ -223,14 +223,14 @@ def maybe_warn_about_dataframe_apply_function(
 def maybe_warn_about_expr_apply_function(
     function: Callable[[Any], Any], columns: list[str]
 ) -> None:
-    src = _parse_lambda_from_function(function)
-    if src is None:
+    str_lambda = _parse_lambda_from_function(function)
+    if str_lambda is None:
         return None
-    lambda_ = _parse_tree(src)
-    if lambda_ is None:
+    ast_lambda = _parse_str_to_ast_lambda(str_lambda)
+    if ast_lambda is None:
         return
     out = _process_ast_expr(
-        lambda_.body, lambda_.args.args[0].arg, columns, level=0, is_expr=True
+        ast_lambda.body, ast_lambda.args.args[0].arg, columns, level=0, is_expr=True
     )
 
     if out:
@@ -238,7 +238,7 @@ def maybe_warn_about_expr_apply_function(
             "Expr.apply is much slower than the native expressions API. Only use "
             "it if you cannot implement your logic otherwise.\n"
             "In this simple case, you can replace:\n"
-            f'\033[31m-    pl.col("{columns[0]}").apply({src})\033[0m\n'
+            f'\033[31m-    pl.col("{columns[0]}").apply({str_lambda})\033[0m\n'
             "\n"
             "with:\n"
             f"\033[32m+    {out}\033[0m\n",
