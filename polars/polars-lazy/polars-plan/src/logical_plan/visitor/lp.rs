@@ -54,6 +54,10 @@ impl ALogicalPlanNode {
     pub fn to_alp(&self) -> &ALogicalPlan {
         self.with_arena(|arena| arena.get(self.node))
     }
+
+    pub fn to_alp_mut(&mut self) -> &mut ALogicalPlan {
+        self.with_arena_mut(|arena| arena.get_mut(self.node))
+    }
 }
 
 impl TreeWalker for ALogicalPlanNode {
