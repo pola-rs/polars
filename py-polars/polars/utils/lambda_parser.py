@@ -49,7 +49,6 @@ def _ast_expr_to_str(
     is_expr
         Whether the original object was a DataFrame or an Expr.
 
-
     Returns
     -------
     str | None

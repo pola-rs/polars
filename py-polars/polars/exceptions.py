@@ -103,6 +103,7 @@ __all__ = [
     "InvalidOperationError",
     "NoDataError",
     "NoRowsReturnedError",
+    "PolarsInefficientApplyWarning",
     "PolarsPanicError",
     "RowsError",
     "SchemaError",
