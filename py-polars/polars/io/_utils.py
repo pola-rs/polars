@@ -196,14 +196,14 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
         
 
 def _prepare_write_file_arg(
-    file: str | BytesIO | Path,
+    file: str | BytesIO | Path | StringIO,
     encoding: str | None = None,
     **kwargs: Any,
 ) -> ContextManager[str | BinaryIO | list[BinaryIO]]:
     """
     Prepare file argument.
 
-    Utility for write_[csv, parquet]. (not to be used by scan_[csv, parquet]).
+    Utility for write_[parquet]. (not to be used by scan_[parquet]).
     Returned value is always usable as a context.
 
     A :class:`StringIO`, :class:`BytesIO` file is returned as a :class:`BytesIO`.
