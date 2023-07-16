@@ -8,7 +8,7 @@ from typing import Any, Callable
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.various import find_stacklevel
 
-AST_BINOP_TO_STR = {
+AST_OPERATOR_TO_STR = {
     ast.Add: "+",
     ast.Mult: "*",
     ast.Div: "/",
@@ -29,11 +29,11 @@ AST_CMPOP_TO_STR = {
 }
 
 
-def _process_ast_expr(
+def _ast_expr_to_str(
     operand: ast.AST, arg: str, names: list[str], *, level: int, is_expr: bool
 ) -> str | None:
     """
-    Process an operand of a binary operation.
+    Convert an operand of a binary operation to str.
 
     Parameters
     ----------
@@ -57,14 +57,14 @@ def _process_ast_expr(
     import ast
 
     if isinstance(operand, ast.Subscript) and not is_expr:
-        return _process_subscript(operand, arg, names)
+        return _ast_subscript_to_str(operand, arg, names)
     elif isinstance(operand, ast.BinOp):
-        ret = _process_binop(operand, arg, names, level=level, is_expr=is_expr)
+        ret = _ast_binop_to_str(operand, arg, names, level=level, is_expr=is_expr)
         if ret is None:
             return None
         return f"({ret})"
     elif isinstance(operand, ast.Compare):
-        ret = _process_compare(operand, arg, names, level=level, is_expr=is_expr)
+        ret = _ast_compare_to_str(operand, arg, names, level=level, is_expr=is_expr)
         if ret is None:
             return None
         return f"({ret})"
@@ -77,9 +77,9 @@ def _process_ast_expr(
     return None
 
 
-def _ast_binop_to_str(op: ast.operator) -> str | None:
+def _ast_operator_to_str(op: ast.operator) -> str | None:
     """Return the string representation of some simple operators."""
-    for ast_op, str_op in AST_BINOP_TO_STR.items():
+    for ast_op, str_op in AST_OPERATOR_TO_STR.items():
         if isinstance(op, ast_op):
             return str_op
     return None
@@ -93,11 +93,11 @@ def _ast_cmpop_to_str(op: ast.cmpop) -> str | None:
     return None
 
 
-def _process_binop(
+def _ast_binop_to_str(
     binop: ast.BinOp, arg: str, columns: list[str], level: int, is_expr: bool
 ) -> str | None:
     """
-    Process a binary operation, such as `x + 1`.
+    Convert a binary operation, such as `x + 1`, to str.
 
     Only return if the left-hand-side, the right-hand-side, and the operator are
     simple.
@@ -107,13 +107,13 @@ def _process_binop(
         # that we'll ever reach this point, as only single-line lambda expressions
         # are allowed.
         return None
-    op = _ast_binop_to_str(binop.op)
+    op = _ast_operator_to_str(binop.op)
     if op is None:
         return None
-    left = _process_ast_expr(binop.left, arg, columns, level=level + 1, is_expr=is_expr)
+    left = _ast_expr_to_str(binop.left, arg, columns, level=level + 1, is_expr=is_expr)
     if left is None:
         return None
-    right = _process_ast_expr(
+    right = _ast_expr_to_str(
         binop.right, arg, columns, level=level + 1, is_expr=is_expr
     )
     if right is None:
@@ -121,11 +121,11 @@ def _process_binop(
     return f"{left} {op} {right}"
 
 
-def _process_compare(
+def _ast_compare_to_str(
     binop: ast.Compare, arg: str, columns: list[str], level: int, is_expr: bool
 ) -> str | None:
     """
-    Process a binary operation, such as `x + 1`.
+    Convert a binary comparison, such as `x == 1`, to str.
 
     Only return if the left-hand-side, the right-hand-side, and the operator are
     simple.
@@ -140,12 +140,12 @@ def _process_compare(
     op = _ast_cmpop_to_str(binop.ops[0])
     if op is None:
         return None
-    left = _process_ast_expr(binop.left, arg, columns, level=level + 1, is_expr=is_expr)
+    left = _ast_expr_to_str(binop.left, arg, columns, level=level + 1, is_expr=is_expr)
     if left is None:
         return None
     if len(binop.comparators) != 1:
         return None
-    right = _process_ast_expr(
+    right = _ast_expr_to_str(
         binop.comparators[0], arg, columns, level=level + 1, is_expr=is_expr
     )
     if right is None:
@@ -153,11 +153,11 @@ def _process_compare(
     return f"{left} {op} {right}"
 
 
-def _process_subscript(
+def _ast_subscript_to_str(
     subscript: ast.Subscript, arg: str, columns: list[str]
 ) -> str | None:
     """
-    Process a subscript expression, such as `x[0]`.
+    Convert a subscript expression, such as `x[0]`, to str.
 
     Only handle the simple case where the slice is a constant integer,
     and replace it with the corresponding column name.
@@ -205,7 +205,7 @@ def _parse_lambda_from_function(function: Callable[[Any], Any]) -> str | None:
     return src
 
 
-def _parse_str_to_ast_lambda(src: str) -> ast.Lambda | None:
+def _str_lambda_to_ast_lambda(src: str) -> ast.Lambda | None:
     """
     Parse a lambda expression into an AST tree.
 
@@ -245,10 +245,10 @@ def maybe_warn_about_dataframe_apply_function(
     str_lambda = _parse_lambda_from_function(function)
     if str_lambda is None:
         return None
-    ast_lambda = _parse_str_to_ast_lambda(str_lambda)
+    ast_lambda = _str_lambda_to_ast_lambda(str_lambda)
     if ast_lambda is None:
         return
-    suggestion = _process_ast_expr(
+    suggestion = _ast_expr_to_str(
         ast_lambda.body, ast_lambda.args.args[0].arg, columns, level=0, is_expr=False
     )
 
@@ -272,10 +272,10 @@ def maybe_warn_about_expr_apply_function(
     str_lambda = _parse_lambda_from_function(function)
     if str_lambda is None:
         return None
-    ast_lambda = _parse_str_to_ast_lambda(str_lambda)
+    ast_lambda = _str_lambda_to_ast_lambda(str_lambda)
     if ast_lambda is None:
         return
-    suggestion = _process_ast_expr(
+    suggestion = _ast_expr_to_str(
         ast_lambda.body, ast_lambda.args.args[0].arg, columns, level=0, is_expr=True
     )
 

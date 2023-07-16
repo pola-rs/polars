@@ -4,7 +4,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
-from polars.utils.lambda_parser import _parse_str_to_ast_lambda, _process_ast_expr
+from polars.utils.lambda_parser import _ast_expr_to_str, _str_lambda_to_ast_lambda
 
 
 @pytest.mark.parametrize(
@@ -28,9 +28,9 @@ def test_dataframe_apply_produces_warning(func: str) -> None:
             "d": [False, True, True],
         }
     )
-    ast_lambda = _parse_str_to_ast_lambda(func)
+    ast_lambda = _str_lambda_to_ast_lambda(func)
     assert ast_lambda is not None
-    suggestion = _process_ast_expr(
+    suggestion = _ast_expr_to_str(
         ast_lambda.body, ast_lambda.args.args[0].arg, df.columns, level=0, is_expr=False
     )
     assert suggestion is not None
@@ -48,7 +48,7 @@ def test_dataframe_apply_produces_warning(func: str) -> None:
     ],
 )
 def test_non_simple_lambda(func: str) -> None:
-    ast_lambda = _parse_str_to_ast_lambda(func)
+    ast_lambda = _str_lambda_to_ast_lambda(func)
     assert ast_lambda is None
 
 
@@ -71,9 +71,9 @@ def test_dataframe_apply_noop(func: str) -> None:
             "d": [False, True, True],
         }
     )
-    ast_lambda = _parse_str_to_ast_lambda(func)
+    ast_lambda = _str_lambda_to_ast_lambda(func)
     assert ast_lambda is not None
-    suggestion = _process_ast_expr(
+    suggestion = _ast_expr_to_str(
         ast_lambda.body, ast_lambda.args.args[0].arg, df.columns, level=0, is_expr=False
     )
     assert suggestion is None
@@ -82,12 +82,8 @@ def test_dataframe_apply_noop(func: str) -> None:
 @pytest.mark.parametrize(
     "func",
     [
-        "lambda x: x + 1",
-        "lambda x: x - 1",
-        "lambda x: x * 1",
-        "lambda x: x / 1",
-        "lambda x: x // 1",
-        "lambda x: x % 2",
+        "lambda x: x + 1-2/3",
+        "lambda x: x // 1 % 1",
         "lambda x: x & True",
         "lambda x: x | False",
         "lambda x: x == 3",
@@ -103,9 +99,9 @@ def test_expr_apply_produces_warning(func: str) -> None:
             "d": [False, True, True],
         }
     )
-    ast_lambda = _parse_str_to_ast_lambda(func)
+    ast_lambda = _str_lambda_to_ast_lambda(func)
     assert ast_lambda is not None
-    suggestion = _process_ast_expr(
+    suggestion = _ast_expr_to_str(
         ast_lambda.body, ast_lambda.args.args[0].arg, ["a"], level=0, is_expr=True
     )
     assert suggestion is not None
@@ -115,14 +111,14 @@ def test_expr_apply_produces_warning(func: str) -> None:
 
 
 def test_expr_apply_non_binary_operator() -> None:
-    ast_lambda = _parse_str_to_ast_lambda("lambda x: np.sin(x)")
+    ast_lambda = _str_lambda_to_ast_lambda("lambda x: np.sin(x)")
     assert ast_lambda is None
 
 
 def test_expr_apply_subscripts() -> None:
-    ast_lambda = _parse_str_to_ast_lambda("lambda x: x[0] + 1")
+    ast_lambda = _str_lambda_to_ast_lambda("lambda x: x[0] + 1")
     assert ast_lambda is not None
-    suggestion = _process_ast_expr(
+    suggestion = _ast_expr_to_str(
         ast_lambda.body, ast_lambda.args.args[0].arg, ["a"], level=0, is_expr=True
     )
     assert suggestion is None
