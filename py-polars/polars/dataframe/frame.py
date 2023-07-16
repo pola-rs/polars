@@ -5748,7 +5748,7 @@ class DataFrame:
 
         Return a Series by mapping each row to a scalar:
 
-        >>> df.apply(lambda t: (t[0] * 2 + t[1]))
+        >>> df.apply(lambda t: (t[0] * 2 + t[1]))  # doctest: +SKIP
         shape: (3, 1)
         ┌───────┐
         │ apply │
@@ -5765,6 +5765,9 @@ class DataFrame:
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
 
         """
+        from polars.utils.lambda_parser import maybe_warn_about_dataframe_apply_function
+
+        maybe_warn_about_dataframe_apply_function(function, self.columns)
         out, is_df = self._df.apply(function, return_dtype, inference_size)
         if is_df:
             return self._from_pydf(out)

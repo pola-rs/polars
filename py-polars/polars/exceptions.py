@@ -86,6 +86,14 @@ class ChronoFormatWarning(Warning):
     """
 
 
+class PolarsInefficientApplyWarning(Warning):
+    """
+    Warning raised when a potentially slow `apply` operation is performed.
+
+    Suggestion of what to replace slow pattern with will also be shown.
+    """
+
+
 __all__ = [
     "ArrowError",
     "ColumnNotFoundError",

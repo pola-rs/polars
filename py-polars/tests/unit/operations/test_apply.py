@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal
 
 
@@ -94,9 +95,12 @@ def test_apply_infer_list() -> None:
 
 def test_apply_arithmetic_consistency() -> None:
     df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
-    assert df.groupby("A").agg(pl.col("B").apply(lambda x: x + 1.0))["B"].to_list() == [
-        [3.0, 4.0]
-    ]
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this simple case, you can replace"
+    ):
+        assert df.groupby("A").agg(pl.col("B").apply(lambda x: x + 1.0))[
+            "B"
+        ].to_list() == [[3.0, 4.0]]
 
 
 def test_apply_struct() -> None:
