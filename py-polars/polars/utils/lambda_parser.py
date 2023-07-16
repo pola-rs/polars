@@ -8,7 +8,7 @@ from typing import Any, Callable
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.various import find_stacklevel
 
-AST_OP_TO_STR = {
+AST_BINOP_TO_STR = {
     ast.Add: "+",
     ast.Mult: "*",
     ast.Div: "/",
@@ -16,14 +16,16 @@ AST_OP_TO_STR = {
     ast.Mod: "%",
     ast.FloorDiv: "//",
     ast.Pow: "**",
+    ast.BitAnd: "&",
+    ast.BitOr: "|",
+}
+AST_CMPOP_TO_STR = {
     ast.Lt: "<",
     ast.LtE: "<=",
     ast.Gt: ">",
     ast.GtE: "<=",
     ast.Eq: "==",
     ast.NotEq: "!=",
-    ast.BitAnd: "&",
-    ast.BitOr: "|",
 }
 
 
@@ -61,6 +63,11 @@ def _process_ast_expr(
         if ret is None:
             return None
         return f"({ret})"
+    elif isinstance(operand, ast.Compare):
+        ret = _process_compare(operand, arg, names, level=level, is_expr=is_expr)
+        if ret is None:
+            return None
+        return f"({ret})"
     elif isinstance(operand, ast.Constant):
         return operand.value
     elif isinstance(operand, ast.Name):
@@ -70,9 +77,17 @@ def _process_ast_expr(
     return None
 
 
-def _process_operator(op: ast.operator) -> str | None:
+def _ast_binop_to_str(op: ast.operator) -> str | None:
     """Return the string representation of some simple operators."""
-    for ast_op, str_op in AST_OP_TO_STR.items():
+    for ast_op, str_op in AST_BINOP_TO_STR.items():
+        if isinstance(op, ast_op):
+            return str_op
+    return None
+
+
+def _ast_cmpop_to_str(op: ast.cmpop) -> str | None:
+    """Return the string representation of some simple operators."""
+    for ast_op, str_op in AST_CMPOP_TO_STR.items():
         if isinstance(op, ast_op):
             return str_op
     return None
@@ -92,7 +107,7 @@ def _process_binop(
         # that we'll ever reach this point, as only single-line lambda expressions
         # are allowed.
         return None
-    op = _process_operator(binop.op)
+    op = _ast_binop_to_str(binop.op)
     if op is None:
         return None
     left = _process_ast_expr(binop.left, arg, columns, level=level + 1, is_expr=is_expr)
@@ -100,6 +115,38 @@ def _process_binop(
         return None
     right = _process_ast_expr(
         binop.right, arg, columns, level=level + 1, is_expr=is_expr
+    )
+    if right is None:
+        return None
+    return f"{left} {op} {right}"
+
+
+def _process_compare(
+    binop: ast.Compare, arg: str, columns: list[str], level: int, is_expr: bool
+) -> str | None:
+    """
+    Process a binary operation, such as `x + 1`.
+
+    Only return if the left-hand-side, the right-hand-side, and the operator are
+    simple.
+    """
+    if level > 5:
+        # We don't want to go too deep in the AST. Note that it's incredibly unlikely
+        # that we'll ever reach this point, as only single-line lambda expressions
+        # are allowed.
+        return None
+    if len(binop.ops) != 1:
+        return None
+    op = _ast_cmpop_to_str(binop.ops[0])
+    if op is None:
+        return None
+    left = _process_ast_expr(binop.left, arg, columns, level=level + 1, is_expr=is_expr)
+    if left is None:
+        return None
+    if len(binop.comparators) != 1:
+        return None
+    right = _process_ast_expr(
+        binop.comparators[0], arg, columns, level=level + 1, is_expr=is_expr
     )
     if right is None:
         return None
@@ -187,8 +234,7 @@ def _parse_str_to_ast_lambda(src: str) -> ast.Lambda | None:
     args = lambda_.args.args
     if len(args) != 1:
         return None
-    # todo: allow ast.Compare
-    if not isinstance(lambda_.body, ast.BinOp):
+    if not isinstance(lambda_.body, (ast.BinOp, ast.Compare)):
         return None
     return lambda_
 
@@ -202,11 +248,11 @@ def maybe_warn_about_dataframe_apply_function(
     ast_lambda = _parse_str_to_ast_lambda(str_lambda)
     if ast_lambda is None:
         return
-    out = _process_ast_expr(
+    suggestion = _process_ast_expr(
         ast_lambda.body, ast_lambda.args.args[0].arg, columns, level=0, is_expr=False
     )
 
-    if out:
+    if suggestion:
         warnings.warn(
             "DataFrame.apply is much slower than the native expressions API. Only use "
             "it if you cannot implement your logic otherwise.\n"
@@ -214,7 +260,7 @@ def maybe_warn_about_dataframe_apply_function(
             f"\033[31m-    .apply({str_lambda})\033[0m\n"
             "\n"
             "with:\n"
-            f'\033[32m+    .select({out}.alias("apply"))\033[0m\n',
+            f'\033[32m+    .select({suggestion}.alias("apply"))\033[0m\n',
             PolarsInefficientApplyWarning,
             stacklevel=find_stacklevel(),
         )
@@ -229,11 +275,11 @@ def maybe_warn_about_expr_apply_function(
     ast_lambda = _parse_str_to_ast_lambda(str_lambda)
     if ast_lambda is None:
         return
-    out = _process_ast_expr(
+    suggestion = _process_ast_expr(
         ast_lambda.body, ast_lambda.args.args[0].arg, columns, level=0, is_expr=True
     )
 
-    if out:
+    if suggestion:
         warnings.warn(
             "Expr.apply is much slower than the native expressions API. Only use "
             "it if you cannot implement your logic otherwise.\n"
@@ -241,7 +287,7 @@ def maybe_warn_about_expr_apply_function(
             f'\033[31m-    pl.col("{columns[0]}").apply({str_lambda})\033[0m\n'
             "\n"
             "with:\n"
-            f"\033[32m+    {out}\033[0m\n",
+            f"\033[32m+    {suggestion}\033[0m\n",
             PolarsInefficientApplyWarning,
             stacklevel=find_stacklevel(),
         )
