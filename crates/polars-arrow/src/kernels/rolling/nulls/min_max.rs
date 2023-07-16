@@ -1,334 +1,234 @@
-use arrow::bitmap::utils::{count_zeros, ZipValidityIter};
+//use arrow::bitmap::utils::{count_zeros, ZipValidityIter};
 use nulls;
 use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
 
 use super::*;
 
-pub fn is_reverse_sorted_max_nulls<T: NativeType + PartialOrd + IsFloat>(
-    values: &[T],
-    validity: &Bitmap,
-) -> bool {
-    let mut current_max = None;
-    for opt_v in ZipValidityIter::new(values.iter(), validity.iter()) {
-        match (current_max, opt_v) {
-            // do nothing
-            (None, None) => {}
-            (None, Some(v)) => current_max = Some(*v),
-            (Some(current), Some(val)) => {
-                match compare_fn_nan_min(&current, val) {
-                    Ordering::Greater => {
-                        current_max = Some(*val);
+
+#[inline]
+fn new_is_min<T: NativeType + IsFloat + PartialOrd>(old: &T, new: &T) -> bool {
+    compare_fn_nan_min(old, new).is_ge()
+}
+
+#[inline]
+fn new_is_max<T: NativeType + IsFloat + PartialOrd>(old: &T, new: &T) -> bool {
+    compare_fn_nan_max(old, new).is_le()
+}
+
+
+// #[inline]
+// unsafe fn get_max_idx_and_null_count<'a, T>(
+//     slice: &'a [T],
+//     validity: &'a Bitmap,
+//     start: usize,
+//     end: usize,
+//     sorted_to: usize,
+// ) -> (Option<(usize, &'a T)>, usize)
+// where
+//     T: NativeType + IsFloat + PartialOrd,
+// {
+//     let ilen = end - start;
+//     let leading_nc = validity.iter().skip(start).take(ilen).position(|x| x).unwrap_or(ilen);
+//     if leading_nc == ilen {
+//         return (None, ilen);
+//     }
+//     let start = start + leading_nc;
+//     let (mut m, mut m_idx) = (slice.get_unchecked(start), start);
+//     if sorted_to >= end {
+//         let remaining_nc = validity.null_count_range(start, end - start);
+//         (Some((m_idx, m)), leading_nc + remaining_nc)
+//     } else {
+//         let start = (start+1).max(sorted_to);
+//         let mut remaining_nc = 0;
+//         for i in start..end {
+//             if !validity.get_bit_unchecked(i) {
+//                 remaining_nc += 1;
+//                 continue;
+//             }
+//             let newval = slice.get_unchecked(i);
+//             if new_is_max(m, newval) {
+//                 (m, m_idx) = (newval, i);
+//             }
+//         }
+//         (Some((m_idx, m)), remaining_nc + leading_nc)
+//     }
+// }
+
+
+macro_rules! fn_n_sorted_past {
+    ($name:ident, $cmp_f:ident, $stop_ord:ident) => {
+        #[inline]
+        unsafe fn $name<T: NativeType + IsFloat + PartialOrd>(
+            slice: &[T],
+            validity: &Bitmap,
+            m_idx: usize,
+        ) -> usize {
+            let (mut last_val, mut n) = (slice.get_unchecked(m_idx), 0);
+            for i in (m_idx + 1)..slice.len() {
+                if validity.get_bit_unchecked(i) {
+                    let val = slice.get_unchecked(i);
+                    if matches!($cmp_f(last_val, val), Ordering::$stop_ord) {
+                        break;
                     }
-                    // allowed
-                    Ordering::Equal => {}
-                    // not sorted
-                    Ordering::Less => return false,
+                    last_val = val;
                 }
+                n += 1;
             }
-            (Some(_current), None) => {}
+            n
         }
-    }
-
-    true
-}
-
-pub struct SortedMinMax<'a, T: NativeType> {
-    slice: &'a [T],
-    validity: &'a Bitmap,
-    last_start: usize,
-    last_end: usize,
-    null_count: usize,
-}
-
-impl<'a, T: NativeType> SortedMinMax<'a, T> {
-    fn count_nulls(&self, start: usize, end: usize) -> usize {
-        let (bytes, offset, _) = self.validity.as_slice();
-        count_zeros(bytes, offset + start, end - start)
     }
 }
+fn_n_sorted_past!(n_sorted_past_min, compare_fn_nan_min, Greater);
+fn_n_sorted_past!(n_sorted_past_max, compare_fn_nan_max, Less);
 
-impl<'a, T: NativeType> RollingAggWindowNulls<'a, T> for SortedMinMax<'a, T> {
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        _params: DynArgs,
-    ) -> Self {
-        let mut out = Self {
-            slice,
-            validity,
-            last_start: start,
-            last_end: end,
-            null_count: 0,
-        };
-        let nulls = out.count_nulls(start, end);
-        out.null_count = nulls;
-        out
-    }
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        self.null_count -= self.count_nulls(self.last_start, start);
-        self.null_count += self.count_nulls(self.last_end, end);
-
-        self.last_start = start;
-        self.last_end = end;
-
-        // return first non null
-        for idx in start..end {
-            let valid = self.validity.get_bit_unchecked(idx);
-
-            if valid {
-                return Some(*self.slice.get_unchecked(idx));
-            }
+// Min and max really are the same thing up to a difference in comparison direction, as represented
+// here by helpers we pass in. Making both with a macro helps keep behavior synchronized
+macro_rules! minmax_window {
+    ($m_window:tt, $new_is_m:ident, $n_sorted_past:ident) => {
+        pub struct $m_window<'a, T: NativeType + PartialOrd + IsFloat> {
+            slice: &'a [T],
+            validity: &'a Bitmap,
+            m: Option<T>,
+            m_idx: usize,
+            sorted_to: usize,
+            last_start: usize,
+            last_end: usize,
+            null_count: usize
         }
 
-        None
-    }
-
-    fn is_valid(&self, min_periods: usize) -> bool {
-        ((self.last_end - self.last_start) - self.null_count) >= min_periods
-    }
-}
-
-/// Generic `Min` / `Max` kernel.
-pub struct MinMaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
-    slice: &'a [T],
-    validity: &'a Bitmap,
-    extremum: Option<T>,
-    last_start: usize,
-    last_end: usize,
-    null_count: usize,
-    compare_fn_nan: fn(&T, &T) -> Ordering,
-    take_extremum: fn(T, T) -> T,
-    // ordering on which the window needs to act.
-    // for min kernel this is Less
-    // for max kernel this is Greater
-    agg_ordering: Ordering,
-}
-
-impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
-    unsafe fn compute_extremum_in_between_leaving_and_entering(&self, start: usize) -> Option<T> {
-        // check the values in between the window that remains e.g. is not leaving
-        // this between `start..last_end`
-        //
-        // because we know the current `min` (which might be leaving), we know we can stop
-        // searching if any value is equal to current `min`.
-        let mut extremum_in_between = None;
-        for idx in start..self.last_end {
-            let valid = self.validity.get_bit_unchecked(idx);
-            let value = self.slice.get_unchecked(idx);
-
-            if valid {
-                // early return
-                if let Some(current_min) = self.extremum {
-                    if matches!(compare_fn_nan_min(value, &current_min), Ordering::Equal) {
-                        return Some(current_min);
-                    }
+        impl<'a, T: NativeType + IsFloat + PartialOrd> $m_window<'a, T> {
+            #[inline]
+            unsafe fn init_get_m_m_idx_and_null_count(
+                slice: &'a [T],
+                validity: &'a Bitmap,
+                start: usize,
+                end: usize,
+                sorted_to: usize,
+            ) -> (Option<(usize, &'a T)>, usize) {
+                let ilen = end - start;
+                let leading_nc = validity.iter().skip(start).take(ilen).position(|x| x).unwrap_or(ilen);
+                if leading_nc == ilen {
+                    return (None, ilen);
                 }
-
-                match extremum_in_between {
-                    None => extremum_in_between = Some(*value),
-                    Some(current) => {
-                        extremum_in_between = Some((self.take_extremum)(*value, current))
-                    }
-                }
-            }
-        }
-        extremum_in_between
-    }
-
-    // compute min from the entire window
-    unsafe fn compute_extremum_and_update_null_count(
-        &mut self,
-        start: usize,
-        end: usize,
-    ) -> Option<T> {
-        let mut extremum = None;
-        let mut idx = start;
-        for value in &self.slice[start..end] {
-            let valid = self.validity.get_bit_unchecked(idx);
-            if valid {
-                match extremum {
-                    None => extremum = Some(*value),
-                    Some(current) => extremum = Some((self.take_extremum)(*value, current)),
-                }
-            } else {
-                self.null_count += 1;
-            }
-            idx += 1;
-        }
-        extremum
-    }
-
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        compare_fn: fn(&T, &T) -> Ordering,
-        take_extremum: fn(T, T) -> T,
-        agg_ordering: Ordering,
-    ) -> Self {
-        let mut out = Self {
-            slice,
-            validity,
-            extremum: None,
-            last_start: start,
-            last_end: end,
-            null_count: 0,
-            compare_fn_nan: compare_fn,
-            take_extremum,
-            agg_ordering,
-        };
-        let extremum = out.compute_extremum_and_update_null_count(start, end);
-        out.extremum = extremum;
-        out
-    }
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        // recompute min
-        if start >= self.last_end {
-            self.extremum = self.compute_extremum_and_update_null_count(start, end);
-            self.last_end = end;
-            self.last_start = start;
-            return self.extremum;
-        }
-
-        // remove elements that should leave the window
-        let mut recompute_extremum = false;
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let valid = self.validity.get_bit_unchecked(idx);
-            if valid {
-                let leaving_value = self.slice.get_unchecked(idx);
-
-                // if the leaving value is the
-                // min value, we need to recompute the min.
-                if matches!(
-                    (self.compare_fn_nan)(leaving_value, &self.extremum.unwrap()),
-                    Ordering::Equal
-                ) {
-                    recompute_extremum = true;
-                    break;
-                }
-            } else {
-                // null value leaving the window
-                self.null_count -= 1;
-
-                // self.min is None and the leaving value is None
-                // if the entering value is valid, we might get a new min.
-                if self.extremum.is_none() {
-                    recompute_extremum = true;
-                    break;
-                }
-            }
-        }
-
-        let entering_extremum = self.compute_extremum_and_update_null_count(self.last_end, end);
-
-        match (self.extremum, entering_extremum) {
-            // all remains `None`
-            (None, None) => {}
-            (None, Some(new_min)) => self.extremum = Some(new_min),
-            // entering min is `None` and the `min` is leaving, so the `in_between` min is the new
-            // minimum.
-            // if min is not leaving, we don't do anything
-            (Some(_current_min), None) => {
-                if recompute_extremum {
-                    self.extremum = self.compute_extremum_in_between_leaving_and_entering(start);
-                }
-            }
-            (Some(current_extremum), Some(entering_extremum)) => {
-                if recompute_extremum {
-                    match (self.compare_fn_nan)(&current_extremum, &entering_extremum) {
-                        // do nothing
-                        Ordering::Equal => {}
-                        // leaving < entering
-                        ord if ord == self.agg_ordering => {
-                            // leaving value could be the smallest, we might need to recompute
-
-                            let min_in_between =
-                                self.compute_extremum_in_between_leaving_and_entering(start);
-                            match min_in_between {
-                                None => self.extremum = Some(entering_extremum),
-                                Some(extremum_in_between) => {
-                                    if (self.compare_fn_nan)(
-                                        &extremum_in_between,
-                                        &entering_extremum,
-                                    ) == self.agg_ordering
-                                    {
-                                        self.extremum = Some(extremum_in_between)
-                                    } else {
-                                        self.extremum = Some(entering_extremum)
-                                    }
-                                }
-                            }
+                let start = start + leading_nc;
+                let (mut m, mut m_idx) = (slice.get_unchecked(start), start);
+                if sorted_to >= end {
+                    let remaining_nc = validity.null_count_range(start, end - start);
+                    (Some((m_idx, m)), leading_nc + remaining_nc)
+                } else {
+                    let start = (start+1).max(sorted_to);
+                    let mut remaining_nc = 0;
+                    for i in start..end {
+                        if !validity.get_bit_unchecked(i) {
+                            remaining_nc += 1;
+                            continue;
                         }
-                        // leaving > entering
-                        _ => {
-                            if (self.compare_fn_nan)(&entering_extremum, &current_extremum)
-                                == self.agg_ordering
-                            {
-                                self.extremum = Some(entering_extremum)
-                            }
+                        let newval = slice.get_unchecked(i);
+                        if $new_is_m(m, newval) {
+                            (m, m_idx) = (newval, i);
                         }
                     }
-                } else if (self.compare_fn_nan)(&entering_extremum, &current_extremum)
-                    == self.agg_ordering
-                {
-                    self.extremum = Some(entering_extremum)
+                    (Some((m_idx, m)), remaining_nc + leading_nc)
+                }
+            }
+
+            #[inline]
+            unsafe fn get_m_m_idx_and_null_count(&self, start: usize, end: usize) -> (Option<(usize, &'a T)>, usize){
+                $m_window::init_get_m_m_idx_and_null_count(self.slice, self.validity, start, end, self.sorted_to)
+            }
+
+            #[inline]
+            unsafe fn update_m_and_m_idx(&mut self, m_and_idx: (usize, &T)) {
+                self.m = Some(*m_and_idx.1);
+                self.m_idx = m_and_idx.0;
+                if self.sorted_to <= self.m_idx && self.m.is_some() {
+                    // Track how far past the current extremum values are sorted. Direction depends on min/max
+                    // Tracking sorted ranges lets us only do comparisons when we have to.
+                    self.sorted_to = self.m_idx + 1 + $n_sorted_past(&self.slice, self.validity, self.m_idx);
                 }
             }
         }
-        self.last_start = start;
-        self.last_end = end;
-        self.extremum
-    }
 
-    fn is_valid(&self, min_periods: usize) -> bool {
-        ((self.last_end - self.last_start) - self.null_count) >= min_periods
-    }
-}
+        impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T>
+            for $m_window<'a, T>
+        {
+            unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, _params: DynArgs) -> Self {
+                let (m_idx, null_count) =
+                    $m_window::init_get_m_m_idx_and_null_count(slice, validity, start, end, 0);
+                let (m, idx) = (m_idx.map(|x| x.1), m_idx.map_or(0, |x| x.0));
+                Self {
+                    slice,
+                    validity,
+                    m: m.copied(),
+                    m_idx: idx,
+                    sorted_to: idx + 1 + $n_sorted_past(&slice, validity, idx),
+                    last_start: start,
+                    last_end: end,
+                    null_count,
+                }
+            }
 
-pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
-    inner: MinMaxWindow<'a, T>,
-}
+            unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+                //For details see: https://github.com/pola-rs/polars/pull/9277#issuecomment-1581401692
+                let leaving_nc = self.validity.null_count_range(self.last_start, start - self.last_start);
+                self.last_start = start; // Don't care where the last one started now
+                let old_last_end = self.last_end; // But we need this
+                self.last_end = end;
+                let entering_start = std::cmp::max(old_last_end, start);
+                let (entering, entering_nc) = if end - entering_start == 1 {
+                    // Faster in the special, but common, case of a fixed window rolling by one
+                    if self.validity.get_bit_unchecked(entering_start) {
+                        (Some((entering_start, self.slice.get_unchecked(entering_start))), 0)
+                    } else {
+                        (None, 1)
+                    }
+                } else if old_last_end == end {
+                    // Edge case for shrinking windows
+                    (None, 0)
+                } else {
+                    self.get_m_m_idx_and_null_count(entering_start, end)
+                };
+                let empty_overlap = old_last_end <= start;
+                self.null_count = self.null_count + entering_nc - leaving_nc;
 
-fn take_min<T: NativeType + IsFloat + PartialOrd>(a: T, b: T) -> T {
-    std::cmp::min_by(a, b, compare_fn_nan_min)
-}
+                if entering.is_some_and(|em| self.m.is_none() || empty_overlap ||$new_is_m(&self.m.unwrap(), em.1)) {
+                    // The entering extremum "beats" the previous extremum so we can ignore the overlap
+                    self.update_m_and_m_idx(entering.unwrap());
+                    return self.m;
+                } else if self.m_idx >= start || empty_overlap {
+                    // The previous extremum didn't drop off. Keep it
+                    return self.m;
+                }
+                // Otherwise get the min of the overlapping window and the entering min
+                let (previous, _) = self.get_m_m_idx_and_null_count(start, old_last_end);
+                match (previous, entering) {
+                    (Some(pm), Some(em)) => {
+                        if $new_is_m(pm.1, em.1) {
+                            self.update_m_and_m_idx(em);
+                        } else {
+                            self.update_m_and_m_idx(pm);
+                        }
+                    }
+                    (Some(pm), None) => self.update_m_and_m_idx(pm),
+                    (None, Some(em)) => self.update_m_and_m_idx(em),
+                    // Both the entering and previous windows are empty or all null
+                    (None, None) => {
+                        self.m = None
+                    },
+                }
 
-impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MinWindow<'a, T> {
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        _params: DynArgs,
-    ) -> Self {
-        Self {
-            inner: MinMaxWindow::new(
-                slice,
-                validity,
-                start,
-                end,
-                compare_fn_nan_min,
-                take_min,
-                Ordering::Less,
-            ),
+                self.m
+            }
+            fn is_valid(&self, min_periods: usize) -> bool {
+                ((self.last_end - self.last_start) - self.null_count) >= min_periods
+            }
         }
-    }
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        self.inner.update(start, end)
-    }
-
-    fn is_valid(&self, min_periods: usize) -> bool {
-        self.inner.is_valid(min_periods)
-    }
+    };
 }
+
+minmax_window!(MinWindow, new_is_min, n_sorted_past_min);
+minmax_window!(MaxWindow, new_is_max, n_sorted_past_max);
+
 
 pub fn rolling_min<T>(
     arr: &PrimitiveArray<T>,
@@ -344,63 +244,18 @@ where
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }
-    if center {
-        rolling_apply_agg_window::<MinWindow<_>, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets_center,
-            None,
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
+    };
+    rolling_apply_agg_window::<MinWindow<_>, _, _>(
+        arr.values().as_slice(),
+        arr.validity().as_ref().unwrap(),
+        window_size,
+        min_periods,
+        offset_fn,
+        None,
         )
-    } else {
-        rolling_apply_agg_window::<MinWindow<_>, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-            None,
-        )
-    }
-}
-
-pub struct MaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
-    inner: MinMaxWindow<'a, T>,
-}
-
-fn take_max<T: NativeType + IsFloat + PartialOrd>(a: T, b: T) -> T {
-    std::cmp::max_by(a, b, compare_fn_nan_max)
-}
-
-impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MaxWindow<'a, T> {
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        _params: DynArgs,
-    ) -> Self {
-        Self {
-            inner: MinMaxWindow::new(
-                slice,
-                validity,
-                start,
-                end,
-                compare_fn_nan_max,
-                take_max,
-                Ordering::Greater,
-            ),
-        }
-    }
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        self.inner.update(start, end)
-    }
-
-    fn is_valid(&self, min_periods: usize) -> bool {
-        self.inner.is_valid(min_periods)
-    }
 }
 
 pub fn rolling_max<T>(
@@ -417,44 +272,16 @@ where
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }
-    if center {
-        if is_reverse_sorted_max_nulls(arr.values().as_slice(), arr.validity().as_ref().unwrap()) {
-            rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
-                arr.values().as_slice(),
-                arr.validity().as_ref().unwrap(),
-                window_size,
-                min_periods,
-                det_offsets_center,
-                None,
-            )
-        } else {
-            rolling_apply_agg_window::<MaxWindow<_>, _, _>(
-                arr.values().as_slice(),
-                arr.validity().as_ref().unwrap(),
-                window_size,
-                min_periods,
-                det_offsets_center,
-                None,
-            )
-        }
-    } else if is_reverse_sorted_max_nulls(arr.values().as_slice(), arr.validity().as_ref().unwrap())
-    {
-        rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-            None,
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
+    };
+    rolling_apply_agg_window::<MaxWindow<_>, _, _>(
+        arr.values().as_slice(),
+        arr.validity().as_ref().unwrap(),
+        window_size,
+        min_periods,
+        offset_fn,
+        None,
         )
-    } else {
-        rolling_apply_agg_window::<MaxWindow<_>, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-            None,
-        )
-    }
 }
