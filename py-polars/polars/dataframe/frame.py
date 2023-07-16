@@ -3306,9 +3306,9 @@ class DataFrame:
         ... )  # doctest: +SKIP
 
         """
-        from polars.io.delta import check_if_delta_available, resolve_delta_lake_uri
+        from polars.io.delta import _check_if_delta_available, _resolve_delta_lake_uri
 
-        check_if_delta_available()
+        _check_if_delta_available()
 
         from deltalake.writer import (
             try_get_deltatable,
@@ -3319,7 +3319,7 @@ class DataFrame:
             delta_write_options = {}
 
         if isinstance(target, (str, Path)):
-            target = resolve_delta_lake_uri(str(target), strict=False)
+            target = _resolve_delta_lake_uri(str(target), strict=False)
 
         unsupported_cols = {}
         unsupported_types = [Time, Categorical, Null]

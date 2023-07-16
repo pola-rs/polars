@@ -875,12 +875,39 @@ class ExprDateTimeNameSpace:
         return wrap_expr(self._pyexpr.dt_ordinal_day())
 
     def time(self) -> Expr:
+        """
+        Extract time.
+
+        Applies to Datetime columns only; fails on Date.
+
+        Returns
+        -------
+        Time
+        """
         return wrap_expr(self._pyexpr.dt_time())
 
     def date(self) -> Expr:
+        """
+        Extract date from date(time).
+
+        Applies to Date and Datetime columns.
+
+        Returns
+        -------
+        Date
+        """
         return wrap_expr(self._pyexpr.dt_date())
 
     def datetime(self) -> Expr:
+        """
+        Return datetime.
+
+        Applies to Datetime columns.
+
+        Returns
+        -------
+        Datetime
+        """
         return wrap_expr(self._pyexpr.dt_datetime())
 
     def hour(self) -> Expr:
