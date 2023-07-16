@@ -3062,6 +3062,9 @@ class DataFrame:
         use_pyarrow
             Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
+        storage_options
+            Extra options that make sense for ``fsspec.open()`` or a particular storage
+            connection, e.g. host, port, username, password, etc.
         pyarrow_options
             Arguments passed to ``pyarrow.parquet.write_table``.
 
