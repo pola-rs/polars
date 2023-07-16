@@ -193,20 +193,20 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
             return BytesIO(f.read())
         else:
             return BytesIO(f.read().decode(encoding).encode("utf8"))
-        
+
 
 def _prepare_write_file_arg(
-    file: str | BytesIO | Path | StringIO,
+    file: str | Path | BytesIO,
     encoding: str | None = None,
     **kwargs: Any,
-) -> ContextManager[str | BinaryIO | list[BinaryIO]]:
+) -> ContextManager[str | BytesIO]:
     """
     Prepare file argument.
 
     Utility for write_[parquet]. (not to be used by scan_[parquet]).
     Returned value is always usable as a context.
 
-    A :class:`StringIO`, :class:`BytesIO` file is returned as a :class:`BytesIO`.
+    A :class:`BytesIO` file is returned as a :class:`BytesIO`.
     A local path is returned as a string.
     An http URL is read into a buffer and returned as a :class:`BytesIO`.
 
@@ -254,7 +254,7 @@ def _prepare_write_file_arg(
             if not has_non_utf8_non_utf8_lossy_encoding:
                 if infer_storage_options(file)["protocol"] == "file":
                     return managed_file(normalise_filepath(file, False))
-            kwargs["mode"] = 'wb'
+            kwargs["mode"] = "wb"
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
 
