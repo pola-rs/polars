@@ -39,7 +39,7 @@ class WhenThen(Expr):
         self._pywhenthen = pywhenthen
 
     @classmethod
-    def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
+    def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:  # type: ignore[override]
         return wrap_expr(pyexpr)
 
     @property
@@ -71,7 +71,7 @@ class WhenThenThen(Expr):
         self._pywhenthenthen = pywhenthenthen
 
     @classmethod
-    def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
+    def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:  # type: ignore[override]
         return wrap_expr(pyexpr)
 
     @property

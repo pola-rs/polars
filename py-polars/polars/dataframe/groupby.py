@@ -322,7 +322,7 @@ class GroupBy:
 
         if isinstance(self.by, str):
             by = [self.by]
-        elif isinstance(self.by, Iterable) and all(isinstance(c, str) for c in self.by):  # type: ignore[union-attr]
+        elif isinstance(self.by, Iterable) and all(isinstance(c, str) for c in self.by):
             by = list(self.by)  # type: ignore[arg-type]
         else:
             raise TypeError("Cannot call `apply` when grouping by an expression.")
