@@ -255,35 +255,6 @@ def _prepare_write_file_arg(
     )
     encoding_str = encoding if encoding else "utf8"
 
-    if isinstance(file, bytes):
-        if has_non_utf8_non_utf8_lossy_encoding:
-            return _check_empty(
-                BytesIO(file.decode(encoding_str).encode("utf8")),
-                context="bytes",
-            )
-
-    if isinstance(file, StringIO):
-        return _check_empty(
-            BytesIO(file.read().encode("utf8")),
-            context="StringIO",
-            read_position=file.tell(),
-        )
-
-    if isinstance(file, BytesIO):
-        if has_non_utf8_non_utf8_lossy_encoding:
-            return _check_empty(
-                BytesIO(file.read().decode(encoding_str).encode("utf8")),
-                context="BytesIO",
-                read_position=file.tell(),
-            )
-        return managed_file(
-            _check_empty(
-                b=file,
-                context="BytesIO",
-                read_position=file.tell(),
-            )
-        )
-
     if isinstance(file, Path):
         if has_non_utf8_non_utf8_lossy_encoding:
             return _check_empty(
@@ -304,7 +275,7 @@ def _prepare_write_file_arg(
             if not has_non_utf8_non_utf8_lossy_encoding:
                 if infer_storage_options(file)["protocol"] == "file":
                     return managed_file(normalise_filepath(file, False))
-            kwargs["mode"] = 'wt'
+            kwargs["mode"] = 'wb'
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
 
@@ -318,7 +289,7 @@ def _prepare_write_file_arg(
                     return managed_file(
                         [normalise_filepath(f, False) for f in file]
                     )
-            kwargs["mode"] = 'wt'
+            kwargs["mode"] = 'wb'
             kwargs["encoding"] = encoding
             return fsspec.open_files(file, **kwargs)
 
