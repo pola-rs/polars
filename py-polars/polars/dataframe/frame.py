@@ -5765,9 +5765,10 @@ class DataFrame:
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
 
         """
-        from polars.utils.lambda_parser import maybe_warn_about_dataframe_apply_function
+        # TODO:
+        # from polars.utils.udfs import warn_on_inefficient_apply
+        # warn_on_inefficient_apply(function, columns=self.columns, apply_target="frame)
 
-        maybe_warn_about_dataframe_apply_function(function, self.columns)
         out, is_df = self._df.apply(function, return_dtype, inference_size)
         if is_df:
             return self._from_pydf(out)

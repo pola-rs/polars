@@ -3772,7 +3772,7 @@ class Expr:
 
         """
         # input x: Series of type list containing the group values
-        from polars.utils.lambda_parser import maybe_warn_about_expr_apply_function
+        from polars.utils.udfs import warn_on_inefficient_apply
 
         try:
             root_names = self.meta.root_names()
@@ -3780,7 +3780,7 @@ class Expr:
             # no root names for pl.col('*')
             pass
         else:
-            maybe_warn_about_expr_apply_function(function, root_names)
+            warn_on_inefficient_apply(function, columns=root_names, apply_target="expr")
 
         if pass_name:
 
