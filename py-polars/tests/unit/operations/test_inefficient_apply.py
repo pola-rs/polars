@@ -9,9 +9,9 @@ import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.udfs import (
     _get_bytecode_ops,
-    _is_inefficient,
-    _param_name_from_simple_signature,
-    _rewrite_as_polars_expr,
+    _param_name_from_signature,
+    _rewrite_as_expression,
+    _to_polars_expression,
 )
 
 MY_CONSTANT = 3
@@ -20,7 +20,7 @@ MY_CONSTANT = 3
 def _get_suggestion(
     func: Callable[[Any], Any], col: str, apply_target: str
 ) -> str | None:
-    return _rewrite_as_polars_expr(_get_bytecode_ops(func), col, apply_target)
+    return _to_polars_expression(_get_bytecode_ops(func), col, apply_target)
 
 
 @pytest.mark.parametrize(
@@ -35,7 +35,7 @@ def _get_suggestion(
     ],
 )
 def test_non_simple_function(func: Callable[[Any], Any]) -> None:
-    assert not _param_name_from_simple_signature(func) or not _is_inefficient(
+    assert not _param_name_from_signature(func) or not _rewrite_as_expression(
         _get_bytecode_ops(func), apply_target="expr"
     )
 

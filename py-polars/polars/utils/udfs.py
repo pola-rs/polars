@@ -64,14 +64,14 @@ def _expr(value: str | tuple[str, str, str], col: str) -> str:
     return value
 
 
-def _op(op: str, argrepr: str, argval: Any) -> str:
+def _op(opname: str, argrepr: str, argval: Any) -> str:
     if argrepr:
         return argrepr
-    elif op == "IS_OP":
+    elif opname == "IS_OP":
         return "is not" if argval else "is"
-    elif op == "CONTAINS_OP":
+    elif opname == "CONTAINS_OP":
         return "not in" if argval else "in"
-    elif op == "UNARY_NOT":
+    elif opname == "UNARY_NOT":
         return "not"
     else:
         raise AssertionError(
@@ -115,7 +115,7 @@ def _inst(opname: str, argrepr: str, argval: str) -> tuple[str, str, str]:
     return opname, argrepr, argval
 
 
-def _is_inefficient(ops: list[tuple[str, str, Any]], apply_target: str) -> bool:
+def _rewrite_as_expression(ops: list[tuple[str, str, Any]], apply_target: str) -> bool:
     """
     Determine if bytecode indicates only simple binary ops and/or comparisons.
 
@@ -131,7 +131,7 @@ def _is_inefficient(ops: list[tuple[str, str, Any]], apply_target: str) -> bool:
     )
 
 
-def _rewrite_as_polars_expr(
+def _to_polars_expression(
     ops: list[tuple[str, str, Any]], col: str, apply_target: str
 ) -> str | None:
     """Take postfix opcode stack and translate to native polars expression."""
@@ -155,7 +155,7 @@ def _rewrite_as_polars_expr(
     return None
 
 
-def _param_name_from_simple_signature(function: Callable[[Any], Any]) -> str | None:
+def _param_name_from_signature(function: Callable[[Any], Any]) -> str | None:
     try:
         sig = signature(function)
     except ValueError:
@@ -173,18 +173,15 @@ def warn_on_inefficient_apply(
     # only consider simple functions with a single col/param
     if not (col := columns and columns[0]):
         return None
-
-    param_name = _param_name_from_simple_signature(function)
-    if param_name is None:
+    if (param_name := _param_name_from_signature(function)) is None:
         return None
 
     # fast function disassembly to get bytecode ops
     ops = _get_bytecode_ops(function)
 
     # if ops indicate a trivial function that should be native, warn about it
-    if _is_inefficient(ops, apply_target):
-        suggestion = _rewrite_as_polars_expr(ops, col, apply_target)
-        if suggestion:
+    if _rewrite_as_expression(ops, apply_target):
+        if suggestion := _to_polars_expression(ops, col, apply_target):
             addendum = (
                 'Note: in list.eval context, pl.col("") should be written as pl.element()'
                 if 'pl.col("")' in suggestion
