@@ -728,41 +728,46 @@ class ExprDateTimeNameSpace:
         -------
         Week day as UInt32
 
+        See Also
+        --------
+        day
+        ordinal_day
+
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 9)
+        >>> start = datetime(2001, 12, 22)
+        >>> stop = datetime(2001, 12, 25)
         >>> df = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, timedelta(days=3), eager=True)}
+        ...     {"date": pl.date_range(start, stop, timedelta(days=1), eager=True)}
         ... )
         >>> df
-        shape: (3, 1)
+        shape: (4, 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-01-04 00:00:00 │
-        │ 2001-01-07 00:00:00 │
+        │ 2001-12-22 00:00:00 │
+        │ 2001-12-23 00:00:00 │
+        │ 2001-12-24 00:00:00 │
+        │ 2001-12-25 00:00:00 │
         └─────────────────────┘
         >>> df.select(
-        ...     [
-        ...         pl.col("date").dt.weekday().alias("weekday"),
-        ...         pl.col("date").dt.day().alias("day_of_month"),
-        ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
-        ...     ]
+        ...     pl.col("date").dt.weekday().alias("weekday"),
+        ...     pl.col("date").dt.day().alias("day_of_month"),
+        ...     pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ... )
-        shape: (3, 3)
+        shape: (4, 3)
         ┌─────────┬──────────────┬─────────────┐
         │ weekday ┆ day_of_month ┆ day_of_year │
         │ ---     ┆ ---          ┆ ---         │
         │ u32     ┆ u32          ┆ u32         │
         ╞═════════╪══════════════╪═════════════╡
-        │ 1       ┆ 1            ┆ 1           │
-        │ 4       ┆ 4            ┆ 4           │
-        │ 7       ┆ 7            ┆ 7           │
+        │ 6       ┆ 22           ┆ 356         │
+        │ 7       ┆ 23           ┆ 357         │
+        │ 1       ┆ 24           ┆ 358         │
+        │ 2       ┆ 25           ┆ 359         │
         └─────────┴──────────────┴─────────────┘
 
         """
@@ -781,41 +786,46 @@ class ExprDateTimeNameSpace:
         -------
         Day as UInt32
 
+        See Also
+        --------
+        weekday
+        ordinal_day
+
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 9)
+        >>> start = datetime(2001, 12, 22)
+        >>> stop = datetime(2001, 12, 25)
         >>> df = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, timedelta(days=3), eager=True)}
+        ...     {"date": pl.date_range(start, stop, timedelta(days=1), eager=True)}
         ... )
         >>> df
-        shape: (3, 1)
+        shape: (4, 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-01-04 00:00:00 │
-        │ 2001-01-07 00:00:00 │
+        │ 2001-12-22 00:00:00 │
+        │ 2001-12-23 00:00:00 │
+        │ 2001-12-24 00:00:00 │
+        │ 2001-12-25 00:00:00 │
         └─────────────────────┘
         >>> df.select(
-        ...     [
-        ...         pl.col("date").dt.weekday().alias("weekday"),
-        ...         pl.col("date").dt.day().alias("day_of_month"),
-        ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
-        ...     ]
+        ...     pl.col("date").dt.weekday().alias("weekday"),
+        ...     pl.col("date").dt.day().alias("day_of_month"),
+        ...     pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ... )
-        shape: (3, 3)
+        shape: (4, 3)
         ┌─────────┬──────────────┬─────────────┐
         │ weekday ┆ day_of_month ┆ day_of_year │
         │ ---     ┆ ---          ┆ ---         │
         │ u32     ┆ u32          ┆ u32         │
         ╞═════════╪══════════════╪═════════════╡
-        │ 1       ┆ 1            ┆ 1           │
-        │ 4       ┆ 4            ┆ 4           │
-        │ 7       ┆ 7            ┆ 7           │
+        │ 6       ┆ 22           ┆ 356         │
+        │ 7       ┆ 23           ┆ 357         │
+        │ 1       ┆ 24           ┆ 358         │
+        │ 2       ┆ 25           ┆ 359         │
         └─────────┴──────────────┴─────────────┘
 
         """
@@ -834,41 +844,46 @@ class ExprDateTimeNameSpace:
         -------
         Day as UInt32
 
+        See Also
+        --------
+        weekday
+        day
+
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 9)
+        >>> start = datetime(2001, 12, 22)
+        >>> stop = datetime(2001, 12, 25)
         >>> df = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, timedelta(days=3), eager=True)}
+        ...     {"date": pl.date_range(start, stop, timedelta(days=1), eager=True)}
         ... )
         >>> df
-        shape: (3, 1)
+        shape: (4, 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-01-04 00:00:00 │
-        │ 2001-01-07 00:00:00 │
+        │ 2001-12-22 00:00:00 │
+        │ 2001-12-23 00:00:00 │
+        │ 2001-12-24 00:00:00 │
+        │ 2001-12-25 00:00:00 │
         └─────────────────────┘
         >>> df.select(
-        ...     [
-        ...         pl.col("date").dt.weekday().alias("weekday"),
-        ...         pl.col("date").dt.day().alias("day_of_month"),
-        ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
-        ...     ]
+        ...     pl.col("date").dt.weekday().alias("weekday"),
+        ...     pl.col("date").dt.day().alias("day_of_month"),
+        ...     pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ... )
-        shape: (3, 3)
+        shape: (4, 3)
         ┌─────────┬──────────────┬─────────────┐
         │ weekday ┆ day_of_month ┆ day_of_year │
         │ ---     ┆ ---          ┆ ---         │
         │ u32     ┆ u32          ┆ u32         │
         ╞═════════╪══════════════╪═════════════╡
-        │ 1       ┆ 1            ┆ 1           │
-        │ 4       ┆ 4            ┆ 4           │
-        │ 7       ┆ 7            ┆ 7           │
+        │ 6       ┆ 22           ┆ 356         │
+        │ 7       ┆ 23           ┆ 357         │
+        │ 1       ┆ 24           ┆ 358         │
+        │ 2       ┆ 25           ┆ 359         │
         └─────────┴──────────────┴─────────────┘
 
         """
