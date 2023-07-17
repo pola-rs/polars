@@ -1,26 +1,26 @@
 use super::*;
 
-/// Intermediate state of `when(..).then(..).otherwise(..)` expr.
+/// Intermediate state of `when(..).then(..).otherwise(..)` expression.
 #[derive(Clone)]
 pub struct When {
     predicate: Expr,
 }
 
-/// Intermediate state of `when(..).then(..).otherwise(..)` expr.
+/// Intermediate state of `when(..).then(..).otherwise(..)` expression.
 #[derive(Clone)]
 pub struct Then {
     predicate: Expr,
     then: Expr,
 }
 
-/// Intermediate state of `when(..).then(..).otherwise(..)` expr.
+/// Intermediate state of a chained `when(..).then(..).otherwise(..)` expression.
 #[derive(Clone)]
 pub struct ChainedWhen {
     predicates: Vec<Expr>,
     thens: Vec<Expr>,
 }
 
-/// Intermediate state of `when(..).then(..).otherwise(..)` expr.
+/// Intermediate state of a chained `when(..).then(..).otherwise(..)` expression.
 #[derive(Clone)]
 pub struct ChainedThen {
     predicates: Vec<Expr>,
@@ -119,7 +119,7 @@ impl ChainedThen {
     }
 }
 
-/// Start a when-then-otherwise expression
+/// Start a `when(..).then(..).otherwise(..)` expression
 pub fn when<E: Into<Expr>>(predicate: E) -> When {
     When {
         predicate: predicate.into(),

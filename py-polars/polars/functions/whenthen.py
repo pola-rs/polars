@@ -91,6 +91,5 @@ def when(expr: IntoExpr) -> pl.When:
 
 
     """
-    expr = parse_as_expression(expr)
-    pywhen = plr.when(expr)
-    return pl.When(pywhen)
+    pyexpr = parse_as_expression(expr)
+    return pl.When(plr.when(pyexpr))
