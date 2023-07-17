@@ -244,7 +244,7 @@ impl<'a> CommonSubExprRewriter<'a> {
 impl RewritingVisitor for CommonSubExprRewriter<'_> {
     type Node = AexprNode;
 
-    fn pre_visit(&mut self, _node: &Self::Node) -> PolarsResult<RewriteRecursion> {
+    fn pre_visit(&mut self, ae_node: &Self::Node) -> PolarsResult<RewriteRecursion> {
         if self.visited_idx >= self.identifier_array.len() - self.id_array_offset {
             return Ok(RewriteRecursion::Stop);
         }
@@ -257,8 +257,12 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             return Ok(RewriteRecursion::Stop);
         }
 
-        let (_node, count) = self.sub_expr_map.get(id).unwrap();
-        if *count > 1 {
+        let (node, count) = self.sub_expr_map.get(id).unwrap();
+        if *count > 1
+            // this does a full expression traversal to check if the expression is truly
+            // the same
+            && ae_node.binary(*node, |l, r| l == r)
+            {
             self.replaced_identifiers.insert(id.clone());
             // rewrite this sub-expression, don't visit its children
             Ok(RewriteRecursion::MutateAndStop)
@@ -374,8 +378,6 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         })?;
                         new_expr.push(new_node.node())
                     }
-                    // TODO! check somewhere the nodes are truly equal
-
                     // Add the tmp columns
                     for id in &self.replaced_identifiers {
                         let (node, _count) = self.se_count.get(id).unwrap();
