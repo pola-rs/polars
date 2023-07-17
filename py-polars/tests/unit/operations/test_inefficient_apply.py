@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any, Callable
-from warnings import catch_warnings, simplefilter
 
 import numpy as np
 import pytest
@@ -14,6 +13,8 @@ from polars.utils.udfs import (
     _rewrite_as_polars_expr,
     _simple_signature,
 )
+
+MY_CONSTANT = 3
 
 
 def _get_suggestion(
@@ -28,6 +29,8 @@ def _get_suggestion(
         np.sin,
         lambda x: np.sin(x),
         lambda x, y: x + y,
+        lambda x: MY_CONSTANT + x,
+        lambda x: x[0] + 1,
     ],
 )
 def test_non_simple_function(func: Callable[[Any], Any]) -> None:
@@ -58,9 +61,9 @@ def test_non_simple_function(func: Callable[[Any], Any]) -> None:
     ],
 )
 def test_expr_apply_produces_warning(func: Callable[[Any], Any]) -> None:
-    with catch_warnings():
-        simplefilter("ignore", PolarsInefficientApplyWarning)
-
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
         suggestion = _get_suggestion(func, col="a", apply_target="expr")
         assert suggestion is not None
 

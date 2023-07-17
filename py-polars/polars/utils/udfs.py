@@ -72,7 +72,10 @@ def _op(op: str, argrepr: str, argval: Any) -> str:
         return "not in" if argval else "in"
     elif op == "UNARY_NOT":
         return "not"
-    return "??"  # should be unreachable with current op list?
+    raise AssertionError(
+        "Unreachable code - please report a bug to https://github.com/pola-rs/polars/issues "
+        "with the content of function you were passing to `apply`."
+    )
 
 
 def _get_bytecode_ops(function: Callable[[Any], Any]) -> list[tuple[str, str, Any]]:

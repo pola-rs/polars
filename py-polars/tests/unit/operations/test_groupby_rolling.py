@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
-from warnings import catch_warnings, simplefilter
 
 import pytest
 
@@ -55,9 +54,9 @@ def test_rolling_groupby_overlapping_groups() -> None:
     # this first aggregates overlapping groups so they cannot be naively flattened
     df = pl.DataFrame({"a": [41, 60, 37, 51, 52, 39, 40]})
 
-    with catch_warnings():
-        simplefilter("ignore", PolarsInefficientApplyWarning)
-
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
         assert_series_equal(
             (
                 df.with_row_count()

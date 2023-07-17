@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from datetime import date
 from typing import TYPE_CHECKING, Any
-from warnings import catch_warnings, simplefilter
 
 import numpy as np
 import pytest
@@ -331,8 +330,9 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
 
-    with catch_warnings():
-        simplefilter("ignore", PolarsInefficientApplyWarning)
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
         (
             q.select(pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Int64)).collect(
                 streaming=True
@@ -549,9 +549,9 @@ def test_streaming_groupby_categorical_aggregate() -> None:
 
 def test_streaming_restart_non_streamable_groupby() -> None:
     df = pl.DataFrame({"id": [1], "id2": [1], "id3": [1], "value": [1]})
-    with catch_warnings():
-        simplefilter("ignore", PolarsInefficientApplyWarning)
-
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
         res = (
             df.lazy()
             .join(df.lazy(), on=["id", "id2"], how="left")

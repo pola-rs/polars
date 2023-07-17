@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from typing import Any
-from warnings import catch_warnings, simplefilter
 
 import pytest
 
@@ -158,9 +157,9 @@ def test_unknown_apply() -> None:
         {"Amount": [10, 1, 1, 5], "Flour": ["1000g", "100g", "50g", "75g"]}
     )
 
-    with catch_warnings():
-        simplefilter("ignore", PolarsInefficientApplyWarning)
-
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
         q = df.lazy().select(
             [
                 pl.col("Amount"),

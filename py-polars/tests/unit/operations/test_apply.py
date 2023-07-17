@@ -4,7 +4,6 @@ import json
 from datetime import date, datetime, timedelta
 from functools import reduce
 from typing import Any, Sequence
-from warnings import catch_warnings, simplefilter
 
 import numpy as np
 import pytest
@@ -246,9 +245,9 @@ def test_apply_skip_nulls() -> None:
 
 
 def test_apply_object_dtypes() -> None:
-    with catch_warnings():
-        simplefilter("ignore", PolarsInefficientApplyWarning)
-
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
         assert pl.DataFrame(
             {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
         ).with_columns(

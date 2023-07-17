@@ -7,7 +7,6 @@ from inspect import signature
 from operator import add
 from string import ascii_letters
 from typing import TYPE_CHECKING, Any, cast
-from warnings import catch_warnings, simplefilter
 
 import numpy as np
 import pytest
@@ -90,9 +89,9 @@ def test_apply() -> None:
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
 
-    with catch_warnings():
-        simplefilter("ignore", PolarsInefficientApplyWarning)
-
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
         for strategy in ["thread_local", "threading"]:
             ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
             new = ldf.with_columns(

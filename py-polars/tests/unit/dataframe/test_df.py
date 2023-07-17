@@ -8,7 +8,6 @@ from decimal import Decimal
 from io import BytesIO
 from operator import floordiv, truediv
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
-from warnings import catch_warnings, simplefilter
 
 import numpy as np
 import pyarrow as pa
@@ -3465,9 +3464,9 @@ def test_format_empty_df() -> None:
 
 
 def test_deadlocks_3409() -> None:
-    with catch_warnings():
-        simplefilter("ignore", PolarsInefficientApplyWarning)
-
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
         assert (
             pl.DataFrame({"col1": [[1, 2, 3]]})
             .with_columns(
