@@ -1,5 +1,4 @@
 use polars_core::prelude::*;
-use polars_core::utils::rayon::iter::repeat;
 use polars_lazy::prelude::*;
 use polars_sql::*;
 
