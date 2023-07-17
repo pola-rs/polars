@@ -9,7 +9,6 @@ import pytest
 
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
-from polars.exceptions import PolarsInefficientApplyWarning
 
 if TYPE_CHECKING:
     from polars.type_aliases import ConcatMethod

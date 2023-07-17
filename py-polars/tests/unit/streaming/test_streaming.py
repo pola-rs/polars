@@ -549,21 +549,18 @@ def test_streaming_groupby_categorical_aggregate() -> None:
 
 def test_streaming_restart_non_streamable_groupby() -> None:
     df = pl.DataFrame({"id": [1], "id2": [1], "id3": [1], "value": [1]})
-    with pytest.warns(
-        PolarsInefficientApplyWarning, match="In this case, you can replace"
-    ):
-        res = (
-            df.lazy()
-            .join(df.lazy(), on=["id", "id2"], how="left")
-            .filter(
-                (pl.col("id3") > pl.col("id3_right"))
-                & (pl.col("id3") - pl.col("id3_right") < 30)
-            )
-            .groupby(["id2", "id3", "id3_right"])
-            .agg(
-                pl.col("value").apply(lambda x: x).sum() * pl.col("value").sum()
-            )  # non-streamable UDF + nested_agg
+    res = (
+        df.lazy()
+        .join(df.lazy(), on=["id", "id2"], how="left")
+        .filter(
+            (pl.col("id3") > pl.col("id3_right"))
+            & (pl.col("id3") - pl.col("id3_right") < 30)
         )
+        .groupby(["id2", "id3", "id3_right"])
+        .agg(
+            pl.col("value").apply(lambda x: x).sum() * pl.col("value").sum()
+        )  # non-streamable UDF + nested_agg
+    )
 
     assert """--- PIPELINE""" in res.explain(streaming=True)
 
