@@ -1,12 +1,11 @@
-"""Suggest native expressions for inefficient lambdas/functions used in `apply`."""
+"""Utilities connected to user defined functions (such as those passed to `apply`)."""
 from __future__ import annotations
 
 import dis
 import sys
 import warnings
 from inspect import signature
-from itertools import tee
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.various import find_stacklevel
@@ -36,13 +35,7 @@ _SIMPLE_EXPR_OPS = {
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
 
 
-def _pairwise(values: Iterable[Any]) -> Iterable[tuple[Any, Any]]:
-    a, b = tee(values)
-    next(b, None)
-    return zip(a, b)
-
-
-def _expr(value: str | tuple[str, str, str], col: str | None) -> str:
+def _expr(value: str | tuple[str, str, str], col: str) -> str:
     if isinstance(value, tuple):
         op = value[1]
         if len(value) == 2 and op == "not":
@@ -56,7 +49,7 @@ def _expr(value: str | tuple[str, str, str], col: str | None) -> str:
         else:
             return f"({_expr(value[0], col)} {op} {_expr(value[2], col)})"
 
-    elif col and value.isidentifier():
+    elif value.isidentifier():
         if value not in ("True", "False", "None"):
             return f'pl.col("{col}")'
 
@@ -72,10 +65,11 @@ def _op(op: str, argrepr: str, argval: Any) -> str:
         return "not in" if argval else "in"
     elif op == "UNARY_NOT":
         return "not"
-    raise AssertionError(
-        "Unreachable code - please report a bug to https://github.com/pola-rs/polars/issues "
-        "with the content of function you were passing to `apply`."
-    )
+    else:
+        raise AssertionError(
+            "Unrecognised op - please report a bug to https://github.com/pola-rs/polars/issues "
+            "with the content of function you were passing to `apply`."
+        )
 
 
 def _get_bytecode_ops(function: Callable[[Any], Any]) -> list[tuple[str, str, Any]]:
@@ -107,7 +101,7 @@ def _is_inefficient(ops: list[tuple[str, str, Any]], apply_target: str) -> bool:
 
 
 def _rewrite_as_polars_expr(
-    ops: list[tuple[str, str, Any]], col: str | None, apply_target: str
+    ops: list[tuple[str, str, Any]], col: str, apply_target: str
 ) -> str | None:
     """Take postfix opcode stack and translate to native polars expression."""
     # const / unchanged
@@ -151,15 +145,20 @@ def warn_on_inefficient_apply(
 
         # if ops indicate a trivial function that should be native, warn about it
         if _is_inefficient(ops, apply_target):
-            col = (columns and columns[0]) or None
+            col = columns[0]
             suggestion = _rewrite_as_polars_expr(ops, col, apply_target)
             if suggestion:
+                addendum = (
+                    'Note: in list.eval context, pl.col("") should be written as pl.element()'
+                    if 'pl.col("")' in suggestion
+                    else ""
+                )
                 warnings.warn(
                     "Expr.apply is significantly slower than the native expressions API.\n"
                     "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-                    "In this case, you can replace your function with an expression:\n"
+                    "In this case, you can replace your `apply` with an expression:\n"
                     f'\033[31m-  pl.col("{columns[0]}").apply({function!r})\033[0m\n'
-                    f"\033[32m+  {suggestion}\033[0m\n",
+                    f"\033[32m+  {suggestion}\033[0m\n{addendum}",
                     PolarsInefficientApplyWarning,
                     stacklevel=find_stacklevel(),
                 )
