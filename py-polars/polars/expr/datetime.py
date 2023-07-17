@@ -46,9 +46,10 @@ class ExprDateTimeNameSpace:
         offset
             Offset the window
         use_earliest
-            If truncating to an ambiguous datetime (say, due to daylight saving time),
-            determine whether to use the earliest datetime or not.
-            If None (the default), then ambiguous datetimes will raise.
+            Determine how to deal with ambiguous datetimes:
+            - None (default): raise;
+            - True: use the earliest datetime;
+            - False: use the latest datetime.
 
         Notes
         -----
@@ -1440,9 +1441,10 @@ class ExprDateTimeNameSpace:
         time_zone
             Time zone for the `Datetime` Series. Pass `None` to unset time zone.
         use_earliest
-            If localizing an ambiguous datetime (say, due to daylight saving time),
-            determine whether to localize to the earliest datetime or not.
-            If None (the default), then ambiguous datetimes will raise.
+            Determine how to deal with ambiguous datetimes:
+            - None (default): raise;
+            - True: use the earliest datetime;
+            - False: use the latest datetime.
 
         Examples
         --------
