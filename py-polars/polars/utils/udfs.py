@@ -40,23 +40,22 @@ REPORT_MSG = (
 )
 
 
-def _expr(value: str | tuple[str, str, str], col: str | None) -> str:
+def _expr(value: str | tuple[str, str, str], col: str) -> str:
     if isinstance(value, tuple):
         op = value[1]
+        e1 = _expr(value[0], col)
+        e2 = _expr(value[2], col) if len(value) > 2 else None
+
         if len(value) == 2 and op == "not":
-            return f"~{_expr(value[0], col)}"
-        elif value[2] == "None" and op == "is not":
-            return f"{_expr(value[0], col)}.is_not_null()"
+            return f"~{e1}"
         elif value[2] == "None" and op == "is":
-            return f"{_expr(value[0], col)}.is_null()"
-        elif value[2] == "None" and op == "is not":
-            return f"{_expr(value[0], col)}.is_not_null()"
-        elif op == "in":
-            return f"({_expr(value[0], col)}.is_in({_expr(value[2], col)}))"
-        elif op == "not in":
-            return f"(~{_expr(value[0], col)}.is_in({_expr(value[2], col)}))"
+            not_ = "not_" if "not" in op else ""
+            return f"{e1}.is_{not_}null()"
+        elif op.endswith("in"):
+            not_ = "~" if "not" in op else ""
+            return f"{not_}({e1}.is_in({e2}))"
         else:
-            return f"({_expr(value[0], col)} {op} {_expr(value[2], col)})"
+            return f"({e1} {op} {e2})"
 
     elif value.isidentifier():
         if value not in ("True", "False", "None"):
@@ -79,6 +78,12 @@ def _op(op: str, argrepr: str, argval: Any) -> str:
             "Unrecognised op - please report a bug to https://github.com/pola-rs/polars/issues "
             "with the content of function you were passing to `apply`."
         )
+
+
+def _function_name(function: Callable[[Any], Any]) -> str:
+    """Return the name of the given function/method/lambda."""
+    func_name = getattr(function, "__name__", None) or "..."
+    return f"<{func_name.strip('<>')}>"
 
 
 def _get_bytecode_ops(function: Callable[[Any], Any]) -> list[tuple[str, str, Any]]:
@@ -160,7 +165,7 @@ def warn_on_inefficient_apply(
     # only consider simple functions with a single col/param
     if not (col := columns and columns[0]):
         return None
-    if _simple_signature(function):
+    elif _simple_signature(function):
         # fast function disassembly to get bytecode ops
         ops = _get_bytecode_ops(function)
 
@@ -173,11 +178,12 @@ def warn_on_inefficient_apply(
                     if 'pl.col("")' in suggestion
                     else ""
                 )
+                func_name = _function_name(function)
                 warnings.warn(
                     "Expr.apply is significantly slower than the native expressions API.\n"
                     "Only use if you absolutely CANNOT implement your logic otherwise.\n"
                     "In this case, you can replace your `apply` with an expression:\n"
-                    f'\033[31m-  pl.col("{columns[0]}").apply(...)\033[0m\n'
+                    f'\033[31m-  pl.col("{columns[0]}").apply({func_name!r})\033[0m\n'
                     f"\033[32m+  {suggestion}\033[0m\n{addendum}",
                     PolarsInefficientApplyWarning,
                     stacklevel=find_stacklevel(),
