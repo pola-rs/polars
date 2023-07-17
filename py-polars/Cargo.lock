@@ -1699,6 +1699,7 @@ dependencies = [
  "hashbrown 0.14.0",
  "num-traits",
  "once_cell",
+ "polars-error",
  "rayon",
  "smartstring",
  "sysinfo",
