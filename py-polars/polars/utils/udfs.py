@@ -52,7 +52,7 @@ def _expr(value: str | tuple[str, str, str], col: str) -> str:
             not_ = "" if op == "is" else "not_"
             return f"{e1}.is_{not_}null()"
         elif op in ("in", "not in"):
-            not_ = "~" if "not" in op else ""
+            not_ = "" if op == "in" else "~"
             return f"{not_}({e1}.is_in({e2}))"
         else:
             return f"({e1} {op} {e2})"
