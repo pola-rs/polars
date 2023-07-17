@@ -3780,7 +3780,8 @@ class Expr:
             # no root names for pl.col('*')
             pass
         else:
-            warn_on_inefficient_apply(function, columns=root_names, apply_target="expr")
+            if root_names:
+                warn_on_inefficient_apply(function, columns=root_names, apply_target="expr")
 
         if pass_name:
 

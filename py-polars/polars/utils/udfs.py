@@ -35,30 +35,31 @@ _SIMPLE_EXPR_OPS = {
 }
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
 
-
-def _pairwise(values: Iterable[Any]) -> Iterable[tuple[Any, Any]]:
-    a, b = tee(values)
-    next(b, None)
-    return zip(a, b)
-
+REPORT_MSG = (
+    "Please report a bug at https://github.com/pola-rs/polars/issues, including "
+    "the function which you passed to `apply`."
+)
 
 def _expr(value: str | tuple[str, str, str], col: str | None) -> str:
     if isinstance(value, tuple):
         op = value[1]
         if len(value) == 2 and op == "not":
             return f"~{_expr(value[0], col)}"
-        elif value[2] == "None" and op.startswith("is"):
-            null_check = "is_not_null" if value[1].endswith("not") else "is_null"
-            return f"{_expr(value[0], col)}.{null_check}()"
-        elif op.endswith("in"):
-            not_ = "~" if op.startswith("not") else ""
-            return f"({not_}{_expr(value[0], col)}.is_in({_expr(value[2], col)}))"
+        elif value[2] == "None" and op == 'is not':
+            return f"{_expr(value[0], col)}.is_not_null()"
+        elif value[2] == "None" and op == 'is':
+            return f"{_expr(value[0], col)}.is_null()"
+        elif value[2] == "None" and op == 'is not':
+            return f"{_expr(value[0], col)}.is_not_null()"
+        elif op == 'in':
+            return f"({_expr(value[0], col)}.is_in({_expr(value[2], col)}))"
+        elif op == 'not in':
+            return f"(~{_expr(value[0], col)}.is_in({_expr(value[2], col)}))"
         else:
             return f"({_expr(value[0], col)} {op} {_expr(value[2], col)})"
 
-    elif col and value.isidentifier():
-        if value not in ("True", "False", "None"):
-            return f'pl.col("{col}")'
+    elif value.isidentifier() and value not in ("True", "False", "None"):
+        return f'pl.col("{col}")'
 
     return value
 
@@ -107,10 +108,11 @@ def _is_inefficient(ops: list[tuple[str, str, Any]], apply_target: str) -> bool:
 
 
 def _rewrite_as_polars_expr(
-    ops: list[tuple[str, str, Any]], col: str | None, apply_target: str
+    ops: list[tuple[str, str, Any]], col: str, apply_target: str
 ) -> str | None:
     """Take postfix opcode stack and translate to native polars expression."""
     # const / unchanged
+    breakpoint()
     if len(ops) == 1:
         return _expr(ops[0][1], col)
     elif len(ops) >= 3:
@@ -145,20 +147,21 @@ def warn_on_inefficient_apply(
 ) -> None:
     """Generate ``PolarsInefficientApplyWarning`` on poor usage of ``apply`` func."""
     # only consider simple functions with a single col/param
+    if not (col := columns and columns[0]):
+        return None
     if _simple_signature(function):
         # fast function disassembly to get bytecode ops
         ops = _get_bytecode_ops(function)
 
         # if ops indicate a trivial function that should be native, warn about it
         if _is_inefficient(ops, apply_target):
-            col = (columns and columns[0]) or None
             suggestion = _rewrite_as_polars_expr(ops, col, apply_target)
             if suggestion:
                 warnings.warn(
                     "Expr.apply is significantly slower than the native expressions API.\n"
                     "Only use if you absolutely CANNOT implement your logic otherwise.\n"
                     "In this case, you can replace your function with an expression:\n"
-                    f'\033[31m-  pl.col("{columns[0]}").apply({function!r})\033[0m\n'
+                    f'\033[31m-  pl.col("{columns[0]}").apply(...)\033[0m\n'
                     f"\033[32m+  {suggestion}\033[0m\n",
                     PolarsInefficientApplyWarning,
                     stacklevel=find_stacklevel(),
