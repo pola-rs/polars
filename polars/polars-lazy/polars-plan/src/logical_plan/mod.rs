@@ -276,4 +276,13 @@ impl LogicalPlan {
     pub fn describe(&self) -> String {
         format!("{self:#?}")
     }
+
+    pub fn to_alp(self) -> PolarsResult<(Node, Arena<ALogicalPlan>, Arena<AExpr>)> {
+        let mut lp_arena = Arena::with_capacity(16);
+        let mut expr_arena = Arena::with_capacity(16);
+
+        let node = to_alp(self, &mut expr_arena, &mut lp_arena)?;
+
+        Ok((node, lp_arena, expr_arena))
+    }
 }

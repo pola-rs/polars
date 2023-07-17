@@ -46,9 +46,16 @@ impl ALogicalPlanNode {
         op(arena)
     }
 
+    /// Add a new `ALogicalPlan` to the arena and set that node to `Self`.
     pub fn assign(&mut self, ae: ALogicalPlan) {
         let node = self.with_arena_mut(|arena| arena.add(ae));
         self.node = node
+    }
+
+    /// Replace the current `Node` with a new `ALogicalPlan`.
+    pub fn replace(&mut self, ae: ALogicalPlan) {
+        let node = self.node;
+        self.with_arena_mut(|arena| arena.replace(node, ae));
     }
 
     pub fn to_alp(&self) -> &ALogicalPlan {
@@ -105,8 +112,7 @@ impl TreeWalker for ALogicalPlanNode {
         }
 
         let lp = lp.with_exprs_and_input(exprs, inputs);
-        let node = self.with_arena_mut(move |arena| arena.add(lp));
-        self.node = node;
+        self.with_arena_mut(move |arena| arena.replace(self.node, lp));
         Ok(self)
     }
 }

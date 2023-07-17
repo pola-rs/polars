@@ -37,6 +37,14 @@ impl ProjectionExprs {
         Self::new_with_cse(expr, 0)
     }
 
+    pub fn default_exprs(&self) -> &[Node] {
+        &self.expr[..self.expr.len() - self.common_sub_offset]
+    }
+
+    pub fn cse_exprs(&self) -> &[Node] {
+        &self.expr[self.expr.len() - self.common_sub_offset..]
+    }
+
     pub(crate) fn new_with_cse(expr: Vec<Node>, common_sub_offset: usize) -> Self {
         Self {
             expr,
