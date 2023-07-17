@@ -36,6 +36,26 @@ impl Default for StrptimeOptions {
     }
 }
 
+#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct TruncateOptions {
+    /// Period length
+    pub every: String,
+    /// Offset of the window
+    pub offset: String,
+    /// How to deal with ambiguous datetimes
+    pub use_earliest: Option<bool>,
+}
+
+impl Default for TruncateOptions {
+    fn default() -> Self {
+        TruncateOptions {
+            every: "".to_string(),
+            offset: "".to_string(),
+            use_earliest: None,
+        }
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinOptions {
