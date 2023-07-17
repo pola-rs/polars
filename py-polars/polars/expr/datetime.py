@@ -753,7 +753,7 @@ class ExprDateTimeNameSpace:
         │ 2001-12-24 00:00:00 │
         │ 2001-12-25 00:00:00 │
         └─────────────────────┘
-        >>> df.select(
+        >>> df.with_columns(
         ...     pl.col("date").dt.weekday().alias("weekday"),
         ...     pl.col("date").dt.day().alias("day_of_month"),
         ...     pl.col("date").dt.ordinal_day().alias("day_of_year"),
@@ -811,7 +811,7 @@ class ExprDateTimeNameSpace:
         │ 2001-12-24 00:00:00 │
         │ 2001-12-25 00:00:00 │
         └─────────────────────┘
-        >>> df.select(
+        >>> df.with_columns(
         ...     pl.col("date").dt.weekday().alias("weekday"),
         ...     pl.col("date").dt.day().alias("day_of_month"),
         ...     pl.col("date").dt.ordinal_day().alias("day_of_year"),
@@ -869,7 +869,7 @@ class ExprDateTimeNameSpace:
         │ 2001-12-24 00:00:00 │
         │ 2001-12-25 00:00:00 │
         └─────────────────────┘
-        >>> df.select(
+        >>> df.with_columns(
         ...     pl.col("date").dt.weekday().alias("weekday"),
         ...     pl.col("date").dt.day().alias("day_of_month"),
         ...     pl.col("date").dt.ordinal_day().alias("day_of_year"),
