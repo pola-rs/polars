@@ -10,8 +10,8 @@ from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.udfs import (
     _get_bytecode_ops,
     _is_inefficient,
+    _param_name_from_simple_signature,
     _rewrite_as_polars_expr,
-    _simple_signature,
 )
 
 MY_CONSTANT = 3
@@ -35,7 +35,7 @@ def _get_suggestion(
     ],
 )
 def test_non_simple_function(func: Callable[[Any], Any]) -> None:
-    assert not _simple_signature(func) or not _is_inefficient(
+    assert not _param_name_from_simple_signature(func) or not _is_inefficient(
         _get_bytecode_ops(func), apply_target="expr"
     )
 

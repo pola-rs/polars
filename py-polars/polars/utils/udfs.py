@@ -80,11 +80,11 @@ def _op(op: str, argrepr: str, argval: Any) -> str:
         )
 
 
-def _function_name(function: Callable[[Any], Any], variable: str) -> str:
+def _function_name(function: Callable[[Any], Any], param_name: str) -> str:
     """Return the name of the given function/method/lambda."""
     func_name = function.__name__
     if func_name == "<lambda>":
-        return f"lambda {variable}: ..."
+        return f"lambda {param_name}: ..."
     elif not func_name:
         return "..."
     return func_name
@@ -155,11 +155,15 @@ def _rewrite_as_polars_expr(
     return None
 
 
-def _simple_signature(function: Callable[[Any], Any]) -> bool:
+def _param_name_from_simple_signature(function: Callable[[Any], Any]) -> str | None:
     try:
-        return len(signature(function).parameters) == 1
+        sig = signature(function)
     except ValueError:
-        return False
+        return None
+    parameters = sig.parameters
+    if len(parameters) == 1:
+        return next(iter(parameters.keys()))
+    return None
 
 
 def warn_on_inefficient_apply(
@@ -169,26 +173,30 @@ def warn_on_inefficient_apply(
     # only consider simple functions with a single col/param
     if not (col := columns and columns[0]):
         return None
-    elif _simple_signature(function):
-        # fast function disassembly to get bytecode ops
-        ops = _get_bytecode_ops(function)
 
-        # if ops indicate a trivial function that should be native, warn about it
-        if _is_inefficient(ops, apply_target):
-            suggestion = _rewrite_as_polars_expr(ops, col, apply_target)
-            if suggestion:
-                addendum = (
-                    'Note: in list.eval context, pl.col("") should be written as pl.element()'
-                    if 'pl.col("")' in suggestion
-                    else ""
-                )
-                func_name = _function_name(function, ops[0][1])
-                warnings.warn(
-                    "Expr.apply is significantly slower than the native expressions API.\n"
-                    "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-                    "In this case, you can replace your `apply` with an expression:\n"
-                    f'\033[31m-  pl.col("{columns[0]}").apply({func_name})\033[0m\n'
-                    f"\033[32m+  {suggestion}\033[0m\n{addendum}",
-                    PolarsInefficientApplyWarning,
-                    stacklevel=find_stacklevel(),
-                )
+    param_name = _param_name_from_simple_signature(function)
+    if param_name is None:
+        return None
+
+    # fast function disassembly to get bytecode ops
+    ops = _get_bytecode_ops(function)
+
+    # if ops indicate a trivial function that should be native, warn about it
+    if _is_inefficient(ops, apply_target):
+        suggestion = _rewrite_as_polars_expr(ops, col, apply_target)
+        if suggestion:
+            addendum = (
+                'Note: in list.eval context, pl.col("") should be written as pl.element()'
+                if 'pl.col("")' in suggestion
+                else ""
+            )
+            func_name = _function_name(function, param_name)
+            warnings.warn(
+                "Expr.apply is significantly slower than the native expressions API.\n"
+                "Only use if you absolutely CANNOT implement your logic otherwise.\n"
+                "In this case, you can replace your `apply` with an expression:\n"
+                f'\033[31m-  pl.col("{columns[0]}").apply({func_name})\033[0m\n'
+                f"\033[32m+  {suggestion}\033[0m\n{addendum}",
+                PolarsInefficientApplyWarning,
+                stacklevel=find_stacklevel(),
+            )
