@@ -154,7 +154,7 @@ pub(super) unsafe fn join_asof_nearest_with_indirection<
     }
     let max_possible_dist = <T as Bounded>::max_value();
     let mut dist: T = max_possible_dist;
-    let mut prev_offset: u32 = 0;
+    let mut prev_offset: IdxSize = 0;
     for (idx, &offset) in offsets.iter().enumerate() {
         let val_r = *right.get_unchecked(offset as usize);
         // This is (val_r - val_l).abs(), but works on strings/dates
