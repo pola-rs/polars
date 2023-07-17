@@ -226,7 +226,13 @@ impl GenericJoinProbe {
         }
         let right_df = self.df_a.as_ref();
 
-        let left_df = unsafe { chunk.data._take_unchecked_slice(&self.join_tuples_b, false) };
+        // join tuples of left joins are always sorted
+        // this will ensure sorted flags maintain
+        let left_df = unsafe {
+            chunk
+                .data
+                ._take_unchecked_slice2(&self.join_tuples_b, false, IsSorted::Ascending)
+        };
         let right_df =
             unsafe { right_df._take_opt_chunked_unchecked_seq(&self.join_tuples_a_left_join) };
 

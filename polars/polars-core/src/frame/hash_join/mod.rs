@@ -176,13 +176,13 @@ impl DataFrame {
         &self,
         join_tuples: &[IdxSize],
         left_join: bool,
-        sorted: bool,
+        sorted_tuple_idx: bool,
     ) -> DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
         } else {
             // left join tuples are always in ascending order
-            let sorted = if left_join || sorted {
+            let sorted = if left_join || sorted_tuple_idx {
                 IsSorted::Ascending
             } else {
                 IsSorted::Not
