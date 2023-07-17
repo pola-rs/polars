@@ -14,7 +14,7 @@ def test_cse_rename_cross_join_5405() -> None:
 
     out = left.join(right.rename({"B": "C"}), on=["A", "C"], how="left")
 
-    assert out.collect(common_subplan_elimination=True).to_dict(False) == {
+    assert out.collect(comm_subplan_elim=True).to_dict(False) == {
         "C": [3, 3, 4, 4],
         "A": [1, 2, 1, 2],
         "D": [5, None, None, 6],
@@ -53,9 +53,9 @@ def test_cse_schema_6081() -> None:
     )
 
     result = df.join(min_value_by_group, on=["date", "id"], how="left")
-    assert result.collect(
-        common_subplan_elimination=True, projection_pushdown=True
-    ).to_dict(False) == {
+    assert result.collect(comm_subplan_elim=True, projection_pushdown=True).to_dict(
+        False
+    ) == {
         "date": [date(2022, 12, 12), date(2022, 12, 12), date(2022, 12, 13)],
         "id": [1, 1, 5],
         "value": [1, 2, 2],
@@ -99,7 +99,7 @@ def test_cse_9630() -> None:
     intersected_df2 = all_subsections.join(df2, on="key")
 
     assert intersected_df1.join(intersected_df2, on=["key"], how="left").collect(
-        common_subplan_elimination=True
+        comm_subplan_elim=True
     ).to_dict(False) == {
         "key": [1],
         "value": [[1, 2]],

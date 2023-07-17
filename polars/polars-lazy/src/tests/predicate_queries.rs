@@ -254,7 +254,7 @@ fn test_predicate_on_join_suffix_4788() -> PolarsResult<()> {
         .suffix("_")
         .finish()
         .filter(col("x").eq(1))
-        .with_common_subplan_elimination(false);
+        .with_comm_subplan_elim(false);
 
     // the left hand side should have a predicate
     assert!(predicate_at_scan(q.clone()));

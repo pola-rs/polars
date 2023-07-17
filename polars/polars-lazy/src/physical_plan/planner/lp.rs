@@ -238,7 +238,14 @@ pub fn create_physical_plan(
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
             let phys_expr = create_physical_expressions(
-                &expr,
+                expr.default_exprs(),
+                Context::Default,
+                expr_arena,
+                Some(&input_schema),
+                &mut state,
+            )?;
+            let cse_expr = create_physical_expressions(
+                expr.cse_exprs(),
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
@@ -246,6 +253,7 @@ pub fn create_physical_plan(
             )?;
             Ok(Box::new(executors::ProjectionExec {
                 input,
+                cse_expr,
                 expr: phys_expr,
                 has_windows: state.has_windows,
                 input_schema,
@@ -272,6 +280,7 @@ pub fn create_physical_plan(
             )?;
             Ok(Box::new(executors::ProjectionExec {
                 input,
+                cse_expr: vec![],
                 expr: phys_expr,
                 has_windows: state.has_windows,
                 input_schema,

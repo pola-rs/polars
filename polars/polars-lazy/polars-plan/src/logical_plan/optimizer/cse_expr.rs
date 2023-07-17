@@ -1,4 +1,5 @@
 use std::rc::Rc;
+
 use polars_utils::vec::CapacityByFactor;
 
 use super::*;
@@ -128,7 +129,11 @@ impl ExprIdentifierVisitor<'_> {
     }
 
     fn accept_node(&self, ae: &AExpr) -> bool {
-        !matches!(ae, AExpr::Column(_) | AExpr::Count | AExpr::Literal(_))
+        // skip windows for now until we properly implemented the physical side
+        !matches!(
+            ae,
+            AExpr::Column(_) | AExpr::Count | AExpr::Literal(_) | AExpr::Window { .. }
+        )
     }
 }
 
@@ -188,7 +193,7 @@ struct CommonSubExprRewriter<'a> {
     /// keep track of the replaced identifiers
     replaced_identifiers: &'a mut PlHashSet<Identifier>,
 
-    max_series_number: usize,
+    max_post_visit_idx: usize,
     /// index in traversal order in which `identifier_array`
     /// was written. This is the index in `identifier_array`.
     visited_idx: usize,
@@ -208,7 +213,7 @@ impl<'a> CommonSubExprRewriter<'a> {
             sub_expr_map,
             identifier_array,
             replaced_identifiers,
-            max_series_number: 0,
+            max_post_visit_idx: 0,
             visited_idx: 0,
             id_array_offset,
         }
@@ -252,7 +257,10 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
     type Node = AexprNode;
 
     fn pre_visit(&mut self, ae_node: &Self::Node) -> PolarsResult<RewriteRecursion> {
-        if self.visited_idx >= self.identifier_array.len() - self.id_array_offset {
+        if self.visited_idx + self.id_array_offset >= self.identifier_array.len()
+            || self.max_post_visit_idx
+                > self.identifier_array[self.visited_idx + self.id_array_offset].0
+        {
             return Ok(RewriteRecursion::Stop);
         }
 
@@ -286,6 +294,12 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             &self.identifier_array[self.visited_idx + self.id_array_offset];
         self.visited_idx += 1;
 
+        // TODO!: check if we ever hit this branch
+        if *post_visit_count < self.max_post_visit_idx {
+            return Ok(node);
+        }
+
+        self.max_post_visit_idx = *post_visit_count;
         // DFS, so every post_visit that is smaller than `post_visit_count`
         // is a subexpression of this node and we can skip that
         //
@@ -304,7 +318,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
     }
 }
 
-struct CommonSubExprOptimizer<'a> {
+pub(crate) struct CommonSubExprOptimizer<'a> {
     expr_arena: &'a mut Arena<AExpr>,
     // amortize allocations
     // these are cleared per lp node
@@ -317,7 +331,7 @@ struct CommonSubExprOptimizer<'a> {
 }
 
 impl<'a> CommonSubExprOptimizer<'a> {
-    fn new(expr_arena: &'a mut Arena<AExpr>) -> Self {
+    pub(crate) fn new(expr_arena: &'a mut Arena<AExpr>) -> Self {
         Self {
             expr_arena,
             se_count: Default::default(),
@@ -351,16 +365,18 @@ impl<'a> CommonSubExprOptimizer<'a> {
         ae_node.rewrite(&mut rewriter)
     }
 
-    fn find_cse(&mut self, expr: &ProjectionExprs,
-                expr_arena: &mut Arena<AExpr>,
-        id_array_offsets: &mut Vec<u32>
-    ) -> PolarsResult<Option<ProjectionExprs>>{
+    fn find_cse(
+        &mut self,
+        expr: &ProjectionExprs,
+        expr_arena: &mut Arena<AExpr>,
+        id_array_offsets: &mut Vec<u32>,
+    ) -> PolarsResult<Option<ProjectionExprs>> {
         debug_assert!(!expr.has_sub_exprs());
 
         let mut has_sub_expr = false;
 
         // first get all cse's
-        for node in &(*expr) {
+        for node in expr {
             // the visitor can return early thus depleted its stack
             // on a previous iteration
             self.visit_stack.clear();
@@ -379,10 +395,9 @@ impl<'a> CommonSubExprOptimizer<'a> {
 
             // then rewrite the expressions that have a cse count > 1
             for (node, offset) in expr.iter().zip(id_array_offsets.iter()) {
-                let new_node =
-                    AexprNode::with_context(*node, expr_arena, |ae_node| {
-                        self.mutate_expression(ae_node, *offset as usize)
-                    })?;
+                let new_node = AexprNode::with_context(*node, expr_arena, |ae_node| {
+                    self.mutate_expression(ae_node, *offset as usize)
+                })?;
                 new_expr.push(new_node.node())
             }
             // Add the tmp columns
@@ -393,13 +408,11 @@ impl<'a> CommonSubExprOptimizer<'a> {
                 let node = expr_arena.add(ae);
                 new_expr.push(node)
             }
-            let expr =
-                ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.len());
+            let expr = ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.len());
             Ok(Some(expr))
         } else {
             Ok(None)
         }
-
     }
 }
 
@@ -416,6 +429,8 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
         id_array_offsets.clear();
         self.replaced_identifiers.clear();
 
+        // we will extend the match later
+        #[allow(clippy::single_match)]
         match node.to_alp() {
             ALogicalPlan::Projection {
                 input,
@@ -431,7 +446,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                     node.replace(lp);
                 }
             }
-            _ => {},
+            _ => {}
         };
         std::mem::swap(self.expr_arena, &mut expr_arena);
         self.id_array_offsets = id_array_offsets;
@@ -484,7 +499,8 @@ mod test {
         let df = df![
             "a" => [1, 2, 3],
             "b" => [4, 5, 6],
-        ].unwrap();
+        ]
+        .unwrap();
 
         let e = col("a").sum();
 
@@ -492,7 +508,7 @@ mod test {
             .project(vec![
                 e.clone() * col("b"),
                 e.clone() * col("b") + e.clone(),
-                col("b")
+                col("b"),
             ])
             .build();
 
@@ -501,18 +517,31 @@ mod test {
 
         let out = ALogicalPlanNode::with_context(node, &mut lp_arena, |alp_node| {
             alp_node.rewrite(&mut optimizer)
-        }).unwrap();
+        })
+        .unwrap();
 
         let ALogicalPlan::Projection {expr, ..} = out.to_alp() else { unreachable!() };
 
         let default = expr.default_exprs();
         assert_eq!(default.len(), 3);
-        assert_eq!(format!("{}", node_to_expr(default[0], &expr_arena)), r#"[(col("b")) * (col("__POLARS_CSER_sum!col(a)"))]"#);
-        assert_eq!(format!("{}", node_to_expr(default[1], &expr_arena)), r#"[(col("__POLARS_CSER_sum!col(a)")) + ([(col("b")) * (col("__POLARS_CSER_sum!col(a)"))])]"#);
-        assert_eq!(format!("{}", node_to_expr(default[2], &expr_arena)), r#"col("b")"#);
+        assert_eq!(
+            format!("{}", node_to_expr(default[0], &expr_arena)),
+            r#"[(col("b")) * (col("__POLARS_CSER_sum!col(a)"))]"#
+        );
+        assert_eq!(
+            format!("{}", node_to_expr(default[1], &expr_arena)),
+            r#"[(col("__POLARS_CSER_sum!col(a)")) + ([(col("b")) * (col("__POLARS_CSER_sum!col(a)"))])]"#
+        );
+        assert_eq!(
+            format!("{}", node_to_expr(default[2], &expr_arena)),
+            r#"col("b")"#
+        );
 
         let cse = expr.cse_exprs();
         assert_eq!(cse.len(), 1);
-        assert_eq!(format!("{}", node_to_expr(cse[0], &expr_arena)), r#"col("a").sum().alias("__POLARS_CSER_sum!col(a)")"#);
+        assert_eq!(
+            format!("{}", node_to_expr(cse[0], &expr_arena)),
+            r#"col("a").sum().alias("__POLARS_CSER_sum!col(a)")"#
+        );
     }
 }

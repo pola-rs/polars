@@ -83,7 +83,7 @@ fn test_q2() -> PolarsResult<()> {
             false,
         )
         .limit(100)
-        .with_common_subplan_elimination(true);
+        .with_comm_subplan_elim(true);
 
     let out = q.collect()?;
     let schema = Schema::from_iter([
