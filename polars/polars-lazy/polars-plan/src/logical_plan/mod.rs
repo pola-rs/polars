@@ -27,13 +27,13 @@ mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
 pub(crate) mod projection;
+mod projection_expr;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;
 #[cfg(any(feature = "meta", feature = "cse"))]
 pub(crate) mod tree_format;
 pub mod visitor;
-mod projection_expr;
 
 pub use aexpr::*;
 pub use alp::*;

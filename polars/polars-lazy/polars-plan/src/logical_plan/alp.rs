@@ -5,13 +5,12 @@ use std::sync::Arc;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
+use super::projection_expr::*;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
 use crate::logical_plan::FileScan;
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
-use super::projection_expr::*;
-
 
 /// ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]

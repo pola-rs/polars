@@ -4,7 +4,7 @@ use super::*;
 use crate::constants::CSE_REPLACED;
 use crate::logical_plan::projection_expr::ProjectionExprs;
 use crate::logical_plan::visitor::{RewriteRecursion, VisitRecursion};
-use crate::prelude::visitor::{AexprNode, ALogicalPlanNode, RewritingVisitor, Visitor, TreeWalker};
+use crate::prelude::visitor::{ALogicalPlanNode, AexprNode, RewritingVisitor, TreeWalker, Visitor};
 
 type Identifier = Rc<str>;
 /// Identifier maps to Expr Node and count.
@@ -37,37 +37,37 @@ enum VisitRecord {
 ///
 /// We also record an `id_array` that followed the pre-visit order. This
 /// is used to cache the `Identifiers`.
-///
-/// # Example
-/// Say we have the expression: `(col("f00").min() * col("bar")).sum()`
-/// with the following call tree:
-///
-///     sum
-///
-///       |
-///
-///     binary: *
-///
-///       |              |
-///
-///     col(bar)         min
-///
-///                      |
-///
-///                      col(f00)
-///
-/// # call order
-/// function-called             stack                stack-after(pop until E, push I)   # ID
-/// pre-visit: sum                E                        -
-/// pre-visit: binary: *          EE                       -
-/// pre-visit: col(bar)           EEE                      -
-/// post-visit: col(bar)	      EEE                      EEI                          id: col(bar)
-/// pre-visit: min                EEIE                     -
-/// pre-visit: col(f00)           EEIEE                    -
-/// post-visit: col(f00)	      EEIEE                    EEIEI                        id: col(f00)
-/// post-visit: min	              EEIEI                    EEII                         id: min!col(f00)
-/// post-visit: binary: *	      EEII                     EI                           id: binary: *!min!col(f00)!col(bar)
-/// post-visit: sum               EI                       I                            id: sum!binary: *!min!col(f00)!col(bar)
+//
+// # Example (this is not a docstring as clippy complains about spacing)
+// Say we have the expression: `(col("f00").min() * col("bar")).sum()`
+// with the following call tree:
+//
+//     sum
+//
+//       |
+//
+//     binary: *
+//
+//       |              |
+//
+//     col(bar)         min
+//
+//                      |
+//
+//                      col(f00)
+//
+// # call order
+// function-called              stack                stack-after(pop until E, push I)   # ID
+// pre-visit: sum                E                        -
+// pre-visit: binary: *          EE                       -
+// pre-visit: col(bar)           EEE                      -
+// post-visit: col(bar)	         EEE                      EEI                          id: col(bar)
+// pre-visit: min                EEIE                     -
+// pre-visit: col(f00)           EEIEE                    -
+// post-visit: col(f00)	         EEIEE                    EEIEI                        id: col(f00)
+// post-visit: min	             EEIEI                    EEII                         id: min!col(f00)
+// post-visit: binary: *         EEII                     EI                           id: binary: *!min!col(f00)!col(bar)
+// post-visit: sum               EI                       I                            id: sum!binary: *!min!col(f00)!col(bar)
 struct ExprIdentifierVisitor<'a> {
     se_count: &'a mut SubExprCount,
     identifier_array: &'a mut IdentifierArray,
@@ -79,7 +79,7 @@ struct ExprIdentifierVisitor<'a> {
     /// this allows us to use a single `vec` on multiple expressions
     id_array_offset: usize,
     // whether the expression replaced a subexpression
-    has_sub_expr: bool
+    has_sub_expr: bool,
 }
 
 impl ExprIdentifierVisitor<'_> {
@@ -96,7 +96,7 @@ impl ExprIdentifierVisitor<'_> {
             post_visit_idx: 0,
             visit_stack,
             id_array_offset,
-            has_sub_expr: false
+            has_sub_expr: false,
         }
     }
 
@@ -134,7 +134,8 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         self.pre_visit_idx += 1;
 
         // implement default placeholders
-        self.identifier_array.push((self.id_array_offset, "".into()));
+        self.identifier_array
+            .push((self.id_array_offset, "".into()));
 
         Ok(VisitRecursion::Continue)
     }
@@ -158,15 +159,14 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         let id: Identifier = Rc::from(format!("{:E}{}", ae, sub_expr_id));
 
         // store the created id
-        self.identifier_array[pre_visit_idx + self.id_array_offset] = (self.post_visit_idx, id.clone());
+        self.identifier_array[pre_visit_idx + self.id_array_offset] =
+            (self.post_visit_idx, id.clone());
 
         // We popped until entered, push this Id on the stack so the trail
         // is available for the parent expression
         self.visit_stack.push(VisitRecord::SubExprId(id.clone()));
 
-        let (_, se_count) = self.se_count
-            .entry(id)
-            .or_insert_with(|| (node.node(), 0));
+        let (_, se_count) = self.se_count.entry(id).or_insert_with(|| (node.node(), 0));
 
         *se_count += 1;
         self.has_sub_expr |= *se_count > 1;
@@ -187,7 +187,7 @@ struct CommonSubExprRewriter<'a> {
     visited_idx: usize,
     /// Offset in the identifier array
     /// this allows us to use a single `vec` on multiple expressions
-    id_array_offset: usize
+    id_array_offset: usize,
 }
 
 impl<'a> CommonSubExprRewriter<'a> {
@@ -195,7 +195,7 @@ impl<'a> CommonSubExprRewriter<'a> {
         sub_expr_map: &'a SubExprCount,
         identifier_array: &'a IdentifierArray,
         replaced_identifiers: &'a mut PlHashSet<Identifier>,
-        id_array_offset: usize
+        id_array_offset: usize,
     ) -> Self {
         Self {
             sub_expr_map,
@@ -203,7 +203,7 @@ impl<'a> CommonSubExprRewriter<'a> {
             replaced_identifiers,
             max_series_number: 0,
             visited_idx: 0,
-            id_array_offset
+            id_array_offset,
         }
     }
 }
@@ -262,7 +262,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             // this does a full expression traversal to check if the expression is truly
             // the same
             && ae_node.binary(*node, |l, r| l == r)
-            {
+        {
             self.replaced_identifiers.insert(id.clone());
             // rewrite this sub-expression, don't visit its children
             Ok(RewriteRecursion::MutateAndStop)
@@ -275,7 +275,8 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
     }
 
     fn mutate(&mut self, mut node: Self::Node) -> PolarsResult<Self::Node> {
-        let (post_visit_count, id) = &self.identifier_array[self.visited_idx + self.id_array_offset];
+        let (post_visit_count, id) =
+            &self.identifier_array[self.visited_idx + self.id_array_offset];
         self.visited_idx += 1;
 
         // DFS, so every post_visit that is smaller than `post_visit_count`
@@ -309,26 +310,37 @@ struct CommonSubExprOptimizer<'a> {
 }
 
 impl<'a> CommonSubExprOptimizer<'a> {
-    fn new(
-        expr_arena: &'a mut Arena<AExpr>
-    ) -> Self {
+    fn new(expr_arena: &'a mut Arena<AExpr>) -> Self {
         Self {
             expr_arena,
             se_count: Default::default(),
             id_array: Default::default(),
             visit_stack: Default::default(),
             id_array_offsets: Default::default(),
-            replaced_identifiers: Default::default()
+            replaced_identifiers: Default::default(),
         }
     }
 
     fn visit_expression(&mut self, ae_node: AexprNode) -> PolarsResult<(usize, bool)> {
-        let mut visitor = ExprIdentifierVisitor::new(&mut self.se_count, &mut self.id_array, &mut self.visit_stack);
+        let mut visitor = ExprIdentifierVisitor::new(
+            &mut self.se_count,
+            &mut self.id_array,
+            &mut self.visit_stack,
+        );
         ae_node.visit(&mut visitor).map(|_| ())?;
         Ok((visitor.id_array_offset, visitor.has_sub_expr))
     }
-    fn mutate_expression(&mut self, ae_node: AexprNode, id_array_offset: usize) -> PolarsResult<AexprNode>{
-        let mut rewriter = CommonSubExprRewriter::new(&self.se_count, &self.id_array, &mut self.replaced_identifiers, id_array_offset);
+    fn mutate_expression(
+        &mut self,
+        ae_node: AexprNode,
+        id_array_offset: usize,
+    ) -> PolarsResult<AexprNode> {
+        let mut rewriter = CommonSubExprRewriter::new(
+            &self.se_count,
+            &self.id_array,
+            &mut self.replaced_identifiers,
+            id_array_offset,
+        );
         ae_node.rewrite(&mut rewriter)
     }
 }
@@ -351,7 +363,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
             ALogicalPlan::Projection {
                 input,
                 expr,
-                schema
+                schema,
             } => {
                 debug_assert!(!expr.has_sub_exprs());
 
@@ -359,23 +371,24 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
 
                 // first get all cse's
                 for node in expr {
-                    let (id_array_offset, this_expr_has_se) = AexprNode::with_context(*node, &mut expr_arena, |ae_node| {
-                        self.visit_expression(ae_node)
-                    })?;
+                    let (id_array_offset, this_expr_has_se) =
+                        AexprNode::with_context(*node, &mut expr_arena, |ae_node| {
+                            self.visit_expression(ae_node)
+                        })?;
                     self.id_array_offsets.push(id_array_offset as u32);
                     has_sub_expr |= this_expr_has_se;
                     debug_assert!(self.visit_stack.is_empty());
                 }
-
 
                 if has_sub_expr {
                     let mut new_expr = Vec::with_capacity(expr.len() * 2);
 
                     // then rewrite the expressions that have a cse count > 1
                     for (node, offset) in expr.iter().zip(id_array_offsets.iter()) {
-                        let new_node = AexprNode::with_context(*node, &mut expr_arena, |ae_node| {
-                            self.mutate_expression(ae_node, *offset as usize)
-                        })?;
+                        let new_node =
+                            AexprNode::with_context(*node, &mut expr_arena, |ae_node| {
+                                self.mutate_expression(ae_node, *offset as usize)
+                            })?;
                         new_expr.push(new_node.node())
                     }
                     // Add the tmp columns
@@ -386,19 +399,19 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         let node = expr_arena.add(ae);
                         new_expr.push(node)
                     }
-                    let expr = ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.len());
+                    let expr =
+                        ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.len());
                     let lp = ALogicalPlan::Projection {
                         input: *input,
                         expr,
-                        schema: schema.clone()
+                        schema: schema.clone(),
                     };
 
                     node.assign(lp);
                 }
                 Ok(node)
-
-            },
-            _ => Ok(node)
+            }
+            _ => Ok(node),
         };
         std::mem::swap(self.expr_arena, &mut expr_arena);
         self.id_array_offsets = id_array_offsets;
@@ -481,13 +494,18 @@ mod test {
         let mut id_array = vec![(0, Rc::from("")); 1];
         let id_array_offset = id_array.len();
         let mut visit_stack = vec![];
-        let mut visitor = ExprIdentifierVisitor::new(&mut se_count, &mut id_array, &mut visit_stack);
+        let mut visitor =
+            ExprIdentifierVisitor::new(&mut se_count, &mut id_array, &mut visit_stack);
 
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
 
         let mut replaced_ids = Default::default();
-        let mut rewriter =
-            CommonSubExprRewriter::new(&mut se_count, &mut id_array, &mut replaced_ids, id_array_offset);
+        let mut rewriter = CommonSubExprRewriter::new(
+            &mut se_count,
+            &mut id_array,
+            &mut replaced_ids,
+            id_array_offset,
+        );
         let ae_node =
             AexprNode::with_context(node, &mut arena, |ae_node| ae_node.rewrite(&mut rewriter))
                 .unwrap();

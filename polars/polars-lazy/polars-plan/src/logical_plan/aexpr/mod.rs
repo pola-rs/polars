@@ -10,8 +10,9 @@ use polars_utils::arena::{Arena, Node};
 use strum_macros::IntoStaticStr;
 
 use crate::dsl::function_expr::FunctionExpr;
-use crate::logical_plan::Context;
+#[cfg(feature = "cse")]
 use crate::logical_plan::visitor::AexprNode;
+use crate::logical_plan::Context;
 use crate::prelude::aexpr::NodeInputs::Single;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
@@ -45,15 +46,29 @@ pub enum AAggExpr {
 }
 
 impl AAggExpr {
-    pub(super) fn equal_nodes(&self, other: &AAggExpr) -> bool{
+    pub(super) fn equal_nodes(&self, other: &AAggExpr) -> bool {
         use AAggExpr::*;
         match (self, other) {
-            (Min{propagate_nans: l,..}, Min{propagate_nans: r, ..}) => l == r,
-            (Max{propagate_nans: l,..}, Max{propagate_nans: r, ..}) => l == r,
-            (Quantile{interpol: l, ..}, Quantile{interpol: r, ..}) => l == r,
-            (Std(_, l), (Std(_, r))) => l == r,
-            (Var(_, l), (Var(_, r))) => l == r,
-            _ => std::mem::discriminant(self) == std::mem::discriminant(other)
+            (
+                Min {
+                    propagate_nans: l, ..
+                },
+                Min {
+                    propagate_nans: r, ..
+                },
+            ) => l == r,
+            (
+                Max {
+                    propagate_nans: l, ..
+                },
+                Max {
+                    propagate_nans: r, ..
+                },
+            ) => l == r,
+            (Quantile { interpol: l, .. }, Quantile { interpol: r, .. }) => l == r,
+            (Std(_, l), Std(_, r)) => l == r,
+            (Var(_, l), Var(_, r)) => l == r,
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
 }
@@ -167,7 +182,8 @@ pub enum AExpr {
 }
 
 impl AExpr {
-    pub(crate) fn is_equal(&self, l: Node, r: Node, arena: &Arena<AExpr>) -> bool {
+    #[cfg(feature = "cse")]
+    pub(crate) fn is_equal(l: Node, r: Node, arena: &Arena<AExpr>) -> bool {
         let arena = arena as *const Arena<AExpr> as *mut Arena<AExpr>;
         // safety: we can pass a *mut pointer
         // the equality operation will not access mutable
@@ -178,6 +194,7 @@ impl AExpr {
         }
     }
 
+    #[cfg(feature = "cse")]
     pub(crate) fn col(name: &str) -> Self {
         AExpr::Column(Arc::from(name))
     }

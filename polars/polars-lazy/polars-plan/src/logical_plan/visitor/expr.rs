@@ -1,4 +1,3 @@
-use crate::dsl::Expr::Filter;
 use super::*;
 use crate::prelude::*;
 
@@ -89,14 +88,12 @@ impl AexprNode {
 
     /// Take a `Node` and convert it an `AExprNode` and call
     /// `F` with `self` and the new created `AExprNode`
-    pub fn binary<F, T>(&self, other: Node, op: F ) -> T
-        where
-            F: FnOnce(&AexprNode, &AexprNode) -> T,
+    pub fn binary<F, T>(&self, other: Node, op: F) -> T
+    where
+        F: FnOnce(&AexprNode, &AexprNode) -> T,
     {
         // this is safe as we remain in context
-        let other = unsafe {
-            AexprNode::from_raw(other, self.arena)
-        };
+        let other = unsafe { AexprNode::from_raw(other, self.arena) };
         op(self, &other)
     }
 
@@ -119,25 +116,46 @@ impl AexprNode {
                 (Alias(_, l), Alias(_, r)) => l == r,
                 (Column(l), Column(r)) => l == r,
                 (Literal(l), Literal(r)) => l == r,
-                (Cache {id: l, ..}, Cache{id: r, ..}) => l == r,
+                (Cache { id: l, .. }, Cache { id: r, .. }) => l == r,
                 (Nth(l), Nth(r)) => l == r,
-                (Window {options: l, ..}, Window {options: r, ..}) => l == r,
-                (Cast{strict: strict_l, data_type: dtl, ..}, Cast{strict: strict_r, data_type: dtr, ..}) => strict_l == strict_r && dtl == dtr,
-                (Sort{options: l, ..}, Sort{options: r, ..}) => l == r,
-                (Take{..}, Take{..}) |
-                (Filter{..}, Filter{..}) |
-                (Ternary{..}, Ternary{..}) |
-                (Count, Count) |
-                (Explode(_), Explode(_))
-                => true,
-                (SortBy{descending: l, ..}, SortBy{descending: r, ..}) => l == r,
+                (Window { options: l, .. }, Window { options: r, .. }) => l == r,
+                (
+                    Cast {
+                        strict: strict_l,
+                        data_type: dtl,
+                        ..
+                    },
+                    Cast {
+                        strict: strict_r,
+                        data_type: dtr,
+                        ..
+                    },
+                ) => strict_l == strict_r && dtl == dtr,
+                (Sort { options: l, .. }, Sort { options: r, .. }) => l == r,
+                (Take { .. }, Take { .. })
+                | (Filter { .. }, Filter { .. })
+                | (Ternary { .. }, Ternary { .. })
+                | (Count, Count)
+                | (Explode(_), Explode(_)) => true,
+                (SortBy { descending: l, .. }, SortBy { descending: r, .. }) => l == r,
                 (Agg(l), Agg(r)) => l.equal_nodes(r),
-                (Function {function: fl, options: ol, .. }, Function {function: fr, options: or, ..}) => fl == fr && ol == or,
-                _ => false
+                (
+                    Function {
+                        function: fl,
+                        options: ol,
+                        ..
+                    },
+                    Function {
+                        function: fr,
+                        options: or,
+                        ..
+                    },
+                ) => fl == fr && ol == or,
+                _ => false,
             };
 
             if !this_node_equal {
-                return false
+                return false;
             }
 
             self_ae.nodes(scratch1);
@@ -152,18 +170,16 @@ impl AexprNode {
                         let r = unsafe { AexprNode::from_raw(r, self.arena) };
 
                         if !l.is_equal(&r, scratch1, scratch2) {
-                            return false
+                            return false;
                         }
-                    },
+                    }
                     (None, None) => return true,
-                    _ => return false
+                    _ => return false,
                 }
-
             }
         })
     }
 }
-
 
 impl PartialEq for AexprNode {
     fn eq(&self, other: &Self) -> bool {

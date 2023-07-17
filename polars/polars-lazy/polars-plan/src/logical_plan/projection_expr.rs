@@ -1,5 +1,6 @@
-use super::*;
 use std::ops::Deref;
+
+use super::*;
 
 #[derive(Debug, Clone)]
 pub struct ProjectionExprs {
@@ -7,7 +8,7 @@ pub struct ProjectionExprs {
     /// offset from the back
     /// `expr[expr.len() - common_sub_offset..]`
     /// are the common sub expressions
-    common_sub_offset: usize
+    common_sub_offset: usize,
 }
 
 impl Deref for ProjectionExprs {
@@ -24,10 +25,8 @@ impl From<Vec<Node>> for ProjectionExprs {
     }
 }
 
-
-
 impl FromIterator<Node> for ProjectionExprs {
-    fn from_iter<T: IntoIterator<Item=Node>>(iter: T) -> Self {
+    fn from_iter<T: IntoIterator<Item = Node>>(iter: T) -> Self {
         let expr = iter.into_iter().collect();
         Self::new(expr)
     }
@@ -41,7 +40,7 @@ impl ProjectionExprs {
     pub(crate) fn new_with_cse(expr: Vec<Node>, common_sub_offset: usize) -> Self {
         Self {
             expr,
-            common_sub_offset
+            common_sub_offset,
         }
     }
 
@@ -75,6 +74,6 @@ impl<'a> IntoIterator for &'a ProjectionExprs {
 
     fn into_iter(self) -> Self::IntoIter {
         assert!(!self.has_sub_exprs(), "should not have sub-expressions yet");
-        (&self.expr).into_iter()
+        self.expr.iter()
     }
 }
