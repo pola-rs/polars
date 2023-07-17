@@ -83,7 +83,10 @@ def _get_bytecode_ops(function: Callable[[Any], Any]) -> list[tuple[str, str, An
             if (idx, inst.opname) not in ((0, "RESUME"), (idx_last, "RETURN_VALUE"))
         ]
     except TypeError:
-        return []  # can't disassemble non-native functions (eg: numpy/etc)
+        # in case we hit something that can't be disassembled,
+        # eg: code object not available (such as a bare numpy
+        # ufunc that isn't contained within a lambda/function)
+        return []
 
 
 def _inst(opname: str, argrepr: str, argval: str) -> tuple[str, str, str]:
