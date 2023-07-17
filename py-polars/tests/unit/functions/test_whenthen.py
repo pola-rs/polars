@@ -1,7 +1,66 @@
 from datetime import datetime
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
+
+
+def test_when_then() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+
+    expr = pl.when(pl.col("a") < 3).then(pl.lit("x"))
+
+    result = df.select(
+        expr.otherwise(pl.lit("y")).alias("a"),
+        expr.alias("b"),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "a": ["x", "x", "y", "y", "y"],
+            "b": ["x", "x", None, None, None],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_when_then_chained() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+
+    expr = pl.when(pl.col("a") < 3).then(pl.lit("x")).when(pl.col("a") > 4).then("z")
+
+    result = df.select(
+        expr.otherwise(pl.lit("y")).alias("a"),
+        expr.alias("b"),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "a": ["x", "x", "y", "y", "z"],
+            "b": ["x", "x", None, None, "z"],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_when_then_invalid_chains() -> None:
+    with pytest.raises(AttributeError):
+        pl.when("a").when("b")  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        pl.when("a").otherwise("b")  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        pl.when("a").then("b").then("c")  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        pl.when("a").then("b").otherwise("c").otherwise("d")  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        pl.when("a").then("b").otherwise("c").otherwise("d")  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        pl.when("a").then("b").when("c").when("d")  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        pl.when("a").then("b").when("c").otherwise("d")  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        pl.when("a").then("b").when("c").then("d").when("e").when("f")  # type: ignore[attr-defined]
 
 
 def test_when_then_implicit_none() -> None:
@@ -12,13 +71,18 @@ def test_when_then_implicit_none() -> None:
         }
     )
 
-    assert df.select(
+    result = df.select(
         pl.when(pl.col("points") > 7).then("Foo"),
         pl.when(pl.col("points") > 7).then("Foo").alias("bar"),
-    ).to_dict(False) == {
-        "literal": ["Foo", "Foo", "Foo", None, None, None],
-        "bar": ["Foo", "Foo", "Foo", None, None, None],
-    }
+    )
+
+    expected = pl.DataFrame(
+        {
+            "literal": ["Foo", "Foo", "Foo", None, None, None],
+            "bar": ["Foo", "Foo", "Foo", None, None, None],
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_when_then_empty_list_5547() -> None:
