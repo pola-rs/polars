@@ -44,9 +44,9 @@ def _expr(value: str | tuple[str, str, str], col: str) -> str:
     if isinstance(value, tuple):
         op = value[1]
         e1 = _expr(value[0], col)
-        e2 = _expr(value[2], col) if len(value) > 2 else None
+        e2 = _expr(value[2], col) if op != "not" else None
 
-        if op == "not" and len(value) == 2:
+        if op == "not":
             return f"~{e1}"
         elif op in ("is", "is not") and value[2] == "None":
             not_ = "" if op == "is" else "not_"
