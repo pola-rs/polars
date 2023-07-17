@@ -53,12 +53,22 @@ impl Expr {
     pub fn pow<E: Into<Expr>>(self, exponent: E) -> Self {
         Expr::Function {
             input: vec![self, exponent.into()],
-            function: FunctionExpr::Pow,
+            function: FunctionExpr::Pow(PowFunction::Generic),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 ..Default::default()
             },
         }
+    }
+
+    /// Compute the square root of the given expression
+    pub fn sqrt(self) -> Self {
+        self.map_private(FunctionExpr::Pow(PowFunction::Sqrt))
+    }
+
+    /// Compute the cube root of the given expression
+    pub fn cbrt(self) -> Self {
+        self.map_private(FunctionExpr::Pow(PowFunction::Cbrt))
     }
 
     /// Compute the cosine of the given expression

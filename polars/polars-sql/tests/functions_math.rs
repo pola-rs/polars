@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_core::utils::rayon::iter::repeat;
 use polars_lazy::prelude::*;
 use polars_sql::*;
 
@@ -17,6 +18,7 @@ fn test_math_functions() {
             ACOS(a) AS acos,
             ASIN(a) AS asin,
             ATAN(a) AS atan,
+            PI() AS pi,
             CEIL(a) AS ceil,
             EXP(a) AS exp,
             FLOOR(a) AS floor,
@@ -25,7 +27,9 @@ fn test_math_functions() {
             LOG10(a) AS log10,
             LOG(a, 5) AS log5,
             LOG1P(a) AS log1p,
-            POW(a, 2) AS pow
+            POW(a, 2) AS pow,
+            SQRT(a) AS sqrt,
+            CBRT(a) AS cbrt
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let df_pl = df
@@ -36,6 +40,7 @@ fn test_math_functions() {
             col("a").arccos().alias("acos"),
             col("a").arcsin().alias("asin"),
             col("a").arctan().alias("atan"),
+            lit(std::f64::consts::PI).alias("pi"),
             col("a").ceil().alias("ceil"),
             col("a").exp().alias("exp"),
             col("a").floor().alias("floor"),
@@ -45,6 +50,8 @@ fn test_math_functions() {
             col("a").log(5.0).alias("log5"),
             col("a").log1p().alias("log1p"),
             col("a").pow(2.0).alias("pow"),
+            col("a").sqrt().alias("sqrt"),
+            col("a").pow(1 / 3).alias("cbrt"),
         ])
         .collect()
         .unwrap();

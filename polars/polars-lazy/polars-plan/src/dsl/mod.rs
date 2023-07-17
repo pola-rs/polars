@@ -821,6 +821,12 @@ impl Expr {
         self.map_private(FunctionExpr::Floor)
     }
 
+    /// Constant Pi
+    #[cfg(feature = "round_series")]
+    pub fn pi() -> Self {
+        lit(std::f64::consts::PI)
+    }
+
     /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn ceil(self) -> Self {
