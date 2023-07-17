@@ -1,12 +1,11 @@
-"""Suggest native expressions for inefficient lambdas/functions used in `apply`."""
+"""Utilities connected to user defined functions (such as those passed to `apply`)."""
 from __future__ import annotations
 
 import dis
 import sys
 import warnings
 from inspect import signature
-from itertools import tee
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.various import find_stacklevel
@@ -58,8 +57,9 @@ def _expr(value: str | tuple[str, str, str], col: str | None) -> str:
         else:
             return f"({_expr(value[0], col)} {op} {_expr(value[2], col)})"
 
-    elif value.isidentifier() and value not in ("True", "False", "None"):
-        return f'pl.col("{col}")'
+    elif value.isidentifier():
+        if value not in ("True", "False", "None"):
+            return f'pl.col("{col}")'
 
     return value
 
@@ -73,10 +73,11 @@ def _op(op: str, argrepr: str, argval: Any) -> str:
         return "not in" if argval else "in"
     elif op == "UNARY_NOT":
         return "not"
-    raise AssertionError(
-        "Unreachable code - please report a bug to https://github.com/pola-rs/polars/issues "
-        "with the content of function you were passing to `apply`."
-    )
+    else:
+        raise AssertionError(
+            "Unrecognised op - please report a bug to https://github.com/pola-rs/polars/issues "
+            "with the content of function you were passing to `apply`."
+        )
 
 
 def _get_bytecode_ops(function: Callable[[Any], Any]) -> list[tuple[str, str, Any]]:
@@ -90,7 +91,10 @@ def _get_bytecode_ops(function: Callable[[Any], Any]) -> list[tuple[str, str, An
             if (idx, inst.opname) not in ((0, "RESUME"), (idx_last, "RETURN_VALUE"))
         ]
     except TypeError:
-        return []  # can't disassemble non-native functions (eg: numpy/etc)
+        # in case we hit something that can't be disassembled,
+        # eg: code object not available (such as a bare numpy
+        # ufunc that isn't contained within a lambda/function)
+        return []
 
 
 def _inst(opname: str, argrepr: str, argval: str) -> tuple[str, str, str]:
@@ -157,12 +161,17 @@ def warn_on_inefficient_apply(
         if _is_inefficient(ops, apply_target):
             suggestion = _rewrite_as_polars_expr(ops, col, apply_target)
             if suggestion:
+                addendum = (
+                    'Note: in list.eval context, pl.col("") should be written as pl.element()'
+                    if 'pl.col("")' in suggestion
+                    else ""
+                )
                 warnings.warn(
                     "Expr.apply is significantly slower than the native expressions API.\n"
                     "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-                    "In this case, you can replace your function with an expression:\n"
+                    "In this case, you can replace your `apply` with an expression:\n"
                     f'\033[31m-  pl.col("{columns[0]}").apply(...)\033[0m\n'
-                    f"\033[32m+  {suggestion}\033[0m\n",
+                    f"\033[32m+  {suggestion}\033[0m\n{addendum}",
                     PolarsInefficientApplyWarning,
                     stacklevel=find_stacklevel(),
                 )
