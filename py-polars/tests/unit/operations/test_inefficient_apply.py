@@ -31,6 +31,7 @@ def _get_suggestion(
         lambda x, y: x + y,
         lambda x: MY_CONSTANT + x,
         lambda x: x[0] + 1,
+        lambda x: x,
     ],
 )
 def test_non_simple_function(func: Callable[[Any], Any]) -> None:
@@ -42,7 +43,6 @@ def test_non_simple_function(func: Callable[[Any], Any]) -> None:
 @pytest.mark.parametrize(
     "func",
     [
-        lambda x: x,
         lambda x: x + 1 - (2 / 3),
         lambda x: x // 1 % 2,
         lambda x: x & True,

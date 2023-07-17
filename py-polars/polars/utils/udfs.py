@@ -107,9 +107,19 @@ def _inst(opname: str, argrepr: str, argval: str) -> tuple[str, str, str]:
 
 
 def _is_inefficient(ops: list[tuple[str, str, Any]], apply_target: str) -> bool:
-    """Determine if bytecode indicates only simple binary ops and/or comparisons."""
+    """
+    Determine if bytecode indicates only simple binary ops and/or comparisons.
+
+    Note that `lambda x: x` is inefficient, but we exclude it as it's otherwise not
+    guaranteed that just using the constant will return the same output. Hopefully
+    nobody is writing lambdas like that anyway...
+    """
     simple_ops = _SIMPLE_FRAME_OPS if apply_target == "frame" else _SIMPLE_EXPR_OPS
-    return bool(ops) and all(op in simple_ops for op, _argrepr, _argval in ops)
+    return (
+        bool(ops)
+        and all(op in simple_ops for op, _argrepr, _argval in ops)
+        and len(ops) >= 3
+    )
 
 
 def _rewrite_as_polars_expr(
@@ -117,22 +127,19 @@ def _rewrite_as_polars_expr(
 ) -> str | None:
     """Take postfix opcode stack and translate to native polars expression."""
     # const / unchanged
-    if len(ops) == 1:
-        return _expr(ops[0][1], col)
-    elif len(ops) >= 3:
-        if apply_target == "expr":
-            stack = []  # type: ignore[var-annotated]
-            for op in ops:
-                stack.append(
-                    op[1]
-                    if op[0].startswith("LOAD_")
-                    else (
-                        (stack.pop(), _op(*op))
-                        if op[0] == "UNARY_NOT"
-                        else (stack.pop(-2), _op(*op), stack.pop(-1))
-                    )
+    if apply_target == "expr":
+        stack = []  # type: ignore[var-annotated]
+        for op in ops:
+            stack.append(
+                op[1]
+                if op[0] in ("LOAD_FAST", "LOAD_CONST")
+                else (
+                    (stack.pop(), _op(*op))
+                    if op[0] == "UNARY_NOT"
+                    else (stack.pop(-2), _op(*op), stack.pop(-1))
                 )
-            return _expr(stack[0], col)  # type: ignore[arg-type]
+            )
+        return _expr(stack[0], col)  # type: ignore[arg-type]
 
     # TODO: frame apply (account for BINARY_SUBSCR)
     # TODO: series apply (rewrite col expr as series)
