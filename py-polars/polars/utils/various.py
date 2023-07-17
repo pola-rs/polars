@@ -320,7 +320,7 @@ def _cast_repr_strings_with_schema(
 NS = TypeVar("NS")
 
 
-class sphinx_accessor(property):
+class sphinx_accessor(property):  # noqa: D101
     def __get__(  # type: ignore[override]
         self,
         instance: Any,

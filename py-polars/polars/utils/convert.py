@@ -30,13 +30,13 @@ if TYPE_CHECKING:
     elif _ZONEINFO_AVAILABLE:
         from backports.zoneinfo._zoneinfo import ZoneInfo
 
-    def get_zoneinfo(key: str) -> ZoneInfo:
+    def get_zoneinfo(key: str) -> ZoneInfo:  # noqa: D103
         pass
 
 else:
 
     @lru_cache(None)
-    def get_zoneinfo(key: str) -> ZoneInfo:
+    def get_zoneinfo(key: str) -> ZoneInfo:  # noqa: D103
         return zoneinfo.ZoneInfo(key)
 
 

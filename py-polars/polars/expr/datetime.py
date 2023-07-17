@@ -75,7 +75,7 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Date/Datetime series
+        Expression of data type `Date`/`Datetime`
 
         Examples
         --------
@@ -199,7 +199,7 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Date/Datetime series
+        Expression of data type `Date`/`Datetime`
 
         Warnings
         --------
@@ -890,12 +890,39 @@ class ExprDateTimeNameSpace:
         return wrap_expr(self._pyexpr.dt_ordinal_day())
 
     def time(self) -> Expr:
+        """
+        Extract time.
+
+        Applies to Datetime columns only; fails on Date.
+
+        Returns
+        -------
+        Expression of data type `Time`
+        """
         return wrap_expr(self._pyexpr.dt_time())
 
     def date(self) -> Expr:
+        """
+        Extract date from date(time).
+
+        Applies to Date and Datetime columns.
+
+        Returns
+        -------
+        Expression of data type `Date`
+        """
         return wrap_expr(self._pyexpr.dt_date())
 
     def datetime(self) -> Expr:
+        """
+        Return datetime.
+
+        Applies to Datetime columns.
+
+        Returns
+        -------
+        Expression of data type `Datetime`
+        """
         return wrap_expr(self._pyexpr.dt_datetime())
 
     def hour(self) -> Expr:
@@ -1256,7 +1283,7 @@ class ExprDateTimeNameSpace:
 
     def with_time_unit(self, time_unit: TimeUnit) -> Expr:
         """
-        Set time unit of a Series of dtype Datetime or Duration.
+        Set time unit of an expression of dtype Datetime or Duration.
 
         This does not modify underlying data, and should be used to fix an incorrect
         time unit.
@@ -1264,7 +1291,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the ``Datetime`` Series.
+            Unit of time for the ``Datetime`` expression.
 
         Examples
         --------
@@ -1307,7 +1334,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Time unit for the ``Datetime`` Series.
+            Time unit for the ``Datetime`` expression.
 
         Examples
         --------
@@ -1342,12 +1369,12 @@ class ExprDateTimeNameSpace:
 
     def convert_time_zone(self, time_zone: str) -> Expr:
         """
-        Convert to given time zone for a Series of type Datetime.
+        Convert to given time zone for an expression of type Datetime.
 
         Parameters
         ----------
         time_zone
-            Time zone for the `Datetime` Series.
+            Time zone for the `Datetime` expression.
 
         Examples
         --------
@@ -1388,7 +1415,7 @@ class ExprDateTimeNameSpace:
         self, time_zone: str | None, *, use_earliest: bool | None = None
     ) -> Expr:
         """
-        Replace time zone for a Series of type Datetime.
+        Replace time zone for an expression of type Datetime.
 
         Different from ``convert_time_zone``, this will also modify
         the underlying timestamp and will ignore the original time zone.
@@ -1396,7 +1423,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         time_zone
-            Time zone for the `Datetime` Series. Pass `None` to unset time zone.
+            Time zone for the `Datetime` expression. Pass `None` to unset time zone.
         use_earliest
             If localizing an ambiguous datetime (say, due to daylight saving time),
             determine whether to localize to the earliest datetime or not.
@@ -1487,7 +1514,7 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        A series of dtype Int64
+        Expression of data type Int64
 
         Examples
         --------
@@ -1525,7 +1552,7 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        A series of dtype Int64
+        Expression of data type Int64
 
         Examples
         --------
@@ -1564,7 +1591,7 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        A series of dtype Int64
+        Expression of data type Int64
 
         Examples
         --------
@@ -1603,7 +1630,7 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        A series of dtype Int64
+        Expression of data type `Int64`
 
         Examples
         --------
@@ -1646,7 +1673,7 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        A series of dtype Int64
+        Expression of data type Int64
 
         Examples
         --------
@@ -1693,7 +1720,7 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        A series of dtype Int64
+        Expression of data type Int64
 
         Examples
         --------
@@ -1740,7 +1767,7 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        A series of dtype Int64
+        Expression of data type Int64
 
         Examples
         --------

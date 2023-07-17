@@ -119,9 +119,11 @@ def test_parse_version(v1: Any, v2: Any) -> None:
     assert parse_version(v2) < parse_version(v1)
 
 
-class Foo:
+class Foo:  # noqa: D101
     @deprecate_nonkeyword_arguments(allowed_args=["self", "baz"])
-    def bar(self, baz: str, ham: str | None = None, foobar: str | None = None) -> None:
+    def bar(  # noqa: D102
+        self, baz: str, ham: str | None = None, foobar: str | None = None
+    ) -> None:
         ...
 
 

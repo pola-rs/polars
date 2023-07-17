@@ -144,12 +144,9 @@ ignore = [
   # pycodestyle
   # TODO: Remove errors below to further improve docstring linting
   # Ordered from most common to least common errors.
-  "D105",
-  "D100",
-  "D103",
-  "D102",
-  "D104",
-  "D101",
+  "D105", # Missing docstring in magic method
+  "D100", # Missing docstring in public module
+  "D104", # Missing docstring in public package
 ]
 
 [tool.ruff.pycodestyle]

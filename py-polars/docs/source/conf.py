@@ -235,14 +235,14 @@ def _minify_classpaths(s: str) -> str:
     )
 
 
-def process_signature(app, what, name, obj, opts, sig, ret):
+def process_signature(app, what, name, obj, opts, sig, ret):  # noqa: D103
     return (
         _minify_classpaths(sig) if sig else sig,
         _minify_classpaths(ret) if ret else ret,
     )
 
 
-def setup(app):
+def setup(app):  # noqa: D103
     # TODO: a handful of methods do not seem to trigger the event for
     #  some reason (possibly @overloads?) - investigate further...
     app.connect("autodoc-process-signature", process_signature)
