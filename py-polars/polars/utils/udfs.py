@@ -80,10 +80,14 @@ def _op(op: str, argrepr: str, argval: Any) -> str:
         )
 
 
-def _function_name(function: Callable[[Any], Any]) -> str:
+def _function_name(function: Callable[[Any], Any], variable: str) -> str:
     """Return the name of the given function/method/lambda."""
-    func_name = getattr(function, "__name__", None) or "..."
-    return f"<{func_name.strip('<>')}>"
+    func_name = function.__name__
+    if func_name == "<lambda>":
+        return f"lambda {variable}: ..."
+    elif not func_name:
+        return "..."
+    return func_name
 
 
 def _get_bytecode_ops(function: Callable[[Any], Any]) -> list[tuple[str, str, Any]]:
@@ -178,12 +182,12 @@ def warn_on_inefficient_apply(
                     if 'pl.col("")' in suggestion
                     else ""
                 )
-                func_name = _function_name(function)
+                func_name = _function_name(function, ops[0][1])
                 warnings.warn(
                     "Expr.apply is significantly slower than the native expressions API.\n"
                     "Only use if you absolutely CANNOT implement your logic otherwise.\n"
                     "In this case, you can replace your `apply` with an expression:\n"
-                    f'\033[31m-  pl.col("{columns[0]}").apply({func_name!r})\033[0m\n'
+                    f'\033[31m-  pl.col("{columns[0]}").apply({func_name})\033[0m\n'
                     f"\033[32m+  {suggestion}\033[0m\n{addendum}",
                     PolarsInefficientApplyWarning,
                     stacklevel=find_stacklevel(),
