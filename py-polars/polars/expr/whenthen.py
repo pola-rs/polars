@@ -15,10 +15,10 @@ if TYPE_CHECKING:
 class When:
     """Utility class. See the `when` function."""
 
-    def __init__(self, pywhen: Any):
-        self._pywhen = pywhen
+    def __init__(self, when: Any):
+        self._when = when
 
-    def then(self, expr: IntoExpr) -> WhenThen:
+    def then(self, expr: IntoExpr) -> Then:
         """
         Values to return in case of the predicate being `True`.
 
@@ -28,15 +28,14 @@ class When:
 
         """
         expr = parse_as_expression(expr, str_as_lit=True)
-        pywhenthen = self._pywhen.then(expr)
-        return WhenThen(pywhenthen)
+        return Then(self._when.then(expr))
 
 
-class WhenThen(Expr):
+class Then(Expr):
     """Utility class. See the `when` function."""
 
-    def __init__(self, pywhenthen: Any):
-        self._pywhenthen = pywhenthen
+    def __init__(self, then: Any):
+        self._then = then
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:  # type: ignore[override]
@@ -44,12 +43,12 @@ class WhenThen(Expr):
 
     @property
     def _pyexpr(self) -> PyExpr:
-        return self._pywhenthen.otherwise(F.lit(None)._pyexpr)
+        return self._then.otherwise(F.lit(None)._pyexpr)
 
-    def when(self, predicate: IntoExpr) -> WhenThenThen:
+    def when(self, predicate: IntoExpr) -> ChainedWhen:
         """Start another "when, then, otherwise" layer."""
         predicate = parse_as_expression(predicate)
-        return WhenThenThen(self._pywhenthen.when(predicate))
+        return ChainedWhen(self._then.when(predicate))
 
     def otherwise(self, expr: IntoExpr) -> Expr:
         """
@@ -61,14 +60,26 @@ class WhenThen(Expr):
 
         """
         expr = parse_as_expression(expr, str_as_lit=True)
-        return wrap_expr(self._pywhenthen.otherwise(expr))
+        return wrap_expr(self._then.otherwise(expr))
 
 
-class WhenThenThen(Expr):
+class ChainedWhen(Expr):
     """Utility class. See the `when` function."""
 
-    def __init__(self, pywhenthenthen: Any):
-        self._pywhenthenthen = pywhenthenthen
+    def __init__(self, chained_when: Any):
+        self._chained_when = chained_when
+
+    def then(self, predicate: IntoExpr) -> ChainedThen:
+        """Start another "when, then, otherwise" layer."""
+        predicate = parse_as_expression(predicate, str_as_lit=True)
+        return ChainedThen(self._chained_when.then(predicate))
+
+
+class ChainedThen(Expr):
+    """Utility class. See the `when` function."""
+
+    def __init__(self, chained_then: Any):
+        self._chained_then = chained_then
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:  # type: ignore[override]
@@ -76,27 +87,12 @@ class WhenThenThen(Expr):
 
     @property
     def _pyexpr(self) -> PyExpr:
-        return self._pywhenthenthen.otherwise(F.lit(None)._pyexpr)
+        return self._chained_then.otherwise(F.lit(None)._pyexpr)
 
-    # @_pyexpr.setter
-    # def _pyexpr(self) -> PyExpr:
-
-    def when(self, predicate: IntoExpr) -> WhenThenThen:
+    def when(self, predicate: IntoExpr) -> ChainedWhen:
         """Start another "when, then, otherwise" layer."""
         predicate = parse_as_expression(predicate)
-        return WhenThenThen(self._pywhenthenthen.when(predicate))
-
-    def then(self, expr: IntoExpr) -> WhenThenThen:
-        """
-        Values to return in case of the predicate being `True`.
-
-        See Also
-        --------
-        pl.when : Documentation for `when, then, otherwise`
-
-        """
-        expr = parse_as_expression(expr, str_as_lit=True)
-        return WhenThenThen(self._pywhenthenthen.then(expr))
+        return ChainedWhen(self._chained_then.when(predicate))
 
     def otherwise(self, expr: IntoExpr) -> Expr:
         """
@@ -108,4 +104,4 @@ class WhenThenThen(Expr):
 
         """
         expr = parse_as_expression(expr, str_as_lit=True)
-        return wrap_expr(self._pywhenthenthen.otherwise(expr))
+        return wrap_expr(self._chained_then.otherwise(expr))
