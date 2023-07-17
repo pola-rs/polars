@@ -713,7 +713,7 @@ def from_pandas(
         3
     ]
 
-    """  # noqa: W505
+    """
     if isinstance(data, (pd.Series, pd.DatetimeIndex)):
         return pl.Series._from_pandas("", data, nan_to_null=nan_to_null)
     elif isinstance(data, pd.DataFrame):
