@@ -3781,7 +3781,9 @@ class Expr:
             pass
         else:
             if root_names:
-                warn_on_inefficient_apply(function, columns=root_names, apply_target="expr")
+                warn_on_inefficient_apply(
+                    function, columns=root_names, apply_target="expr"
+                )
 
         if pass_name:
 

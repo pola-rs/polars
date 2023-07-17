@@ -16,7 +16,6 @@ from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, FLOAT_DTYPES, INTEGER_DTYPES
-from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -3464,28 +3463,23 @@ def test_format_empty_df() -> None:
 
 
 def test_deadlocks_3409() -> None:
-    with pytest.warns(
-        PolarsInefficientApplyWarning, match="In this case, you can replace"
-    ):
-        assert (
-            pl.DataFrame({"col1": [[1, 2, 3]]})
-            .with_columns(
-                [
-                    pl.col("col1").list.eval(
-                        pl.element().apply(lambda x: x, return_dtype=pl.Int64)
-                    )
-                ]
-            )
-            .to_dict(False)
-        ) == {"col1": [[1, 2, 3]]}
+    assert (
+        pl.DataFrame({"col1": [[1, 2, 3]]})
+        .with_columns(
+            [
+                pl.col("col1").list.eval(
+                    pl.element().apply(lambda x: x, return_dtype=pl.Int64)
+                )
+            ]
+        )
+        .to_dict(False)
+    ) == {"col1": [[1, 2, 3]]}
 
-        assert (
-            pl.DataFrame({"col1": [1, 2, 3]})
-            .with_columns(
-                [pl.col("col1").cumulative_eval(pl.element().map(lambda x: 0))]
-            )
-            .to_dict(False)
-        ) == {"col1": [0, 0, 0]}
+    assert (
+        pl.DataFrame({"col1": [1, 2, 3]})
+        .with_columns([pl.col("col1").cumulative_eval(pl.element().map(lambda x: 0))])
+        .to_dict(False)
+    ) == {"col1": [0, 0, 0]}
 
 
 def test_clip() -> None:

@@ -39,20 +39,21 @@ REPORT_MSG = (
     "the function which you passed to `apply`."
 )
 
+
 def _expr(value: str | tuple[str, str, str], col: str | None) -> str:
     if isinstance(value, tuple):
         op = value[1]
         if len(value) == 2 and op == "not":
             return f"~{_expr(value[0], col)}"
-        elif value[2] == "None" and op == 'is not':
+        elif value[2] == "None" and op == "is not":
             return f"{_expr(value[0], col)}.is_not_null()"
-        elif value[2] == "None" and op == 'is':
+        elif value[2] == "None" and op == "is":
             return f"{_expr(value[0], col)}.is_null()"
-        elif value[2] == "None" and op == 'is not':
+        elif value[2] == "None" and op == "is not":
             return f"{_expr(value[0], col)}.is_not_null()"
-        elif op == 'in':
+        elif op == "in":
             return f"({_expr(value[0], col)}.is_in({_expr(value[2], col)}))"
-        elif op == 'not in':
+        elif op == "not in":
             return f"(~{_expr(value[0], col)}.is_in({_expr(value[2], col)}))"
         else:
             return f"({_expr(value[0], col)} {op} {_expr(value[2], col)})"
@@ -116,7 +117,6 @@ def _rewrite_as_polars_expr(
 ) -> str | None:
     """Take postfix opcode stack and translate to native polars expression."""
     # const / unchanged
-    breakpoint()
     if len(ops) == 1:
         return _expr(ops[0][1], col)
     elif len(ops) >= 3:
