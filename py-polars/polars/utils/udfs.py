@@ -78,8 +78,13 @@ def _op(op: str, argrepr: str, argval: Any) -> str:
 def _get_bytecode_ops(function: Callable[[Any], Any]) -> list[tuple[str, str, Any]]:
     """Return disassembled bytecode ops, arg-repr, and arg-specific value/flag."""
     try:
-        instructions = dis.get_instructions(function)
-        return [_inst(i.opname, i.argrepr, i.argval) for i in instructions][1:-1]
+        instructions = list(dis.get_instructions(function))
+        idx_last = len(instructions) - 1
+        return [
+            _inst(inst.opname, inst.argrepr, inst.argval)
+            for idx, inst in enumerate(instructions)
+            if (idx, inst.opname) not in ((0, "RESUME"), (idx_last, "RETURN_VALUE"))
+        ]
     except TypeError:
         return []  # can't disassemble non-native functions (eg: numpy/etc)
 
