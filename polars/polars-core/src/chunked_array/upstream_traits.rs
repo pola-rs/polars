@@ -421,14 +421,9 @@ where
     fn from_par_iter<I: IntoParallelIterator<Item = T::Native>>(iter: I) -> Self {
         // Get linkedlist filled with different vec result from different threads
         let vectors = collect_into_linked_list(iter);
-        let capacity: usize = get_capacity_from_par_results(&vectors);
-
-        let mut av = Vec::<T::Native>::with_capacity(capacity);
-        for v in vectors {
-            av.extend_from_slice(&v)
-        }
-        let arr = to_array::<T>(av, None);
-        unsafe { NoNull::new(ChunkedArray::from_chunks("", vec![arr])) }
+        let vectors = vectors.into_iter().collect::<Vec<_>>();
+        let values = flatten_par(&vectors);
+        NoNull::new(ChunkedArray::new_vec("", values))
     }
 }
 

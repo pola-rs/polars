@@ -5682,6 +5682,10 @@ class DataFrame:
         """
         Apply a custom/user-defined function (UDF) over the rows of the DataFrame.
 
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
+
         The UDF will receive each row as a tuple of values: ``udf(row)``.
 
         Implementing logic using a Python function is almost always _significantly_
@@ -5811,16 +5815,21 @@ class DataFrame:
         else:
             return self._from_pydf(self._df.hstack([s._s for s in columns]))
 
-    def vstack(self, df: DataFrame, *, in_place: bool = False) -> Self:
+    @deprecated_alias(df="other")
+    def vstack(self, other: DataFrame, *, in_place: bool = False) -> Self:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
 
         Parameters
         ----------
-        df
+        other
             DataFrame to stack.
         in_place
-            Modify in place
+            Modify in place.
+
+        See Also
+        --------
+        extend
 
         Examples
         --------
@@ -5853,34 +5862,51 @@ class DataFrame:
 
         """
         if in_place:
-            self._df.vstack_mut(df._df)
-            return self
-        else:
-            return self._from_pydf(self._df.vstack(df._df))
+            try:
+                self._df.vstack_mut(other._df)
+                return self
+            except RuntimeError as exc:
+                if str(exc) == "Already mutably borrowed":
+                    self._df.vstack_mut(other._df.clone())
+                    return self
+                else:
+                    raise exc
 
-    def extend(self, other: Self) -> Self:
+        return self._from_pydf(self._df.vstack(other._df))
+
+    def extend(self, other: DataFrame) -> Self:
         """
         Extend the memory backed by this `DataFrame` with the values from `other`.
 
-        Different from `vstack` which adds the chunks from `other` to the chunks of this
-        `DataFrame` `extend` appends the data from `other` to the underlying memory
-        locations and thus may cause a reallocation.
+        Different from ``vstack`` which adds the chunks from ``other`` to the chunks of
+        this ``DataFrame``, ``extend`` appends the data from `other` to the underlying
+        memory locations and thus may cause a reallocation.
 
         If this does not cause a reallocation, the resulting data structure will not
         have any extra chunks and thus will yield faster queries.
 
-        Prefer `extend` over `vstack` when you want to do a query after a single append.
-        For instance during online operations where you add `n` rows and rerun a query.
+        Prefer ``extend`` over ``vstack`` when you want to do a query after a single
+        append. For instance, during online operations where you add `n` rows and rerun
+        a query.
 
-        Prefer `vstack` over `extend` when you want to append many times before doing a
-        query. For instance when you read in multiple files and when to store them in a
-        single `DataFrame`. In the latter case, finish the sequence of `vstack`
-        operations with a `rechunk`.
+        Prefer ``vstack`` over ``extend`` when you want to append many times before
+        doing a query. For instance, when you read in multiple files and want to store
+        them in a single ``DataFrame``. In the latter case, finish the sequence of
+        ``vstack`` operations with a ``rechunk``.
 
         Parameters
         ----------
         other
             DataFrame to vertically add.
+
+        Warnings
+        --------
+        This method modifies the dataframe in-place. The dataframe is returned for
+        convenience only.
+
+        See Also
+        --------
+        vstack
 
         Examples
         --------
@@ -5902,7 +5928,13 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        self._df.extend(other._df)
+        try:
+            self._df.extend(other._df)
+        except RuntimeError as exc:
+            if str(exc) == "Already mutably borrowed":
+                self._df.extend(other._df.clone())
+            else:
+                raise exc
         return self
 
     def drop(self, columns: str | Collection[str], *more_columns: str) -> DataFrame:

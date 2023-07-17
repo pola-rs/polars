@@ -894,7 +894,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         optimized: bool = True,
         show: bool = True,
-        output_path: str | None = None,
+        output_path: str | Path | None = None,
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
         type_coercion: bool = True,
@@ -975,8 +975,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             raise ImportError("Graphviz dot binary should be on your PATH") from None
 
         if output_path:
-            with Path(output_path).open(mode="wb") as file:
-                file.write(graph)
+            Path(output_path).write_bytes(graph)
 
         if not show:
             return None

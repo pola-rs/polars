@@ -30,7 +30,7 @@ where
         // TODO!
         // we can speed this upp if the boolean array doesn't have nulls
         // Then we can work directly on the byte slice.
-        let val = values.clone().sliced_unchecked(start, len);
+        let val = unsafe { values.clone().sliced_unchecked(start, len) };
         start = end;
         op(&val)
     });

@@ -308,7 +308,7 @@ def test_window_5868() -> None:
     df = pl.DataFrame({"a": [None, 1, 2, 3, 3, 3, 4, 4]})
 
     result = df.select(pl.col("a").sum().over("a")).get_column("a")
-    expected = pl.Series("a", [None, 1, 2, 9, 9, 9, 8, 8])
+    expected = pl.Series("a", [0, 1, 2, 9, 9, 9, 8, 8])
     assert_series_equal(result, expected)
 
     result = (

@@ -409,15 +409,6 @@ def test_add_string() -> None:
     assert_series_equal(result, pl.Series(["pfx:hello", "pfx:weird"]))
 
 
-def test_append_extend() -> None:
-    a = pl.Series("a", [1, 2])
-    b = pl.Series("b", [8, 9, None])
-    a.append(b, append_chunks=False)
-    expected = pl.Series("a", [1, 2, 8, 9, None])
-    assert_series_equal(a, expected)
-    assert a.n_chunks() == 1
-
-
 @pytest.mark.parametrize(
     ("data", "expected_dtype"),
     [
@@ -2303,11 +2294,6 @@ def test_n_unique() -> None:
 def test_clip() -> None:
     s = pl.Series("foo", [-50, 5, None, 50])
     assert s.clip(1, 10).to_list() == [1, 5, None, 10]
-
-
-def test_mutable_borrowed_append_3915() -> None:
-    s = pl.Series("s", [1, 2, 3])
-    assert s.append(s).to_list() == [1, 2, 3, 1, 2, 3]
 
 
 def test_set_at_idx() -> None:

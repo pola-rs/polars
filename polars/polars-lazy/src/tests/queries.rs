@@ -907,7 +907,7 @@ fn test_lazy_groupby_filter() -> PolarsResult<()> {
 
     assert_eq!(
         Vec::from(out.column("b_sum").unwrap().i32().unwrap()),
-        [Some(6), None, None]
+        [Some(6), Some(0), Some(0)]
     );
     assert_eq!(
         Vec::from(out.column("b_first").unwrap().i32().unwrap()),

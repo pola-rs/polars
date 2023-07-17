@@ -43,7 +43,9 @@ def test_error_on_reducing_map() -> None:
         ),
     ):
         df.select(
-            pl.col("x").map(lambda x: x.cut(bins=[1, 2, 3], series=False)).over("group")
+            pl.col("x")
+            .map(lambda x: x.cut(breaks=[1, 2, 3], series=False))
+            .over("group")
         )
 
 

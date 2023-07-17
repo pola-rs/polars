@@ -1,6 +1,6 @@
 [package]
 name = "polars-error"
-version = "0.30.0"
+version.workspace = true
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"

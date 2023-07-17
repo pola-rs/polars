@@ -50,7 +50,13 @@ def test_rolling_kernels_and_groupby_rolling(
     out1 = example_df.select(
         [
             pl.col("dt"),
-            pl.col("values").rolling_sum(period, by="dt", closed=closed).alias("sum"),
+            # this differs from groupby aggregation because the empty window is
+            # null here
+            # where the sum aggregation of an empty set is 0
+            pl.col("values")
+            .rolling_sum(period, by="dt", closed=closed)
+            .fill_null(0)
+            .alias("sum"),
             pl.col("values").rolling_var(period, by="dt", closed=closed).alias("var"),
             pl.col("values").rolling_mean(period, by="dt", closed=closed).alias("mean"),
             pl.col("values").rolling_std(period, by="dt", closed=closed).alias("std"),

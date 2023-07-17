@@ -51,8 +51,9 @@ pydantic = ["pydantic"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
 adbc = ["adbc_driver_sqlite"]
+cloudpickle = ["cloudpickle"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc,cloudpickle]",
 ]
 
 [tool.mypy]
@@ -119,6 +120,7 @@ select = [
   "UP", # pyupgrade
   "PT", # flake8-pytest-style
   "RUF", # Ruff-specific rules
+  "PTH", # flake8-use-pathlib
 ]
 
 ignore = [

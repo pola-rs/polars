@@ -60,8 +60,8 @@ pub(crate) struct SqlExprVisitor<'a> {
 impl SqlExprVisitor<'_> {
     fn visit_expr(&self, expr: &SqlExpr) -> PolarsResult<Expr> {
         match expr {
-            SqlExpr::AllOp(_) => Ok(self.visit_expr(expr)?.all()),
-            SqlExpr::AnyOp(expr) => Ok(self.visit_expr(expr)?.any()),
+            SqlExpr::AllOp(_) => Ok(self.visit_expr(expr)?.all(true)),
+            SqlExpr::AnyOp(expr) => Ok(self.visit_expr(expr)?.any(true)),
             SqlExpr::ArrayAgg(expr) => self.visit_arr_agg(expr),
             SqlExpr::Between {
                 expr,

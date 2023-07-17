@@ -16,11 +16,12 @@ import os
 import re
 import sys
 import warnings
+from pathlib import Path
 
 import sphinx_autosummary_accessors
 
 # add polars directory
-sys.path.insert(0, os.path.abspath("../.."))
+sys.path.insert(0, str(Path("../..").resolve()))
 
 # -- Project information -----------------------------------------------------
 
@@ -200,8 +201,8 @@ def linkcode_resolve(domain, info):
 
     linespec = f"#L{lineno}-L{lineno + len(source) - 1}" if lineno else ""
 
-    conf_dir_path = os.path.dirname(os.path.realpath(__file__))
-    polars_root = os.path.abspath(f"{conf_dir_path}/../../polars")
+    conf_dir_path = Path(__file__).absolute().parent
+    polars_root = (conf_dir_path.parent.parent / "polars").absolute()
 
     fn = os.path.relpath(fn, start=polars_root)
     return f"{github_root}/blob/main/py-polars/polars/{fn}{linespec}"

@@ -288,7 +288,7 @@ def iterable_to_pyseries(
             series = schunk
             dtype = series.dtype
         else:
-            series.append(schunk, append_chunks=True)
+            series.append(schunk)
             n_chunks += 1
 
     if series is None:
