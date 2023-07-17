@@ -12,10 +12,10 @@ use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::data_types::IsFloat;
 use polars_arrow::kernels::rolling;
 use polars_arrow::kernels::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
+    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
 use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
-use polars_arrow::kernels::rolling::{DynArgs, RollingVarParams};
+use polars_arrow::kernels::rolling::{DynArgs, RollingQuantileParams, RollingVarParams};
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::TrustedLenPush;
@@ -29,6 +29,7 @@ use crate::frame::groupby::GroupsIndicator;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
+use crate::utils::NoNull;
 use crate::{apply_method_physical_integer, POOL};
 
 fn idx2usize(idx: &[IdxSize]) -> impl Iterator<Item = usize> + ExactSizeIterator + '_ {
@@ -167,6 +168,17 @@ where
     ca.into_series()
 }
 
+// same helper as `_agg_helper_idx` but for aggregations that don't return an Option
+pub fn _agg_helper_idx_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
+where
+    F: Fn((IdxSize, &Vec<IdxSize>)) -> T::Native + Send + Sync,
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+{
+    let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.into_par_iter().map(f).collect());
+    ca.into_inner().into_series()
+}
+
 // helper that iterates on the `all: Vec<Vec<u32>` collection
 // this doesn't have traverse the `first: Vec<u32>` memory and is therefore faster
 fn agg_helper_idx_on_all<T, F>(groups: &GroupsIdx, f: F) -> Series
@@ -187,6 +199,16 @@ where
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
+}
+
+pub fn _agg_helper_slice_no_null<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
+where
+    F: Fn([IdxSize; 2]) -> T::Native + Send + Sync,
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+{
+    let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    ca.into_inner().into_series()
 }
 
 #[inline(always)]
@@ -271,6 +293,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
 {
     let invalid_quantile = !(0.0..=1.0).contains(&quantile);
     if invalid_quantile {
@@ -298,19 +321,25 @@ where
                 let values = arr.values().as_slice();
                 let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
-                    None => rolling::no_nulls::rolling_quantile_by_iter(
+                    None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _>(
                         values,
-                        quantile,
-                        interpol,
                         offset_iter,
+                        Some(Arc::new(RollingQuantileParams {
+                            prob: quantile,
+                            interpol,
+                        })),
                     ),
-                    Some(validity) => rolling::nulls::rolling_quantile_by_iter(
-                        values,
-                        validity,
-                        quantile,
-                        interpol,
-                        offset_iter,
-                    ),
+                    Some(validity) => {
+                        _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _>(
+                            values,
+                            validity,
+                            offset_iter,
+                            Some(Arc::new(RollingQuantileParams {
+                                prob: quantile,
+                                interpol,
+                            })),
+                        )
+                    }
                 };
                 // the rolling kernels works on the dtype, this is not yet the float
                 // output type we need.
@@ -342,6 +371,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
 {
     match groups {
         GroupsProxy::Idx(groups) => {
@@ -540,19 +570,19 @@ where
                 let ca = self.rechunk();
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
-                _agg_helper_idx::<T, _>(groups, |(first, idx)| {
+                _agg_helper_idx_no_null::<T, _>(groups, |(first, idx)| {
                     debug_assert!(idx.len() <= self.len());
                     if idx.is_empty() {
-                        None
+                        T::Native::zero()
                     } else if idx.len() == 1 {
-                        arr.get(first as usize)
+                        arr.get(first as usize).unwrap_or(T::Native::zero())
                     } else if no_nulls {
-                        Some(take_agg_no_null_primitive_iter_unchecked(
+                        take_agg_no_null_primitive_iter_unchecked(
                             arr,
                             idx2usize(idx),
                             |a, b| a + b,
                             T::Native::zero(),
-                        ))
+                        )
                     } else {
                         take_agg_primitive_iter_unchecked::<T::Native, _, _>(
                             arr,
@@ -561,6 +591,7 @@ where
                             T::Native::zero(),
                             idx.len() as IdxSize,
                         )
+                        .unwrap_or(T::Native::zero())
                     }
                 })
             }
@@ -585,14 +616,14 @@ where
                     };
                     Self::from_chunks("", vec![arr]).into_series()
                 } else {
-                    _agg_helper_slice::<T, _>(groups, |[first, len]| {
+                    _agg_helper_slice_no_null::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
-                            0 => None,
-                            1 => self.get(first as usize),
+                            0 => T::Native::zero(),
+                            1 => self.get(first as usize).unwrap_or(T::Native::zero()),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
-                                arr_group.sum()
+                                arr_group.sum().unwrap_or(T::Native::zero())
                             }
                         }
                     })

@@ -311,9 +311,14 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
-    def any(self) -> Self:
+    def any(self, drop_nulls: bool = True) -> Self:
         """
         Check if any boolean value in a Boolean column is `True`.
+
+        Parameters
+        ----------
+        drop_nulls
+            If False, return None if there are nulls but no Trues.
 
         Returns
         -------
@@ -331,16 +336,41 @@ class Expr:
         ╞══════╪═══════╡
         │ true ┆ false │
         └──────┴───────┘
+        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
+        >>> df.select(pl.col("x").any(True), pl.col("y").any(True))
+        shape: (1, 2)
+        ┌───────┬──────┐
+        │ x     ┆ y    │
+        │ ---   ┆ ---  │
+        │ bool  ┆ bool │
+        ╞═══════╪══════╡
+        │ false ┆ true │
+        └───────┴──────┘
+        >>> df.select(pl.col("x").any(False), pl.col("y").any(False))
+        shape: (1, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ bool ┆ bool │
+        ╞══════╪══════╡
+        │ null ┆ true │
+        └──────┴──────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.any())
+        return self._from_pyexpr(self._pyexpr.any(drop_nulls))
 
-    def all(self) -> Self:
+    def all(self, drop_nulls: bool = True) -> Self:
         """
         Check if all boolean values in a Boolean column are `True`.
 
         This method is an expression - not to be confused with
         :func:`polars.all` which is a function to select all columns.
+
+        Parameters
+        ----------
+        drop_nulls
+            If False, return None if there are any nulls.
+
 
         Returns
         -------
@@ -360,9 +390,28 @@ class Expr:
         ╞══════╪═══════╪═══════╡
         │ true ┆ false ┆ false │
         └──────┴───────┴───────┘
+        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
+        >>> df.select(pl.col("x").all(True), pl.col("y").all(True))
+        shape: (1, 2)
+        ┌───────┬───────┐
+        │ x     ┆ y     │
+        │ ---   ┆ ---   │
+        │ bool  ┆ bool  │
+        ╞═══════╪═══════╡
+        │ false ┆ false │
+        └───────┴───────┘
+        >>> df.select(pl.col("x").all(False), pl.col("y").all(False))
+        shape: (1, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ bool ┆ bool │
+        ╞══════╪══════╡
+        │ null ┆ null │
+        └──────┴──────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.all())
+        return self._from_pyexpr(self._pyexpr.all(drop_nulls))
 
     def arg_true(self) -> Self:
         """
@@ -3249,7 +3298,7 @@ class Expr:
         breaks
             A list of unique cut points.
         labels
-            Labels to assign to bins. If given, the length must be len(probs) + 1.
+            Labels to assign to bins. If given, the length must be len(breaks) + 1.
         left_closed
             Whether intervals should be [) instead of the default of (]
         include_breaks
@@ -3492,14 +3541,14 @@ class Expr:
         ...     ]
         ... ).sort("group_col")
         shape: (2, 3)
-        ┌───────────┬──────┬─────┐
-        │ group_col ┆ lt   ┆ gte │
-        │ ---       ┆ ---  ┆ --- │
-        │ str       ┆ i64  ┆ i64 │
-        ╞═══════════╪══════╪═════╡
-        │ g1        ┆ 1    ┆ 2   │
-        │ g2        ┆ null ┆ 3   │
-        └───────────┴──────┴─────┘
+        ┌───────────┬─────┬─────┐
+        │ group_col ┆ lt  ┆ gte │
+        │ ---       ┆ --- ┆ --- │
+        │ str       ┆ i64 ┆ i64 │
+        ╞═══════════╪═════╪═════╡
+        │ g1        ┆ 1   ┆ 2   │
+        │ g2        ┆ 0   ┆ 3   │
+        └───────────┴─────┴─────┘
 
         """
         return self._from_pyexpr(self._pyexpr.filter(predicate._pyexpr))
@@ -3530,14 +3579,14 @@ class Expr:
         ...     ]
         ... ).sort("group_col")
         shape: (2, 3)
-        ┌───────────┬──────┬─────┐
-        │ group_col ┆ lt   ┆ gte │
-        │ ---       ┆ ---  ┆ --- │
-        │ str       ┆ i64  ┆ i64 │
-        ╞═══════════╪══════╪═════╡
-        │ g1        ┆ 1    ┆ 2   │
-        │ g2        ┆ null ┆ 3   │
-        └───────────┴──────┴─────┘
+        ┌───────────┬─────┬─────┐
+        │ group_col ┆ lt  ┆ gte │
+        │ ---       ┆ --- ┆ --- │
+        │ str       ┆ i64 ┆ i64 │
+        ╞═══════════╪═════╪═════╡
+        │ g1        ┆ 1   ┆ 2   │
+        │ g2        ┆ 0   ┆ 3   │
+        └───────────┴─────┴─────┘
 
         """
         return self.filter(predicate)
@@ -3612,6 +3661,10 @@ class Expr:
     ) -> Self:
         """
         Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
+
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
 
         Depending on the context it has the following behavior:
 
@@ -4568,7 +4621,7 @@ class Expr:
         """
         return self.__truediv__(other)
 
-    def pow(self, exponent: int | float | Series | Expr) -> Self:
+    def pow(self, exponent: int | float | None | Series | Expr) -> Self:
         """
         Method equivalent of exponentiation operator ``expr ** exponent``.
 

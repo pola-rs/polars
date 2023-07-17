@@ -17,37 +17,39 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum StringFunction {
+    #[cfg(feature = "concat_str")]
+    ConcatHorizontal(String),
+    #[cfg(feature = "concat_str")]
+    ConcatVertical(String),
     #[cfg(feature = "regex")]
     Contains {
         literal: bool,
         strict: bool,
     },
-    StartsWith,
+    CountMatch(String),
     EndsWith,
+    Explode,
     Extract {
         pat: String,
         group_index: usize,
     },
-    #[cfg(feature = "string_justify")]
-    Zfill(usize),
+    ExtractAll,
+    #[cfg(feature = "string_from_radix")]
+    FromRadix(u32, bool),
+    NChars,
+    Length,
     #[cfg(feature = "string_justify")]
     LJust {
         width: usize,
         fillchar: char,
     },
-    #[cfg(feature = "string_justify")]
-    RJust {
-        width: usize,
-        fillchar: char,
+    Lowercase,
+    LStrip(Option<String>),
+    #[cfg(feature = "extract_jsonpath")]
+    JsonExtract {
+        dtype: Option<DataType>,
+        infer_schema_len: Option<usize>,
     },
-    ExtractAll,
-    CountMatch(String),
-    #[cfg(feature = "temporal")]
-    Strptime(DataType, StrptimeOptions),
-    #[cfg(feature = "concat_str")]
-    ConcatVertical(String),
-    #[cfg(feature = "concat_str")]
-    ConcatHorizontal(String),
     #[cfg(feature = "regex")]
     Replace {
         // negative is replace all
@@ -55,56 +57,58 @@ pub enum StringFunction {
         n: i64,
         literal: bool,
     },
-    Uppercase,
-    Lowercase,
-    #[cfg(feature = "nightly")]
-    Titlecase,
-    Strip(Option<String>),
+    #[cfg(feature = "string_justify")]
+    RJust {
+        width: usize,
+        fillchar: char,
+    },
     RStrip(Option<String>),
-    LStrip(Option<String>),
-    #[cfg(feature = "string_from_radix")]
-    FromRadix(u32, bool),
     Slice(i64, Option<u64>),
-    Explode,
+    StartsWith,
+    Strip(Option<String>),
+    #[cfg(feature = "temporal")]
+    Strptime(DataType, StrptimeOptions),
     #[cfg(feature = "dtype-decimal")]
     ToDecimal(usize),
-    #[cfg(feature = "extract_jsonpath")]
-    JsonExtract {
-        dtype: Option<DataType>,
-        infer_schema_len: Option<usize>,
-    },
+    #[cfg(feature = "nightly")]
+    Titlecase,
+    Uppercase,
+    #[cfg(feature = "string_justify")]
+    Zfill(usize),
 }
 
 impl StringFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use StringFunction::*;
         match self {
-            #[cfg(feature = "regex")]
-            Contains { .. } => mapper.with_dtype(DataType::Boolean),
-            EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
-            Extract { .. } => mapper.with_same_dtype(),
-            ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
-            CountMatch(_) => mapper.with_dtype(DataType::UInt32),
-            #[cfg(feature = "string_justify")]
-            Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
-            #[cfg(feature = "temporal")]
-            Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "concat_str")]
             ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_same_dtype(),
             #[cfg(feature = "regex")]
+            Contains { .. } => mapper.with_dtype(DataType::Boolean),
+            CountMatch(_) => mapper.with_dtype(DataType::UInt32),
+            EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
+            Explode => mapper.with_same_dtype(),
+            Extract { .. } => mapper.with_same_dtype(),
+            ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
+            #[cfg(feature = "string_from_radix")]
+            FromRadix { .. } => mapper.with_dtype(DataType::Int32),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonExtract { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
+            Length => mapper.with_dtype(DataType::UInt32),
+            NChars => mapper.with_dtype(DataType::UInt32),
+            #[cfg(feature = "regex")]
             Replace { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "temporal")]
+            Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
+            #[cfg(feature = "nightly")]
+            Titlecase => mapper.with_same_dtype(),
+            #[cfg(feature = "dtype-decimal")]
+            ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
             Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) | Slice(_, _) => {
                 mapper.with_same_dtype()
             }
-            #[cfg(feature = "nightly")]
-            Titlecase => mapper.with_same_dtype(),
-            #[cfg(feature = "string_from_radix")]
-            FromRadix { .. } => mapper.with_dtype(DataType::Int32),
-            Explode => mapper.with_same_dtype(),
-            #[cfg(feature = "dtype-decimal")]
-            ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
-            #[cfg(feature = "extract_jsonpath")]
-            JsonExtract { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
+            #[cfg(feature = "string_justify")]
+            Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
         }
     }
 }
@@ -114,42 +118,43 @@ impl Display for StringFunction {
         let s = match self {
             #[cfg(feature = "regex")]
             StringFunction::Contains { .. } => "contains",
-            StringFunction::StartsWith { .. } => "starts_with",
+            StringFunction::CountMatch(_) => "count_match",
             StringFunction::EndsWith { .. } => "ends_with",
             StringFunction::Extract { .. } => "extract",
-            #[cfg(feature = "string_justify")]
-            StringFunction::Zfill(_) => "zfill",
-            #[cfg(feature = "string_justify")]
-            StringFunction::LJust { .. } => "str.ljust",
-            #[cfg(feature = "string_justify")]
-            StringFunction::RJust { .. } => "rjust",
-            StringFunction::ExtractAll => "extract_all",
-            StringFunction::CountMatch(_) => "count_match",
-            #[cfg(feature = "temporal")]
-            StringFunction::Strptime(_, _) => "strptime",
-            #[cfg(feature = "concat_str")]
-            StringFunction::ConcatVertical(_) => "concat_vertical",
             #[cfg(feature = "concat_str")]
             StringFunction::ConcatHorizontal(_) => "concat_horizontal",
-            #[cfg(feature = "regex")]
-            StringFunction::Replace { .. } => "replace",
-            StringFunction::Uppercase => "uppercase",
-            StringFunction::Lowercase => "lowercase",
-            #[cfg(feature = "nightly")]
-            StringFunction::Titlecase => "titlecase",
-            StringFunction::Strip(_) => "strip",
-            StringFunction::LStrip(_) => "lstrip",
-            StringFunction::RStrip(_) => "rstrip",
+            #[cfg(feature = "concat_str")]
+            StringFunction::ConcatVertical(_) => "concat_vertical",
+            StringFunction::Explode => "explode",
+            StringFunction::ExtractAll => "extract_all",
             #[cfg(feature = "string_from_radix")]
             StringFunction::FromRadix { .. } => "from_radix",
-            StringFunction::Slice(_, _) => "str_slice",
-            StringFunction::Explode => "explode",
-            #[cfg(feature = "dtype-decimal")]
-            StringFunction::ToDecimal(_) => "to_decimal",
             #[cfg(feature = "extract_jsonpath")]
             StringFunction::JsonExtract { .. } => "json_extract",
+            #[cfg(feature = "string_justify")]
+            StringFunction::LJust { .. } => "str.ljust",
+            StringFunction::LStrip(_) => "lstrip",
+            StringFunction::Length => "str_lengths",
+            StringFunction::Lowercase => "lowercase",
+            StringFunction::NChars => "n_chars",
+            #[cfg(feature = "string_justify")]
+            StringFunction::RJust { .. } => "rjust",
+            StringFunction::RStrip(_) => "rstrip",
+            #[cfg(feature = "regex")]
+            StringFunction::Replace { .. } => "replace",
+            StringFunction::Slice(_, _) => "str_slice",
+            StringFunction::StartsWith { .. } => "starts_with",
+            StringFunction::Strip(_) => "strip",
+            #[cfg(feature = "temporal")]
+            StringFunction::Strptime(_, _) => "strptime",
+            #[cfg(feature = "nightly")]
+            StringFunction::Titlecase => "titlecase",
+            #[cfg(feature = "dtype-decimal")]
+            StringFunction::ToDecimal(_) => "to_decimal",
+            StringFunction::Uppercase => "uppercase",
+            #[cfg(feature = "string_justify")]
+            StringFunction::Zfill(_) => "zfill",
         };
-
         write!(f, "str.{s}")
     }
 }
@@ -168,6 +173,16 @@ pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
 pub(super) fn titlecase(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_titlecase().into_series())
+}
+
+pub(super) fn n_chars(s: &Series) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.str_n_chars().into_series())
+}
+
+pub(super) fn lengths(s: &Series) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.str_lengths().into_series())
 }
 
 #[cfg(feature = "regex")]

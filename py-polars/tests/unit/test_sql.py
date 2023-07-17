@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import warnings
 from pathlib import Path
 
@@ -13,8 +12,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 # TODO: Do not rely on I/O for these tests
 @pytest.fixture()
-def foods_ipc_path() -> str:
-    return str(Path(os.path.dirname(__file__)) / "io" / "files" / "foods1.ipc")
+def foods_ipc_path() -> Path:
+    return Path(__file__).parent / "io" / "files" / "foods1.ipc"
 
 
 def test_sql_cast() -> None:
@@ -682,6 +681,27 @@ def test_sql_round_ndigits_errors() -> None:
         ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 
 
+def test_sql_string_lengths() -> None:
+    df = pl.DataFrame({"words": ["Café", None, "東京"]})
+
+    with pl.SQLContext(frame=df) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              words,
+              LENGTH(words) AS n_chars,
+              OCTET_LENGTH(words) AS n_bytes
+            FROM frame
+            """
+        ).collect()
+
+    assert res.to_dict(False) == {
+        "words": ["Café", None, "東京"],
+        "n_chars": [4, None, 2],
+        "n_bytes": [5, None, 6],
+    }
+
+
 def test_sql_substr() -> None:
     df = pl.DataFrame(
         {
@@ -750,9 +770,21 @@ def test_register_context() -> None:
 
 def test_sql_expr() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["xyz", "abcde", None]})
-    sql_exprs = (
-        pl.sql_expr("MIN(a)"),
-        pl.sql_expr("SUBSTR(b,1,2)"),
+    sql_exprs = pl.sql_expr(
+        [
+            "MIN(a)",
+            "POWER(a,a) AS aa",
+            "SUBSTR(b,1,2) AS b2",
+        ]
     )
-    expected = pl.DataFrame({"a": [1, 1, 1], "b": ["yz", "bc", None]})
-    assert df.select(sql_exprs).frame_equal(expected)
+    expected = pl.DataFrame(
+        {"a": [1, 1, 1], "aa": [1, 4, 27], "b2": ["yz", "bc", None]}
+    )
+    assert df.select(*sql_exprs).frame_equal(expected)
+
+    # expect expressions that can't reasonably be parsed as expressions to raise
+    # (for example: those that explicitly reference tables and/or use wildcards)
+    with pytest.raises(
+        pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
+    ):
+        pl.sql_expr("xyz.*")

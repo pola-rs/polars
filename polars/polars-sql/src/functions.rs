@@ -161,6 +161,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT LEFT(column_1, 3) from df;
     /// ```
     Left,
+    /// SQL 'length' function (characters)
+    /// ```sql
+    /// SELECT LENGTH(column_1) from df;
+    /// ```
+    Length,
     /// SQL 'lower' function
     /// ```sql
     /// SELECT LOWER(column_1) from df;
@@ -171,6 +176,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT LTRIM(column_1) from df;
     /// ```
     LTrim,
+    /// SQL 'octet_length' function (bytes)
+    /// ```sql
+    /// SELECT OCTET_LENGTH(column_1) from df;
+    /// ```
+    OctetLength,
     /// SQL 'regexp_like' function
     /// ```sql
     /// SELECT REGEXP_LIKE(column_1,'xyz', 'i') from df;
@@ -368,7 +378,9 @@ impl PolarsSqlFunctions {
             "ltrim",
             "max",
             "min",
+            "octet_length",
             "pow",
+            "power",
             "radians",
             "round",
             "rtrim",
@@ -421,16 +433,18 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "log10" => Self::Log10,
             "log1p" => Self::Log1p,
             "log2" => Self::Log2,
-            "pow" => Self::Pow,
+            "pow" | "power" => Self::Pow,
             "round" => Self::Round,
 
             // ----
             // String functions
             // ----
             "ends_with" => Self::EndsWith,
+            "length" => Self::Length,
             "left" => Self::Left,
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
+            "octet_length" => Self::OctetLength,
             "regexp_like" => Self::RegexpLike,
             "rtrim" => Self::RTrim,
             "starts_with" => Self::StartsWith,
@@ -532,6 +546,7 @@ impl SqlFunctionVisitor<'_> {
                     }
                 }))
             }),
+            Length => self.visit_unary(|e| e.str().n_chars()),
             Lower => self.visit_unary(|e| e.str().to_lowercase()),
             LTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().lstrip(None)),
@@ -541,6 +556,7 @@ impl SqlFunctionVisitor<'_> {
                     function.args.len()
                 ),
             },
+            OctetLength => self.visit_unary(|e| e.str().lengths()),
             RegexpLike => match function.args.len() {
                 2 => self.visit_binary(|e, s| e.str().contains(s, true)),
                 3 => self.try_visit_ternary(|e, pat, flags| {

@@ -48,7 +48,7 @@ impl Series {
     /// function `skewtest` can be used to determine if the skewness value
     /// is close enough to zero, statistically speaking.
     ///
-    /// see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024
+    /// see: [scipy](https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024)
     pub fn skew(&self, bias: bool) -> PolarsResult<Option<f64>> {
         let mean = match self.mean() {
             Some(mean) => mean,
@@ -76,7 +76,7 @@ impl Series {
     /// If bias is `false` then the kurtosis is calculated using k statistics to
     /// eliminate bias coming from biased moment estimators
     ///
-    /// see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1027
+    /// see: [scipy](https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1027)
     pub fn kurtosis(&self, fisher: bool, bias: bool) -> PolarsResult<Option<f64>> {
         let mean = match self.mean() {
             Some(mean) => mean,

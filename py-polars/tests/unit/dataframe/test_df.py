@@ -704,77 +704,6 @@ def test_hstack_dataframe(in_place: bool) -> None:
         assert_frame_equal(df_out, expected)
 
 
-@pytest.mark.parametrize("in_place", [True, False])
-def test_vstack(in_place: bool) -> None:
-    df1 = pl.DataFrame({"foo": [1, 2], "bar": [6, 7], "ham": ["a", "b"]})
-    df2 = pl.DataFrame({"foo": [3, 4], "bar": [8, 9], "ham": ["c", "d"]})
-
-    expected = pl.DataFrame(
-        {"foo": [1, 2, 3, 4], "bar": [6, 7, 8, 9], "ham": ["a", "b", "c", "d"]}
-    )
-
-    out = df1.vstack(df2, in_place=in_place)
-    if in_place:
-        assert_frame_equal(df1, expected)
-    else:
-        assert_frame_equal(out, expected)
-
-
-def test_extend() -> None:
-    with pl.StringCache():
-        df1 = pl.DataFrame(
-            {
-                "foo": [1, 2],
-                "bar": [True, False],
-                "ham": ["a", "b"],
-                "cat": ["A", "B"],
-                "dates": [datetime(2021, 1, 1), datetime(2021, 2, 1)],
-            }
-        ).with_columns(
-            [
-                pl.col("cat").cast(pl.Categorical),
-            ]
-        )
-        df2 = pl.DataFrame(
-            {
-                "foo": [3, 4],
-                "bar": [True, None],
-                "ham": ["c", "d"],
-                "cat": ["C", "B"],
-                "dates": [datetime(2022, 9, 1), datetime(2021, 2, 1)],
-            }
-        ).with_columns(
-            [
-                pl.col("cat").cast(pl.Categorical),
-            ]
-        )
-
-        df1.extend(df2)
-        expected = pl.DataFrame(
-            {
-                "foo": [1, 2, 3, 4],
-                "bar": [True, False, True, None],
-                "ham": ["a", "b", "c", "d"],
-                "cat": ["A", "B", "C", "B"],
-                "dates": [
-                    datetime(2021, 1, 1),
-                    datetime(2021, 2, 1),
-                    datetime(2022, 9, 1),
-                    datetime(2021, 2, 1),
-                ],
-            }
-        ).with_columns(
-            pl.col("cat").cast(pl.Categorical),
-        )
-        assert_frame_equal(df1, expected)
-
-        # 8745
-        df = pl.DataFrame([{"age": 1}, {"age": 2}, {"age": 3}])
-        df = df[:-1]
-        tail = pl.DataFrame([{"age": 8}])
-        assert df.extend(tail).to_dict(False) == {"age": [1, 2, 8]}
-
-
 def test_file_buffer() -> None:
     f = BytesIO()
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
@@ -2965,20 +2894,6 @@ def test_fill_null_limits() -> None:
             False,
         ],
     }
-
-
-def test_head_tail(fruits_cars: pl.DataFrame) -> None:
-    res_expr = fruits_cars.select([pl.head("A", 2)])
-    res_series = pl.head(fruits_cars["A"], 2)
-    expected = pl.Series("A", [1, 2])
-    assert_series_equal(res_expr.to_series(0), expected)
-    assert_series_equal(res_series, expected)
-
-    res_expr = fruits_cars.select([pl.tail("A", 2)])
-    res_series = pl.tail(fruits_cars["A"], 2)
-    expected = pl.Series("A", [4, 5])
-    assert_series_equal(res_expr.to_series(0), expected)
-    assert_series_equal(res_series, expected)
 
 
 def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:

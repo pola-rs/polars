@@ -276,3 +276,7 @@ def test_sum_empty_and_null_set() -> None:
 
     series = pl.Series("a", [None])
     assert series.sum() == 0
+
+    df = pl.DataFrame({"a": [None, None, None], "b": [1, 1, 1]})
+    assert df.select(pl.sum("a")).item() == 0.0
+    assert df.groupby("b").agg(pl.sum("a"))["a"].item() == 0.0

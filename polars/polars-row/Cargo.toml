@@ -10,5 +10,5 @@ description = "Row encodings for the Polars DataFrame library"
 
 [dependencies]
 arrow.workspace = true
-polars-error = { version = "0.30.0", path = "../polars-error" }
-polars-utils = { version = "0.30.0", path = "../polars-utils" }
+polars-error = { version = "0.31.1", path = "../polars-error" }
+polars-utils = { version = "0.31.1", path = "../polars-utils" }

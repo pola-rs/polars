@@ -166,7 +166,7 @@ def _prepare_file_arg(
     if isinstance(file, str):
         file = normalise_filepath(file, check_not_dir)
         if has_non_utf8_non_utf8_lossy_encoding:
-            with Path.open(file, encoding=encoding_str) as f:
+            with Path(file).open(encoding=encoding_str) as f:
                 return _check_empty(
                     BytesIO(f.read().encode("utf8")), context=f"{file!r}"
                 )
@@ -261,7 +261,7 @@ def _prepare_write_file_arg(
     if isinstance(file, str):
         file = normalise_filepath(file, False)
         if has_non_utf8_non_utf8_lossy_encoding:
-            with Path.open(file, encoding=encoding_str) as f:
+            with Path(file).open(encoding=encoding_str) as f:
                 return _check_empty(
                     BytesIO(f.read().encode("utf8")), context=f"{file!r}"
                 )

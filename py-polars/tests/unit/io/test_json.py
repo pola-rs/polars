@@ -152,3 +152,50 @@ def test_json_deserialize_9687() -> None:
     result = pl.read_json(json.dumps(response).encode())
 
     assert result.to_dict(False) == {k: [v] for k, v in response.items()}
+
+
+def test_ndjson_ignore_errors() -> None:
+    # this schema is inconsistent as "value" is string and object
+    jsonl = r"""{"Type":"insert","Key":[1],"SeqNo":1,"Timestamp":1,"Fields":[{"Name":"added_id","Value":2},{"Name":"body","Value":{"a": 1}}]}
+    {"Type":"insert","Key":[1],"SeqNo":1,"Timestamp":1,"Fields":[{"Name":"added_id","Value":2},{"Name":"body","Value":{"a": 1}}]}"""
+
+    buf = io.BytesIO(jsonl.encode())
+
+    # check if we can replace with nulls
+    assert pl.read_ndjson(buf, ignore_errors=True).to_dict(False) == {
+        "Type": ["insert", "insert"],
+        "Key": [[1], [1]],
+        "SeqNo": [1, 1],
+        "Timestamp": [1, 1],
+        "Fields": [
+            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": None}],
+            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": None}],
+        ],
+    }
+
+    schema = {
+        "Fields": pl.List(
+            pl.Struct([pl.Field("Name", pl.Utf8), pl.Field("Value", pl.Int64)])
+        )
+    }
+    # schema argument only parses Fields
+    assert pl.read_ndjson(buf, schema=schema, ignore_errors=True).to_dict(False) == {
+        "Fields": [
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+        ]
+    }
+
+    # schema_overrides argument does schema inference, but overrides Fields
+    assert pl.read_ndjson(buf, schema_overrides=schema, ignore_errors=True).to_dict(
+        False
+    ) == {
+        "Type": ["insert", "insert"],
+        "Key": [[1], [1]],
+        "SeqNo": [1, 1],
+        "Timestamp": [1, 1],
+        "Fields": [
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+        ],
+    }

@@ -194,7 +194,7 @@ def test_groupby_agg_equals_zero_3535() -> None:
     ).to_dict(False) == {
         "key": ["aa", "bb", "cc"],
         "val1": [10, 0, -99],
-        "val2": [None, 0.0, 10.5],
+        "val2": [0.0, 0.0, 10.5],
     }
 
 

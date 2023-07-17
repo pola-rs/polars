@@ -3,179 +3,205 @@ use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 
 use super::*;
 
-pub struct SortedMinMax<'a, T: NativeType> {
-    slice: &'a [T],
+#[inline]
+fn new_is_min<T: NativeType + IsFloat + PartialOrd>(old: &T, new: &T) -> bool {
+    compare_fn_nan_min(old, new).is_ge()
 }
 
-impl<'a, T: NativeType> RollingAggWindowNoNulls<'a, T> for SortedMinMax<'a, T> {
-    fn new(slice: &'a [T], _start: usize, _end: usize, _params: DynArgs) -> Self {
-        Self { slice }
-    }
+#[inline]
+fn new_is_max<T: NativeType + IsFloat + PartialOrd>(old: &T, new: &T) -> bool {
+    compare_fn_nan_max(old, new).is_le()
+}
 
-    #[inline]
-    unsafe fn update(&mut self, start: usize, _end: usize) -> T {
-        *self.slice.get_unchecked(start)
+#[inline]
+unsafe fn get_min_and_idx<T>(
+    slice: &[T],
+    start: usize,
+    end: usize,
+    sorted_to: usize,
+) -> Option<(usize, &T)>
+where
+    T: NativeType + IsFloat + PartialOrd,
+{
+    if sorted_to >= end {
+        // If we're sorted past the end we can just take the first element because this function
+        // won't be called on intervals that contain the previous min
+        Some((start, slice.get_unchecked(start)))
+    } else if sorted_to <= start {
+        // We have to inspect the whole range
+        // Reversed because min_by returns the first min if there's a tie but we want the last
+        slice
+            .get_unchecked(start..end)
+            .iter()
+            .enumerate()
+            .rev()
+            .min_by(|&a, &b| compare_fn_nan_min(a.1, b.1))
+            .map(|v| (v.0 + start, v.1))
+    } else {
+        // It's sorted in range start..sorted_to. Compare slice[start] to min over sorted_to..end
+        let s = (start, slice.get_unchecked(start));
+        slice
+            .get_unchecked(sorted_to..end)
+            .iter()
+            .enumerate()
+            .rev()
+            .min_by(|&a, &b| compare_fn_nan_min(a.1, b.1))
+            .map(|v| {
+                if new_is_min(s.1, v.1) {
+                    (v.0 + sorted_to, v.1)
+                } else {
+                    s
+                }
+            })
     }
 }
 
 #[inline]
-unsafe fn get_min_and_idx<T>(slice: &[T], start: usize, end: usize) -> Option<(usize, &T)>
+unsafe fn get_max_and_idx<T>(
+    slice: &[T],
+    start: usize,
+    end: usize,
+    sorted_to: usize,
+) -> Option<(usize, &T)>
 where
     T: NativeType + IsFloat + PartialOrd,
 {
-    // Reversed because min_by returns the first min if there's a tie but we want the last
-    slice
-        .get_unchecked(start..end)
-        .iter()
-        .enumerate()
-        .rev()
-        .min_by(|&a, &b| compare_fn_nan_min(a.1, b.1))
-}
-
-pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
-    slice: &'a [T],
-    min: T,
-    min_idx: usize,
-    last_start: usize,
-    last_end: usize,
-}
-
-impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MinWindow<'a, T> {
-    fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
-        let (idx, min) =
-            unsafe { get_min_and_idx(slice, start, end).unwrap_or((0, &slice[start])) };
-        Self {
-            slice,
-            min: *min,
-            min_idx: start + idx,
-            last_start: start,
-            last_end: end,
-        }
-    }
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        //For details see: https://github.com/pola-rs/polars/pull/9277#issuecomment-1581401692
-        self.last_start = start; // Don't care where the last one started
-        let old_last_end = self.last_end; // But we need this
-        self.last_end = end;
-
-        let entering_start = std::cmp::max(old_last_end, start);
-        let entering = get_min_and_idx(self.slice, entering_start, end);
-        let empty_overlap = old_last_end <= start;
-
-        if entering.is_some_and(|em| compare_fn_nan_min(&self.min, em.1).is_ge() || empty_overlap) {
-            // If the entering min <= the current min return early, since no value in the overlap can be smaller than either.
-            self.min = *entering.unwrap().1;
-            self.min_idx = entering_start + entering.unwrap().0;
-            return self.min;
-        } else if self.min_idx >= start || empty_overlap {
-            // If the entering min isn't the smallest but the current min is between start and end we can still ignore the overlap
-            return self.min;
-        }
-        // Otherwise get the min of the overlapping window and the entering min
-        match (get_min_and_idx(self.slice, start, old_last_end), entering) {
-            (Some(pm), Some(em)) => {
-                if compare_fn_nan_min(pm.1, em.1).is_ge() {
-                    self.min = *em.1;
-                    self.min_idx = entering_start + em.0;
+    if sorted_to >= end {
+        Some((start, slice.get_unchecked(start)))
+    } else if sorted_to <= start {
+        slice
+            .get_unchecked(start..end)
+            .iter()
+            .enumerate()
+            .max_by(|&a, &b| compare_fn_nan_max(a.1, b.1))
+            .map(|v| (v.0 + start, v.1))
+    } else {
+        let s = (start, slice.get_unchecked(start));
+        slice
+            .get_unchecked(sorted_to..end)
+            .iter()
+            .enumerate()
+            .max_by(|&a, &b| compare_fn_nan_max(a.1, b.1))
+            .map(|v| {
+                if new_is_max(s.1, v.1) {
+                    (v.0 + sorted_to, v.1)
                 } else {
-                    self.min = *pm.1;
-                    self.min_idx = start + pm.0;
+                    s
                 }
-            }
-            (Some(pm), None) => {
-                self.min = *pm.1;
-                self.min_idx = start + pm.0;
-            }
-            (None, Some(em)) => {
-                self.min = *em.1;
-                self.min_idx = entering_start + em.0;
-            }
-            // We shouldn't reach this, but it means
-            (None, None) => {}
-        }
-
-        self.min
+            })
     }
 }
 
 #[inline]
-unsafe fn get_max_and_idx<T>(slice: &[T], start: usize, end: usize) -> Option<(usize, &T)>
-where
-    T: NativeType + IsFloat + PartialOrd,
-{
+fn n_sorted_past_min<T: NativeType + IsFloat + PartialOrd>(slice: &[T]) -> usize {
     slice
-        .get_unchecked(start..end)
-        .iter()
-        .enumerate()
-        .max_by(|&a, &b| compare_fn_nan_max(a.1, b.1))
+        .windows(2)
+        .position(|x| compare_fn_nan_min(&x[0], &x[1]).is_gt())
+        .unwrap_or(slice.len() - 1)
 }
 
-pub struct MaxWindow<'a, T: NativeType> {
-    slice: &'a [T],
-    max: T,
-    max_idx: usize,
-    last_start: usize,
-    last_end: usize,
+#[inline]
+fn n_sorted_past_max<T: NativeType + IsFloat + PartialOrd>(slice: &[T]) -> usize {
+    slice
+        .windows(2)
+        .position(|x| compare_fn_nan_max(&x[0], &x[1]).is_lt())
+        .unwrap_or(slice.len() - 1)
 }
 
-impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MaxWindow<'a, T> {
-    fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
-        let (idx, max) =
-            unsafe { get_max_and_idx(slice, start, end).unwrap_or((0, &slice[start])) };
-        Self {
-            slice,
-            max: *max,
-            max_idx: start + idx,
-            last_start: start,
-            last_end: end,
+// Min and max really are the same thing up to a difference in comparison direction, as represented
+// here by helpers we pass in. Making both with a macro helps keep behavior synchronized
+macro_rules! minmax_window {
+    ($m_window:tt, $get_m_and_idx:ident, $new_is_m:ident, $n_sorted_past:ident) => {
+        pub struct $m_window<'a, T: NativeType + PartialOrd + IsFloat> {
+            slice: &'a [T],
+            m: T,
+            m_idx: usize,
+            sorted_to: usize,
+            last_start: usize,
+            last_end: usize,
         }
-    }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        self.last_start = start; // Don't care where the last one started
-        let old_last_end = self.last_end; // But we need this
-        self.last_end = end;
-
-        let entering_start = std::cmp::max(old_last_end, start);
-        let entering = get_max_and_idx(self.slice, entering_start, end);
-        let empty_overlap = old_last_end < start;
-
-        if entering.is_some_and(|em| compare_fn_nan_max(&self.max, em.1).is_le() || empty_overlap) {
-            // If the entering max >= the current max return early, since no value in the overlap can be larger than either.
-            self.max = *entering.unwrap().1;
-            self.max_idx = entering_start + entering.unwrap().0;
-            return self.max;
-        } else if self.max_idx >= start || empty_overlap {
-            // If the entering max isn't the largest but the current max is between start and end we can still ignore the overlap
-            return self.max;
-        }
-        // Otherwise get the max of the overlapping window and the entering max
-        match (get_max_and_idx(self.slice, start, old_last_end), entering) {
-            (Some(pm), Some(em)) => {
-                if compare_fn_nan_max(pm.1, em.1).is_le() {
-                    self.max = *em.1;
-                    self.max_idx = entering_start + em.0;
-                } else {
-                    self.max = *pm.1;
-                    self.max_idx = start + pm.0;
+        impl<'a, T: NativeType + IsFloat + PartialOrd> $m_window<'a, T> {
+            #[inline]
+            unsafe fn update_m_and_m_idx(&mut self, m_and_idx: (usize, &T)) {
+                self.m = *m_and_idx.1;
+                self.m_idx = m_and_idx.0;
+                if self.sorted_to <= self.m_idx {
+                    // Track how far past the current extremum values are sorted. Direction depends on min/max
+                    // Tracking sorted ranges lets us only do comparisons when we have to.
+                    self.sorted_to =
+                        self.m_idx + 1 + $n_sorted_past(&self.slice.get_unchecked(self.m_idx..));
                 }
             }
-            (Some(pm), None) => {
-                self.max = *pm.1;
-                self.max_idx = start + pm.0;
-            }
-            (None, Some(em)) => {
-                self.max = *em.1;
-                self.max_idx = entering_start + em.0;
-            }
-            // We shouldn't reach this, but it means
-            (None, None) => {}
         }
 
-        self.max
-    }
+        impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T>
+            for $m_window<'a, T>
+        {
+            fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
+                let (idx, m) =
+                    unsafe { $get_m_and_idx(slice, start, end, 0).unwrap_or((0, &slice[start])) };
+                Self {
+                    slice,
+                    m: *m,
+                    m_idx: idx,
+                    sorted_to: idx + 1 + $n_sorted_past(&slice[idx..]),
+                    last_start: start,
+                    last_end: end,
+                }
+            }
+
+            unsafe fn update(&mut self, start: usize, end: usize) -> T {
+                //For details see: https://github.com/pola-rs/polars/pull/9277#issuecomment-1581401692
+                self.last_start = start; // Don't care where the last one started
+                let old_last_end = self.last_end; // But we need this
+                self.last_end = end;
+                let entering_start = std::cmp::max(old_last_end, start);
+                let entering = if end - entering_start == 1 {
+                    // Faster in the special, but common, case of a fixed window rolling by one
+                    Some((entering_start, self.slice.get_unchecked(entering_start)))
+                } else if old_last_end == end {
+                    // Edge case for shrinking windows
+                    None
+                } else {
+                    $get_m_and_idx(self.slice, entering_start, end, self.sorted_to)
+                };
+                let empty_overlap = old_last_end <= start;
+
+                if entering.is_some_and(|em| $new_is_m(&self.m, em.1) || empty_overlap) {
+                    // The entering extremum "beats" the previous extremum so we can ignore the overlap
+                    self.update_m_and_m_idx(entering.unwrap());
+                    return self.m;
+                } else if self.m_idx >= start || empty_overlap {
+                    // The previous extremum didn't drop off. Keep it
+                    return self.m;
+                }
+                // Otherwise get the min of the overlapping window and the entering min
+                match (
+                    $get_m_and_idx(self.slice, start, old_last_end, self.sorted_to),
+                    entering,
+                ) {
+                    (Some(pm), Some(em)) => {
+                        if $new_is_m(pm.1, em.1) {
+                            self.update_m_and_m_idx(em);
+                        } else {
+                            self.update_m_and_m_idx(pm);
+                        }
+                    }
+                    (Some(pm), None) => self.update_m_and_m_idx(pm),
+                    (None, Some(em)) => self.update_m_and_m_idx(em),
+                    // This would mean both the entering and previous windows are empty
+                    (None, None) => unreachable!(),
+                }
+
+                self.m
+            }
+        }
+    };
 }
+
+minmax_window!(MinWindow, get_min_and_idx, new_is_min, n_sorted_past_min);
+minmax_window!(MaxWindow, get_max_and_idx, new_is_max, n_sorted_past_max);
 
 pub(crate) fn compute_min_weights<T>(values: &[T], weights: &[T]) -> T
 where
@@ -206,206 +232,57 @@ where
     max
 }
 
-pub fn is_reverse_sorted_max<T: NativeType + PartialOrd + IsFloat>(values: &[T]) -> bool {
-    values
-        .windows(2)
-        .all(|w| match compare_fn_nan_min(&w[0], &w[1]) {
-            Ordering::Equal => true,
-            Ordering::Greater => true,
-            Ordering::Less => false,
-        })
+// Same as the window definition. The dispatch is identical up to the name.
+macro_rules! rolling_minmax_func {
+    ($rolling_m:ident, $window:tt, $wtd_f:ident) => {
+        pub fn $rolling_m<T>(
+            values: &[T],
+            window_size: usize,
+            min_periods: usize,
+            center: bool,
+            weights: Option<&[f64]>,
+            _params: DynArgs,
+        ) -> PolarsResult<ArrayRef>
+        where
+            T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
+        {
+            let offset_fn = match center {
+                true => det_offsets_center,
+                false => det_offsets,
+            };
+            match weights {
+                None => rolling_apply_agg_window::<$window<_>, _, _>(
+                    values,
+                    window_size,
+                    min_periods,
+                    offset_fn,
+                    None,
+                ),
+                Some(weights) => {
+                    assert!(
+                        T::is_float(),
+                        "implementation error, should only be reachable by float types"
+                    );
+                    let weights = weights
+                        .iter()
+                        .map(|v| NumCast::from(*v).unwrap())
+                        .collect::<Vec<_>>();
+                    no_nulls::rolling_apply_weights(
+                        values,
+                        window_size,
+                        min_periods,
+                        offset_fn,
+                        $wtd_f,
+                        &weights,
+                    )
+                }
+            }
+        }
+    };
 }
 
-pub fn rolling_max<T>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-    _params: DynArgs,
-) -> PolarsResult<ArrayRef>
-where
-    T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
-{
-    match (center, weights) {
-        (true, None) => {
-            // will be O(n2) if we don't take this path we hope that we hit an early return on not sorted data
-            if is_reverse_sorted_max(values) {
-                rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
-                    values,
-                    window_size,
-                    min_periods,
-                    det_offsets_center,
-                    None,
-                )
-            } else {
-                rolling_apply_agg_window::<MaxWindow<_>, _, _>(
-                    values,
-                    window_size,
-                    min_periods,
-                    det_offsets_center,
-                    None,
-                )
-            }
-        }
-        (false, None) => {
-            if is_reverse_sorted_max(values) {
-                rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
-                    values,
-                    window_size,
-                    min_periods,
-                    det_offsets,
-                    None,
-                )
-            } else {
-                rolling_apply_agg_window::<MaxWindow<_>, _, _>(
-                    values,
-                    window_size,
-                    min_periods,
-                    det_offsets,
-                    None,
-                )
-            }
-        }
-        (true, Some(weights)) => {
-            assert!(
-                T::is_float(),
-                "implementation error, should only be reachable by float types"
-            );
-            let weights = weights
-                .iter()
-                .map(|v| NumCast::from(*v).unwrap())
-                .collect::<Vec<_>>();
-            no_nulls::rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets_center,
-                compute_max_weights,
-                &weights,
-            )
-        }
-        (false, Some(weights)) => {
-            assert!(
-                T::is_float(),
-                "implementation error, should only be reachable by float types"
-            );
-            let weights = weights
-                .iter()
-                .map(|v| NumCast::from(*v).unwrap())
-                .collect::<Vec<_>>();
-            no_nulls::rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets,
-                compute_max_weights,
-                &weights,
-            )
-        }
-    }
-}
-
-pub fn is_sorted_min<T: NativeType + PartialOrd + IsFloat>(values: &[T]) -> bool {
-    values
-        .windows(2)
-        .all(|w| match compare_fn_nan_min(&w[0], &w[1]) {
-            Ordering::Equal => true,
-            Ordering::Less => true,
-            Ordering::Greater => false,
-        })
-}
-
-pub fn rolling_min<T>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-    _params: DynArgs,
-) -> PolarsResult<ArrayRef>
-where
-    T: NativeType + PartialOrd + NumCast + Mul<Output = T> + Bounded + IsFloat,
-{
-    match (center, weights) {
-        (true, None) => {
-            // will be O(n2) if we don't take this path we hope that we hit an early return on not sorted data
-            if is_sorted_min(values) {
-                rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
-                    values,
-                    window_size,
-                    min_periods,
-                    det_offsets_center,
-                    None,
-                )
-            } else {
-                rolling_apply_agg_window::<MinWindow<_>, _, _>(
-                    values,
-                    window_size,
-                    min_periods,
-                    det_offsets_center,
-                    None,
-                )
-            }
-        }
-        (false, None) => {
-            // will be O(n2)
-            if is_sorted_min(values) {
-                rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
-                    values,
-                    window_size,
-                    min_periods,
-                    det_offsets,
-                    None,
-                )
-            } else {
-                rolling_apply_agg_window::<MinWindow<_>, _, _>(
-                    values,
-                    window_size,
-                    min_periods,
-                    det_offsets,
-                    None,
-                )
-            }
-        }
-        (true, Some(weights)) => {
-            assert!(
-                T::is_float(),
-                "implementation error, should only be reachable by float types"
-            );
-            let weights = weights
-                .iter()
-                .map(|v| NumCast::from(*v).unwrap())
-                .collect::<Vec<_>>();
-            no_nulls::rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets_center,
-                compute_min_weights,
-                &weights,
-            )
-        }
-        (false, Some(weights)) => {
-            assert!(
-                T::is_float(),
-                "implementation error, should only be reachable by float types"
-            );
-            let weights = weights
-                .iter()
-                .map(|v| NumCast::from(*v).unwrap())
-                .collect::<Vec<_>>();
-            no_nulls::rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets,
-                compute_min_weights,
-                &weights,
-            )
-        }
-    }
-}
+rolling_minmax_func!(rolling_min, MinWindow, compute_min_weights);
+rolling_minmax_func!(rolling_max, MaxWindow, compute_max_weights);
 
 #[cfg(test)]
 mod test {

@@ -250,6 +250,7 @@ impl FunctionExpr {
             ToPhysical => mapper.to_physical_type(),
             #[cfg(feature = "random")]
             Random { .. } => mapper.with_same_dtype(),
+            SetSortedFlag(_) => mapper.with_same_dtype(),
         }
     }
 }

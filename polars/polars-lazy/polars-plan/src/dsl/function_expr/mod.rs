@@ -230,6 +230,7 @@ pub enum FunctionExpr {
         seed: Option<u64>,
         fixed_seed: bool,
     },
+    SetSortedFlag(IsSorted),
 }
 
 impl Display for FunctionExpr {
@@ -335,6 +336,7 @@ impl Display for FunctionExpr {
             ToPhysical => "to_physical",
             #[cfg(feature = "random")]
             Random { method, .. } => method.into(),
+            SetSortedFlag(_) => "set_sorted",
         };
         write!(f, "{s}")
     }
@@ -607,6 +609,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 seed,
                 fixed_seed
             ),
+            SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
         }
     }
 }
@@ -618,6 +621,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         match func {
             #[cfg(feature = "regex")]
             Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
+            CountMatch(pat) => {
+                map!(strings::count_match, &pat)
+            }
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
             Extract { pat, group_index } => {
@@ -626,9 +632,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ExtractAll => {
                 map_as_slice!(strings::extract_all)
             }
-            CountMatch(pat) => {
-                map!(strings::count_match, &pat)
-            }
+            NChars => map!(strings::n_chars),
+            Length => map!(strings::lengths),
             #[cfg(feature = "string_justify")]
             Zfill(alignment) => {
                 map!(strings::zfill, alignment)
