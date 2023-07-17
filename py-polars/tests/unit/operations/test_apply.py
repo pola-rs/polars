@@ -4,6 +4,7 @@ import json
 from datetime import date, datetime, timedelta
 from functools import reduce
 from typing import Any, Sequence
+from warnings import catch_warnings, simplefilter
 
 import numpy as np
 import pytest
@@ -245,25 +246,28 @@ def test_apply_skip_nulls() -> None:
 
 
 def test_apply_object_dtypes() -> None:
-    assert pl.DataFrame(
-        {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
-    ).with_columns(
-        [
-            pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Object),
-            pl.col("a")
-            .apply(lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean)
-            .alias("is_numeric1"),
-            pl.col("a")
-            .apply(lambda x: isinstance(x, (int, float)))
-            .alias("is_numeric_infer"),
-        ]
-    ).to_dict(
-        False
-    ) == {
-        "a": [2, 4, "aa", 8, 10],
-        "is_numeric1": [True, True, False, True, True],
-        "is_numeric_infer": [True, True, False, True, True],
-    }
+    with catch_warnings():
+        simplefilter("ignore", PolarsInefficientApplyWarning)
+
+        assert pl.DataFrame(
+            {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
+        ).with_columns(
+            [
+                pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Object),
+                pl.col("a")
+                .apply(lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean)
+                .alias("is_numeric1"),
+                pl.col("a")
+                .apply(lambda x: isinstance(x, (int, float)))
+                .alias("is_numeric_infer"),
+            ]
+        ).to_dict(
+            False
+        ) == {
+            "a": [2, 4, "aa", 8, 10],
+            "is_numeric1": [True, True, False, True, True],
+            "is_numeric_infer": [True, True, False, True, True],
+        }
 
 
 def test_apply_explicit_list_output_type() -> None:

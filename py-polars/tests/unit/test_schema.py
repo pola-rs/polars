@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from typing import Any
+from warnings import catch_warnings, simplefilter
 
 import pytest
 
 import polars as pl
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal
 
 
@@ -156,12 +158,15 @@ def test_unknown_apply() -> None:
         {"Amount": [10, 1, 1, 5], "Flour": ["1000g", "100g", "50g", "75g"]}
     )
 
-    q = df.lazy().select(
-        [
-            pl.col("Amount"),
-            pl.col("Flour").apply(lambda x: 100.0) / pl.col("Amount"),
-        ]
-    )
+    with catch_warnings():
+        simplefilter("ignore", PolarsInefficientApplyWarning)
+
+        q = df.lazy().select(
+            [
+                pl.col("Amount"),
+                pl.col("Flour").apply(lambda x: 100.0) / pl.col("Amount"),
+            ]
+        )
 
     assert q.collect().to_dict(False) == {
         "Amount": [10, 1, 1, 5],

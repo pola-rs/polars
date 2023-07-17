@@ -7,6 +7,7 @@ from inspect import signature
 from operator import add
 from string import ascii_letters
 from typing import TYPE_CHECKING, Any, cast
+from warnings import catch_warnings, simplefilter
 
 import numpy as np
 import pytest
@@ -14,6 +15,7 @@ import pytest
 import polars as pl
 from polars import lit, when
 from polars.datatypes import FLOAT_DTYPES
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -88,14 +90,16 @@ def test_apply() -> None:
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
 
-    for strategy in ["thread_local", "threading"]:
-        ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
-        new = ldf.with_columns(
-            pl.col("a").apply(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
-        )
+    with catch_warnings():
+        simplefilter("ignore", PolarsInefficientApplyWarning)
 
-        expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
-        assert_frame_equal(new.collect(), expected.collect())
+        for strategy in ["thread_local", "threading"]:
+            ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
+            new = ldf.with_columns(
+                pl.col("a").apply(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
+            )
+            expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
+            assert_frame_equal(new.collect(), expected.collect())
 
 
 def test_add_eager_column() -> None:

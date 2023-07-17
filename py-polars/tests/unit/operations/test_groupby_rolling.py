@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
+from warnings import catch_warnings, simplefilter
 
 import pytest
 
 import polars as pl
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -50,31 +52,29 @@ def test_groupby_rolling_apply() -> None:
 
 
 def test_rolling_groupby_overlapping_groups() -> None:
-    # this first aggregates overlapping groups
-    # so they cannot be naively flattened
-    df = pl.DataFrame(
-        {
-            "a": [41, 60, 37, 51, 52, 39, 40],
-        }
-    )
+    # this first aggregates overlapping groups so they cannot be naively flattened
+    df = pl.DataFrame({"a": [41, 60, 37, 51, 52, 39, 40]})
 
-    assert_series_equal(
-        (
-            df.with_row_count()
-            .with_columns(pl.col("row_nr").cast(pl.Int32))
-            .groupby_rolling(
-                index_column="row_nr",
-                period="5i",
-            )
-            .agg(
-                # the apply to trigger the apply on the expression engine
-                pl.col("a")
-                .apply(lambda x: x)
-                .sum()
-            )
-        )["a"],
-        df["a"].rolling_sum(window_size=5, min_periods=1),
-    )
+    with catch_warnings():
+        simplefilter("ignore", PolarsInefficientApplyWarning)
+
+        assert_series_equal(
+            (
+                df.with_row_count()
+                .with_columns(pl.col("row_nr").cast(pl.Int32))
+                .groupby_rolling(
+                    index_column="row_nr",
+                    period="5i",
+                )
+                .agg(
+                    # trigger the apply on the expression engine
+                    pl.col("a")
+                    .apply(lambda x: x)
+                    .sum()
+                )
+            )["a"],
+            df["a"].rolling_sum(window_size=5, min_periods=1),
+        )
 
 
 @pytest.mark.parametrize("lazy", [True, False])

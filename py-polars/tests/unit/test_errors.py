@@ -9,6 +9,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
+from polars.exceptions import PolarsInefficientApplyWarning
 
 if TYPE_CHECKING:
     from polars.type_aliases import ConcatMethod
@@ -520,6 +521,8 @@ def test_skip_nulls_err() -> None:
 
     with pytest.raises(
         pl.ComputeError, match=r"The output type of 'apply' function cannot determined"
+    ), pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
     ):
         df.with_columns(pl.col("foo").apply(lambda x: x, skip_nulls=True))
 
