@@ -550,7 +550,7 @@ class Expr:
         │ 13  ┆ z   ┆ Z   │
         └─────┴─────┴─────┘
 
-        Overwrite the default name of literal columns to prevent errors for duplicate
+        Overwrite the default name of literal columns to prevent errors due to duplicate
         column names.
 
         >>> df.with_columns(
@@ -733,7 +733,7 @@ class Expr:
         │ 18  ┆ 4   │
         └─────┴─────┘
 
-        Prevent errors for duplicate column names.
+        Prevent errors due to duplicate column names.
 
         >>> df.select((pl.lit(10) / pl.all()).keep_name())
         shape: (2, 2)
