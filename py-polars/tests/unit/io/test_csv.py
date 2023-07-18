@@ -1368,3 +1368,12 @@ def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
         "2,csv,2023-01-02\n"
         "3,stdout,2023-01-03\n"
     )
+
+
+def test_csv_9929() -> None:
+    df = pl.DataFrame({"nrs": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_csv(f)
+    f.seek(0)
+    with pytest.raises(pl.NoDataError):
+        pl.read_csv(f, skip_rows=10**6)
