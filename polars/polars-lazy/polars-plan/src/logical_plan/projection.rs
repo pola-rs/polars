@@ -143,15 +143,16 @@ fn replace_regex(
                     if has_exclude {
                         // iterate until we find the Exclude node
                         // we remove that node from the expression
+                        // the `exclude` set is already filled
+                        // by prepare exclude
                         for e in expr.into_iter() {
                             if let Expr::Exclude(e, _) = e {
                                 expand_regex(e, result, schema, name, exclude)?;
-                                break;
+                                return Ok(());
                             }
                         }
-                    } else {
-                        expand_regex(expr, result, schema, name, exclude)?
                     }
+                    expand_regex(expr, result, schema, name, exclude)?
                 }
                 Some(r) => {
                     polars_ensure!(
