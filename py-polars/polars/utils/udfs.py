@@ -1,4 +1,4 @@
-"""Utilities connected to user defined functions (such as those passed to `apply`)."""
+"""Utilities related to user defined functions (such as those passed to `apply`)."""
 from __future__ import annotations
 
 import dis
@@ -23,6 +23,11 @@ _BINARY_OPCODES = {
     "BINARY_TRUE_DIVIDE": "/",
     "BINARY_XOR": "^",
 }
+_UNARY_OPCODES = {
+    "UNARY_NEGATIVE": "-",
+    "UNARY_POSITIVE": "+",
+    "UNARY_NOT": "~",
+}
 _SIMPLE_EXPR_OPS = {
     "BINARY_OP",
     "COMPARE_OP",
@@ -30,8 +35,8 @@ _SIMPLE_EXPR_OPS = {
     "IS_OP",
     "LOAD_CONST",
     "LOAD_FAST",
-    "UNARY_NOT",
 }
+_SIMPLE_EXPR_OPS |= set(_UNARY_OPCODES)
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
 
 REPORT_MSG = (
@@ -43,11 +48,12 @@ REPORT_MSG = (
 def _expr(value: str | tuple[str, str, str], col: str) -> str:
     if isinstance(value, tuple):
         op = value[1]
+        unary_op = len(value) == 2
         e1 = _expr(value[0], col)
-        e2 = _expr(value[2], col) if op != "not" else None
+        e2 = _expr(value[2], col) if not unary_op else None
 
-        if op == "not":
-            return f"~{e1}"
+        if unary_op:
+            return f"{op}{e1}"
         elif op in ("is", "is not") and value[2] == "None":
             not_ = "" if op == "is" else "not_"
             return f"{e1}.is_{not_}null()"
@@ -71,8 +77,8 @@ def _op(opname: str, argrepr: str, argval: Any) -> str:
         return "is not" if argval else "is"
     elif opname == "CONTAINS_OP":
         return "not in" if argval else "in"
-    elif opname == "UNARY_NOT":
-        return "not"
+    elif opname.startswith("UNARY_"):
+        return _UNARY_OPCODES[opname]
     else:
         raise AssertionError(
             "Unrecognised op - please report a bug to https://github.com/pola-rs/polars/issues "
@@ -143,7 +149,7 @@ def _to_polars_expression(
                 if op[0] in ("LOAD_FAST", "LOAD_CONST")
                 else (
                     (stack.pop(), _op(*op))
-                    if op[0] == "UNARY_NOT"
+                    if op[0].startswith("UNARY_")
                     else (stack.pop(-2), _op(*op), stack.pop(-1))
                 )
             )

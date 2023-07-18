@@ -52,7 +52,7 @@ def test_non_simple_function(func: Callable[[Any], Any]) -> None:
         lambda x: not (x > 1),
         lambda x: x is None,
         lambda x: x is not None,
-        lambda x: (x * x) ** x,
+        lambda x: (x * -x) ** x,
         lambda x: x * (x**x),
         lambda x: (x / x) + ((x * x) - x),
         lambda x: (10 - x) / (((x * 4) - x) // (2 + (x * (x - 1)))),
