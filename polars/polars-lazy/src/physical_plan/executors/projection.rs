@@ -19,13 +19,14 @@ impl ProjectionExec {
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         #[allow(clippy::let_and_return)]
-        let df = evaluate_physical_expressions(
+        let selected_cols = evaluate_physical_expressions(
             &mut df,
             &self.cse_expr,
             &self.expr,
             state,
             self.has_windows,
-        );
+        )?;
+        let df = check_expand_literals(selected_cols, df.height() == 0)?;
 
         // this only runs during testing and check if the runtime type matches the predicted schema
         #[cfg(test)]
@@ -39,7 +40,7 @@ impl ProjectionExec {
             }
         }
 
-        df
+        Ok(df)
     }
 }
 

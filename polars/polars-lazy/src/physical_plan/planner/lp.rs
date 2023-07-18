@@ -518,8 +518,17 @@ pub fn create_physical_plan(
 
             let mut state =
                 ExpressionConversionState::new(POOL.current_num_threads() > exprs.len());
-            let phys_expr = create_physical_expressions(
-                &exprs,
+
+            let cse_exprs = create_physical_expressions(
+                exprs.cse_exprs(),
+                Context::Default,
+                expr_arena,
+                Some(&input_schema),
+                &mut state,
+            )?;
+
+            let phys_exprs = create_physical_expressions(
+                exprs.default_exprs(),
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
@@ -528,7 +537,8 @@ pub fn create_physical_plan(
             Ok(Box::new(executors::StackExec {
                 input,
                 has_windows: state.has_windows,
-                expr: phys_expr,
+                cse_exprs,
+                exprs: phys_exprs,
                 input_schema,
             }))
         }

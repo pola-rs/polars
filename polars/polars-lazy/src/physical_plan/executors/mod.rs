@@ -150,24 +150,25 @@ fn run_exprs_par(
     })
 }
 
-pub(crate) fn evaluate_physical_expressions(
+pub(super) fn evaluate_physical_expressions(
     df: &mut DataFrame,
     cse_exprs: &[Arc<dyn PhysicalExpr>],
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &mut ExecutionState,
     has_windows: bool,
-) -> PolarsResult<DataFrame> {
+) -> PolarsResult<Vec<Series>> {
     state.expr_cache = Some(Default::default());
-    let zero_length = df.height() == 0;
 
     let selected_columns = if !cse_exprs.is_empty() {
         let tmp_cols = run_exprs_par(df, cse_exprs, state)?;
         let width = df.width();
 
+        // put the cse expressions at the end
         unsafe {
             df.hstack_mut_unchecked(&tmp_cols);
         }
         let result = run_exprs_par(df, exprs, state)?;
+        // restore original df
         unsafe {
             df.get_columns_mut().truncate(width);
         }
@@ -181,10 +182,10 @@ pub(crate) fn evaluate_physical_expressions(
     state.clear_window_expr_cache();
     state.expr_cache = None;
 
-    check_expand_literals(selected_columns, zero_length)
+    Ok(selected_columns)
 }
 
-fn check_expand_literals(
+pub(super) fn check_expand_literals(
     mut selected_columns: Vec<Series>,
     zero_length: bool,
 ) -> PolarsResult<DataFrame> {
