@@ -5363,12 +5363,12 @@ class Series:
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Series:
         """
-        Interpolate intermediate values. The interpolation method is linear.
+        Fill null values using interpolation.
 
         Parameters
         ----------
         method : {'linear', 'nearest'}
-            Interpolation method
+            Interpolation method.
 
         Examples
         --------
