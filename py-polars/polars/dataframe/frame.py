@@ -5739,14 +5739,14 @@ class DataFrame:
         │ 6        ┆ 24       │
         └──────────┴──────────┘
 
-        It is better to implement this with an expression:
+        However, it is much better to implement this with a native expression:
 
         >>> df.select(
         ...     pl.col("foo") * 2,
         ...     pl.col("bar") * 3,
         ... )  # doctest: +IGNORE_RESULT
 
-        Return a Series by mapping each row to a scalar:
+        Return a DataFrame with a single column by mapping each row to a scalar:
 
         >>> df.apply(lambda t: (t[0] * 2 + t[1]))  # doctest: +SKIP
         shape: (3, 1)
@@ -5760,7 +5760,7 @@ class DataFrame:
         │ 14    │
         └───────┘
 
-        In this case it is better to use the following expression:
+        In this case it is better to use the following native expression:
 
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
 
