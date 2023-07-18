@@ -1774,7 +1774,7 @@ class Series:
         Examples
         --------
         >>> a = pl.Series("a", range(-5, 3))
-        >>> a.qcut(2, series = True)
+        >>> a.qcut(2, series=True)
         shape: (8,)
         Series: 'a' [cat]
         [
@@ -1845,17 +1845,14 @@ class Series:
         res = (
             self.to_frame()
             .select(
-                F.col(n).qcut(
-                    q, labels, left_closed, allow_duplicates, include_breaks
-                )
+                F.col(n).qcut(q, labels, left_closed, allow_duplicates, include_breaks)
             )
             .to_series()
         )
         if include_breaks:
             return res.struct.rename_fields([break_point_label, category_label])
         return res
-        
-        
+
     def rle(self) -> Series:
         """
         Get the lengths of runs of identical values.

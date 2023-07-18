@@ -3331,7 +3331,7 @@ class Expr:
         return self._from_pyexpr(
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
-        
+
     @deprecated_alias(probs="q")
     def qcut(
         self,
