@@ -8,7 +8,7 @@ from inspect import signature
 from typing import Any, Callable
 
 from polars.exceptions import PolarsInefficientApplyWarning
-from polars.utils.various import find_stacklevel
+from polars.utils.various import find_stacklevel, in_terminal_that_supports_colour
 
 # Note: in 3.11 individual binary opcodes were folded into a new BINARY_OP
 _BINARY_OPCODES = {
@@ -193,12 +193,22 @@ def warn_on_inefficient_apply(
                 else ""
             )
             func_name = _function_name(function, param_name)
+            before_after_suggestion = (
+                (
+                    f'  \033[31m-  pl.col("{columns[0]}").apply({func_name})\033[0m\n'
+                    f"  \033[32m+  {suggestion}\033[0m\n{addendum}"
+                )
+                if in_terminal_that_supports_colour()
+                else (
+                    f'  - pl.col("{columns[0]}").apply({func_name})\n'
+                    f"  + {suggestion}\n{addendum}"
+                )
+            )
             warnings.warn(
-                "Expr.apply is significantly slower than the native expressions API.\n"
+                "\nExpr.apply is significantly slower than the native expressions API.\n"
                 "Only use if you absolutely CANNOT implement your logic otherwise.\n"
                 "In this case, you can replace your `apply` with an expression:\n"
-                f'\033[31m-  pl.col("{columns[0]}").apply({func_name})\033[0m\n'
-                f"\033[32m+  {suggestion}\033[0m\n{addendum}",
+                f"{before_after_suggestion}",
                 PolarsInefficientApplyWarning,
                 stacklevel=find_stacklevel(),
             )
