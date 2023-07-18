@@ -131,6 +131,7 @@ fn replace_regex(
     result: &mut Vec<Expr>,
     schema: &Schema,
     exclude: &PlHashSet<Arc<str>>,
+    has_exclude: bool,
 ) -> PolarsResult<()> {
     let roots = expr_to_leaf_column_names(expr);
     let mut regex = None;
@@ -139,18 +140,19 @@ fn replace_regex(
             match regex {
                 None => {
                     regex = Some(name);
-                    if exclude.is_empty() {
-                        expand_regex(expr, result, schema, name, exclude)?
-                    } else {
+                    if has_exclude {
                         // iterate until we find the Exclude node
                         // we remove that node from the expression
+                        // the `exclude` set is already filled
+                        // by prepare exclude
                         for e in expr.into_iter() {
                             if let Expr::Exclude(e, _) = e {
                                 expand_regex(e, result, schema, name, exclude)?;
-                                break;
+                                return Ok(());
                             }
                         }
                     }
+                    expand_regex(expr, result, schema, name, exclude)?
                 }
                 Some(r) => {
                     polars_ensure!(
@@ -274,7 +276,13 @@ fn prepare_excluded(
                         match to_exclude_single {
                             Excluded::Name(name) => {
                                 let e = Expr::Column(name.clone());
-                                replace_regex(&e, &mut buf, schema, &Default::default())?;
+                                replace_regex(
+                                    &e,
+                                    &mut buf,
+                                    schema,
+                                    &Default::default(),
+                                    has_exclude,
+                                )?;
                                 // we cannot loop because of bchck
                                 while let Some(col) = buf.pop() {
                                     if let Expr::Column(name) = col {
@@ -512,7 +520,7 @@ fn replace_and_add_to_results(
         {
             // keep track of column excluded from the dtypes
             let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
-            replace_regex(&expr, result, schema, &exclude)?;
+            replace_regex(&expr, result, schema, &exclude, flags.has_exclude)?;
         }
         #[cfg(not(feature = "regex"))]
         {

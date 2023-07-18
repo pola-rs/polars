@@ -427,3 +427,8 @@ def test_selector_expr_dispatch() -> None:
                 pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).keep_name()
             ).fill_null(0),
         )
+
+
+def test_regex_expansion_groupby_9947() -> None:
+    df = pl.DataFrame({"g": [3], "abc": [1], "abcd": [3]})
+    assert df.groupby("g").agg(pl.col("^ab.*$")).columns == ["g", "abc", "abcd"]
