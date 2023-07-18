@@ -5011,18 +5011,17 @@ class Expr:
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Self:
         """
-        Fill nulls with linear interpolation over missing values.
-
-        Can also be used to regrid data to a new grid - see examples below.
+        Fill null values using interpolation.
 
         Parameters
         ----------
-        method : {'linear', 'linear'}
-            Interpolation method
+        method : {'linear', 'nearest'}
+            Interpolation method.
 
         Examples
         --------
-        >>> # Fill nulls with linear interpolation
+        Fill null values using linear interpolation.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, None, 3],
@@ -5040,6 +5039,23 @@ class Expr:
         │ 2   ┆ NaN │
         │ 3   ┆ 3.0 │
         └─────┴─────┘
+
+        Fill null values using nearest interpolation.
+
+        >>> df.select(pl.all().interpolate("nearest"))
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1.0 │
+        │ 3   ┆ NaN │
+        │ 3   ┆ 3.0 │
+        └─────┴─────┘
+
+        Regrid data to a new grid.
+
         >>> df_original_grid = pl.DataFrame(
         ...     {
         ...         "grid_points": [1, 3, 10],
