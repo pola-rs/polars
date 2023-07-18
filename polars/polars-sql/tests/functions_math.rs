@@ -50,9 +50,11 @@ fn test_math_functions() {
             col("a").log1p().alias("log1p"),
             col("a").pow(2.0).alias("pow"),
             col("a").sqrt().alias("sqrt"),
-            col("a").pow(1 / 3).alias("cbrt"),
+            col("a").cbrt().alias("cbrt"),
         ])
         .collect()
         .unwrap();
+    println!("{}", df_pl.head(Some(10)));
+    println!("{}", df_sql.head(Some(10)));
     assert!(df_sql.frame_equal_missing(&df_pl));
 }

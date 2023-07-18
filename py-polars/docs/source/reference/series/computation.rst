@@ -56,5 +56,6 @@ Computation
     Series.sinh
     Series.skew
     Series.sqrt
+    Series.cbrt
     Series.tan
     Series.tanh

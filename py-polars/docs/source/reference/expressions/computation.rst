@@ -58,6 +58,7 @@ Computation
     Expr.sinh
     Expr.skew
     Expr.sqrt
+    Expr.cbrt
     Expr.tan
     Expr.tanh
     Expr.unique
