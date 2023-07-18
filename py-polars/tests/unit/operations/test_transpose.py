@@ -147,3 +147,8 @@ def test_transpose_logical_data() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_err_transpose_object() -> None:
+    with pytest.raises(pl.InvalidOperationError):
+        pl.DataFrame([object()]).transpose()
