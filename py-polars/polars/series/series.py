@@ -4523,6 +4523,12 @@ class Series:
         Series
 
         """
+        # TODO:
+        # from polars.utils.udfs import warn_on_inefficient_apply
+        # warn_on_inefficient_apply(
+        #     function, columns=[self.name], apply_target="series"
+        # )
+
         if return_dtype is None:
             pl_return_dtype = None
         else:

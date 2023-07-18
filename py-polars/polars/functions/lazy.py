@@ -1214,7 +1214,9 @@ def apply(
 
     Calculate product of ``a``.
 
-    >>> df.with_columns(pl.col("a").apply(lambda x: x * x).alias("product_a"))
+    >>> df.with_columns(  # doctest: +SKIP
+    ...     pl.col("a").apply(lambda x: x * x).alias("product_a")
+    ... )
     shape: (4, 3)
     ┌─────┬─────┬───────────┐
     │ a   ┆ b   ┆ product_a │

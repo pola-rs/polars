@@ -35,6 +35,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
+from polars.exceptions import PolarsPanicError
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -3709,7 +3710,7 @@ class Expr:
 
         In a selection context, the function is applied by row.
 
-        >>> df.with_columns(
+        >>> df.with_columns(  # doctest: +SKIP
         ...     pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
         ... )
         shape: (4, 3)
@@ -3754,6 +3755,19 @@ class Expr:
 
         """
         # input x: Series of type list containing the group values
+        from polars.utils.udfs import warn_on_inefficient_apply
+
+        try:
+            root_names = self.meta.root_names()
+        except PolarsPanicError:
+            # no root names for pl.col('*')
+            pass
+        else:
+            if root_names:
+                warn_on_inefficient_apply(
+                    function, columns=root_names, apply_target="expr"
+                )
+
         if pass_name:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
