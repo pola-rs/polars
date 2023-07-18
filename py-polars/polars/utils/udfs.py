@@ -171,6 +171,35 @@ def _param_name_from_signature(function: Callable[[Any], Any]) -> str | None:
     return None
 
 
+def _generate_warning(
+    function: Callable[[Any], Any], suggestion: str, col: str, param_name: str
+) -> None:
+    func_name = _function_name(function, param_name)
+    addendum = (
+        'Note: in list.eval context, pl.col("") should be written as pl.element()'
+        if 'pl.col("")' in suggestion
+        else ""
+    )
+    before_after_suggestion = (
+        (
+            f'  \033[31m-  pl.col("{col}").apply({func_name})\033[0m\n'
+            f"  \033[32m+  {suggestion}\033[0m\n{addendum}"
+        )
+        if in_terminal_that_supports_colour()
+        else (
+            f'  - pl.col("{col}").apply({func_name})\n' f"  + {suggestion}\n{addendum}"
+        )
+    )
+    warnings.warn(
+        "\nExpr.apply is significantly slower than the native expressions API.\n"
+        "Only use if you absolutely CANNOT implement your logic otherwise.\n"
+        "In this case, you can replace your `apply` with an expression:\n"
+        f"{before_after_suggestion}",
+        PolarsInefficientApplyWarning,
+        stacklevel=find_stacklevel(),
+    )
+
+
 def warn_on_inefficient_apply(
     function: Callable[[Any], Any], columns: list[str], apply_target: str
 ) -> None:
@@ -187,28 +216,4 @@ def warn_on_inefficient_apply(
     # if ops indicate a trivial function that should be native, warn about it
     if _rewrite_as_expression(ops, apply_target):
         if suggestion := _to_polars_expression(ops, col, apply_target):
-            addendum = (
-                'Note: in list.eval context, pl.col("") should be written as pl.element()'
-                if 'pl.col("")' in suggestion
-                else ""
-            )
-            func_name = _function_name(function, param_name)
-            before_after_suggestion = (
-                (
-                    f'  \033[31m-  pl.col("{columns[0]}").apply({func_name})\033[0m\n'
-                    f"  \033[32m+  {suggestion}\033[0m\n{addendum}"
-                )
-                if in_terminal_that_supports_colour()
-                else (
-                    f'  - pl.col("{columns[0]}").apply({func_name})\n'
-                    f"  + {suggestion}\n{addendum}"
-                )
-            )
-            warnings.warn(
-                "\nExpr.apply is significantly slower than the native expressions API.\n"
-                "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-                "In this case, you can replace your `apply` with an expression:\n"
-                f"{before_after_suggestion}",
-                PolarsInefficientApplyWarning,
-                stacklevel=find_stacklevel(),
-            )
+            _generate_warning(function, suggestion, col, param_name)
