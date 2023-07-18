@@ -714,3 +714,10 @@ def test_sorted_flag_partition_by() -> None:
         .partition_by("two", maintain_order=True)[0]["one"]
         .flags["SORTED_ASC"]
     )
+
+
+def test_sorted_flag_singletons() -> None:
+    assert pl.DataFrame({"x": [1]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": ["a"]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": [True]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": [None]})["x"].flags["SORTED_ASC"]

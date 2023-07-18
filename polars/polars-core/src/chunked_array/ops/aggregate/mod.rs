@@ -99,6 +99,9 @@ where
     }
 
     fn min(&self) -> Option<T::Native> {
+        if self.is_empty() {
+            return None;
+        }
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.first_non_null().and_then(|idx| {
@@ -128,6 +131,9 @@ where
     }
 
     fn max(&self) -> Option<T::Native> {
+        if self.is_empty() {
+            return None;
+        }
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.last_non_null().and_then(|idx| {
@@ -441,6 +447,9 @@ impl ChunkAggSeries for BooleanChunked {
 
 impl Utf8Chunked {
     pub(crate) fn max_str(&self) -> Option<&str> {
+        if self.is_empty() {
+            return None;
+        }
         match self.is_sorted_flag() {
             IsSorted::Ascending => self.get(self.len() - 1),
             IsSorted::Descending => self.get(0),
@@ -451,6 +460,9 @@ impl Utf8Chunked {
         }
     }
     pub(crate) fn min_str(&self) -> Option<&str> {
+        if self.is_empty() {
+            return None;
+        }
         match self.is_sorted_flag() {
             IsSorted::Ascending => self.get(0),
             IsSorted::Descending => self.get(self.len() - 1),
