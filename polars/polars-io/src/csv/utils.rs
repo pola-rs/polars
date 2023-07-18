@@ -175,17 +175,8 @@ pub(crate) fn parse_bytes_with_encoding(
     })
 }
 
-/// Infer the schema of a CSV file by reading through the first n rows of the file,
-/// with `max_read_rows` controlling the maximum number of rows to read.
-///
-/// If `max_read_rows` is not set, the whole file is read to infer its schema.
-///
-/// Returns
-///     - inferred schema
-///     - number of rows used for inference.
-///     - bytes read
 #[allow(clippy::too_many_arguments)]
-pub fn infer_file_schema(
+pub fn infer_file_schema_inner(
     reader_bytes: &ReaderBytes,
     delimiter: u8,
     max_read_rows: Option<usize>,
@@ -200,6 +191,7 @@ pub fn infer_file_schema(
     eol_char: u8,
     null_values: Option<&NullValues>,
     try_parse_dates: bool,
+    recursion_count: u8,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -288,14 +280,14 @@ pub fn infer_file_schema(
             }
             column_names
         }
-    } else if has_header && !bytes.is_empty() {
+    } else if has_header && !bytes.is_empty() && recursion_count == 0 {
         // there was no new line char. So we copy the whole buf and add one
         // this is likely to be cheap as there are no rows.
         let mut buf = Vec::with_capacity(bytes.len() + 2);
         buf.extend_from_slice(bytes);
         buf.push(eol_char);
 
-        return infer_file_schema(
+        return infer_file_schema_inner(
             &ReaderBytes::Owned(buf),
             delimiter,
             max_read_rows,
@@ -308,6 +300,7 @@ pub fn infer_file_schema(
             eol_char,
             null_values,
             try_parse_dates,
+            recursion_count + 1,
         );
     } else {
         polars_bail!(NoData: "empty CSV");
@@ -473,11 +466,11 @@ pub fn infer_file_schema(
     // if there is a single line after the header without an eol
     // we copy the bytes add an eol and rerun this function
     // so that the inference is consistent with and without eol char
-    if rows_count == 0 && reader_bytes[reader_bytes.len() - 1] != eol_char {
+    if rows_count == 0 && reader_bytes[reader_bytes.len() - 1] != eol_char && recursion_count == 0 {
         let mut rb = Vec::with_capacity(reader_bytes.len() + 1);
         rb.extend_from_slice(reader_bytes);
         rb.push(eol_char);
-        return infer_file_schema(
+        return infer_file_schema_inner(
             &ReaderBytes::Owned(rb),
             delimiter,
             max_read_rows,
@@ -490,10 +483,54 @@ pub fn infer_file_schema(
             eol_char,
             null_values,
             try_parse_dates,
+            recursion_count + 1,
         );
     }
 
     Ok((Schema::from_iter(fields), rows_count, end_ptr - start_ptr))
+}
+
+/// Infer the schema of a CSV file by reading through the first n rows of the file,
+/// with `max_read_rows` controlling the maximum number of rows to read.
+///
+/// If `max_read_rows` is not set, the whole file is read to infer its schema.
+///
+/// Returns
+///     - inferred schema
+///     - number of rows used for inference.
+///     - bytes read
+#[allow(clippy::too_many_arguments)]
+pub fn infer_file_schema(
+    reader_bytes: &ReaderBytes,
+    delimiter: u8,
+    max_read_rows: Option<usize>,
+    has_header: bool,
+    schema_overwrite: Option<&Schema>,
+    // we take &mut because we maybe need to skip more rows dependent
+    // on the schema inference
+    skip_rows: &mut usize,
+    skip_rows_after_header: usize,
+    comment_char: Option<u8>,
+    quote_char: Option<u8>,
+    eol_char: u8,
+    null_values: Option<&NullValues>,
+    try_parse_dates: bool,
+) -> PolarsResult<(Schema, usize, usize)> {
+    infer_file_schema_inner(
+        reader_bytes,
+        delimiter,
+        max_read_rows,
+        has_header,
+        schema_overwrite,
+        skip_rows,
+        skip_rows_after_header,
+        comment_char,
+        quote_char,
+        eol_char,
+        null_values,
+        try_parse_dates,
+        0,
+    )
 }
 
 // magic numbers
