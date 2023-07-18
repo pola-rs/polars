@@ -231,7 +231,7 @@ impl GenericJoinProbe {
         let left_df = unsafe {
             chunk
                 .data
-                ._take_unchecked_slice2(&self.join_tuples_b, false, IsSorted::Ascending)
+                ._take_unchecked_slice_sorted(&self.join_tuples_b, false, IsSorted::Ascending)
         };
         let right_df =
             unsafe { right_df._take_opt_chunked_unchecked_seq(&self.join_tuples_a_left_join) };

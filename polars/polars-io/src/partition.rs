@@ -3,6 +3,7 @@ use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_core::POOL;
 use rayon::prelude::*;
 
@@ -102,7 +103,10 @@ where
                         .enumerate()
                         .map(|(i, (_, group))| {
                             // groups are in bounds
-                            let mut part_df = unsafe { df._take_unchecked_slice(group, false) };
+                            // and sorted
+                            let mut part_df = unsafe {
+                                df._take_unchecked_slice_sorted(group, false, IsSorted::Ascending)
+                            };
                             self.write_partition_df(&mut part_df, i)
                         })
                         .collect::<PolarsResult<Vec<_>>>()
