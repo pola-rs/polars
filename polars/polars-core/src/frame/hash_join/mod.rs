@@ -188,7 +188,7 @@ impl DataFrame {
                 IsSorted::Not
             };
 
-            self._take_unchecked_slice2(join_tuples, true, sorted)
+            self._take_unchecked_slice_sorted(join_tuples, true, sorted)
         }
     }
 
@@ -316,7 +316,7 @@ impl DataFrame {
             idx = slice_slice(idx, offset, len);
         }
         // idx from anti-semi join should always be sorted
-        self._take_unchecked_slice2(idx, true, IsSorted::Ascending)
+        self._take_unchecked_slice_sorted(idx, true, IsSorted::Ascending)
     }
 
     #[cfg(feature = "semi_anti_join")]
