@@ -159,7 +159,12 @@ def test_local_time_sortedness(time_zone: str | None) -> None:
 def test_offset_by_sortedness(
     time_zone: str | None, offset: str, expected: bool
 ) -> None:
-    ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
+    # create 2 values, as a single value is always sorted
+    ser = (
+        pl.Series(
+            [datetime(2022, 1, 1, 22), datetime(2022, 1, 1, 22)]
+        ).dt.replace_time_zone(time_zone)
+    ).sort()
     result = ser.dt.offset_by(offset)
     assert result.flags["SORTED_ASC"] == expected
     assert result.flags["SORTED_DESC"] is False

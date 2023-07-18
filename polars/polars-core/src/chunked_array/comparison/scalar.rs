@@ -93,7 +93,7 @@ where
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
         match (self.is_sorted_flag(), self.null_count()) {
-            (IsSorted::Ascending, 0) => {
+            (IsSorted::Ascending, 0) if self.len() > 1 => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
 
                 let cmp_fn = |a: &T::Native| match compare_fn_nan_max(a, &rhs) {
@@ -110,7 +110,7 @@ where
 
     fn gt_eq(&self, rhs: Rhs) -> BooleanChunked {
         match (self.is_sorted_flag(), self.null_count()) {
-            (IsSorted::Ascending, 0) => {
+            (IsSorted::Ascending, 0) if self.len() > 1 => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
 
                 let cmp_fn = |a: &T::Native| match compare_fn_nan_max(a, &rhs) {
