@@ -15,6 +15,7 @@ Computation
     Expr.arctan
     Expr.arctanh
     Expr.arg_unique
+    Expr.cbrt
     Expr.cos
     Expr.cosh
     Expr.cumcount
@@ -58,7 +59,6 @@ Computation
     Expr.sinh
     Expr.skew
     Expr.sqrt
-    Expr.cbrt
     Expr.tan
     Expr.tanh
     Expr.unique

@@ -15,6 +15,7 @@ Computation
     Series.arctanh
     Series.arg_true
     Series.arg_unique
+    Series.cbrt
     Series.cos
     Series.cosh
     Series.cummax
@@ -56,6 +57,5 @@ Computation
     Series.sinh
     Series.skew
     Series.sqrt
-    Series.cbrt
     Series.tan
     Series.tanh
