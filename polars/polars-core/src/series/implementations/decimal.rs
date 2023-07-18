@@ -52,6 +52,7 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
         self.0.dtype()
     }
 
+    #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         Ok(self
             .0

@@ -16,7 +16,8 @@ from polars.utils.convert import (
     _timedelta_to_pl_timedelta,
 )
 from polars.utils.decorators import deprecate_nonkeyword_arguments, redirect
-from polars.utils.various import parse_version
+from polars.utils.meta import get_idx_type
+from polars.utils.various import _in_notebook, parse_version
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
@@ -118,9 +119,11 @@ def test_parse_version(v1: Any, v2: Any) -> None:
     assert parse_version(v2) < parse_version(v1)
 
 
-class Foo:
+class Foo:  # noqa: D101
     @deprecate_nonkeyword_arguments(allowed_args=["self", "baz"])
-    def bar(self, baz: str, ham: str | None = None, foobar: str | None = None) -> None:
+    def bar(  # noqa: D102
+        self, baz: str, ham: str | None = None, foobar: str | None = None
+    ) -> None:
         ...
 
 
@@ -158,3 +161,13 @@ def test_redirect() -> None:
                 return "BAZ" if upper else "baz"
 
         assert DemoClass2().foo() == "BAZ"  # type: ignore[attr-defined]
+
+
+def test_get_idx_type_deprecation() -> None:
+    with pytest.deprecated_call():
+        get_idx_type()
+
+
+def test_in_notebook() -> None:
+    # private function, but easier to test this separately and mock it in the callers
+    assert not _in_notebook()

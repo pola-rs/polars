@@ -1196,7 +1196,7 @@ class Series:
 
         """
 
-    def any(self) -> bool:
+    def any(self, drop_nulls: bool = True) -> bool | None:
         """
         Check if any boolean value in the column is `True`.
 
@@ -1205,9 +1205,9 @@ class Series:
         Boolean literal
 
         """
-        return self.to_frame().select(F.col(self.name).any()).to_series()[0]
+        return self.to_frame().select(F.col(self.name).any(drop_nulls)).to_series()[0]
 
-    def all(self) -> bool:
+    def all(self, drop_nulls: bool = True) -> bool | None:
         """
         Check if all boolean values in the column are `True`.
 
@@ -1216,7 +1216,7 @@ class Series:
         Boolean literal
 
         """
-        return self.to_frame().select(F.col(self.name).all()).to_series()[0]
+        return self.to_frame().select(F.col(self.name).all(drop_nulls)).to_series()[0]
 
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
@@ -1604,9 +1604,10 @@ class Series:
         """
         return wrap_df(self._s.to_dummies(separator))
 
+    @deprecated_alias(bins="breaks")
     def cut(
         self,
-        bins: list[float],
+        breaks: list[float],
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
@@ -1620,11 +1621,11 @@ class Series:
 
         Parameters
         ----------
-        bins
-            Bins to create.
+        breaks
+            A list of unique cut points.
         labels
             Labels to assign to the bins. If given the length of labels must be
-            len(bins) + 1.
+            len(breaks) + 1.
         break_point_label
             Name given to the breakpoint column/field. Only used if series == False or
             include_breaks == True
@@ -1707,14 +1708,14 @@ class Series:
             return (
                 self.to_frame()
                 .with_columns(
-                    F.col(n).cut(bins, labels, left_closed, True).alias(n + "_bin")
+                    F.col(n).cut(breaks, labels, left_closed, True).alias(n + "_bin")
                 )
                 .unnest(n + "_bin")
                 .rename({"brk": break_point_label, n + "_bin": category_label})
             )
         res = (
             self.to_frame()
-            .select(F.col(n).cut(bins, labels, left_closed, include_breaks))
+            .select(F.col(n).cut(breaks, labels, left_closed, include_breaks))
             .to_series()
         )
         if include_breaks:
@@ -1743,7 +1744,7 @@ class Series:
             We expect quantiles ``0.0 <= quantile <= 1``
         labels
             Labels to assign to the quantiles. If given the length of labels must be
-            len(bins) + 1.
+            len(breaks) + 1.
         break_point_label
             Name given to the breakpoint column/field. Only used if series == False or
             include_breaks == True
@@ -2072,17 +2073,24 @@ class Series:
 
     def alias(self, name: str) -> Series:
         """
-        Return a copy of the Series with a new alias/name.
+        Rename the series.
 
         Parameters
         ----------
         name
-            New name.
+            The new name.
 
         Examples
         --------
-        >>> srs = pl.Series("x", [1, 2, 3])
-        >>> new_aliased_srs = srs.alias("y")
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.alias("b")
+        shape: (3,)
+        Series: 'b' [i64]
+        [
+                1
+                2
+                3
+        ]
 
         """
         s = self.clone()
@@ -2303,7 +2311,7 @@ class Series:
 
         """
 
-    def append(self, other: Series, *, append_chunks: bool = True) -> Series:
+    def append(self, other: Series, *, append_chunks: bool | None = None) -> Self:
         """
         Append a Series to this one.
 
@@ -2312,6 +2320,11 @@ class Series:
         other
             Series to append.
         append_chunks
+            .. deprecated:: 0.18.8
+                This argument will be removed and ``append`` will change to always
+                behave like ``append_chunks=True`` (the previous default). For the
+                behavior of ``append_chunks=False``, use ``Series.extend``.
+
             If set to `True` the append operation will add the chunks from `other` to
             self. This is super cheap.
 
@@ -2335,13 +2348,21 @@ class Series:
             to store them in a single `Series`. In the latter case, finish the sequence
             of `append_chunks` operations with a `rechunk`.
 
+        Warnings
+        --------
+        This method modifies the series in-place. The series is returned for
+        convenience only.
+
+        See Also
+        --------
+        extend
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s2 = pl.Series("b", [4, 5, 6])
-        >>> s.append(s2)
-        shape: (6,)
+        >>> a = pl.Series("a", [1, 2, 3])
+        >>> b = pl.Series("b", [4, 5])
+        >>> a.append(b)
+        shape: (5,)
         Series: 'a' [i64]
         [
             1
@@ -2349,18 +2370,97 @@ class Series:
             3
             4
             5
-            6
         ]
+
+        The resulting series will consist of multiple chunks.
+
+        >>> a.n_chunks()
+        2
+
+        """
+        if append_chunks is not None:
+            warnings.warn(
+                "the `append_chunks` argument will be removed and `append` will change"
+                " to always behave like `append_chunks=True` (the previous default)."
+                " For the behavior of `append_chunks=False`, use `Series.extend`.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
+        else:
+            append_chunks = True
+
+        if not append_chunks:
+            return self.extend(other)
+
+        try:
+            self._s.append(other._s)
+        except RuntimeError as exc:
+            if str(exc) == "Already mutably borrowed":
+                self._s.append(other._s.clone())
+            else:
+                raise exc
+        return self
+
+    def extend(self, other: Series) -> Self:
+        """
+        Extend the memory backed by this Series with the values from another.
+
+        Different from ``append``, which adds the chunks from ``other`` to the chunks of
+        this series, ``extend`` appends the data from ``other`` to the underlying memory
+        locations and thus may cause a reallocation (which is expensive).
+
+        If this does `not` cause a reallocation, the resulting data structure will not
+        have any extra chunks and thus will yield faster queries.
+
+        Prefer ``extend`` over ``append`` when you want to do a query after a single
+        append. For instance, during online operations where you add `n` rows
+        and rerun a query.
+
+        Prefer ``append`` over ``extend`` when you want to append many times
+        before doing a query. For instance, when you read in multiple files and want
+        to store them in a single ``Series``. In the latter case, finish the sequence
+        of ``append`` operations with a `rechunk`.
+
+        Parameters
+        ----------
+        other
+            Series to extend the series with.
+
+        Warnings
+        --------
+        This method modifies the series in-place. The series is returned for
+        convenience only.
+
+        See Also
+        --------
+        append
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [1, 2, 3])
+        >>> b = pl.Series("b", [4, 5])
+        >>> a.extend(b)
+        shape: (5,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+            4
+            5
+        ]
+
+        The resulting series will consist of a single chunk.
+
+        >>> a.n_chunks()
+        1
 
         """
         try:
-            if append_chunks:
-                self._s.append(other._s)
-            else:
-                self._s.extend(other._s)
+            self._s.extend(other._s)
         except RuntimeError as exc:
             if str(exc) == "Already mutably borrowed":
-                self.append(other.clone(), append_chunks=append_chunks)
+                self._s.extend(other._s.clone())
             else:
                 raise exc
         return self
@@ -4364,6 +4464,10 @@ class Series:
         """
         Apply a custom/user-defined function (UDF) over elements in this Series.
 
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
+
         If the function returns a different datatype, the return_dtype arg should
         be set, otherwise the method will fail.
 
@@ -4419,6 +4523,12 @@ class Series:
         Series
 
         """
+        # TODO:
+        # from polars.utils.udfs import warn_on_inefficient_apply
+        # warn_on_inefficient_apply(
+        #     function, columns=[self.name], apply_target="series"
+        # )
+
         if return_dtype is None:
             pl_return_dtype = None
         else:
@@ -5266,12 +5376,12 @@ class Series:
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Series:
         """
-        Interpolate intermediate values. The interpolation method is linear.
+        Fill null values using interpolation.
 
         Parameters
         ----------
         method : {'linear', 'nearest'}
-            Interpolation method
+            Interpolation method.
 
         Examples
         --------

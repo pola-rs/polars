@@ -1352,17 +1352,12 @@ impl Expr {
     ///
     /// See: [`RollingAgg::rolling_quantile`]
     #[cfg(feature = "rolling_window")]
-    pub fn rolling_quantile(
-        self,
-        quantile: f64,
-        interpolation: QuantileInterpolOptions,
-        options: RollingOptions,
-    ) -> Expr {
+    pub fn rolling_quantile(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
             options,
             "rolling_quantile",
             "rolling_quantile_by",
-            Arc::new(move |s, options| s.rolling_quantile(quantile, interpolation, options)),
+            Arc::new(|s, options| s.rolling_quantile(options)),
             GetOutput::float_type(),
         )
     }
@@ -1553,7 +1548,7 @@ impl Expr {
     /// function `skewtest` can be used to determine if the skewness value
     /// is close enough to zero, statistically speaking.
     ///
-    /// see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024
+    /// see: [scipy](https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024)
     pub fn skew(self, bias: bool) -> Expr {
         self.apply(
             move |s| {
@@ -1663,8 +1658,8 @@ impl Expr {
     }
 
     /// Check if any boolean value is `true`
-    pub fn any(self) -> Self {
-        self.apply_private(BooleanFunction::Any.into())
+    pub fn any(self, drop_nulls: bool) -> Self {
+        self.apply_private(BooleanFunction::Any { drop_nulls }.into())
             .with_function_options(|mut opt| {
                 opt.auto_explode = true;
                 opt
@@ -1679,8 +1674,8 @@ impl Expr {
     }
 
     /// Check if all boolean values are `true`
-    pub fn all(self) -> Self {
-        self.apply_private(BooleanFunction::All.into())
+    pub fn all(self, drop_nulls: bool) -> Self {
+        self.apply_private(BooleanFunction::All { drop_nulls }.into())
             .with_function_options(|mut opt| {
                 opt.auto_explode = true;
                 opt

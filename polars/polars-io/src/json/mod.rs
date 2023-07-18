@@ -157,20 +157,22 @@ where
 
 /// Reads JSON in one of the formats in [`JsonFormat`] into a DataFrame.
 #[must_use]
-pub struct JsonReader<R>
+pub struct JsonReader<'a, R>
 where
     R: MmapBytesReader,
 {
     reader: R,
     rechunk: bool,
+    ignore_errors: bool,
     infer_schema_len: Option<usize>,
     batch_size: usize,
     projection: Option<Vec<String>>,
-    schema: Option<ArrowSchema>,
+    schema: Option<SchemaRef>,
+    schema_overwrite: Option<&'a Schema>,
     json_format: JsonFormat,
 }
 
-impl<R> SerReader<R> for JsonReader<R>
+impl<'a, R> SerReader<R> for JsonReader<'a, R>
 where
     R: MmapBytesReader,
 {
@@ -178,10 +180,12 @@ where
         JsonReader {
             reader,
             rechunk: true,
+            ignore_errors: false,
             infer_schema_len: Some(100),
             batch_size: 8192,
             projection: None,
             schema: None,
+            schema_overwrite: None,
             json_format: JsonFormat::Json,
         }
     }
@@ -201,32 +205,63 @@ where
 
         let out = match self.json_format {
             JsonFormat::Json => {
+                polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");
                 let mut bytes = rb.deref().to_vec();
                 let json_value =
                     simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?;
 
-                // likely struct type
-                let dtype = if let BorrowedValue::Array(values) = &json_value {
-                    // struct types may have missing fields so find supertype
-                    let dtype = values
-                        .iter()
-                        .take(self.infer_schema_len.unwrap_or(usize::MAX))
-                        .map(|value| {
-                            infer(value)
-                                .map_err(PolarsError::from)
-                                .map(|dt| DataType::from(&dt))
-                        })
-                        .fold_first_(|l, r| {
-                            let l = l?;
-                            let r = r?;
-                            try_get_supertype(&l, &r)
-                        })
-                        .unwrap()?;
-                    let dtype = DataType::List(Box::new(dtype));
-                    dtype.to_arrow()
+                // struct type
+                let dtype = if let Some(mut schema) = self.schema {
+                    if let Some(overwrite) = self.schema_overwrite {
+                        let mut_schema = Arc::make_mut(&mut schema);
+                        overwrite_schema(mut_schema, overwrite)?;
+                    }
+                    DataType::Struct(schema.iter_fields().collect()).to_arrow()
                 } else {
-                    infer(&json_value)?
+                    // infer
+                    if let BorrowedValue::Array(values) = &json_value {
+                        polars_ensure!(self.schema_overwrite.is_none() && self.schema.is_none(), ComputeError: "schema arguments not yet supported for Array json");
+
+                        // struct types may have missing fields so find supertype
+                        let dtype = values
+                            .iter()
+                            .take(self.infer_schema_len.unwrap_or(usize::MAX))
+                            .map(|value| {
+                                infer(value)
+                                    .map_err(PolarsError::from)
+                                    .map(|dt| DataType::from(&dt))
+                            })
+                            .fold_first_(|l, r| {
+                                let l = l?;
+                                let r = r?;
+                                try_get_supertype(&l, &r)
+                            })
+                            .unwrap()?;
+                        let dtype = DataType::List(Box::new(dtype));
+                        dtype.to_arrow()
+                    } else {
+                        let dtype = infer(&json_value)?;
+                        if let Some(overwrite) = self.schema_overwrite {
+                            let ArrowDataType::Struct(fields) = dtype else {
+                                    polars_bail!(ComputeError: "can only deserialize json objects")
+                                };
+
+                            let mut schema = Schema::from_iter(fields.iter());
+                            overwrite_schema(&mut schema, overwrite)?;
+
+                            DataType::Struct(
+                                schema
+                                    .into_iter()
+                                    .map(|(name, dt)| Field::new(&name, dt))
+                                    .collect(),
+                            )
+                            .to_arrow()
+                        } else {
+                            dtype
+                        }
+                    }
                 };
+
                 let arr = polars_json::json::deserialize(&json_value, dtype)?;
                 let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(
                     || polars_err!(ComputeError: "can only deserialize json objects"),
@@ -237,12 +272,14 @@ where
                 let mut json_reader = CoreJsonReader::new(
                     rb,
                     None,
-                    None,
+                    self.schema,
+                    self.schema_overwrite,
                     None,
                     1024, // sample size
                     1 << 18,
                     false,
                     self.infer_schema_len,
+                    self.ignore_errors,
                 )?;
                 let mut df: DataFrame = json_reader.as_df()?;
                 if self.rechunk {
@@ -252,6 +289,7 @@ where
             }
         }?;
 
+        // TODO! Ensure we don't materialize the columns we don't need
         if let Some(proj) = &self.projection {
             out.select(proj)
         } else {
@@ -260,13 +298,19 @@ where
     }
 }
 
-impl<R> JsonReader<R>
+impl<'a, R> JsonReader<'a, R>
 where
     R: MmapBytesReader,
 {
     /// Set the JSON file's schema
-    pub fn with_schema(mut self, schema: &Schema) -> Self {
-        self.schema = Some(schema.to_arrow());
+    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
+        self.schema = Some(schema);
+        self
+    }
+
+    /// Overwrite parts of the inferred schema.
+    pub fn with_schema_overwrite(mut self, schema: &'a Schema) -> Self {
+        self.schema_overwrite = Some(schema);
         self
     }
 
@@ -303,6 +347,12 @@ where
 
     pub fn with_json_format(mut self, format: JsonFormat) -> Self {
         self.json_format = format;
+        self
+    }
+
+    /// Return a `null` if an error occurs during parsing.
+    pub fn with_ignore_errors(mut self, ignore: bool) -> Self {
+        self.ignore_errors = ignore;
         self
     }
 }

@@ -3282,15 +3282,23 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
 
+    /// Take by index values given by the slice `idx`.
+    /// # Warning
     /// Be careful with allowing threads when calling this in a large hot loop
     /// every thread split may be on rayon stack and lead to SO
     #[doc(hidden)]
     pub unsafe fn _take_unchecked_slice(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
-        self._take_unchecked_slice2(idx, allow_threads, IsSorted::Not)
+        self._take_unchecked_slice_sorted(idx, allow_threads, IsSorted::Not)
     }
 
+    /// Take by index values given by the slice `idx`. Use this over `_take_unchecked_slice`
+    /// if the index value in `idx` are sorted. This will maintain sorted flags.
+    ///
+    /// # Warning
+    /// Be careful with allowing threads when calling this in a large hot loop
+    /// every thread split may be on rayon stack and lead to SO
     #[doc(hidden)]
-    pub unsafe fn _take_unchecked_slice2(
+    pub unsafe fn _take_unchecked_slice_sorted(
         &self,
         idx: &[IdxSize],
         allow_threads: bool,
@@ -3310,26 +3318,9 @@ impl DataFrame {
                 }
             }
         }
-        let ptr = idx.as_ptr() as *mut IdxSize;
-        let len = idx.len();
-
-        // create a temporary vec. we will not drop it.
-        let mut ca = IdxCa::from_vec("", Vec::from_raw_parts(ptr, len, len));
+        let mut ca = IdxCa::mmap_slice("", idx);
         ca.set_sorted_flag(sorted);
-        let out = self.take_unchecked_impl(&ca, allow_threads);
-
-        // ref count of buffers should be one because we dropped all allocations
-        let arr = {
-            let arr_ref = std::mem::take(&mut ca.chunks).pop().unwrap();
-            arr_ref
-                .as_any()
-                .downcast_ref::<PrimitiveArray<IdxSize>>()
-                .unwrap()
-                .clone()
-        };
-        // the only owned heap allocation is the `Vec` we created and must not be dropped
-        let _ = std::mem::ManuallyDrop::new(arr.into_mut().right().unwrap());
-        out
+        self.take_unchecked_impl(&ca, allow_threads)
     }
 
     #[cfg(feature = "partition_by")]
@@ -3362,7 +3353,9 @@ impl DataFrame {
                         .into_par_iter()
                         .map(|(_, group)| {
                             // groups are in bounds
-                            unsafe { df._take_unchecked_slice(&group, false) }
+                            unsafe {
+                                df._take_unchecked_slice_sorted(&group, false, IsSorted::Ascending)
+                            }
                         })
                         .collect())
                 }

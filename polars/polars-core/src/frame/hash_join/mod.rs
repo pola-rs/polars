@@ -176,19 +176,19 @@ impl DataFrame {
         &self,
         join_tuples: &[IdxSize],
         left_join: bool,
-        sorted: bool,
+        sorted_tuple_idx: bool,
     ) -> DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
         } else {
             // left join tuples are always in ascending order
-            let sorted = if left_join || sorted {
+            let sorted = if left_join || sorted_tuple_idx {
                 IsSorted::Ascending
             } else {
                 IsSorted::Not
             };
 
-            self._take_unchecked_slice2(join_tuples, true, sorted)
+            self._take_unchecked_slice_sorted(join_tuples, true, sorted)
         }
     }
 
@@ -316,7 +316,7 @@ impl DataFrame {
             idx = slice_slice(idx, offset, len);
         }
         // idx from anti-semi join should always be sorted
-        self._take_unchecked_slice2(idx, true, IsSorted::Ascending)
+        self._take_unchecked_slice_sorted(idx, true, IsSorted::Ascending)
     }
 
     #[cfg(feature = "semi_anti_join")]

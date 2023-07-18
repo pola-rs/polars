@@ -106,6 +106,17 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
     }
 }
 
+#[cfg(feature = "json")]
+pub(crate) fn overwrite_schema(
+    schema: &mut Schema,
+    overwriting_schema: &Schema,
+) -> PolarsResult<()> {
+    for (k, value) in overwriting_schema.iter() {
+        *schema.try_get_mut(k)? = value.clone();
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;

@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal
 
 
@@ -94,9 +95,12 @@ def test_apply_infer_list() -> None:
 
 def test_apply_arithmetic_consistency() -> None:
     df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
-    assert df.groupby("A").agg(pl.col("B").apply(lambda x: x + 1.0))["B"].to_list() == [
-        [3.0, 4.0]
-    ]
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
+        assert df.groupby("A").agg(pl.col("B").apply(lambda x: x + 1.0))[
+            "B"
+        ].to_list() == [[3.0, 4.0]]
 
 
 def test_apply_struct() -> None:
@@ -241,25 +245,28 @@ def test_apply_skip_nulls() -> None:
 
 
 def test_apply_object_dtypes() -> None:
-    assert pl.DataFrame(
-        {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
-    ).with_columns(
-        [
-            pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Object),
-            pl.col("a")
-            .apply(lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean)
-            .alias("is_numeric1"),
-            pl.col("a")
-            .apply(lambda x: isinstance(x, (int, float)))
-            .alias("is_numeric_infer"),
-        ]
-    ).to_dict(
-        False
-    ) == {
-        "a": [2, 4, "aa", 8, 10],
-        "is_numeric1": [True, True, False, True, True],
-        "is_numeric_infer": [True, True, False, True, True],
-    }
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
+        assert pl.DataFrame(
+            {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
+        ).with_columns(
+            [
+                pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Object),
+                pl.col("a")
+                .apply(lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean)
+                .alias("is_numeric1"),
+                pl.col("a")
+                .apply(lambda x: isinstance(x, (int, float)))
+                .alias("is_numeric_infer"),
+            ]
+        ).to_dict(
+            False
+        ) == {
+            "a": [2, 4, "aa", 8, 10],
+            "is_numeric1": [True, True, False, True, True],
+            "is_numeric_infer": [True, True, False, True, True],
+        }
 
 
 def test_apply_explicit_list_output_type() -> None:

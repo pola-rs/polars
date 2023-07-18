@@ -35,6 +35,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
+from polars.exceptions import PolarsPanicError
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -311,9 +312,14 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
-    def any(self) -> Self:
+    def any(self, drop_nulls: bool = True) -> Self:
         """
         Check if any boolean value in a Boolean column is `True`.
+
+        Parameters
+        ----------
+        drop_nulls
+            If False, return None if there are nulls but no Trues.
 
         Returns
         -------
@@ -331,16 +337,41 @@ class Expr:
         ╞══════╪═══════╡
         │ true ┆ false │
         └──────┴───────┘
+        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
+        >>> df.select(pl.col("x").any(True), pl.col("y").any(True))
+        shape: (1, 2)
+        ┌───────┬──────┐
+        │ x     ┆ y    │
+        │ ---   ┆ ---  │
+        │ bool  ┆ bool │
+        ╞═══════╪══════╡
+        │ false ┆ true │
+        └───────┴──────┘
+        >>> df.select(pl.col("x").any(False), pl.col("y").any(False))
+        shape: (1, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ bool ┆ bool │
+        ╞══════╪══════╡
+        │ null ┆ true │
+        └──────┴──────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.any())
+        return self._from_pyexpr(self._pyexpr.any(drop_nulls))
 
-    def all(self) -> Self:
+    def all(self, drop_nulls: bool = True) -> Self:
         """
         Check if all boolean values in a Boolean column are `True`.
 
         This method is an expression - not to be confused with
         :func:`polars.all` which is a function to select all columns.
+
+        Parameters
+        ----------
+        drop_nulls
+            If False, return None if there are any nulls.
+
 
         Returns
         -------
@@ -360,9 +391,28 @@ class Expr:
         ╞══════╪═══════╪═══════╡
         │ true ┆ false ┆ false │
         └──────┴───────┴───────┘
+        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
+        >>> df.select(pl.col("x").all(True), pl.col("y").all(True))
+        shape: (1, 2)
+        ┌───────┬───────┐
+        │ x     ┆ y     │
+        │ ---   ┆ ---   │
+        │ bool  ┆ bool  │
+        ╞═══════╪═══════╡
+        │ false ┆ false │
+        └───────┴───────┘
+        >>> df.select(pl.col("x").all(False), pl.col("y").all(False))
+        shape: (1, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ bool ┆ bool │
+        ╞══════╪══════╡
+        │ null ┆ null │
+        └──────┴──────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.all())
+        return self._from_pyexpr(self._pyexpr.all(drop_nulls))
 
     def arg_true(self) -> Self:
         """
@@ -463,12 +513,12 @@ class Expr:
 
     def alias(self, name: str) -> Self:
         """
-        Rename the output of an expression.
+        Rename the expression.
 
         Parameters
         ----------
         name
-            New name.
+            The new name.
 
         See Also
         --------
@@ -478,40 +528,227 @@ class Expr:
 
         Examples
         --------
+        Rename an expression to avoid overwriting an existing column.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3],
-        ...         "b": ["a", "b", None],
+        ...         "b": ["x", "y", "z"],
         ...     }
         ... )
-        >>> df
-        shape: (3, 2)
-        ┌─────┬──────┐
-        │ a   ┆ b    │
-        │ --- ┆ ---  │
-        │ i64 ┆ str  │
-        ╞═════╪══════╡
-        │ 1   ┆ a    │
-        │ 2   ┆ b    │
-        │ 3   ┆ null │
-        └─────┴──────┘
-        >>> df.select(
-        ...     pl.col("a").alias("bar"),
-        ...     pl.col("b").alias("foo"),
+        >>> df.with_columns(
+        ...     pl.col("a") + 10,
+        ...     pl.col("b").str.to_uppercase().alias("c"),
         ... )
-        shape: (3, 2)
-        ┌─────┬──────┐
-        │ bar ┆ foo  │
-        │ --- ┆ ---  │
-        │ i64 ┆ str  │
-        ╞═════╪══════╡
-        │ 1   ┆ a    │
-        │ 2   ┆ b    │
-        │ 3   ┆ null │
-        └─────┴──────┘
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 11  ┆ x   ┆ X   │
+        │ 12  ┆ y   ┆ Y   │
+        │ 13  ┆ z   ┆ Z   │
+        └─────┴─────┴─────┘
+
+        Overwrite the default name of literal columns to prevent errors due to duplicate
+        column names.
+
+        >>> df.with_columns(
+        ...     pl.lit(True).alias("c"),
+        ...     pl.lit(4.0).alias("d"),
+        ... )
+        shape: (3, 4)
+        ┌─────┬─────┬──────┬─────┐
+        │ a   ┆ b   ┆ c    ┆ d   │
+        │ --- ┆ --- ┆ ---  ┆ --- │
+        │ i64 ┆ str ┆ bool ┆ f64 │
+        ╞═════╪═════╪══════╪═════╡
+        │ 1   ┆ x   ┆ true ┆ 4.0 │
+        │ 2   ┆ y   ┆ true ┆ 4.0 │
+        │ 3   ┆ z   ┆ true ┆ 4.0 │
+        └─────┴─────┴──────┴─────┘
 
         """
         return self._from_pyexpr(self._pyexpr.alias(name))
+
+    def map_alias(self, function: Callable[[str], str]) -> Self:
+        """
+        Rename the output of an expression by mapping a function over the root name.
+
+        Parameters
+        ----------
+        function
+            Function that maps a root name to a new name.
+
+        See Also
+        --------
+        alias
+        prefix
+        suffix
+
+        Examples
+        --------
+        Remove a common suffix and convert to lower case.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A_reverse": [3, 2, 1],
+        ...         "B_reverse": ["z", "y", "x"],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.all().reverse().map_alias(lambda c: c.rstrip("_reverse").lower())
+        ... )
+        shape: (3, 4)
+        ┌───────────┬───────────┬─────┬─────┐
+        │ A_reverse ┆ B_reverse ┆ a   ┆ b   │
+        │ ---       ┆ ---       ┆ --- ┆ --- │
+        │ i64       ┆ str       ┆ i64 ┆ str │
+        ╞═══════════╪═══════════╪═════╪═════╡
+        │ 3         ┆ z         ┆ 1   ┆ x   │
+        │ 2         ┆ y         ┆ 2   ┆ y   │
+        │ 1         ┆ x         ┆ 3   ┆ z   │
+        └───────────┴───────────┴─────┴─────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.map_alias(function))
+
+    def prefix(self, prefix: str) -> Self:
+        """
+        Add a prefix to the root column name of the expression.
+
+        Parameters
+        ----------
+        prefix
+            Prefix to add to the root column name.
+
+        Notes
+        -----
+        This will undo any previous renaming operations on the expression.
+
+        Due to implementation constraints, this method can only be called as the last
+        expression in a chain.
+
+        See Also
+        --------
+        suffix
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["x", "y", "z"],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.all().reverse().prefix("reverse_"))
+        shape: (3, 4)
+        ┌─────┬─────┬───────────┬───────────┐
+        │ a   ┆ b   ┆ reverse_a ┆ reverse_b │
+        │ --- ┆ --- ┆ ---       ┆ ---       │
+        │ i64 ┆ str ┆ i64       ┆ str       │
+        ╞═════╪═════╪═══════════╪═══════════╡
+        │ 1   ┆ x   ┆ 3         ┆ z         │
+        │ 2   ┆ y   ┆ 2         ┆ y         │
+        │ 3   ┆ z   ┆ 1         ┆ x         │
+        └─────┴─────┴───────────┴───────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.prefix(prefix))
+
+    def suffix(self, suffix: str) -> Self:
+        """
+        Add a suffix to the root column name of the expression.
+
+        Parameters
+        ----------
+        suffix
+            Suffix to add to the root column name.
+
+        Notes
+        -----
+        This will undo any previous renaming operations on the expression.
+
+        Due to implementation constraints, this method can only be called as the last
+        expression in a chain.
+
+        See Also
+        --------
+        prefix
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["x", "y", "z"],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.all().reverse().suffix("_reverse"))
+        shape: (3, 4)
+        ┌─────┬─────┬───────────┬───────────┐
+        │ a   ┆ b   ┆ a_reverse ┆ b_reverse │
+        │ --- ┆ --- ┆ ---       ┆ ---       │
+        │ i64 ┆ str ┆ i64       ┆ str       │
+        ╞═════╪═════╪═══════════╪═══════════╡
+        │ 1   ┆ x   ┆ 3         ┆ z         │
+        │ 2   ┆ y   ┆ 2         ┆ y         │
+        │ 3   ┆ z   ┆ 1         ┆ x         │
+        └─────┴─────┴───────────┴───────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.suffix(suffix))
+
+    def keep_name(self) -> Self:
+        """
+        Keep the original root name of the expression.
+
+        Notes
+        -----
+        Due to implementation constraints, this method can only be called as the last
+        expression in a chain.
+
+        See Also
+        --------
+        alias
+
+        Examples
+        --------
+        Undo an alias operation.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2],
+        ...         "b": [3, 4],
+        ...     }
+        ... )
+        >>> df.with_columns((pl.col("a") * 9).alias("c").keep_name())
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 9   ┆ 3   │
+        │ 18  ┆ 4   │
+        └─────┴─────┘
+
+        Prevent errors due to duplicate column names.
+
+        >>> df.select((pl.lit(10) / pl.all()).keep_name())
+        shape: (2, 2)
+        ┌──────┬──────────┐
+        │ a    ┆ b        │
+        │ ---  ┆ ---      │
+        │ f64  ┆ f64      │
+        ╞══════╪══════════╡
+        │ 10.0 ┆ 3.333333 │
+        │ 5.0  ┆ 2.5      │
+        └──────┴──────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.keep_name())
 
     def exclude(
         self,
@@ -634,50 +871,6 @@ class Expr:
                 f"Invalid input for `exclude`. Expected `str` or `DataType`, got {type(columns)!r}"
             )
 
-    def keep_name(self) -> Self:
-        """
-        Keep the original root name of the expression.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2],
-        ...         "b": [3, 4],
-        ...     }
-        ... )
-
-        Keep original column name to undo an alias operation.
-
-        >>> df.with_columns([(pl.col("a") * 9).alias("c").keep_name()])
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 9   ┆ 3   │
-        │ 18  ┆ 4   │
-        └─────┴─────┘
-
-        Prevent
-        "DuplicateError: Column with name: 'literal' has more than one occurrences"
-        errors.
-
-        >>> df.select((pl.lit(10) / pl.all()).keep_name())
-        shape: (2, 2)
-        ┌──────┬──────────┐
-        │ a    ┆ b        │
-        │ ---  ┆ ---      │
-        │ f64  ┆ f64      │
-        ╞══════╪══════════╡
-        │ 10.0 ┆ 3.333333 │
-        │ 5.0  ┆ 2.5      │
-        └──────┴──────────┘
-
-        """
-        return self._from_pyexpr(self._pyexpr.keep_name())
-
     def pipe(
         self,
         function: Callable[Concatenate[Expr, P], T],
@@ -728,166 +921,6 @@ class Expr:
 
         '''
         return function(self, *args, **kwargs)
-
-    def prefix(self, prefix: str) -> Self:
-        """
-        Add a prefix to the root column name of the expression.
-
-        Parameters
-        ----------
-        prefix
-            Prefix to add to root column name.
-
-        See Also
-        --------
-        alias
-        map_alias
-        suffix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1, 2, 3, 4, 5],
-        ...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
-        ...         "B": [5, 4, 3, 2, 1],
-        ...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        ...     }
-        ... )
-        >>> df
-        shape: (5, 4)
-        ┌─────┬────────┬─────┬────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   │
-        │ --- ┆ ---    ┆ --- ┆ ---    │
-        │ i64 ┆ str    ┆ i64 ┆ str    │
-        ╞═════╪════════╪═════╪════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle │
-        │ 2   ┆ banana ┆ 4   ┆ audi   │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle │
-        │ 5   ┆ banana ┆ 1   ┆ beetle │
-        └─────┴────────┴─────┴────────┘
-        >>> df.select(
-        ...     pl.all(),
-        ...     pl.all().reverse().prefix("reverse_"),
-        ... )
-        shape: (5, 8)
-        ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   ┆ reverse_A ┆ reverse_fruits ┆ reverse_B ┆ reverse_cars │
-        │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---       ┆ ---            ┆ ---       ┆ ---          │
-        │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64       ┆ str            ┆ i64       ┆ str          │
-        ╞═════╪════════╪═════╪════════╪═══════════╪════════════════╪═══════════╪══════════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 5         ┆ banana         ┆ 1         ┆ beetle       │
-        │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 4         ┆ apple          ┆ 2         ┆ beetle       │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ 3         ┆ apple          ┆ 3         ┆ beetle       │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2         ┆ banana         ┆ 4         ┆ audi         │
-        │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
-        └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
-
-        """  # noqa: W505
-        return self._from_pyexpr(self._pyexpr.prefix(prefix))
-
-    def suffix(self, suffix: str) -> Self:
-        """
-        Add a suffix to the root column name of the expression.
-
-        Parameters
-        ----------
-        suffix
-            Suffix to add to root column name.
-
-        See Also
-        --------
-        alias
-        map_alias
-        prefix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1, 2, 3, 4, 5],
-        ...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
-        ...         "B": [5, 4, 3, 2, 1],
-        ...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        ...     }
-        ... )
-        >>> df
-        shape: (5, 4)
-        ┌─────┬────────┬─────┬────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   │
-        │ --- ┆ ---    ┆ --- ┆ ---    │
-        │ i64 ┆ str    ┆ i64 ┆ str    │
-        ╞═════╪════════╪═════╪════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle │
-        │ 2   ┆ banana ┆ 4   ┆ audi   │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle │
-        │ 5   ┆ banana ┆ 1   ┆ beetle │
-        └─────┴────────┴─────┴────────┘
-        >>> df.select(
-        ...     pl.all(),
-        ...     pl.all().reverse().suffix("_reverse"),
-        ... )
-        shape: (5, 8)
-        ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   ┆ A_reverse ┆ fruits_reverse ┆ B_reverse ┆ cars_reverse │
-        │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---       ┆ ---            ┆ ---       ┆ ---          │
-        │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64       ┆ str            ┆ i64       ┆ str          │
-        ╞═════╪════════╪═════╪════════╪═══════════╪════════════════╪═══════════╪══════════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 5         ┆ banana         ┆ 1         ┆ beetle       │
-        │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 4         ┆ apple          ┆ 2         ┆ beetle       │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ 3         ┆ apple          ┆ 3         ┆ beetle       │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2         ┆ banana         ┆ 4         ┆ audi         │
-        │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
-        └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
-
-        """  # noqa: W505
-        return self._from_pyexpr(self._pyexpr.suffix(suffix))
-
-    def map_alias(self, function: Callable[[str], str]) -> Self:
-        """
-        Rename the output of an expression by mapping a function over the root name.
-
-        Parameters
-        ----------
-        function
-            Function that maps root name to new name.
-
-        See Also
-        --------
-        alias
-        prefix
-        suffix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1, 2],
-        ...         "B": [3, 4],
-        ...     }
-        ... )
-
-        >>> df.select(pl.all().reverse().suffix("_reverse")).with_columns(
-        ...     pl.all().map_alias(
-        ...         # Remove "_reverse" suffix and convert to lower case.
-        ...         lambda col_name: col_name.rsplit("_reverse", 1)[0].lower()
-        ...     )
-        ... )
-        shape: (2, 4)
-        ┌───────────┬───────────┬─────┬─────┐
-        │ A_reverse ┆ B_reverse ┆ a   ┆ b   │
-        │ ---       ┆ ---       ┆ --- ┆ --- │
-        │ i64       ┆ i64       ┆ i64 ┆ i64 │
-        ╞═══════════╪═══════════╪═════╪═════╡
-        │ 2         ┆ 4         ┆ 2   ┆ 4   │
-        │ 1         ┆ 3         ┆ 1   ┆ 3   │
-        └───────────┴───────────┴─────┴─────┘
-
-
-        """
-        return self._from_pyexpr(self._pyexpr.map_alias(function))
 
     def is_not(self) -> Self:
         """
@@ -3249,7 +3282,7 @@ class Expr:
         breaks
             A list of unique cut points.
         labels
-            Labels to assign to bins. If given, the length must be len(probs) + 1.
+            Labels to assign to bins. If given, the length must be len(breaks) + 1.
         left_closed
             Whether intervals should be [) instead of the default of (]
         include_breaks
@@ -3492,14 +3525,14 @@ class Expr:
         ...     ]
         ... ).sort("group_col")
         shape: (2, 3)
-        ┌───────────┬──────┬─────┐
-        │ group_col ┆ lt   ┆ gte │
-        │ ---       ┆ ---  ┆ --- │
-        │ str       ┆ i64  ┆ i64 │
-        ╞═══════════╪══════╪═════╡
-        │ g1        ┆ 1    ┆ 2   │
-        │ g2        ┆ null ┆ 3   │
-        └───────────┴──────┴─────┘
+        ┌───────────┬─────┬─────┐
+        │ group_col ┆ lt  ┆ gte │
+        │ ---       ┆ --- ┆ --- │
+        │ str       ┆ i64 ┆ i64 │
+        ╞═══════════╪═════╪═════╡
+        │ g1        ┆ 1   ┆ 2   │
+        │ g2        ┆ 0   ┆ 3   │
+        └───────────┴─────┴─────┘
 
         """
         return self._from_pyexpr(self._pyexpr.filter(predicate._pyexpr))
@@ -3530,14 +3563,14 @@ class Expr:
         ...     ]
         ... ).sort("group_col")
         shape: (2, 3)
-        ┌───────────┬──────┬─────┐
-        │ group_col ┆ lt   ┆ gte │
-        │ ---       ┆ ---  ┆ --- │
-        │ str       ┆ i64  ┆ i64 │
-        ╞═══════════╪══════╪═════╡
-        │ g1        ┆ 1    ┆ 2   │
-        │ g2        ┆ null ┆ 3   │
-        └───────────┴──────┴─────┘
+        ┌───────────┬─────┬─────┐
+        │ group_col ┆ lt  ┆ gte │
+        │ ---       ┆ --- ┆ --- │
+        │ str       ┆ i64 ┆ i64 │
+        ╞═══════════╪═════╪═════╡
+        │ g1        ┆ 1   ┆ 2   │
+        │ g2        ┆ 0   ┆ 3   │
+        └───────────┴─────┴─────┘
 
         """
         return self.filter(predicate)
@@ -3613,6 +3646,10 @@ class Expr:
         """
         Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
 
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
+
         Depending on the context it has the following behavior:
 
         * Selection
@@ -3673,7 +3710,7 @@ class Expr:
 
         In a selection context, the function is applied by row.
 
-        >>> df.with_columns(
+        >>> df.with_columns(  # doctest: +SKIP
         ...     pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
         ... )
         shape: (4, 3)
@@ -3718,6 +3755,19 @@ class Expr:
 
         """
         # input x: Series of type list containing the group values
+        from polars.utils.udfs import warn_on_inefficient_apply
+
+        try:
+            root_names = self.meta.root_names()
+        except PolarsPanicError:
+            # no root names for pl.col('*')
+            pass
+        else:
+            if root_names:
+                warn_on_inefficient_apply(
+                    function, columns=root_names, apply_target="expr"
+                )
+
         if pass_name:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
@@ -4958,18 +5008,17 @@ class Expr:
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Self:
         """
-        Fill nulls with linear interpolation over missing values.
-
-        Can also be used to regrid data to a new grid - see examples below.
+        Fill null values using interpolation.
 
         Parameters
         ----------
-        method : {'linear', 'linear'}
-            Interpolation method
+        method : {'linear', 'nearest'}
+            Interpolation method.
 
         Examples
         --------
-        >>> # Fill nulls with linear interpolation
+        Fill null values using linear interpolation.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, None, 3],
@@ -4987,6 +5036,23 @@ class Expr:
         │ 2   ┆ NaN │
         │ 3   ┆ 3.0 │
         └─────┴─────┘
+
+        Fill null values using nearest interpolation.
+
+        >>> df.select(pl.all().interpolate("nearest"))
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1.0 │
+        │ 3   ┆ NaN │
+        │ 3   ┆ 3.0 │
+        └─────┴─────┘
+
+        Regrid data to a new grid.
+
         >>> df_original_grid = pl.DataFrame(
         ...     {
         ...         "grid_points": [1, 3, 10],

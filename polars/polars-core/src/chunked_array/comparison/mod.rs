@@ -1004,6 +1004,23 @@ impl BooleanChunked {
     pub fn any(&self) -> bool {
         self.downcast_iter().any(compute::boolean::any)
     }
+
+    // Three-valued versions which can return None
+    pub fn all_3val(&self, drop_nulls: bool) -> Option<bool> {
+        if drop_nulls || self.null_count() == 0 {
+            Some(self.all())
+        } else {
+            None
+        }
+    }
+    pub fn any_3val(&self, drop_nulls: bool) -> Option<bool> {
+        let res = self.any();
+        if drop_nulls || res {
+            Some(res)
+        } else {
+            None
+        }
+    }
 }
 
 // private

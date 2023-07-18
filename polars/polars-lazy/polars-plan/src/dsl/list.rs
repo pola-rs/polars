@@ -243,7 +243,7 @@ impl ListNameSpace {
     ///
     /// # Schema
     ///
-    /// A polars [`LazyFrame`] needs to know the schema at all time. The caller therefore must provide
+    /// A polars `LazyFrame` needs to know the schema at all time. The caller therefore must provide
     /// an `upper_bound` of struct fields that will be set.
     /// If this is incorrectly downstream operation may fail. For instance an `all().sum()` expression
     /// will look in the current schema to determine which columns to select.

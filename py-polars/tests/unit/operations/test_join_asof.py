@@ -441,6 +441,31 @@ def test_asof_join_nearest_by() -> None:
     out = df1.join_asof(df2, on="asof_key", by="group", strategy="nearest")
     assert_frame_equal(out, expected)
 
+    a = pl.DataFrame(
+        {
+            "code": [676, 35, 676, 676, 676],
+            "time": [364360, 364370, 364380, 365400, 367440],
+        }
+    )
+    b = pl.DataFrame(
+        {
+            "code": [676, 676, 35, 676, 676],
+            "time": [364000, 365000, 365000, 366000, 367000],
+            "price": [1.0, 2.0, 50, 3.0, None],
+        }
+    )
+
+    expected = pl.DataFrame(
+        {
+            "code": [676, 35, 676, 676, 676],
+            "time": [364360, 364370, 364380, 365400, 367440],
+            "price": [1.0, 50.0, 1.0, 2.0, None],
+        }
+    )
+
+    out = a.join_asof(b, by="code", on="time", strategy="nearest")
+    assert_frame_equal(out, expected)
+
 
 def test_asof_join_nearest_by_date() -> None:
     df1 = pl.DataFrame(

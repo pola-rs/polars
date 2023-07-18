@@ -28,7 +28,7 @@ def all(
 @deprecated_alias(columns="exprs")
 def all(
     exprs: IntoExpr | Iterable[IntoExpr] | None = None, *more_exprs: IntoExpr
-) -> Expr | bool:
+) -> Expr | bool | None:
     """
     Either return an expression representing all columns, or evaluate a bitwise AND operation.
 
@@ -40,7 +40,7 @@ def all(
 
     Otherwise, this function computes the bitwise AND horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.all_horizontal`` instead.
 
     Parameters
     ----------
@@ -49,6 +49,10 @@ def all(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    all_horizontal
 
     Examples
     --------
@@ -96,11 +100,7 @@ def all(
         elif isinstance(exprs, str):
             return F.col(exprs).all()
 
-    warnings.warn(
-        "using `all` for horizontal computation is deprecated. Use `all_horizontal` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
+    _warn_for_deprecated_horizontal_use("all")
     return F.all_horizontal(exprs, *more_exprs)
 
 
@@ -115,7 +115,9 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
 
 
 @deprecated_alias(columns="exprs")
-def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | bool:
+def any(
+    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+) -> Expr | bool | None:
     """
     Evaluate a bitwise OR operation.
 
@@ -126,7 +128,11 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
 
     Otherwise, this function computes the bitwise OR horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.any_horizontal`` instead.
+
+    See Also
+    --------
+    any_horizontal
 
     Parameters
     ----------
@@ -166,11 +172,7 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
         elif isinstance(exprs, str):
             return F.col(exprs).any()
 
-    warnings.warn(
-        "using `any` for horizontal computation is deprecated. Use `any_horizontal` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
+    _warn_for_deprecated_horizontal_use("any")
     return F.any_horizontal(exprs, *more_exprs)
 
 
@@ -195,7 +197,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
 
     Otherwise, this function computes the maximum value horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.max_horizontal`` instead.
 
     Parameters
     ----------
@@ -204,6 +206,10 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    max_horizontal
 
     Examples
     --------
@@ -260,11 +266,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
         elif isinstance(exprs, str):
             return F.col(exprs).max()
 
-    warnings.warn(
-        "using `max` for horizontal computation is deprecated. Use `max_horizontal` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
+    _warn_for_deprecated_horizontal_use("max")
     return F.max_horizontal(exprs, *more_exprs)
 
 
@@ -291,7 +293,7 @@ def min(
 
     Otherwise, this function computes the minimum value horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.min_horizontal`` instead.
 
     Parameters
     ----------
@@ -300,6 +302,10 @@ def min(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    min_horizontal
 
     Examples
     --------
@@ -356,11 +362,7 @@ def min(
         elif isinstance(exprs, str):
             return F.col(exprs).min()
 
-    warnings.warn(
-        "using `min` for horizontal computation is deprecated. Use `min_horizontal` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
+    _warn_for_deprecated_horizontal_use("min")
     return F.min_horizontal(exprs, *more_exprs)
 
 
@@ -387,7 +389,7 @@ def sum(
     **This functionality is deprecated**.
 
     Otherwise, this function computes the sum horizontally across multiple columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.sum_horizontal`` instead.
 
     Parameters
     ----------
@@ -396,6 +398,10 @@ def sum(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    sum_horizontal
 
     Examples
     --------
@@ -453,11 +459,7 @@ def sum(
         elif isinstance(exprs, str):
             return F.col(exprs).sum()
 
-    warnings.warn(
-        "using `sum` for horizontal computation is deprecated. Use `sum_horizontal` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
+    _warn_for_deprecated_horizontal_use("sum")
     return F.sum_horizontal(exprs, *more_exprs)
 
 
@@ -485,7 +487,7 @@ def cumsum(
 
     Otherwise, this function computes the cumulative sum horizontally across multiple
     columns.
-    **This functionality is deprecated**.
+    **This functionality is deprecated**, use ``pl.cumsum_horizontal`` instead.
 
     Parameters
     ----------
@@ -494,6 +496,10 @@ def cumsum(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+
+    See Also
+    --------
+    cumsum_horizontal
 
     Examples
     --------
@@ -527,9 +533,13 @@ def cumsum(
         elif isinstance(exprs, str):
             return F.col(exprs).cumsum()
 
+    _warn_for_deprecated_horizontal_use("cumsum")
+    return F.cumsum_horizontal(exprs, *more_exprs)
+
+
+def _warn_for_deprecated_horizontal_use(name: str) -> None:
     warnings.warn(
-        "using `cumsum` for horizontal computation is deprecated. Use `cumsum_horizontal` instead.",
+        f"using `{name}` for horizontal computation is deprecated. Use `{name}_horizontal` instead.",
         DeprecationWarning,
         stacklevel=find_stacklevel(),
     )
-    return F.cumsum_horizontal(exprs, *more_exprs)

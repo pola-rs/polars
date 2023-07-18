@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -326,15 +327,19 @@ def test_tree_validation_streaming() -> None:
 
 def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     q = pl.DataFrame({"a": [1, 2]}).lazy()
 
-    (
-        q.select(pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Int64)).collect(
-            streaming=True
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
+        (
+            q.select(pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Int64)).collect(
+                streaming=True
+            )
         )
-    )
-    (_, err) = capfd.readouterr()
-    assert "df -> projection -> ordered_sink" in err
+        (_, err) = capfd.readouterr()
+        assert "df -> projection -> ordered_sink" in err
 
 
 def test_streaming_ternary() -> None:

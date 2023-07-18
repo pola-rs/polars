@@ -34,12 +34,7 @@ pub trait SeriesOpsTime {
     }
     /// Apply a rolling quantile to a Series.
     #[cfg(feature = "rolling_window")]
-    fn rolling_quantile(
-        &self,
-        _quantile: f64,
-        _interpolation: QuantileInterpolOptions,
-        _options: RollingOptionsImpl,
-    ) -> PolarsResult<Series> {
+    fn rolling_quantile(&self, _options: RollingOptionsImpl) -> PolarsResult<Series> {
         invalid_operation!(self)
     }
 
@@ -85,16 +80,9 @@ impl SeriesOpsTime for Series {
     }
     /// Apply a rolling quantile to a Series.
     #[cfg(feature = "rolling_window")]
-    fn rolling_quantile(
-        &self,
-        quantile: f64,
-        interpolation: QuantileInterpolOptions,
-        options: RollingOptionsImpl,
-    ) -> PolarsResult<Series> {
-        self.to_ops()
-            .rolling_quantile(quantile, interpolation, options)
+    fn rolling_quantile(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
+        self.to_ops().rolling_quantile(options)
     }
-
     #[cfg(feature = "rolling_window")]
     fn rolling_min(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         self.to_ops().rolling_min(options)

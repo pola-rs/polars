@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use crossbeam_queue::SegQueue;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::POOL;
 use polars_io::ipc::IpcReader;
@@ -186,8 +187,8 @@ fn partition_df(df: DataFrame, partitions: &IdxCa) -> PolarsResult<(DfIter, IdxC
     let out = match groups {
         GroupsProxy::Idx(idx) => {
             let iter = idx.into_iter().map(move |(_, group)| {
-                // groups are in bounds
-                unsafe { df._take_unchecked_slice(&group, false) }
+                // groups are in bounds and sorted
+                unsafe { df._take_unchecked_slice_sorted(&group, false, IsSorted::Ascending) }
             });
             Box::new(iter) as DfIter
         }

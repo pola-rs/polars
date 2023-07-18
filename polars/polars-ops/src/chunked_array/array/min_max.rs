@@ -30,7 +30,7 @@ where
         (0..values.len())
             .step_by(width)
             .map(|start| {
-                let sliced = values.clone().sliced_unchecked(start, start + width);
+                let sliced = unsafe { values.clone().sliced_unchecked(start, start + width) };
                 arr_agg(sliced)
             })
             .collect()

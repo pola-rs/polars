@@ -32,15 +32,8 @@ where
         self.0.cast(&DataType::Float64)?.rolling_median(options)
     }
 
-    fn rolling_quantile(
-        &self,
-        quantile: f64,
-        interpolation: QuantileInterpolOptions,
-        options: RollingOptionsImpl,
-    ) -> PolarsResult<Series> {
-        self.0
-            .cast(&DataType::Float64)?
-            .rolling_quantile(quantile, interpolation, options)
+    fn rolling_quantile(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
+        self.0.cast(&DataType::Float64)?.rolling_quantile(options)
     }
 
     fn rolling_min(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {

@@ -20,6 +20,11 @@ impl DataFrame {
             DataType::UInt64 => numeric_transpose::<UInt64Type>(&self.columns),
             DataType::Float32 => numeric_transpose::<Float32Type>(&self.columns),
             DataType::Float64 => numeric_transpose::<Float64Type>(&self.columns),
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                // this requires to support `Object` in Series::iter which we don't yet
+                polars_bail!(InvalidOperation: "Object dtype not supported in 'transpose'")
+            }
             _ => {
                 let phys_dtype = dtype.to_physical();
                 let mut buffers = (0..new_width)
