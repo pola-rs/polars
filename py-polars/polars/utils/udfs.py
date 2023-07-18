@@ -121,7 +121,9 @@ def _inst(opname: str, argrepr: str, argval: str) -> tuple[str, str, str]:
     return opname, argrepr, argval
 
 
-def _rewrite_as_expression(ops: list[tuple[str, str, Any]], apply_target: str) -> bool:
+def _can_rewrite_as_expression(
+    ops: list[tuple[str, str, Any]], apply_target: str
+) -> bool:
     """
     Determine if bytecode indicates only simple binary ops and/or comparisons.
 
@@ -214,6 +216,6 @@ def warn_on_inefficient_apply(
     ops = _get_bytecode_ops(function)
 
     # if ops indicate a trivial function that should be native, warn about it
-    if _rewrite_as_expression(ops, apply_target):
+    if _can_rewrite_as_expression(ops, apply_target):
         if suggestion := _to_polars_expression(ops, col, apply_target):
             _generate_warning(function, suggestion, col, param_name)
