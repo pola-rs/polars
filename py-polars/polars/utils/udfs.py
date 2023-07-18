@@ -135,7 +135,6 @@ def _to_polars_expression(
     ops: list[tuple[str, str, Any]], col: str, apply_target: str
 ) -> str | None:
     """Take postfix opcode stack and translate to native polars expression."""
-    # const / unchanged
     if apply_target == "expr":
         stack = []  # type: ignore[var-annotated]
         for op in ops:
