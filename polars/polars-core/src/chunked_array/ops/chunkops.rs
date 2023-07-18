@@ -73,6 +73,11 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             }
         }
         self.length = inner(&self.chunks) as IdxSize;
+
+        if self.length <= 1 {
+            self.set_sorted_flag(IsSorted::Ascending)
+        }
+
         #[cfg(feature = "python")]
         assert!(
             self.length < IdxSize::MAX,
