@@ -1734,8 +1734,7 @@ def collect_all(
     """
     Collect multiple LazyFrames at the same time.
 
-    This runs all the computation graphs in parallel on the Polars threadpool,
-    and returns the collected DataFrames in the same order as input.
+    This runs all the computation graphs in parallel on the Polars threadpool.
 
     Parameters
     ----------
@@ -1761,6 +1760,7 @@ def collect_all(
     Returns
     -------
     List[DataFrame]
+        The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
     if no_optimization:
