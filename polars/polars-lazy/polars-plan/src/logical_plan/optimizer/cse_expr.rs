@@ -419,6 +419,17 @@ impl<'a> CommonSubExprOptimizer<'a> {
 impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
     type Node = ALogicalPlanNode;
 
+    fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<RewriteRecursion> {
+        use ALogicalPlan::*;
+        Ok(
+            if matches!(node.to_alp(), Projection { .. } | HStack { .. }) {
+                RewriteRecursion::MutateAndContinue
+            } else {
+                RewriteRecursion::NoMutateAndContinue
+            },
+        )
+    }
+
     fn mutate(&mut self, mut node: Self::Node) -> PolarsResult<Self::Node> {
         let mut expr_arena = Arena::new();
         std::mem::swap(self.expr_arena, &mut expr_arena);
@@ -429,8 +440,6 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
         id_array_offsets.clear();
         self.replaced_identifiers.clear();
 
-        // we will extend the match later
-        #[allow(clippy::single_match)]
         match node.to_alp() {
             ALogicalPlan::Projection {
                 input,
@@ -441,6 +450,20 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                     let lp = ALogicalPlan::Projection {
                         input: *input,
                         expr,
+                        schema: schema.clone(),
+                    };
+                    node.replace(lp);
+                }
+            }
+            ALogicalPlan::HStack {
+                input,
+                exprs,
+                schema,
+            } => {
+                if let Some(exprs) = self.find_cse(exprs, &mut expr_arena, &mut id_array_offsets)? {
+                    let lp = ALogicalPlan::HStack {
+                        input: *input,
+                        exprs,
                         schema: schema.clone(),
                     };
                     node.replace(lp);
