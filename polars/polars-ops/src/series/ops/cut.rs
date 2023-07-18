@@ -70,7 +70,7 @@ pub fn cut(
     let sorted_breaks = breaks.as_mut_slice();
     sorted_breaks.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
     polars_ensure!(sorted_breaks.windows(2).all(|x| x[0] != x[1]), Duplicate: "Breaks are not unique");
-    if sorted_breaks.len() > 0 {
+    if !sorted_breaks.is_empty() {
         polars_ensure!(sorted_breaks[0] > f64::NEG_INFINITY, ComputeError: "Don't include -inf in breaks");
         polars_ensure!(sorted_breaks[sorted_breaks.len() - 1] < f64::INFINITY, ComputeError: "Don't include inf in breaks");
     }
