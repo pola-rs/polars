@@ -512,12 +512,12 @@ class Expr:
 
     def alias(self, name: str) -> Self:
         """
-        Rename the output of an expression.
+        Rename the expression.
 
         Parameters
         ----------
         name
-            New name.
+            The new name.
 
         See Also
         --------
@@ -527,40 +527,227 @@ class Expr:
 
         Examples
         --------
+        Rename an expression to avoid overwriting an existing column.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3],
-        ...         "b": ["a", "b", None],
+        ...         "b": ["x", "y", "z"],
         ...     }
         ... )
-        >>> df
-        shape: (3, 2)
-        ┌─────┬──────┐
-        │ a   ┆ b    │
-        │ --- ┆ ---  │
-        │ i64 ┆ str  │
-        ╞═════╪══════╡
-        │ 1   ┆ a    │
-        │ 2   ┆ b    │
-        │ 3   ┆ null │
-        └─────┴──────┘
-        >>> df.select(
-        ...     pl.col("a").alias("bar"),
-        ...     pl.col("b").alias("foo"),
+        >>> df.with_columns(
+        ...     pl.col("a") + 10,
+        ...     pl.col("b").str.to_uppercase().alias("c"),
         ... )
-        shape: (3, 2)
-        ┌─────┬──────┐
-        │ bar ┆ foo  │
-        │ --- ┆ ---  │
-        │ i64 ┆ str  │
-        ╞═════╪══════╡
-        │ 1   ┆ a    │
-        │ 2   ┆ b    │
-        │ 3   ┆ null │
-        └─────┴──────┘
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 11  ┆ x   ┆ X   │
+        │ 12  ┆ y   ┆ Y   │
+        │ 13  ┆ z   ┆ Z   │
+        └─────┴─────┴─────┘
+
+        Overwrite the default name of literal columns to prevent errors due to duplicate
+        column names.
+
+        >>> df.with_columns(
+        ...     pl.lit(True).alias("c"),
+        ...     pl.lit(4.0).alias("d"),
+        ... )
+        shape: (3, 4)
+        ┌─────┬─────┬──────┬─────┐
+        │ a   ┆ b   ┆ c    ┆ d   │
+        │ --- ┆ --- ┆ ---  ┆ --- │
+        │ i64 ┆ str ┆ bool ┆ f64 │
+        ╞═════╪═════╪══════╪═════╡
+        │ 1   ┆ x   ┆ true ┆ 4.0 │
+        │ 2   ┆ y   ┆ true ┆ 4.0 │
+        │ 3   ┆ z   ┆ true ┆ 4.0 │
+        └─────┴─────┴──────┴─────┘
 
         """
         return self._from_pyexpr(self._pyexpr.alias(name))
+
+    def map_alias(self, function: Callable[[str], str]) -> Self:
+        """
+        Rename the output of an expression by mapping a function over the root name.
+
+        Parameters
+        ----------
+        function
+            Function that maps a root name to a new name.
+
+        See Also
+        --------
+        alias
+        prefix
+        suffix
+
+        Examples
+        --------
+        Remove a common suffix and convert to lower case.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A_reverse": [3, 2, 1],
+        ...         "B_reverse": ["z", "y", "x"],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.all().reverse().map_alias(lambda c: c.rstrip("_reverse").lower())
+        ... )
+        shape: (3, 4)
+        ┌───────────┬───────────┬─────┬─────┐
+        │ A_reverse ┆ B_reverse ┆ a   ┆ b   │
+        │ ---       ┆ ---       ┆ --- ┆ --- │
+        │ i64       ┆ str       ┆ i64 ┆ str │
+        ╞═══════════╪═══════════╪═════╪═════╡
+        │ 3         ┆ z         ┆ 1   ┆ x   │
+        │ 2         ┆ y         ┆ 2   ┆ y   │
+        │ 1         ┆ x         ┆ 3   ┆ z   │
+        └───────────┴───────────┴─────┴─────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.map_alias(function))
+
+    def prefix(self, prefix: str) -> Self:
+        """
+        Add a prefix to the root column name of the expression.
+
+        Parameters
+        ----------
+        prefix
+            Prefix to add to the root column name.
+
+        Notes
+        -----
+        This will undo any previous renaming operations on the expression.
+
+        Due to implementation constraints, this method can only be called as the last
+        expression in a chain.
+
+        See Also
+        --------
+        suffix
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["x", "y", "z"],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.all().reverse().prefix("reverse_"))
+        shape: (3, 4)
+        ┌─────┬─────┬───────────┬───────────┐
+        │ a   ┆ b   ┆ reverse_a ┆ reverse_b │
+        │ --- ┆ --- ┆ ---       ┆ ---       │
+        │ i64 ┆ str ┆ i64       ┆ str       │
+        ╞═════╪═════╪═══════════╪═══════════╡
+        │ 1   ┆ x   ┆ 3         ┆ z         │
+        │ 2   ┆ y   ┆ 2         ┆ y         │
+        │ 3   ┆ z   ┆ 1         ┆ x         │
+        └─────┴─────┴───────────┴───────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.prefix(prefix))
+
+    def suffix(self, suffix: str) -> Self:
+        """
+        Add a suffix to the root column name of the expression.
+
+        Parameters
+        ----------
+        suffix
+            Suffix to add to the root column name.
+
+        Notes
+        -----
+        This will undo any previous renaming operations on the expression.
+
+        Due to implementation constraints, this method can only be called as the last
+        expression in a chain.
+
+        See Also
+        --------
+        prefix
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["x", "y", "z"],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.all().reverse().suffix("_reverse"))
+        shape: (3, 4)
+        ┌─────┬─────┬───────────┬───────────┐
+        │ a   ┆ b   ┆ a_reverse ┆ b_reverse │
+        │ --- ┆ --- ┆ ---       ┆ ---       │
+        │ i64 ┆ str ┆ i64       ┆ str       │
+        ╞═════╪═════╪═══════════╪═══════════╡
+        │ 1   ┆ x   ┆ 3         ┆ z         │
+        │ 2   ┆ y   ┆ 2         ┆ y         │
+        │ 3   ┆ z   ┆ 1         ┆ x         │
+        └─────┴─────┴───────────┴───────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.suffix(suffix))
+
+    def keep_name(self) -> Self:
+        """
+        Keep the original root name of the expression.
+
+        Notes
+        -----
+        Due to implementation constraints, this method can only be called as the last
+        expression in a chain.
+
+        See Also
+        --------
+        alias
+
+        Examples
+        --------
+        Undo an alias operation.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2],
+        ...         "b": [3, 4],
+        ...     }
+        ... )
+        >>> df.with_columns((pl.col("a") * 9).alias("c").keep_name())
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 9   ┆ 3   │
+        │ 18  ┆ 4   │
+        └─────┴─────┘
+
+        Prevent errors due to duplicate column names.
+
+        >>> df.select((pl.lit(10) / pl.all()).keep_name())
+        shape: (2, 2)
+        ┌──────┬──────────┐
+        │ a    ┆ b        │
+        │ ---  ┆ ---      │
+        │ f64  ┆ f64      │
+        ╞══════╪══════════╡
+        │ 10.0 ┆ 3.333333 │
+        │ 5.0  ┆ 2.5      │
+        └──────┴──────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.keep_name())
 
     def exclude(
         self,
@@ -683,50 +870,6 @@ class Expr:
                 f"Invalid input for `exclude`. Expected `str` or `DataType`, got {type(columns)!r}"
             )
 
-    def keep_name(self) -> Self:
-        """
-        Keep the original root name of the expression.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2],
-        ...         "b": [3, 4],
-        ...     }
-        ... )
-
-        Keep original column name to undo an alias operation.
-
-        >>> df.with_columns([(pl.col("a") * 9).alias("c").keep_name()])
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 9   ┆ 3   │
-        │ 18  ┆ 4   │
-        └─────┴─────┘
-
-        Prevent
-        "DuplicateError: Column with name: 'literal' has more than one occurrences"
-        errors.
-
-        >>> df.select((pl.lit(10) / pl.all()).keep_name())
-        shape: (2, 2)
-        ┌──────┬──────────┐
-        │ a    ┆ b        │
-        │ ---  ┆ ---      │
-        │ f64  ┆ f64      │
-        ╞══════╪══════════╡
-        │ 10.0 ┆ 3.333333 │
-        │ 5.0  ┆ 2.5      │
-        └──────┴──────────┘
-
-        """
-        return self._from_pyexpr(self._pyexpr.keep_name())
-
     def pipe(
         self,
         function: Callable[Concatenate[Expr, P], T],
@@ -777,166 +920,6 @@ class Expr:
 
         '''
         return function(self, *args, **kwargs)
-
-    def prefix(self, prefix: str) -> Self:
-        """
-        Add a prefix to the root column name of the expression.
-
-        Parameters
-        ----------
-        prefix
-            Prefix to add to root column name.
-
-        See Also
-        --------
-        alias
-        map_alias
-        suffix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1, 2, 3, 4, 5],
-        ...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
-        ...         "B": [5, 4, 3, 2, 1],
-        ...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        ...     }
-        ... )
-        >>> df
-        shape: (5, 4)
-        ┌─────┬────────┬─────┬────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   │
-        │ --- ┆ ---    ┆ --- ┆ ---    │
-        │ i64 ┆ str    ┆ i64 ┆ str    │
-        ╞═════╪════════╪═════╪════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle │
-        │ 2   ┆ banana ┆ 4   ┆ audi   │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle │
-        │ 5   ┆ banana ┆ 1   ┆ beetle │
-        └─────┴────────┴─────┴────────┘
-        >>> df.select(
-        ...     pl.all(),
-        ...     pl.all().reverse().prefix("reverse_"),
-        ... )
-        shape: (5, 8)
-        ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   ┆ reverse_A ┆ reverse_fruits ┆ reverse_B ┆ reverse_cars │
-        │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---       ┆ ---            ┆ ---       ┆ ---          │
-        │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64       ┆ str            ┆ i64       ┆ str          │
-        ╞═════╪════════╪═════╪════════╪═══════════╪════════════════╪═══════════╪══════════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 5         ┆ banana         ┆ 1         ┆ beetle       │
-        │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 4         ┆ apple          ┆ 2         ┆ beetle       │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ 3         ┆ apple          ┆ 3         ┆ beetle       │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2         ┆ banana         ┆ 4         ┆ audi         │
-        │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
-        └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
-
-        """  # noqa: W505
-        return self._from_pyexpr(self._pyexpr.prefix(prefix))
-
-    def suffix(self, suffix: str) -> Self:
-        """
-        Add a suffix to the root column name of the expression.
-
-        Parameters
-        ----------
-        suffix
-            Suffix to add to root column name.
-
-        See Also
-        --------
-        alias
-        map_alias
-        prefix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1, 2, 3, 4, 5],
-        ...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
-        ...         "B": [5, 4, 3, 2, 1],
-        ...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        ...     }
-        ... )
-        >>> df
-        shape: (5, 4)
-        ┌─────┬────────┬─────┬────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   │
-        │ --- ┆ ---    ┆ --- ┆ ---    │
-        │ i64 ┆ str    ┆ i64 ┆ str    │
-        ╞═════╪════════╪═════╪════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle │
-        │ 2   ┆ banana ┆ 4   ┆ audi   │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle │
-        │ 5   ┆ banana ┆ 1   ┆ beetle │
-        └─────┴────────┴─────┴────────┘
-        >>> df.select(
-        ...     pl.all(),
-        ...     pl.all().reverse().suffix("_reverse"),
-        ... )
-        shape: (5, 8)
-        ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   ┆ A_reverse ┆ fruits_reverse ┆ B_reverse ┆ cars_reverse │
-        │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---       ┆ ---            ┆ ---       ┆ ---          │
-        │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64       ┆ str            ┆ i64       ┆ str          │
-        ╞═════╪════════╪═════╪════════╪═══════════╪════════════════╪═══════════╪══════════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 5         ┆ banana         ┆ 1         ┆ beetle       │
-        │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 4         ┆ apple          ┆ 2         ┆ beetle       │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ 3         ┆ apple          ┆ 3         ┆ beetle       │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2         ┆ banana         ┆ 4         ┆ audi         │
-        │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
-        └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
-
-        """  # noqa: W505
-        return self._from_pyexpr(self._pyexpr.suffix(suffix))
-
-    def map_alias(self, function: Callable[[str], str]) -> Self:
-        """
-        Rename the output of an expression by mapping a function over the root name.
-
-        Parameters
-        ----------
-        function
-            Function that maps root name to new name.
-
-        See Also
-        --------
-        alias
-        prefix
-        suffix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1, 2],
-        ...         "B": [3, 4],
-        ...     }
-        ... )
-
-        >>> df.select(pl.all().reverse().suffix("_reverse")).with_columns(
-        ...     pl.all().map_alias(
-        ...         # Remove "_reverse" suffix and convert to lower case.
-        ...         lambda col_name: col_name.rsplit("_reverse", 1)[0].lower()
-        ...     )
-        ... )
-        shape: (2, 4)
-        ┌───────────┬───────────┬─────┬─────┐
-        │ A_reverse ┆ B_reverse ┆ a   ┆ b   │
-        │ ---       ┆ ---       ┆ --- ┆ --- │
-        │ i64       ┆ i64       ┆ i64 ┆ i64 │
-        ╞═══════════╪═══════════╪═════╪═════╡
-        │ 2         ┆ 4         ┆ 2   ┆ 4   │
-        │ 1         ┆ 3         ┆ 1   ┆ 3   │
-        └───────────┴───────────┴─────┴─────┘
-
-
-        """
-        return self._from_pyexpr(self._pyexpr.map_alias(function))
 
     def is_not(self) -> Self:
         """
