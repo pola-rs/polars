@@ -110,15 +110,15 @@ macro_rules! minmax_window {
                 if leading_nc == ilen {
                     return (None, ilen);
                 }
-                let start = start + leading_nc;
-                let (mut m, mut m_idx) = (slice.get_unchecked(start), start);
+                let vstart = start + leading_nc; // First _V_alid entry start
+                let (mut m, mut m_idx) = (slice.get_unchecked(vstart), vstart);
                 if sorted_to >= end {
-                    let remaining_nc = validity.null_count_range(start, end - start);
+                    let remaining_nc = validity.null_count_range(vstart, end - vstart);
                     (Some((m_idx, m)), leading_nc + remaining_nc)
                 } else {
-                    let start = (start+1).max(sorted_to);
-                    let mut remaining_nc = 0;
-                    for i in start..end {
+                    let tstart = (vstart+1).max(sorted_to); // _T_ail elements to check
+                    let mut remaining_nc = validity.null_count_range(vstart, tstart - vstart);
+                    for i in tstart..end {
                         if !validity.get_bit_unchecked(i) {
                             remaining_nc += 1;
                             continue;
@@ -189,7 +189,9 @@ macro_rules! minmax_window {
                     self.get_m_m_idx_and_null_count(entering_start, end)
                 };
                 let empty_overlap = old_last_end <= start;
-                self.null_count = self.null_count + entering_nc - leaving_nc;
+                //println!("start: {}, end: {}, nc: {}, entering_nc: {}, leaving_nc: {}",
+                //         start, end, self.null_count, entering_nc, leaving_nc);
+                self.null_count = (self.null_count + entering_nc) - leaving_nc;
 
                 if entering.is_some_and(|em| self.m.is_none() || empty_overlap ||$new_is_m(&self.m.unwrap(), em.1)) {
                     // The entering extremum "beats" the previous extremum so we can ignore the overlap
@@ -200,7 +202,10 @@ macro_rules! minmax_window {
                     return self.m;
                 }
                 // Otherwise get the min of the overlapping window and the entering min
-                let (previous, _) = self.get_m_m_idx_and_null_count(start, old_last_end);
+                let (previous, _) = match self.m {
+                    None => (None, 0),
+                    Some(_) => self.get_m_m_idx_and_null_count(start, old_last_end)
+                };
                 match (previous, entering) {
                     (Some(pm), Some(em)) => {
                         if $new_is_m(pm.1, em.1) {
