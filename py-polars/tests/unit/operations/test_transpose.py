@@ -150,5 +150,8 @@ def test_transpose_logical_data() -> None:
 
 
 def test_err_transpose_object() -> None:
+    class CustomObject:
+        pass
+
     with pytest.raises(pl.InvalidOperationError):
-        pl.DataFrame([object()]).transpose()
+        pl.DataFrame([CustomObject()]).transpose()
