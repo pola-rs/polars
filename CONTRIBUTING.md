@@ -128,6 +128,88 @@ Two other things to keep in mind:
 - If you add code that should be tested, add tests.
 - If you change the public API, [update the documentation](#api-reference).
 
+
+### Debugging Environment
+
+Due to the way that python and rust interoperate, debugging the Rust side of development from Python calls can be difficult. For this reason, we have provided
+a guide and several tools to setup up [Visual Studio Code](https://code.visualstudio.com/) with a debugging environment that makes debugging relatively simple.
+
+#### VS Code Extensions
+
+Install The [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) and the [Task Shell Input](https://marketplace.visualstudio.com/items?itemName=augustocdias.tasks-shell-input) extensions.
+You can install from within a VS Code terminal with the following (use `-r` to run in the current VSCode window):
+
+```shell
+code -r --install-extension vadimcn.vscode-lldb augustocdias.tasks-shell-input
+code -r --install-extension augustocdias.tasks-shell-input
+```
+
+#### Debug Configuration
+
+Copy the following `configurations` and `inputs` components to your `launch.json` file.
+
+<details><summary><code><b>launch.json</b></code></summary>
+
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Debug Rust",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/py-polars/debug/launch.py",
+            "args": [
+                "${file}",
+            ],
+            "console": "internalConsole",
+            "justMyCode": true,
+            "serverReadyAction": {
+                "pattern": "pID = ([0-9]+)",
+                "action": "startDebugging",
+                "name": "Rust LLDB",
+            },
+        },
+        {
+            "name": "Rust LLDB",
+            "type": "lldb",
+            "request": "attach",
+            "program": "${workspaceFolder}/py-polars/.venv/bin/pytho",
+            "pid": "${input:readPIDDirectTestFile}",
+            "stopOnEntry": false,
+            "sourceLanguages": [
+                "rust"
+            ],
+            "presentation": {
+                "hidden": true,
+            },
+        },
+    ],
+    "inputs": [
+        {
+            "id": "readPIDDirectTestFile",
+            "type": "command",
+            "command": "shellCommand.execute",
+            "args": {
+                "command": "ps -aux | grep 'debugpy/launcher/../../debugpy' | grep '/[h]ome/${TEST_FILE_PATH}' | awk '{print $2}'",
+                "cwd": "${workspaceFolder}",
+                "useFirstResult": true,
+            },
+        },
+    ],
+}
+```
+</details>
+<br>
+
+Next, in the `Run and Debug` panel on the left, select `Python: Debug Rust` from the drop-down menu on top.
+
+
+#### Debugging a file
+
+At this point, you should be able to set a breakpoint in any `.rs` file located within the codebase. To stop at this breakpoint, open in your editor a python script that calls polars code and hit either `F5` to launch the `Python: Debug Rust` debugging configuration.
+
+
 ### Pull requests
 
 When you have resolved your issue, [open a pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork) in the Polars repository.
