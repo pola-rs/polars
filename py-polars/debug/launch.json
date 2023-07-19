@@ -2,15 +2,15 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Rust Debug Launcher",
+            "name": "Python: Debug Rust",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/py-polars/debug/launch.py",
             "args": [
-                "${file}",
+                "${file}"
                 // any other input arguments here
             ],
-            "console": "integratedTerminal",
+            "console": "internalConsole",
             "justMyCode": true,
             "serverReadyAction": {
                 "pattern": "pID = ([0-9]+)",
@@ -22,22 +22,27 @@
             "name": "Rust LLDB",
             "type": "lldb",
             "request": "attach",
-            "program": "${workspaceFolder}/py-polars/.venv/bin/pytho",
+            "program": "${workspaceFolder}/py-polars/.venv/bin/python",
             "pid": "${input:readPIDDirectTestFile}",
             "stopOnEntry": false,
-            "sourceLanguages": ["rust"],
-        },
+            "sourceLanguages": [
+                "rust"
+            ],
+            "presentation": {
+                "hidden": true
+            }
+        }
     ],
     "inputs": [
-      {
-        "id": "readPIDDirectTestFile",
-        "type": "command",
-        "command": "shellCommand.execute",
-        "args": { 
-            "command": "ps -aux | grep 'debugpy/launcher/../../debugpy' | grep '/[h]ome/${TEST_FILE_PATH}' | awk '{print $2}'",
-            "cwd": "${workspaceFolder}",
-            "useFirstResult": true
-         }
-      }
-    ],
+        {
+            "id": "readPIDDirectTestFile",
+            "type": "command",
+            "command": "shellCommand.execute",
+            "args": {
+                "command": "ps -aux | grep 'debugpy/launcher/../../debugpy' | grep '/[h]ome/${TEST_FILE_PATH}' | awk '{print $2}'",
+                "cwd": "${workspaceFolder}",
+                "useFirstResult": true
+            }
+        }
+    ]
 }
