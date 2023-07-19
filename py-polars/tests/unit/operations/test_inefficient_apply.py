@@ -8,9 +8,9 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.udfs import (
-    _bytecode_to_expression,
     _can_rewrite_as_expression,
-    _get_bytecode_ops,
+    _get_bytecode_instructions,
+    _instructions_to_expression,
     _param_name_from_signature,
 )
 
@@ -20,8 +20,8 @@ MY_CONSTANT = 3
 def _get_suggestion(
     func: Callable[[Any], Any], col: str, apply_target: str, param_name: str
 ) -> str | None:
-    return _bytecode_to_expression(
-        _get_bytecode_ops(func), col, apply_target, param_name
+    return _instructions_to_expression(
+        _get_bytecode_instructions(func), col, apply_target, param_name
     )
 
 
@@ -39,7 +39,7 @@ def _get_suggestion(
 )
 def test_non_simple_function(func: Callable[[Any], Any]) -> None:
     assert not _param_name_from_signature(func) or not _can_rewrite_as_expression(
-        _get_bytecode_ops(func), apply_target="expr"
+        _get_bytecode_instructions(func), apply_target="expr"
     )
 
 

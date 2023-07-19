@@ -1,24 +1,34 @@
 """Utilities related to user defined functions (such as those passed to `apply`)."""
 from __future__ import annotations
 
-import dis
 import sys
 import warnings
 from collections import defaultdict
+from dis import get_instructions
 from inspect import signature
-from typing import TYPE_CHECKING, Any, Callable, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Union
 
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.various import find_stacklevel, in_terminal_that_supports_colour
 
 if TYPE_CHECKING:
+    from dis import Instruction
+
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
 
-ByteCodeInfo: TypeAlias = Tuple[str, str, Any, int]
-StackValue: TypeAlias = Union[str, Tuple[str, str, str]]
+
+class StackValue(NamedTuple):  # noqa: D101
+    operator: str
+    operator_arity: int
+    left_operand: str
+    right_operand: str
+
+
+StackEntry: TypeAlias = Union[str, StackValue]
+
 
 # Note: in 3.11 individual binary opcodes were folded into a new BINARY_OP
 _BINARY_OPCODES = {
@@ -58,31 +68,25 @@ _SIMPLE_EXPR_OPS |= set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES)
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
 _UPGRADE_BINARY_OPS = sys.version_info < (3, 11)
 
-REPORT_MSG = (
-    "Please report a bug at https://github.com/pola-rs/polars/issues, including "
-    "the function which you passed to `apply`."
-)
 
-
-def _expr(value: StackValue, col: str, param_name: str, depth: int) -> str:
+def _expr(value: StackEntry, col: str, param_name: str, depth: int) -> str:
     """Take a stack entry value and convert to string, accounting for nested values."""
-    if isinstance(value, tuple):
-        op = value[1]
-        unary_op = len(value) == 2
-        e1 = _expr(value[0], col, param_name, depth + 1)
-        e2 = _expr(value[2], col, param_name, depth + 1) if not unary_op else None
-
-        if unary_op:
+    if isinstance(value, StackValue):
+        op = value.operator
+        e1 = _expr(value.left_operand, col, param_name, depth + 1)
+        if value.operator_arity == 1:
             return f"{op}{e1}"
-        elif op in ("is", "is not") and value[2] == "None":
-            not_ = "" if op == "is" else "not_"
-            return f"{e1}.is_{not_}null()"
-        elif op in ("in", "not in"):
-            not_ = "" if op == "in" else "~"
-            return f"{not_}({e1}.is_in({e2}))"
         else:
-            expr = f"{e1} {op} {e2}"
-            return f"({expr})" if depth else expr
+            e2 = _expr(value.right_operand, col, param_name, depth + 1)
+            if op in ("is", "is not") and value[2] == "None":
+                not_ = "" if op == "is" else "not_"
+                return f"{e1}.is_{not_}null()"
+            elif op in ("in", "not in"):
+                not_ = "" if op == "in" else "~"
+                return f"{not_}({e1}.is_in({e2}))"
+            else:
+                expr = f"{e1} {op} {e2}"
+                return f"({expr})" if depth else expr
 
     elif value == param_name:
         return f'pl.col("{col}")'
@@ -90,40 +94,52 @@ def _expr(value: StackValue, col: str, param_name: str, depth: int) -> str:
     return value
 
 
-def _op(opname: str, argrepr: str, argval: Any, _offset: int) -> str:
-    """Convert bytecode op to a distinct/suitable intermediate op string."""
-    if opname in _LOGICAL_OPCODES:
-        return _LOGICAL_OPCODES[opname]
-    elif argrepr:
-        return argrepr
-    elif opname == "IS_OP":
-        return "is not" if argval else "is"
-    elif opname == "CONTAINS_OP":
-        return "not in" if argval else "in"
-    elif opname in _UNARY_OPCODES:
-        return _UNARY_OPCODES[opname]
+def _op(inst: Instruction) -> str:
+    """Convert bytecode instruction to suitable intermediate op string."""
+    if inst.opname in _LOGICAL_OPCODES:
+        return _LOGICAL_OPCODES[inst.opname]
+    elif inst.argrepr:
+        return inst.argrepr
+    elif inst.opname == "IS_OP":
+        return "is not" if inst.argval else "is"
+    elif inst.opname == "CONTAINS_OP":
+        return "not in" if inst.argval else "in"
+    elif inst.opname in _UNARY_OPCODES:
+        return _UNARY_OPCODES[inst.opname]
     else:
         raise AssertionError(
-            "Unrecognised op - please report a bug to https://github.com/pola-rs/polars/issues "
-            "with the content of function you were passing to `apply`."
+            "Unrecognised opname; please report a bug to https://github.com/pola-rs/polars/issues "
+            "with the content of function you were passing to `apply` and the "
+            f"following instruction object:\n{inst}"
         )
 
 
-def _ops_to_stack_value(ops: list[ByteCodeInfo], apply_target: str) -> StackValue:
+def _instructions_to_stack(
+    instructions: list[Instruction], apply_target: str
+) -> StackEntry:
     """Take postfix bytecode and convert to an intermediate natural-order stack."""
     if apply_target == "expr":
-        stack: list[StackValue] = []
-        for op in ops:
+        stack: list[StackEntry] = []
+        for inst in instructions:
             stack.append(
-                op[1]  # type: ignore[arg-type]
-                if op[0] in ("LOAD_FAST", "LOAD_CONST")
+                inst.argrepr
+                if inst.opname in ("LOAD_FAST", "LOAD_CONST")
                 else (
-                    (stack.pop(), _op(*op))
-                    if op[0].startswith("UNARY_")
-                    else (stack.pop(-2), _op(*op), stack.pop(-1))
+                    StackValue(
+                        operator=_op(inst),
+                        operator_arity=1,
+                        left_operand=stack.pop(),  # type: ignore[arg-type]
+                        right_operand=None,  # type: ignore[arg-type]
+                    )
+                    if inst.opname in _UNARY_OPCODES
+                    else StackValue(
+                        operator=_op(inst),
+                        operator_arity=2,
+                        left_operand=stack.pop(-2),  # type: ignore[arg-type]
+                        right_operand=stack.pop(-1),  # type: ignore[arg-type]
+                    )
                 )
             )
-
         return stack[0]
 
     # TODO: frame apply (account for BINARY_SUBSCR)
@@ -131,24 +147,24 @@ def _ops_to_stack_value(ops: list[ByteCodeInfo], apply_target: str) -> StackValu
     raise NotImplementedError(f"TODO: {apply_target!r} apply")
 
 
-def _bytecode_to_expression(
-    bytecode: list[ByteCodeInfo], col: str, apply_target: str, param_name: str
+def _instructions_to_expression(
+    instructions: list[Instruction], col: str, apply_target: str, param_name: str
 ) -> str | None:
-    """Take postfix bytecode and translate to polars expression string."""
+    """Take postfix bytecode instructions and translate to polars expression string."""
     # decompose bytecode into logical 'and'/'or' expression blocks (if present)
     logical_blocks, logical_ops = defaultdict(list), []
     jump_offset = 0
-    for idx, op in enumerate(bytecode):
-        if op[0] in _LOGICAL_OPCODES:
-            jump_offset = bytecode[idx + 1][3]
-            logical_ops.append(op)
+    for idx, inst in enumerate(instructions):
+        if inst.opname in _LOGICAL_OPCODES:
+            jump_offset = instructions[idx + 1].offset
+            logical_ops.append(inst)
         else:
-            logical_blocks[jump_offset].append(op)
+            logical_blocks[jump_offset].append(inst)
 
     # convert each logical block to a polars expression string
     expression_strings = {
         offset: _expr(
-            _ops_to_stack_value(ops, apply_target),
+            _instructions_to_stack(ops, apply_target),
             col=col,
             param_name=param_name,
             depth=int(bool(logical_ops)),
@@ -156,7 +172,7 @@ def _bytecode_to_expression(
         for offset, ops in logical_blocks.items()
     }
     for op in logical_ops:
-        expression_strings[op[3]] = _op(*op)
+        expression_strings[op.offset] = _op(op)
 
     # TODO: handle mixed 'and'/'or' blocks (e.g. `x > 0 AND (x != 1 OR (x % 2 == 0))`).
     #  (we need to reconstruct the correct nesting boundaries to do this properly...)
@@ -165,7 +181,9 @@ def _bytecode_to_expression(
     return " ".join(expr for _, expr in exprs)
 
 
-def _can_rewrite_as_expression(ops: list[ByteCodeInfo], apply_target: str) -> bool:
+def _can_rewrite_as_expression(
+    instructions: list[Instruction], apply_target: str
+) -> bool:
     """
     Determine if bytecode indicates only simple binary ops and/or comparisons.
 
@@ -173,13 +191,19 @@ def _can_rewrite_as_expression(ops: list[ByteCodeInfo], apply_target: str) -> bo
     guaranteed that using the equivalent bare constant value will return the
     same output. (Hopefully nobody is writing lambdas like that anyway...)
     """
-    simple_ops = _SIMPLE_FRAME_OPS if apply_target == "frame" else _SIMPLE_EXPR_OPS
-    if bool(ops) and all(op[0] in simple_ops for op in ops) and len(ops) >= 3:
-        return (
+    if instructions:
+        simple_ops = _SIMPLE_FRAME_OPS if apply_target == "frame" else _SIMPLE_EXPR_OPS
+        if len(instructions) >= 3 and all(
+            inst.opname in simple_ops for inst in instructions
+        ):
             # can (currently) only handle logical 'and'/'or' if they are not mixed
-            len({_LOGICAL_OPCODES[op[0]] for op in ops if op[0] in _LOGICAL_OPCODES})
-            <= 1
-        )
+            logical_ops = {
+                _LOGICAL_OPCODES[inst.opname]
+                for inst in instructions
+                if inst.opname in _LOGICAL_OPCODES
+            }
+            return len(logical_ops) <= 1
+
     return False
 
 
@@ -193,13 +217,13 @@ def _function_name(function: Callable[[Any], Any], param_name: str) -> str:
     return func_name
 
 
-def _get_bytecode_ops(function: Callable[[Any], Any]) -> list[ByteCodeInfo]:
+def _get_bytecode_instructions(function: Callable[[Any], Any]) -> list[Instruction]:
     """Return disassembled bytecode ops, arg-repr, and arg-specific value/flag."""
     try:
-        instructions = list(dis.get_instructions(function))
+        instructions = list(get_instructions(function))
         idx_last = len(instructions) - 1
         return [
-            _upgrade_instruction(inst.opname, inst.argrepr, inst.argval, inst.offset)
+            _upgrade_instruction(inst)
             for idx, inst in enumerate(instructions)
             if (idx, inst.opname) not in ((0, "RESUME"), (idx_last, "RETURN_VALUE"))
         ]
@@ -209,14 +233,14 @@ def _get_bytecode_ops(function: Callable[[Any], Any]) -> list[ByteCodeInfo]:
         return []
 
 
-def _upgrade_instruction(
-    opname: str, argrepr: str, argval: Any, offset: int
-) -> ByteCodeInfo:
+def _upgrade_instruction(inst: Instruction) -> Instruction:
     """Rewrite any older binary opcodes using py 3.11 'BINARY_OP' instead."""
-    if _UPGRADE_BINARY_OPS and opname in _BINARY_OPCODES:
-        argrepr = _BINARY_OPCODES[opname]
-        opname = "BINARY_OP"
-    return opname, argrepr, argval, offset
+    if _UPGRADE_BINARY_OPS and inst.opname in _BINARY_OPCODES:
+        inst = inst._replace(
+            argrepr=_BINARY_OPCODES[inst.opname],
+            opname="BINARY_OP",
+        )
+    return inst
 
 
 def _param_name_from_signature(function: Callable[[Any], Any]) -> str | None:
@@ -277,18 +301,19 @@ def warn_on_inefficient_apply(
         The target of the ``apply`` call. One of ``"expr"``, ``"frame"``,
         or ``"series"``.
     """
-    # only consider simple functions with a single col/param
+    # we only consider simple functions with a single col/param
     if not (col := columns and columns[0]):
         return None
     if (param_name := _param_name_from_signature(function)) is None:
         return None
 
-    # fast function disassembly to get bytecode ops
-    bytecode = _get_bytecode_ops(function)
+    # fast function disassembly to get bytecode instructions
+    instructions = _get_bytecode_instructions(function)
 
-    # if ops indicate a trivial function that should be native, warn about it
-    if _can_rewrite_as_expression(bytecode, apply_target):
-        if suggestion := _bytecode_to_expression(
-            bytecode, col, apply_target, param_name
+    # if they indicate a trivial/inefficient function that should
+    # be rewritten as a native polars expression, warn about it
+    if _can_rewrite_as_expression(instructions, apply_target):
+        if suggestion := _instructions_to_expression(
+            instructions, col, apply_target, param_name
         ):
             _generate_warning(function, suggestion, col, param_name)
