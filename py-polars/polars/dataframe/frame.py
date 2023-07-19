@@ -2549,7 +2549,11 @@ class DataFrame:
         hidden_columns: Sequence[str] | None = None,
         hide_gridlines: bool = False,
         sheet_zoom: int | None = None,
-        freeze_panes: str | tuple[int, int] | tuple[int, int, int, int] | None = None,
+        freeze_panes: str
+        | tuple[str, int, int]
+        | tuple[int, int]
+        | tuple[int, int, int, int]
+        | None = None,
     ) -> Workbook:
         """
         Write frame data to a table in an Excel workbook/worksheet.
@@ -2668,7 +2672,7 @@ class DataFrame:
             Set the default zoom level of the output worksheet.
         freeze_panes : str | (str, int, int) | (int, int) | (int, int, int, int)
             Freeze workbook panes.
-            
+
             * If (row, col) is supplied, panes are split at the top-left corner of the
               specified cell, which are 0-indexed. Thus, to freeze only the top row,
               supply (1, 0).
