@@ -207,11 +207,11 @@ impl PyExpr {
             .qcut(probs, labels, left_closed, allow_duplicates, include_breaks)
             .into()
     }
-    #[pyo3(signature = (nbins, labels, left_closed, allow_duplicates, include_breaks))]
+    #[pyo3(signature = (n_bins, labels, left_closed, allow_duplicates, include_breaks))]
     #[cfg(feature = "cutqcut")]
-    fn nqcut(
+    fn qcut_uniform(
         &self,
-        nbins: usize,
+        n_bins: usize,
         labels: Option<Vec<String>>,
         left_closed: bool,
         allow_duplicates: bool,
@@ -219,7 +219,13 @@ impl PyExpr {
     ) -> Self {
         self.inner
             .clone()
-            .nqcut(nbins, labels, left_closed, allow_duplicates, include_breaks)
+            .qcut_uniform(
+                n_bins,
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
+            )
             .into()
     }
 

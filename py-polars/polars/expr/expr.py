@@ -3453,7 +3453,7 @@ class Expr:
         │ b   ┆ 9   ┆ {inf,"(4.5, inf]"}    │
         └─────┴─────┴───────────────────────┘
         """
-        expr_f = self._pyexpr.nqcut if isinstance(q, int) else self._pyexpr.qcut
+        expr_f = self._pyexpr.qcut_uniform if isinstance(q, int) else self._pyexpr.qcut
         return self._from_pyexpr(
             expr_f(q, labels, left_closed, allow_duplicates, include_breaks)
         )

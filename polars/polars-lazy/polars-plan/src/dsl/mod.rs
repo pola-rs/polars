@@ -1494,15 +1494,15 @@ impl Expr {
     }
 
     #[cfg(feature = "cutqcut")]
-    pub fn nqcut(
+    pub fn qcut_uniform(
         self,
-        nbins: usize,
+        n_bins: usize,
         labels: Option<Vec<String>>,
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
     ) -> Expr {
-        let probs = (1..nbins).map(|b| b as f64 / nbins as f64).collect();
+        let probs = (1..n_bins).map(|b| b as f64 / n_bins as f64).collect();
         self.apply_private(FunctionExpr::QCut {
             probs,
             labels,
