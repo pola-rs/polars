@@ -6,7 +6,7 @@ import sys
 import warnings
 from collections import defaultdict
 from inspect import signature
-from typing import TYPE_CHECKING, Any, Callable, Union
+from typing import TYPE_CHECKING, Any, Callable, Tuple, Union
 
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.various import find_stacklevel, in_terminal_that_supports_colour
@@ -17,8 +17,8 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeAlias
 
-ByteCodeInfo: TypeAlias = tuple[str, str, Any, int]
-StackValue: TypeAlias = Union[str, tuple[str, str, str]]
+ByteCodeInfo: TypeAlias = Tuple[str, str, Any, int]
+StackValue: TypeAlias = Union[str, Tuple[str, str, str]]
 
 # Note: in 3.11 individual binary opcodes were folded into a new BINARY_OP
 _BINARY_OPCODES = {
