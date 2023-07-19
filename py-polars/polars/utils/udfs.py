@@ -222,7 +222,13 @@ def _get_bytecode_ops(function: Callable[[Any], Any]) -> list[ByteCodeInfo]:
         return [
             _upgrade_instruction(inst.opname, inst.argrepr, inst.argval, inst.offset)
             for idx, inst in enumerate(instructions)
-            if (idx, inst.opname) not in ((0, "RESUME"), (idx_last, "RETURN_VALUE"))
+            if (idx, inst.opname)
+            not in (
+                (0, "COPY_FREE_VARS"),
+                (0, "RESUME"),
+                (1, "RESUME"),
+                (idx_last, "RETURN_VALUE"),
+            )
         ]
     except TypeError:
         # in case we hit something that can't be disassembled (eg: code object

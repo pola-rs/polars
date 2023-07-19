@@ -100,7 +100,7 @@ def test_map_dict() -> None:
     my_local_dict = {"1": 1, "2": 2, "3": 3}
     for func in [
         lambda x: my_local_dict[x],
-        # lambda x: MY_GLOBAL_DICT[x],
+        lambda x: MY_GLOBAL_DICT[x],
     ]:
         suggestion = _get_suggestion(func, "a", "expr", "x")
         assert suggestion is not None
