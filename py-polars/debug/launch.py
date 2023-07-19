@@ -2,9 +2,16 @@ import re
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 
-def launch_debugging():
+def launch_debugging() -> None:
+    """
+    Debug Rust files via Python.
+
+    Determine the pID for the current debugging session, attach the Rust LLDB launcher,
+    and execute the originally-requested script.
+    """
     if len(sys.argv) == 1:
         return
 
@@ -22,7 +29,7 @@ def launch_debugging():
     if p_status != 0 or output is None:
         raise RuntimeError("Cannot get pID of current debugging session.")
     output = output.decode()
-    if (out := re.match("^(\d+)", output)) is None:
+    if (out := re.match("^(\\d+)", output)) is None:
         raise RuntimeError("Cannot get pID of current debugging session.")
 
     pID = int(out.group(0))
@@ -37,7 +44,7 @@ def launch_debugging():
     # we updated sys.argv so that when exec() is called, it's populated with
     # the requested script name in sys.argv[0] and the remaining args after
     sys.argv = sys.argv[1:]
-    exec(open(sys.argv[0]).read())
+    exec(Path.open(sys.argv[0]).read())
 
 
 if __name__ == "__main__":
