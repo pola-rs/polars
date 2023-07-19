@@ -110,6 +110,7 @@ def _op(opname: str, argrepr: str, argval: Any, _offset: int) -> str:
 
 
 def _ops_to_stack_value(ops: list[ByteCodeInfo], apply_target: str) -> StackValue:
+    """Take postfix bytecode and convert to an intermediate natural-order stack."""
     if apply_target == "expr":
         stack: list[StackValue] = []
         for op in ops:
@@ -133,7 +134,7 @@ def _ops_to_stack_value(ops: list[ByteCodeInfo], apply_target: str) -> StackValu
 def _bytecode_to_expression(
     bytecode: list[ByteCodeInfo], col: str, apply_target: str, param_name: str
 ) -> str | None:
-    """Take postfix opcode stack and translate to polars expression string."""
+    """Take postfix bytecode and translate to polars expression string."""
     # decompose bytecode into logical 'and'/'or' expression blocks (if present)
     logical_blocks, logical_ops = defaultdict(list), []
     jump_offset = 0
@@ -175,7 +176,7 @@ def _can_rewrite_as_expression(ops: list[ByteCodeInfo], apply_target: str) -> bo
     simple_ops = _SIMPLE_FRAME_OPS if apply_target == "frame" else _SIMPLE_EXPR_OPS
     if bool(ops) and all(op[0] in simple_ops for op in ops) and len(ops) >= 3:
         return (
-            # can currently only handle logical 'and'/'or' if they are not mixed
+            # can (currently) only handle logical 'and'/'or' if they are not mixed
             len({_LOGICAL_OPCODES[op[0]] for op in ops if op[0] in _LOGICAL_OPCODES})
             <= 1
         )
