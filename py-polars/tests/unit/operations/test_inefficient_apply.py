@@ -18,9 +18,9 @@ MY_CONSTANT = 3
 
 
 def _get_suggestion(
-    func: Callable[[Any], Any], col: str, apply_target: str
+    func: Callable[[Any], Any], col: str, apply_target: str, param_name: str
 ) -> str | None:
-    return _to_polars_expression(_get_bytecode_ops(func), col, apply_target)
+    return _to_polars_expression(_get_bytecode_ops(func), col, apply_target, param_name)
 
 
 @pytest.mark.parametrize(
@@ -64,7 +64,7 @@ def test_expr_apply_produces_warning(func: Callable[[Any], Any]) -> None:
     with pytest.warns(
         PolarsInefficientApplyWarning, match="In this case, you can replace"
     ):
-        suggestion = _get_suggestion(func, col="a", apply_target="expr")
+        suggestion = _get_suggestion(func, col="a", apply_target="expr", param_name="x")
         assert suggestion is not None
 
         df = pl.DataFrame({"a": [1, 2, 3]})
@@ -85,5 +85,7 @@ def test_expr_apply_produces_warning_misc() -> None:
         def x10(self, x: pl.Expr) -> pl.Expr:
             return x * 10
 
-    suggestion = _get_suggestion(Test().x10, col="colx", apply_target="expr")
+    suggestion = _get_suggestion(
+        Test().x10, col="colx", apply_target="expr", param_name="x"
+    )
     assert suggestion == '(pl.col("colx") * 10)'

@@ -45,12 +45,12 @@ REPORT_MSG = (
 )
 
 
-def _expr(value: str | tuple[str, str, str], col: str) -> str:
+def _expr(value: str | tuple[str, str, str], col: str, param_name: str) -> str:
     if isinstance(value, tuple):
         op = value[1]
         unary_op = len(value) == 2
-        e1 = _expr(value[0], col)
-        e2 = _expr(value[2], col) if not unary_op else None
+        e1 = _expr(value[0], col, param_name)
+        e2 = _expr(value[2], col, param_name) if not unary_op else None
 
         if unary_op:
             return f"{op}{e1}"
@@ -63,9 +63,8 @@ def _expr(value: str | tuple[str, str, str], col: str) -> str:
         else:
             return f"({e1} {op} {e2})"
 
-    elif value.isidentifier():
-        if value not in ("True", "False", "None"):
-            return f'pl.col("{col}")'
+    elif value == param_name:
+        return f'pl.col("{col}")'
 
     return value
 
@@ -140,9 +139,25 @@ def _can_rewrite_as_expression(
 
 
 def _to_polars_expression(
-    ops: list[tuple[str, str, Any]], col: str, apply_target: str
+    ops: list[tuple[str, str, Any]], col: str, apply_target: str, param_name: str
 ) -> str | None:
-    """Take postfix opcode stack and translate to native polars expression."""
+    """
+    Take postfix opcode stack and translate to native polars expression.
+
+    Parameters
+    ----------
+    ops
+        The list of opcodes, argreprs, and argvals.
+    col
+        The column name of the original object. In the case of an ``Expr``, this
+        will be the expression's root name.
+    apply_target
+        The target of the ``apply`` call. One of ``"expr"``, ``"frame"``,
+        or ``"series"``.
+    param_name
+        Argument of the function / lambda (e.g. if it's ``lambda x: x + 1``, then
+        ``param_name`` will be ``"x"``).
+    """
     if apply_target == "expr":
         stack = []  # type: ignore[var-annotated]
         for op in ops:
@@ -155,7 +170,7 @@ def _to_polars_expression(
                     else (stack.pop(-2), _op(*op), stack.pop(-1))
                 )
             )
-        return _expr(stack[0], col)  # type: ignore[arg-type]
+        return _expr(stack[0], col, param_name)  # type: ignore[arg-type]
 
     # TODO: frame apply (account for BINARY_SUBSCR)
     # TODO: series apply (rewrite col expr as series)
@@ -205,7 +220,20 @@ def _generate_warning(
 def warn_on_inefficient_apply(
     function: Callable[[Any], Any], columns: list[str], apply_target: str
 ) -> None:
-    """Generate ``PolarsInefficientApplyWarning`` on poor usage of ``apply`` func."""
+    """
+    Generate ``PolarsInefficientApplyWarning`` on poor usage of ``apply`` func.
+
+    Parameters
+    ----------
+    function
+        The function passed to ``apply``.
+    columns
+        The column names of the original object. In the case of an ``Expr``, this
+        will be a list of length 1 containing the expression's root name.
+    apply_target
+        The target of the ``apply`` call. One of ``"expr"``, ``"frame"``,
+        or ``"series"``.
+    """
     # only consider simple functions with a single col/param
     if not (col := columns and columns[0]):
         return None
@@ -217,5 +245,5 @@ def warn_on_inefficient_apply(
 
     # if ops indicate a trivial function that should be native, warn about it
     if _can_rewrite_as_expression(ops, apply_target):
-        if suggestion := _to_polars_expression(ops, col, apply_target):
+        if suggestion := _to_polars_expression(ops, col, apply_target, param_name):
             _generate_warning(function, suggestion, col, param_name)
