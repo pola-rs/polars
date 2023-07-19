@@ -137,7 +137,8 @@ impl LogicalPlan {
                 )
             }
             Selection { predicate, input } => {
-                write!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
+                // this one is writeln because we don't increase indent (which inserts a line)
+                writeln!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
                 input._format(f, indent)
             }
             DataFrameScan {

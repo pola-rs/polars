@@ -235,3 +235,21 @@ fn test_predicate_on_join_select_4884() -> PolarsResult<()> {
     assert_eq!(out, expected);
     Ok(())
 }
+
+#[test]
+fn test_predicate_pushdown_block_8847() -> PolarsResult<()> {
+    let ldf = df![
+        "A" => [1, 2, 3]
+    ]?
+    .lazy();
+
+    let q = ldf
+        .with_column(lit(1).strict_cast(DataType::Int32).alias("B"))
+        .drop_nulls(None)
+        .filter(col("B").eq(lit(1)));
+
+    let out = q.collect()?;
+    assert_eq!(out.get_column_names(), &["A", "B"]);
+
+    Ok(())
+}
