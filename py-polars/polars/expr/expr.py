@@ -4024,12 +4024,12 @@ class Expr:
 
     def and_(self, *others: Any) -> Self:
         """
-        Method equivalent of logical "and" operator ``expr & other & ...``.
+        Method equivalent of bitwise "and" operator ``expr & other & ...``.
 
         Parameters
         ----------
         *others
-            One or more logical boolean expressions to evaluate/combine.
+            One or more integer or boolean expressions to evaluate/combine.
 
         Examples
         --------
@@ -4068,12 +4068,12 @@ class Expr:
 
     def or_(self, *others: Any) -> Self:
         """
-        Method equivalent of logical "or" operator ``expr | other | ...``.
+        Method equivalent of bitwise "or" operator ``expr | other | ...``.
 
         Parameters
         ----------
         *others
-            One or more logical boolean expressions to evaluate/combine.
+            One or more integer or boolean expressions to evaluate/combine.
 
         Examples
         --------
@@ -4652,7 +4652,7 @@ class Expr:
 
     def xor(self, other: Any) -> Self:
         """
-        Method equivalent of logical exclusive-or operator ``expr ^ other``.
+        Method equivalent of bitwise exclusive-or operator ``expr ^ other``.
 
         Parameters
         ----------
