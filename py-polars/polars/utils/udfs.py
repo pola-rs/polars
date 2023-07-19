@@ -51,6 +51,8 @@ _SIMPLE_EXPR_OPS = {
     "COMPARE_OP",
     "CONTAINS_OP",
     "IS_OP",
+    "LOAD_DEREF",
+    "LOAD_GLOBAL",
     "LOAD_CONST",
     "LOAD_FAST",
 }
@@ -74,6 +76,8 @@ def _expr(value: StackValue, col: str, param_name: str, depth: int) -> str:
 
         if unary_op:
             return f"{op}{e1}"
+        elif op == "map_dict":
+            return f"{e2}.map_dict({e1})"
         elif op in ("is", "is not") and value[2] == "None":
             not_ = "" if op == "is" else "not_"
             return f"{e1}.is_{not_}null()"
@@ -94,6 +98,8 @@ def _op(opname: str, argrepr: str, argval: Any, _offset: int) -> str:
     """Convert bytecode op to a distinct/suitable intermediate op string."""
     if opname in _LOGICAL_OPCODES:
         return _LOGICAL_OPCODES[opname]
+    elif opname == "BINARY_SUBSCR":
+        return "map_dict"
     elif argrepr:
         return argrepr
     elif opname == "IS_OP":
@@ -114,15 +120,12 @@ def _ops_to_stack_value(ops: list[ByteCodeInfo], apply_target: str) -> StackValu
     if apply_target == "expr":
         stack: list[StackValue] = []
         for op in ops:
-            stack.append(
-                op[1]  # type: ignore[arg-type]
-                if op[0] in ("LOAD_FAST", "LOAD_CONST")
-                else (
-                    (stack.pop(), _op(*op))
-                    if op[0].startswith("UNARY_")
-                    else (stack.pop(-2), _op(*op), stack.pop(-1))
-                )
-            )
+            if op[0] in ("LOAD_FAST", "LOAD_CONST", "LOAD_GLOBAL", "LOAD_DEREF"):
+                stack.append(op[1])
+            elif op[0].startswith("UNARY_"):
+                stack.append((stack.pop(), _op(*op)))  # type: ignore[arg-type]
+            else:
+                stack.append((stack.pop(-2), _op(*op), stack.pop(-1)))  # type: ignore[arg-type]
 
         return stack[0]
 
@@ -165,7 +168,9 @@ def _bytecode_to_expression(
     return " ".join(expr for _, expr in exprs)
 
 
-def _can_rewrite_as_expression(ops: list[ByteCodeInfo], apply_target: str) -> bool:
+def _can_rewrite_as_expression(
+    ops: list[ByteCodeInfo], apply_target: str, param_name: str
+) -> bool:
     """
     Determine if bytecode indicates only simple binary ops and/or comparisons.
 
@@ -173,14 +178,30 @@ def _can_rewrite_as_expression(ops: list[ByteCodeInfo], apply_target: str) -> bo
     guaranteed that using the equivalent bare constant value will return the
     same output. (Hopefully nobody is writing lambdas like that anyway...)
     """
+    # TODO: only loop through ops once?
+
+    if len(ops) < 3:
+        return False
     simple_ops = _SIMPLE_FRAME_OPS if apply_target == "frame" else _SIMPLE_EXPR_OPS
-    if bool(ops) and all(op[0] in simple_ops for op in ops) and len(ops) >= 3:
-        return (
-            # can (currently) only handle logical 'and'/'or' if they are not mixed
-            len({_LOGICAL_OPCODES[op[0]] for op in ops if op[0] in _LOGICAL_OPCODES})
-            <= 1
-        )
-    return False
+    logical_opcodes = set()
+    for i, op in enumerate(ops):
+        if op[0] == "BINARY_SUBSCR":
+            if (
+                i < 2
+                or ops[i - 1][1] != param_name
+                or ops[i - 2][0] not in ("LOAD_GLOBAL", "LOAD_DEREF")
+            ):
+                return False
+        elif op[0] not in simple_ops:
+            return False
+        elif op[0] in _LOGICAL_OPCODES:
+            logical_opcodes.add(op[0])
+
+    if len(logical_opcodes) > 1:
+        # todo: can't yet handle mixed and/or logical operators
+        return False
+
+    return True
 
 
 def _function_name(function: Callable[[Any], Any], param_name: str) -> str:
@@ -235,11 +256,17 @@ def _generate_warning(
 ) -> None:
     """Create a warning that includes a faster native expression as an alternative."""
     func_name = _function_name(function, param_name)
-    addendum = (
-        'Note: in list.eval context, pl.col("") should be written as pl.element()'
-        if 'pl.col("")' in suggestion
-        else ""
-    )
+    if 'pl.col("")' in suggestion:
+        addendum = (
+            'Note: in list.eval context, pl.col("") should be written as pl.element()'
+        )
+    elif ".map_dict(" in suggestion:
+        addendum = (
+            "Note: this suggestion assumes that you're mapping a dictionary. "
+            "If that's not the case, then the suggestion may not be correct."
+        )
+    else:
+        addendum = ""
     before_after_suggestion = (
         (
             f'  \033[31m-  pl.col("{col}").apply({func_name})\033[0m\n'
@@ -287,7 +314,7 @@ def warn_on_inefficient_apply(
     bytecode = _get_bytecode_ops(function)
 
     # if ops indicate a trivial function that should be native, warn about it
-    if _can_rewrite_as_expression(bytecode, apply_target):
+    if _can_rewrite_as_expression(bytecode, apply_target, param_name):
         if suggestion := _bytecode_to_expression(
             bytecode, col, apply_target, param_name
         ):
