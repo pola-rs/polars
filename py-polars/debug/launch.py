@@ -44,7 +44,9 @@ def launch_debugging() -> None:
     # we updated sys.argv so that when exec() is called, it's populated with
     # the requested script name in sys.argv[0] and the remaining args after
     sys.argv = sys.argv[1:]
-    exec(Path.open(sys.argv[0]).read())
+    with Path(sys.argv[0]).open() as fh:
+        script_contents = fh.read()
+    exec(script_contents)
 
 
 if __name__ == "__main__":
