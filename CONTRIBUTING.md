@@ -173,7 +173,7 @@ Copy the following `configurations` and `inputs` components to your `launch.json
             "name": "Rust LLDB",
             "type": "lldb",
             "request": "attach",
-            "program": "${workspaceFolder}/py-polars/.venv/bin/pytho",
+            "program": "${workspaceFolder}/py-polars/.venv/bin/python",
             "pid": "${input:readPIDDirectTestFile}",
             "stopOnEntry": false,
             "sourceLanguages": [
