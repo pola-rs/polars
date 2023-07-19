@@ -1,8 +1,12 @@
+mod warning;
+
 use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::ops::Deref;
 use std::{env, io};
+
+pub use warning::*;
 
 #[derive(Debug)]
 pub struct ErrString(Cow<'static, str>);

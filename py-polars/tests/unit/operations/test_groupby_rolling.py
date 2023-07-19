@@ -50,13 +50,8 @@ def test_groupby_rolling_apply() -> None:
 
 
 def test_rolling_groupby_overlapping_groups() -> None:
-    # this first aggregates overlapping groups
-    # so they cannot be naively flattened
-    df = pl.DataFrame(
-        {
-            "a": [41, 60, 37, 51, 52, 39, 40],
-        }
-    )
+    # this first aggregates overlapping groups so they cannot be naively flattened
+    df = pl.DataFrame({"a": [41, 60, 37, 51, 52, 39, 40]})
 
     assert_series_equal(
         (
@@ -67,7 +62,7 @@ def test_rolling_groupby_overlapping_groups() -> None:
                 period="5i",
             )
             .agg(
-                # the apply to trigger the apply on the expression engine
+                # trigger the apply on the expression engine
                 pl.col("a")
                 .apply(lambda x: x)
                 .sum()

@@ -666,8 +666,8 @@ def from_pandas(
 
     Parameters
     ----------
-    data: :class:`pandas.DataFrame`, :class:`pandas.Series`, :class:`pandas.DatetimeIndex`
-        Data represented as a pandas DataFrame, Series, or DatetimeIndex.
+    data : :class:`pandas.DataFrame` or :class:`pandas.Series` or :class:`pandas.Index`
+        Data represented as a pandas DataFrame, Series, or Index.
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
     rechunk : bool, default True
@@ -713,7 +713,7 @@ def from_pandas(
         3
     ]
 
-    """  # noqa: W505
+    """
     if isinstance(data, (pd.Series, pd.DatetimeIndex)):
         return pl.Series._from_pandas("", data, nan_to_null=nan_to_null)
     elif isinstance(data, pd.DataFrame):

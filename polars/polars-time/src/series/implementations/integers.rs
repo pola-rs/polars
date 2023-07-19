@@ -24,13 +24,8 @@ where
     }
 
     #[cfg(feature = "rolling_window")]
-    fn rolling_quantile(
-        &self,
-        quantile: f64,
-        interpolation: QuantileInterpolOptions,
-        options: RollingOptionsImpl,
-    ) -> PolarsResult<Series> {
-        RollingAgg::rolling_quantile(self, quantile, interpolation, options)
+    fn rolling_quantile(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
+        RollingAgg::rolling_quantile(self, options)
     }
 
     #[cfg(feature = "rolling_window")]

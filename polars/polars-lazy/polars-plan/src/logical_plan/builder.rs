@@ -633,7 +633,13 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn sort(self, by_column: Vec<Expr>, descending: Vec<bool>, null_last: bool) -> Self {
+    pub fn sort(
+        self,
+        by_column: Vec<Expr>,
+        descending: Vec<bool>,
+        null_last: bool,
+        maintain_order: bool,
+    ) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let by_column = try_delayed!(rewrite_projections(by_column, &schema, &[]), &self.0, into);
         LogicalPlan::Sort {
@@ -643,6 +649,7 @@ impl LogicalPlanBuilder {
                 descending,
                 nulls_last: null_last,
                 slice: None,
+                maintain_order,
             },
         }
         .into()

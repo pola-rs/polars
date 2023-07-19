@@ -7,6 +7,10 @@ impl Series {
             DataType::List(inner_dtype) => {
                 ListChunked::full_null_with_dtype(name, size, inner_dtype).into_series()
             }
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner_dtype, width) => {
+                ArrayChunked::full_null_with_dtype(name, size, inner_dtype, *width).into_series()
+            }
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(rev_map) => {
                 let mut ca = CategoricalChunked::full_null(name, size);

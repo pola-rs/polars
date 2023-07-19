@@ -24,12 +24,12 @@ impl ProjectionExec {
         #[cfg(test)]
         #[allow(unused_must_use)]
         {
-            // TODO: check also the types.
-            df.as_ref().map(|df| {
+            // TODO: also check the types.
+            if let Ok(df) = df.as_ref() {
                 for (l, r) in df.iter().zip(self.schema.iter_names()) {
                     assert_eq!(l.name(), r);
                 }
-            });
+            }
         }
 
         df

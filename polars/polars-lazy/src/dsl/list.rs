@@ -156,14 +156,14 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                         ..
                     } => {
                         polars_bail!(
-                            ComputeError: "casting to categorical not allowed in `arr.eval`"
+                            ComputeError: "casting to categorical not allowed in `list.eval`"
                         )
                     }
                     Expr::Column(name) => {
                         polars_ensure!(
                             name.is_empty(),
                             ComputeError:
-                            "named columns are not allowed in `arr.eval`; consider using `element` or `col(\"\")`"
+                            "named columns are not allowed in `list.eval`; consider using `element` or `col(\"\")`"
                         );
                     }
                     _ => {}

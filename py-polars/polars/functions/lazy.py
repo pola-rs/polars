@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
@@ -26,6 +27,7 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -320,6 +322,11 @@ def count(column: str | Series | None = None) -> Expr | int:
         return wrap_expr(plr.count())
 
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `count` is deprecated. Use `Series.len()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.len()
     return col(column).count()
 
@@ -377,6 +384,11 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `std` is deprecated. Use `Series.std()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.std(ddof)
     return col(column).std(ddof)
 
@@ -421,6 +433,11 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `var` is deprecated. Use `Series.var()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.var(ddof)
     return col(column).var(ddof)
 
@@ -451,11 +468,14 @@ def mean(column: str | Series) -> Expr | float | None:
     ╞═════╡
     │ 4.0 │
     └─────┘
-    >>> pl.mean(df["a"])
-    4.0
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `mean` is deprecated. Use `Series.mean()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.mean()
     return col(column).mean()
 
@@ -486,8 +506,6 @@ def avg(column: str | Series) -> Expr | float:
     ╞═════╡
     │ 4.0 │
     └─────┘
-    >>> pl.avg(df["a"])
-    4.0
 
     """
     return mean(column)
@@ -519,11 +537,14 @@ def median(column: str | Series) -> Expr | float | int | None:
     ╞═════╡
     │ 3.0 │
     └─────┘
-    >>> pl.median(df["a"])
-    3.0
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `median` is deprecated. Use `Series.median()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.median()
     return col(column).median()
 
@@ -554,11 +575,14 @@ def n_unique(column: str | Series) -> Expr | int:
     ╞═════╡
     │ 2   │
     └─────┘
-    >>> pl.n_unique(df["a"])
-    2
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `n_unique` is deprecated. Use `Series.n_unique()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.n_unique()
     return col(column).n_unique()
 
@@ -643,14 +667,17 @@ def first(column: str | Series | None = None) -> Expr | Any:
     ╞═════╡
     │ 1   │
     └─────┘
-    >>> pl.first(df["a"])
-    1
 
     """
     if column is None:
         return wrap_expr(plr.first())
 
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `first` is deprecated. Use `series[0]` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         if column.len() > 0:
             return column[0]
         else:
@@ -706,14 +733,17 @@ def last(column: str | Series | None = None) -> Expr:
     ╞═════╡
     │ 3   │
     └─────┘
-    >>> pl.last(df["a"])
-    3
 
     """
     if column is None:
         return wrap_expr(plr.last())
 
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `last` is deprecated. Use `series[-1]` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         if column.len() > 0:
             return column[-1]
         else:
@@ -766,16 +796,14 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
     │ 1   │
     │ 8   │
     └─────┘
-    >>> pl.head(df["a"], 2)
-    shape: (2,)
-    Series: 'a' [i64]
-    [
-        1
-        8
-    ]
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `head` is deprecated. Use `Series.head()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.head(n)
     return col(column).head(n)
 
@@ -825,16 +853,14 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
     │ 8   │
     │ 3   │
     └─────┘
-    >>> pl.tail(df["a"], 2)
-    shape: (2,)
-    Series: 'a' [i64]
-    [
-        8
-        3
-    ]
 
     """
     if isinstance(column, pl.Series):
+        warnings.warn(
+            "passing a Series to `tail` is deprecated. Use `Series.tail()` instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return column.tail(n)
     return col(column).tail(n)
 
@@ -1138,6 +1164,10 @@ def apply(
     """
     Apply a custom/user-defined function (UDF) in a GroupBy context.
 
+    .. warning::
+        This method is much slower than the native expressions API.
+        Only use it if you cannot implement your logic otherwise.
+
     Depending on the context it has the following behavior:
 
     * Select
@@ -1184,7 +1214,9 @@ def apply(
 
     Calculate product of ``a``.
 
-    >>> df.with_columns(pl.col("a").apply(lambda x: x * x).alias("product_a"))
+    >>> df.with_columns(  # doctest: +SKIP
+    ...     pl.col("a").apply(lambda x: x * x).alias("product_a")
+    ... )
     shape: (4, 3)
     ┌─────┬─────┬───────────┐
     │ a   ┆ b   ┆ product_a │
@@ -1704,7 +1736,7 @@ def collect_all(
     """
     Collect multiple LazyFrames at the same time.
 
-    This runs all the computation graphs in parallel on Polars threadpool.
+    This runs all the computation graphs in parallel on the Polars threadpool.
 
     Parameters
     ----------
@@ -1730,6 +1762,7 @@ def collect_all(
     Returns
     -------
     List[DataFrame]
+        The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
     if no_optimization:
@@ -2067,17 +2100,29 @@ def rolling_corr(
     )
 
 
-def sql_expr(sql: str) -> Expr:
+@overload
+def sql_expr(sql: str) -> Expr:  # type: ignore[misc]
+    ...
+
+
+@overload
+def sql_expr(sql: Sequence[str]) -> list[Expr]:
+    ...
+
+
+def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
     """
-    Parse a SQL expression to a polars expression.
+    Parse one or more SQL expressions to polars expression(s).
 
     Parameters
     ----------
     sql
-        SQL expression
+        One or more SQL expressions.
 
     Examples
     --------
+    Parse a single SQL expression:
+
     >>> df = pl.DataFrame({"a": [2, 1]})
     >>> expr = pl.sql_expr("MAX(a)")
     >>> df.select(expr)
@@ -2089,5 +2134,23 @@ def sql_expr(sql: str) -> Expr:
     ╞═════╡
     │ 2   │
     └─────┘
+
+    Parse multiple SQL expressions:
+
+    >>> df.with_columns(
+    ...     *pl.sql_expr(["POWER(a,a) AS a_a", "CAST(a AS TEXT) AS a_txt"]),
+    ... )
+    shape: (2, 3)
+    ┌─────┬─────┬───────┐
+    │ a   ┆ a_a ┆ a_txt │
+    │ --- ┆ --- ┆ ---   │
+    │ i64 ┆ f64 ┆ str   │
+    ╞═════╪═════╪═══════╡
+    │ 2   ┆ 4.0 ┆ 2     │
+    │ 1   ┆ 1.0 ┆ 1     │
+    └─────┴─────┴───────┘
     """
-    return wrap_expr(plr.sql_expr(sql))
+    if isinstance(sql, str):
+        return wrap_expr(plr.sql_expr(sql))
+    else:
+        return [wrap_expr(plr.sql_expr(q)) for q in sql]

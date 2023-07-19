@@ -150,3 +150,24 @@ where
     };
     rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter, params)
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn rolling_quantile<T>(
+    values: &[T],
+    period: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+    tz: Option<&TimeZone>,
+    params: DynArgs,
+) -> PolarsResult<ArrayRef>
+where
+    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
+{
+    let offset_iter = match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => groupby_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
+        _ => groupby_values_iter(period, time, closed_window, tu, None),
+    };
+    rolling_apply_agg_window::<no_nulls::QuantileWindow<_>, _, _>(values, offset_iter, params)
+}

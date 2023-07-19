@@ -214,7 +214,13 @@ fn rename_predicate_columns_due_to_aliased_projection(
     let projection_aexpr = expr_arena.get(projection_node);
     if let AExpr::Alias(_, alias_name) = projection_aexpr {
         let alias_name = alias_name.as_ref();
-        let projection_roots = aexpr_to_leaf_names(projection_node, expr_arena);
+        let projection_leaves = aexpr_to_leaf_names(projection_node, expr_arena);
+
+        // this means the leaf is a literal
+        if projection_leaves.is_empty() {
+            return LoopBehavior::Nothing;
+        }
+
         // if this alias refers to one of the predicates in the upper nodes
         // we rename the column of the predicate before we push it downwards.
         if let Some(predicate) = acc_predicates.remove(alias_name) {
@@ -222,11 +228,11 @@ fn rename_predicate_columns_due_to_aliased_projection(
                 local_predicates.push(predicate);
                 return LoopBehavior::Continue;
             }
-            if projection_roots.len() == 1 {
+            if projection_leaves.len() == 1 {
                 // we were able to rename the alias column with the root column name
                 // before pushing down the predicate
                 let predicate =
-                    rename_aexpr_leaf_names(predicate, expr_arena, projection_roots[0].clone());
+                    rename_aexpr_leaf_names(predicate, expr_arena, projection_leaves[0].clone());
 
                 insert_and_combine_predicate(acc_predicates, predicate, expr_arena);
             } else {

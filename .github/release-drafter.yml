@@ -1,8 +1,10 @@
 categories:
   - title: 🏆 Highlights
     labels: highlight
-  - title: ⚠️ Breaking changes
+  - title: 💥 Breaking changes
     labels: breaking
+  - title: ⚠️ Deprecations
+    labels: deprecation
   - title: 🚀 Performance improvements
     labels: performance
   - title: ✨ Enhancements
@@ -12,13 +14,8 @@ categories:
   - title: 🛠️ Other improvements
     labels:
       - build
-      - chore
-      - ci
       - documentation
-      - refactor
-      - revert
-      - style
-      - test
+      - internal
 
 exclude-labels:
   - skip-changelog
@@ -28,7 +25,7 @@ change-template: '- $TITLE (#$NUMBER)'
 change-title-escapes: '\<*_&'
 replacers:
   # Remove conventional commits from titles
-  - search: '/- (build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)(\(.*\))?(\!)?\: /g'
+  - search: '/- (build|chore|depr|docs|feat|fix|perf|release)(\(.*\))?(\!)?\: /g'
     replace: '- '
 
 version-resolver:
@@ -39,22 +36,25 @@ version-resolver:
 autolabeler:
   - label: rust
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)\(.*rust.*\)/'
+      - '/^(build|chore|depr|docs|feat|fix|perf|release)(\(.*rust.*\))?\!?\: /'
   - label: python
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)\(.*python.*\)/'
+      - '/^(build|chore|depr|docs|feat|fix|perf|release)(\(.*python.*\))?\!?\: /'
+  - label: cli
+    title:
+      - '/^(build|chore|depr|docs|feat|fix|perf|release)\(.*cli.*\)\!?\: /'  # CLI tag not in global scope
   - label: breaking
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)(\(.*\))?\!\: /'
+      - '/^(build|chore|depr|docs|feat|fix|perf|release)(\(.*\))?\!\: /'
   - label: build
     title:
       - '/^build/'
-  - label: chore
+  - label: internal
     title:
       - '/^chore/'
-  - label: ci
+  - label: deprecation
     title:
-      - '/^ci/'
+      - '/^depr/'
   - label: documentation
     title:
       - '/^docs/'
@@ -67,21 +67,9 @@ autolabeler:
   - label: performance
     title:
       - '/^perf/'
-  - label: refactor
-    title:
-      - '/^refactor/'
   - label: release
     title:
       - '/^release/'
-  - label: revert
-    title:
-      - '/^revert/'
-  - label: style
-    title:
-      - '/^style/'
-  - label: test
-    title:
-      - '/^test/'
 
 template: |
   $CHANGES

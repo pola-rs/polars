@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import os
 import sys
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -11,8 +11,6 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars.type_aliases import (
         DbReadEngine,
         DbWriteEngine,
@@ -35,8 +33,7 @@ def sample_df() -> pl.DataFrame:
 def create_temp_sqlite_db(test_db: str) -> None:
     import sqlite3
 
-    if os.path.exists(test_db):
-        os.unlink(test_db)
+    Path(test_db).unlink(missing_ok=True)
 
     # NOTE: at the time of writing adcb/connectorx have weak SQLite support (poor or
     # no bool/date/datetime dtypes, for example) and there is a bug in connectorx that

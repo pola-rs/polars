@@ -252,6 +252,10 @@ class GroupBy:
         """
         Apply a custom/user-defined function (UDF) over the groups as a sub-DataFrame.
 
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
+
         Implementing logic using a Python function is almost always _significantly_
         slower and more memory intensive than implementing the same logic using
         the native expression API because:
@@ -841,6 +845,19 @@ class RollingGroupBy:
         *aggs: IntoExpr | Iterable[IntoExpr],
         **named_aggs: IntoExpr,
     ) -> DataFrame:
+        """
+        Compute aggregations for each group of a groupby operation.
+
+        Parameters
+        ----------
+        *aggs
+            Aggregations to compute for each group of the groupby operation,
+            specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names.
+        **named_aggs
+            Additional aggregations, specified as keyword arguments.
+            The resulting columns will be renamed to the keyword used.
+        """
         return (
             self.df.lazy()
             .groupby_rolling(
@@ -1042,6 +1059,19 @@ class DynamicGroupBy:
         *aggs: IntoExpr | Iterable[IntoExpr],
         **named_aggs: IntoExpr,
     ) -> DataFrame:
+        """
+        Compute aggregations for each group of a groupby operation.
+
+        Parameters
+        ----------
+        *aggs
+            Aggregations to compute for each group of the groupby operation,
+            specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names.
+        **named_aggs
+            Additional aggregations, specified as keyword arguments.
+            The resulting columns will be renamed to the keyword used.
+        """
         return (
             self.df.lazy()
             .groupby_dynamic(

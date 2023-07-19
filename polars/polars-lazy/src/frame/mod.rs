@@ -110,6 +110,11 @@ impl LazyFrame {
         }
     }
 
+    /// Get current optimizations
+    pub fn get_current_optimizations(&self) -> OptState {
+        self.opt_state
+    }
+
     /// Set allowed optimizations
     pub fn with_optimizations(mut self, opt_state: OptState) -> Self {
         self.opt_state = opt_state;
@@ -220,11 +225,17 @@ impl LazyFrame {
     pub fn sort(self, by_column: &str, options: SortOptions) -> Self {
         let descending = options.descending;
         let nulls_last = options.nulls_last;
+        let maintain_order = options.maintain_order;
 
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(vec![col(by_column)], vec![descending], nulls_last)
+            .sort(
+                vec![col(by_column)],
+                vec![descending],
+                nulls_last,
+                maintain_order,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -240,7 +251,7 @@ impl LazyFrame {
     /// /// Sort DataFrame by 'sepal.width' column
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .sort_by_exprs(vec![col("sepal.width")], vec![false], false)
+    ///         .sort_by_exprs(vec![col("sepal.width")], vec![false], false, false)
     /// }
     /// ```
     pub fn sort_by_exprs<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
@@ -248,6 +259,7 @@ impl LazyFrame {
         by_exprs: E,
         descending: B,
         nulls_last: bool,
+        maintain_order: bool,
     ) -> Self {
         let by_exprs = by_exprs.as_ref().to_vec();
         let descending = descending.as_ref().to_vec();
@@ -257,7 +269,7 @@ impl LazyFrame {
             let opt_state = self.get_opt_state();
             let lp = self
                 .get_plan_builder()
-                .sort(by_exprs, descending, nulls_last)
+                .sort(by_exprs, descending, nulls_last, maintain_order)
                 .build();
             Self::from_logical_plan(lp, opt_state)
         }
@@ -269,6 +281,7 @@ impl LazyFrame {
         by_exprs: E,
         descending: B,
         nulls_last: bool,
+        maintain_order: bool,
     ) -> Self {
         let mut descending = descending.as_ref().to_vec();
         // top-k is reverse from sort
@@ -276,7 +289,7 @@ impl LazyFrame {
             *v = !*v;
         }
         // this will optimize to top-k
-        self.sort_by_exprs(by_exprs, descending, nulls_last)
+        self.sort_by_exprs(by_exprs, descending, nulls_last, maintain_order)
             .slice(0, k)
     }
 
@@ -286,10 +299,11 @@ impl LazyFrame {
         by_exprs: E,
         descending: B,
         nulls_last: bool,
+        maintain_order: bool,
     ) -> Self {
         let descending = descending.as_ref().to_vec();
         // this will optimize to bottom-k
-        self.sort_by_exprs(by_exprs, descending, nulls_last)
+        self.sort_by_exprs(by_exprs, descending, nulls_last, maintain_order)
             .slice(0, k)
     }
 
@@ -473,7 +487,7 @@ impl LazyFrame {
         let streaming = self.opt_state.streaming;
         #[cfg(feature = "cse")]
         if streaming && self.opt_state.common_subplan_elimination {
-            eprintln!("Cannot combine 'streaming' with 'common_subplan_elimination'. CSE will be turned off.");
+            polars_warn!("Cannot combine 'streaming' with 'common_subplan_elimination'. CSE will be turned off.");
             opt_state.common_subplan_elimination = false;
         }
         let lp_top = optimize(self.logical_plan, opt_state, lp_arena, expr_arena, scratch)?;

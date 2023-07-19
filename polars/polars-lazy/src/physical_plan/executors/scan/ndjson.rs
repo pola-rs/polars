@@ -10,7 +10,7 @@ impl AnonymousScan for LazyJsonLineReader {
     fn scan(&self, scan_opts: AnonymousScanOptions) -> PolarsResult<DataFrame> {
         let schema = scan_opts.output_schema.unwrap_or(scan_opts.schema);
         JsonLineReader::from_path(&self.path)?
-            .with_schema(&schema)
+            .with_schema(schema)
             .with_rechunk(self.rechunk)
             .with_chunk_size(self.batch_size)
             .low_memory(self.low_memory)

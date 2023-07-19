@@ -705,3 +705,19 @@ def test_top_k_9385() -> None:
     assert pl.LazyFrame({"b": [True, False]}).sort(["b"]).slice(0, 1).collect()[
         "b"
     ].to_list() == [False]
+
+
+def test_sorted_flag_partition_by() -> None:
+    assert (
+        pl.DataFrame({"one": [1, 2, 3], "two": ["a", "a", "b"]})
+        .set_sorted("one")
+        .partition_by("two", maintain_order=True)[0]["one"]
+        .flags["SORTED_ASC"]
+    )
+
+
+def test_sorted_flag_singletons() -> None:
+    assert pl.DataFrame({"x": [1]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": ["a"]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": [True]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": [None]})["x"].flags["SORTED_ASC"]

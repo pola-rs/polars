@@ -14,6 +14,8 @@ mod is_first;
 mod is_unique;
 #[cfg(feature = "log")]
 mod log;
+#[cfg(feature = "rle")]
+mod rle;
 #[cfg(feature = "rolling_window")]
 mod rolling;
 #[cfg(feature = "search_sorted")]
@@ -39,6 +41,8 @@ pub use is_unique::*;
 #[cfg(feature = "log")]
 pub use log::*;
 use polars_core::prelude::*;
+#[cfg(feature = "rle")]
+pub use rle::*;
 #[cfg(feature = "rolling_window")]
 pub use rolling::*;
 #[cfg(feature = "search_sorted")]

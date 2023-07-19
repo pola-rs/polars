@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import warnings
 from pathlib import Path
 
@@ -13,8 +12,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 # TODO: Do not rely on I/O for these tests
 @pytest.fixture()
-def foods_ipc_path() -> str:
-    return str(Path(os.path.dirname(__file__)) / "io" / "files" / "foods1.ipc")
+def foods_ipc_path() -> Path:
+    return Path(__file__).parent / "io" / "files" / "foods1.ipc"
 
 
 def test_sql_cast() -> None:
@@ -436,6 +435,26 @@ def test_sql_groupby(foods_ipc_path: Path) -> None:
     assert out.to_dict(False) == {"grp": ["c"], "n_dist_attr": [2]}
 
 
+def test_sql_left() -> None:
+    df = pl.DataFrame({"scol": ["abcde", "abc", "a", None]})
+    ctx = pl.SQLContext(df=df)
+    res = ctx.execute(
+        'SELECT scol, LEFT(scol,2) AS "scol:left2" FROM df',
+    ).collect()
+
+    assert res.to_dict(False) == {
+        "scol": ["abcde", "abc", "a", None],
+        "scol:left2": ["ab", "ab", "a", None],
+    }
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="Invalid 'length' for Left: 'xyz'",
+    ):
+        ctx.execute(
+            """SELECT scol, LEFT(scol,'xyz') AS "scol:left2" FROM df"""
+        ).collect()
+
+
 def test_sql_limit_offset() -> None:
     n_values = 11
     lf = pl.LazyFrame({"a": range(n_values), "b": reversed(range(n_values))})
@@ -550,7 +569,7 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         ("!~*", "[aeiOU]", None),
     ],
 )
-def test_sql_regex(
+def test_sql_regex_operators(
     foods_ipc_path: Path, op: str, pattern: str, expected: str | None
 ) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
@@ -565,7 +584,7 @@ def test_sql_regex(
         assert out.rows() == ([(expected,)] if expected else [])
 
 
-def test_sql_regex_error() -> None:
+def test_sql_regex_operators_error() -> None:
     df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
         with pytest.raises(
@@ -577,6 +596,58 @@ def test_sql_regex_error() -> None:
             match=r"""Invalid pattern for '!~\*' operator: col\("abcde"\)""",
         ):
             ctx.execute("SELECT * FROM df WHERE sval !~* abcde")
+
+
+@pytest.mark.parametrize(
+    ("not_", "pattern", "flags", "expected"),
+    [
+        ("", "^veg", None, "vegetables"),
+        ("", "^VEG", None, None),
+        ("", "(?i)^VEG", None, "vegetables"),
+        ("NOT", "(t|s)$", None, "seafood"),
+        ("NOT", "T|S$", "i", "seafood"),
+        ("NOT", "^.E", "i", "fruit"),
+        ("NOT", "[aeiOU]", "i", None),
+    ],
+)
+def test_sql_regexp_like(
+    foods_ipc_path: Path,
+    not_: str,
+    pattern: str,
+    flags: str | None,
+    expected: str | None,
+) -> None:
+    lf = pl.scan_ipc(foods_ipc_path)
+    flags = "" if flags is None else f",'{flags}'"
+    with pl.SQLContext(foods=lf, eager_execution=True) as ctx:
+        out = ctx.execute(
+            f"""
+            SELECT DISTINCT category FROM foods
+            WHERE {not_} REGEXP_LIKE(category,'{pattern}'{flags})
+            """
+        )
+        assert out.rows() == ([(expected,)] if expected else [])
+
+
+def test_sql_regexp_like_errors() -> None:
+    with pl.SQLContext(df=pl.DataFrame({"scol": ["xyz"]})) as ctx:
+        with pytest.raises(
+            pl.InvalidOperationError,
+            match="Invalid/empty 'flags' for RegexpLike",
+        ):
+            ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,'[x-z]+','')")
+
+        with pytest.raises(
+            pl.InvalidOperationError,
+            match="Invalid arguments for RegexpLike",
+        ):
+            ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,999,999)")
+
+        with pytest.raises(
+            pl.InvalidOperationError,
+            match="Invalid number of arguments for RegexpLike",
+        ):
+            ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol)")
 
 
 @pytest.mark.parametrize(
@@ -608,6 +679,27 @@ def test_sql_round_ndigits_errors() -> None:
         pl.InvalidOperationError, match="Invalid 'decimals' for Round: -1"
     ):
         ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
+
+
+def test_sql_string_lengths() -> None:
+    df = pl.DataFrame({"words": ["Café", None, "東京"]})
+
+    with pl.SQLContext(frame=df) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              words,
+              LENGTH(words) AS n_chars,
+              OCTET_LENGTH(words) AS n_bytes
+            FROM frame
+            """
+        ).collect()
+
+    assert res.to_dict(False) == {
+        "words": ["Café", None, "東京"],
+        "n_chars": [4, None, 2],
+        "n_bytes": [5, None, 6],
+    }
 
 
 def test_sql_substr() -> None:
@@ -678,9 +770,21 @@ def test_register_context() -> None:
 
 def test_sql_expr() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["xyz", "abcde", None]})
-    sql_exprs = (
-        pl.sql_expr("MIN(a)"),
-        pl.sql_expr("SUBSTR(b,1,2)"),
+    sql_exprs = pl.sql_expr(
+        [
+            "MIN(a)",
+            "POWER(a,a) AS aa",
+            "SUBSTR(b,1,2) AS b2",
+        ]
     )
-    expected = pl.DataFrame({"a": [1, 1, 1], "b": ["yz", "bc", None]})
-    assert df.select(sql_exprs).frame_equal(expected)
+    expected = pl.DataFrame(
+        {"a": [1, 1, 1], "aa": [1, 4, 27], "b2": ["yz", "bc", None]}
+    )
+    assert df.select(*sql_exprs).frame_equal(expected)
+
+    # expect expressions that can't reasonably be parsed as expressions to raise
+    # (for example: those that explicitly reference tables and/or use wildcards)
+    with pytest.raises(
+        pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
+    ):
+        pl.sql_expr("xyz.*")

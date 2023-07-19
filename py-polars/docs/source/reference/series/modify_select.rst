@@ -21,6 +21,7 @@ Manipulation/selection
     Series.drop_nans
     Series.drop_nulls
     Series.explode
+    Series.extend
     Series.extend_constant
     Series.fill_nan
     Series.fill_null
@@ -37,6 +38,8 @@ Manipulation/selection
     Series.rename
     Series.reshape
     Series.reverse
+    Series.rle
+    Series.rle_id
     Series.round
     Series.sample
     Series.set

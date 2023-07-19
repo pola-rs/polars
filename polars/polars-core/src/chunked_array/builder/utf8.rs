@@ -43,13 +43,15 @@ impl Utf8ChunkedBuilder {
         let arr = self.builder.as_box();
         let length = arr.len() as IdxSize;
 
-        ChunkedArray {
+        let mut ca = ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
             phantom: PhantomData,
             bit_settings: Default::default(),
             length,
-        }
+        };
+        ca.compute_len();
+        ca
     }
 
     fn shrink_to_fit(&mut self) {

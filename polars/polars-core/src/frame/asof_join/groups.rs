@@ -152,26 +152,26 @@ pub(super) unsafe fn join_asof_nearest_with_indirection<
     if offsets.is_empty() {
         return (None, 0);
     }
-    let max_value = <T as Bounded>::max_value();
-    let mut dist: T = max_value;
+    let max_possible_dist = <T as Bounded>::max_value();
+    let mut dist: T = max_possible_dist;
+    let mut prev_offset: IdxSize = 0;
     for (idx, &offset) in offsets.iter().enumerate() {
         let val_r = *right.get_unchecked(offset as usize);
-        if val_r >= val_l {
-            // This is (val_r - val_l).abs(), but works on strings/dates
-            let dist_curr = if val_r > val_l {
-                val_r - val_l
-            } else {
-                val_l - val_r
-            };
-            if dist_curr <= dist {
-                // candidate for match
-                dist = dist_curr;
-            } else {
-                // note for a nearest-match, we can re-match on the same val_r next time,
-                // so we need to rewind the idx by 1
-                return (Some(offset - 1), idx - 1);
-            }
+        // This is (val_r - val_l).abs(), but works on strings/dates
+        let dist_curr = if val_r > val_l {
+            val_r - val_l
+        } else {
+            val_l - val_r
+        };
+        if dist_curr <= dist {
+            // candidate for match
+            dist = dist_curr;
+        } else {
+            // note for a nearest-match, we can re-match on the same val_r next time,
+            // so we need to rewind the idx by 1
+            return (Some(prev_offset), idx - 1);
         }
+        prev_offset = offset;
     }
 
     // if we've reached the end with nearest and haven't returned, it means that the last item was the closest

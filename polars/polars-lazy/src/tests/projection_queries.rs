@@ -90,7 +90,7 @@ fn test_row_count_pd() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "cse")]
 fn scan_join_same_file() -> PolarsResult<()> {
-    let lf = LazyCsvReader::new(FOODS_CSV.to_string()).finish()?;
+    let lf = LazyCsvReader::new(FOODS_CSV).finish()?;
 
     for cse in [true, false] {
         let partial = lf.clone().select([col("category")]).limit(5);

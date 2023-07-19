@@ -27,7 +27,7 @@ fn test_filter_sort_diff_2984() -> PolarsResult<()> {
         .sort("group", Default::default())
         .collect()?;
 
-    assert_eq!(Vec::from(out.column("id")?.i32()?), &[Some(1), None]);
+    assert_eq!(Vec::from(out.column("id")?.i32()?), &[Some(1), Some(0)]);
     Ok(())
 }
 

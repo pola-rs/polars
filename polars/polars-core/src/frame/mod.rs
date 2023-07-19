@@ -1073,21 +1073,26 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_cols))
     }
 
+    /// Drop columns that are in `names`.
     pub fn drop_many<S: AsRef<str>>(&self, names: &[S]) -> Self {
         let names: PlHashSet<_> = names.iter().map(|s| s.as_ref()).collect();
-        fn inner(df: &DataFrame, names: PlHashSet<&str>) -> DataFrame {
-            let mut new_cols = Vec::with_capacity(df.columns.len() - names.len());
-            df.columns.iter().for_each(|s| {
-                if !names.contains(&s.name()) {
-                    new_cols.push(s.clone())
-                }
-            });
-
-            DataFrame::new_no_checks(new_cols)
-        }
-        inner(self, names)
+        self.drop_many_amortized(&names)
     }
 
+    /// Drop columns that are in `names` without allocating a `HashSet`.
+    pub fn drop_many_amortized(&self, names: &PlHashSet<&str>) -> DataFrame {
+        let mut new_cols = Vec::with_capacity(self.columns.len().saturating_sub(names.len()));
+        self.columns.iter().for_each(|s| {
+            if !names.contains(&s.name()) {
+                new_cols.push(s.clone())
+            }
+        });
+
+        DataFrame::new_no_checks(new_cols)
+    }
+
+    /// Insert a new column at a given index without checking for duplicates.
+    /// This can leave the DataFrame at an invalid state
     fn insert_at_idx_no_name_check(
         &mut self,
         index: usize,
@@ -1836,11 +1841,12 @@ impl DataFrame {
         &mut self,
         by_column: impl IntoVec<SmartString>,
         descending: impl IntoVec<bool>,
+        maintain_order: bool,
     ) -> PolarsResult<&mut Self> {
         let by_column = self.select_series(by_column)?;
         let descending = descending.into_vec();
         self.columns = self
-            .sort_impl(by_column, descending, false, None, true)?
+            .sort_impl(by_column, descending, false, maintain_order, None, true)?
             .columns;
         Ok(self)
     }
@@ -1851,6 +1857,7 @@ impl DataFrame {
         by_column: Vec<Series>,
         descending: Vec<bool>,
         nulls_last: bool,
+        maintain_order: bool,
         slice: Option<(i64, usize)>,
         parallel: bool,
     ) -> PolarsResult<Self> {
@@ -1885,7 +1892,7 @@ impl DataFrame {
         }
 
         if let Some((0, k)) = slice {
-            return self.top_k_impl(k, descending, by_column, nulls_last);
+            return self.top_k_impl(k, descending, by_column, nulls_last, maintain_order);
         }
 
         #[cfg(feature = "dtype-struct")]
@@ -1907,6 +1914,7 @@ impl DataFrame {
                     descending: descending[0],
                     nulls_last,
                     multithreaded: parallel,
+                    maintain_order,
                 };
                 // fast path for a frame with a single series
                 // no need to compute the sort indices and then take by these indices
@@ -1954,20 +1962,21 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn sort_example(df: &DataFrame, descending: bool) -> PolarsResult<DataFrame> {
-    ///     df.sort(["a"], descending)
+    ///     df.sort(["a"], descending, false)
     /// }
     ///
     /// fn sort_by_multiple_columns_example(df: &DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.sort(&["a", "b"], vec![false, true])
+    ///     df.sort(&["a", "b"], vec![false, true], false)
     /// }
     /// ```
     pub fn sort(
         &self,
         by_column: impl IntoVec<SmartString>,
         descending: impl IntoVec<bool>,
+        maintain_order: bool,
     ) -> PolarsResult<Self> {
         let mut df = self.clone();
-        df.sort_in_place(by_column, descending)?;
+        df.sort_in_place(by_column, descending, maintain_order)?;
         Ok(df)
     }
 
@@ -1981,6 +1990,7 @@ impl DataFrame {
                 by_column,
                 descending,
                 options.nulls_last,
+                options.maintain_order,
                 None,
                 options.multithreaded,
             )?
@@ -3272,15 +3282,23 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
 
+    /// Take by index values given by the slice `idx`.
+    /// # Warning
     /// Be careful with allowing threads when calling this in a large hot loop
     /// every thread split may be on rayon stack and lead to SO
     #[doc(hidden)]
     pub unsafe fn _take_unchecked_slice(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
-        self._take_unchecked_slice2(idx, allow_threads, IsSorted::Not)
+        self._take_unchecked_slice_sorted(idx, allow_threads, IsSorted::Not)
     }
 
+    /// Take by index values given by the slice `idx`. Use this over `_take_unchecked_slice`
+    /// if the index value in `idx` are sorted. This will maintain sorted flags.
+    ///
+    /// # Warning
+    /// Be careful with allowing threads when calling this in a large hot loop
+    /// every thread split may be on rayon stack and lead to SO
     #[doc(hidden)]
-    pub unsafe fn _take_unchecked_slice2(
+    pub unsafe fn _take_unchecked_slice_sorted(
         &self,
         idx: &[IdxSize],
         allow_threads: bool,
@@ -3300,26 +3318,9 @@ impl DataFrame {
                 }
             }
         }
-        let ptr = idx.as_ptr() as *mut IdxSize;
-        let len = idx.len();
-
-        // create a temporary vec. we will not drop it.
-        let mut ca = IdxCa::from_vec("", Vec::from_raw_parts(ptr, len, len));
+        let mut ca = IdxCa::mmap_slice("", idx);
         ca.set_sorted_flag(sorted);
-        let out = self.take_unchecked_impl(&ca, allow_threads);
-
-        // ref count of buffers should be one because we dropped all allocations
-        let arr = {
-            let arr_ref = std::mem::take(&mut ca.chunks).pop().unwrap();
-            arr_ref
-                .as_any()
-                .downcast_ref::<PrimitiveArray<IdxSize>>()
-                .unwrap()
-                .clone()
-        };
-        // the only owned heap allocation is the `Vec` we created and must not be dropped
-        let _ = std::mem::ManuallyDrop::new(arr.into_mut().right().unwrap());
-        out
+        self.take_unchecked_impl(&ca, allow_threads)
     }
 
     #[cfg(feature = "partition_by")]
@@ -3328,11 +3329,19 @@ impl DataFrame {
         &self,
         cols: &[String],
         stable: bool,
+        include_key: bool,
     ) -> PolarsResult<Vec<DataFrame>> {
         let groups = if stable {
             self.groupby_stable(cols)?.take_groups()
         } else {
             self.groupby(cols)?.take_groups()
+        };
+
+        // drop key columns prior to calculation if requested
+        let df = if include_key {
+            self.clone()
+        } else {
+            self.drop_many(cols)
         };
 
         // don't parallelize this
@@ -3344,13 +3353,15 @@ impl DataFrame {
                         .into_par_iter()
                         .map(|(_, group)| {
                             // groups are in bounds
-                            unsafe { self._take_unchecked_slice(&group, false) }
+                            unsafe {
+                                df._take_unchecked_slice_sorted(&group, false, IsSorted::Ascending)
+                            }
                         })
                         .collect())
                 }
                 GroupsProxy::Slice { groups, .. } => Ok(groups
                     .into_par_iter()
-                    .map(|[first, len]| self.slice(first as i64, len as usize))
+                    .map(|[first, len]| df.slice(first as i64, len as usize))
                     .collect()),
             }
         })
@@ -3358,17 +3369,25 @@ impl DataFrame {
 
     /// Split into multiple DataFrames partitioned by groups
     #[cfg(feature = "partition_by")]
-    pub fn partition_by(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
+    pub fn partition_by(
+        &self,
+        cols: impl IntoVec<String>,
+        include_key: bool,
+    ) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
-        self._partition_by_impl(&cols, false)
+        self._partition_by_impl(&cols, false, include_key)
     }
 
     /// Split into multiple DataFrames partitioned by groups
     /// Order of the groups are maintained.
     #[cfg(feature = "partition_by")]
-    pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
+    pub fn partition_by_stable(
+        &self,
+        cols: impl IntoVec<String>,
+        include_key: bool,
+    ) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
-        self._partition_by_impl(&cols, true)
+        self._partition_by_impl(&cols, true, include_key)
     }
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
@@ -3598,7 +3617,7 @@ mod test {
         let df = df
             .unique_stable(None, UniqueKeepStrategy::First, None)
             .unwrap()
-            .sort(["flt"], false)
+            .sort(["flt"], false, false)
             .unwrap();
         let valid = df! {
             "flt" => [1., 2., 3.],

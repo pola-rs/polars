@@ -196,15 +196,23 @@ impl FunctionNode {
                     let mut new_schema = Schema::with_capacity(input_schema.len() * 2);
                     for (name, dtype) in input_schema.iter() {
                         if _columns.iter().any(|item| item.as_ref() == name.as_str()) {
-                            if let DataType::Struct(flds) = dtype {
-                                for fld in flds {
-                                    new_schema
-                                        .with_column(fld.name().clone(), fld.data_type().clone());
+                            match dtype {
+                                DataType::Struct(flds) => {
+                                    for fld in flds {
+                                        new_schema.with_column(
+                                            fld.name().clone(),
+                                            fld.data_type().clone(),
+                                        );
+                                    }
                                 }
-                            } else {
-                                polars_bail!(
-                                    SchemaMismatch: "expected struct dtype, got: `{}`", dtype
-                                );
+                                DataType::Unknown => {
+                                    // pass through unknown
+                                }
+                                _ => {
+                                    polars_bail!(
+                                        SchemaMismatch: "expected struct dtype, got: `{}`", dtype
+                                    );
+                                }
                             }
                         } else {
                             new_schema.with_column(name.clone(), dtype.clone());

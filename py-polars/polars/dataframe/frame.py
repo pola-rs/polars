@@ -991,7 +991,13 @@ class DataFrame:
         return self
 
     @classmethod
-    def _read_json(cls, source: str | Path | IOBase | bytes) -> Self:
+    def _read_json(
+        cls,
+        source: str | Path | IOBase | bytes,
+        *,
+        schema: SchemaDefinition | None = None,
+        schema_overrides: SchemaDefinition | None = None,
+    ) -> Self:
         """
         Read into a DataFrame from a JSON file.
 
@@ -1008,11 +1014,20 @@ class DataFrame:
             source = normalise_filepath(source)
 
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_json(source, False)
+        self._df = PyDataFrame.read_json(
+            source, schema=schema, schema_overrides=schema_overrides
+        )
         return self
 
     @classmethod
-    def _read_ndjson(cls, source: str | Path | IOBase | bytes) -> Self:
+    def _read_ndjson(
+        cls,
+        source: str | Path | IOBase | bytes,
+        *,
+        schema: SchemaDefinition | None = None,
+        schema_overrides: SchemaDefinition | None = None,
+        ignore_errors: bool = False,
+    ) -> Self:
         """
         Read into a DataFrame from a newline delimited JSON file.
 
@@ -1029,7 +1044,12 @@ class DataFrame:
             source = normalise_filepath(source)
 
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_ndjson(source)
+        self._df = PyDataFrame.read_ndjson(
+            source,
+            ignore_errors=ignore_errors,
+            schema=schema,
+            schema_overrides=schema_overrides,
+        )
         return self
 
     @property
@@ -2529,6 +2549,11 @@ class DataFrame:
         hidden_columns: Sequence[str] | None = None,
         hide_gridlines: bool = False,
         sheet_zoom: int | None = None,
+        freeze_panes: str
+        | tuple[str, int, int]
+        | tuple[int, int]
+        | tuple[int, int, int, int]
+        | None = None,
     ) -> Workbook:
         """
         Write frame data to a table in an Excel workbook/worksheet.
@@ -2645,6 +2670,21 @@ class DataFrame:
             Do not display any gridlines on the output worksheet.
         sheet_zoom : int
             Set the default zoom level of the output worksheet.
+        freeze_panes : str | (str, int, int) | (int, int) | (int, int, int, int)
+            Freeze workbook panes.
+
+            * If (row, col) is supplied, panes are split at the top-left corner of the
+              specified cell, which are 0-indexed. Thus, to freeze only the top row,
+              supply (1, 0).
+            * Alternatively, cell notation can be used to supply the cell. For example,
+              "A2" indicates the split occurs at the top-left of cell A2, which is the
+              equivalent of (1, 0).
+            * If (row, col, top_row, top_col) are supplied, the panes are split based on
+              the `row` and `col`, and the scrolling region is inititalized to begin at
+              the `top_row` and `top_col`. Thus, to freeze only the top row and have the
+              scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
+              Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
+
 
         Notes
         -----
@@ -2959,6 +2999,12 @@ class DataFrame:
                     f'"autofit=True" requires xlsxwriter 3.0.8 or higher; found {xlv}.'
                 )
             ws.autofit()
+
+        if freeze_panes:
+            if isinstance(freeze_panes, str):
+                ws.freeze_panes(freeze_panes)
+            else:
+                ws.freeze_panes(*freeze_panes)
 
         if can_close:
             wb.close()
@@ -3286,9 +3332,9 @@ class DataFrame:
         ... )  # doctest: +SKIP
 
         """
-        from polars.io.delta import check_if_delta_available, resolve_delta_lake_uri
+        from polars.io.delta import _check_if_delta_available, _resolve_delta_lake_uri
 
-        check_if_delta_available()
+        _check_if_delta_available()
 
         from deltalake.writer import (
             try_get_deltatable,
@@ -3299,7 +3345,7 @@ class DataFrame:
             delta_write_options = {}
 
         if isinstance(target, (str, Path)):
-            target = resolve_delta_lake_uri(str(target), strict=False)
+            target = _resolve_delta_lake_uri(str(target), strict=False)
 
         unsupported_cols = {}
         unsupported_types = [Time, Categorical, Null]
@@ -4049,6 +4095,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> DataFrame:
         """
         Return the `k` largest elements.
@@ -4067,6 +4114,10 @@ class DataFrame:
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+            Note that if `true` streaming is not possible and performance might be
+            worse since this requires a stable search.
 
         See Also
         --------
@@ -4114,7 +4165,13 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .top_k(k, by=by, descending=descending, nulls_last=nulls_last)
+            .top_k(
+                k,
+                by=by,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+            )
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
@@ -4130,6 +4187,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> DataFrame:
         """
         Return the `k` smallest elements.
@@ -4148,6 +4206,10 @@ class DataFrame:
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+            Note that if `true` streaming is not possible and performance might be
+            worse since this requires a stable search.
 
         See Also
         --------
@@ -4195,7 +4257,13 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .bottom_k(k, by=by, descending=descending, nulls_last=nulls_last)
+            .bottom_k(
+                k,
+                by=by,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+            )
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
@@ -4645,6 +4713,15 @@ class DataFrame:
             This is slower than a default groupby.
             Settings this to ``True`` blocks the possibility
             to run on the streaming engine.
+
+            .. note::
+                Within each group, the order of rows is always preserved, regardless
+                of this argument.
+
+        Returns
+        -------
+        GroupBy
+            Object which can be used to perform aggregations.
 
         Examples
         --------
@@ -5658,6 +5735,10 @@ class DataFrame:
         """
         Apply a custom/user-defined function (UDF) over the rows of the DataFrame.
 
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
+
         The UDF will receive each row as a tuple of values: ``udf(row)``.
 
         Implementing logic using a Python function is almost always _significantly_
@@ -5711,16 +5792,16 @@ class DataFrame:
         │ 6        ┆ 24       │
         └──────────┴──────────┘
 
-        It is better to implement this with an expression:
+        However, it is much better to implement this with a native expression:
 
         >>> df.select(
         ...     pl.col("foo") * 2,
         ...     pl.col("bar") * 3,
         ... )  # doctest: +IGNORE_RESULT
 
-        Return a Series by mapping each row to a scalar:
+        Return a DataFrame with a single column by mapping each row to a scalar:
 
-        >>> df.apply(lambda t: (t[0] * 2 + t[1]))
+        >>> df.apply(lambda t: (t[0] * 2 + t[1]))  # doctest: +SKIP
         shape: (3, 1)
         ┌───────┐
         │ apply │
@@ -5732,11 +5813,15 @@ class DataFrame:
         │ 14    │
         └───────┘
 
-        In this case it is better to use the following expression:
+        In this case it is better to use the following native expression:
 
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
 
         """
+        # TODO:
+        # from polars.utils.udfs import warn_on_inefficient_apply
+        # warn_on_inefficient_apply(function, columns=self.columns, apply_target="frame)
+
         out, is_df = self._df.apply(function, return_dtype, inference_size)
         if is_df:
             return self._from_pydf(out)
@@ -5787,16 +5872,21 @@ class DataFrame:
         else:
             return self._from_pydf(self._df.hstack([s._s for s in columns]))
 
-    def vstack(self, df: DataFrame, *, in_place: bool = False) -> Self:
+    @deprecated_alias(df="other")
+    def vstack(self, other: DataFrame, *, in_place: bool = False) -> Self:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
 
         Parameters
         ----------
-        df
+        other
             DataFrame to stack.
         in_place
-            Modify in place
+            Modify in place.
+
+        See Also
+        --------
+        extend
 
         Examples
         --------
@@ -5829,34 +5919,51 @@ class DataFrame:
 
         """
         if in_place:
-            self._df.vstack_mut(df._df)
-            return self
-        else:
-            return self._from_pydf(self._df.vstack(df._df))
+            try:
+                self._df.vstack_mut(other._df)
+                return self
+            except RuntimeError as exc:
+                if str(exc) == "Already mutably borrowed":
+                    self._df.vstack_mut(other._df.clone())
+                    return self
+                else:
+                    raise exc
 
-    def extend(self, other: Self) -> Self:
+        return self._from_pydf(self._df.vstack(other._df))
+
+    def extend(self, other: DataFrame) -> Self:
         """
         Extend the memory backed by this `DataFrame` with the values from `other`.
 
-        Different from `vstack` which adds the chunks from `other` to the chunks of this
-        `DataFrame` `extend` appends the data from `other` to the underlying memory
-        locations and thus may cause a reallocation.
+        Different from ``vstack`` which adds the chunks from ``other`` to the chunks of
+        this ``DataFrame``, ``extend`` appends the data from `other` to the underlying
+        memory locations and thus may cause a reallocation.
 
         If this does not cause a reallocation, the resulting data structure will not
         have any extra chunks and thus will yield faster queries.
 
-        Prefer `extend` over `vstack` when you want to do a query after a single append.
-        For instance during online operations where you add `n` rows and rerun a query.
+        Prefer ``extend`` over ``vstack`` when you want to do a query after a single
+        append. For instance, during online operations where you add `n` rows and rerun
+        a query.
 
-        Prefer `vstack` over `extend` when you want to append many times before doing a
-        query. For instance when you read in multiple files and when to store them in a
-        single `DataFrame`. In the latter case, finish the sequence of `vstack`
-        operations with a `rechunk`.
+        Prefer ``vstack`` over ``extend`` when you want to append many times before
+        doing a query. For instance, when you read in multiple files and want to store
+        them in a single ``DataFrame``. In the latter case, finish the sequence of
+        ``vstack`` operations with a ``rechunk``.
 
         Parameters
         ----------
         other
             DataFrame to vertically add.
+
+        Warnings
+        --------
+        This method modifies the dataframe in-place. The dataframe is returned for
+        convenience only.
+
+        See Also
+        --------
+        vstack
 
         Examples
         --------
@@ -5878,7 +5985,13 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        self._df.extend(other._df)
+        try:
+            self._df.extend(other._df)
+        except RuntimeError as exc:
+            if str(exc) == "Already mutably borrowed":
+                self._df.extend(other._df.clone())
+            else:
+                raise exc
         return self
 
     def drop(self, columns: str | Collection[str], *more_columns: str) -> DataFrame:
@@ -6707,6 +6820,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = ...,
+        include_key: bool = ...,
         as_dict: Literal[False] = ...,
     ) -> list[Self]:
         ...
@@ -6717,6 +6831,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = ...,
+        include_key: bool = ...,
         as_dict: Literal[True],
     ) -> dict[Any, Self]:
         ...
@@ -6726,6 +6841,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = True,
+        include_key: bool = True,
         as_dict: bool = False,
     ) -> list[Self] | dict[Any, Self]:
         """
@@ -6740,6 +6856,8 @@ class DataFrame:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default partition by operation.
+        include_key
+            Include the columns used to partition the DataFrame in the output.
         as_dict
             Return a dictionary instead of a list. The dictionary keys are the distinct
             group values that identify that group.
@@ -6860,7 +6978,8 @@ class DataFrame:
             by.extend(more_by)
 
         partitions = [
-            self._from_pydf(_df) for _df in self._df.partition_by(by, maintain_order)
+            self._from_pydf(_df)
+            for _df in self._df.partition_by(by, maintain_order, include_key)
         ]
 
         if as_dict:

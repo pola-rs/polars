@@ -8,12 +8,13 @@ use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::error::PolarsError::ComputeError;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::apply::lazy::{call_lambda_with_series, ToSeries};
 use crate::dataframe::PyDataFrame;
 use crate::prelude::{python_udf, ObjectValue};
-use crate::py_modules::POLARS;
+use crate::py_modules::{POLARS, UTILS};
 use crate::Wrap;
 
 fn python_function_caller_series(s: Series, lambda: &PyObject) -> PolarsResult<Series> {
@@ -56,9 +57,23 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
     })
 }
 
+fn warning_function(msg: &str) {
+    Python::with_gil(|py| {
+        let warn_fn = UTILS
+            .as_ref(py)
+            .getattr(intern!(py, "_polars_warn"))
+            .unwrap();
+
+        if let Err(e) = warn_fn.call1((msg,)) {
+            eprintln!("{e}")
+        }
+    });
+}
+
 #[pyfunction]
 pub fn __register_startup_deps() {
     if !registry::is_object_builder_registered() {
+        // register object type builder
         let object_builder = Box::new(|name: &str, capacity: usize| {
             Box::new(ObjectChunkedBuilder::<ObjectValue>::new(name, capacity))
                 as Box<dyn AnonymousObjectBuilder>
@@ -72,7 +87,15 @@ pub fn __register_startup_deps() {
         });
 
         registry::register_object_builder(object_builder, object_converter);
+        // register SERIES UDF
         unsafe { python_udf::CALL_SERIES_UDF_PYTHON = Some(python_function_caller_series) }
+        // register DATAFRAME UDF
         unsafe { python_udf::CALL_DF_UDF_PYTHON = Some(python_function_caller_df) }
+        // register warning function for `polars_warn!`
+        unsafe { polars_error::set_warning_function(warning_function) };
+        Python::with_gil(|py| {
+            // init AnyValue LUT
+            crate::conversion::LUT.set(py, Default::default()).unwrap();
+        });
     }
 }

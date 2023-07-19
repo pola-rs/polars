@@ -14,8 +14,6 @@ use polars_arrow::data_types::IsFloat;
 use polars_arrow::export::arrow;
 #[cfg(feature = "rolling_window")]
 use polars_arrow::kernels::rolling;
-#[cfg(feature = "rolling_window")]
-use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
 
 #[cfg(feature = "rolling_window")]
@@ -191,12 +189,7 @@ pub trait RollingAgg {
     /// Apply a rolling quantile (moving quantile) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be weighted according to the `weights` vector.
-    fn rolling_quantile(
-        &self,
-        quantile: f64,
-        interpolation: QuantileInterpolOptions,
-        options: RollingOptionsImpl,
-    ) -> PolarsResult<Series>;
+    fn rolling_quantile(&self, options: RollingOptionsImpl) -> PolarsResult<Series>;
 
     /// Apply a rolling var (moving var) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window

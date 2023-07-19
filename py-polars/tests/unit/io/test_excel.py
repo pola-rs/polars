@@ -297,3 +297,28 @@ def test_excel_write_multiple_tables() -> None:
         )
     assert table_names == {f"Frame{n}" for n in range(4)}
     assert pl.read_excel(xls, sheet_name="sheet3").rows() == []
+
+
+def test_excel_freeze_panes() -> None:
+    from xlsxwriter import Workbook
+
+    # note: checks that empty tables don't error on write
+    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+
+    xls = BytesIO()
+
+    # use all three freeze_pane notations
+    with Workbook(xls) as wb:
+        df1.write_excel(workbook=wb, worksheet="sheet1", freeze_panes=(1, 0))
+        df2.write_excel(workbook=wb, worksheet="sheet2", freeze_panes=(1, 0, 3, 4))
+        df3.write_excel(workbook=wb, worksheet="sheet3", freeze_panes=("B2"))
+
+    table_names: set[str] = set()
+    for sheet in ("sheet1", "sheet2", "sheet3"):
+        table_names.update(
+            tbl["name"] for tbl in wb.get_worksheet_by_name(sheet).tables
+        )
+    assert table_names == {f"Frame{n}" for n in range(3)}
+    assert pl.read_excel(xls, sheet_name="sheet3").rows() == []

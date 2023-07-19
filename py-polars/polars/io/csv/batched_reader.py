@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 
 
 class BatchedCsvReader:
+    """Read a CSV file in batches."""
+
     def __init__(
         self,
         source: str | Path,

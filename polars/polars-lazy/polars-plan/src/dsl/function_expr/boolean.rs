@@ -8,8 +8,12 @@ use crate::wrap;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum BooleanFunction {
-    All,
-    Any,
+    All {
+        drop_nulls: bool,
+    },
+    Any {
+        drop_nulls: bool,
+    },
     IsNot,
     IsNull,
     IsNotNull,
@@ -37,8 +41,8 @@ impl Display for BooleanFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use BooleanFunction::*;
         let s = match self {
-            All => "all",
-            Any => "any",
+            All { .. } => "all",
+            Any { .. } => "any",
             IsNot => "is_not",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
@@ -63,8 +67,8 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: BooleanFunction) -> Self {
         use BooleanFunction::*;
         match func {
-            All => map!(all),
-            Any => map!(any),
+            All { drop_nulls } => map!(all, drop_nulls),
+            Any { drop_nulls } => map!(any, drop_nulls),
             IsNot => map!(is_not),
             IsNull => map!(is_null),
             IsNotNull => map!(is_not_null),
@@ -90,22 +94,14 @@ impl From<BooleanFunction> for FunctionExpr {
     }
 }
 
-fn all(s: &Series) -> PolarsResult<Series> {
+fn all(s: &Series, drop_nulls: bool) -> PolarsResult<Series> {
     let boolean = s.bool()?;
-    if boolean.all() {
-        Ok(Series::new(s.name(), [true]))
-    } else {
-        Ok(Series::new(s.name(), [false]))
-    }
+    Ok(Series::new(s.name(), [boolean.all_3val(drop_nulls)]))
 }
 
-fn any(s: &Series) -> PolarsResult<Series> {
+fn any(s: &Series, drop_nulls: bool) -> PolarsResult<Series> {
     let boolean = s.bool()?;
-    if boolean.any() {
-        Ok(Series::new(s.name(), [true]))
-    } else {
-        Ok(Series::new(s.name(), [false]))
-    }
+    Ok(Series::new(s.name(), [boolean.any_3val(drop_nulls)]))
 }
 
 fn is_not(s: &Series) -> PolarsResult<Series> {

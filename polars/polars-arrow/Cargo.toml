@@ -17,7 +17,7 @@ ethnum = { version = "1.3.2", optional = true }
 hashbrown.workspace = true
 multiversion.workspace = true
 num-traits.workspace = true
-polars-error = { version = "0.30.0", path = "../polars-error" }
+polars-error = { version = "0.31.1", path = "../polars-error" }
 serde = { version = "1", features = ["derive"], optional = true }
 thiserror.workspace = true
 

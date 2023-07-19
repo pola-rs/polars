@@ -5,8 +5,8 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::{col, lit, when};
 use sqlparser::ast::{
     ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
-    Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, TrimWhereField,
-    UnaryOperator, Value as SqlValue,
+    Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, SelectItem,
+    TrimWhereField, UnaryOperator, Value as SqlValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -60,8 +60,8 @@ pub(crate) struct SqlExprVisitor<'a> {
 impl SqlExprVisitor<'_> {
     fn visit_expr(&self, expr: &SqlExpr) -> PolarsResult<Expr> {
         match expr {
-            SqlExpr::AllOp(_) => Ok(self.visit_expr(expr)?.all()),
-            SqlExpr::AnyOp(expr) => Ok(self.visit_expr(expr)?.any()),
+            SqlExpr::AllOp(_) => Ok(self.visit_expr(expr)?.all(true)),
+            SqlExpr::AnyOp(expr) => Ok(self.visit_expr(expr)?.any(true)),
             SqlExpr::ArrayAgg(expr) => self.visit_arr_agg(expr),
             SqlExpr::Between {
                 expr,
@@ -532,8 +532,14 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     });
 
     let mut ast = parser.try_with_sql(s.as_ref()).map_err(to_compute_err)?;
+    let expr = ast.parse_select_item().map_err(to_compute_err)?;
 
-    let expr = ast.parse_expr().map_err(to_compute_err)?;
-
-    parse_sql_expr(&expr, &ctx)
+    Ok(match &expr {
+        SelectItem::ExprWithAlias { expr, alias } => {
+            let expr = parse_sql_expr(expr, &ctx)?;
+            expr.alias(&alias.value)
+        }
+        SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &ctx)?,
+        _ => polars_bail!(InvalidOperation: "Unable to parse '{}' as Expr", s.as_ref()),
+    })
 }
