@@ -3151,7 +3151,7 @@ class Expr:
 
         Returns
         -------
-        Boolean Series
+        Boolean expression
 
         Examples
         --------
@@ -3176,6 +3176,38 @@ class Expr:
 
         """
         return self._from_pyexpr(self._pyexpr.is_first())
+
+    def is_last(self) -> Self:
+        """
+        Get a mask of the last unique value.
+
+        Returns
+        -------
+        Boolean expression
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "num": [1, 2, 3, 1, 5],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("num").is_last().alias("is_last"))
+        shape: (5, 2)
+        ┌─────┬─────────┐
+        │ num ┆ is_last │
+        │ --- ┆ ---     │
+        │ i64 ┆ bool    │
+        ╞═════╪═════════╡
+        │ 1   ┆ false   │
+        │ 2   ┆ true    │
+        │ 3   ┆ true    │
+        │ 1   ┆ true    │
+        │ 5   ┆ true    │
+        └─────┴─────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.is_last())
 
     def is_duplicated(self) -> Self:
         """

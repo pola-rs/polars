@@ -1239,8 +1239,17 @@ def test_apply_list_out() -> None:
 
 
 def test_is_first() -> None:
-    s = pl.Series("", [1, 1, 2])
-    assert s.is_first().to_list() == [True, False, True]
+    s = pl.Series([1, 1, 2])
+    result = s.is_first()
+    expected = pl.Series([True, False, True])
+    assert_series_equal(result, expected)
+
+
+def test_is_last() -> None:
+    s = pl.Series([1, 1, 2])
+    result = s.is_last()
+    expected = pl.Series([False, True, True])
+    assert_series_equal(result, expected)
 
 
 def test_reinterpret() -> None:

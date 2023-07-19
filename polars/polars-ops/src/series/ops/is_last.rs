@@ -6,53 +6,53 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 
-use crate::series::ops::arg_min_max::arg_max_bool;
+use crate::series::ops::arg_min_max::arg_min_bool;
 
-pub fn is_first(s: &Series) -> PolarsResult<BooleanChunked> {
+pub fn is_last(s: &Series) -> PolarsResult<BooleanChunked> {
     let s = s.to_physical_repr();
 
     use DataType::*;
     let out = match s.dtype() {
         Boolean => {
             let ca = s.bool().unwrap();
-            is_first_boolean(ca)
+            is_last_boolean(ca)
         }
         Binary => {
             let ca = s.binary().unwrap();
-            is_first_bin(ca)
+            is_last_bin(ca)
         }
         Utf8 => {
             let s = s.cast(&Binary).unwrap();
-            return is_first(&s);
+            return is_last(&s);
         }
         Float32 => {
             let ca = s.bit_repr_small();
-            is_first_numeric(&ca)
+            is_last_numeric(&ca)
         }
         Float64 => {
             let ca = s.bit_repr_large();
-            is_first_numeric(&ca)
+            is_last_numeric(&ca)
         }
         dt if dt.is_numeric() => {
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                is_first_numeric(ca)
+                is_last_numeric(ca)
             })
         }
         #[cfg(feature = "dtype-struct")]
-        Struct(_) => return is_first_struct(&s),
-        dt => polars_bail!(opq = is_first, dt),
+        Struct(_) => return is_last_struct(&s),
+        dt => polars_bail!(opq = is_last, dt),
     };
     Ok(out)
 }
 
-fn is_first_boolean(ca: &BooleanChunked) -> BooleanChunked {
+fn is_last_boolean(ca: &BooleanChunked) -> BooleanChunked {
     let mut out = MutableBitmap::with_capacity(ca.len());
     out.extend_constant(ca.len(), false);
-    if let Some(index) = arg_max_bool(ca) {
+    if let Some(index) = arg_min_bool(ca) {
         out.set(index, true)
     }
-    if let Some(index) = ca.first_non_null() {
+    if let Some(index) = ca.last_non_null() {
         out.set(index, true)
     }
 
@@ -61,7 +61,7 @@ fn is_first_boolean(ca: &BooleanChunked) -> BooleanChunked {
     unsafe { BooleanChunked::from_chunks(ca.name(), chunks) }
 }
 
-fn is_first_bin(ca: &BinaryChunked) -> BooleanChunked {
+fn is_last_bin(ca: &BinaryChunked) -> BooleanChunked {
     let mut unique = PlHashSet::new();
     let chunks = ca
         .downcast_iter()
@@ -76,20 +76,21 @@ fn is_first_bin(ca: &BinaryChunked) -> BooleanChunked {
 
     unsafe { BooleanChunked::from_chunks(ca.name(), chunks) }
 }
-
-fn is_first_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
+fn is_last_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
     T: PolarsNumericType,
     T::Native: Hash + Eq,
 {
+    eprintln!("Hello");
     let mut unique = PlHashSet::new();
     let chunks = ca
         .downcast_iter()
         .map(|arr| {
             let mask: BooleanArray = arr
                 .into_iter()
+                .rev()
                 .map(|opt_v| unique.insert(opt_v))
-                .collect_trusted();
+                .collect_reversed();
             Box::new(mask) as ArrayRef
         })
         .collect();
@@ -98,7 +99,7 @@ where
 }
 
 #[cfg(feature = "dtype-struct")]
-fn is_first_struct(s: &Series) -> PolarsResult<BooleanChunked> {
+fn is_last_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     let groups = s.group_tuples(true, false)?;
     let first = groups.take_group_firsts();
     let mut out = MutableBitmap::with_capacity(s.len());

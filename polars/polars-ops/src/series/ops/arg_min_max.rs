@@ -90,7 +90,7 @@ pub(crate) fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
     }
 }
 
-fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
+pub(crate) fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
     if ca.is_empty() || ca.null_count() == ca.len() || ca.all() {
         Some(0)
     } else if ca.null_count() == 0 && ca.chunks().len() == 1 {

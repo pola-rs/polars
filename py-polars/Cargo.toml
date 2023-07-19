@@ -136,6 +136,7 @@ features = [
   "rows",
   "round_series",
   "is_first",
+  "is_last",
   "is_unique",
   "dot_product",
   "concat_str",
