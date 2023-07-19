@@ -128,7 +128,6 @@ Two other things to keep in mind:
 - If you add code that should be tested, add tests.
 - If you change the public API, [update the documentation](#api-reference).
 
-
 ### Debugging Environment
 
 Due to the way that python and rust interoperate, debugging the Rust side of development from Python calls can be difficult. For this reason, we have provided
@@ -204,11 +203,9 @@ Copy the following `configurations` and `inputs` components to your `launch.json
 
 Next, in the `Run and Debug` panel on the left, select `Python: Debug Rust` from the drop-down menu on top.
 
-
 #### Debugging a file
 
 At this point, you should be able to set a breakpoint in any `.rs` file located within the codebase. To stop at this breakpoint, open in your editor a python script that calls polars code and hit either `F5` to launch the `Python: Debug Rust` debugging configuration.
-
 
 ### Pull requests
 
