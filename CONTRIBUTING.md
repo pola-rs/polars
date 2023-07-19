@@ -198,6 +198,7 @@ Copy the following `configurations` and `inputs` components to your `launch.json
     ],
 }
 ```
+
 </details>
 <br>
 
