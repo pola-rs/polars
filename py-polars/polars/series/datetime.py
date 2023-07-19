@@ -1494,7 +1494,7 @@ class DateTimeNameSpace:
 
         """
 
-    def offset_by(self, by: str) -> Series:
+    def offset_by(self, by: str | Expr) -> Series:
         """
         Offset this date by a relative time offset.
 

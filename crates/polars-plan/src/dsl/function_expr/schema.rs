@@ -128,7 +128,7 @@ impl FunctionExpr {
                 Ok(field)
             },
             #[cfg(feature = "date_offset")]
-            DateOffset(_) => mapper.with_same_dtype(),
+            DateOffset { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "trigonometry")]
             Trigonometry(_) => mapper.map_to_float_dtype(),
             #[cfg(feature = "trigonometry")]

@@ -114,43 +114,71 @@ pub(super) fn datetime(
 }
 
 #[cfg(feature = "date_offset")]
-pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
+pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
+    let sa = &s[0];
+    let sb = &s[1];
+
     let preserve_sortedness: bool;
-    let out = match s.dtype().clone() {
+    let out = match sa.dtype().clone() {
         DataType::Date => {
-            let s = s
+            let sa = sa
                 .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
                 .unwrap();
             preserve_sortedness = true;
-            date_offset(s, offset).and_then(|s| s.cast(&DataType::Date))
-        },
+            date_offset(&[sa, sb.clone()]).and_then(|s| s.cast(&DataType::Date))
+        }
         DataType::Datetime(tu, tz) => {
-            let ca = s.datetime().unwrap();
+            let ca = sa.datetime().unwrap();
+            let offsets = sb.utf8().unwrap();
 
-            fn offset_fn(tu: TimeUnit) -> fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64> {
-                match tu {
-                    TimeUnit::Nanoseconds => Duration::add_ns,
-                    TimeUnit::Microseconds => Duration::add_us,
-                    TimeUnit::Milliseconds => Duration::add_ms,
-                }
-            }
+            let offset_fn = match tu {
+                TimeUnit::Nanoseconds => Duration::add_ns,
+                TimeUnit::Microseconds => Duration::add_us,
+                TimeUnit::Milliseconds => Duration::add_ms,
+            };
 
-            let out = match tz {
+            let tz_args = match tz {
                 #[cfg(feature = "timezones")]
-                Some(ref tz) => {
-                    let offset_fn = offset_fn(tu);
-                    ca.0.try_apply(|v| offset_fn(&offset, v, tz.parse::<Tz>().ok().as_ref()))
-                },
+                Some(ref tz) => tz.parse::<Tz>().ok(),
+                _ => None,
+            };
+
+            let out = match offsets.len() {
+                1 => {
+                    let offset = match offsets.get(0) {
+                        Some(offset) => Duration::parse(offset),
+                        _ => Duration::new(0),
+                    };
+                    ca.0.try_apply(|v| offset_fn(&offset, v, tz_args.as_ref()))
+                }
                 _ => {
-                    let offset_fn = offset_fn(tu);
-                    ca.0.try_apply(|v| offset_fn(&offset, v, None))
-                },
+                    let out = ca
+                        .into_iter()
+                        .zip(offsets.into_iter())
+                        .map(|(v, offset)| {
+                            let offset = match offset {
+                                Some(offset) => Duration::parse(offset),
+                                _ => Duration::new(0),
+                            };
+                            offset_fn(&offset, v.unwrap(), tz_args.as_ref()).unwrap()
+                        })
+                        .collect::<Vec<_>>();
+                    Ok(Int64Chunked::from_vec("", out))
+                }
             }?;
             // Sortedness may not be preserved when crossing daylight savings time boundaries
             // for calendar-aware durations.
             // Constant durations (e.g. 2 hours) always preserve sortedness.
-            preserve_sortedness =
-                tz.is_none() || tz.as_deref() == Some("UTC") || offset.is_constant_duration();
+            preserve_sortedness = match offsets.len() {
+                1 => {
+                    let offset = match offsets.get(0) {
+                        Some(offset) => Duration::parse(offset),
+                        _ => Duration::new(0),
+                    };
+                    tz.is_none() || tz.as_deref() == Some("UTC") || offset.is_constant_duration()
+                }
+                _ => false,
+            };
             out.cast(&DataType::Datetime(tu, tz))
         },
         dt => polars_bail!(
@@ -159,7 +187,7 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
     };
     if preserve_sortedness {
         out.map(|mut out| {
-            out.set_sorted_flag(s.is_sorted_flag());
+            out.set_sorted_flag(sa.is_sorted_flag());
             out
         })
     } else {

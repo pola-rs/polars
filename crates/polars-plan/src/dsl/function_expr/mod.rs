@@ -110,7 +110,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "range")]
     Range(RangeFunction),
     #[cfg(feature = "date_offset")]
-    DateOffset(polars_time::Duration),
+    DateOffset,
     #[cfg(feature = "trigonometry")]
     Trigonometry(TrigonometricFunction),
     #[cfg(feature = "trigonometry")]
@@ -282,7 +282,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "range")]
             Range(func) => return write!(f, "{func}"),
             #[cfg(feature = "date_offset")]
-            DateOffset(_) => "dt.offset_by",
+            DateOffset => "dt.offset_by",
             #[cfg(feature = "trigonometry")]
             Trigonometry(func) => return write!(f, "{func}"),
             #[cfg(feature = "trigonometry")]
@@ -486,6 +486,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_owned!(temporal::date_offset, offset)
             },
 
+            DateOffset => {
+                map_as_slice!(temporal::date_offset)
+            }
             #[cfg(feature = "trigonometry")]
             Trigonometry(trig_function) => {
                 map!(trigonometry::apply_trigonometric_function, trig_function)

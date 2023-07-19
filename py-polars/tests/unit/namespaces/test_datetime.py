@@ -690,6 +690,91 @@ def test_offset_by_truncate_sorted_flag() -> None:
     assert s2.flags["SORTED_ASC"]
 
 
+def test_offset_by_expressions() -> None:
+    df = pl.DataFrame(
+        {
+            "DATE_COL": [
+                datetime(2023, 11, 1),
+                datetime(2023, 12, 1),
+                datetime(2024, 1, 1),
+            ],
+            "ADD_DAYS": [15, None, 25],
+            "ADD_MONTHS": [2, 4, 6],
+        }
+    )
+
+    expected = {
+        "DATE_COL": [
+            datetime(2023, 11, 1, 0, 0),
+            datetime(2023, 12, 1, 0, 0),
+            datetime(2024, 1, 1, 0, 0),
+        ],
+        "ADD_DAYS": [15, None, 25],
+        "ADD_MONTHS": [2, 4, 6],
+    }
+
+    # test add months from column
+    expected["NEW_DATE_COL"] = [
+        datetime(2024, 1, 1, 0, 0),
+        datetime(2024, 4, 1, 0, 0),
+        datetime(2024, 7, 1, 0, 0),
+    ]
+    assert (
+        df.with_columns(
+            NEW_DATE_COL=pl.col("DATE_COL").dt.offset_by(
+                pl.format("{}mo", "ADD_MONTHS")
+            )
+        ).to_dict(as_series=False)
+        == expected
+    )
+
+    # test add days from column (containing nulls)
+    expected["NEW_DATE_COL"] = [
+        datetime(2023, 11, 16, 0, 0),
+        datetime(2023, 12, 1, 0, 0),
+        datetime(2024, 1, 26, 0, 0),
+    ]
+    assert (
+        df.with_columns(
+            NEW_DATE_COL=pl.col("DATE_COL").dt.offset_by(pl.format("{}d", "ADD_DAYS"))
+        ).to_dict(as_series=False)
+        == expected
+    )
+
+    # test add from string
+    expected["NEW_DATE_COL"] = [
+        datetime(2023, 11, 21, 0, 10),
+        datetime(2023, 12, 21, 0, 10),
+        datetime(2024, 1, 21, 0, 10),
+    ]
+    assert (
+        df.with_columns(NEW_DATE_COL=pl.col("DATE_COL").dt.offset_by("20d10m")).to_dict(
+            as_series=False
+        )
+        == expected
+    )
+
+    # test sorted flags from single offset
+    df = df.sort("DATE_COL")
+    assert (
+        df.with_columns(NEW_DATE_COL=pl.col("DATE_COL").dt.offset_by("10d"))
+        .get_column("NEW_DATE_COL")
+        .flags["SORTED_ASC"]
+    )
+
+    # test sorted flags from multiple offsets
+    assert (
+        df.with_columns(
+            NEW_DATE_COL=pl.col("DATE_COL").dt.offset_by(
+                pl.format("{}mo", "ADD_MONTHS")
+            )
+        )
+        .get_column("NEW_DATE_COL")
+        .flags["SORTED_ASC"]
+        is False
+    )
+
+
 @pytest.mark.parametrize(
     ("duration", "input_date", "expected"),
     [
