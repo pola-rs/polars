@@ -8,10 +8,10 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.udfs import (
+    _bytecode_to_expression,
     _can_rewrite_as_expression,
     _get_bytecode_ops,
     _param_name_from_signature,
-    _to_polars_expression,
 )
 
 MY_CONSTANT = 3
@@ -20,7 +20,9 @@ MY_CONSTANT = 3
 def _get_suggestion(
     func: Callable[[Any], Any], col: str, apply_target: str, param_name: str
 ) -> str | None:
-    return _to_polars_expression(_get_bytecode_ops(func), col, apply_target, param_name)
+    return _bytecode_to_expression(
+        _get_bytecode_ops(func), col, apply_target, param_name
+    )
 
 
 @pytest.mark.parametrize(
@@ -32,6 +34,7 @@ def _get_suggestion(
         lambda x: MY_CONSTANT + x,
         lambda x: x[0] + 1,
         lambda x: x,
+        lambda x: x > 0 and (x < 100 or (x % 2 == 0)),
     ],
 )
 def test_non_simple_function(func: Callable[[Any], Any]) -> None:
@@ -49,7 +52,7 @@ def test_non_simple_function(func: Callable[[Any], Any]) -> None:
         lambda x: x | False,
         lambda x: x != 3,
         lambda x: x > 1,
-        lambda x: not (x > 1),
+        lambda x: not (x > 1) or x == 2,
         lambda x: x is None,
         lambda x: x is not None,
         lambda x: (x * -x) ** x,
@@ -58,6 +61,7 @@ def test_non_simple_function(func: Callable[[Any], Any]) -> None:
         lambda x: (10 - x) / (((x * 4) - x) // (2 + (x * (x - 1)))),
         lambda x: x in (2, 3, 4),
         lambda x: x not in (2, 3, 4),
+        lambda x: x in (1, 2, 3, 4, 3) and x % 2 == 0 and x > 0,
     ],
 )
 def test_expr_apply_produces_warning(func: Callable[[Any], Any]) -> None:
@@ -88,4 +92,4 @@ def test_expr_apply_produces_warning_misc() -> None:
     suggestion = _get_suggestion(
         Test().x10, col="colx", apply_target="expr", param_name="x"
     )
-    assert suggestion == '(pl.col("colx") * 10)'
+    assert suggestion == 'pl.col("colx") * 10'
