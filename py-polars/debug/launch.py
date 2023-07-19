@@ -13,7 +13,11 @@ def launch_debugging() -> None:
     and execute the originally-requested script.
     """
     if len(sys.argv) == 1:
-        return
+        raise RuntimeError(
+            "launch.py is not meant to be executed directly; please use the `Python: "
+            "Debug Rust` debugging configuration to run a python script that uses the "
+            "polars library."
+        )
 
     cmd = (
         f"ps -aux | grep 'debugpy/launcher/../../debugpy' "
