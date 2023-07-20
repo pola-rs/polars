@@ -234,11 +234,11 @@ def test_date_range_precision(time_unit: TimeUnit | None, expected_micros: int) 
 
 
 def test_range_invalid_unit() -> None:
-    with pytest.raises(pl.PolarsPanicError, match="'D' not supported"):
+    with pytest.raises(pl.PolarsPanicError, match="'x' not supported"):
         pl.date_range(
             start=datetime(2021, 12, 16),
             end=datetime(2021, 12, 16, 3),
-            interval="1D",
+            interval="1X",
             eager=True,
         )
 
