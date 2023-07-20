@@ -144,7 +144,7 @@ macro_rules! minmax_window {
                     validity,
                     m: m.copied(),
                     m_idx: idx,
-                    sorted_to: sorted_to,
+                    sorted_to,
                     last_start: start,
                     last_end: end,
                     null_count,
