@@ -97,8 +97,8 @@ def arange(
     dtype
         Data type of the resulting column. Defaults to ``Int64``.
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
+        Evaluate immediately and return a ``Series``.
+        If set to ``False`` (default), return an expression instead.
 
     See Also
     --------
@@ -199,8 +199,8 @@ def int_range(
     dtype
         Data type of the range. Defaults to ``Int64``.
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
+        Evaluate immediately and return a ``Series``.
+        If set to ``False`` (default), return an expression instead.
 
     Returns
     -------
@@ -290,8 +290,8 @@ def int_ranges(
     dtype
         Integer data type of the ranges. Defaults to ``Int64``.
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
+        Evaluate immediately and return a ``Series``.
+        If set to ``False`` (default), return an expression instead.
 
     Returns
     -------
@@ -384,39 +384,44 @@ def date_range(
     name: str | None = None,
 ) -> Series | Expr:
     """
-    Create a range of type `Datetime` (or `Date`).
+    Generate a date range.
 
     Parameters
     ----------
     start
-        Lower bound of the date range, given as a date, datetime, Expr, or column name.
+        Lower bound of the date range.
     end
-        Upper bound of the date range, given as a date, datetime, Expr, or column name.
+        Upper bound of the date range.
     interval
-        Interval of the range periods; can be a python timedelta object like
-        ``timedelta(days=10)`` or a polars duration string, such as ``3d12h4m25s``
-        (representing 3 days, 12 hours, 4 minutes, and 25 seconds). Append
-        ``_saturating`` to the interval string to restrict resulting invalid dates to
-        valid ranges.
+        Interval of the range periods, specified as a Python ``timedelta`` object
+        or a Polars duration string like ``1h30m25s``.
+
+        Append ``_saturating`` to the interval string to restrict resulting invalid
+        dates to valid ranges.
 
         It is common to attempt to create a month-end date series by using the "1mo"
         offset string with a start date at the end of the month. This will not produce
         the desired results. See Note #2 below for further information.
     closed : {'both', 'left', 'right', 'none'}
-        Define whether the temporal window interval is closed or not.
+        Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
-        Set the time unit. Only takes effect if output is of ``Datetime`` type.
-    time_zone:
-        Optional timezone. Only takes effect if output is of ``Datetime`` type.
+        Time unit of the resulting ``Datetime`` data type.
+        Only takes effect if the output column is of type ``Datetime``.
+    time_zone
+        Time zone of the resulting ``Datetime`` data type.
+        Only takes effect if the output column is of type ``Datetime``.
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
+        Evaluate immediately and return a ``Series``.
+        If set to ``False`` (default), return an expression instead.
     name
         Name of the output column.
 
         .. deprecated:: 0.18.0
             This argument is deprecated. Use the ``alias`` method instead.
 
+    Returns
+    -------
+    Column of data type ``Date`` or ``Datetime``.
 
     Notes
     -----
@@ -458,13 +463,9 @@ def date_range(
             2023-05-31
     ]
 
-    Returns
-    -------
-    A Series of type `Datetime` or `Date`.
-
     Examples
     --------
-    Using polars duration string to specify the interval:
+    Using Polars duration string to specify the interval:
 
     >>> from datetime import date
     >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True)
@@ -476,7 +477,7 @@ def date_range(
         2022-03-01
     ]
 
-    Using `timedelta` object to specify the interval:
+    Using ``timedelta`` object to specify the interval:
 
     >>> from datetime import datetime, timedelta
     >>> pl.date_range(
@@ -498,7 +499,7 @@ def date_range(
         1985-01-10 00:00:00
     ]
 
-    Specify a time zone
+    Specifying a time zone:
 
     >>> pl.date_range(
     ...     datetime(2022, 1, 1),
@@ -517,11 +518,9 @@ def date_range(
 
     Combine with ``month_end`` to get the last day of the month:
 
-    >>> (
-    ...     pl.date_range(
-    ...         datetime(2022, 1, 1), datetime(2022, 3, 1), "1mo", eager=True
-    ...     ).dt.month_end()
-    ... )
+    >>> pl.date_range(
+    ...     datetime(2022, 1, 1), datetime(2022, 3, 1), "1mo", eager=True
+    ... ).dt.month_end()
     shape: (3,)
     Series: 'date' [datetime[μs]]
     [
@@ -539,7 +538,6 @@ def date_range(
         )
 
     interval = _parse_interval_argument(interval)
-
     if time_unit is None and "ns" in interval:
         time_unit = "ns"
 
@@ -566,9 +564,136 @@ def date_range(
 
 
 @overload
+def date_ranges(
+    start: date | datetime | IntoExpr,
+    end: date | datetime | IntoExpr,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
+    eager: Literal[False] = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def date_ranges(
+    start: date | datetime | IntoExpr,
+    end: date | datetime | IntoExpr,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
+    eager: Literal[True],
+) -> Series:
+    ...
+
+
+@overload
+def date_ranges(
+    start: date | datetime | IntoExpr,
+    end: date | datetime | IntoExpr,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
+    eager: bool,
+) -> Series | Expr:
+    ...
+
+
+def date_ranges(
+    start: date | datetime | IntoExpr,
+    end: date | datetime | IntoExpr,
+    interval: str | timedelta = "1d",
+    *,
+    closed: ClosedInterval = "both",
+    time_unit: TimeUnit | None = None,
+    time_zone: str | None = None,
+    eager: bool = False,
+) -> Series | Expr:
+    """
+    Create a column of date ranges.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the date range.
+    end
+        Upper bound of the date range.
+    interval
+        Interval of the range periods, specified as a Python ``timedelta`` object
+        or a Polars duration string like ``1h30m25s``.
+
+        Append ``_saturating`` to the interval string to restrict resulting invalid
+        dates to valid ranges.
+
+        It is common to attempt to create a month-end date series by using the "1mo"
+        offset string with a start date at the end of the month. This will not produce
+        the desired results. See Note #2 below for further information.
+    closed : {'both', 'left', 'right', 'none'}
+        Define which sides of the range are closed (inclusive).
+    time_unit : {None, 'ns', 'us', 'ms'}
+        Time unit of the resulting ``Datetime`` data type.
+        Only takes effect if the output column is of type ``Datetime``.
+    time_zone
+        Time zone of the resulting ``Datetime`` data type.
+        Only takes effect if the output column is of type ``Datetime``.
+    eager
+        Evaluate immediately and return a ``Series``.
+        If set to ``False`` (default), return an expression instead.
+
+    Returns
+    -------
+    Column of data type ``List(Date)`` or ``List(Datetime)``.
+
+    Examples
+    --------
+    >>> from datetime import date
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [date(2022, 1, 1), date(2022, 1, 2)],
+    ...         "end": date(2022, 1, 3),
+    ...     }
+    ... )
+    >>> df.with_columns(pl.date_ranges("start", "end"))
+    shape: (2, 3)
+    ┌────────────┬────────────┬───────────────────────────────────┐
+    │ start      ┆ end        ┆ dates                             │
+    │ ---        ┆ ---        ┆ ---                               │
+    │ date       ┆ date       ┆ list[date]                        │
+    ╞════════════╪════════════╪═══════════════════════════════════╡
+    │ 2022-01-01 ┆ 2022-01-03 ┆ [2022-01-01, 2022-01-02, 2022-01… │
+    │ 2022-01-02 ┆ 2022-01-03 ┆ [2022-01-02, 2022-01-03]          │
+    └────────────┴────────────┴───────────────────────────────────┘
+
+    """
+    interval = _parse_interval_argument(interval)
+    if time_unit is None and "ns" in interval:
+        time_unit = "ns"
+
+    start_pyexpr = parse_as_expression(start)
+    end_pyexpr = parse_as_expression(end)
+
+    result = wrap_expr(
+        plr.date_ranges(
+            start_pyexpr, end_pyexpr, interval, closed, time_unit, time_zone
+        )
+    )
+
+    if eager:
+        return F.select(result).to_series()
+
+    return result
+
+
+@overload
 def time_range(
-    start: time | IntoExpr | str | None = ...,
-    end: time | IntoExpr | str | None = ...,
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -614,25 +739,24 @@ def time_range(
     name: str | None = None,
 ) -> Series | Expr:
     """
-    Create a range of type `Time`.
+    Generate a time range.
 
     Parameters
     ----------
     start
-        Lower bound of the time range, given as a time, Expr, or column name.
-        If omitted, will default to ``time(0,0,0,0)``.
+        Lower bound of the time range.
+        If omitted, defaults to ``time(0,0,0,0)``.
     end
-        Upper bound of the time range, given as a time, Expr, or column name.
-        If omitted, will default to ``time(23,59,59,999999)``.
+        Upper bound of the time range.
+        If omitted, defaults to ``time(23,59,59,999999)``.
     interval
-        Interval of the range periods; can be a python timedelta object like
-        ``timedelta(minutes=10)`` or a polars duration string, such as ``1h30m25s``
-        (representing 1 hour, 30 minutes, and 25 seconds).
+        Interval of the range periods, specified as a Python ``timedelta`` object
+        or a Polars duration string like ``1h30m25s``.
     closed : {'both', 'left', 'right', 'none'}
-        Define whether the temporal window interval is closed or not.
+        Define which sides of the range are closed (inclusive).
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
+        Evaluate immediately and return a ``Series``.
+        If set to ``False`` (default), return an expression instead.
     name
         Name of the output column.
 
@@ -641,12 +765,14 @@ def time_range(
 
     Returns
     -------
-    A Series of type `Time`.
+    Column of data type ``Time``.
+
+    See Also
+    --------
+    time_ranges : Create a column of time ranges.
 
     Examples
     --------
-    Create a Series that starts at 14:00, with intervals of 3 hours and 15 mins:
-
     >>> from datetime import time
     >>> pl.time_range(
     ...     start=time(14, 0),
@@ -661,30 +787,6 @@ def time_range(
         20:30:00
         23:45:00
     ]
-
-    Generate a DataFrame with two columns made of eager ``time_range`` Series,
-    and create a third column using ``time_range`` in expression context:
-
-    >>> lf = pl.LazyFrame(
-    ...     {
-    ...         "start": pl.time_range(interval="6h", eager=True),
-    ...         "stop": pl.time_range(start=time(2, 59), interval="5h59m", eager=True),
-    ...     }
-    ... ).with_columns(
-    ...     intervals=pl.time_range("start", "stop", interval="1h29m", eager=False)
-    ... )
-    >>> lf.collect()
-    shape: (4, 3)
-    ┌──────────┬──────────┬────────────────────────────────┐
-    │ start    ┆ stop     ┆ intervals                      │
-    │ ---      ┆ ---      ┆ ---                            │
-    │ time     ┆ time     ┆ list[time]                     │
-    ╞══════════╪══════════╪════════════════════════════════╡
-    │ 00:00:00 ┆ 02:59:00 ┆ [00:00:00, 01:29:00, 02:58:00] │
-    │ 06:00:00 ┆ 08:58:00 ┆ [06:00:00, 07:29:00, 08:58:00] │
-    │ 12:00:00 ┆ 14:57:00 ┆ [12:00:00, 13:29:00]           │
-    │ 18:00:00 ┆ 20:56:00 ┆ [18:00:00, 19:29:00]           │
-    └──────────┴──────────┴────────────────────────────────┘
 
     """
     if name is not None:
@@ -706,6 +808,7 @@ def time_range(
 
     start_pyexpr = parse_as_expression(start)
     end_pyexpr = parse_as_expression(end)
+
     result = wrap_expr(plr.time_range(start_pyexpr, end_pyexpr, interval, closed))
 
     if name is not None:
@@ -720,6 +823,120 @@ def time_range(
         return s
 
     _warn_for_deprecation_time_range()
+
+    return result
+
+
+@overload
+def time_ranges(
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: Literal[False] = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def time_ranges(
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: Literal[True],
+) -> Series:
+    ...
+
+
+@overload
+def time_ranges(
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: bool,
+) -> Series | Expr:
+    ...
+
+
+def time_ranges(
+    start: time | IntoExpr | None = None,
+    end: time | IntoExpr | None = None,
+    interval: str | timedelta = "1h",
+    *,
+    closed: ClosedInterval = "both",
+    eager: bool = False,
+) -> Series | Expr:
+    """
+    Create a column of time ranges.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the time range.
+        If omitted, defaults to ``time(0, 0, 0, 0)``.
+    end
+        Upper bound of the time range.
+        If omitted, defaults to ``time(23, 59, 59, 999999)``.
+    interval
+        Interval of the range periods, specified as a Python ``timedelta`` object
+        or a Polars duration string like ``1h30m25s``.
+    closed : {'both', 'left', 'right', 'none'}
+        Define which sides of the range are closed (inclusive).
+    eager
+        Evaluate immediately and return a ``Series``.
+        If set to ``False`` (default), return an expression instead.
+
+    Returns
+    -------
+    Column of data type ``List(Time)``.
+
+    See Also
+    --------
+    time_range : Generate a single time range.
+
+    Examples
+    --------
+    >>> from datetime import time
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [time(9, 0), time(10, 0)],
+    ...         "end": time(11, 0),
+    ...     }
+    ... )
+    >>> df.with_columns(pl.time_ranges("start", "end"))
+    shape: (2, 3)
+    ┌──────────┬──────────┬────────────────────────────────┐
+    │ start    ┆ end      ┆ times                          │
+    │ ---      ┆ ---      ┆ ---                            │
+    │ time     ┆ time     ┆ list[time]                     │
+    ╞══════════╪══════════╪════════════════════════════════╡
+    │ 09:00:00 ┆ 11:00:00 ┆ [09:00:00, 10:00:00, 11:00:00] │
+    │ 10:00:00 ┆ 11:00:00 ┆ [10:00:00, 11:00:00]           │
+    └──────────┴──────────┴────────────────────────────────┘
+
+    """
+    interval = _parse_interval_argument(interval)
+    for unit in ("y", "mo", "w", "d"):
+        if unit in interval:
+            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+
+    if start is None:
+        start = time(0, 0, 0)
+    if end is None:
+        end = time(23, 59, 59, 999999)
+
+    start_pyexpr = parse_as_expression(start)
+    end_pyexpr = parse_as_expression(end)
+
+    result = wrap_expr(plr.time_ranges(start_pyexpr, end_pyexpr, interval, closed))
+
+    if eager:
+        return F.select(result).to_series()
 
     return result
 

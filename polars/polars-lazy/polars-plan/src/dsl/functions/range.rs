@@ -82,7 +82,7 @@ pub fn date_range(
     every: Duration,
     closed: ClosedWindow,
     time_unit: Option<TimeUnit>,
-    tz: Option<TimeZone>,
+    time_zone: Option<TimeZone>,
 ) -> Expr {
     let input = vec![start, end];
 
@@ -92,7 +92,7 @@ pub fn date_range(
             every,
             closed,
             time_unit,
-            tz,
+            time_zone,
         }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
@@ -103,7 +103,36 @@ pub fn date_range(
     }
 }
 
-/// Create a time range from a `start` and `stop` expression.
+/// Create a column of date ranges from a `start` and `stop` expression.
+#[cfg(feature = "temporal")]
+pub fn date_ranges(
+    start: Expr,
+    end: Expr,
+    every: Duration,
+    closed: ClosedWindow,
+    time_unit: Option<TimeUnit>,
+    time_zone: Option<TimeZone>,
+) -> Expr {
+    let input = vec![start, end];
+
+    Expr::Function {
+        input,
+        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRanges {
+            every,
+            closed,
+            time_unit,
+            time_zone,
+        }),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: true,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
+}
+
+/// Generate a time range.
 #[cfg(feature = "temporal")]
 pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
     let input = vec![start, end];
@@ -111,6 +140,23 @@ pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow)
     Expr::Function {
         input,
         function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRange { every, closed }),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: false,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
+}
+
+/// Create a column of time ranges from a `start` and `stop` expression.
+#[cfg(feature = "temporal")]
+pub fn time_ranges(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
+    let input = vec![start, end];
+
+    Expr::Function {
+        input,
+        function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRanges { every, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: false,

@@ -49,9 +49,19 @@ pub enum TemporalFunction {
         every: Duration,
         closed: ClosedWindow,
         time_unit: Option<TimeUnit>,
-        tz: Option<TimeZone>,
+        time_zone: Option<TimeZone>,
+    },
+    DateRanges {
+        every: Duration,
+        closed: ClosedWindow,
+        time_unit: Option<TimeUnit>,
+        time_zone: Option<TimeZone>,
     },
     TimeRange {
+        every: Duration,
+        closed: ClosedWindow,
+    },
+    TimeRanges {
         every: Duration,
         closed: ClosedWindow,
     },
@@ -96,7 +106,9 @@ impl Display for TemporalFunction {
             #[cfg(feature = "timezones")]
             TzLocalize(_) => "tz_localize",
             DateRange { .. } => return write!(f, "date_range"),
+            DateRanges { .. } => return write!(f, "date_ranges"),
             TimeRange { .. } => return write!(f, "time_range"),
+            TimeRanges { .. } => return write!(f, "time_ranges"),
             Combine(_) => "combine",
         };
         write!(f, "dt.{s}")

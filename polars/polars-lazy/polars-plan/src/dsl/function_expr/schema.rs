@@ -67,13 +67,36 @@ impl FunctionExpr {
                         every,
                         closed: _,
                         time_unit,
-                        tz,
+                        time_zone,
                     } => {
-                        // output dtype may change based on `every`, `tz`, and `time_unit`
-                        return mapper.map_to_date_range_dtype(every, time_unit, tz);
+                        // output dtype may change based on `every`, `time_unit`, and `time_zone`
+                        let inner_dtype =
+                            mapper.map_to_date_range_dtype(every, time_unit, time_zone)?;
+                        return Ok(Field::new("date", DataType::List(Box::new(inner_dtype))));
                     }
+                    DateRanges {
+                        every,
+                        closed: _,
+                        time_unit,
+                        time_zone,
+                    } => {
+                        // output dtype may change based on `every`, `time_unit`, and `time_zone`
+                        let inner_dtype =
+                            mapper.map_to_date_range_dtype(every, time_unit, time_zone)?;
+                        return Ok(Field::new(
+                            "date_range",
+                            DataType::List(Box::new(inner_dtype)),
+                        ));
+                    }
+
                     TimeRange { .. } => {
                         return Ok(Field::new("time", DataType::List(Box::new(DataType::Time))));
+                    }
+                    TimeRanges { .. } => {
+                        return Ok(Field::new(
+                            "time_range",
+                            DataType::List(Box::new(DataType::Time)),
+                        ));
                     }
                     Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
                         DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),
@@ -344,7 +367,7 @@ impl<'a> FieldsMapper<'a> {
         every: &Duration,
         time_unit: &Option<TimeUnit>,
         tz: &Option<String>,
-    ) -> PolarsResult<Field> {
+    ) -> PolarsResult<DataType> {
         let inner_dtype = match (&self.map_to_supertype()?.dtype, time_unit, tz, every) {
             #[cfg(feature = "timezones")]
             (DataType::Datetime(tu, Some(field_tz)), time_unit, Some(tz), _) => {
@@ -394,7 +417,7 @@ impl<'a> FieldsMapper<'a> {
                 polars_bail!(ComputeError: "expected Date or Datetime, got {}", dtype)
             }
         };
-        Ok(Field::new("date", DataType::List(Box::new(inner_dtype))))
+        Ok(inner_dtype)
     }
 
     /// Map the dtypes to the "supertype" of a list of lists.

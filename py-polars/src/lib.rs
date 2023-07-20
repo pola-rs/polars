@@ -98,7 +98,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::range::date_range))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::range::date_ranges))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::range::time_range))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::range::time_ranges))
         .unwrap();
 
     // Functions - aggregation
