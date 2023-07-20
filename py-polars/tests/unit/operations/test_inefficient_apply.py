@@ -15,7 +15,8 @@ from polars.utils.udfs import (
 )
 
 MY_CONSTANT = 3
-MY_GLOBAL_DICT = {"1": 1, "2": 2, "3": 3}
+MY_GLOBAL_DICT = {1: 2, 2: 3, 3: 1}
+MY_GLOBAL_ARRAY = [1, 2, 3]
 
 
 def _get_suggestion(
@@ -35,6 +36,7 @@ def _get_suggestion(
         lambda x: x[0] + 1,
         lambda x: x,
         lambda x: x > 0 and (x < 100 or (x % 2 == 0)),
+        lambda x: MY_GLOBAL_ARRAY[x],
     ],
 )
 def test_non_simple_function(func: Callable[[Any], Any]) -> None:
@@ -97,7 +99,7 @@ def test_expr_apply_produces_warning_misc() -> None:
 
 
 def test_map_dict() -> None:
-    my_local_dict = {"1": 1, "2": 2, "3": 3}
+    my_local_dict = {1: 2, 2: 3, 3: 1}
     for func in [
         lambda x: my_local_dict[x],
         lambda x: MY_GLOBAL_DICT[x],
@@ -105,7 +107,7 @@ def test_map_dict() -> None:
         suggestion = _get_suggestion(func, "a", "expr", "x")
         assert suggestion is not None
 
-        df = pl.DataFrame({"a": ["1", "2", "3"]})
+        df = pl.DataFrame({"a": [1, 2, 3]})
         result = df.select(
             x="a",
             y=eval(suggestion),

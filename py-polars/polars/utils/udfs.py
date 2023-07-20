@@ -192,6 +192,20 @@ def _can_rewrite_as_expression(
                 or ops[i - 2][0] not in ("LOAD_GLOBAL", "LOAD_DEREF")
             ):
                 return False
+            import inspect
+
+            dict_name = ops[i - 2][1]
+            for frameinfo in inspect.stack(0):
+                if dict_name in frameinfo.frame.f_locals:
+                    if isinstance(frameinfo.frame.f_locals[dict_name], dict):
+                        return True
+                elif dict_name in frameinfo.frame.f_globals:
+                    if isinstance(frameinfo.frame.f_globals[dict_name], dict):
+                        return True
+            else:
+                # Couldn't find the dict_name variable,
+                # or found it but it's not a dict.
+                return False
         elif op[0] not in simple_ops:
             return False
         elif op[0] in _LOGICAL_OPCODES:
