@@ -31,7 +31,6 @@ def _get_suggestion(
         np.sin,
         lambda x: np.sin(x),
         lambda x, y: x + y,
-        lambda x: MY_CONSTANT + x,
         lambda x: x[0] + 1,
         lambda x: x,
         lambda x: x > 0 and (x < 100 or (x % 2 == 0)),
@@ -62,6 +61,7 @@ def test_non_simple_function(func: Callable[[Any], Any]) -> None:
         lambda x: x in (2, 3, 4),
         lambda x: x not in (2, 3, 4),
         lambda x: x in (1, 2, 3, 4, 3) and x % 2 == 0 and x > 0,
+        lambda x: MY_CONSTANT + x,
     ],
 )
 def test_expr_apply_produces_warning(func: Callable[[Any], Any]) -> None:
@@ -93,3 +93,7 @@ def test_expr_apply_produces_warning_misc() -> None:
         Test().x10, col="colx", apply_target="expr", param_name="x"
     )
     assert suggestion == 'pl.col("colx") * 10'
+
+    # note: all constants - should not create a warning/suggestion
+    suggestion = _get_suggestion(lambda x: MY_CONSTANT + 42, "colx", "expr", "x")
+    assert suggestion is None
