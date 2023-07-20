@@ -58,18 +58,16 @@ _UNARY_OPCODES = {
 }
 _SIMPLE_EXPR_OPS = {
     "BINARY_OP",
+    "BINARY_SUBSCR",
     "COMPARE_OP",
     "CONTAINS_OP",
     "IS_OP",
-    "LOAD_DEREF",
-    "LOAD_GLOBAL",
     "LOAD_CONST",
     "LOAD_FAST",
     "LOAD_GLOBAL",
     "LOAD_DEREF",
 }
 _SIMPLE_EXPR_OPS |= set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES)
-_SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
 _UPGRADE_BINARY_OPS = sys.version_info < (3, 11)
 
 
@@ -197,7 +195,10 @@ def _instructions_to_expression(
 
 
 def _can_rewrite_as_expression(
-    instructions: list[Instruction], apply_target: str, param_name, stacklevel
+    instructions: list[Instruction],
+    apply_target: str,
+    param_name: str,
+    stacklevel: int,
 ) -> bool:
     """
     Determine if bytecode indicates only simple binary ops and/or comparisons.
@@ -208,20 +209,20 @@ def _can_rewrite_as_expression(
     """
     if len(instructions) < 3:
         return False
-    simple_ops = _SIMPLE_FRAME_OPS if apply_target == "frame" else _SIMPLE_EXPR_OPS
     logical_opcodes = set()
     for i, op in enumerate(instructions):
-        if op[0] == "BINARY_SUBSCR":
+        if op.opname == "BINARY_SUBSCR":
             if (
                 i < 2
-                or instructions[i - 1][1] != param_name
-                or instructions[i - 2][0] not in ("LOAD_GLOBAL", "LOAD_DEREF")
+                or instructions[i - 1].argval != param_name
+                or instructions[i - 2].opname not in ("LOAD_GLOBAL", "LOAD_DEREF")
             ):
                 return False
+
             import inspect
 
-            dict_name = instructions[i - 2][1]
-            frame = inspect.stack(0)[stacklevel - 1]
+            dict_name = instructions[i - 2].argval
+            frame = inspect.stack(0)[stacklevel]
             if dict_name in frame.frame.f_locals:
                 if isinstance(frame.frame.f_locals[dict_name], dict):
                     return True
@@ -231,10 +232,10 @@ def _can_rewrite_as_expression(
             # Couldn't find the dict_name variable,
             # or found it but it's not a dict.
             return False
-        elif op[0] not in simple_ops:
+        elif op.opname not in _SIMPLE_EXPR_OPS:
             return False
-        elif op[0] in _LOGICAL_OPCODES:
-            logical_opcodes.add(op[0])
+        elif op.opname in _LOGICAL_OPCODES:
+            logical_opcodes.add(op.opname)
 
     if len(logical_opcodes) > 1:
         # todo: can't yet handle mixed and/or logical operators
@@ -322,7 +323,7 @@ def _generate_warning(
         "In this case, you can replace your `apply` with an expression:\n"
         f"{before_after_suggestion}",
         PolarsInefficientApplyWarning,
-        stacklevel=stacklevel,
+        stacklevel=stacklevel + 1,
     )
 
 
@@ -356,8 +357,10 @@ def warn_on_inefficient_apply(
 
     # if they indicate a trivial/inefficient function that should
     # be rewritten as a native polars expression, warn about it
-    if _can_rewrite_as_expression(instructions, apply_target, param_name, stacklevel=stacklevel+1):
+    if _can_rewrite_as_expression(
+        instructions, apply_target, param_name, stacklevel=stacklevel
+    ):
         if suggestion := _instructions_to_expression(
             instructions, col, apply_target, param_name
         ):
-            _generate_warning(function, suggestion, col, param_name, stacklevel + 1)
+            _generate_warning(function, suggestion, col, param_name, stacklevel)
