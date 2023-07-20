@@ -172,7 +172,7 @@ def _can_rewrite_as_expression(
     ops: list[ByteCodeInfo],
     apply_target: str,
     param_name: str,
-    function: Callable[[Any], Any],
+    stacklevel: int,
 ) -> bool:
     """
     Determine if bytecode indicates only simple binary ops and/or comparisons.
@@ -196,18 +196,13 @@ def _can_rewrite_as_expression(
             import inspect
 
             dict_name = ops[i - 2][1]
-            frameinfo = inspect.stack(0)[-1]
-            for frameinfo in inspect.stack(0):
-                if dict_name in frameinfo.frame.f_locals:
-                    if function in list(
-                        frameinfo.frame.f_locals.values()
-                    ) and isinstance(frameinfo.frame.f_locals[dict_name], dict):
-                        return True
-                elif dict_name in frameinfo.frame.f_globals:
-                    if function in list(
-                        frameinfo.frame.f_locals.values()
-                    ) and isinstance(frameinfo.frame.f_globals[dict_name], dict):
-                        return True
+            frame = inspect.stack(0)[stacklevel - 1]
+            if dict_name in frame.frame.f_locals:
+                if isinstance(frame.frame.f_locals[dict_name], dict):
+                    return True
+            elif dict_name in frame.frame.f_globals:
+                if isinstance(frame.frame.f_globals[dict_name], dict):
+                    return True
             # Couldn't find the dict_name variable,
             # or found it but it's not a dict.
             return False
@@ -277,7 +272,11 @@ def _param_name_from_signature(function: Callable[[Any], Any]) -> str | None:
 
 
 def _generate_warning(
-    function: Callable[[Any], Any], suggestion: str, col: str, param_name: str
+    function: Callable[[Any], Any],
+    suggestion: str,
+    col: str,
+    param_name: str,
+    stacklevel: int,
 ) -> None:
     """Create a warning that includes a faster native expression as an alternative."""
     func_name = _function_name(function, param_name)
@@ -302,7 +301,7 @@ def _generate_warning(
         "In this case, you can replace your `apply` with an expression:\n"
         f"{before_after_suggestion}",
         PolarsInefficientApplyWarning,
-        stacklevel=find_stacklevel(),
+        stacklevel=stacklevel,
     )
 
 
@@ -332,9 +331,11 @@ def warn_on_inefficient_apply(
     # fast function disassembly to get bytecode ops
     bytecode = _get_bytecode_ops(function)
 
+    stacklevel = find_stacklevel()
+
     # if ops indicate a trivial function that should be native, warn about it
-    if _can_rewrite_as_expression(bytecode, apply_target, param_name, function):
+    if _can_rewrite_as_expression(bytecode, apply_target, param_name, stacklevel + 1):
         if suggestion := _bytecode_to_expression(
             bytecode, col, apply_target, param_name
         ):
-            _generate_warning(function, suggestion, col, param_name)
+            _generate_warning(function, suggestion, col, param_name, stacklevel + 1)

@@ -13,6 +13,7 @@ from polars.utils.udfs import (
     _get_bytecode_ops,
     _param_name_from_signature,
 )
+from polars.utils.various import find_stacklevel
 
 MY_CONSTANT = 3
 MY_GLOBAL_DICT = {1: 2, 2: 3, 3: 1}
@@ -40,8 +41,12 @@ def _get_suggestion(
     ],
 )
 def test_non_simple_function(func: Callable[[Any], Any]) -> None:
+    stacklevel = find_stacklevel()
     assert not _param_name_from_signature(func) or not _can_rewrite_as_expression(
-        _get_bytecode_ops(func), apply_target="expr", param_name="x", function=func
+        _get_bytecode_ops(func),
+        apply_target="expr",
+        param_name="x",
+        stacklevel=stacklevel + 1,
     )
 
 
