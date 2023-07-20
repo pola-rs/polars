@@ -328,8 +328,8 @@ def int_ranges(
 
 @overload
 def date_range(
-    start: date | datetime | Expr | str,
-    end: date | datetime | Expr | str,
+    start: date | datetime | IntoExpr,
+    end: date | datetime | IntoExpr,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -343,8 +343,8 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | Expr | str,
-    end: date | datetime | Expr | str,
+    start: date | datetime | IntoExpr,
+    end: date | datetime | IntoExpr,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -358,8 +358,8 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | Expr | str,
-    end: date | datetime | Expr | str,
+    start: date | datetime | IntoExpr,
+    end: date | datetime | IntoExpr,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -373,8 +373,8 @@ def date_range(
 
 @deprecated_alias(low="start", high="end")
 def date_range(
-    start: date | datetime | Expr | str,
-    end: date | datetime | Expr | str,
+    start: date | datetime | IntoExpr,
+    end: date | datetime | IntoExpr,
     interval: str | timedelta = "1d",
     *,
     closed: ClosedInterval = "both",
@@ -553,15 +553,18 @@ def date_range(
         result = result.alias(name)
 
     if eager:
-        return F.select(result).to_series().explode().set_sorted()
+        s = F.select(result).to_series()
+        if s.len() == 1:
+            s = s.explode().set_sorted()
+        return s
 
     return result
 
 
 @overload
 def time_range(
-    start: time | Expr | str | None = ...,
-    end: time | Expr | str | None = ...,
+    start: time | IntoExpr | str | None = ...,
+    end: time | IntoExpr | str | None = ...,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -573,8 +576,8 @@ def time_range(
 
 @overload
 def time_range(
-    start: time | Expr | str | None = ...,
-    end: time | Expr | str | None = ...,
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -586,8 +589,8 @@ def time_range(
 
 @overload
 def time_range(
-    start: time | Expr | str | None = ...,
-    end: time | Expr | str | None = ...,
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -598,8 +601,8 @@ def time_range(
 
 
 def time_range(
-    start: time | Expr | str | None = None,
-    end: time | Expr | str | None = None,
+    start: time | IntoExpr | None = None,
+    end: time | IntoExpr | None = None,
     interval: str | timedelta = "1h",
     *,
     closed: ClosedInterval = "both",
@@ -705,7 +708,10 @@ def time_range(
         result = result.alias(name)
 
     if eager:
-        return F.select(result).to_series().explode().set_sorted()
+        s = F.select(result).to_series()
+        if s.len() == 1:
+            s = s.explode().set_sorted()
+        return s
 
     return result
 
