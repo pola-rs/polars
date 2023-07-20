@@ -136,7 +136,7 @@ with a debugging environment that makes debugging relatively simple.
 
 #### VS Code Extensions
 
-Install The [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) and the 
+Install The [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) and the
 Task Shell Input](https://marketplace.visualstudio.com/items?itemName=augustocdias.tasks-shell-input) extensions.
 You can install from within a VS Code terminal with the following:
 
