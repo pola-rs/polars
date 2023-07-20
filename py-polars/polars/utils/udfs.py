@@ -139,7 +139,7 @@ class BytecodeParser:
                     and instruction_buffer[1].opname.startswith("LOAD_")
                     and instruction_buffer[2].opname.startswith("CALL")
                 ):
-                    # note: we map synthetic POALRS_EXPRESSION as a unary op
+                    # note: we map synthetic POLARS_EXPRESSION as a unary op
                     expr_name = instruction_buffer[0].argval
                     synthetic_call = inst._replace(
                         opname="POLARS_EXPRESSION", argval=expr_name, argrepr=expr_name
