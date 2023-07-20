@@ -15,6 +15,7 @@ Computation
     Expr.arctan
     Expr.arctanh
     Expr.arg_unique
+    Expr.cbrt
     Expr.cos
     Expr.cosh
     Expr.cumcount

@@ -79,6 +79,7 @@ pub use self::boolean::BooleanFunction;
 pub(crate) use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
+pub(super) use self::pow::PowFunction;
 #[cfg(feature = "range")]
 pub(super) use self::range::RangeFunction;
 #[cfg(feature = "strings")]
@@ -95,7 +96,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "abs")]
     Abs,
     NullCount,
-    Pow,
+    Pow(PowFunction),
     #[cfg(feature = "row_hash")]
     Hash(u64, u64, u64, u64),
     #[cfg(feature = "arg_where")]
@@ -241,7 +242,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "abs")]
             Abs => "abs",
             NullCount => "null_count",
-            Pow => "pow",
+            Pow(func) => return write!(f, "{func}"),
             #[cfg(feature = "row_hash")]
             Hash(_, _, _, _) => "hash",
             #[cfg(feature = "arg_where")]
@@ -428,9 +429,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 };
                 wrap!(f)
             }
-            Pow => {
-                wrap!(pow::pow)
-            }
+            Pow(func) => match func {
+                PowFunction::Generic => wrap!(pow::pow),
+                PowFunction::Sqrt => map!(pow::sqrt),
+                PowFunction::Cbrt => map!(pow::cbrt),
+            },
             #[cfg(feature = "row_hash")]
             Hash(k0, k1, k2, k3) => {
                 map!(row_hash::row_hash, k0, k1, k2, k3)

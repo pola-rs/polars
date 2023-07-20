@@ -577,6 +577,14 @@ impl PyExpr {
         self.clone().inner.pow(exponent.inner).into()
     }
 
+    fn sqrt(&self) -> Self {
+        self.clone().inner.sqrt().into()
+    }
+
+    fn cbrt(&self) -> Self {
+        self.clone().inner.cbrt().into()
+    }
+
     fn cumsum(&self, reverse: bool) -> Self {
         self.clone().inner.cumsum(reverse).into()
     }

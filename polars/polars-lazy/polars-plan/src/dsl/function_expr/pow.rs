@@ -5,6 +5,25 @@ use polars_core::export::num::{Float, ToPrimitive};
 
 use super::*;
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+pub enum PowFunction {
+    Generic,
+    Sqrt,
+    Cbrt,
+}
+
+impl Display for PowFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use self::*;
+        match self {
+            PowFunction::Generic => write!(f, "pow"),
+            PowFunction::Sqrt => write!(f, "sqrt"),
+            PowFunction::Cbrt => write!(f, "cbrt"),
+        }
+    }
+}
+
 fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &Series) -> PolarsResult<Option<Series>>
 where
     T: PolarsFloatType,
@@ -90,4 +109,58 @@ pub(super) fn pow(s: &mut [Series]) -> PolarsResult<Option<Series>> {
             exp_len, base_len,
         ),
     }
+}
+
+pub(super) fn sqrt(base: &Series) -> PolarsResult<Series> {
+    use DataType::*;
+    match base.dtype() {
+        Float32 => {
+            let ca = base.f32().unwrap();
+            sqrt_on_floats(ca)
+        }
+        Float64 => {
+            let ca = base.f64().unwrap();
+            sqrt_on_floats(ca)
+        }
+        _ => {
+            let base = base.cast(&DataType::Float64)?;
+            sqrt(&base)
+        }
+    }
+}
+
+fn sqrt_on_floats<T>(base: &ChunkedArray<T>) -> PolarsResult<Series>
+where
+    T: PolarsFloatType,
+    T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
+    ChunkedArray<T>: IntoSeries,
+{
+    Ok(base.apply(|v| v.sqrt()).into_series())
+}
+
+pub(super) fn cbrt(base: &Series) -> PolarsResult<Series> {
+    use DataType::*;
+    match base.dtype() {
+        Float32 => {
+            let ca = base.f32().unwrap();
+            cbrt_on_floats(ca)
+        }
+        Float64 => {
+            let ca = base.f64().unwrap();
+            cbrt_on_floats(ca)
+        }
+        _ => {
+            let base = base.cast(&DataType::Float64)?;
+            cbrt(&base)
+        }
+    }
+}
+
+fn cbrt_on_floats<T>(base: &ChunkedArray<T>) -> PolarsResult<Series>
+where
+    T: PolarsFloatType,
+    T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
+    ChunkedArray<T>: IntoSeries,
+{
+    Ok(base.apply(|v| v.cbrt()).into_series())
 }
