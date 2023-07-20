@@ -63,6 +63,8 @@ _SIMPLE_EXPR_OPS = {
     "IS_OP",
     "LOAD_CONST",
     "LOAD_FAST",
+    "LOAD_GLOBAL",
+    "LOAD_DEREF",
 }
 _SIMPLE_EXPR_OPS |= set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES)
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
@@ -123,7 +125,7 @@ def _instructions_to_stack(
         for inst in instructions:
             stack.append(
                 inst.argrepr
-                if inst.opname in ("LOAD_FAST", "LOAD_CONST")
+                if inst.opname.startswith("LOAD_")
                 else (
                     StackValue(
                         operator=_op(inst),
@@ -178,7 +180,14 @@ def _instructions_to_expression(
     #  (we need to reconstruct the correct nesting boundaries to do this properly...)
 
     exprs = sorted(expression_strings.items())
-    return " ".join(expr for _, expr in exprs)
+    polars_expr = " ".join(expr for _, expr in exprs)
+
+    # note: if no 'pl.col' in the expression, it likely represents a compound
+    # constant value (e.g. `lambda x: CONST + 123`), so we don't want to warn
+    if "pl.col(" not in polars_expr:
+        return None
+
+    return polars_expr
 
 
 def _can_rewrite_as_expression(
@@ -220,13 +229,15 @@ def _function_name(function: Callable[[Any], Any], param_name: str) -> str:
 def _get_bytecode_instructions(function: Callable[[Any], Any]) -> list[Instruction]:
     """Return disassembled bytecode ops, arg-repr, and arg-specific value/flag."""
     try:
-        instructions = list(get_instructions(function))
-        idx_last = len(instructions) - 1
-        return [
+        instructions = [
             _upgrade_instruction(inst)
-            for idx, inst in enumerate(instructions)
-            if (idx, inst.opname) not in ((0, "RESUME"), (idx_last, "RETURN_VALUE"))
+            for idx, inst in enumerate(get_instructions(function))
         ]
+        while instructions and instructions[0].opname in ("COPY_FREE_VARS", "RESUME"):
+            instructions.pop(0)
+        if instructions and instructions[-1].opname == "RETURN_VALUE":
+            instructions.pop()
+        return instructions
     except TypeError:
         # in case we hit something that can't be disassembled (eg: code object
         # unavailable, like a bare numpy ufunc that isn't in a lambda/function)
