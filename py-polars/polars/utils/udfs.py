@@ -169,7 +169,10 @@ def _bytecode_to_expression(
 
 
 def _can_rewrite_as_expression(
-    ops: list[ByteCodeInfo], apply_target: str, param_name: str
+    ops: list[ByteCodeInfo],
+    apply_target: str,
+    param_name: str,
+    function: Callable[[Any], Any],
 ) -> bool:
     """
     Determine if bytecode indicates only simple binary ops and/or comparisons.
@@ -178,8 +181,6 @@ def _can_rewrite_as_expression(
     guaranteed that using the equivalent bare constant value will return the
     same output. (Hopefully nobody is writing lambdas like that anyway...)
     """
-    # TODO: only loop through ops once?
-
     if len(ops) < 3:
         return False
     simple_ops = _SIMPLE_FRAME_OPS if apply_target == "frame" else _SIMPLE_EXPR_OPS
@@ -195,17 +196,21 @@ def _can_rewrite_as_expression(
             import inspect
 
             dict_name = ops[i - 2][1]
+            frameinfo = inspect.stack(0)[-1]
             for frameinfo in inspect.stack(0):
                 if dict_name in frameinfo.frame.f_locals:
-                    if isinstance(frameinfo.frame.f_locals[dict_name], dict):
+                    if function in list(
+                        frameinfo.frame.f_locals.values()
+                    ) and isinstance(frameinfo.frame.f_locals[dict_name], dict):
                         return True
                 elif dict_name in frameinfo.frame.f_globals:
-                    if isinstance(frameinfo.frame.f_globals[dict_name], dict):
+                    if function in list(
+                        frameinfo.frame.f_locals.values()
+                    ) and isinstance(frameinfo.frame.f_globals[dict_name], dict):
                         return True
-            else:
-                # Couldn't find the dict_name variable,
-                # or found it but it's not a dict.
-                return False
+            # Couldn't find the dict_name variable,
+            # or found it but it's not a dict.
+            return False
         elif op[0] not in simple_ops:
             return False
         elif op[0] in _LOGICAL_OPCODES:
@@ -276,17 +281,11 @@ def _generate_warning(
 ) -> None:
     """Create a warning that includes a faster native expression as an alternative."""
     func_name = _function_name(function, param_name)
-    if 'pl.col("")' in suggestion:
-        addendum = (
-            'Note: in list.eval context, pl.col("") should be written as pl.element()'
-        )
-    elif ".map_dict(" in suggestion:
-        addendum = (
-            "Note: this suggestion assumes that you're mapping a dictionary. "
-            "If that's not the case, then the suggestion may not be correct."
-        )
-    else:
-        addendum = ""
+    addendum = (
+        'Note: in list.eval context, pl.col("") should be written as pl.element()'
+        if 'pl.col("")' in suggestion
+        else ""
+    )
     before_after_suggestion = (
         (
             f'  \033[31m-  pl.col("{col}").apply({func_name})\033[0m\n'
@@ -334,7 +333,7 @@ def warn_on_inefficient_apply(
     bytecode = _get_bytecode_ops(function)
 
     # if ops indicate a trivial function that should be native, warn about it
-    if _can_rewrite_as_expression(bytecode, apply_target, param_name):
+    if _can_rewrite_as_expression(bytecode, apply_target, param_name, function):
         if suggestion := _bytecode_to_expression(
             bytecode, col, apply_target, param_name
         ):

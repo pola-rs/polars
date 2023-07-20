@@ -41,7 +41,7 @@ def _get_suggestion(
 )
 def test_non_simple_function(func: Callable[[Any], Any]) -> None:
     assert not _param_name_from_signature(func) or not _can_rewrite_as_expression(
-        _get_bytecode_ops(func), apply_target="expr", param_name="x"
+        _get_bytecode_ops(func), apply_target="expr", param_name="x", function=func
     )
 
 
