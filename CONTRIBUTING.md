@@ -208,6 +208,13 @@ Next, in the `Run and Debug` panel on the left, select `Python: Debug Rust` from
 
 At this point, you should be able to set a breakpoint in any `.rs` file located within the codebase. To stop at this breakpoint, open in your editor a python script that calls polars code and hit either `F5` to launch the `Python: Debug Rust` debugging configuration.
 
+#### Details
+
+The debugging feature runs via the specially-designed VS Code launch configuration shown above. The initial python debugger is launched, using a special launch script located at `/py-polars/debug/launch.py`,
+and passes the name of the script to be debugged (the target script) as an input argument. The launch script compiles the target script and runs it in the current environment. At this point, the process ID
+of the python debugging process is retrieved, and a second (Rust) debugger is attached to the Python debugger. The result is two simultaneous debuggers operating on the same running instance. Breakpoings in
+the Python code will stop on the Python debugger and breakpoints in the Rust code will stop on the Rust debugger.
+
 ### Pull requests
 
 When you have resolved your issue, [open a pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork) in the Polars repository.
