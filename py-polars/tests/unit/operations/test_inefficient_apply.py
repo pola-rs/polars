@@ -7,7 +7,6 @@ import pytest
 
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
-from polars.utils.various import find_stacklevel
 from polars.utils.udfs import BytecodeParser
 
 MY_CONSTANT = 3
@@ -85,7 +84,9 @@ def test_expr_apply_parsing_misc() -> None:
 
     # note: all constants - should not create a warning/suggestion
     suggested_expression = BytecodeParser(
-        lambda x: MY_CONSTANT + 42, apply_target="expr", stacklevel=2,
+        lambda x: MY_CONSTANT + 42,
+        apply_target="expr",
+        stacklevel=2,
     ).to_expression(col="colx")
     assert suggested_expression is None
 
@@ -96,7 +97,9 @@ def test_map_dict() -> None:
         lambda x: my_local_dict[x],
         lambda x: MY_GLOBAL_DICT[x],
     ]:
-        suggestion = BytecodeParser(func, apply_target="expr", stacklevel=2).to_expression(col='a')
+        suggestion = BytecodeParser(
+            func, apply_target="expr", stacklevel=2
+        ).to_expression(col="a")
         assert suggestion is not None
 
         df = pl.DataFrame({"a": [1, 2, 3]})

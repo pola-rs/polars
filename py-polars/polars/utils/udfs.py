@@ -78,7 +78,9 @@ class BytecodeParser:
 
     _can_rewrite: dict[str, bool]
 
-    def __init__(self, function: Callable[[Any], Any], apply_target: str, stacklevel: int):
+    def __init__(
+        self, function: Callable[[Any], Any], apply_target: str, stacklevel: int
+    ):
         self._can_rewrite = {}
         self._apply_target = apply_target
         self._param_name = self._get_param_name(function)
@@ -228,7 +230,8 @@ class BytecodeParser:
                         if (
                             i < 2
                             or self._instructions[i - 1].argval != self._param_name
-                            or self._instructions[i - 2].opname not in ("LOAD_GLOBAL", "LOAD_DEREF")
+                            or self._instructions[i - 2].opname
+                            not in ("LOAD_GLOBAL", "LOAD_DEREF")
                         ):
                             return False
 
@@ -237,8 +240,14 @@ class BytecodeParser:
                         dict_name = self._instructions[i - 2].argval
                         frame = inspect.stack(0)[self._stacklevel]
                         if not (
-                            (dict_name in frame.frame.f_locals and isinstance(frame.frame.f_locals[dict_name], dict))
-                            or (dict_name in frame.frame.f_globals and isinstance(frame.frame.f_globals[dict_name], dict))
+                            (
+                                dict_name in frame.frame.f_locals
+                                and isinstance(frame.frame.f_locals[dict_name], dict)
+                            )
+                            or (
+                                dict_name in frame.frame.f_globals
+                                and isinstance(frame.frame.f_globals[dict_name], dict)
+                            )
                         ):
                             return False
                     elif op.opname not in _SIMPLE_EXPR_OPS:
@@ -345,7 +354,7 @@ class BytecodeParser:
                 "In this case, you can replace your `apply` with an expression:\n"
                 f"{before_after_suggestion}",
                 PolarsInefficientApplyWarning,
-                stacklevel=self._stacklevel+1,
+                stacklevel=self._stacklevel + 1,
             )
 
 
