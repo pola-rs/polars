@@ -1,20 +1,11 @@
 use super::*;
 
-/// Create list entries that are range arrays
-/// - if `start` and `end` are a column, every element will expand into an array in a list column.
-/// - if `start` and `end` are literals the output will be of `Int64`.
+/// Generate a range of integers.
+///
+/// Alias for `int_range`.
 #[cfg(feature = "range")]
 pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
-    let input = vec![start, end];
-
-    Expr::Function {
-        input,
-        function: FunctionExpr::Range(RangeFunction::ARange { step }),
-        options: FunctionOptions {
-            allow_rename: true,
-            ..Default::default()
-        },
-    }
+    int_range(start, end, step)
 }
 
 #[cfg(feature = "range")]

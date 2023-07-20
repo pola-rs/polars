@@ -852,9 +852,6 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: RangeFunction) -> Self {
         use RangeFunction::*;
         match func {
-            ARange { step } => {
-                map_as_slice!(range::arange, step)
-            },
             IntRange { step } => {
                 map_as_slice!(range::int_range, step)
             },
