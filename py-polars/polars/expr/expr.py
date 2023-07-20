@@ -3332,9 +3332,10 @@ class Expr:
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
+    @deprecated_alias(probs="q")
     def qcut(
         self,
-        probs: list[float],
+        q: list[float] | int,
         labels: list[str] | None = None,
         left_closed: bool = False,
         allow_duplicates: bool = False,
@@ -3345,9 +3346,9 @@ class Expr:
 
         Parameters
         ----------
-        probs
-            Probabilities for which to find the corresponding quantiles
-            For p in probs, we assume 0 <= p <= 1
+        q
+            Either a list of quantile probabilities between 0 and 1 or a positive
+            integer determining the number of evenly spaced probabilities to use.
         labels
             Labels to assign to bins. If given, the length must be len(probs) + 1.
             If computing over groups this must be set for now.
@@ -3367,6 +3368,23 @@ class Expr:
         >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
         >>> df = pl.DataFrame(dict(g=g, x=range(10)))
         >>> df.with_columns(q=pl.col("x").qcut([0.5]))
+        shape: (10, 3)
+        ┌─────┬─────┬─────────────┐
+        │ g   ┆ x   ┆ q           │
+        │ --- ┆ --- ┆ ---         │
+        │ str ┆ i64 ┆ cat         │
+        ╞═════╪═════╪═════════════╡
+        │ a   ┆ 0   ┆ (-inf, 4.5] │
+        │ a   ┆ 1   ┆ (-inf, 4.5] │
+        │ a   ┆ 2   ┆ (-inf, 4.5] │
+        │ a   ┆ 3   ┆ (-inf, 4.5] │
+        │ …   ┆ …   ┆ …           │
+        │ b   ┆ 6   ┆ (4.5, inf]  │
+        │ b   ┆ 7   ┆ (4.5, inf]  │
+        │ b   ┆ 8   ┆ (4.5, inf]  │
+        │ b   ┆ 9   ┆ (4.5, inf]  │
+        └─────┴─────┴─────────────┘
+        >>> df.with_columns(q=pl.col("x").qcut(2))
         shape: (10, 3)
         ┌─────┬─────┬─────────────┐
         │ g   ┆ x   ┆ q           │
@@ -3435,10 +3453,9 @@ class Expr:
         │ b   ┆ 9   ┆ {inf,"(4.5, inf]"}    │
         └─────┴─────┴───────────────────────┘
         """
+        expr_f = self._pyexpr.qcut_uniform if isinstance(q, int) else self._pyexpr.qcut
         return self._from_pyexpr(
-            self._pyexpr.qcut(
-                probs, labels, left_closed, allow_duplicates, include_breaks
-            )
+            expr_f(q, labels, left_closed, allow_duplicates, include_breaks)
         )
 
     def rle(self) -> Self:

@@ -1493,6 +1493,25 @@ impl Expr {
         })
     }
 
+    #[cfg(feature = "cutqcut")]
+    pub fn qcut_uniform(
+        self,
+        n_bins: usize,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    ) -> Expr {
+        let probs = (1..n_bins).map(|b| b as f64 / n_bins as f64).collect();
+        self.apply_private(FunctionExpr::QCut {
+            probs,
+            labels,
+            left_closed,
+            allow_duplicates,
+            include_breaks,
+        })
+    }
+
     #[cfg(feature = "rle")]
     pub fn rle(self) -> Expr {
         self.apply_private(FunctionExpr::RLE)

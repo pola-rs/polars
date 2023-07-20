@@ -1631,8 +1631,6 @@ class Series:
             include_breaks == True
         category_label
             Name given to the category column. Only used if series == False
-        maintain_order
-            Keep the order of the original `Series`. Only used if series == False
         series
             If True, return the a categorical series in the data's original order.
         left_closed
@@ -1722,26 +1720,27 @@ class Series:
             return res.struct.rename_fields([break_point_label, category_label])
         return res
 
+    @deprecated_alias(quantiles="q")
     def qcut(
         self,
-        quantiles: list[float],
+        q: list[float] | int,
         *,
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
-        series: bool = False,
+        series: bool = True,
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
     ) -> DataFrame | Series:
         """
-        Bin continuous values into discrete categories based on their quantiles.
+        Discretize continuous values into discrete categories based on their quantiles.
 
         Parameters
         ----------
-        quantiles
-            List of quantiles to create.
-            We expect quantiles ``0.0 <= quantile <= 1``
+        q
+            Either a list of quantile probabilities between 0 and 1 or a positive
+            integer determining the number of evenly spaced probabilities to use.
         labels
             Labels to assign to the quantiles. If given the length of labels must be
             len(breaks) + 1.
@@ -1750,8 +1749,6 @@ class Series:
             include_breaks == True
         category_label
             Name given to the category column. Only used if series == False.
-        maintain_order
-            Keep the order of the original `Series`. Only used if series == False.
         series
             If True, return a categorical series in the data's original order
         left_closed
@@ -1777,6 +1774,19 @@ class Series:
         Examples
         --------
         >>> a = pl.Series("a", range(-5, 3))
+        >>> a.qcut(2, series=True)
+        shape: (8,)
+        Series: 'a' [cat]
+        [
+                "(-inf, -1.5]"
+                "(-inf, -1.5]"
+                "(-inf, -1.5]"
+                "(-inf, -1.5]"
+                "(-1.5, inf]"
+                "(-1.5, inf]"
+                "(-1.5, inf]"
+                "(-1.5, inf]"
+        ]
         >>> a.qcut([0.0, 0.25, 0.75], series=False)
         shape: (8, 3)
         ┌─────┬─────────────┬───────────────┐
@@ -1821,14 +1831,13 @@ class Series:
         ]
         """
         n = self._s.name()
-
         if not series:
             # "Old style" always includes breaks
             return (
                 self.to_frame()
                 .with_columns(
                     F.col(n)
-                    .qcut(quantiles, labels, left_closed, allow_duplicates, True)
+                    .qcut(q, labels, left_closed, allow_duplicates, True)
                     .alias(n + "_bin")
                 )
                 .unnest(n + "_bin")
@@ -1837,9 +1846,7 @@ class Series:
         res = (
             self.to_frame()
             .select(
-                F.col(n).qcut(
-                    quantiles, labels, left_closed, allow_duplicates, include_breaks
-                )
+                F.col(n).qcut(q, labels, left_closed, allow_duplicates, include_breaks)
             )
             .to_series()
         )
