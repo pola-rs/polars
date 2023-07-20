@@ -1,4 +1,6 @@
+import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -20,7 +22,7 @@ def launch_debugging() -> None:
         )
 
     cmd = (
-        f"ps -aux | grep 'debugpy/launcher/../../debugpy' "
+        f"ps -aux | grep 'debugpy/launcher/../../debugpy'"
         f"| grep '{__file__}' | awk '{{print $2}}'"
     )
 
@@ -36,13 +38,20 @@ def launch_debugging() -> None:
     if (out := re.match("^(\\d+)", output)) is None:
         raise RuntimeError("Cannot get pID of current debugging session.")
 
-    pID = int(out.group(0))
+    pID = out.group(0)
+    
+    # write the pID to file
+    env_file = Path(__file__).parent / "launch.env"
+    with open(env_file, 'w') as f:
+        f.write(f"PID = \"{pID}\"")
 
     # print to the console to allow the "Rust LLDB" routine to pick up on the signal
+    
+    
     print(f"pID = {pID}")
 
     # give the LLDB time to connect. We may have to play with this setting.
-    time.sleep(1)
+    time.sleep(2)
 
     # run the originally requested file
     # we updated sys.argv so that when exec() is called, it's populated with
@@ -50,7 +59,13 @@ def launch_debugging() -> None:
     sys.argv = sys.argv[1:]
     with Path(sys.argv[0]).open() as fh:
         script_contents = fh.read()
-    exec(script_contents)
+            
+    # path to the script to be executed
+    fh = Path(sys.argv[0])
+    exec(
+        compile(script_contents, fh, mode="exec"),
+        {"__name__": "__main__"}
+    )
 
 
 if __name__ == "__main__":
