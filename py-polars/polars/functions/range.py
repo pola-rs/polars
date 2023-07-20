@@ -662,7 +662,7 @@ def date_ranges(
     >>> df.with_columns(pl.date_ranges("start", "end"))
     shape: (2, 3)
     ┌────────────┬────────────┬───────────────────────────────────┐
-    │ start      ┆ end        ┆ dates                             │
+    │ start      ┆ end        ┆ date_range                        │
     │ ---        ┆ ---        ┆ ---                               │
     │ date       ┆ date       ┆ list[date]                        │
     ╞════════════╪════════════╪═══════════════════════════════════╡
@@ -911,7 +911,7 @@ def time_ranges(
     >>> df.with_columns(pl.time_ranges("start", "end"))
     shape: (2, 3)
     ┌──────────┬──────────┬────────────────────────────────┐
-    │ start    ┆ end      ┆ times                          │
+    │ start    ┆ end      ┆ time_range                     │
     │ ---      ┆ ---      ┆ ---                            │
     │ time     ┆ time     ┆ list[time]                     │
     ╞══════════╪══════════╪════════════════════════════════╡
