@@ -23,6 +23,7 @@ cloudpickle
 hypothesis==6.79.4; python_version < '3.8'
 hypothesis==6.80.0; python_version >= '3.8'
 maturin==1.1.0
+patchelf; platform_system == 'Linux'  # Extra dependency for maturin, only for Linux
 pytest==7.4.0
 pytest-cov==4.1.0
 pytest-xdist==3.3.1
