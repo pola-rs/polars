@@ -1,6 +1,4 @@
-import os
 import re
-import shlex
 import subprocess
 import sys
 import time
@@ -39,15 +37,8 @@ def launch_debugging() -> None:
         raise RuntimeError("Cannot get pID of current debugging session.")
 
     pID = out.group(0)
-    
-    # write the pID to file
-    env_file = Path(__file__).parent / "launch.env"
-    with open(env_file, 'w') as f:
-        f.write(f"PID = \"{pID}\"")
 
     # print to the console to allow the "Rust LLDB" routine to pick up on the signal
-    
-    
     print(f"pID = {pID}")
 
     # give the LLDB time to connect. We may have to play with this setting.
@@ -59,13 +50,10 @@ def launch_debugging() -> None:
     sys.argv = sys.argv[1:]
     with Path(sys.argv[0]).open() as fh:
         script_contents = fh.read()
-            
+
     # path to the script to be executed
     fh = Path(sys.argv[0])
-    exec(
-        compile(script_contents, fh, mode="exec"),
-        {"__name__": "__main__"}
-    )
+    exec(compile(script_contents, fh, mode="exec"), {"__name__": "__main__"})
 
 
 if __name__ == "__main__":
