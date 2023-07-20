@@ -7,17 +7,8 @@ import pytest
 
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
-<<<<<<< HEAD
-from polars.utils.udfs import (
-    _can_rewrite_as_expression,
-    _get_bytecode_instructions,
-    _instructions_to_expression,
-    _param_name_from_signature,
-)
 from polars.utils.various import find_stacklevel
-=======
 from polars.utils.udfs import BytecodeParser
->>>>>>> upstream/main
 
 MY_CONSTANT = 3
 MY_GLOBAL_DICT = {1: 2, 2: 3, 3: 1}
@@ -37,17 +28,7 @@ MY_GLOBAL_ARRAY = [1, 2, 3]
     ],
 )
 def test_non_simple_function(func: Callable[[Any], Any]) -> None:
-<<<<<<< HEAD
-    stacklevel = find_stacklevel()
-    assert not _param_name_from_signature(func) or not _can_rewrite_as_expression(
-        _get_bytecode_instructions(func),
-        apply_target="expr",
-        param_name="x",
-        stacklevel=stacklevel + 1,
-    )
-=======
-    assert not BytecodeParser(func, apply_target="expr").can_rewrite()
->>>>>>> upstream/main
+    assert not BytecodeParser(func, apply_target="expr", stacklevel=2).can_rewrite()
 
 
 @pytest.mark.parametrize(
@@ -76,7 +57,7 @@ def test_expr_apply_produces_warning(func: Callable[[Any], Any]) -> None:
     with pytest.warns(
         PolarsInefficientApplyWarning, match="In this case, you can replace"
     ):
-        parser = BytecodeParser(func, apply_target="expr")
+        parser = BytecodeParser(func, apply_target="expr", stacklevel=2)
         suggested_expression = parser.to_expression(col="a")
         assert suggested_expression is not None
 
@@ -98,14 +79,15 @@ def test_expr_apply_parsing_misc() -> None:
         def x10(self, x: pl.Expr) -> pl.Expr:
             return x * 10
 
-<<<<<<< HEAD
-    suggestion = _get_suggestion(
-        Test().x10, col="colx", apply_target="expr", param_name="x"
-    )
-    assert suggestion == 'pl.col("colx") * 10'
+    parser = BytecodeParser(Test().x10, apply_target="expr", stacklevel=2)
+    suggested_expression = parser.to_expression(col="colx")
+    assert suggested_expression == 'pl.col("colx") * 10'
+
     # note: all constants - should not create a warning/suggestion
-    suggestion = _get_suggestion(lambda x: MY_CONSTANT + 42, "colx", "expr", "x")
-    assert suggestion is None
+    suggested_expression = BytecodeParser(
+        lambda x: MY_CONSTANT + 42, apply_target="expr", stacklevel=2,
+    ).to_expression(col="colx")
+    assert suggested_expression is None
 
 
 def test_map_dict() -> None:
@@ -114,7 +96,7 @@ def test_map_dict() -> None:
         lambda x: my_local_dict[x],
         lambda x: MY_GLOBAL_DICT[x],
     ]:
-        suggestion = _get_suggestion(func, "a", "expr", "x")
+        suggestion = BytecodeParser(func, apply_target="expr", stacklevel=2).to_expression(col='a')
         assert suggestion is not None
 
         df = pl.DataFrame({"a": [1, 2, 3]})
@@ -130,14 +112,3 @@ def test_map_dict() -> None:
                 y=pl.col("a").apply(func),
             )
         assert result.rows() == expected.rows()
-=======
-    parser = BytecodeParser(Test().x10, apply_target="expr")
-    suggested_expression = parser.to_expression(col="colx")
-    assert suggested_expression == 'pl.col("colx") * 10'
-
-    # note: all constants - should not create a warning/suggestion
-    suggested_expression = BytecodeParser(
-        lambda x: MY_CONSTANT + 42, apply_target="expr"
-    ).to_expression(col="colx")
-    assert suggested_expression is None
->>>>>>> upstream/main

@@ -78,12 +78,13 @@ class BytecodeParser:
 
     _can_rewrite: dict[str, bool]
 
-    def __init__(self, function: Callable[[Any], Any], apply_target: str):
+    def __init__(self, function: Callable[[Any], Any], apply_target: str, stacklevel: int):
         self._can_rewrite = {}
         self._apply_target = apply_target
         self._param_name = self._get_param_name(function)
         self._instructions = self._get_instructions(function)
         self._function = function
+        self._stacklevel = stacklevel
 
     def _get_instructions(self, function: Callable[[Any], Any]) -> list[Instruction]:
         """Return disassembled bytecode ops, arg-repr, and arg-specific value/flag."""
@@ -206,7 +207,7 @@ class BytecodeParser:
         """The apply target, eg: one of 'expr', 'frame', or 'series'."""
         return self._apply_target
 
-    def can_rewrite(self, stacklevel: int) -> bool:
+    def can_rewrite(self) -> bool:
         """
         Determine if bytecode indicates only simple binary ops and/or comparisons.
 
@@ -219,26 +220,27 @@ class BytecodeParser:
         else:
             self._can_rewrite[self._apply_target] = False
             if self._instructions and self._param_name is not None:
-                if len(instructions) < 3:
+                if len(self._instructions) < 3:
                     return False
                 logical_opcodes = set()
-                for i, op in enumerate(instructions):
+                for i, op in enumerate(self._instructions):
                     if op.opname == "BINARY_SUBSCR":
                         if (
                             i < 2
-                            or instructions[i - 1].argval != param_name
-                            or instructions[i - 2].opname not in ("LOAD_GLOBAL", "LOAD_DEREF")
+                            or self._instructions[i - 1].argval != self._param_name
+                            or self._instructions[i - 2].opname not in ("LOAD_GLOBAL", "LOAD_DEREF")
                         ):
                             return False
 
                         import inspect
 
-                        dict_name = instructions[i - 2].argval
-                        frame = inspect.stack(0)[stacklevel]
-                        if not (dict_name in frame.frame.f_locals and isinstance(frame.frame.f_locals[dict_name], dict)):
-                                return False
-                        if not (dict_name in frame.frame.f_globals and isinstance(frame.frame.f_globals[dict_name], dict)):
-                                return False
+                        dict_name = self._instructions[i - 2].argval
+                        frame = inspect.stack(0)[self._stacklevel]
+                        if not (
+                            (dict_name in frame.frame.f_locals and isinstance(frame.frame.f_locals[dict_name], dict))
+                            or (dict_name in frame.frame.f_globals and isinstance(frame.frame.f_globals[dict_name], dict))
+                        ):
+                            return False
                     elif op.opname not in _SIMPLE_EXPR_OPS:
                         return False
                     elif op.opname in _LOGICAL_OPCODES:
@@ -312,7 +314,7 @@ class BytecodeParser:
 
         return polars_expr
 
-    def warn(self, col: str, stacklevel: int) -> None:
+    def warn(self, col: str) -> None:
         """Generate warning that suggests an equivalent native polars expression."""
         if (suggested_expression := self.to_expression(col)) is None:
             return None
@@ -343,7 +345,7 @@ class BytecodeParser:
                 "In this case, you can replace your `apply` with an expression:\n"
                 f"{before_after_suggestion}",
                 PolarsInefficientApplyWarning,
-                stacklevel=stacklevel,
+                stacklevel=self._stacklevel+1,
             )
 
 
@@ -373,10 +375,10 @@ def warn_on_inefficient_apply(
 
     # the parser introspects function bytecode to determine if we can
     # rewrite as a much more optimal native polars expression instead
-    parser = BytecodeParser(function, apply_target)
+    stacklevel = find_stacklevel()
+    parser = BytecodeParser(function, apply_target, stacklevel=stacklevel)
     if parser.can_rewrite():
-        stacklevel = find_stacklevel()
-        parser.warn(col, stacklevel=stacklevel)
+        parser.warn(col)
 
 
 __all__ = [
