@@ -553,7 +553,10 @@ def date_range(
         result = result.alias(name)
 
     if eager:
-        return F.select(result).to_series().explode().set_sorted()
+        s = F.select(result).to_series()
+        if s.len() == 1:
+            s = s.explode().set_sorted()
+        return s
 
     return result
 
@@ -705,7 +708,10 @@ def time_range(
         result = result.alias(name)
 
     if eager:
-        return F.select(result).to_series().explode().set_sorted()
+        s = F.select(result).to_series()
+        if s.len() == 1:
+            s = s.explode().set_sorted()
+        return s
 
     return result
 
