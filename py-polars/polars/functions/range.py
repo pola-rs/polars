@@ -556,7 +556,11 @@ def date_range(
         s = F.select(result).to_series()
         if s.len() == 1:
             s = s.explode().set_sorted()
+        else:
+            _warn_for_deprecation_date_range()
         return s
+
+    _warn_for_deprecation_date_range()
 
     return result
 
@@ -711,7 +715,11 @@ def time_range(
         s = F.select(result).to_series()
         if s.len() == 1:
             s = s.explode().set_sorted()
+        else:
+            _warn_for_deprecation_time_range()
         return s
+
+    _warn_for_deprecation_time_range()
 
     return result
 
@@ -724,3 +732,23 @@ def _parse_interval_argument(interval: str | timedelta) -> str:
     if " " in interval:
         interval = interval.replace(" ", "")
     return interval.lower()
+
+
+def _warn_for_deprecation_date_range() -> None:
+    warnings.warn(
+        "behavior of `date_range` will change in a future version."
+        " The result will be a single range of type Date or Datetime instead of List."
+        " Use the new `date_ranges` function to retain the old functionality and silence this warning.",
+        DeprecationWarning,
+        stacklevel=find_stacklevel(),
+    )
+
+
+def _warn_for_deprecation_time_range() -> None:
+    warnings.warn(
+        "behavior of `time_range` will change in a future version."
+        " The result will be a single range of type Time instead of List."
+        " Use the new `date_ranges` function to retain the old functionality and silence this warning.",
+        DeprecationWarning,
+        stacklevel=find_stacklevel(),
+    )
