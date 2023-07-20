@@ -140,12 +140,18 @@ class BytecodeParser:
                     and instruction_buffer[1].opname.startswith("LOAD_")
                     and instruction_buffer[2].opname.startswith("CALL")
                 ):
-                    # note: we map synthetic POLARS_EXPRESSION as a unary op
+                    # note: we map the synthetic POLARS_EXPRESSION as a unary
+                    # op, so we switch the instruction order on injection
                     expr_name = instruction_buffer[0].argval
+                    offsets = inst.offset, instruction_buffer[1].offset
                     synthetic_call = inst._replace(
-                        opname="POLARS_EXPRESSION", argval=expr_name, argrepr=expr_name
+                        opname="POLARS_EXPRESSION",
+                        argval=expr_name,
+                        argrepr=expr_name,
+                        offset=offsets[1],
                     )
-                    updated_instructions.extend((instruction_buffer[1], synthetic_call))
+                    operand = instruction_buffer[1]._replace(offset=offsets[0])
+                    updated_instructions.extend((operand, synthetic_call))
                 else:
                     updated_instructions.extend(instruction_buffer)
             else:
