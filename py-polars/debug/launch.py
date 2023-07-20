@@ -20,7 +20,7 @@ def launch_debugging() -> None:
         )
 
     cmd = (
-        f"ps -aux | grep 'debugpy/launcher/../../debugpy'"
+        f"ps -aux | grep 'debugpy/launcher/../../debugpy' | grep -v grep "
         f"| grep '{__file__}' | awk '{{print $2}}'"
     )
 
@@ -42,7 +42,7 @@ def launch_debugging() -> None:
     print(f"pID = {pID}")
 
     # give the LLDB time to connect. We may have to play with this setting.
-    time.sleep(2)
+    time.sleep(0.5)
 
     # run the originally requested file
     # we updated sys.argv so that when exec() is called, it's populated with
