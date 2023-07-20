@@ -75,6 +75,7 @@ _SIMPLE_EXPR_OPS = {
 }
 _SIMPLE_EXPR_OPS |= set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES) | _SYNTHETIC_OPS
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
+_UNARY_OPCODE_VALUES = set(_UNARY_OPCODES.values())
 _UPGRADE_BINARY_OPS = sys.version_info < (3, 11)
 
 # whitelist numpy functions that we can map directly to a native expression
@@ -201,7 +202,7 @@ class BytecodeParser:
             op = value.operator
             e1 = cls._expr(value.left_operand, col, param_name, depth + 1)
             if value.operator_arity == 1:
-                if op.isidentifier():
+                if op not in _UNARY_OPCODE_VALUES:
                     return f"{e1}.{op}()"
                 return f"{op}{e1}"
             else:
