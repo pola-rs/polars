@@ -8,9 +8,9 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.udfs import (
-    _bytecode_to_expression,
     _can_rewrite_as_expression,
-    _get_bytecode_ops,
+    _get_bytecode_instructions,
+    _instructions_to_expression,
     _param_name_from_signature,
 )
 from polars.utils.various import find_stacklevel
@@ -23,8 +23,8 @@ MY_GLOBAL_ARRAY = [1, 2, 3]
 def _get_suggestion(
     func: Callable[[Any], Any], col: str, apply_target: str, param_name: str
 ) -> str | None:
-    return _bytecode_to_expression(
-        _get_bytecode_ops(func), col, apply_target, param_name
+    return _instructions_to_expression(
+        _get_bytecode_instructions(func), col, apply_target, param_name
     )
 
 
@@ -43,8 +43,7 @@ def _get_suggestion(
 def test_non_simple_function(func: Callable[[Any], Any]) -> None:
     stacklevel = find_stacklevel()
     assert not _param_name_from_signature(func) or not _can_rewrite_as_expression(
-        _get_bytecode_ops(func),
-        apply_target="expr",
+        _get_bytecode_instructions(func), apply_target="expr",
         param_name="x",
         stacklevel=stacklevel + 1,
     )
@@ -101,6 +100,9 @@ def test_expr_apply_produces_warning_misc() -> None:
         Test().x10, col="colx", apply_target="expr", param_name="x"
     )
     assert suggestion == 'pl.col("colx") * 10'
+    # note: all constants - should not create a warning/suggestion
+    suggestion = _get_suggestion(lambda x: MY_CONSTANT + 42, "colx", "expr", "x")
+    assert suggestion is None
 
 
 def test_map_dict() -> None:

@@ -5,13 +5,11 @@ import warnings
 from datetime import time, timedelta
 from typing import TYPE_CHECKING, overload
 
-import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import Int64
 from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr, wrap_s
+from polars.utils._wrap import wrap_expr
 from polars.utils.convert import (
-    _time_to_pl_time,
     _timedelta_to_pl_duration,
 )
 from polars.utils.decorators import deprecated_alias
@@ -540,35 +538,24 @@ def date_range(
             stacklevel=find_stacklevel(),
         )
 
-    if isinstance(interval, timedelta):
-        interval = _timedelta_to_pl_duration(interval)
-    elif " " in interval:
-        interval = interval.replace(" ", "")
+    interval = _parse_interval_argument(interval)
 
-    time_unit_: TimeUnit | None
-    if time_unit is not None:
-        time_unit_ = time_unit
-    elif "ns" in interval:
-        time_unit_ = "ns"
-    else:
-        time_unit_ = None
+    if time_unit is None and "ns" in interval:
+        time_unit = "ns"
 
-    start_pl = parse_as_expression(start)
-    end_pl = parse_as_expression(end)
-    dt_range = wrap_expr(
-        plr.date_range_lazy(start_pl, end_pl, interval, closed, time_unit_, time_zone)
+    start_pyexpr = parse_as_expression(start)
+    end_pyexpr = parse_as_expression(end)
+    result = wrap_expr(
+        plr.date_range(start_pyexpr, end_pyexpr, interval, closed, time_unit, time_zone)
     )
-    if name is not None:
-        dt_range = dt_range.alias(name)
 
-    if (
-        not eager
-        or isinstance(start_pl, (str, pl.Expr))
-        or isinstance(end_pl, (str, pl.Expr))
-    ):
-        return dt_range
-    res = F.select(dt_range).to_series().explode().set_sorted()
-    return res
+    if name is not None:
+        result = result.alias(name)
+
+    if eager:
+        return F.select(result).to_series().explode().set_sorted()
+
+    return result
 
 
 @overload
@@ -700,45 +687,34 @@ def time_range(
             stacklevel=find_stacklevel(),
         )
 
-    if isinstance(interval, timedelta):
-        interval = _timedelta_to_pl_duration(interval)
-    elif " " in interval:
-        interval = interval.replace(" ", "").lower()
-
+    interval = _parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
             raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
 
-    default_start = time(0, 0, 0)
-    default_end = time(23, 59, 59, 999999)
-    if (
-        not eager
-        or isinstance(start, (str, pl.Expr))
-        or isinstance(end, (str, pl.Expr))
-    ):
-        start_expr = (
-            F.lit(default_start)._pyexpr
-            if start is None
-            else parse_as_expression(start)
-        )
+    if start is None:
+        start = time(0, 0, 0)
+    if end is None:
+        end = time(23, 59, 59, 999999)
 
-        end_expr = (
-            F.lit(default_end)._pyexpr if end is None else parse_as_expression(end)
-        )
+    start_pyexpr = parse_as_expression(start)
+    end_pyexpr = parse_as_expression(end)
+    result = wrap_expr(plr.time_range(start_pyexpr, end_pyexpr, interval, closed))
 
-        tm_expr = wrap_expr(plr.time_range_lazy(start_expr, end_expr, interval, closed))
-        if name is not None:
-            tm_expr = tm_expr.alias(name)
-        return tm_expr
-    else:
-        tm_srs = wrap_s(
-            plr.time_range_eager(
-                _time_to_pl_time(default_start if start is None else start),
-                _time_to_pl_time(default_end if end is None else end),
-                interval,
-                closed,
-            )
-        )
-        if name is not None:
-            tm_srs = tm_srs.alias(name)
-        return tm_srs
+    if name is not None:
+        result = result.alias(name)
+
+    if eager:
+        return F.select(result).to_series().explode().set_sorted()
+
+    return result
+
+
+def _parse_interval_argument(interval: str | timedelta) -> str:
+    """Parse the interval argument as a Polars duration string."""
+    if isinstance(interval, timedelta):
+        return _timedelta_to_pl_duration(interval)
+
+    if " " in interval:
+        interval = interval.replace(" ", "")
+    return interval.lower()

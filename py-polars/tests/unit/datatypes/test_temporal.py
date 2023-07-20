@@ -2414,6 +2414,48 @@ def test_truncate_by_multiple_weeks() -> None:
     }
 
 
+def test_truncate_use_earliest() -> None:
+    ser = pl.date_range(
+        date(2020, 10, 25),
+        datetime(2020, 10, 25, 2),
+        "30m",
+        eager=True,
+        time_zone="Europe/London",
+    ).dt.offset_by("15m")
+    df = ser.to_frame()
+    df = df.with_columns(
+        use_earliest=pl.col("date").dt.dst_offset() == pl.duration(hours=1)
+    )
+    result = df.select(
+        pl.when(pl.col("use_earliest"))
+        .then(pl.col("date").dt.truncate("30m", use_earliest=True))
+        .otherwise(pl.col("date").dt.truncate("30m", use_earliest=False))
+    )
+    expected = pl.date_range(
+        date(2020, 10, 25),
+        datetime(2020, 10, 25, 2),
+        "30m",
+        eager=True,
+        time_zone="Europe/London",
+    ).to_frame()
+    assert_frame_equal(result, expected)
+
+
+def test_truncate_ambiguous() -> None:
+    ser = pl.date_range(
+        date(2020, 10, 25),
+        datetime(2020, 10, 25, 2),
+        "30m",
+        eager=True,
+        time_zone="Europe/London",
+    ).dt.offset_by("15m")
+    with pytest.raises(
+        ComputeError,
+        match="datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'",
+    ):
+        ser.dt.truncate("30m")
+
+
 def test_round_by_week() -> None:
     df = pl.DataFrame(
         {
