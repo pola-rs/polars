@@ -560,6 +560,32 @@ def test_date_range_name() -> None:
     assert result_lazy.name == expected_name
 
 
+def test_date_range_eager() -> None:
+    start = pl.Series([date(2022, 1, 1), date(2022, 1, 2)])
+    end = pl.Series([date(2022, 1, 4), date(2022, 1, 3)])
+
+    result = pl.date_range(start, end, eager=True)
+
+    expected = pl.Series(
+        "date",
+        [
+            [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3), date(2022, 1, 4)],
+            [date(2022, 1, 2), date(2022, 1, 3)],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+
+def test_date_range_eager_explode() -> None:
+    start = pl.Series([date(2022, 1, 1)])
+    end = pl.Series([date(2022, 1, 3)])
+
+    result = pl.date_range(start, end, eager=True)
+
+    expected = pl.Series("date", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)])
+    assert_series_equal(result, expected)
+
+
 def test_time_range_lit() -> None:
     for eager in (True, False):
         tm = pl.select(
@@ -947,3 +973,29 @@ def test_time_range_no_alias_schema_9037() -> None:
     expected_schema = {"start": pl.Time, "end": pl.Time, "time": pl.List(pl.Time)}
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
+
+
+def test_time_range_eager() -> None:
+    start = pl.Series([time(9, 0), time(10, 0)])
+    end = pl.Series([time(12, 0), time(11, 0)])
+
+    result = pl.time_range(start, end, eager=True)
+
+    expected = pl.Series(
+        "time",
+        [
+            [time(9, 0), time(10, 0), time(11, 0), time(12, 0)],
+            [time(10, 0), time(11, 0)],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+
+def test_time_range_eager_explode() -> None:
+    start = pl.Series([time(9, 0)])
+    end = pl.Series([time(11, 0)])
+
+    result = pl.time_range(start, end, eager=True)
+
+    expected = pl.Series("time", [time(9, 0), time(10, 0), time(11, 0)])
+    assert_series_equal(result, expected)
