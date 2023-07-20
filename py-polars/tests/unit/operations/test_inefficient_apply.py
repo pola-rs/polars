@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.udfs import BytecodeParser
+from polars.utils.various import find_stacklevel
 
 MY_CONSTANT = 3
 MY_GLOBAL_DICT = {1: 2, 2: 3, 3: 1}
@@ -56,7 +57,7 @@ def test_expr_apply_produces_warning(func: Callable[[Any], Any]) -> None:
     with pytest.warns(
         PolarsInefficientApplyWarning, match="In this case, you can replace"
     ):
-        parser = BytecodeParser(func, apply_target="expr", stacklevel=2)
+        parser = BytecodeParser(func, apply_target="expr", stacklevel=find_stacklevel())
         suggested_expression = parser.to_expression(col="a")
         assert suggested_expression is not None
 
