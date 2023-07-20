@@ -7,7 +7,8 @@ import warnings
 from collections import defaultdict
 from dis import get_instructions
 from inspect import signature
-from typing import TYPE_CHECKING, Any, Callable, Literal, NamedTuple, Union
+from itertools import islice
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
 
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.utils.various import find_stacklevel, in_terminal_that_supports_colour
@@ -58,6 +59,9 @@ _UNARY_OPCODES = {
     "UNARY_POSITIVE": "+",
     "UNARY_NOT": "~",
 }
+_SYNTHETIC_OPS = {
+    "POLARS_EXPRESSION",
+}
 _SIMPLE_EXPR_OPS = {
     "BINARY_OP",
     "COMPARE_OP",
@@ -67,10 +71,16 @@ _SIMPLE_EXPR_OPS = {
     "LOAD_FAST",
     "LOAD_GLOBAL",
     "LOAD_DEREF",
+    "UNARY_CALL",  # synthetic opcode
 }
-_SIMPLE_EXPR_OPS |= set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES)
+_SIMPLE_EXPR_OPS |= set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES) | _SYNTHETIC_OPS
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
+_UNARY_OPCODE_VALUES = set(_UNARY_OPCODES.values())
 _UPGRADE_BINARY_OPS = sys.version_info < (3, 11)
+
+# whitelist numpy functions that we can map directly to a native expression
+_NUMPY_MODULE_ALIASES = {"np", "numpy"}
+_NUMPY_FUNCTIONS = {"cbrt", "cos", "cosh", "sin", "sinh", "sqrt", "tan", "tanh"}
 
 
 class BytecodeParser:
@@ -88,11 +98,12 @@ class BytecodeParser:
     def _get_instructions(self, function: Callable[[Any], Any]) -> list[Instruction]:
         """Return disassembled bytecode ops, arg-repr, and arg-specific value/flag."""
         try:
-            return [
+            return self._inject_synthetic_calls(
                 self._upgrade_instruction(inst)
                 for inst in get_instructions(function)
-                if inst.opname not in ("COPY_FREE_VARS", "RESUME", "RETURN_VALUE")
-            ]
+                if inst.opname
+                not in ("COPY_FREE_VARS", "PRECALL", "RESUME", "RETURN_VALUE")
+            )
         except TypeError:
             # in case we hit something that can't be disassembled (eg: code object
             # unavailable, like a bare numpy ufunc that isn't in a lambda/function)
@@ -112,6 +123,41 @@ class BytecodeParser:
         except ValueError:
             return None
 
+    def _inject_synthetic_calls(
+        self, instructions: Iterator[Instruction]
+    ) -> list[Instruction]:
+        """Transform supported calls into synthetic POLARS_EXPRESSION ops."""
+        updated_instructions = []
+        for inst in instructions:
+            if inst.opname != "LOAD_GLOBAL":
+                updated_instructions.append(inst)
+
+            elif inst.argval in _NUMPY_MODULE_ALIASES:
+                instruction_buffer = list(islice(instructions, 3))
+                if (
+                    len(instruction_buffer) == 3
+                    and instruction_buffer[0].argval in _NUMPY_FUNCTIONS
+                    and instruction_buffer[1].opname.startswith("LOAD_")
+                    and instruction_buffer[2].opname.startswith("CALL")
+                ):
+                    # note: we map the synthetic POLARS_EXPRESSION as a unary
+                    # op, so we switch the instruction order on injection
+                    expr_name = instruction_buffer[0].argval
+                    offsets = inst.offset, instruction_buffer[1].offset
+                    synthetic_call = inst._replace(
+                        opname="POLARS_EXPRESSION",
+                        argval=expr_name,
+                        argrepr=expr_name,
+                        offset=offsets[1],
+                    )
+                    operand = instruction_buffer[1]._replace(offset=offsets[0])
+                    updated_instructions.extend((operand, synthetic_call))
+                else:
+                    updated_instructions.extend(instruction_buffer)
+            else:
+                updated_instructions.append(inst)
+        return updated_instructions
+
     def _to_intermediate_stack(self, instructions: list[Instruction]) -> StackEntry:
         """Take postfix bytecode and convert to an intermediate natural-order stack."""
         if self._apply_target == "expr":
@@ -127,7 +173,10 @@ class BytecodeParser:
                             left_operand=stack.pop(),  # type: ignore[arg-type]
                             right_operand=None,  # type: ignore[arg-type]
                         )
-                        if inst.opname in _UNARY_OPCODES
+                        if (
+                            inst.opname in _UNARY_OPCODES
+                            or inst.opname in _SYNTHETIC_OPS
+                        )
                         else StackValue(
                             operator=self._op(inst),
                             operator_arity=2,
@@ -159,6 +208,8 @@ class BytecodeParser:
             op = value.operator
             e1 = cls._expr(value.left_operand, col, param_name, depth + 1)
             if value.operator_arity == 1:
+                if op not in _UNARY_OPCODE_VALUES:
+                    return f"{e1}.{op}()"
                 return f"{op}{e1}"
             else:
                 e2 = cls._expr(value.right_operand, col, param_name, depth + 1)
@@ -220,7 +271,7 @@ class BytecodeParser:
                     if self._apply_target == "frame"
                     else _SIMPLE_EXPR_OPS
                 )
-                if len(self._instructions) >= 3 and all(
+                if len(self._instructions) >= 2 and all(
                     inst.opname in simple_ops for inst in self._instructions
                 ):
                     # can (currently) only handle logical 'and'/'or' if they not mixed
@@ -244,7 +295,7 @@ class BytecodeParser:
 
     @property
     def instructions(self) -> list[Instruction]:
-        """The bytecode instructions disassembled from the function being parsed."""
+        """The (adjusted) bytecode instructions from the function we are parsing."""
         return self._instructions
 
     @property

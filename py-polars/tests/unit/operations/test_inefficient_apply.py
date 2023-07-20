@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+import numpy
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
+from polars.testing import assert_frame_equal
 from polars.utils.udfs import BytecodeParser
 
 MY_CONSTANT = 3
@@ -16,7 +18,6 @@ MY_CONSTANT = 3
     "func",
     [
         np.sin,
-        lambda x: np.sin(x),
         lambda x, y: x + y,
         lambda x: x[0] + 1,
         lambda x: x,
@@ -39,14 +40,16 @@ def test_non_simple_function(func: Callable[[Any], Any]) -> None:
         lambda x: not (x > 1) or x == 2,
         lambda x: x is None,
         lambda x: x is not None,
-        lambda x: (x * -x) ** x,
-        lambda x: x * (x**x),
+        lambda x: ((x * -x) ** x) * 1.0,
+        lambda x: 1.0 * (x * (x**x)),
         lambda x: (x / x) + ((x * x) - x),
         lambda x: (10 - x) / (((x * 4) - x) // (2 + (x * (x - 1)))),
         lambda x: x in (2, 3, 4),
         lambda x: x not in (2, 3, 4),
         lambda x: x in (1, 2, 3, 4, 3) and x % 2 == 0 and x > 0,
         lambda x: MY_CONSTANT + x,
+        lambda x: 0 + numpy.cbrt(x),
+        lambda x: np.sin(x) + 1,
     ],
 )
 def test_expr_apply_produces_warning(func: Callable[[Any], Any]) -> None:
@@ -66,7 +69,7 @@ def test_expr_apply_produces_warning(func: Callable[[Any], Any]) -> None:
             x=pl.col("a"),
             y=pl.col("a").apply(func),
         )
-        assert result.rows() == expected.rows()
+        assert_frame_equal(result, expected)
 
 
 def test_expr_apply_parsing_misc() -> None:
