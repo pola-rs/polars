@@ -723,7 +723,9 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Microsecond => map!(datetime::microsecond),
             Nanosecond => map!(datetime::nanosecond),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
-            Truncate(every, offset) => map!(datetime::truncate, &every, &offset),
+            Truncate(truncate_options) => {
+                map!(datetime::truncate, &truncate_options)
+            }
             #[cfg(feature = "date_offset")]
             MonthStart => map!(datetime::month_start),
             #[cfg(feature = "date_offset")]
