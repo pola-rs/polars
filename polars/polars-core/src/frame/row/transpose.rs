@@ -7,7 +7,7 @@ impl DataFrame {
         &self,
         dtype: &DataType,
         keep_names_as: Option<&str>,
-        colnames: &Vec<String>,
+        colnames: &[String],
     ) -> PolarsResult<DataFrame> {
         let new_width = self.height();
         let new_height = self.width();
@@ -69,7 +69,7 @@ impl DataFrame {
         out.set_column_names(colnames)?;
         match keep_names_as {
             Some(cn) => {
-                let namecol = Utf8Chunked::new(&cn, self.get_column_names());
+                let namecol = Utf8Chunked::new(cn, self.get_column_names());
                 out.insert_at_idx_no_name_check(0, namecol.into()).cloned()
             }
             None => Ok(out),
@@ -101,13 +101,10 @@ impl DataFrame {
                 }
             },
         };
-        match keep_names_as {
+        if let Some(cn) = keep_names_as {
             // Check that the column name we're using for the original column names is unique before
             // wasting time transposing
-            Some(cn) => {
-                polars_ensure!(!colnames_t.contains(&cn.to_owned()), Duplicate: "{} is already in output column names", cn)
-            }
-            None => {}
+            polars_ensure!(!colnames_t.contains(&cn.to_owned()), Duplicate: "{} is already in output column names", cn)
         }
         polars_ensure!(
             df.height() != 0 && df.width() != 0,
