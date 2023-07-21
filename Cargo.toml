@@ -5,6 +5,7 @@ members = [
   "polars-cli",
   "polars/polars-*",
   "polars/polars-lazy/polars-*",
+  "contribution/*",
   "examples/*",
 ]
 exclude = [
