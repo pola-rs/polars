@@ -94,26 +94,21 @@ class BytecodeParser:
 
     _can_rewrite: dict[str, bool]
 
-    def __init__(self, function: Callable[[Any], Any], apply_target: str):
-        self._can_rewrite = {}
-        self._apply_target = apply_target
-        self._param_name = self._get_param_name(function)
-        self._instructions = self._get_instructions(function)
-        self._function = function
-
-    def _get_instructions(self, function: Callable[[Any], Any]) -> list[Instruction]:
-        """Return disassembled bytecode ops, arg-repr, and arg-specific value/flag."""
+    def __init__(self, function: Callable[[Any], Any], apply_target: ApplyTarget):
         try:
-            return self._inject_synthetic_calls(
-                self._upgrade_instruction(inst)
-                for inst in get_instructions(function)
-                if inst.opname
-                not in ("COPY_FREE_VARS", "PRECALL", "RESUME", "RETURN_VALUE")
-            )
+            original_instructions = get_instructions(function)
         except TypeError:
             # in case we hit something that can't be disassembled (eg: code object
             # unavailable, like a bare numpy ufunc that isn't in a lambda/function)
-            return []
+            original_instructions = iter([])
+
+        self._can_rewrite = {}
+        self._function = function
+        self._apply_target = apply_target
+        self._param_name = self._get_param_name(function)
+        self._rewritten_instructions = RewrittenInstructions(
+            instructions=original_instructions,
+        )
 
     @staticmethod
     def _get_param_name(function: Callable[[Any], Any]) -> str | None:
@@ -129,148 +124,8 @@ class BytecodeParser:
         except ValueError:
             return None
 
-    def _inject_synthetic_calls(
-        self, instructions: Iterator[Instruction]
-    ) -> list[Instruction]:
-        """Transform supported calls into synthetic POLARS_EXPRESSION ops."""
-        updated_instructions: list[Instruction] = []
-        for inst in instructions:
-            # check for load/call of mapped numpy functions
-            instruction_buffer = []
-            if inst.opname == "LOAD_GLOBAL" and inst.argval in _NUMPY_MODULE_ALIASES:
-                instruction_buffer = list(islice(instructions, 3))
-                if (
-                    len(instruction_buffer) == 3
-                    and instruction_buffer[0].argval in _NUMPY_FUNCTIONS
-                    and instruction_buffer[1].opname.startswith("LOAD_")
-                    and instruction_buffer[2].opname.startswith("CALL")
-                ):
-                    # note: we map the synthetic POLARS_EXPRESSION as a unary
-                    # op, so we switch the instruction order on injection
-                    expr_name = instruction_buffer[0].argval
-                    offsets = inst.offset, instruction_buffer[1].offset
-                    synthetic_call = inst._replace(
-                        opname="POLARS_EXPRESSION",
-                        argval=expr_name,
-                        argrepr=expr_name,
-                        offset=offsets[1],
-                    )
-                    operand = instruction_buffer[1]._replace(offset=offsets[0])
-                    updated_instructions.extend((operand, synthetic_call))
-                else:
-                    updated_instructions.append(inst)
-                    updated_instructions.extend(instruction_buffer)
-
-            # check for load/call of mapped python functions
-            elif inst.opname == "LOAD_METHOD" and inst.argval in _PYFUNCTION_MAP:
-                if (
-                    instruction_buffer := list(islice(instructions, 1))
-                ) and instruction_buffer[0].opname.startswith("CALL"):
-                    expr_name = _PYFUNCTION_MAP[inst.argval]
-                    synthetic_call = inst._replace(
-                        opname="POLARS_EXPRESSION",
-                        argval=expr_name,
-                        argrepr=expr_name,
-                    )
-                    updated_instructions.append(synthetic_call)
-            else:
-                updated_instructions.append(inst)
-                updated_instructions.extend(instruction_buffer)
-
-        return updated_instructions
-
-    def _to_intermediate_stack(self, instructions: list[Instruction]) -> StackEntry:
-        """Take postfix bytecode and convert to an intermediate natural-order stack."""
-        if self._apply_target == "expr":
-            stack: list[StackEntry] = []
-            for inst in instructions:
-                stack.append(
-                    inst.argrepr
-                    if inst.opname.startswith("LOAD_")
-                    else (
-                        StackValue(
-                            operator=self._op(inst),
-                            operator_arity=1,
-                            left_operand=stack.pop(),  # type: ignore[arg-type]
-                            right_operand=None,  # type: ignore[arg-type]
-                        )
-                        if (
-                            inst.opname in _UNARY_OPCODES
-                            or inst.opname in _SYNTHETIC_OPS
-                        )
-                        else StackValue(
-                            operator=self._op(inst),
-                            operator_arity=2,
-                            left_operand=stack.pop(-2),  # type: ignore[arg-type]
-                            right_operand=stack.pop(-1),  # type: ignore[arg-type]
-                        )
-                    )
-                )
-            return stack[0]
-
-        # TODO: frame apply (account for BINARY_SUBSCR)
-        # TODO: series apply (rewrite col expr as series)
-        raise NotImplementedError(f"TODO: {self._apply_target!r} apply")
-
-    @staticmethod
-    def _upgrade_instruction(inst: Instruction) -> Instruction:
-        """Rewrite any older binary opcodes using py 3.11 'BINARY_OP' instead."""
-        if _UPGRADE_BINARY_OPS and inst.opname in _BINARY_OPCODES:
-            inst = inst._replace(
-                argrepr=_BINARY_OPCODES[inst.opname],
-                opname="BINARY_OP",
-            )
-        return inst
-
-    @classmethod
-    def _expr(cls, value: StackEntry, col: str, param_name: str, depth: int) -> str:
-        """Take stack entry value and convert to polars expression string."""
-        if isinstance(value, StackValue):
-            op = value.operator
-            e1 = cls._expr(value.left_operand, col, param_name, depth + 1)
-            if value.operator_arity == 1:
-                if op not in _UNARY_OPCODE_VALUES:
-                    return f"{e1}.{op}()"
-                return f"{op}{e1}"
-            else:
-                e2 = cls._expr(value.right_operand, col, param_name, depth + 1)
-                if op in ("is", "is not") and value[2] == "None":
-                    not_ = "" if op == "is" else "not_"
-                    return f"{e1}.is_{not_}null()"
-                elif op in ("in", "not in"):
-                    not_ = "" if op == "in" else "~"
-                    return f"{not_}({e1}.is_in({e2}))"
-                else:
-                    expr = f"{e1} {op} {e2}"
-                    return f"({expr})" if depth else expr
-
-        elif value == param_name:
-            return f'pl.col("{col}")'
-
-        return value
-
-    @classmethod
-    def _op(cls, inst: Instruction) -> str:
-        """Convert bytecode instruction to suitable intermediate op string."""
-        if inst.opname in _LOGICAL_OPCODES:
-            return _LOGICAL_OPCODES[inst.opname]
-        elif inst.argrepr:
-            return inst.argrepr
-        elif inst.opname == "IS_OP":
-            return "is not" if inst.argval else "is"
-        elif inst.opname == "CONTAINS_OP":
-            return "not in" if inst.argval else "in"
-        elif inst.opname in _UNARY_OPCODES:
-            return _UNARY_OPCODES[inst.opname]
-        else:
-            raise AssertionError(
-                "Unrecognised opname; please report a bug to https://github.com/pola-rs/polars/issues "
-                "with the content of function you were passing to `apply` and the "
-                f"following instruction object:\n{inst}"
-            )
-
     @property
-    def apply_target(self) -> str:
+    def apply_target(self) -> ApplyTarget:
         """The apply target, eg: one of 'expr', 'frame', or 'series'."""
         return self._apply_target
 
@@ -286,19 +141,19 @@ class BytecodeParser:
             return can_rewrite
         else:
             self._can_rewrite[self._apply_target] = False
-            if self._instructions and self._param_name is not None:
+            if self._rewritten_instructions and self._param_name is not None:
                 simple_ops = (
                     _SIMPLE_FRAME_OPS
                     if self._apply_target == "frame"
                     else _SIMPLE_EXPR_OPS
                 )
-                if len(self._instructions) >= 2 and all(
-                    inst.opname in simple_ops for inst in self._instructions
+                if len(self._rewritten_instructions) >= 2 and all(
+                    inst.opname in simple_ops for inst in self._rewritten_instructions
                 ):
                     # can (currently) only handle logical 'and'/'or' if they not mixed
                     logical_ops = {
                         _LOGICAL_OPCODES[inst.opname]
-                        for inst in self._instructions
+                        for inst in self._rewritten_instructions
                         if inst.opname in _LOGICAL_OPCODES
                     }
                     self._can_rewrite[self._apply_target] = len(logical_ops) <= 1
@@ -315,14 +170,19 @@ class BytecodeParser:
         return self._function
 
     @property
-    def instructions(self) -> list[Instruction]:
-        """The (adjusted) bytecode instructions from the function we are parsing."""
-        return self._instructions
+    def original_instructions(self) -> list[Instruction]:
+        """The original bytecode instructions from the function we are parsing."""
+        return list(get_instructions(self._function))
 
     @property
     def param_name(self) -> str | None:
         """The parameter name of the function being parsed."""
         return self._param_name
+
+    @property
+    def rewritten_instructions(self) -> list[Instruction]:
+        """The rewritten bytecode instructions from the function we are parsing."""
+        return list(self._rewritten_instructions)
 
     def to_expression(self, col: str) -> str | None:
         """Translate postfix bytecode instructions to polars expression string."""
@@ -330,27 +190,30 @@ class BytecodeParser:
             return None
 
         # decompose bytecode into logical 'and'/'or' expression blocks (if present)
-        logical_blocks, logical_ops = defaultdict(list), []
+        logical_instruction_blocks = defaultdict(list)
+        logical_instructions = []
         jump_offset = 0
-        for idx, inst in enumerate(self._instructions):
+        for idx, inst in enumerate(self._rewritten_instructions):
             if inst.opname in _LOGICAL_OPCODES:
-                jump_offset = self._instructions[idx + 1].offset
-                logical_ops.append(inst)
+                jump_offset = self._rewritten_instructions[idx + 1].offset
+                logical_instructions.append(inst)
             else:
-                logical_blocks[jump_offset].append(inst)
+                logical_instruction_blocks[jump_offset].append(inst)
 
         # convert each logical block to a polars expression string
         expression_strings = {
-            offset: self._expr(
-                self._to_intermediate_stack(ops),
+            offset: InstructionTranslator(
+                instructions=ops,
+                apply_target=self._apply_target,
+            ).to_expression(
                 col=col,
                 param_name=self._param_name,
-                depth=int(bool(logical_ops)),
+                depth=int(bool(logical_instructions)),
             )
-            for offset, ops in logical_blocks.items()
+            for offset, ops in logical_instruction_blocks.items()
         }
-        for op in logical_ops:
-            expression_strings[op.offset] = self._op(op)
+        for inst in logical_instructions:
+            expression_strings[inst.offset] = InstructionTranslator.op(inst)
 
         # TODO: handle mixed 'and'/'or' blocks (e.g. `x > 0 AND (x > 0 OR (x == -1)`).
         #  (need to reconstruct the correct nesting boundaries to do this properly)
@@ -398,6 +261,211 @@ class BytecodeParser:
                 PolarsInefficientApplyWarning,
                 stacklevel=find_stacklevel(),
             )
+
+
+class InstructionTranslator:
+    """Translates Instruction bytecode to a polars expression string."""
+
+    def __init__(self, instructions: list[Instruction], apply_target: ApplyTarget):
+        self._stack = self._to_intermediate_stack(instructions, apply_target)
+
+    def to_expression(self, col: str, param_name: str, depth: int) -> str:
+        """Convert intermediate stack to polars expression string."""
+        return self._expr(self._stack, col, param_name, depth)
+
+    @classmethod
+    def op(cls, inst: Instruction) -> str:
+        """Convert bytecode instruction to suitable intermediate op string."""
+        if inst.opname in _LOGICAL_OPCODES:
+            return _LOGICAL_OPCODES[inst.opname]
+        elif inst.argrepr:
+            return inst.argrepr
+        elif inst.opname == "IS_OP":
+            return "is not" if inst.argval else "is"
+        elif inst.opname == "CONTAINS_OP":
+            return "not in" if inst.argval else "in"
+        elif inst.opname in _UNARY_OPCODES:
+            return _UNARY_OPCODES[inst.opname]
+        else:
+            raise AssertionError(
+                "Unrecognised opname; please report a bug to https://github.com/pola-rs/polars/issues "
+                "with the content of function you were passing to `apply` and the "
+                f"following instruction object:\n{inst}"
+            )
+
+    @classmethod
+    def _expr(cls, value: StackEntry, col: str, param_name: str, depth: int) -> str:
+        """Take stack entry value and convert to polars expression string."""
+        if isinstance(value, StackValue):
+            op = value.operator
+            e1 = cls._expr(value.left_operand, col, param_name, depth + 1)
+            if value.operator_arity == 1:
+                if op not in _UNARY_OPCODE_VALUES:
+                    return f"{e1}.{op}()"
+                return f"{op}{e1}"
+            else:
+                e2 = cls._expr(value.right_operand, col, param_name, depth + 1)
+                if op in ("is", "is not") and value[2] == "None":
+                    not_ = "" if op == "is" else "not_"
+                    return f"{e1}.is_{not_}null()"
+                elif op in ("in", "not in"):
+                    not_ = "" if op == "in" else "~"
+                    return f"{not_}({e1}.is_in({e2}))"
+                else:
+                    expr = f"{e1} {op} {e2}"
+                    return f"({expr})" if depth else expr
+
+        elif value == param_name:
+            return f'pl.col("{col}")'
+
+        return value
+
+    def _to_intermediate_stack(
+        self, instructions: list[Instruction], apply_target: ApplyTarget
+    ) -> StackEntry:
+        """Take postfix bytecode and convert to an intermediate natural-order stack."""
+        if apply_target == "expr":
+            stack: list[StackEntry] = []
+            for inst in instructions:
+                stack.append(
+                    inst.argrepr
+                    if inst.opname.startswith("LOAD_")
+                    else (
+                        StackValue(
+                            operator=self.op(inst),
+                            operator_arity=1,
+                            left_operand=stack.pop(),  # type: ignore[arg-type]
+                            right_operand=None,  # type: ignore[arg-type]
+                        )
+                        if (
+                            inst.opname in _UNARY_OPCODES
+                            or inst.opname in _SYNTHETIC_OPS
+                        )
+                        else StackValue(
+                            operator=self.op(inst),
+                            operator_arity=2,
+                            left_operand=stack.pop(-2),  # type: ignore[arg-type]
+                            right_operand=stack.pop(-1),  # type: ignore[arg-type]
+                        )
+                    )
+                )
+            return stack[0]
+
+        # TODO: frame apply (account for BINARY_SUBSCR)
+        # TODO: series apply (rewrite col expr as series)
+        raise NotImplementedError(f"TODO: {apply_target!r} apply")
+
+
+class RewrittenInstructions:
+    """
+    Standalone class that applies Instruction rewrite/filtering rules.
+
+    This significantly simplifies subsequent parsing by injecting
+    synthetic POLARS_EXPRESSION ops into the Instruction stream for
+    easy identification/translation and separates the parsing logic
+    from the identification of expression translation opportunities.
+    """
+
+    def __init__(self, instructions: Iterator[Instruction]):
+        self._instructions = instructions
+        self._rewritten_instructions = self._apply_rules(
+            self._upgrade_instruction(inst)
+            for inst in instructions
+            if inst.opname
+            not in ("COPY_FREE_VARS", "PRECALL", "RESUME", "RETURN_VALUE")
+        )
+
+    def __len__(self) -> int:
+        return len(self._rewritten_instructions)
+
+    def __iter__(self) -> Iterator[Instruction]:
+        return iter(self._rewritten_instructions)
+
+    def __getitem__(self, item: Any) -> Instruction:
+        return self._rewritten_instructions[item]
+
+    def _apply_rules(self, instructions: Iterator[Instruction]) -> list[Instruction]:
+        """
+        Apply rewrite rules, potentially injecting synthetic operations.
+
+        Rules operate on the instruction stream and can examine/modify
+        it as needed, pushing updates into "updated_instructions" and
+        returning True/False to indicate if any changes were made.
+        """
+        self._instructions = instructions
+        updated_instructions: list[Instruction] = []
+        for inst in instructions:
+            if not any(
+                apply_rewrite(inst, updated_instructions)
+                for apply_rewrite in (
+                    # add any other rewrite methods here
+                    self._numpy_functions,
+                    self._python_functions,
+                )
+            ):
+                updated_instructions.append(inst)
+        return updated_instructions
+
+    def _numpy_functions(
+        self, inst: Instruction, instructions: list[Instruction]
+    ) -> bool:
+        """Replace numpy function calls with a synthetic POLARS_EXPRESSION op."""
+        if inst.opname == "LOAD_GLOBAL" and inst.argval in _NUMPY_MODULE_ALIASES:
+            instruction_buffer = list(islice(self._instructions, 3))
+            if (
+                len(instruction_buffer) == 3
+                and instruction_buffer[0].argval in _NUMPY_FUNCTIONS
+                and instruction_buffer[1].opname.startswith("LOAD_")
+                and instruction_buffer[2].opname.startswith("CALL")
+            ):
+                # note: synthetic POLARS_EXPRESSION is mapped as a unary
+                # op, so we switch the instruction order on injection
+                expr_name = instruction_buffer[0].argval
+                offsets = inst.offset, instruction_buffer[1].offset
+                synthetic_call = inst._replace(
+                    opname="POLARS_EXPRESSION",
+                    argval=expr_name,
+                    argrepr=expr_name,
+                    offset=offsets[1],
+                )
+                operand = instruction_buffer[1]._replace(offset=offsets[0])
+                instructions.extend((operand, synthetic_call))
+            else:
+                instructions.append(inst)
+                instructions.extend(instruction_buffer)
+            return True
+        return False
+
+    def _python_functions(
+        self, inst: Instruction, instructions: list[Instruction]
+    ) -> bool:
+        """Replace python method calls with synthetic POLARS_EXPRESSION op."""
+        if inst.opname == "LOAD_METHOD" and inst.argval in _PYFUNCTION_MAP:
+            if (
+                instruction_buffer := list(islice(self._instructions, 1))
+            ) and instruction_buffer[0].opname.startswith("CALL"):
+                expr_name = _PYFUNCTION_MAP[inst.argval]
+                synthetic_call = inst._replace(
+                    opname="POLARS_EXPRESSION",
+                    argval=expr_name,
+                    argrepr=expr_name,
+                )
+                instructions.append(synthetic_call)
+            else:
+                instructions.append(inst)
+                instructions.extend(instruction_buffer)
+            return True
+        return False
+
+    @staticmethod
+    def _upgrade_instruction(inst: Instruction) -> Instruction:
+        """Rewrite any older binary opcodes using py 3.11 'BINARY_OP' instead."""
+        if _UPGRADE_BINARY_OPS and inst.opname in _BINARY_OPCODES:
+            inst = inst._replace(
+                argrepr=_BINARY_OPCODES[inst.opname],
+                opname="BINARY_OP",
+            )
+        return inst
 
 
 def warn_on_inefficient_apply(
