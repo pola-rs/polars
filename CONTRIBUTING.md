@@ -134,15 +134,13 @@ Due to the way that Python and Rust interoperate, debugging the Rust side of dev
 For this reason, we have provided a guide and several tools to setup up [Visual Studio Code](https://code.visualstudio.com/)
 with a debugging environment that makes debugging relatively simple.
 
-#### VS Code Extensions
+#### Rust VSCode Debugging Extension
 
-Install The [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) and the
-Task Shell Input](https://marketplace.visualstudio.com/items?itemName=augustocdias.tasks-shell-input) extensions.
-You can install from within a VS Code terminal with the following:
+Install The [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension. You can install
+from within a VS Code terminal with the following:
 
 ```shell
 code --install-extension vadimcn.vscode-lldb augustocdias.tasks-shell-input
-code --install-extension augustocdias.tasks-shell-input
 ```
 
 #### Debug Configuration
@@ -161,43 +159,31 @@ Copy the following `configurations` and `inputs` components to your `launch.json
             "request": "launch",
             "program": "${workspaceFolder}/py-polars/debug/launch.py",
             "args": [
-                "${file}",
+                "${file}"
             ],
             "console": "internalConsole",
             "justMyCode": true,
             "serverReadyAction": {
                 "pattern": "pID = ([0-9]+)",
                 "action": "startDebugging",
-                "name": "Rust LLDB",
-            },
+                "name": "Rust LLDB"
+            }
         },
         {
             "name": "Rust LLDB",
+            "pid": "0",
             "type": "lldb",
             "request": "attach",
             "program": "${workspaceFolder}/py-polars/.venv/bin/python",
-            "pid": "${input:readPIDDirectTestFile}",
             "stopOnEntry": false,
             "sourceLanguages": [
                 "rust"
             ],
             "presentation": {
-                "hidden": true,
-            },
-        },
-    ],
-    "inputs": [
-        {
-            "id": "readPIDDirectTestFile",
-            "type": "command",
-            "command": "shellCommand.execute",
-            "args": {
-                "command": "ps -aux | grep 'debugpy/launcher/../../debugpy' | grep '/[h]ome/${TEST_FILE_PATH}' | awk '{print $2}'",
-                "cwd": "${workspaceFolder}",
-                "useFirstResult": true,
-            },
-        },
-    ],
+                "hidden": true
+            }
+        }
+    ]
 }
 ```
 
@@ -216,10 +202,11 @@ debugging configuration.
 
 The debugging feature runs via the specially-designed VS Code launch configuration shown above. The initial python debugger
 is launched, using a special launch script located at `/py-polars/debug/launch.py`, and passes the name of the script to be
-debugged (the target script) as an input argument. The launch script compiles the target script and runs it in the current
-environment. At this point, the process ID of the python debugging process is retrieved, and a second (Rust) debugger is
-attached to the Python debugger. The result is two simultaneous debuggers operating on the same running instance. Breakpoints
-in the Python code will stop on the Python debugger and breakpoints in the Rust code will stop on the Rust debugger.
+debugged (the target script) as an input argument. The launch script determines the process ID, writes this value into
+the launch.json configuration file, compiles the target script and runs it in the current environment. At this point, a
+second (Rust) debugger is attached to the Python debugger. The result is two simultaneous debuggers operating on the same
+running instance. Breakpoints in the Python code will stop on the Python debugger and breakpoints in the Rust code will stop
+on the Rust debugger.
 
 ### Pull requests
 
