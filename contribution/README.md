@@ -1,0 +1,13 @@
+# Contribution guideline examples
+
+This subdirectory is intended to provide examples that guide contributors.
+
+
+Naming conventions for variables:
+
+```rust
+let s: Series = ...
+let ca: ChunkedArray = ...
+let arr: ArrayRef = ..
+let arr: PrimitiveArray = ..
+```
