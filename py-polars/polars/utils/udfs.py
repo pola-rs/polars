@@ -371,13 +371,14 @@ class RewrittenInstructions:
     from the identification of expression translation opportunities.
     """
 
+    _ignored_ops = frozenset(["COPY_FREE_VARS", "PRECALL", "RESUME", "RETURN_VALUE"])
+
     def __init__(self, instructions: Iterator[Instruction]):
         self._instructions = instructions
         self._rewritten_instructions = self._apply_rules(
             self._upgrade_instruction(inst)
             for inst in instructions
-            if inst.opname
-            not in ("COPY_FREE_VARS", "PRECALL", "RESUME", "RETURN_VALUE")
+            if inst.opname not in self._ignored_ops
         )
 
     def __len__(self) -> int:
@@ -404,14 +405,16 @@ class RewrittenInstructions:
                 apply_rewrite(inst, updated_instructions)
                 for apply_rewrite in (
                     # add any other rewrite methods here
-                    self._functions,
-                    self._methods,
+                    self._rewrite_functions,
+                    self._rewrite_methods,
                 )
             ):
                 updated_instructions.append(inst)
         return updated_instructions
 
-    def _functions(self, inst: Instruction, instructions: list[Instruction]) -> bool:
+    def _rewrite_functions(
+        self, inst: Instruction, instructions: list[Instruction]
+    ) -> bool:
         """Replace numpy/json function calls with a synthetic POLARS_EXPRESSION op."""
         if inst.opname == "LOAD_GLOBAL" and (
             inst.argval in _NUMPY_MODULE_ALIASES or inst.argval == "json"
@@ -445,7 +448,9 @@ class RewrittenInstructions:
             return True
         return False
 
-    def _methods(self, inst: Instruction, instructions: list[Instruction]) -> bool:
+    def _rewrite_methods(
+        self, inst: Instruction, instructions: list[Instruction]
+    ) -> bool:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
         if inst.opname == "LOAD_METHOD" and inst.argval in _PYFUNCTION_MAP:
             if (
@@ -482,10 +487,15 @@ def _is_raw_function(function: Callable[[Any], Any]) -> tuple[str, str]:
         func_name = function.__name__
         if func_module == "numpy" and func_name in _NUMPY_FUNCTIONS:
             return "np", func_name
-        elif func_module in ("builtins", "json") and func_name == "loads":
-            return "json", "str.json_extract"
+        elif func_module == "builtins" and func_name == "loads":
+            import json  # double-check since it is referenced via 'builtins'
+
+            if function is json.loads:
+                return "json", "str.json_extract"
+
     except AttributeError:
         pass
+
     return "", ""
 
 

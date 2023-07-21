@@ -172,18 +172,28 @@ def test_datelike_identity() -> None:
 def test_apply_list_anyvalue_fallback() -> None:
     import json
 
-    df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
-    assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
-        "text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]
-    }
+    with pytest.warns(
+        PolarsInefficientApplyWarning,
+        match=r'(?s)replace your `apply` with.*pl.col\("text"\).str.json_extract()',
+    ):
+        df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
+        assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
+            "text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]
+        }
 
-    # starts with empty list '[]'
-    df = pl.DataFrame(
-        {"text": ["[]", '[{"x": 1, "y": 2}, {"x": 3, "y": 4}]', '[{"x": 1, "y": 2}]']}
-    )
-    assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
-        "text": [[], [{"x": 1, "y": 2}, {"x": 3, "y": 4}], [{"x": 1, "y": 2}]]
-    }
+        # starts with empty list '[]'
+        df = pl.DataFrame(
+            {
+                "text": [
+                    "[]",
+                    '[{"x": 1, "y": 2}, {"x": 3, "y": 4}]',
+                    '[{"x": 1, "y": 2}]',
+                ]
+            }
+        )
+        assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
+            "text": [[], [{"x": 1, "y": 2}, {"x": 3, "y": 4}], [{"x": 1, "y": 2}]]
+        }
 
 
 def test_apply_all_types() -> None:
@@ -246,7 +256,8 @@ def test_apply_skip_nulls() -> None:
 
 def test_apply_object_dtypes() -> None:
     with pytest.warns(
-        PolarsInefficientApplyWarning, match="In this case, you can replace"
+        PolarsInefficientApplyWarning,
+        match=r"(?s)replace your `apply` with.*lambda x:",
     ):
         assert pl.DataFrame(
             {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
@@ -283,15 +294,19 @@ def test_apply_explicit_list_output_type() -> None:
 
 
 def test_apply_dict() -> None:
-    df = pl.DataFrame({"Col": ['{"A":"Value1"}', '{"B":"Value2"}']})
-    assert df.select(pl.col("Col").apply(json.loads)).to_dict(False) == {
-        "Col": [{"A": "Value1", "B": None}, {"A": None, "B": "Value2"}]
-    }
-    assert pl.DataFrame(
-        {"Col": ['{"A":"Value1", "B":"Value2"}', '{"B":"Value3"}']}
-    ).select(pl.col("Col").apply(json.loads)).to_dict(False) == {
-        "Col": [{"A": "Value1", "B": "Value2"}, {"A": None, "B": "Value3"}]
-    }
+    with pytest.warns(
+        PolarsInefficientApplyWarning,
+        match=r'(?s)replace your `apply` with.*pl.col\("abc"\).str.json_extract()',
+    ):
+        df = pl.DataFrame({"abc": ['{"A":"Value1"}', '{"B":"Value2"}']})
+        assert df.select(pl.col("abc").apply(json.loads)).to_dict(False) == {
+            "abc": [{"A": "Value1", "B": None}, {"A": None, "B": "Value2"}]
+        }
+        assert pl.DataFrame(
+            {"abc": ['{"A":"Value1", "B":"Value2"}', '{"B":"Value3"}']}
+        ).select(pl.col("abc").apply(json.loads)).to_dict(False) == {
+            "abc": [{"A": "Value1", "B": "Value2"}, {"A": None, "B": "Value3"}]
+        }
 
 
 def test_apply_pass_name() -> None:
