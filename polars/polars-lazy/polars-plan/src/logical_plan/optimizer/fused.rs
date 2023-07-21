@@ -35,7 +35,12 @@ fn check_eligible(
         .get(*right)
         .get_type(&schema, Context::Default, expr_arena)?;
     let type_left = &field_left.dtype;
-    if type_left.is_numeric() && type_right.is_numeric() {
+    // Exclude literals for now as these will not result in fused operation downstream
+    if type_left.is_numeric()
+        && type_right.is_numeric()
+        && !has_aexpr_literal(*left, expr_arena)
+        && !has_aexpr_literal(*right, expr_arena)
+    {
         Ok((Some(true), Some(field_left)))
     } else {
         Ok((Some(false), None))

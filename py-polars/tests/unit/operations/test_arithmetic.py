@@ -170,19 +170,19 @@ def test_fused_arithm() -> None:
     q = df.lazy().select(pl.lit(1) * pl.lit(2) - pl.col("c"))
     assert """(2) - (col("c")""" in q.explain()
 
-    # 8752
-    df = pl.DataFrame({"x": pl.Series(values=[0, 0])})
-    q = df.lazy().with_columns((0 + 2.5 * (0.5 + pl.col("x"))).alias("compute"))
-    assert q.collect()["compute"][0] == 1.25
-    assert "0.0.fma" in q.explain()
-
-
-def test_fused_arithm_9009() -> None:
-    q = pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
-    q = q.select((pl.col("b") * 2 + 3).over("a"))
-
-    assert """3.fma([col("b"), 2]).alias("b")""" in q.explain()
-    assert q.collect()["b"].to_list() == [9, 11]
+    # Check if fused is turned off for literals
+    for expr in [
+        pl.col("c") * 2 + 5,
+        pl.col("c") * 2 + pl.col("c"),
+        pl.col("c") * 2 - 5,
+        pl.col("c") * 2 - pl.col("c"),
+        5 - pl.col("c") * 2,
+        pl.col("c") - pl.col("c") * 2,
+    ]:
+        q = df.lazy().select(expr)
+        assert all(
+            el not in q.explain() for el in ["fms", "fsm", "fma"]
+        ), f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
 
 
 def test_boolean_addition() -> None:

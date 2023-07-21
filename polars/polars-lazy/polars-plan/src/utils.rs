@@ -95,7 +95,7 @@ pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr
         .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
 }
 
-pub(crate) fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> bool {
+pub fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> bool {
     arena.iter(current_node).all(|(_node, e)| {
         use AExpr::*;
         match e {
@@ -122,6 +122,10 @@ where
 
 pub fn has_aexpr_window(current_node: Node, arena: &Arena<AExpr>) -> bool {
     has_aexpr(current_node, arena, |e| matches!(e, AExpr::Window { .. }))
+}
+
+pub fn has_aexpr_literal(current_node: Node, arena: &Arena<AExpr>) -> bool {
+    has_aexpr(current_node, arena, |e| matches!(e, AExpr::Literal(_)))
 }
 
 /// Can check if an expression tree has a matching_expr. This
