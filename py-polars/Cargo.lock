@@ -1724,6 +1724,7 @@ dependencies = [
  "ahash",
  "built",
  "ciborium",
+ "either",
  "jemallocator",
  "lexical-core",
  "libc",
