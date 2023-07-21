@@ -35,7 +35,9 @@ fn check_eligible(
         .get(*right)
         .get_type(&schema, Context::Default, expr_arena)?;
     let type_left = &field_left.dtype;
-    // Exclude literals for now as these will not result in fused operation downstream
+    // Exclude literals for now as these will not benefit from fused operations downstream #9857
+    // This optimization would also interfere with the `col -> lit` type-coercion rules
+    // And it might also interfere with constant folding which is a more suitable optimizations here
     if type_left.is_numeric()
         && type_right.is_numeric()
         && !has_aexpr_literal(*left, expr_arena)
