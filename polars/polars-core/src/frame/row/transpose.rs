@@ -1,11 +1,18 @@
+use either::Either;
+
 use super::*;
 
 impl DataFrame {
-    pub(crate) fn transpose_from_dtype(&self, dtype: &DataType) -> PolarsResult<DataFrame> {
+    pub(crate) fn transpose_from_dtype(
+        &self,
+        dtype: &DataType,
+        keep_names_as: Option<&str>,
+        colnames: &Vec<String>,
+    ) -> PolarsResult<DataFrame> {
         let new_width = self.height();
         let new_height = self.width();
 
-        match dtype {
+        let mut out = match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => numeric_transpose::<Int8Type>(&self.columns),
             #[cfg(feature = "dtype-i16")]
@@ -54,25 +61,59 @@ impl DataFrame {
                 }
                 let cols = buffers
                     .into_iter()
-                    .enumerate()
-                    .map(|(i, buf)| {
-                        let mut s = buf.into_series().cast(dtype).unwrap();
-                        s.rename(&format!("column_{i}"));
-                        s
-                    })
+                    .map(|buf| buf.into_series().cast(dtype).unwrap())
                     .collect::<Vec<_>>();
                 Ok(DataFrame::new_no_checks(cols))
             }
+        }?;
+        out.set_column_names(colnames)?;
+        match keep_names_as {
+            Some(cn) => {
+                let namecol = Utf8Chunked::new(&cn, self.get_column_names());
+                out.insert_at_idx_no_name_check(0, namecol.into()).cloned()
+            }
+            None => Ok(out),
         }
     }
 
     /// Transpose a DataFrame. This is a very expensive operation.
-    pub fn transpose(&self) -> PolarsResult<DataFrame> {
+    pub fn transpose(
+        &self,
+        keep_names_as: Option<&str>,
+        column_names: Option<Either<String, Vec<String>>>,
+    ) -> PolarsResult<DataFrame> {
+        let mut df = self.clone(); // Must be owned so we get the same type if dropping a column.
+        let colnames_t = match column_names {
+            None => (0..self.height()).map(|i| format!("column_{i}")).collect(),
+            Some(cn) => match cn {
+                Either::Left(cname) => {
+                    let new_names = self.column(&cname).and_then(|x| x.utf8())?;
+                    polars_ensure!(!new_names.has_validity(), ComputeError: "Column with new names can't have null values");
+                    df = self.drop(&cname)?;
+                    new_names
+                        .into_no_null_iter()
+                        .map(|s| s.to_owned())
+                        .collect()
+                }
+                Either::Right(names) => {
+                    polars_ensure!(names.len() == self.height(), ShapeMismatch: "Length of new column names must be the same as the row count");
+                    names
+                }
+            },
+        };
+        match keep_names_as {
+            // Check that the column name we're using for the original column names is unique before
+            // wasting time transposing
+            Some(cn) => {
+                polars_ensure!(!colnames_t.contains(&cn.to_owned()), Duplicate: "{} is already in output column names", cn)
+            }
+            None => {}
+        }
         polars_ensure!(
-            self.height() != 0 && self.width() != 0,
+            df.height() != 0 && df.width() != 0,
             NoData: "unable to transpose an empty dataframe"
         );
-        let dtype = self.get_supertype().unwrap()?;
+        let dtype = df.get_supertype().unwrap()?;
         match dtype {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
@@ -97,7 +138,7 @@ impl DataFrame {
             }
             _ => {}
         }
-        self.transpose_from_dtype(&dtype)
+        df.transpose_from_dtype(&dtype, keep_names_as, &colnames_t)
     }
 }
 
@@ -228,7 +269,7 @@ mod test {
             "b" => [10, 20, 30],
         ]?;
 
-        let out = df.transpose()?;
+        let out = df.transpose(None, None)?;
         let expected = df![
             "column_0" => [1, 10],
             "column_1" => [2, 20],
@@ -241,7 +282,7 @@ mod test {
             "a" => [Some(1), None, Some(3)],
             "b" => [Some(10), Some(20), None],
         ]?;
-        let out = df.transpose()?;
+        let out = df.transpose(None, None)?;
         let expected = df![
             "column_0" => [1, 10],
             "column_1" => [None, Some(20)],
@@ -254,7 +295,7 @@ mod test {
             "a" => ["a", "b", "c"],
             "b" => [Some(10), Some(20), None],
         ]?;
-        let out = df.transpose()?;
+        let out = df.transpose(None, None)?;
         let expected = df![
             "column_0" => ["a", "10"],
             "column_1" => ["b", "20"],

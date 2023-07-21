@@ -1,6 +1,7 @@
 use std::io::BufWriter;
 use std::ops::Deref;
 
+use either::Either;
 use numpy::IntoPyArray;
 use polars::frame::row::{rows_to_schema_supertypes, Row};
 #[cfg(feature = "avro")]
@@ -1356,17 +1357,21 @@ impl PyDataFrame {
         Ok(hash.into_series().into())
     }
 
-    pub fn transpose(&self, include_header: bool, names: &str) -> PyResult<Self> {
-        let mut df = self.df.transpose().map_err(PyPolarsErr::from)?;
-        if include_header {
-            let s = Utf8Chunked::from_iter_values(
-                names,
-                self.df.get_columns().iter().map(|s| s.name()),
-            )
-            .into_series();
-            df.insert_at_idx(0, s).unwrap();
-        }
-        Ok(df.into())
+    #[pyo3(signature = (keep_names_as, column_names))]
+    pub fn transpose(&self, keep_names_as: Option<&str>, column_names: &PyAny) -> PyResult<Self> {
+        // It doesn't automatically translate Python types to Either :-(
+        let cnames = if let Ok(cn) = column_names.extract::<Vec<String>>() {
+            Some(Either::Right(cn))
+        } else if let Ok(cn) = column_names.extract::<String>() {
+            Some(Either::Left(cn))
+        } else {
+            None
+        };
+        Ok(self
+            .df
+            .transpose(keep_names_as, cnames)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
     pub fn upsample(
         &self,
