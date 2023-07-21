@@ -185,6 +185,18 @@ def test_fused_arithm() -> None:
         ), f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
 
 
+def test_literal_no_upcast() -> None:
+    df = pl.DataFrame({
+        'a': pl.Series([1, 2, 3], dtype=pl.Float32)
+    })
+
+    q= df.lazy().select(
+        (pl.col('a')*-5 + 2).alias("fma"),
+        (2 - pl.col('a') * 5).alias("fsm"),
+        (pl.col('a') * 5 - 2).alias("fms"),
+    ).collect()
+    assert set(q.schema.values()) == {pl.Float32}, "Literal * Column (Float32) should not lead upcast"
+
 def test_boolean_addition() -> None:
     s = pl.DataFrame({"a": [True, False, False], "b": [True, False, True]}).sum(axis=1)
 
