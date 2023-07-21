@@ -170,7 +170,7 @@ def test_fused_arithm() -> None:
     q = df.lazy().select(pl.lit(1) * pl.lit(2) - pl.col("c"))
     assert """(2) - (col("c")""" in q.explain()
 
-    # Check if fused is turned off for literals
+    # Check if fused is turned off for literals see: #9857
     for expr in [
         pl.col("c") * 2 + 5,
         pl.col("c") * 2 + pl.col("c"),
