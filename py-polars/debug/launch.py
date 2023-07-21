@@ -39,15 +39,15 @@ def launch_debugging() -> None:
     pID = out.group(0)
 
     # print to the console to allow the "Rust LLDB" routine to pick up on the signal
-    # create new url    
+    # create new url
     launch_file = Path(__file__).parents[2] / ".vscode/launch.json"
     if not launch_file.exists():
         raise RuntimeError(f"Cannot locate {launch_file}")
-    with launch_file.open('r') as f:
+    with launch_file.open("r") as f:
         launch_info = f.read()
-        
+
     # overwrite the pid found in launch.config with the pid for the current process
-    found = re.search(r'\"Rust LLDB\",\s*\"pid\":\s*\"(\d+)\"', launch_info)
+    found = re.search(r"\"Rust LLDB\",\s*\"pid\":\s*\"(\d+)\"", launch_info)
     if not found:
         raise RuntimeError(
             "Cannot locate pid definition in launch.json for Rust LLDB configuration. "
@@ -55,12 +55,10 @@ def launch_debugging() -> None:
             "launch configuration."
         )
     launch_info_with_new_pid = re.sub(
-        r'(\"Rust LLDB\",\s*\"pid\":\s*\")\d+(\")',
-        fr"\g<1>{pID}\g<2>",
-        launch_info
+        r"(\"Rust LLDB\",\s*\"pid\":\s*\")\d+(\")", rf"\g<1>{pID}\g<2>", launch_info
     )
-    with launch_file.open('w') as f:
-        f.write(launch_info_with_new_pid)    
+    with launch_file.open("w") as f:
+        f.write(launch_info_with_new_pid)
 
     # print pID to the debug console. This auto-triggers the Rust LLDB configurations.
     print(f"pID = {pID}")
