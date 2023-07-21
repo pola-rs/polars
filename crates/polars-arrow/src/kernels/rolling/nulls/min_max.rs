@@ -3,7 +3,7 @@ use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
 
 use super::*;
 
-pub struct MinMaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
+pub struct MinMaxWindow<'a, T: NativeType + PartialOrd + IsFloat, const R: i8> {
     slice: &'a [T],
     validity: &'a Bitmap,
     m: Option<T>,
@@ -12,40 +12,42 @@ pub struct MinMaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     last_start: usize,
     last_end: usize,
     null_count: usize,
-    sort_end_order: Ordering,
 }
 
-impl<'a, T: NativeType + PartialOrd + IsFloat> MinMaxWindow<'a, T> {
-
+// R should be an Ordering but isn't because non-primitive const generics aren't considered stable
+// as of this writing. Passing comparison information this way is faster than having a field inside
+// the struct so we live with it.
+impl<'a, T: NativeType + PartialOrd + IsFloat, const R: i8> MinMaxWindow<'a, T, R> {
     #[inline]
-    unsafe fn cmp_f(&self, a: &T, b: &T) -> Ordering {
+    unsafe fn cmp_f(&self, a: &T, b: &T) -> i8 {
         // Seems like it's faster to directly put this here instead of having a field in the window
         // that gets called dynamically
         if T::is_float() {
             match (a.is_nan(), b.is_nan()) {
                 // safety: we checked nans
-                (false, false) => a.partial_cmp(b).unwrap_unchecked() ,
-                (true, true) => Ordering::Equal,
-                (true, false) => self.sort_end_order.reverse(),
-                (false, true) => self.sort_end_order,
+                (false, false) => a.partial_cmp(b).unwrap_unchecked() as i8,
+                (true, true) => 0,
+                (true, false) => -R,
+                (false, true) => R,
             }
         } else {
-            a.partial_cmp(b).unwrap_unchecked()
+            a.partial_cmp(b).unwrap_unchecked() as i8
         }
     }
     #[inline]
     unsafe fn new_is_m(&self, old: &T, new: &T) -> bool {
-        self.cmp_f(new, old) != self.sort_end_order
+        self.cmp_f(new, old) != R
     }
 
     #[inline]
     unsafe fn update_sorted_to(&mut self) {
         let mut last_val = self.m.unwrap();
+        self.sorted_to = self.m_idx;
         for i in (self.m_idx + 1)..self.slice.len() {
-            self.sorted_to = i;
+            self.sorted_to += 1;
             if self.validity.get_bit_unchecked(i) {
                 let val = self.slice.get_unchecked(i);
-                if self.cmp_f(&last_val, val) == self.sort_end_order {
+                if self.cmp_f(&last_val, val) == R {
                     break;
                 }
                 last_val = *val;
@@ -108,7 +110,7 @@ impl<'a, T: NativeType + PartialOrd + IsFloat> MinMaxWindow<'a, T> {
         validity: &'a Bitmap,
         start: usize,
         end: usize,
-        sort_end_order: Ordering,
+        //        sort_end_order: Ordering,
     ) -> Self {
         let mut out = Self {
             slice,
@@ -119,7 +121,6 @@ impl<'a, T: NativeType + PartialOrd + IsFloat> MinMaxWindow<'a, T> {
             last_start: start,
             last_end: end,
             null_count: 0,
-            sort_end_order,
         };
         let (m_idx, null_count) = out.get_m_m_idx_and_null_count(start, end);
         let (m, idx) = (m_idx.map(|x| x.1), m_idx.map_or(0, |x| x.0));
@@ -194,9 +195,9 @@ impl<'a, T: NativeType + PartialOrd + IsFloat> MinMaxWindow<'a, T> {
 
 // This counts as dispatch
 macro_rules! minmax_window {
-    ($m_window:tt, $rolling_fn:ident, $sort_end_order:ident) => {
+    ($m_window:tt, $rolling_fn:ident, $sort_end_order:literal) => {
         pub struct $m_window<'a, T: NativeType + PartialOrd + IsFloat> {
-            the_window: MinMaxWindow<'a, T>,
+            the_window: MinMaxWindow<'a, T, $sort_end_order>,
         }
 
         impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T>
@@ -210,14 +211,7 @@ macro_rules! minmax_window {
                 _params: DynArgs,
             ) -> Self {
                 Self {
-                    the_window: MinMaxWindow::new(
-                        slice,
-                        validity,
-                        start,
-                        end,
-                        //$cmp_f,
-                        Ordering::$sort_end_order,
-                    ),
+                    the_window: MinMaxWindow::new(slice, validity, start, end),
                 }
             }
             unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
@@ -258,5 +252,5 @@ macro_rules! minmax_window {
     };
 }
 
-minmax_window!(MinWindow, rolling_min, Greater);
-minmax_window!(MaxWindow, rolling_max, Less);
+minmax_window!(MinWindow, rolling_min, 1);
+minmax_window!(MaxWindow, rolling_max, -1);
