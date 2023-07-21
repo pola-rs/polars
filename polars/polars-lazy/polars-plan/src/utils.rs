@@ -124,6 +124,10 @@ pub fn has_aexpr_window(current_node: Node, arena: &Arena<AExpr>) -> bool {
     has_aexpr(current_node, arena, |e| matches!(e, AExpr::Window { .. }))
 }
 
+pub fn has_aexpr_literal(current_node: Node, arena: &Arena<AExpr>) -> bool {
+    has_aexpr(current_node, arena, |e| matches!(e, AExpr::Literal(_)))
+}
+
 /// Can check if an expression tree has a matching_expr. This
 /// requires a dummy expression to be created that will be used to patter match against.
 pub(crate) fn has_expr<F>(current_expr: &Expr, matches: F) -> bool
