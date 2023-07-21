@@ -112,7 +112,7 @@ impl AexprNode {
             let other_ae = arena.get(other.node());
 
             use AExpr::*;
-            let this_node_equal = match (self_ae, other_ae) {
+            let this_node_equal = match dbg!(self_ae, other_ae) {
                 (Alias(_, l), Alias(_, r)) => l == r,
                 (Column(l), Column(r)) => l == r,
                 (Literal(l), Literal(r)) => l == r,
@@ -151,6 +151,10 @@ impl AexprNode {
                         ..
                     },
                 ) => fl == fr && ol == or,
+                (AnonymousFunction { function: l, .. }, AnonymousFunction { function: r, .. }) => {
+                    l == r
+                }
+                (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
                 _ => false,
             };
 

@@ -1,5 +1,18 @@
 use super::*;
 
+/// the replace CSE has a temporary name
+/// we don't want this name in the result
+#[cfg(feature = "cse")]
+pub(super) fn correct_schema_cse(df: &mut DataFrame, schema: &Schema) {
+    unsafe {
+        for (s, name) in df.get_columns_mut().iter_mut().zip(schema.iter_names()) {
+            if s.name() != name {
+                s.rename(name);
+            }
+        }
+    }
+}
+
 /// Take an input Executor (creates the input DataFrame)
 /// and a multiple PhysicalExpressions (create the output Series)
 pub struct ProjectionExec {
@@ -8,7 +21,7 @@ pub struct ProjectionExec {
     pub(crate) expr: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) has_windows: bool,
     pub(crate) input_schema: SchemaRef,
-    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) schema: SchemaRef,
 }
 
@@ -26,17 +39,21 @@ impl ProjectionExec {
             state,
             self.has_windows,
         )?;
-        let df = check_expand_literals(selected_cols, df.height() == 0)?;
+        #[allow(unused_mut)]
+        let mut df = check_expand_literals(selected_cols, df.height() == 0)?;
+
+        #[cfg(feature = "cse")]
+        if !self.cse_expr.is_empty() {
+            correct_schema_cse(&mut df, &self.schema)
+        }
 
         // this only runs during testing and check if the runtime type matches the predicted schema
         #[cfg(test)]
         #[allow(unused_must_use)]
         {
             // TODO: also check the types.
-            if let Ok(df) = df.as_ref() {
-                for (l, r) in df.iter().zip(self.schema.iter_names()) {
-                    assert_eq!(l.name(), r);
-                }
+            for (l, r) in df.iter().zip(self.schema.iter_names()) {
+                assert_eq!(l.name(), r);
             }
         }
 

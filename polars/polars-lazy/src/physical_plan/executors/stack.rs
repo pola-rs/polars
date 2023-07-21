@@ -6,6 +6,8 @@ pub struct StackExec {
     pub(crate) cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) input_schema: SchemaRef,
+    #[allow(dead_code)]
+    pub(crate) schema: SchemaRef,
 }
 
 impl StackExec {
@@ -28,6 +30,9 @@ impl StackExec {
 
         let schema = &*self.input_schema;
         df._add_columns(res, schema)?;
+
+        #[cfg(feature = "cse")]
+        correct_schema_cse(&mut df, &self.schema);
 
         Ok(df)
     }
