@@ -68,19 +68,25 @@ _SIMPLE_EXPR_OPS = {
     "CONTAINS_OP",
     "IS_OP",
     "LOAD_CONST",
+    "LOAD_DEREF",
     "LOAD_FAST",
     "LOAD_GLOBAL",
-    "LOAD_DEREF",
-    "UNARY_CALL",  # synthetic opcode
 }
 _SIMPLE_EXPR_OPS |= set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES) | _SYNTHETIC_OPS
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
 _UNARY_OPCODE_VALUES = set(_UNARY_OPCODES.values())
 _UPGRADE_BINARY_OPS = sys.version_info < (3, 11)
 
-# whitelist numpy functions that we can map directly to a native expression
+# numpy functions that we can map to a native expression
 _NUMPY_MODULE_ALIASES = {"np", "numpy"}
 _NUMPY_FUNCTIONS = {"cbrt", "cos", "cosh", "sin", "sinh", "sqrt", "tan", "tanh"}
+
+# python function that we can map to a native expression
+_PYFUNCTION_MAP = {
+    "lower": "str.to_lowercase",
+    "title": "str.to_titlecase",
+    "upper": "str.to_uppercase",
+}
 
 
 class BytecodeParser:
@@ -127,12 +133,11 @@ class BytecodeParser:
         self, instructions: Iterator[Instruction]
     ) -> list[Instruction]:
         """Transform supported calls into synthetic POLARS_EXPRESSION ops."""
-        updated_instructions = []
+        updated_instructions: list[Instruction] = []
         for inst in instructions:
-            if inst.opname != "LOAD_GLOBAL":
-                updated_instructions.append(inst)
-
-            elif inst.argval in _NUMPY_MODULE_ALIASES:
+            # check for load/call of mapped numpy functions
+            instruction_buffer = []
+            if inst.opname == "LOAD_GLOBAL" and inst.argval in _NUMPY_MODULE_ALIASES:
                 instruction_buffer = list(islice(instructions, 3))
                 if (
                     len(instruction_buffer) == 3
@@ -153,9 +158,25 @@ class BytecodeParser:
                     operand = instruction_buffer[1]._replace(offset=offsets[0])
                     updated_instructions.extend((operand, synthetic_call))
                 else:
+                    updated_instructions.append(inst)
                     updated_instructions.extend(instruction_buffer)
+
+            # check for load/call of mapped python functions
+            elif inst.opname == "LOAD_METHOD" and inst.argval in _PYFUNCTION_MAP:
+                if (
+                    instruction_buffer := list(islice(instructions, 1))
+                ) and instruction_buffer[0].opname.startswith("CALL"):
+                    expr_name = _PYFUNCTION_MAP[inst.argval]
+                    synthetic_call = inst._replace(
+                        opname="POLARS_EXPRESSION",
+                        argval=expr_name,
+                        argrepr=expr_name,
+                    )
+                    updated_instructions.append(synthetic_call)
             else:
                 updated_instructions.append(inst)
+                updated_instructions.extend(instruction_buffer)
+
         return updated_instructions
 
     def _to_intermediate_stack(self, instructions: list[Instruction]) -> StackEntry:
