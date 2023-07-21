@@ -2,7 +2,6 @@
 
 This subdirectory is intended to provide examples that guide contributors.
 
-
 Naming conventions for variables:
 
 ```rust
