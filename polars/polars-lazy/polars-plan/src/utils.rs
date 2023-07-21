@@ -95,7 +95,7 @@ pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr
         .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
 }
 
-pub fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> bool {
+pub(crate) fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> bool {
     arena.iter(current_node).all(|(_node, e)| {
         use AExpr::*;
         match e {
