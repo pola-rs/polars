@@ -1,5 +1,5 @@
+import os
 import re
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -19,24 +19,8 @@ def launch_debugging() -> None:
             "polars library."
         )
 
-    cmd = (
-        f"ps -aux | grep 'debugpy/launcher/../../debugpy' | grep -v grep "
-        f"| grep '{__file__}' | awk '{{print $2}}'"
-    )
-
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
-    output, _ = p.communicate()
-    p_status = p.wait()
-
-    # parse the output: the first should be the actual pid (the second is the Popened
-    # subprocess)
-    if p_status != 0 or output is None:
-        raise RuntimeError("Cannot get pID of current debugging session.")
-    output = output.decode()
-    if (out := re.match("^(\\d+)", output)) is None:
-        raise RuntimeError("Cannot get pID of current debugging session.")
-
-    pID = out.group(0)
+    # get the current process ID
+    pID = os.getpid()
 
     # print to the console to allow the "Rust LLDB" routine to pick up on the signal
     # create new url
