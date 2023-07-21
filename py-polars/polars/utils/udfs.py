@@ -228,12 +228,16 @@ class BytecodeParser:
 
         return polars_expr
 
-    def warn(self, col: str) -> None:
+    def warn(
+        self,
+        col: str,
+        suggestion_override: str | None = None,
+        func_name_override: str | None = None,
+    ) -> None:
         """Generate warning that suggests an equivalent native polars expression."""
-        if (suggested_expression := self.to_expression(col)) is None:
-            return None
-        else:
-            func_name = self._function.__name__ or "..."
+        suggested_expression = suggestion_override or self.to_expression(col)
+        if suggested_expression is not None:
+            func_name = func_name_override or self._function.__name__ or "..."
             if func_name == "<lambda>":
                 func_name = f"lambda {self._param_name}: ..."
 
@@ -468,6 +472,17 @@ class RewrittenInstructions:
         return inst
 
 
+def _is_raw_numpy_function(function: Callable[[Any], Any]) -> bool:
+    """Identify numpy calls that are not wrapped in a lambda/function."""
+    try:
+        return (
+            function.__class__.__module__ == "numpy"
+            and function.__name__ in _NUMPY_FUNCTIONS
+        )
+    except AttributeError:
+        return False
+
+
 def warn_on_inefficient_apply(
     function: Callable[[Any], Any], columns: list[str], apply_target: ApplyTarget
 ) -> None:
@@ -497,6 +512,10 @@ def warn_on_inefficient_apply(
     parser = BytecodeParser(function, apply_target)
     if parser.can_rewrite():
         parser.warn(col)
+    elif _is_raw_numpy_function(function):
+        fn = function.__name__
+        suggestion = f'pl.col("{col}").{fn}()'
+        parser.warn(col, suggestion_override=suggestion, func_name_override=f"np.{fn}")
 
 
 __all__ = [
