@@ -94,7 +94,7 @@ class BytecodeParser:
 
     _can_rewrite: dict[str, bool]
 
-    def __init__(self, function: Callable[[Any], Any], apply_target: str):
+    def __init__(self, function: Callable[[Any], Any], apply_target: ApplyTarget):
         try:
             original_instructions = get_instructions(function)
         except TypeError:
@@ -125,7 +125,7 @@ class BytecodeParser:
             return None
 
     @property
-    def apply_target(self) -> str:
+    def apply_target(self) -> ApplyTarget:
         """The apply target, eg: one of 'expr', 'frame', or 'series'."""
         return self._apply_target
 
@@ -266,7 +266,7 @@ class BytecodeParser:
 class InstructionTranslator:
     """Translates Instruction bytecode to a polars expression string."""
 
-    def __init__(self, instructions: list[Instruction], apply_target: str):
+    def __init__(self, instructions: list[Instruction], apply_target: ApplyTarget):
         self._stack = self._to_intermediate_stack(instructions, apply_target)
 
     def to_expression(self, col: str, param_name: str, depth: int) -> str:
@@ -321,7 +321,7 @@ class InstructionTranslator:
         return value
 
     def _to_intermediate_stack(
-        self, instructions: list[Instruction], apply_target: str
+        self, instructions: list[Instruction], apply_target: ApplyTarget
     ) -> StackEntry:
         """Take postfix bytecode and convert to an intermediate natural-order stack."""
         if apply_target == "expr":
