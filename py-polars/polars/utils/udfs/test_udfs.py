@@ -21,9 +21,9 @@ from udfs import BytecodeParser  # type: ignore[import]
     ("col", "func", "expected"),
     TEST_CASES,
 )
-def test_bytecode_parser_expression(
+def test_bytecode_parser_expression(  # noqa: D103
     col: str, func: Callable[[Any], Any], expected: str
-) -> None:  # noqa: D103
+) -> None:
     bytecode_parser = BytecodeParser(func, apply_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected
