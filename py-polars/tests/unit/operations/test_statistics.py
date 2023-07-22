@@ -103,7 +103,7 @@ def test_qcut() -> None:
             + ["(0.25, inf]"] * 2,
         }
     )
-    out = cast(pl.DataFrame, input.qcut([0.0, 0.25, 0.75]))
+    out = cast(pl.DataFrame, input.qcut([0.0, 0.25, 0.75], series=False))
     out_s = cast(pl.Series, input.qcut([0.0, 0.25, 0.75], series=True))
     assert_frame_equal(out, exp, check_dtype=False)
     assert_series_equal(

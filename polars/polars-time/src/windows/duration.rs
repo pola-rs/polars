@@ -438,6 +438,7 @@ impl Duration {
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
+        _use_earliest: Option<bool>,
     ) -> PolarsResult<i64>
     where
         F: Fn(i64) -> i64,
@@ -465,6 +466,7 @@ impl Duration {
                     Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
                         timestamp_to_datetime(t - remainder),
                         tz,
+                        _use_earliest,
                     )?)),
                     _ => Ok(t - remainder),
                 }
@@ -484,6 +486,7 @@ impl Duration {
                     Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
                         first_day_of_week.and_time(NaiveTime::default()),
                         tz,
+                        _use_earliest,
                     )?)),
                     _ => Ok(datetime_to_timestamp(
                         first_day_of_week.and_time(NaiveTime::default()),
@@ -509,6 +512,7 @@ impl Duration {
                     Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
                         timestamp_to_datetime(t - remainder),
                         tz,
+                        _use_earliest,
                     )?)),
                     _ => Ok(t - remainder),
                 }
@@ -536,7 +540,11 @@ impl Duration {
                 ))?;
                 match tz {
                     #[cfg(feature = "timezones")]
-                    Some(tz) => Ok(datetime_to_timestamp(localize_datetime(dt, tz)?)),
+                    Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
+                        dt,
+                        tz,
+                        _use_earliest,
+                    )?)),
                     _ => Ok(datetime_to_timestamp(dt)),
                 }
             }
@@ -548,37 +556,55 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn truncate_ns(
+        &self,
+        t: i64,
+        tz: Option<&Tz>,
+        use_earliest: Option<bool>,
+    ) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
             |nsecs| nsecs,
             timestamp_ns_to_datetime,
             datetime_to_timestamp_ns,
+            use_earliest,
         )
     }
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn truncate_us(
+        &self,
+        t: i64,
+        tz: Option<&Tz>,
+        use_earliest: Option<bool>,
+    ) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
             |nsecs| nsecs / 1000,
             timestamp_us_to_datetime,
             datetime_to_timestamp_us,
+            use_earliest,
         )
     }
 
     // Truncate the given ms timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn truncate_ms(
+        &self,
+        t: i64,
+        tz: Option<&Tz>,
+        use_earliest: Option<bool>,
+    ) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
             |nsecs| nsecs / 1_000_000,
             timestamp_ms_to_datetime,
             datetime_to_timestamp_ms,
+            use_earliest,
         )
     }
 
@@ -607,7 +633,7 @@ impl Duration {
             let dt = Self::add_month(ts, d.months, d.negative, d.saturating)?;
             new_t = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz)?),
+                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz, None)?),
                 _ => datetime_to_timestamp(dt),
             };
         }
@@ -620,8 +646,11 @@ impl Duration {
                     new_t =
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_weeks } else { t_weeks };
-                    new_t =
-                        datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz)?);
+                    new_t = datetime_to_timestamp(localize_datetime(
+                        timestamp_to_datetime(new_t),
+                        tz,
+                        None,
+                    )?);
                 }
                 _ => new_t += if d.negative { -t_weeks } else { t_weeks },
             };
@@ -635,8 +664,11 @@ impl Duration {
                     new_t =
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_days } else { t_days };
-                    new_t =
-                        datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz)?);
+                    new_t = datetime_to_timestamp(localize_datetime(
+                        timestamp_to_datetime(new_t),
+                        tz,
+                        None,
+                    )?);
                 }
                 _ => new_t += if d.negative { -t_days } else { t_days },
             };

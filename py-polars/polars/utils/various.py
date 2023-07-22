@@ -375,10 +375,13 @@ def find_stacklevel() -> int:
 
 
 def _get_stack_locals(
-    of_type: type | tuple[type, ...] | None = None, n_objects: int | None = None
+    of_type: type | tuple[type, ...] | None = None,
+    n_objects: int | None = None,
+    n_frames: int | None = None,
+    named: str | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """
-    Retrieve f_locals from all stack frames (starting from the current frame).
+    Retrieve f_locals from all (or the last 'n') stack frames from the calling location.
 
     Parameters
     ----------
@@ -386,18 +389,36 @@ def _get_stack_locals(
         Only return objects of this type.
     n_objects
         If specified, return only the most recent ``n`` matching objects.
+    n_frames
+        If specified, look at objects in the last ``n`` stack frames only.
+    named
+        If specified, only return objects matching the given name(s).
 
     """
+    if isinstance(named, str):
+        named = (named,)
+
     objects = {}
+    examined_frames = 0
+    if n_frames is None:
+        n_frames = sys.maxsize
     stack_frame = getattr(inspect.currentframe(), "f_back", None)
-    while stack_frame:
+
+    while stack_frame and examined_frames < n_frames:
         local_items = list(stack_frame.f_locals.items())
         for nm, obj in reversed(local_items):
-            if nm not in objects and (not of_type or isinstance(obj, of_type)):
+            if (
+                nm not in objects
+                and (named is None or (nm in named))
+                and (of_type is None or isinstance(obj, of_type))
+            ):
                 objects[nm] = obj
                 if n_objects is not None and len(objects) >= n_objects:
                     return objects
+
         stack_frame = stack_frame.f_back
+        examined_frames += 1
+
     return objects
 
 

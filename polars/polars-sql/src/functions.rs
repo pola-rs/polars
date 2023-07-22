@@ -111,6 +111,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT FLOOR(column_1) from df;
     /// ```
     Floor,
+    /// SQL 'pi' function
+    /// ```sql
+    /// SELECT PI() from df;
+    /// ```
+    Pi,
     /// SQL 'ln' function
     /// ```sql
     /// SELECT LN(column_1) from df;
@@ -141,6 +146,16 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT POW(column_1, 2) from df;
     /// ```
     Pow,
+    /// SQL 'sqrt' function
+    /// ```sql
+    /// SELECT SQRT(column_1) from df;
+    /// ```
+    Sqrt,
+    /// SQL 'cbrt' function
+    /// ```sql
+    /// SELECT CBRT(column_1) from df;
+    /// ```
+    Cbrt,
     /// SQL 'round' function
     /// ```sql
     /// SELECT ROUND(column_1, 3) from df;
@@ -354,6 +369,7 @@ impl PolarsSqlFunctions {
             "atan",
             "atand",
             "avg",
+            "cbrt",
             "ceil",
             "ceiling",
             "cos",
@@ -379,6 +395,7 @@ impl PolarsSqlFunctions {
             "max",
             "min",
             "octet_length",
+            "pi",
             "pow",
             "power",
             "radians",
@@ -386,6 +403,7 @@ impl PolarsSqlFunctions {
             "rtrim",
             "sin",
             "sind",
+            "sqrt",
             "starts_with",
             "stddev",
             "sum",
@@ -428,12 +446,15 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "ceil" | "ceiling" => Self::Ceil,
             "exp" => Self::Exp,
             "floor" => Self::Floor,
+            "pi" => Self::Pi,
             "ln" => Self::Ln,
             "log" => Self::Log,
             "log10" => Self::Log10,
             "log1p" => Self::Log1p,
             "log2" => Self::Log2,
             "pow" | "power" => Self::Pow,
+            "sqrt" => Self::Sqrt,
+            "cbrt" => Self::Cbrt,
             "round" => Self::Round,
 
             // ----
@@ -514,12 +535,15 @@ impl SqlFunctionVisitor<'_> {
             Ceil => self.visit_unary(Expr::ceil),
             Exp => self.visit_unary(Expr::exp),
             Floor => self.visit_unary(Expr::floor),
+            Pi => self.visit_nullary(Expr::pi),
             Ln => self.visit_unary(|e| e.log(std::f64::consts::E)),
             Log => self.visit_binary(Expr::log),
             Log10 => self.visit_unary(|e| e.log(10.0)),
             Log1p => self.visit_unary(Expr::log1p),
             Log2 => self.visit_unary(|e| e.log(2.0)),
             Pow => self.visit_binary::<Expr>(Expr::pow),
+            Sqrt => self.visit_unary(Expr::sqrt),
+            Cbrt => self.visit_unary(Expr::cbrt),
             Round => match function.args.len() {
                 1 => self.visit_unary(|e| e.round(0)),
                 2 => self.try_visit_binary(|e, decimals| {
@@ -754,6 +778,14 @@ impl SqlFunctionVisitor<'_> {
             }
             _ => self.not_supported_error(),
         }
+    }
+
+    fn visit_nullary(&self, f: impl Fn() -> Expr) -> PolarsResult<Expr> {
+        let args = extract_args(self.func);
+        if !args.is_empty() {
+            return self.not_supported_error();
+        }
+        Ok(f())
     }
 
     fn visit_count(&self) -> PolarsResult<Expr> {

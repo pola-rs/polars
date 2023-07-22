@@ -1366,6 +1366,15 @@ def test_sqrt() -> None:
     )
 
 
+def test_cbrt() -> None:
+    s = pl.Series("a", [1, 2])
+    assert_series_equal(s.cbrt(), pl.Series("a", [1.0, np.cbrt(2)]))
+    df = pl.DataFrame([s])
+    assert_series_equal(
+        df.select(pl.col("a").cbrt())["a"], pl.Series("a", [1.0, np.cbrt(2)])
+    )
+
+
 def test_range() -> None:
     s1 = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     assert_series_equal(s1[2:5], s1[range(2, 5)])

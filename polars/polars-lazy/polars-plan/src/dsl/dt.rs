@@ -226,12 +226,10 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TimeStamp(tu)))
     }
 
-    pub fn truncate<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
-        let every = every.as_ref().into();
-        let offset = offset.as_ref().into();
+    pub fn truncate(self, options: TruncateOptions) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Truncate(
-                every, offset,
+                options,
             )))
     }
 

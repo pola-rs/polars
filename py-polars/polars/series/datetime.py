@@ -1139,9 +1139,10 @@ class DateTimeNameSpace:
         time_zone
             Time zone for the `Datetime` Series. Pass `None` to unset time zone.
         use_earliest
-            If localizing an ambiguous datetime (say, due to daylight saving time),
-            determine whether to localize to the earliest datetime or not.
-            If None (the default), then ambiguous datetimes will raise.
+            Determine how to deal with ambiguous datetimes:
+            - None (default): raise;
+            - True: use the earliest datetime;
+            - False: use the latest datetime.
 
         Examples
         --------
@@ -1567,12 +1568,14 @@ class DateTimeNameSpace:
         self,
         every: str | dt.timedelta,
         offset: str | dt.timedelta | None = None,
+        *,
+        use_earliest: bool | None = None,
     ) -> Series:
         """
         Divide the date/ datetime range into buckets.
 
-        Each date/datetime is mapped to the start of its bucket. Note that weekly
-        buckets start on Monday.
+        Each date/datetime is mapped to the start of its bucket using the corresponding
+        local datetime. Note that weekly buckets start on Monday.
 
         Parameters
         ----------
@@ -1580,6 +1583,11 @@ class DateTimeNameSpace:
             Every interval start and period length
         offset
             Offset the window
+        use_earliest
+            Determine how to deal with ambiguous datetimes:
+            - None (default): raise;
+            - True: use the earliest datetime;
+            - False: use the latest datetime.
 
         Notes
         -----
@@ -1679,6 +1687,46 @@ class DateTimeNameSpace:
                 2001-01-01 01:00:00
         ]
 
+        If crossing daylight savings time boundaries, you may want to use
+        `use_earliest` and combine with :func:`~polars.Series.dt.dst_offset`
+        and :func:`~polars.when`:
+
+        >>> ser = pl.date_range(
+        ...     datetime(2020, 10, 25, 0),
+        ...     datetime(2020, 10, 25, 2),
+        ...     "30m",
+        ...     eager=True,
+        ...     time_zone="Europe/London",
+        ... ).dt.offset_by("15m")
+        >>> ser
+        shape: (7,)
+        Series: 'date' [datetime[μs, Europe/London]]
+        [
+                2020-10-25 00:15:00 BST
+                2020-10-25 00:45:00 BST
+                2020-10-25 01:15:00 BST
+                2020-10-25 01:45:00 BST
+                2020-10-25 01:15:00 GMT
+                2020-10-25 01:45:00 GMT
+                2020-10-25 02:15:00 GMT
+        ]
+
+        >>> pl.select(
+        ...     pl.when(ser.dt.dst_offset() == pl.duration(hours=1))
+        ...     .then(ser.dt.truncate("30m", use_earliest=True))
+        ...     .otherwise(ser.dt.truncate("30m", use_earliest=False))
+        ... )["date"]
+        shape: (7,)
+        Series: 'date' [datetime[μs, Europe/London]]
+        [
+                2020-10-25 00:00:00 BST
+                2020-10-25 00:30:00 BST
+                2020-10-25 01:00:00 BST
+                2020-10-25 01:30:00 BST
+                2020-10-25 01:00:00 GMT
+                2020-10-25 01:30:00 GMT
+                2020-10-25 02:00:00 GMT
+        ]
         """
 
     def round(

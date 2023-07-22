@@ -14,7 +14,7 @@ impl FunctionExpr {
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
-            Pow => mapper.map_to_float_dtype(),
+            Pow(_) => mapper.map_to_float_dtype(),
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
             Hash(..) => mapper.with_dtype(DataType::UInt64),

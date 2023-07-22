@@ -821,6 +821,12 @@ impl Expr {
         self.map_private(FunctionExpr::Floor)
     }
 
+    /// Constant Pi
+    #[cfg(feature = "round_series")]
+    pub fn pi() -> Self {
+        lit(std::f64::consts::PI)
+    }
+
     /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn ceil(self) -> Self {
@@ -1484,6 +1490,25 @@ impl Expr {
         allow_duplicates: bool,
         include_breaks: bool,
     ) -> Expr {
+        self.apply_private(FunctionExpr::QCut {
+            probs,
+            labels,
+            left_closed,
+            allow_duplicates,
+            include_breaks,
+        })
+    }
+
+    #[cfg(feature = "cutqcut")]
+    pub fn qcut_uniform(
+        self,
+        n_bins: usize,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    ) -> Expr {
+        let probs = (1..n_bins).map(|b| b as f64 / n_bins as f64).collect();
         self.apply_private(FunctionExpr::QCut {
             probs,
             labels,

@@ -2549,6 +2549,13 @@ class DataFrame:
         hidden_columns: Sequence[str] | None = None,
         hide_gridlines: bool = False,
         sheet_zoom: int | None = None,
+        freeze_panes: (
+            str
+            | tuple[int, int]
+            | tuple[str, int, int]
+            | tuple[int, int, int, int]
+            | None
+        ) = None,
     ) -> Workbook:
         """
         Write frame data to a table in an Excel workbook/worksheet.
@@ -2665,6 +2672,21 @@ class DataFrame:
             Do not display any gridlines on the output worksheet.
         sheet_zoom : int
             Set the default zoom level of the output worksheet.
+        freeze_panes : str | (str, int, int) | (int, int) | (int, int, int, int)
+            Freeze workbook panes.
+
+            * If (row, col) is supplied, panes are split at the top-left corner of the
+              specified cell, which are 0-indexed. Thus, to freeze only the top row,
+              supply (1, 0).
+            * Alternatively, cell notation can be used to supply the cell. For example,
+              "A2" indicates the split occurs at the top-left of cell A2, which is the
+              equivalent of (1, 0).
+            * If (row, col, top_row, top_col) are supplied, the panes are split based on
+              the `row` and `col`, and the scrolling region is inititalized to begin at
+              the `top_row` and `top_col`. Thus, to freeze only the top row and have the
+              scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
+              Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
+
 
         Notes
         -----
@@ -2979,6 +3001,12 @@ class DataFrame:
                     f'"autofit=True" requires xlsxwriter 3.0.8 or higher; found {xlv}.'
                 )
             ws.autofit()
+
+        if freeze_panes:
+            if isinstance(freeze_panes, str):
+                ws.freeze_panes(freeze_panes)
+            else:
+                ws.freeze_panes(*freeze_panes)
 
         if can_close:
             wb.close()
@@ -3409,7 +3437,7 @@ class DataFrame:
         *,
         include_header: bool = False,
         header_name: str = "column",
-        column_names: Iterable[str] | None = None,
+        column_names: str | Iterable[str] | None = None,
     ) -> Self:
         """
         Transpose a DataFrame over the diagonal.
@@ -3422,8 +3450,8 @@ class DataFrame:
             If `include_header` is set, this determines the name of the column that will
             be inserted.
         column_names
-            Optional iterable that yields column names. Will be used to
-            replace the columns in the DataFrame.
+            Optional iterable yielding strings or a string naming an existing column.
+            These will name the value (non-header) columns in the transposed data.
 
         Notes
         -----
@@ -3495,8 +3523,35 @@ class DataFrame:
         │ 1           ┆ 2           ┆ 3           │
         └─────────────┴─────────────┴─────────────┘
 
+        Use an existing column as the new column names
+
+        >>> df = pl.DataFrame(dict(id=["a", "b", "c"], col1=[1, 3, 2], col2=[3, 4, 6]))
+        >>> df.transpose(column_names="id")
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 3   ┆ 2   │
+        │ 3   ┆ 4   ┆ 6   │
+        └─────┴─────┴─────┘
+        >>> df.transpose(include_header=True, header_name="new_id", column_names="id")
+        shape: (2, 4)
+        ┌────────┬─────┬─────┬─────┐
+        │ new_id ┆ a   ┆ b   ┆ c   │
+        │ ---    ┆ --- ┆ --- ┆ --- │
+        │ str    ┆ i64 ┆ i64 ┆ i64 │
+        ╞════════╪═════╪═════╪═════╡
+        │ col1   ┆ 1   ┆ 3   ┆ 2   │
+        │ col2   ┆ 3   ┆ 4   ┆ 6   │
+        └────────┴─────┴─────┴─────┘
         """
-        df = self._from_pydf(self._df.transpose(include_header, header_name))
+        pydf = self._df
+        if isinstance(column_names, str):
+            pydf = self.drop(column_names)._df
+            column_names = self._df.column(column_names).to_list()
+        df = self._from_pydf(pydf.transpose(include_header, header_name))
         if column_names is not None:
             names = []
             n = df.width

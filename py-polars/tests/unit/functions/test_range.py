@@ -234,11 +234,11 @@ def test_date_range_precision(time_unit: TimeUnit | None, expected_micros: int) 
 
 
 def test_range_invalid_unit() -> None:
-    with pytest.raises(pl.PolarsPanicError, match="'D' not supported"):
+    with pytest.raises(pl.PolarsPanicError, match="'x' not supported"):
         pl.date_range(
             start=datetime(2021, 12, 16),
             end=datetime(2021, 12, 16, 3),
-            interval="1D",
+            interval="1X",
             eager=True,
         )
 
@@ -558,6 +558,32 @@ def test_date_range_name() -> None:
         pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=False)
     ).to_series()
     assert result_lazy.name == expected_name
+
+
+def test_date_range_eager() -> None:
+    start = pl.Series([date(2022, 1, 1), date(2022, 1, 2)])
+    end = pl.Series([date(2022, 1, 4), date(2022, 1, 3)])
+
+    result = pl.date_range(start, end, eager=True)
+
+    expected = pl.Series(
+        "date",
+        [
+            [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3), date(2022, 1, 4)],
+            [date(2022, 1, 2), date(2022, 1, 3)],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+
+def test_date_range_eager_explode() -> None:
+    start = pl.Series([date(2022, 1, 1)])
+    end = pl.Series([date(2022, 1, 3)])
+
+    result = pl.date_range(start, end, eager=True)
+
+    expected = pl.Series("date", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)])
+    assert_series_equal(result, expected)
 
 
 def test_time_range_lit() -> None:
@@ -947,3 +973,29 @@ def test_time_range_no_alias_schema_9037() -> None:
     expected_schema = {"start": pl.Time, "end": pl.Time, "time": pl.List(pl.Time)}
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
+
+
+def test_time_range_eager() -> None:
+    start = pl.Series([time(9, 0), time(10, 0)])
+    end = pl.Series([time(12, 0), time(11, 0)])
+
+    result = pl.time_range(start, end, eager=True)
+
+    expected = pl.Series(
+        "time",
+        [
+            [time(9, 0), time(10, 0), time(11, 0), time(12, 0)],
+            [time(10, 0), time(11, 0)],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+
+def test_time_range_eager_explode() -> None:
+    start = pl.Series([time(9, 0)])
+    end = pl.Series([time(11, 0)])
+
+    result = pl.time_range(start, end, eager=True)
+
+    expected = pl.Series("time", [time(9, 0), time(10, 0), time(11, 0)])
+    assert_series_equal(result, expected)
