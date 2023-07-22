@@ -8806,9 +8806,7 @@ class Expr:
 
             if is_keys:
                 # values = remapping.keys()
-                if s.null_count() == 0:
-                    pass
-                elif s.null_count() == 1 and None in remapping:
+                if (s.null_count() == 0) or (s.null_count() == 1 and None in remapping):
                     pass
                 else:
                     raise ValueError(
@@ -8816,9 +8814,9 @@ class Expr:
                     )
             else:
                 # values = remapping.values()
-                if s.null_count() == 0:
-                    pass
-                elif s.len() - s.null_count() == len(list(filter(None, values))):
+                if (s.null_count() == 0) or (
+                    s.len() - s.null_count() == len(list(filter(None, values)))
+                ):
                     pass
                 else:
                     raise ValueError(

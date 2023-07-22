@@ -10,16 +10,18 @@ Usage:
 
     $ PYTHONPATH=. pytest tests/
 """
+from typing import Any, Callable
+
 import pytest
-from test_cases import TEST_CASES
-from udfs import BytecodeParser
+from test_cases import TEST_CASES  # type: ignore[import]
+from udfs import BytecodeParser  # type: ignore[import]
 
 
 @pytest.mark.parametrize(
     ("col", "func", "expected"),
     TEST_CASES,
 )
-def test_me(col, func, expected):  # noqa: D103
+def test_me(col: str, func: Callable[[Any], Any], expected: str) -> None:  # noqa: D103
     bytecode_parser = BytecodeParser(func, apply_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected

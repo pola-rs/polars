@@ -31,9 +31,7 @@ def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
 
 @pytest.mark.parametrize(
     ("col", "func"),
-    [
-        (test_case[0], test_case[1]) for test_case in TEST_CASES
-    ],
+    [(test_case[0], test_case[1]) for test_case in TEST_CASES],
 )
 def test_parse_apply_functions(col: str, func: Callable[[Any], Any]) -> None:
     with pytest.warns(

@@ -240,6 +240,7 @@ class BytecodeParser:
             find_stacklevel,
             in_terminal_that_supports_colour,
         )
+
         suggested_expression = suggestion_override or self.to_expression(col)
         if suggested_expression is not None:
             func_name = func_name_override or self._function.__name__ or "..."
@@ -542,5 +543,3 @@ def warn_on_inefficient_apply(
                 suggestion_override=f'pl.col("{col}").{func_name}()',
                 func_name_override=f"{module}.{fn}",
             )
-
-
