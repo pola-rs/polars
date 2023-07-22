@@ -13,8 +13,12 @@ Usage:
 from typing import Any, Callable
 
 import pytest
-from .test_cases import TEST_CASES  # type: ignore[import]
-from .udfs import BytecodeParser  # type: ignore[import]
+
+# Note: these imports need to be relative so that this test can be run
+# both from the py-polars directory and from this directory (which happens
+# for the bytecode-parser tests).
+from .test_cases import TEST_CASES  # noqa: TID252
+from .udfs import BytecodeParser  # noqa: TID252
 
 
 @pytest.mark.parametrize(
