@@ -14,11 +14,13 @@ from typing import Any, Callable
 
 import pytest
 
-# Note: these imports need to be relative so that this test can be run
-# both from the py-polars directory and from this directory (which happens
-# for the bytecode-parser tests).
-from .test_cases import TEST_CASES  # noqa: TID252
-from .udfs import BytecodeParser  # noqa: TID252
+try:
+    from test_cases import TEST_CASES  # type: ignore[import]
+    from udfs import BytecodeParser  # type: ignore[import]
+except ModuleNotFoundError:
+    # This test is designed to be run from the current directory.
+    # Running it from the py-polars directory will fail.
+    pytest.skip(allow_module_level=True)
 
 
 @pytest.mark.parametrize(
