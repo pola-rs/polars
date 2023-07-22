@@ -13,8 +13,8 @@ Usage:
 from typing import Any, Callable
 
 import pytest
-from test_cases import TEST_CASES  # type: ignore[import]
-from udfs import BytecodeParser  # type: ignore[import]
+from .test_cases import TEST_CASES  # type: ignore[import]
+from .udfs import BytecodeParser  # type: ignore[import]
 
 
 @pytest.mark.parametrize(
