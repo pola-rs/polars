@@ -82,7 +82,8 @@ _NUMPY_MODULE_ALIASES = {"np", "numpy"}
 _NUMPY_FUNCTIONS = {"cbrt", "cos", "cosh", "sin", "sinh", "sqrt", "tan", "tanh"}
 
 # python function that we can map to a native expression
-_PYFUNCTION_MAP = {
+_PYTHON_CASTS_MAP = {"float": "Float64", "int": "Int64", "str": "Utf8"}
+_PYTHON_METHOD_MAP = {
     "lower": "str.to_lowercase",
     "title": "str.to_titlecase",
     "upper": "str.to_uppercase",
@@ -233,12 +234,12 @@ class BytecodeParser:
         self,
         col: str,
         suggestion_override: str | None = None,
-        func_name_override: str | None = None,
+        udf_override: str | None = None,
     ) -> None:
         """Generate warning that suggests an equivalent native polars expression."""
         suggested_expression = suggestion_override or self.to_expression(col)
         if suggested_expression is not None:
-            func_name = func_name_override or self._function.__name__ or "..."
+            func_name = udf_override or self._function.__name__ or "..."
             if func_name == "<lambda>":
                 func_name = f"lambda {self._param_name}: ..."
 
@@ -306,7 +307,8 @@ class InstructionTranslator:
             e1 = cls._expr(value.left_operand, col, param_name, depth + 1)
             if value.operator_arity == 1:
                 if op not in _UNARY_OPCODE_VALUES:
-                    return f"{e1}.{op}()"
+                    call = "" if op.endswith(")") else "()"
+                    return f"{e1}.{op}{call}"
                 return f"{op}{e1}"
             else:
                 e2 = cls._expr(value.right_operand, col, param_name, depth + 1)
@@ -407,10 +409,36 @@ class RewrittenInstructions:
                     # add any other rewrite methods here
                     self._rewrite_functions,
                     self._rewrite_methods,
+                    self._rewrite_builtins,
                 )
             ):
                 updated_instructions.append(inst)
         return updated_instructions
+
+    def _rewrite_builtins(
+        self, inst: Instruction, instructions: list[Instruction]
+    ) -> bool:
+        if inst.opname == "LOAD_GLOBAL" and inst.argval in _PYTHON_CASTS_MAP:
+            instruction_buffer = list(islice(self._instructions, 2))
+            if (
+                len(instruction_buffer) == 2
+                and instruction_buffer[0].opname == "LOAD_FAST"
+                and instruction_buffer[1].opname.startswith("CALL")
+                and (dtype := _PYTHON_CASTS_MAP.get(inst.argval)) is not None
+            ):
+                synthetic_call = inst._replace(
+                    opname="POLARS_EXPRESSION",
+                    argval=f"cast(pl.{dtype})",
+                    argrepr=f"cast(pl.{dtype})",
+                    offset=instruction_buffer[0].offset,
+                )
+                operand = instruction_buffer[0]._replace(offset=inst.offset)
+                instructions.extend((operand, synthetic_call))
+            else:
+                instructions.append(inst)
+                instructions.extend(instruction_buffer)
+            return True
+        return False
 
     def _rewrite_functions(
         self, inst: Instruction, instructions: list[Instruction]
@@ -432,15 +460,14 @@ class RewrittenInstructions:
                 # note: synthetic POLARS_EXPRESSION is mapped as a unary
                 # op, so we switch the instruction order on injection
                 expr_name = instruction_buffer[0].argval
-                expr_name = _PYFUNCTION_MAP.get(expr_name, expr_name)
-                offsets = inst.offset, instruction_buffer[1].offset
+                expr_name = _PYTHON_METHOD_MAP.get(expr_name, expr_name)
                 synthetic_call = inst._replace(
                     opname="POLARS_EXPRESSION",
                     argval=expr_name,
                     argrepr=expr_name,
-                    offset=offsets[1],
+                    offset=instruction_buffer[1].offset,
                 )
-                operand = instruction_buffer[1]._replace(offset=offsets[0])
+                operand = instruction_buffer[1]._replace(offset=inst.offset)
                 instructions.extend((operand, synthetic_call))
             else:
                 instructions.append(inst)
@@ -452,11 +479,11 @@ class RewrittenInstructions:
         self, inst: Instruction, instructions: list[Instruction]
     ) -> bool:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
-        if inst.opname == "LOAD_METHOD" and inst.argval in _PYFUNCTION_MAP:
+        if inst.opname == "LOAD_METHOD" and inst.argval in _PYTHON_METHOD_MAP:
             if (
                 instruction_buffer := list(islice(self._instructions, 1))
             ) and instruction_buffer[0].opname.startswith("CALL"):
-                expr_name = _PYFUNCTION_MAP[inst.argval]
+                expr_name = _PYTHON_METHOD_MAP[inst.argval]
                 synthetic_call = inst._replace(
                     opname="POLARS_EXPRESSION",
                     argval=expr_name,
@@ -485,13 +512,20 @@ def _is_raw_function(function: Callable[[Any], Any]) -> tuple[str, str]:
     try:
         func_module = function.__class__.__module__
         func_name = function.__name__
-        if func_module == "numpy" and func_name in _NUMPY_FUNCTIONS:
-            return "np", func_name
-        elif func_module == "builtins" and func_name == "loads":
-            import json  # double-check since it is referenced via 'builtins'
 
-            if function is json.loads:
-                return "json", "str.json_extract"
+        # numpy function calls
+        if func_module == "numpy" and func_name in _NUMPY_FUNCTIONS:
+            return "np", f"{func_name}()"
+
+        # python function calls
+        elif func_module == "builtins":
+            if func_name in _PYTHON_CASTS_MAP:
+                return "builtins", f"cast(pl.{_PYTHON_CASTS_MAP[func_name]})"
+            elif func_name == "loads":
+                import json  # double-check since it is referenced via 'builtins'
+
+                if function is json.loads:
+                    return "json", "str.json_extract()"
 
     except AttributeError:
         pass
@@ -530,13 +564,13 @@ def warn_on_inefficient_apply(
         parser.warn(col)
     else:
         # handle bare numpy/json functions
-        module, func_name = _is_raw_function(function)
-        if module and func_name:
+        module, suggestion = _is_raw_function(function)
+        if module and suggestion:
             fn = function.__name__
             parser.warn(
                 col,
-                suggestion_override=f'pl.col("{col}").{func_name}()',
-                func_name_override=f"{module}.{fn}",
+                suggestion_override=f'pl.col("{col}").{suggestion}',
+                udf_override=fn if module == "builtins" else f"{module}.{fn}",
             )
 
 
