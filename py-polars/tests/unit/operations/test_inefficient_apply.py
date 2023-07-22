@@ -32,13 +32,13 @@ def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
 @pytest.mark.parametrize(
     ("col", "func"),
     [
-        # numeric col: math, comparison, logic ops
+        # numeric expr: math, comparison, logic ops
         ("a", lambda x: x + 1 - (2 / 3)),
         ("a", lambda x: x // 1 % 2),
         ("a", lambda x: x & True),
         ("a", lambda x: x | False),
         ("a", lambda x: x != 3),
-        ("a", lambda x: x > 1),
+        ("a", lambda x: int(x) > 1),
         ("a", lambda x: not (x > 1) or x == 2),
         ("a", lambda x: x is None),
         ("a", lambda x: x is not None),
@@ -52,10 +52,11 @@ def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
         ("a", lambda x: MY_CONSTANT + x),
         ("a", lambda x: 0 + numpy.cbrt(x)),
         ("a", lambda x: np.sin(x) + 1),
-        # string col: case ops
-        ("b", lambda x: x.title()),
-        ("b", lambda x: x.lower() + ":" + x.upper()),
-        # json col: load/extract
+        ("a", lambda x: (float(x) * int(x)) // 2),
+        # string expr: case/cast ops
+        ("a", lambda x: str(x).title()),
+        ("b", lambda x: x.lower() + ":" + x.upper() + ":" + x.title()),
+        # json expr: load/extract
         ("c", lambda x: json.loads(x)),
     ],
 )
@@ -88,7 +89,7 @@ def test_parse_apply_functions(col: str, func: Callable[[Any], Any]) -> None:
 def test_parse_apply_raw_functions() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]})
 
-    # test bare numpy functions
+    # test bare 'numpy' functions
     for func_name in _NUMPY_FUNCTIONS:
         func = getattr(numpy, func_name)
 
@@ -105,7 +106,7 @@ def test_parse_apply_raw_functions() -> None:
             df2 = lf.select(getattr(pl.col("a"), func_name)()).collect()
             assert_frame_equal(df1, df2)
 
-    # test bare json.loads
+    # test bare 'json.loads'
     result_frames = []
     with pytest.warns(
         PolarsInefficientApplyWarning,
@@ -121,7 +122,19 @@ def test_parse_apply_raw_functions() -> None:
                 .unnest("extracted")
                 .collect()
             )
+
     assert_frame_equal(*result_frames)
+
+    # test primitive python casts
+    for py_cast, pl_dtype in ((str, pl.Utf8), (int, pl.Int64), (float, pl.Float64)):
+        with pytest.warns(
+            PolarsInefficientApplyWarning,
+            match=rf'(?s) replace.*pl\.col\("a"\)\.cast\(pl\.{pl_dtype.__name__}\)',
+        ):
+            assert_frame_equal(
+                lf.select(pl.col("a").apply(py_cast)).collect(),
+                lf.select(pl.col("a").cast(pl_dtype)).collect(),
+            )
 
 
 def test_parse_apply_miscellaneous() -> None:
