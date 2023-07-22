@@ -10,6 +10,7 @@ mod groupby_dynamic;
 mod predicate_queries;
 mod projection_queries;
 mod queries;
+mod schema;
 
 use polars::prelude::*;
 

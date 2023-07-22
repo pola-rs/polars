@@ -29,6 +29,7 @@ use polars_io::{
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
+use crate::prelude::builder_functions::explode_schema;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
@@ -659,23 +660,20 @@ impl LogicalPlanBuilder {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let columns = try_delayed!(rewrite_projections(columns, &schema, &[]), &self.0, into);
 
-        let mut schema = (**schema).clone();
-
         // columns to string
         let columns = columns
             .iter()
             .map(|e| {
                 if let Expr::Column(name) = e {
-                    if let Some(DataType::List(inner)) = schema.get(name) {
-                        let inner = *inner.clone();
-                        schema.with_column(name.as_ref().into(), inner);
-                    }
                     name.clone()
                 } else {
                     panic!("expected column expression")
                 }
             })
-            .collect();
+            .collect::<Arc<[Arc<str>]>>();
+
+        let mut schema = (**schema).clone();
+        try_delayed!(explode_schema(&mut schema, &columns), &self.0, into);
 
         LogicalPlan::MapFunction {
             input: Box::new(self.0),

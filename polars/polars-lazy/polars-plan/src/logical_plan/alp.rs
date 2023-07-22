@@ -9,6 +9,7 @@ use super::projection_expr::*;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
 use crate::logical_plan::FileScan;
+use crate::prelude::builder_functions::explode_schema;
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 
@@ -594,6 +595,22 @@ impl<'a> ALogicalPlanBuilder<'a> {
             input: self.root,
             exprs: ProjectionExprs::new(exprs),
             schema: Arc::new(new_schema),
+        };
+        let root = self.lp_arena.add(lp);
+        Self::new(root, self.expr_arena, self.lp_arena)
+    }
+
+    // call this if the schema needs to be updated
+    pub(crate) fn explode(self, columns: Arc<[Arc<str>]>) -> Self {
+        let mut schema = (*self.schema().into_owned()).clone();
+        explode_schema(&mut schema, &columns).unwrap();
+
+        let lp = ALogicalPlan::MapFunction {
+            input: self.root,
+            function: FunctionNode::Explode {
+                columns,
+                schema: Arc::new(schema),
+            },
         };
         let root = self.lp_arena.add(lp);
         Self::new(root, self.expr_arena, self.lp_arena)

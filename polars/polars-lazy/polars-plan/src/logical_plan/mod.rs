@@ -16,6 +16,7 @@ pub(crate) mod anonymous_scan;
 
 mod apply;
 mod builder;
+pub mod builder_functions;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;

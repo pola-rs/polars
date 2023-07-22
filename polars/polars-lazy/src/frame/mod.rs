@@ -484,6 +484,18 @@ impl LazyFrame {
         self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![], false)
     }
 
+    pub fn to_alp_optimized(self) -> PolarsResult<(Node, Arena<ALogicalPlan>, Arena<AExpr>)> {
+        let mut lp_arena = Arena::with_capacity(16);
+        let mut expr_arena = Arena::with_capacity(16);
+        let node =
+            self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![], false)?;
+        Ok((node, lp_arena, expr_arena))
+    }
+
+    pub fn to_alp(self) -> PolarsResult<(Node, Arena<ALogicalPlan>, Arena<AExpr>)> {
+        self.logical_plan.to_alp()
+    }
+
     pub(crate) fn optimize_with_scratch(
         self,
         lp_arena: &mut Arena<ALogicalPlan>,
