@@ -23,7 +23,6 @@ def launch_debugging() -> None:
     pID = os.getpid()
 
     # print to the console to allow the "Rust LLDB" routine to pick up on the signal
-    # create new url
     launch_file = Path(__file__).parents[2] / ".vscode/launch.json"
     if not launch_file.exists():
         raise RuntimeError(f"Cannot locate {launch_file}")
@@ -31,16 +30,17 @@ def launch_debugging() -> None:
         launch_info = f.read()
 
     # overwrite the pid found in launch.config with the pid for the current process
-    found = re.search(r"\"Rust LLDB\",\s*\"pid\":\s*\"(\d+)\"", launch_info)
+    # match initial the "Rust LLDB" definition with the pid immediately after
+    pattern = re.compile('("Rust LLDB",\\s*"pid":\\s*")\\d+(")')
+    found = pattern.search(launch_info)
     if not found:
         raise RuntimeError(
             "Cannot locate pid definition in launch.json for Rust LLDB configuration. "
             "Please follow the instructions in CONTRIBUTING.md for creating the "
             "launch configuration."
         )
-    launch_info_with_new_pid = re.sub(
-        r"(\"Rust LLDB\",\s*\"pid\":\s*\")\d+(\")", rf"\g<1>{pID}\g<2>", launch_info
-    )
+
+    launch_info_with_new_pid = pattern.sub(rf"\g<1>{pID}\g<2>", launch_info)
     with launch_file.open("w") as f:
         f.write(launch_info_with_new_pid)
 
