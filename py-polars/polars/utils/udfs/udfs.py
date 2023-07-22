@@ -19,7 +19,7 @@ if TYPE_CHECKING:
         from typing_extensions import TypeAlias
 
 
-class StackValue(NamedTuple):  # noqa: D101
+class StackValue(NamedTuple):
     operator: str
     operator_arity: int
     left_operand: str
@@ -543,3 +543,9 @@ def warn_on_inefficient_apply(
                 suggestion_override=f'pl.col("{col}").{func_name}()',
                 func_name_override=f"{module}.{fn}",
             )
+
+
+__all__ = [
+    "BytecodeParser",
+    "warn_on_inefficient_apply",
+]

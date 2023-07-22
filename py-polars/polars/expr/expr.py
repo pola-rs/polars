@@ -3794,7 +3794,7 @@ class Expr:
 
         """
         # input x: Series of type list containing the group values
-        from polars.utils.udfs import warn_on_inefficient_apply
+        from polars.utils.udfs.udfs import warn_on_inefficient_apply
 
         try:
             root_names = self.meta.root_names()
