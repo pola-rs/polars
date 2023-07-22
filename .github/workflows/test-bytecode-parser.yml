@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHONPATH: polars/utils/udfs
+  PYTHONPATH: py-polars/polars/utils/udfs
 
 defaults:
   run:
