@@ -49,7 +49,7 @@ dtype-decimal = ["polars-core/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
-async = ["async-trait", "futures", "tokio", "arrow/io_ipc_write_async", "polars-error/regex"]
+async = ["async-trait", "futures", "tokio", "tokio-util", "arrow/io_ipc_write_async", "polars-error/regex"]
 cloud = ["object_store", "async", "url"]
 aws = ["object_store/aws", "cloud", "polars-core/aws"]
 azure = ["object_store/azure", "cloud", "polars-core/azure"]
@@ -89,6 +89,7 @@ serde_json = { version = "1", optional = true, default-features = false, feature
 simd-json = { version = "0.10", optional = true, features = ["allow-non-simd", "known-key"] }
 simdutf8 = { version = "0.1", optional = true }
 tokio = { version = "1.26.0", features = ["net"], optional = true }
+tokio-util = { version = "0.7.8", features = ["io", "io-util"], optional = true }
 url = { version = "2.3.1", optional = true }
 
 [dev-dependencies]

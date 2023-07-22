@@ -9,6 +9,10 @@ use futures::executor::block_on;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
 use futures::{AsyncRead, AsyncSeek, Future, TryFutureExt};
+
+use tokio::io::AsyncWrite;
+use tokio_util::io::SyncIoBridge;
+
 use object_store::path::Path;
 use object_store::MultipartId;
 use object_store::ObjectStore;
@@ -138,7 +142,7 @@ impl AsyncSeek for CloudReader {
 /// such as with `polars::prelude::CsvWriter`.
 pub struct CloudWriter {
     // Hold a reference to the store in a thread-safe way
-    object_store: Arc<Mutex<Box<dyn ObjectStore>>>,
+    object_store: Arc<std::sync::Mutex<Box<dyn ObjectStore>>>,
     // The path in the object_store which we want to write to
     path: Path,
     // ID of a partially-done upload, used to abort the upload on error
@@ -154,7 +158,7 @@ impl CloudWriter {
     ///
     /// Creates a new (current-thread) Tokio runtime
     /// which bridges the sync writing process with the async ObjectStore multipart uploading.
-    pub fn new(object_store: Arc<Mutex<Box<dyn ObjectStore>>>, path: Path) -> Self {
+    pub fn new(object_store: Arc<std::sync::Mutex<Box<dyn ObjectStore>>>, path: Path) -> Self {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap();
@@ -170,7 +174,7 @@ impl CloudWriter {
     }
 
     async fn build_writer(
-        object_store: &Arc<Mutex<Box<dyn ObjectStore>>>,
+        object_store: &Arc<std::sync::Mutex<Box<dyn ObjectStore>>>,
         path: &Path,
     ) -> (
         MultipartId,
@@ -219,15 +223,16 @@ impl Drop for CloudWriter {
     }
 }
 
+#[cfg(feature = "csv")]
 #[cfg(test)]
 mod tests {
     use object_store::ObjectStore;
 
     use super::*;
 
-    use polars::df;
-    use polars::prelude::DataFrame;
-    use polars::prelude::NamedFrom;
+    use polars_core::df;
+    use polars_core::prelude::DataFrame;
+    use polars_core::prelude::NamedFrom;
 
     fn example_dataframe() -> DataFrame {
         df!(
@@ -239,7 +244,8 @@ mod tests {
 
     #[test]
     fn csv_to_local_objectstore_cloudwriter() {
-        use polars::prelude::{CsvWriter, SerWriter};
+        use crate::csv::CsvWriter;
+        use crate::prelude::SerWriter;
 
         let mut df = example_dataframe();
 
@@ -247,12 +253,12 @@ mod tests {
             object_store::local::LocalFileSystem::new_with_prefix("/tmp/")
                 .expect("Could not initialize connection"),
         );
-        let object_store: Arc<Mutex<Box<dyn ObjectStore>>> = Arc::from(Mutex::from(object_store));
+        let object_store: Arc<std::sync::Mutex<Box<dyn ObjectStore>>> = Arc::from(std::sync::Mutex::from(object_store));
 
         let path: object_store::path::Path = "cloud_writer_example.csv".into();
 
         let mut cloud_writer = CloudWriter::new(object_store, path);
-        let csv_writer = CsvWriter::new(&mut cloud_writer)
+        CsvWriter::new(&mut cloud_writer)
             .finish(&mut df)
             .expect("Could not write dataframe as CSV to remote location");
     }
