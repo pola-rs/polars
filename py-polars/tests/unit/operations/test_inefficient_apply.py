@@ -4,14 +4,13 @@ import json
 from typing import Any, Callable
 
 import numpy
-import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal
-from polars.utils.udfs.udfs import _NUMPY_FUNCTIONS, BytecodeParser
 from polars.utils.udfs.test_cases import TEST_CASES
+from polars.utils.udfs.udfs import _NUMPY_FUNCTIONS, BytecodeParser
 
 MY_CONSTANT = 3
 

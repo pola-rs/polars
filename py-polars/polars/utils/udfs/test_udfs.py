@@ -10,17 +10,16 @@ Usage:
 
     $ PYTHONPATH=. pytest tests/
 """
-import json
-from udfs import BytecodeParser
-from test_cases import TEST_CASES
-import numpy as np
 import pytest
+from test_cases import TEST_CASES
+from udfs import BytecodeParser
+
 
 @pytest.mark.parametrize(
     ("col", "func", "expected"),
     TEST_CASES,
 )
-def test_me(col, func, expected):
+def test_me(col, func, expected):  # noqa: D103
     bytecode_parser = BytecodeParser(func, apply_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected

@@ -8806,7 +8806,7 @@ class Expr:
 
             if is_keys:
                 # values = remapping.keys()
-                if s.null_count() == 0:  # noqa: SIM114
+                if s.null_count() == 0:
                     pass
                 elif s.null_count() == 1 and None in remapping:
                     pass
@@ -8816,7 +8816,7 @@ class Expr:
                     )
             else:
                 # values = remapping.values()
-                if s.null_count() == 0:  # noqa: SIM114
+                if s.null_count() == 0:
                     pass
                 elif s.len() - s.null_count() == len(list(filter(None, values))):
                     pass
