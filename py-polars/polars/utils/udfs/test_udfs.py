@@ -8,7 +8,7 @@ All that needs to be installed is numpy and pytest.
 
 Usage:
 
-    $ PYTHONPATH=. pytest tests/
+    $ PYTHONPATH=. pytest test_udfs.py
 """
 from typing import Any, Callable
 
@@ -21,7 +21,9 @@ from udfs import BytecodeParser  # type: ignore[import]
     ("col", "func", "expected"),
     TEST_CASES,
 )
-def test_me(col: str, func: Callable[[Any], Any], expected: str) -> None:  # noqa: D103
+def test_bytecode_parser_expression(
+    col: str, func: Callable[[Any], Any], expected: str
+) -> None:  # noqa: D103
     bytecode_parser = BytecodeParser(func, apply_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected
