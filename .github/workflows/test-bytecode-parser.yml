@@ -18,9 +18,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  PYTHONPATH: py-polars/polars/utils/udfs
-
 defaults:
   run:
     working-directory: py-polars
@@ -51,4 +48,4 @@ jobs:
 
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
-        run: cd polars/utils/udfs && pytest test_udfs.py
+        run: cd polars/utils/udfs && PYTHONPATH=. pytest test_udfs.py
