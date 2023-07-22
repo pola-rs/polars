@@ -4,14 +4,12 @@ on:
   pull_request:
     paths:
       - py-polars/**
-      - polars/**
       - .github/workflows/test-bytecode-parser.yml
   push:
     branches:
       - main
     paths:
       - py-polars/**
-      - polars/**
       - .github/workflows/test-bytecode-parser.yml
 
 concurrency:
