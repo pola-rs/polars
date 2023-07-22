@@ -15,13 +15,13 @@ MY_CONSTANT = 3
 
 # column_name, function, expected_suggestion
 TEST_CASES = [
-    # numeric col: math, comparison, logic ops
+    # numeric expr: math, comparison, logic ops
     ("a", lambda x: x + 1 - (2 / 3), '(pl.col("a") + 1) - 0.6666666666666666'),
     ("a", lambda x: x // 1 % 2, '(pl.col("a") // 1) % 2'),
     ("a", lambda x: x & True, 'pl.col("a") & True'),
     ("a", lambda x: x | False, 'pl.col("a") | False'),
     ("a", lambda x: x != 3, 'pl.col("a") != 3'),
-    ("a", lambda x: x > 1, 'pl.col("a") > 1'),
+    ("a", lambda x: int(x) > 1, 'pl.col("a").cast(pl.Int64) > 1'),
     ("a", lambda x: not (x > 1) or x == 2, '~(pl.col("a") > 1) | (pl.col("a") == 2)'),
     ("a", lambda x: x is None, 'pl.col("a") is None'),
     ("a", lambda x: x is not None, 'pl.col("a") is not None'),
@@ -55,13 +55,18 @@ TEST_CASES = [
     ("a", lambda x: MY_CONSTANT + x, 'MY_CONSTANT + pl.col("a")'),
     ("a", lambda x: 0 + numpy.cbrt(x), '0 + pl.col("a").cbrt()'),
     ("a", lambda x: np.sin(x) + 1, 'pl.col("a").sin() + 1'),
-    # string col: case ops
-    ("b", lambda x: x.title(), 'pl.col("b").str.to_titlecase()'),
+    (
+        "a",
+        lambda x: (float(x) * int(x)) // 2,
+        '(pl.col("a").cast(pl.Float64) * pl.col("a").cast(pl.Int64)) // 2',
+    ),
+    # string expr: case/cast ops
+    ("b", lambda x: str(x).title(), 'pl.col("b").cast(pl.Utf8).str.to_titlecase()'),
     (
         "b",
-        lambda x: x.lower() + ":" + x.upper(),
-        '(pl.col("b").str.to_lowercase() + \':\') + pl.col("b").str.to_uppercase()',
+        lambda x: x.lower() + ":" + x.upper() + ":" + x.title(),
+        '(((pl.col("b").str.to_lowercase() + \':\') + pl.col("b").str.to_uppercase()) + \':\') + pl.col("b").str.to_titlecase()',
     ),
-    # json col: load/extract
+    # json expr: load/extract
     ("c", lambda x: json.loads(x), 'pl.col("c").str.json_extract()'),
 ]
