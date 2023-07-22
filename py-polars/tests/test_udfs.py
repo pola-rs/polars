@@ -8,7 +8,7 @@ All that needs to be installed is numpy and pytest.
 
 Usage:
 
-    $ PYTHONPATH=. pytest test_udfs.py
+    $ PYTHONPATH=polars/utils/udfs pytest tests/test_udfs.py
 """
 from typing import Any, Callable
 
@@ -18,8 +18,9 @@ try:
     from test_cases import TEST_CASES  # type: ignore[import]
     from udfs import BytecodeParser  # type: ignore[import]
 except ModuleNotFoundError:
-    # This test is designed to be run from the current directory.
-    # Running it from the py-polars directory will fail.
+    # This test is designed to be run with PYTHONPATH set to
+    # the current directory, so it can run without polars
+    # needing to be installed.
     pytest.skip(allow_module_level=True)
 
 
@@ -27,7 +28,7 @@ except ModuleNotFoundError:
     ("col", "func", "expected"),
     TEST_CASES,
 )
-def test_bytecode_parser_expression(  # noqa: D103
+def test_bytecode_parser_expression(
     col: str, func: Callable[[Any], Any], expected: str
 ) -> None:
     bytecode_parser = BytecodeParser(func, apply_target="expr")
