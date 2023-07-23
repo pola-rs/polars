@@ -42,8 +42,8 @@ jobs:
           echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: pip install numpy pytest
+        run: pip install numpy pytest pytest-cov
 
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
-        run: PYTHONPATH=polars/utils pytest tests/test_udfs.py
+        run: PYTHONPATH=polars/utils pytest tests/test_udfs.py  --cov=udfs --cov-fail-under=70
