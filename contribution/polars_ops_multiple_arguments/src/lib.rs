@@ -23,7 +23,7 @@ where
 
     // process the numerical data as if there were no validities
     let values_1: &[T] = arr_1.values().as_slice();
-    let values_2: &[T] = arr_1.values().as_slice();
+    let values_2: &[T] = arr_2.values().as_slice();
 
     let values = values_1
         .iter()
