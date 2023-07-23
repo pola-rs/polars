@@ -527,7 +527,7 @@ mod test {
         let lp = LogicalPlanBuilder::from_existing_df(df)
             .project(vec![
                 e.clone() * col("b"),
-                e.clone() * col("b") + e.clone(),
+                e.clone() * col("b") + e,
                 col("b"),
             ])
             .build();

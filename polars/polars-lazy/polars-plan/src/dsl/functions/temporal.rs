@@ -18,6 +18,7 @@ macro_rules! impl_unit_setter {
 ///
 /// # Examples
 /// ```
+/// use polars_plan::prelude::*;
 /// // construct a DatetimeArgs set to July 20, 1969 at 20:17
 /// let args = DatetimeArgs::new(lit(1969), lit(7), lit(20)).with_hms(lit(20), lit(17), lit(0));
 /// // or
