@@ -43,6 +43,12 @@ pub(super) fn process_melt(
             lp_arena,
             expr_arena,
         )?;
+
+        // re-make melt node so that the schema is updated
+        let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+            .melt(args.clone())
+            .build();
+
         if local_projections.is_empty() {
             Ok(lp)
         } else {

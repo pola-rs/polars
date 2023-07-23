@@ -231,7 +231,7 @@ pub fn create_physical_plan(
         Projection {
             expr,
             input,
-            schema,
+            schema: _schema,
             ..
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
@@ -257,13 +257,14 @@ pub fn create_physical_plan(
                 expr: phys_expr,
                 has_windows: state.has_windows,
                 input_schema,
-                schema,
+                #[cfg(test)]
+                schema: _schema,
             }))
         }
         LocalProjection {
             expr,
             input,
-            schema,
+            schema: _schema,
             ..
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
@@ -283,7 +284,8 @@ pub fn create_physical_plan(
                 expr: phys_expr,
                 has_windows: state.has_windows,
                 input_schema,
-                schema,
+                #[cfg(test)]
+                schema: _schema,
             }))
         }
         DataFrameScan {
@@ -513,7 +515,7 @@ pub fn create_physical_plan(
         HStack {
             input,
             exprs,
-            schema,
+            schema: _schema,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
@@ -542,7 +544,8 @@ pub fn create_physical_plan(
                 cse_exprs,
                 exprs: phys_exprs,
                 input_schema,
-                schema,
+                #[cfg(test)]
+                schema: _schema,
             }))
         }
         MapFunction {

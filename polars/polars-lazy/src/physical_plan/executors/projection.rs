@@ -1,12 +1,21 @@
+#[cfg(feature = "cse")]
+use polars_plan::constants::CSE_REPLACED;
+
 use super::*;
 
 /// the replace CSE has a temporary name
 /// we don't want this name in the result
 #[cfg(feature = "cse")]
-pub(super) fn correct_schema_cse(df: &mut DataFrame, schema: &Schema) {
+pub(super) fn correct_schema_cse(df: &mut DataFrame) {
     unsafe {
-        for (s, name) in df.get_columns_mut().iter_mut().zip(schema.iter_names()) {
-            if s.name() != name {
+        for s in df.get_columns_mut() {
+            let field = s.field().into_owned();
+            let name = &field.name;
+            if name.starts_with(CSE_REPLACED) {
+                let pat = r#"col(""#;
+                let offset = name.rfind(pat).unwrap() + pat.len();
+                // -2 is `")` of `col("foo")`
+                let name = &name[offset..name.len() - 2];
                 s.rename(name);
             }
         }
@@ -21,7 +30,7 @@ pub struct ProjectionExec {
     pub(crate) expr: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) has_windows: bool,
     pub(crate) input_schema: SchemaRef,
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) schema: SchemaRef,
 }
 
@@ -44,7 +53,7 @@ impl ProjectionExec {
 
         #[cfg(feature = "cse")]
         if !self.cse_expr.is_empty() {
-            correct_schema_cse(&mut df, &self.schema)
+            correct_schema_cse(&mut df)
         }
 
         // this only runs during testing and check if the runtime type matches the predicted schema

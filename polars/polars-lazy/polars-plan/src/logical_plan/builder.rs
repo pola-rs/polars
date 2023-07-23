@@ -5,7 +5,6 @@ use std::io::{Read, Seek};
 use polars_core::cloud::CloudOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
-use polars_core::utils::try_get_supertype;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
@@ -26,10 +25,10 @@ use polars_io::{
     csv::NullValues,
 };
 
+use super::builder_functions::*;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
-use crate::prelude::builder_functions::explode_schema;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
@@ -695,6 +694,22 @@ impl LogicalPlanBuilder {
         .into()
     }
 
+    pub fn row_count(self, name: &str, offset: Option<IdxSize>) -> Self {
+        let mut schema = try_delayed!(self.0.schema(), &self.0, into).into_owned();
+        let schema_mut = Arc::make_mut(&mut schema);
+        row_count_schema(schema_mut, name);
+
+        LogicalPlan::MapFunction {
+            input: Box::new(self.0),
+            function: FunctionNode::RowCount {
+                name: Arc::from(name),
+                offset,
+                schema,
+            },
+        }
+        .into()
+    }
+
     pub fn distinct(self, options: DistinctOptions) -> Self {
         LogicalPlan::Distinct {
             input: Box::new(self.0),
@@ -807,50 +822,4 @@ impl LogicalPlanBuilder {
         }
         .into()
     }
-}
-
-pub(crate) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaRef {
-    let mut new_schema = args
-        .id_vars
-        .iter()
-        .map(|id| Field::new(id, input_schema.get(id).unwrap().clone()))
-        .collect::<Schema>();
-    let variable_name = args
-        .variable_name
-        .as_ref()
-        .cloned()
-        .unwrap_or_else(|| "variable".into());
-    let value_name = args
-        .value_name
-        .as_ref()
-        .cloned()
-        .unwrap_or_else(|| "value".into());
-
-    new_schema.with_column(variable_name, DataType::Utf8);
-
-    // We need to determine the supertype of all value columns.
-    let mut st = None;
-
-    // take all columns that are not in `id_vars` as `value_var`
-    if args.value_vars.is_empty() {
-        let id_vars = PlHashSet::from_iter(&args.id_vars);
-        for (name, dtype) in input_schema.iter() {
-            if !id_vars.contains(name) {
-                match &st {
-                    None => st = Some(dtype.clone()),
-                    Some(st_) => st = Some(try_get_supertype(st_, dtype).unwrap()),
-                }
-            }
-        }
-    } else {
-        for name in &args.value_vars {
-            let dtype = input_schema.get(name).unwrap();
-            match &st {
-                None => st = Some(dtype.clone()),
-                Some(st_) => st = Some(try_get_supertype(st_, dtype).unwrap()),
-            }
-        }
-    }
-    new_schema.with_column(value_name, st.unwrap());
-    Arc::new(new_schema)
 }

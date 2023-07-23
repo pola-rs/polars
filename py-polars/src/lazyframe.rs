@@ -350,7 +350,7 @@ impl PyLazyFrame {
         #[cfg(feature = "cse")]
         {
             ldf = ldf.with_comm_subplan_elim(comm_subplan_elim);
-            ldf = ldf.with_comm_subplan_elim(comm_subexpr_elim);
+            ldf = ldf.with_comm_subexpr_elim(comm_subexpr_elim);
         }
 
         ldf.into()

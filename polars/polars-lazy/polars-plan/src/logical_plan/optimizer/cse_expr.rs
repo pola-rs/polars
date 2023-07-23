@@ -421,13 +421,10 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
 
     fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<RewriteRecursion> {
         use ALogicalPlan::*;
-        Ok(
-            if matches!(node.to_alp(), Projection { .. } | HStack { .. }) {
-                RewriteRecursion::MutateAndContinue
-            } else {
-                RewriteRecursion::NoMutateAndContinue
-            },
-        )
+        Ok(match node.to_alp() {
+            Projection { .. } | HStack { .. } => RewriteRecursion::NoMutateAndContinue,
+            _ => RewriteRecursion::NoMutateAndContinue,
+        })
     }
 
     fn mutate(&mut self, mut node: Self::Node) -> PolarsResult<Self::Node> {

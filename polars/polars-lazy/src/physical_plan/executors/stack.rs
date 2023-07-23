@@ -6,7 +6,7 @@ pub struct StackExec {
     pub(crate) cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) input_schema: SchemaRef,
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) schema: SchemaRef,
 }
 
@@ -33,7 +33,7 @@ impl StackExec {
 
         #[cfg(feature = "cse")]
         if !self.cse_exprs.is_empty() {
-            correct_schema_cse(&mut df, &self.schema);
+            correct_schema_cse(&mut df);
         }
 
         Ok(df)
