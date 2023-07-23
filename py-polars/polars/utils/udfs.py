@@ -10,9 +10,6 @@ from inspect import signature
 from itertools import islice
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
 
-from polars.exceptions import PolarsInefficientApplyWarning
-from polars.utils.various import find_stacklevel, in_terminal_that_supports_colour
-
 if TYPE_CHECKING:
     from dis import Instruction
 
@@ -237,6 +234,13 @@ class BytecodeParser:
         udf_override: str | None = None,
     ) -> None:
         """Generate warning that suggests an equivalent native polars expression."""
+        # Import these here so that udfs can be imported without polars installed.
+        from polars.exceptions import PolarsInefficientApplyWarning
+        from polars.utils.various import (
+            find_stacklevel,
+            in_terminal_that_supports_colour,
+        )
+
         suggested_expression = suggestion_override or self.to_expression(col)
         if suggested_expression is not None:
             func_name = udf_override or self._function.__name__ or "..."
