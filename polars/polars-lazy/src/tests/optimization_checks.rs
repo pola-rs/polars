@@ -181,7 +181,7 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
         )
         .slice(1, 3)
         // this inserts a cache and blocks slice pushdown
-        .with_common_subplan_elimination(false);
+        .with_comm_subplan_elim(false);
     // test if optimization continued beyond the join node
     assert!(slice_at_scan(q.clone()));
 

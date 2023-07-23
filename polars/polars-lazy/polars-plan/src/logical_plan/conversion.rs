@@ -239,10 +239,10 @@ pub fn to_alp(
             input,
             schema,
         } => {
-            let exp = expr.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
+            let expr = expr.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
             let i = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Projection {
-                expr: exp,
+                expr,
                 input: i,
                 schema,
             }
@@ -698,6 +698,7 @@ impl ALogicalPlan {
                 input,
                 schema,
             } => {
+                debug_assert!(!expr.has_sub_exprs());
                 let i = convert_to_lp(input, lp_arena);
 
                 LogicalPlan::Projection {

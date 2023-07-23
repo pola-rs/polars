@@ -15,11 +15,6 @@ pub(super) fn process_functions(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<ALogicalPlan> {
-    let lp = ALogicalPlan::MapFunction {
-        input,
-        function: function.clone(),
-    };
-
     use FunctionNode::*;
     match function {
         Rename {
@@ -43,6 +38,11 @@ pub(super) fn process_functions(
                 lp_arena,
                 expr_arena,
             )?;
+
+            let lp = ALogicalPlan::MapFunction {
+                input,
+                function: function.clone(),
+            };
             Ok(lp)
         }
         Explode { columns, .. } => {
@@ -57,19 +57,32 @@ pub(super) fn process_functions(
                 lp_arena,
                 expr_arena,
             )?;
-            Ok(lp)
+            Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+                .explode(columns.clone())
+                .build())
         }
-        Melt { args, .. } => process_melt(
-            proj_pd,
-            lp,
-            args,
-            input,
-            acc_projections,
-            projections_seen,
-            lp_arena,
-            expr_arena,
-        ),
+        Melt { args, .. } => {
+            let lp = ALogicalPlan::MapFunction {
+                input,
+                function: function.clone(),
+            };
+
+            process_melt(
+                proj_pd,
+                lp,
+                args,
+                input,
+                acc_projections,
+                projections_seen,
+                lp_arena,
+                expr_arena,
+            )
+        }
         _ => {
+            let lp = ALogicalPlan::MapFunction {
+                input,
+                function: function.clone(),
+            };
             if function.allow_projection_pd() && !acc_projections.is_empty() {
                 let original_acc_projection_len = acc_projections.len();
 

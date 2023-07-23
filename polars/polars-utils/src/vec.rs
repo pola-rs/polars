@@ -63,3 +63,14 @@ impl<T> PushUnchecked<T> for Vec<T> {
         self.set_len(self.len() + 1);
     }
 }
+
+pub trait CapacityByFactor {
+    fn with_capacity_by_factor(original_len: usize, factor: f64) -> Self;
+}
+
+impl<T> CapacityByFactor for Vec<T> {
+    fn with_capacity_by_factor(original_len: usize, factor: f64) -> Self {
+        let cap = (original_len as f64 * factor) as usize;
+        Vec::with_capacity(cap)
+    }
+}

@@ -8,7 +8,9 @@ pub struct OptState {
     pub file_caching: bool,
     pub slice_pushdown: bool,
     #[cfg(feature = "cse")]
-    pub common_subplan_elimination: bool,
+    pub comm_subplan_elim: bool,
+    #[cfg(feature = "cse")]
+    pub comm_subexpr_elim: bool,
     pub streaming: bool,
 }
 
@@ -23,7 +25,9 @@ impl Default for OptState {
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
             #[cfg(feature = "cse")]
-            common_subplan_elimination: true,
+            comm_subplan_elim: true,
+            #[cfg(feature = "cse")]
+            comm_subexpr_elim: false,
             streaming: false,
         }
     }

@@ -51,6 +51,7 @@ test:  ## Run tests
 		-p polars-utils \
 		-p polars-row \
 		-p polars-sql \
+		-p polars-plan \
 		-- \
 		--test-threads=2
 

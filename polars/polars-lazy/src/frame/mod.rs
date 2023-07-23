@@ -132,7 +132,9 @@ impl LazyFrame {
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
             #[cfg(feature = "cse")]
-            common_subplan_elimination: false,
+            comm_subplan_elim: false,
+            #[cfg(feature = "cse")]
+            comm_subexpr_elim: false,
             streaming: false,
         })
     }
@@ -163,8 +165,15 @@ impl LazyFrame {
 
     /// Toggle common subplan elimination optimization on or off
     #[cfg(feature = "cse")]
-    pub fn with_common_subplan_elimination(mut self, toggle: bool) -> Self {
-        self.opt_state.common_subplan_elimination = toggle;
+    pub fn with_comm_subplan_elim(mut self, toggle: bool) -> Self {
+        self.opt_state.comm_subplan_elim = toggle;
+        self
+    }
+
+    /// Toggle common subexpression elimination optimization on or off
+    #[cfg(feature = "cse")]
+    pub fn with_comm_subexpr_elim(mut self, toggle: bool) -> Self {
+        self.opt_state.comm_subexpr_elim = toggle;
         self
     }
 
@@ -475,6 +484,18 @@ impl LazyFrame {
         self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![], false)
     }
 
+    pub fn to_alp_optimized(self) -> PolarsResult<(Node, Arena<ALogicalPlan>, Arena<AExpr>)> {
+        let mut lp_arena = Arena::with_capacity(16);
+        let mut expr_arena = Arena::with_capacity(16);
+        let node =
+            self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![], false)?;
+        Ok((node, lp_arena, expr_arena))
+    }
+
+    pub fn to_alp(self) -> PolarsResult<(Node, Arena<ALogicalPlan>, Arena<AExpr>)> {
+        self.logical_plan.to_alp()
+    }
+
     pub(crate) fn optimize_with_scratch(
         self,
         lp_arena: &mut Arena<ALogicalPlan>,
@@ -486,9 +507,11 @@ impl LazyFrame {
         let mut opt_state = self.opt_state;
         let streaming = self.opt_state.streaming;
         #[cfg(feature = "cse")]
-        if streaming && self.opt_state.common_subplan_elimination {
+        if streaming && self.opt_state.comm_subplan_elim {
             polars_warn!("Cannot combine 'streaming' with 'common_subplan_elimination'. CSE will be turned off.");
-            opt_state.common_subplan_elimination = false;
+            opt_state.comm_subplan_elim = false;
+            // TODO! toggle on once implemented on the physical side
+            opt_state.comm_subexpr_elim = false;
         }
         let lp_top = optimize(self.logical_plan, opt_state, lp_arena, expr_arena, scratch)?;
 

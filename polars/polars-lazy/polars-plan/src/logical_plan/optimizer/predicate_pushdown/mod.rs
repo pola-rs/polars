@@ -617,21 +617,3 @@ impl PredicatePushDown {
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_insert_and_combine_predicate() {
-        let mut acc_predicates = PlHashMap::with_capacity(32);
-        let mut expr_arena = Arena::new();
-
-        let predicate_expr = col("foo").gt(col("bar"));
-        let predicate = to_aexpr(predicate_expr.clone(), &mut expr_arena);
-        insert_and_combine_predicate(&mut acc_predicates, predicate, &mut expr_arena);
-        let root = *acc_predicates.get("foo").unwrap();
-        let expr = node_to_expr(root, &expr_arena);
-        assert_eq!(format!("{:?}", &expr), format!("{:?}", predicate_expr));
-    }
-}

@@ -52,7 +52,7 @@ fn check_eligible(
 impl OptimizationRule for FusedArithmetic {
     #[allow(clippy::float_cmp)]
     fn optimize_expr(
-        &self,
+        &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
         lp_arena: &Arena<ALogicalPlan>,

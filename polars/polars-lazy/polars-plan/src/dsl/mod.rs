@@ -1132,10 +1132,8 @@ impl Expr {
 
     /// Keep the original root name
     ///
-    /// ```
-    /// use polars_core::prelude::*;
-    /// use polars_lazy::prelude::*;
-    ///
+    /// ```rust,no_run
+    /// # use polars_plan::prelude::*;
     /// fn example(df: LazyFrame) -> LazyFrame {
     ///     df.select([
     /// // even thought the alias yields a different column name,

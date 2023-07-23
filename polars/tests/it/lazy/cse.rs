@@ -28,7 +28,7 @@ fn test_cse_union_schema_6504() -> PolarsResult<()> {
         },
     )
     .unwrap()
-    .with_common_subplan_elimination(true)
+    .with_comm_subplan_elim(true)
     .collect()?;
     let expected = df![
         "a" => [1, 0],

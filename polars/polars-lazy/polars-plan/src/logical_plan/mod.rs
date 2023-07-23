@@ -16,6 +16,8 @@ pub(crate) mod anonymous_scan;
 
 mod apply;
 mod builder;
+mod builder_alp;
+pub mod builder_functions;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
@@ -27,10 +29,11 @@ mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
 pub(crate) mod projection;
+mod projection_expr;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;
-#[cfg(feature = "meta")]
+#[cfg(any(feature = "meta", feature = "cse"))]
 pub(crate) mod tree_format;
 pub mod visitor;
 
@@ -39,6 +42,7 @@ pub use alp::*;
 pub use anonymous_scan::*;
 pub use apply::*;
 pub use builder::*;
+pub use builder_alp::*;
 pub use conversion::*;
 pub use file_scan::*;
 pub use functions::*;
@@ -274,5 +278,14 @@ impl Default for LogicalPlan {
 impl LogicalPlan {
     pub fn describe(&self) -> String {
         format!("{self:#?}")
+    }
+
+    pub fn to_alp(self) -> PolarsResult<(Node, Arena<ALogicalPlan>, Arena<AExpr>)> {
+        let mut lp_arena = Arena::with_capacity(16);
+        let mut expr_arena = Arena::with_capacity(16);
+
+        let node = to_alp(self, &mut expr_arena, &mut lp_arena)?;
+
+        Ok((node, lp_arena, expr_arena))
     }
 }

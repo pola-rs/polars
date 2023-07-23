@@ -2,7 +2,6 @@ use polars_arrow::error::PolarsResult;
 
 use crate::prelude::*;
 
-#[macro_export]
 macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
         use Expr::*;
@@ -137,8 +136,7 @@ impl<'a> ExprMut<'a> {
             if !f(current_expr)? {
                 break;
             }
-            let mut push = |e: &'a mut Expr| self.stack.push(e);
-            push_expr!(current_expr, push, iter_mut);
+            current_expr.nodes_mut(&mut self.stack)
         }
         Ok(())
     }
@@ -153,11 +151,21 @@ impl<'a> Iterator for ExprIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.stack.pop().map(|current_expr| {
-            let mut push = |e: &'a Expr| self.stack.push(e);
-
-            push_expr!(current_expr, push, iter);
+            current_expr.nodes(&mut self.stack);
             current_expr
         })
+    }
+}
+
+impl Expr {
+    pub fn nodes<'a>(&'a self, container: &mut Vec<&'a Expr>) {
+        let mut push = |e: &'a Expr| container.push(e);
+        push_expr!(self, push, iter);
+    }
+
+    pub fn nodes_mut<'a>(&'a mut self, container: &mut Vec<&'a mut Expr>) {
+        let mut push = |e: &'a mut Expr| container.push(e);
+        push_expr!(self, push, iter_mut);
     }
 }
 
@@ -169,105 +177,6 @@ impl<'a> IntoIterator for &'a Expr {
         let mut stack = Vec::with_capacity(4);
         stack.push(self);
         ExprIter { stack }
-    }
-}
-
-impl AExpr {
-    /// Push nodes at this level to a pre-allocated stack
-    pub(crate) fn nodes<'a>(&'a self, container: &mut Vec<Node>) {
-        let mut push = |e: &'a Node| container.push(*e);
-        use AExpr::*;
-
-        match self {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {}
-            Alias(e, _) => push(e),
-            BinaryExpr { left, op: _, right } => {
-                // reverse order so that left is popped first
-                push(right);
-                push(left);
-            }
-            Cast { expr, .. } => push(expr),
-            Cache { input, .. } => push(input),
-            Sort { expr, .. } => push(expr),
-            Take { expr, idx } => {
-                push(idx);
-                // latest, so that it is popped first
-                push(expr);
-            }
-            SortBy { expr, by, .. } => {
-                for node in by {
-                    push(node)
-                }
-                // latest, so that it is popped first
-                push(expr);
-            }
-            Filter { input, by } => {
-                push(by);
-                // latest, so that it is popped first
-                push(input);
-            }
-            Agg(agg_e) => {
-                use AAggExpr::*;
-                match agg_e {
-                    Max { input, .. } => push(input),
-                    Min { input, .. } => push(input),
-                    Mean(e) => push(e),
-                    Median(e) => push(e),
-                    NUnique(e) => push(e),
-                    First(e) => push(e),
-                    Last(e) => push(e),
-                    Implode(e) => push(e),
-                    Count(e) => push(e),
-                    Quantile { expr, .. } => push(expr),
-                    Sum(e) => push(e),
-                    AggGroups(e) => push(e),
-                    Std(e, _) => push(e),
-                    Var(e, _) => push(e),
-                }
-            }
-            Ternary {
-                truthy,
-                falsy,
-                predicate,
-            } => {
-                push(predicate);
-                push(falsy);
-                // latest, so that it is popped first
-                push(truthy);
-            }
-            AnonymousFunction { input, .. } | Function { input, .. } =>
-            // we iterate in reverse order, so that the lhs is popped first and will be found
-            // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
-            {
-                input.iter().rev().for_each(push)
-            }
-            Explode(e) => push(e),
-            Window {
-                function,
-                partition_by,
-                order_by,
-                options: _,
-            } => {
-                for e in partition_by.iter().rev() {
-                    push(e);
-                }
-                if let Some(e) = order_by {
-                    push(e);
-                }
-                // latest so that it is popped first
-                push(function);
-            }
-            Slice {
-                input,
-                offset,
-                length,
-            } => {
-                push(length);
-                push(offset);
-                // latest so that it is popped first
-                push(input);
-            }
-        }
     }
 }
 

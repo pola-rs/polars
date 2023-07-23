@@ -4,6 +4,7 @@ use crate::prelude::*;
 
 pub(super) struct SlicePushDown {
     streaming: bool,
+    pub scratch: Vec<Node>,
 }
 
 #[derive(Copy, Clone)]
@@ -14,7 +15,10 @@ struct State {
 
 impl SlicePushDown {
     pub(super) fn new(streaming: bool) -> Self {
-        Self { streaming }
+        Self {
+            streaming,
+            scratch: vec![],
+        }
     }
 
     // slice will be done at this node if we found any

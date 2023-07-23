@@ -27,6 +27,7 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
+from polars.utils.decorators import deprecated_alias
 from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -1721,6 +1722,7 @@ def arg_sort_by(
     return wrap_expr(plr.arg_sort_by(exprs, descending))
 
 
+@deprecated_alias(common_subplan_elimination="comm_subplan_elim")
 def collect_all(
     lazy_frames: Sequence[LazyFrame],
     *,
@@ -1730,7 +1732,8 @@ def collect_all(
     simplify_expression: bool = True,
     no_optimization: bool = False,
     slice_pushdown: bool = True,
-    common_subplan_elimination: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
     streaming: bool = False,
 ) -> list[DataFrame]:
     """
@@ -1754,8 +1757,10 @@ def collect_all(
         Turn off optimizations.
     slice_pushdown
         Slice pushdown optimization.
-    common_subplan_elimination
+    comm_subplan_elim
         Will try to cache branching subplans that occur on self-joins or unions.
+    comm_subexpr_elim
+        Common subexpressions will be cached and reused.
     streaming
         Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -1769,7 +1774,8 @@ def collect_all(
         predicate_pushdown = False
         projection_pushdown = False
         slice_pushdown = False
-        common_subplan_elimination = False
+        comm_subplan_elim = False
+        comm_subexpr_elim = False
 
     prepared = []
 
@@ -1780,7 +1786,8 @@ def collect_all(
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
-            common_subplan_elimination,
+            comm_subplan_elim,
+            comm_subexpr_elim,
             streaming,
         )
         prepared.append(ldf)
