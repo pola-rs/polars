@@ -143,8 +143,8 @@ impl AsyncSeek for CloudReader {
 /// This allows it to be used in sync code which would otherwise write to a simple File or byte stream,
 /// such as with `polars::prelude::CsvWriter`.
 pub struct CloudWriter {
-    // Hold a reference to the store in a thread-safe way
-    object_store: Arc<std::sync::Mutex<Box<dyn ObjectStore>>>,
+    // Hold a reference to the store
+    object_store: Arc<dyn ObjectStore>,
     // The path in the object_store which we want to write to
     path: Path,
     // ID of a partially-done upload, used to abort the upload on error
@@ -161,7 +161,7 @@ impl CloudWriter {
     /// Creates a new (current-thread) Tokio runtime
     /// which bridges the sync writing process with the async ObjectStore multipart uploading.
     /// TODO: Naming?
-    pub fn new_with_object_store(object_store: Arc<std::sync::Mutex<Box<dyn ObjectStore>>>, path: Path) -> Self {
+    pub fn new_with_object_store(object_store: Arc<dyn ObjectStore>, path: Path) -> Self {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap();
@@ -182,18 +182,17 @@ impl CloudWriter {
     /// TODO: Naming?
     pub fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
         let (cloud_location, object_store) = crate::cloud::build(uri, cloud_options)?;
-        let object_store = Arc::from(std::sync::Mutex::from(object_store));
+        let object_store = Arc::from(object_store);
         Ok(Self::new_with_object_store(object_store, cloud_location.prefix.into()))
     }
 
     async fn build_writer(
-        object_store: &Arc<std::sync::Mutex<Box<dyn ObjectStore>>>,
+        object_store: &Arc<dyn ObjectStore>,
         path: &Path,
     ) -> (
         MultipartId,
         SyncIoBridge<Box<dyn AsyncWrite + Send + Unpin>>,
     ) {
-        let object_store = object_store.lock().unwrap();
         let (multipart_id, async_s3_writer) = object_store
             .put_multipart(path)
             .await
@@ -204,8 +203,7 @@ impl CloudWriter {
 
     fn abort(&self) {
         let _ = self.runtime.block_on(async {
-            let object_store = self.object_store.lock().unwrap();
-            object_store
+            self.object_store
                 .abort_multipart(&self.path, &self.multipart_id)
                 .await
         });
@@ -266,7 +264,7 @@ mod tests {
             object_store::local::LocalFileSystem::new_with_prefix("/tmp/")
                 .expect("Could not initialize connection"),
         );
-        let object_store: Arc<std::sync::Mutex<Box<dyn ObjectStore>>> = Arc::from(std::sync::Mutex::from(object_store));
+        let object_store: Arc<dyn ObjectStore> = Arc::from(object_store);
 
         let path: object_store::path::Path = "cloud_writer_example.csv".into();
 
@@ -280,7 +278,6 @@ mod tests {
     fn cloudwriter_from_cloudlocation_test() {
         use crate::csv::CsvWriter;
         use crate::prelude::SerWriter;
-        use crate::cloud::{CloudLocation, BuildResult};
 
         let mut df = example_dataframe();
 
