@@ -1183,7 +1183,7 @@ class DataFrame:
     @property
     def flags(self) -> dict[str, dict[str, bool]]:
         """
-        Get flags that are set on the columns of a DataFrame.
+        Get flags that are set on the columns of this DataFrame.
 
         Returns
         -------
