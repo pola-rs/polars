@@ -375,8 +375,8 @@ class Series:
 
         Returns
         -------
-        Dictionary containing the flag name and the value
-
+        dict
+            Dictionary containing the flag name and the value
         """
         out = {
             "SORTED_ASC": self._s.is_sorted_ascending_flag(),
