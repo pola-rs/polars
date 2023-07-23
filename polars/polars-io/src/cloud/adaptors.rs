@@ -10,6 +10,8 @@ use futures::future::BoxFuture;
 use futures::lock::Mutex;
 use futures::{AsyncRead, AsyncSeek, Future, TryFutureExt};
 
+use polars_core::cloud::CloudOptions;
+use polars_error::PolarsResult;
 use tokio::io::AsyncWrite;
 use tokio_util::io::SyncIoBridge;
 
@@ -154,11 +156,12 @@ pub struct CloudWriter {
 }
 
 impl CloudWriter {
-    /// Construct a new CloudWriter
+    /// Construct a new CloudWriter, re-using the given `object_store`
     ///
     /// Creates a new (current-thread) Tokio runtime
     /// which bridges the sync writing process with the async ObjectStore multipart uploading.
-    pub fn new(object_store: Arc<std::sync::Mutex<Box<dyn ObjectStore>>>, path: Path) -> Self {
+    /// TODO: Naming?
+    pub fn new_with_object_store(object_store: Arc<std::sync::Mutex<Box<dyn ObjectStore>>>, path: Path) -> Self {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap();
@@ -171,6 +174,16 @@ impl CloudWriter {
             runtime,
             writer,
         }
+    }
+
+    /// Constructs a new CloudWriter from a path and an optional set of CloudOptions.
+    ///
+    /// Wrapper around `CloudWriter::new_with_object_store` that is useful if you only have a single write task.
+    /// TODO: Naming?
+    pub fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
+        let (cloud_location, object_store) = crate::cloud::build(uri, cloud_options)?;
+        let object_store = Arc::from(std::sync::Mutex::from(object_store));
+        Ok(Self::new_with_object_store(object_store, cloud_location.prefix.into()))
     }
 
     async fn build_writer(
@@ -257,7 +270,22 @@ mod tests {
 
         let path: object_store::path::Path = "cloud_writer_example.csv".into();
 
-        let mut cloud_writer = CloudWriter::new(object_store, path);
+        let mut cloud_writer = CloudWriter::new_with_object_store(object_store, path);
+        CsvWriter::new(&mut cloud_writer)
+            .finish(&mut df)
+            .expect("Could not write dataframe as CSV to remote location");
+    }
+
+    #[test]
+    fn cloudwriter_from_cloudlocation_test() {
+        use crate::csv::CsvWriter;
+        use crate::prelude::SerWriter;
+        use crate::cloud::{CloudLocation, BuildResult};
+
+        let mut df = example_dataframe();
+
+        let mut cloud_writer = CloudWriter::new("file:///tmp/cloud_writer_example2.csv", None).unwrap();
+
         CsvWriter::new(&mut cloud_writer)
             .finish(&mut df)
             .expect("Could not write dataframe as CSV to remote location");
