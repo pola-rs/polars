@@ -66,7 +66,7 @@ impl StackOptimizer {
                             continue;
                         }
                     }
-                    for rule in rules.iter() {
+                    for rule in rules.iter_mut() {
                         // keep iterating over same rule
                         while let Some(x) = rule.optimize_expr(
                             expr_arena,
@@ -104,7 +104,7 @@ pub trait OptimizationRule {
         None
     }
     fn optimize_expr(
-        &self,
+        &mut self,
         _expr_arena: &mut Arena<AExpr>,
         _expr_node: Node,
         _lp_arena: &Arena<ALogicalPlan>,

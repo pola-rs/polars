@@ -19,7 +19,7 @@ fn test_cse_self_joins() -> PolarsResult<()> {
     let lf = lf
         .clone()
         .left_join(lf, col("fats_g"), col("fats_g"))
-        .with_common_subplan_elimination(true);
+        .with_comm_subplan_elim(true);
 
     cached_before_root(lf);
 
@@ -41,7 +41,7 @@ fn test_cse_unions() -> PolarsResult<()> {
         },
     )?
     .select([col("category"), col("fats_g")])
-    .with_common_subplan_elimination(true);
+    .with_comm_subplan_elim(true);
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = lf.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -77,7 +77,7 @@ fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
     let q2 = q.filter(col("a").eq(lit(1))).select([col("a"), col("b")]);
     let q = q1
         .left_join(q2, col("a"), col("a"))
-        .with_common_subplan_elimination(true);
+        .with_comm_subplan_elim(true);
 
     // check that the projection of a is not done before the cache
     let (mut expr_arena, mut lp_arena) = get_arenas();
@@ -242,7 +242,7 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
             JoinType::Semi.into(),
         );
 
-    let q = q.with_common_subplan_elimination(true);
+    let q = q.with_comm_subplan_elim(true);
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();

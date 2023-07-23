@@ -5,11 +5,12 @@ use std::sync::Arc;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
+use super::projection_expr::*;
 use crate::logical_plan::functions::FunctionNode;
-use crate::logical_plan::schema::{det_join_schema, FileInfo};
+use crate::logical_plan::schema::FileInfo;
 use crate::logical_plan::FileScan;
 use crate::prelude::*;
-use crate::utils::{aexprs_to_schema, PushNode};
+use crate::utils::PushNode;
 
 /// ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
@@ -55,7 +56,7 @@ pub enum ALogicalPlan {
     },
     Projection {
         input: Node,
-        expr: Vec<Node>,
+        expr: ProjectionExprs,
         schema: SchemaRef,
     },
     LocalProjection {
@@ -92,7 +93,7 @@ pub enum ALogicalPlan {
     },
     HStack {
         input: Node,
-        exprs: Vec<Node>,
+        exprs: ProjectionExprs,
         schema: SchemaRef,
     },
     Distinct {
@@ -253,7 +254,7 @@ impl ALogicalPlan {
             },
             Projection { schema, .. } => Projection {
                 input: inputs[0],
-                expr: exprs,
+                expr: ProjectionExprs::new(exprs),
                 schema: schema.clone(),
             },
             Aggregate {
@@ -303,7 +304,7 @@ impl ALogicalPlan {
             },
             HStack { schema, .. } => HStack {
                 input: inputs[0],
-                exprs,
+                exprs: ProjectionExprs::new(exprs),
                 schema: schema.clone(),
             },
             Scan {
@@ -498,197 +499,5 @@ impl ALogicalPlan {
         let mut inputs = [None, None];
         self.copy_inputs(&mut inputs);
         inputs[0]
-    }
-}
-
-pub struct ALogicalPlanBuilder<'a> {
-    root: Node,
-    expr_arena: &'a mut Arena<AExpr>,
-    lp_arena: &'a mut Arena<ALogicalPlan>,
-}
-
-impl<'a> ALogicalPlanBuilder<'a> {
-    pub(crate) fn new(
-        root: Node,
-        expr_arena: &'a mut Arena<AExpr>,
-        lp_arena: &'a mut Arena<ALogicalPlan>,
-    ) -> Self {
-        ALogicalPlanBuilder {
-            root,
-            expr_arena,
-            lp_arena,
-        }
-    }
-
-    pub(crate) fn from_lp(
-        lp: ALogicalPlan,
-        expr_arena: &'a mut Arena<AExpr>,
-        lp_arena: &'a mut Arena<ALogicalPlan>,
-    ) -> Self {
-        let root = lp_arena.add(lp);
-        ALogicalPlanBuilder {
-            root,
-            expr_arena,
-            lp_arena,
-        }
-    }
-
-    pub fn project_local(self, exprs: Vec<Node>) -> Self {
-        let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
-        let schema = aexprs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
-        let lp = ALogicalPlan::LocalProjection {
-            expr: exprs,
-            input: self.root,
-            schema: Arc::new(schema),
-        };
-        let node = self.lp_arena.add(lp);
-        ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
-    }
-
-    pub fn project(self, exprs: Vec<Node>) -> Self {
-        let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
-        let schema = aexprs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
-
-        // if len == 0, no projection has to be done. This is a select all operation.
-        if !exprs.is_empty() {
-            let lp = ALogicalPlan::Projection {
-                expr: exprs,
-                input: self.root,
-                schema: Arc::new(schema),
-            };
-            let node = self.lp_arena.add(lp);
-            ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
-        } else {
-            self
-        }
-    }
-
-    pub fn build(self) -> ALogicalPlan {
-        if self.root.0 == self.lp_arena.len() {
-            self.lp_arena.pop().unwrap()
-        } else {
-            self.lp_arena.take(self.root)
-        }
-    }
-
-    pub(crate) fn schema(&'a self) -> Cow<'a, SchemaRef> {
-        self.lp_arena.get(self.root).schema(self.lp_arena)
-    }
-
-    pub(crate) fn with_columns(self, exprs: Vec<Node>) -> Self {
-        let schema = self.schema();
-        let mut new_schema = (**schema).clone();
-
-        for e in &exprs {
-            let field = self
-                .expr_arena
-                .get(*e)
-                .to_field(&schema, Context::Default, self.expr_arena)
-                .unwrap();
-
-            new_schema.with_column(field.name().clone(), field.data_type().clone());
-        }
-
-        let lp = ALogicalPlan::HStack {
-            input: self.root,
-            exprs,
-            schema: Arc::new(new_schema),
-        };
-        let root = self.lp_arena.add(lp);
-        Self::new(root, self.expr_arena, self.lp_arena)
-    }
-
-    pub fn groupby(
-        self,
-        keys: Vec<Node>,
-        aggs: Vec<Node>,
-        apply: Option<Arc<dyn DataFrameUdf>>,
-        maintain_order: bool,
-        options: GroupbyOptions,
-    ) -> Self {
-        let current_schema = self.schema();
-        // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
-        // let aggs = rewrite_projections(aggs, current_schema);
-
-        let mut schema =
-            aexprs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
-        let other = aexprs_to_schema(
-            &aggs,
-            &current_schema,
-            Context::Aggregation,
-            self.expr_arena,
-        );
-        schema.merge(other);
-
-        #[cfg(feature = "dynamic_groupby")]
-        {
-            let index_columns = &[
-                options
-                    .rolling
-                    .as_ref()
-                    .map(|options| &options.index_column),
-                options
-                    .dynamic
-                    .as_ref()
-                    .map(|options| &options.index_column),
-            ];
-            for &name in index_columns.iter().flatten() {
-                let dtype = current_schema.get(name).unwrap();
-                schema.with_column(name.clone(), dtype.clone());
-            }
-        }
-
-        let lp = ALogicalPlan::Aggregate {
-            input: self.root,
-            keys,
-            aggs,
-            schema: Arc::new(schema),
-            apply,
-            maintain_order,
-            options,
-        };
-        let root = self.lp_arena.add(lp);
-        Self::new(root, self.expr_arena, self.lp_arena)
-    }
-
-    pub fn join(
-        self,
-        other: Node,
-        left_on: Vec<Node>,
-        right_on: Vec<Node>,
-        options: JoinOptions,
-    ) -> Self {
-        let schema_left = self.schema();
-        let schema_right = self.lp_arena.get(other).schema(self.lp_arena);
-
-        let left_on_exprs = left_on
-            .iter()
-            .map(|node| node_to_expr(*node, self.expr_arena))
-            .collect::<Vec<_>>();
-        let right_on_exprs = right_on
-            .iter()
-            .map(|node| node_to_expr(*node, self.expr_arena))
-            .collect::<Vec<_>>();
-
-        let schema = det_join_schema(
-            &schema_left,
-            &schema_right,
-            &left_on_exprs,
-            &right_on_exprs,
-            &options,
-        )
-        .unwrap();
-
-        let lp = ALogicalPlan::Join {
-            input_left: self.root,
-            input_right: other,
-            schema,
-            left_on,
-            right_on,
-            options,
-        };
-
-        let root = self.lp_arena.add(lp);
-        Self::new(root, self.expr_arena, self.lp_arena)
     }
 }

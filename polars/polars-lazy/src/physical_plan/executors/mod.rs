@@ -22,6 +22,7 @@ use std::borrow::Cow;
 
 pub use executor::*;
 use polars_core::POOL;
+use polars_plan::constants::CSE_REPLACED;
 use polars_plan::global::FETCH_ROWS;
 use polars_plan::utils::*;
 use rayon::prelude::*;
@@ -137,31 +138,70 @@ fn execute_projection_cached_window_fns(
     Ok(selected_columns)
 }
 
-pub(crate) fn evaluate_physical_expressions(
+fn run_exprs_par(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &mut ExecutionState,
+) -> PolarsResult<Vec<Series>> {
+    POOL.install(|| {
+        exprs
+            .par_iter()
+            .map(|expr| expr.evaluate(df, state))
+            .collect()
+    })
+}
+
+pub(super) fn evaluate_physical_expressions(
+    df: &mut DataFrame,
+    cse_exprs: &[Arc<dyn PhysicalExpr>],
+    exprs: &[Arc<dyn PhysicalExpr>],
+    state: &mut ExecutionState,
     has_windows: bool,
-) -> PolarsResult<DataFrame> {
+) -> PolarsResult<Vec<Series>> {
     state.expr_cache = Some(Default::default());
-    let zero_length = df.height() == 0;
-    let selected_columns = if has_windows {
+
+    let selected_columns = if !cse_exprs.is_empty() {
+        let tmp_cols = run_exprs_par(df, cse_exprs, state)?;
+        let width = df.width();
+
+        // put the cse expressions at the end
+        unsafe {
+            df.hstack_mut_unchecked(&tmp_cols);
+        }
+        let mut result = run_exprs_par(df, exprs, state)?;
+        // restore original df
+        unsafe {
+            df.get_columns_mut().truncate(width);
+        }
+
+        // the replace CSE has a temporary name
+        // we don't want this name in the result
+        for s in result.iter_mut() {
+            let field = s.field().into_owned();
+            let name = &field.name;
+            if name.starts_with(CSE_REPLACED) {
+                let pat = r#"col("#;
+                let offset = name.rfind(pat).unwrap() + pat.len();
+                // -1 is `)` of `col(foo)`
+                let name = &name[offset..name.len() - 1];
+                s.rename(name);
+            }
+        }
+
+        result
+    } else if has_windows {
         execute_projection_cached_window_fns(df, exprs, state)?
     } else {
-        POOL.install(|| {
-            exprs
-                .par_iter()
-                .map(|expr| expr.evaluate(df, state))
-                .collect::<PolarsResult<_>>()
-        })?
+        run_exprs_par(df, exprs, state)?
     };
+
     state.clear_window_expr_cache();
     state.expr_cache = None;
 
-    check_expand_literals(selected_columns, zero_length)
+    Ok(selected_columns)
 }
 
-fn check_expand_literals(
+pub(super) fn check_expand_literals(
     mut selected_columns: Vec<Series>,
     zero_length: bool,
 ) -> PolarsResult<DataFrame> {

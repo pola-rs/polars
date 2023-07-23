@@ -17,7 +17,6 @@ pub(crate) use polars_time::{
 pub use polars_utils::arena::{Arena, Node};
 
 pub use crate::dsl::*;
-pub(crate) use crate::logical_plan::alp::*;
 pub(crate) use crate::logical_plan::conversion::*;
 #[cfg(feature = "debugging")]
 pub use crate::logical_plan::debug::*;

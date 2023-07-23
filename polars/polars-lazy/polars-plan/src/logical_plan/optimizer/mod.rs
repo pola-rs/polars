@@ -9,6 +9,8 @@ mod cse;
 mod delay_rechunk;
 mod drop_nulls;
 
+#[cfg(feature = "cse")]
+mod cse_expr;
 mod fast_projection;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
 pub(crate) mod file_caching;
@@ -37,6 +39,10 @@ pub use type_coercion::TypeCoercionRule;
 
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
+#[cfg(feature = "cse")]
+use crate::logical_plan::optimizer::cse_expr::CommonSubExprOptimizer;
+#[cfg(feature = "cse")]
+use crate::logical_plan::visitor::*;
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> PolarsResult<LogicalPlan>;
@@ -64,7 +70,9 @@ pub fn optimize(
     let slice_pushdown = opt_state.slice_pushdown;
     let streaming = opt_state.streaming;
     #[cfg(feature = "cse")]
-    let cse = opt_state.common_subplan_elimination;
+    let comm_subplan_elim = opt_state.comm_subplan_elim;
+    #[cfg(feature = "cse")]
+    let comm_subexpr_elim = opt_state.comm_subexpr_elim;
 
     #[allow(unused_variables)]
     let agg_scan_projection = opt_state.file_caching;
@@ -80,7 +88,7 @@ pub fn optimize(
     let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
 
     #[cfg(feature = "cse")]
-    let cse_changed = if cse {
+    let cse_changed = if comm_subplan_elim {
         let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
         lp_top = lp;
         changed
@@ -176,6 +184,16 @@ pub fn optimize(
     rules.push(Box::new(FlattenUnionRule {}));
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
+
+    // This one should run (nearly) last as this modifies the projections
+    #[cfg(feature = "cse")]
+    if comm_subexpr_elim {
+        let mut optimizer = CommonSubExprOptimizer::new(expr_arena);
+        lp_top = ALogicalPlanNode::with_context(lp_top, lp_arena, |alp_node| {
+            alp_node.rewrite(&mut optimizer)
+        })?
+        .node()
+    }
 
     // during debug we check if the optimizations have not modified the final schema
     #[cfg(debug_assertions)]

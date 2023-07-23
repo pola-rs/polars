@@ -3,7 +3,8 @@ use super::*;
 pub struct StackExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) has_windows: bool,
-    pub(crate) expr: Vec<Arc<dyn PhysicalExpr>>,
+    pub(crate) cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
+    pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) input_schema: SchemaRef,
 }
 
@@ -14,18 +15,14 @@ impl StackExec {
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         state.expr_cache = Some(Default::default());
-        let res = if self.has_windows {
-            // we have a different run here
-            // to ensure the window functions run sequential and share caches
-            execute_projection_cached_window_fns(&df, &self.expr, state)?
-        } else {
-            POOL.install(|| {
-                self.expr
-                    .par_iter()
-                    .map(|expr| expr.evaluate(&df, state))
-                    .collect::<PolarsResult<Vec<_>>>()
-            })?
-        };
+
+        let res = evaluate_physical_expressions(
+            &mut df,
+            &self.cse_exprs,
+            &self.exprs,
+            state,
+            self.has_windows,
+        )?;
         state.clear_window_expr_cache();
         state.expr_cache = None;
 
@@ -41,14 +38,18 @@ impl Executor for StackExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run StackExec")
+                if self.cse_exprs.is_empty() {
+                    println!("run StackExec");
+                } else {
+                    println!("run StackExec with {} CSE", self.cse_exprs.len());
+                };
             }
         }
         let df = self.input.execute(state)?;
 
         let profile_name = if state.has_node_timer() {
             let by = self
-                .expr
+                .exprs
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;

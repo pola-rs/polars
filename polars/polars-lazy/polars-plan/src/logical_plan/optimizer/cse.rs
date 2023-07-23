@@ -88,12 +88,12 @@ fn expr_nodes_equal(a: &[Node], b: &[Node], expr_arena: &Arena<AExpr>) -> bool {
     a.len() == b.len()
         && a.iter()
             .zip(b)
-            .all(|(a, b)| node_to_expr(*a, expr_arena) == node_to_expr(*b, expr_arena))
+            .all(|(a, b)| AExpr::is_equal(*a, *b, expr_arena))
 }
 
 fn predicate_equal(a: Option<Node>, b: Option<Node>, expr_arena: &Arena<AExpr>) -> bool {
     match (a, b) {
-        (Some(l), Some(r)) => node_to_expr(l, expr_arena) == node_to_expr(r, expr_arena),
+        (Some(l), Some(r)) => AExpr::is_equal(l, r, expr_arena),
         (None, None) => true,
         _ => false,
     }
@@ -135,7 +135,7 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
                 && predicate_equal(*predicate_left, *predicate_right, expr_arena)
         }
         (Selection { predicate: l, .. }, Selection { predicate: r, .. }) => {
-            node_to_expr(*l, expr_arena) == node_to_expr(*r, expr_arena)
+            AExpr::is_equal(*l, *r, expr_arena)
         }
         (Projection { expr: l, .. }, Projection { expr: r, .. })
         | (HStack { exprs: l, .. }, HStack { exprs: r, .. }) => expr_nodes_equal(l, r, expr_arena),

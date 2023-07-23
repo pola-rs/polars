@@ -4177,7 +4177,7 @@ class DataFrame:
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
-                common_subplan_elimination=False,
+                comm_subplan_elim=False,
                 slice_pushdown=True,
             )
         )
@@ -4269,7 +4269,7 @@ class DataFrame:
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
-                common_subplan_elimination=False,
+                comm_subplan_elim=False,
                 slice_pushdown=True,
             )
         )

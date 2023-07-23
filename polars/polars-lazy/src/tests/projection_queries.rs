@@ -102,7 +102,7 @@ fn scan_join_same_file() -> PolarsResult<()> {
                 [col("category")],
                 JoinType::Inner.into(),
             )
-            .with_common_subplan_elimination(cse);
+            .with_comm_subplan_elim(cse);
         let out = q.collect()?;
         assert_eq!(
             out.get_column_names(),

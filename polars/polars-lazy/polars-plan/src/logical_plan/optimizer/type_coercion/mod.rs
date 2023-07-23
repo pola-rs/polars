@@ -273,7 +273,7 @@ fn get_aexpr_and_type<'a>(
 
 impl OptimizationRule for TypeCoercionRule {
     fn optimize_expr(
-        &self,
+        &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
         lp_arena: &Arena<ALogicalPlan>,

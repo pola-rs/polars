@@ -10,6 +10,8 @@ use polars_utils::arena::{Arena, Node};
 use strum_macros::IntoStaticStr;
 
 use crate::dsl::function_expr::FunctionExpr;
+#[cfg(feature = "cse")]
+use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;
 use crate::prelude::aexpr::NodeInputs::Single;
 use crate::prelude::names::COUNT;
@@ -41,6 +43,34 @@ pub enum AAggExpr {
     Std(Node, u8),
     Var(Node, u8),
     AggGroups(Node),
+}
+
+impl AAggExpr {
+    pub(super) fn equal_nodes(&self, other: &AAggExpr) -> bool {
+        use AAggExpr::*;
+        match (self, other) {
+            (
+                Min {
+                    propagate_nans: l, ..
+                },
+                Min {
+                    propagate_nans: r, ..
+                },
+            ) => l == r,
+            (
+                Max {
+                    propagate_nans: l, ..
+                },
+                Max {
+                    propagate_nans: r, ..
+                },
+            ) => l == r,
+            (Quantile { interpol: l, .. }, Quantile { interpol: r, .. }) => l == r,
+            (Std(_, l), Std(_, r)) => l == r,
+            (Var(_, l), Var(_, r)) => l == r,
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+        }
+    }
 }
 
 impl From<AAggExpr> for GroupByMethod {
@@ -152,6 +182,22 @@ pub enum AExpr {
 }
 
 impl AExpr {
+    #[cfg(feature = "cse")]
+    pub(crate) fn is_equal(l: Node, r: Node, arena: &Arena<AExpr>) -> bool {
+        let arena = arena as *const Arena<AExpr> as *mut Arena<AExpr>;
+        // safety: we can pass a *mut pointer
+        // the equality operation will not access mutable
+        unsafe {
+            let ae_node_l = AexprNode::from_raw(l, arena);
+            let ae_node_r = AexprNode::from_raw(r, arena);
+            ae_node_l == ae_node_r
+        }
+    }
+
+    #[cfg(feature = "cse")]
+    pub(crate) fn col(name: &str) -> Self {
+        AExpr::Column(Arc::from(name))
+    }
     /// Any expression that is sensitive to the number of elements in a group
     /// - Aggregations
     /// - Sorts
@@ -198,6 +244,91 @@ impl AExpr {
             .map(|f| f.data_type().clone())
     }
 
+    /// Push nodes at this level to a pre-allocated stack
+    pub(crate) fn nodes(&self, container: &mut Vec<Node>) {
+        use AExpr::*;
+
+        match self {
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {}
+            Alias(e, _) => container.push(*e),
+            BinaryExpr { left, op: _, right } => {
+                // reverse order so that left is popped first
+                container.push(*right);
+                container.push(*left);
+            }
+            Cast { expr, .. } => container.push(*expr),
+            Cache { input, .. } => container.push(*input),
+            Sort { expr, .. } => container.push(*expr),
+            Take { expr, idx } => {
+                container.push(*idx);
+                // latest, so that it is popped first
+                container.push(*expr);
+            }
+            SortBy { expr, by, .. } => {
+                for node in by {
+                    container.push(*node)
+                }
+                // latest, so that it is popped first
+                container.push(*expr);
+            }
+            Filter { input, by } => {
+                container.push(*by);
+                // latest, so that it is popped first
+                container.push(*input);
+            }
+            Agg(agg_e) => {
+                let node = agg_e.get_input().first();
+                container.push(node);
+            }
+            Ternary {
+                truthy,
+                falsy,
+                predicate,
+            } => {
+                container.push(*predicate);
+                container.push(*falsy);
+                // latest, so that it is popped first
+                container.push(*truthy);
+            }
+            AnonymousFunction { input, .. } | Function { input, .. } =>
+            // we iterate in reverse order, so that the lhs is popped first and will be found
+            // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
+            {
+                input
+                    .iter()
+                    .rev()
+                    .copied()
+                    .for_each(|node| container.push(node))
+            }
+            Explode(e) => container.push(*e),
+            Window {
+                function,
+                partition_by,
+                order_by,
+                options: _,
+            } => {
+                for e in partition_by.iter().rev() {
+                    container.push(*e);
+                }
+                if let Some(e) = order_by {
+                    container.push(*e);
+                }
+                // latest so that it is popped first
+                container.push(*function);
+            }
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                container.push(*length);
+                container.push(*offset);
+                // latest so that it is popped first
+                container.push(*input);
+            }
+        }
+    }
+
     pub(crate) fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
@@ -206,18 +337,27 @@ impl AExpr {
             Cast { expr, .. } => expr,
             Explode(input) | Slice { input, .. } | Cache { input, .. } => input,
             BinaryExpr { left, right, .. } => {
-                *left = inputs[0];
-                *right = inputs[1];
+                *right = inputs[0];
+                *left = inputs[1];
                 return self;
             }
-            Sort { expr, .. } | Take { expr, .. } => expr,
+            Take { expr, idx } => {
+                *idx = inputs[0];
+                *expr = inputs[1];
+                return self;
+            }
+            Sort { expr, .. } => expr,
             SortBy { expr, by, .. } => {
                 *expr = *inputs.last().unwrap();
                 by.clear();
                 by.extend_from_slice(&inputs[..inputs.len() - 1]);
                 return self;
             }
-            Filter { input, .. } => input,
+            Filter { input, by, .. } => {
+                *by = inputs[0];
+                *input = inputs[1];
+                return self;
+            }
             Agg(a) => {
                 a.set_input(inputs[0]);
                 return self;
@@ -227,9 +367,9 @@ impl AExpr {
                 falsy,
                 predicate,
             } => {
-                *truthy = inputs[0];
+                *predicate = inputs[0];
                 *falsy = inputs[1];
-                *predicate = inputs[2];
+                *truthy = inputs[2];
                 return self;
             }
             AnonymousFunction { input, .. } | Function { input, .. } => {
@@ -243,8 +383,10 @@ impl AExpr {
                 order_by,
                 ..
             } => {
-                *function = inputs[0];
-                partition_by.extend_from_slice(&inputs[1..]);
+                *function = *inputs.last().unwrap();
+                partition_by.clear();
+                partition_by.extend_from_slice(&inputs[..inputs.len() - 1]);
+
                 assert!(order_by.is_none());
                 return self;
             }
@@ -253,57 +395,6 @@ impl AExpr {
         self
     }
 
-    pub(crate) fn get_input(&self) -> NodeInputs {
-        use AExpr::*;
-        use NodeInputs::*;
-        match self {
-            Alias(input, _) => Single(*input),
-            Cast { expr, .. } => Single(*expr),
-            Explode(input) => Single(*input),
-            Column(_) => Leaf,
-            Literal(_) => Leaf,
-            BinaryExpr { left, right, .. } => Many(vec![*left, *right]),
-            Sort { expr, .. } => Single(*expr),
-            Take { expr, .. } => Single(*expr),
-            SortBy { expr, by, .. } => {
-                let mut many = by.clone();
-                many.push(*expr);
-                Many(many)
-            }
-            Filter { input, .. } => Single(*input),
-            Agg(a) => a.get_input(),
-            Ternary {
-                truthy,
-                falsy,
-                predicate,
-            } => Many(vec![*truthy, *falsy, *predicate]),
-            // we iterate in reverse order, so that the lhs is popped first and will be found
-            // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
-            AnonymousFunction { input, .. } | Function { input, .. } => match input.len() {
-                1 => Single(input[0]),
-                _ => Many(input.iter().copied().rev().collect()),
-            },
-            Window {
-                function,
-                order_by,
-                partition_by,
-                ..
-            } => {
-                let mut out = Vec::with_capacity(partition_by.len() + 2);
-                out.push(*function);
-                if let Some(a) = order_by {
-                    out.push(*a);
-                }
-                out.extend(partition_by);
-                Many(out)
-            }
-            Wildcard => panic!("no wildcard expected"),
-            Slice { input, .. } => Single(*input),
-            Cache { input, .. } => Single(*input),
-            Count => Leaf,
-            Nth(_) => Leaf,
-        }
-    }
     pub(crate) fn is_leaf(&self) -> bool {
         matches!(
             self,
