@@ -321,6 +321,7 @@ pub fn create_physical_plan(
             output_schema,
             ..
         } => {
+            let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             let predicate = predicate
                 .map(|pred| {
                     create_physical_expr(

@@ -364,9 +364,11 @@ impl ProjectionPushDown {
                 output_schema,
             } => {
                 if function.allows_projection_pushdown() {
-                    options.with_columns = get_scan_columns(&mut acc_projections, expr_arena, None);
+                    let mut_options = Arc::make_mut(&mut options);
+                    mut_options.with_columns =
+                        get_scan_columns(&mut acc_projections, expr_arena, None);
 
-                    let output_schema = if options.with_columns.is_none() {
+                    let output_schema = if mut_options.with_columns.is_none() {
                         None
                     } else {
                         Some(Arc::new(update_scan_schema(
@@ -376,7 +378,7 @@ impl ProjectionPushDown {
                             true,
                         )?))
                     };
-                    options.output_schema = output_schema.clone();
+                    mut_options.output_schema = output_schema.clone();
 
                     let lp = AnonymousScan {
                         function,

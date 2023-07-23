@@ -146,7 +146,7 @@ pub enum LogicalPlan {
         function: Arc<dyn AnonymousScan>,
         file_info: FileInfo,
         predicate: Option<Expr>,
-        options: AnonymousScanOptions,
+        options: Arc<AnonymousScanOptions>,
     },
     #[cfg(feature = "python")]
     PythonScan { options: PythonOptions },

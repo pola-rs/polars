@@ -103,7 +103,7 @@ impl LogicalPlanBuilder {
             function,
             file_info,
             predicate: None,
-            options: AnonymousScanOptions {
+            options: Arc::new(AnonymousScanOptions {
                 fmt_str: name,
                 schema,
                 skip_rows,
@@ -111,7 +111,7 @@ impl LogicalPlanBuilder {
                 output_schema: None,
                 with_columns: None,
                 predicate: None,
-            },
+            }),
         }
         .into())
     }
@@ -599,7 +599,7 @@ impl LogicalPlanBuilder {
         let options = GroupbyOptions {
             dynamic: dynamic_options,
             rolling: rolling_options,
-            slice: None
+            slice: None,
         };
 
         #[cfg(not(feature = "dynamic_groupby"))]

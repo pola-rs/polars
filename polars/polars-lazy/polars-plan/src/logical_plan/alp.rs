@@ -20,7 +20,7 @@ pub enum ALogicalPlan {
         file_info: FileInfo,
         output_schema: Option<SchemaRef>,
         predicate: Option<Node>,
-        options: AnonymousScanOptions,
+        options: Arc<AnonymousScanOptions>,
     },
     #[cfg(feature = "python")]
     PythonScan {
@@ -509,5 +509,12 @@ mod test {
     #[test]
     fn test_alp_size() {
         dbg!(std::mem::size_of::<ALogicalPlan>());
+        dbg!(std::mem::size_of::<AnonymousScanOptions>());
+        dbg!(std::mem::size_of::<PythonOptions>());
+        dbg!(std::mem::size_of::<FileScanOptions>());
+        dbg!(std::mem::size_of::<JoinOptions>());
+        dbg!(std::mem::size_of::<DistinctOptions>());
+        dbg!(std::mem::size_of::<FunctionNode>());
+        dbg!(std::mem::size_of::<FileSinkOptions>());
     }
 }
