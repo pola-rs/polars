@@ -62,20 +62,25 @@ _UNARY_OPCODES = {
 _SYNTHETIC_OPS = {
     "POLARS_EXPRESSION",
 }
-_SIMPLE_EXPR_OPS = {
-    "BINARY_OP",
-    "COMPARE_OP",
-    "CONTAINS_OP",
-    "IS_OP",
+_LOAD_OPS = {
     "LOAD_CONST",
     "LOAD_DEREF",
     "LOAD_FAST",
     "LOAD_GLOBAL",
 }
-_SIMPLE_EXPR_OPS |= set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES) | _SYNTHETIC_OPS
+_SIMPLE_EXPR_OPS = {
+    "BINARY_OP",
+    "COMPARE_OP",
+    "CONTAINS_OP",
+    "IS_OP",
+}
+_SIMPLE_EXPR_OPS |= (
+    set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES) | _LOAD_OPS | _SYNTHETIC_OPS
+)
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
 _UNARY_OPCODE_VALUES = set(_UNARY_OPCODES.values())
 _UPGRADE_BINARY_OPS = sys.version_info < (3, 11)
+_LOAD_OPS |= {"LOAD_METHOD", "LOAD_ATTR"}
 
 # numpy functions that we can map to a native expression
 _NUMPY_MODULE_ALIASES = {"np", "numpy"}
@@ -335,7 +340,7 @@ class InstructionTranslator:
             for inst in instructions:
                 stack.append(
                     inst.argrepr
-                    if inst.opname.startswith("LOAD_")
+                    if inst.opname in _LOAD_OPS
                     else (
                         StackValue(
                             operator=self.op(inst),
@@ -437,7 +442,8 @@ class RewrittenInstructions:
         updated_instructions: list[Instruction] = []
         idx = 0
         while idx < len(self._instructions):
-            if not any(
+            inst, increment = self._instructions[idx], 1
+            if inst.opname not in _LOAD_OPS or not any(
                 (increment := apply_rewrite(idx, updated_instructions))
                 for apply_rewrite in (
                     # add any other rewrite methods here
@@ -446,7 +452,6 @@ class RewrittenInstructions:
                     self._rewrite_builtins,
                 )
             ):
-                inst = self._instructions[idx]
                 updated_instructions.append(inst)
             idx += increment or 1
         return updated_instructions
