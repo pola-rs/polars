@@ -508,14 +508,6 @@ mod test {
 
     #[test]
     fn test_alp_size() {
-        dbg!(std::mem::size_of::<ALogicalPlan>());
-        dbg!(std::mem::size_of::<AnonymousScanOptions>());
-        dbg!(std::mem::size_of::<PythonOptions>());
-        dbg!(std::mem::size_of::<FileScanOptions>());
-        dbg!(std::mem::size_of::<JoinOptions>());
-        dbg!(std::mem::size_of::<DistinctOptions>());
-        dbg!(std::mem::size_of::<FunctionNode>());
-        dbg!(std::mem::size_of::<FileSinkOptions>());
-        dbg!(std::mem::size_of::<UnionOptions>());
+        assert!(std::mem::size_of::<ALogicalPlan>() <= 152);
     }
 }
