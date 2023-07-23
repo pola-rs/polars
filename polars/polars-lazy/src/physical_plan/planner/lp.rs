@@ -544,8 +544,6 @@ pub fn create_physical_plan(
                 cse_exprs,
                 exprs: phys_exprs,
                 input_schema,
-                #[cfg(test)]
-                schema: _schema,
             }))
         }
         MapFunction {

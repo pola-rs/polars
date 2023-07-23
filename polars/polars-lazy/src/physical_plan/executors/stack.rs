@@ -6,8 +6,6 @@ pub struct StackExec {
     pub(crate) cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) input_schema: SchemaRef,
-    #[cfg(test)]
-    pub(crate) schema: SchemaRef,
 }
 
 impl StackExec {
