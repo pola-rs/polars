@@ -29,11 +29,6 @@ impl StackExec {
         let schema = &*self.input_schema;
         df._add_columns(res, schema)?;
 
-        #[cfg(feature = "cse")]
-        if !self.cse_exprs.is_empty() {
-            correct_schema_cse(&mut df);
-        }
-
         Ok(df)
     }
 }

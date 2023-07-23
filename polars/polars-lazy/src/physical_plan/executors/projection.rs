@@ -1,26 +1,4 @@
-#[cfg(feature = "cse")]
-use polars_plan::constants::CSE_REPLACED;
-
 use super::*;
-
-/// the replace CSE has a temporary name
-/// we don't want this name in the result
-#[cfg(feature = "cse")]
-pub(super) fn correct_schema_cse(df: &mut DataFrame) {
-    unsafe {
-        for s in df.get_columns_mut() {
-            let field = s.field().into_owned();
-            let name = &field.name;
-            if name.starts_with(CSE_REPLACED) {
-                let pat = r#"col(""#;
-                let offset = name.rfind(pat).unwrap() + pat.len();
-                // -2 is `")` of `col("foo")`
-                let name = &name[offset..name.len() - 2];
-                s.rename(name);
-            }
-        }
-    }
-}
 
 /// Take an input Executor (creates the input DataFrame)
 /// and a multiple PhysicalExpressions (create the output Series)
@@ -50,11 +28,6 @@ impl ProjectionExec {
         )?;
         #[allow(unused_mut)]
         let mut df = check_expand_literals(selected_cols, df.height() == 0)?;
-
-        #[cfg(feature = "cse")]
-        if !self.cse_expr.is_empty() {
-            correct_schema_cse(&mut df)
-        }
 
         // this only runs during testing and check if the runtime type matches the predicted schema
         #[cfg(test)]

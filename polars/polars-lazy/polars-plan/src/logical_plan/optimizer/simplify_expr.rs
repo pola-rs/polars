@@ -107,7 +107,7 @@ pub struct SimplifyBooleanRule {}
 
 impl OptimizationRule for SimplifyBooleanRule {
     fn optimize_expr(
-        &self,
+        &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
         _: &Arena<ALogicalPlan>,
@@ -440,7 +440,7 @@ pub struct SimplifyExprRule {}
 impl OptimizationRule for SimplifyExprRule {
     #[allow(clippy::float_cmp)]
     fn optimize_expr(
-        &self,
+        &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
         _lp_arena: &Arena<ALogicalPlan>,

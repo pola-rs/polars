@@ -10,7 +10,7 @@ fn pushdown(input: Node, offset: Node, length: Node, arena: &mut Arena<AExpr>) -
 
 impl OptimizationRule for SlicePushDown {
     fn optimize_expr(
-        &self,
+        &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
         _lp_arena: &Arena<ALogicalPlan>,
@@ -27,11 +27,13 @@ impl OptimizationRule for SlicePushDown {
 
             use AExpr::*;
             let out = match expr_arena.get(*input) {
-                m @ Alias(..) | m @ Cast { .. } => {
-                    let m = m.clone();
-                    let input = m.get_input().first();
+                ae @ Alias(..) | ae @ Cast { .. } => {
+                    let ae = ae.clone();
+                    self.scratch.clear();
+                    ae.nodes(&mut self.scratch);
+                    let input = self.scratch[0];
                     let new_input = pushdown(input, offset, length, expr_arena);
-                    Some(m.replace_inputs(&[new_input]))
+                    Some(ae.replace_inputs(&[new_input]))
                 }
                 Literal(lv) => {
                     match lv {

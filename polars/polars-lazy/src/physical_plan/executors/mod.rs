@@ -22,6 +22,7 @@ use std::borrow::Cow;
 
 pub use executor::*;
 use polars_core::POOL;
+use polars_plan::constants::CSE_REPLACED;
 use polars_plan::global::FETCH_ROWS;
 use polars_plan::utils::*;
 use rayon::prelude::*;
@@ -167,11 +168,26 @@ pub(super) fn evaluate_physical_expressions(
         unsafe {
             df.hstack_mut_unchecked(&tmp_cols);
         }
-        let result = run_exprs_par(df, exprs, state)?;
+        let mut result = run_exprs_par(df, exprs, state)?;
         // restore original df
         unsafe {
             df.get_columns_mut().truncate(width);
         }
+
+        // the replace CSE has a temporary name
+        // we don't want this name in the result
+        for s in result.iter_mut() {
+            let field = s.field().into_owned();
+            let name = &field.name;
+            if name.starts_with(CSE_REPLACED) {
+                let pat = r#"col("#;
+                let offset = name.rfind(pat).unwrap() + pat.len();
+                // -1 is `)` of `col(foo)`
+                let name = &name[offset..name.len() - 1];
+                s.rename(name);
+            }
+        }
+
         result
     } else if has_windows {
         execute_projection_cached_window_fns(df, exprs, state)?
