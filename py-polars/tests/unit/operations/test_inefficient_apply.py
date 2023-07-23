@@ -9,8 +9,8 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal
-from polars.utils.udfs.udfs import _NUMPY_FUNCTIONS, BytecodeParser
-from tests.test_udfs import TEST_CASES, MY_CONSTANT
+from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
+from tests.test_udfs import MY_CONSTANT, TEST_CASES
 
 
 @pytest.mark.parametrize(

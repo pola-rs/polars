@@ -8,15 +8,15 @@ All that needs to be installed is numpy and pytest.
 
 Usage:
 
-    $ PYTHONPATH=polars/utils/udfs pytest tests/test_udfs.py
+    $ PYTHONPATH=polars/utils pytest tests/test_udfs.py
 
 Running it without `PYTHONPATH` set will result in the test being skipped.
 """
+import json
+from typing import Any, Callable
+
 import numpy
 import numpy as np
-from typing import Any, Callable
-import json
-
 import pytest
 
 MY_CONSTANT = 3
@@ -78,6 +78,7 @@ TEST_CASES = [
     # json expr: load/extract
     ("c", lambda x: json.loads(x), 'pl.col("c").str.json_extract()'),
 ]
+
 
 @pytest.mark.parametrize(
     ("col", "func", "expected"),

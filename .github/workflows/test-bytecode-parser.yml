@@ -46,4 +46,4 @@ jobs:
 
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
-        run: PYTHONPATH=polars/utils/udfs pytest tests/test_udfs.py
+        run: PYTHONPATH=polars/utils pytest tests/test_udfs.py
