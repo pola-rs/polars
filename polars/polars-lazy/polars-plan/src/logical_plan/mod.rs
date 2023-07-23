@@ -200,7 +200,7 @@ pub enum LogicalPlan {
         #[cfg_attr(feature = "serde", serde(skip))]
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        options: GroupbyOptions,
+        options: Arc<GroupbyOptions>,
     },
     /// Join operation
     Join {

@@ -376,6 +376,7 @@ pub fn create_physical_plan(
             options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
+            let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             let phys_keys = create_physical_expressions(
                 &keys,
                 Context::Default,

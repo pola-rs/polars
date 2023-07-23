@@ -125,7 +125,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         aggs: Vec<Node>,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        options: GroupbyOptions,
+        options: Arc<GroupbyOptions>,
     ) -> Self {
         let current_schema = self.schema();
         // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan

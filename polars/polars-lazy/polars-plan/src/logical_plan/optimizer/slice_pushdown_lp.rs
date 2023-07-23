@@ -223,7 +223,8 @@ impl SlicePushDown {
                 let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
                 let input= lp_arena.add(input_lp);
 
-                options.slice = Some((state.offset, state.len as usize));
+                let mut_options= Arc::make_mut(&mut options);
+                mut_options.slice = Some((state.offset, state.len as usize));
 
                 Ok(Aggregate {
                     input,

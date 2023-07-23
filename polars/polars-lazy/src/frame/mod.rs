@@ -1408,7 +1408,7 @@ impl LazyGroupBy {
             schema,
             apply: Some(Arc::new(f)),
             maintain_order: self.maintain_order,
-            options,
+            options: Arc::new(options),
         };
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }

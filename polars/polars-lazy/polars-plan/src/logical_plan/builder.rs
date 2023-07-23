@@ -599,7 +599,7 @@ impl LogicalPlanBuilder {
         let options = GroupbyOptions {
             dynamic: dynamic_options,
             rolling: rolling_options,
-            slice: None,
+            slice: None
         };
 
         #[cfg(not(feature = "dynamic_groupby"))]
@@ -612,7 +612,7 @@ impl LogicalPlanBuilder {
             schema: Arc::new(schema),
             apply,
             maintain_order,
-            options,
+            options: Arc::new(options),
         }
         .into()
     }

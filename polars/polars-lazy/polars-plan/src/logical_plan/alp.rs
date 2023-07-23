@@ -81,7 +81,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        options: GroupbyOptions,
+        options: Arc<GroupbyOptions>,
     },
     Join {
         input_left: Node,
@@ -499,5 +499,15 @@ impl ALogicalPlan {
         let mut inputs = [None, None];
         self.copy_inputs(&mut inputs);
         inputs[0]
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_alp_size() {
+        dbg!(std::mem::size_of::<ALogicalPlan>());
     }
 }

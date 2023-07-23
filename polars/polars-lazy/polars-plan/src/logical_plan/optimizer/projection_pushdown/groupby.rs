@@ -9,7 +9,7 @@ pub(super) fn process_groupby(
     apply: Option<Arc<dyn DataFrameUdf>>,
     schema: SchemaRef,
     maintain_order: bool,
-    options: GroupbyOptions,
+    options: Arc<GroupbyOptions>,
     acc_projections: Vec<Node>,
     projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
