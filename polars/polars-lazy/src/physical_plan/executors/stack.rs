@@ -45,12 +45,11 @@ impl Executor for StackExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                let s = if self.cse_exprs.is_empty() {
-                    "run StackExec"
+                if self.cse_exprs.is_empty() {
+                    println!("run StackExec");
                 } else {
-                    "run StackExec with CSE"
+                    println!("run StackExec with {} CSE", self.cse_exprs.len());
                 };
-                println!("{s}");
             }
         }
         let df = self.input.execute(state)?;

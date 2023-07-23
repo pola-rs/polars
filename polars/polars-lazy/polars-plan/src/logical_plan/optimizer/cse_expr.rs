@@ -422,7 +422,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
     fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<RewriteRecursion> {
         use ALogicalPlan::*;
         Ok(match node.to_alp() {
-            Projection { .. } | HStack { .. } => RewriteRecursion::NoMutateAndContinue,
+            Projection { .. } | HStack { .. } => RewriteRecursion::MutateAndContinue,
             _ => RewriteRecursion::NoMutateAndContinue,
         })
     }
@@ -497,12 +497,8 @@ mod test {
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
 
         let mut replaced_ids = Default::default();
-        let mut rewriter = CommonSubExprRewriter::new(
-            &mut se_count,
-            &mut id_array,
-            &mut replaced_ids,
-            id_array_offset,
-        );
+        let mut rewriter =
+            CommonSubExprRewriter::new(&se_count, &id_array, &mut replaced_ids, id_array_offset);
         let ae_node =
             AexprNode::with_context(node, &mut arena, |ae_node| ae_node.rewrite(&mut rewriter))
                 .unwrap();

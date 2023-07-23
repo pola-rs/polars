@@ -75,13 +75,11 @@ impl Executor for ProjectionExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                let s = if self.cse_expr.is_empty() {
-                    "run ProjectionExec"
+                if self.cse_expr.is_empty() {
+                    println!("run ProjectionExec");
                 } else {
-                    "run ProjectionExec with CSE"
+                    println!("run ProjectionExec with {} CSE", self.cse_expr.len())
                 };
-
-                println!("{s}")
             }
         }
         let df = self.input.execute(state)?;

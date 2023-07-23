@@ -1,6 +1,7 @@
 import re
 from datetime import date
 from tempfile import NamedTemporaryFile
+from typing import Any
 
 import pytest
 
@@ -132,3 +133,44 @@ def test_schema_row_count_cse() -> None:
         "A_right": [["Gr1", "Gr1"]],
     }
     csv_a.close()
+
+
+def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    q = pl.LazyFrame(
+        {
+            "a": [1, 2, 3, 4],
+            "b": [1, 2, 3, 4],
+            "c": [1, 2, 3, 4],
+        }
+    )
+
+    derived = (pl.col("a") * pl.col("b")).sum()
+    derived2 = derived * derived
+
+    exprs = [
+        derived.alias("d1"),
+        (derived * pl.col("c").sum() - 1).alias("foo"),
+        derived2.alias("d2"),
+        (derived2 * 10).alias("d3"),
+    ]
+
+    assert q.select(exprs).collect(comm_subexpr_elim=True).to_dict(False) == {
+        "d1": [30],
+        "foo": [299],
+        "d2": [900],
+        "d3": [9000],
+    }
+    assert q.with_columns(exprs).collect(comm_subexpr_elim=True).to_dict(False) == {
+        "a": [1, 2, 3, 4],
+        "b": [1, 2, 3, 4],
+        "c": [1, 2, 3, 4],
+        "d1": [30, 30, 30, 30],
+        "foo": [299, 299, 299, 299],
+        "d2": [900, 900, 900, 900],
+        "d3": [9000, 9000, 9000, 9000],
+    }
+
+    out = capfd.readouterr().out
+    assert "run ProjectionExec with 2 CSE" in out
+    assert "run StackExec with 2 CSE" in out
