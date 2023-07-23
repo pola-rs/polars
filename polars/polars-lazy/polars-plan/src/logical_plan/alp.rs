@@ -89,7 +89,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         left_on: Vec<Node>,
         right_on: Vec<Node>,
-        options: JoinOptions,
+        options: Arc<JoinOptions>,
     },
     HStack {
         input: Node,
@@ -516,5 +516,6 @@ mod test {
         dbg!(std::mem::size_of::<DistinctOptions>());
         dbg!(std::mem::size_of::<FunctionNode>());
         dbg!(std::mem::size_of::<FileSinkOptions>());
+        dbg!(std::mem::size_of::<UnionOptions>());
     }
 }

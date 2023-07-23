@@ -1523,7 +1523,8 @@ impl JoinBuilder {
                     force_parallel: self.force_parallel,
                     args,
                     ..Default::default()
-                },
+                }
+                .into(),
             )
             .build();
         LazyFrame::from_logical_plan(lp, opt_state)

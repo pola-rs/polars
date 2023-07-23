@@ -176,7 +176,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         other: Node,
         left_on: Vec<Node>,
         right_on: Vec<Node>,
-        options: JoinOptions,
+        options: Arc<JoinOptions>,
     ) -> Self {
         let schema_left = self.schema();
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);

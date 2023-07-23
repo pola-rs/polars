@@ -505,6 +505,7 @@ pub fn create_physical_plan(
                 None,
                 &mut Default::default(),
             )?;
+            let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             Ok(Box::new(executors::JoinExec::new(
                 input_left,
                 input_right,

@@ -207,7 +207,8 @@ impl SlicePushDown {
 
                 // then assign the slice state to the join operation
 
-                options.args.slice = Some((state.offset, state.len as usize));
+                let mut_options = Arc::make_mut(&mut options);
+                mut_options.args.slice = Some((state.offset, state.len as usize));
 
                 Ok(Join {
                     input_left,

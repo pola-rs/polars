@@ -209,7 +209,7 @@ pub enum LogicalPlan {
         schema: SchemaRef,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
-        options: JoinOptions,
+        options: Arc<JoinOptions>,
     },
     /// Adding columns to the table without a Join
     HStack {
