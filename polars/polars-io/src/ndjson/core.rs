@@ -307,9 +307,18 @@ fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> Pol
     // It is used to properly iterate over the lines without re-implementing the splitlines logic when this does the same thing.
     let mut iter =
         serde_json::Deserializer::from_slice(bytes).into_iter::<Box<serde_json::value::RawValue>>();
-    while let Some(Ok(value)) = iter.next() {
-        let bytes = value.get().as_bytes();
-        parse_impl(bytes, buffers, &mut buf)?;
+    while let Some(value_result) = iter.next() {
+        match value_result {
+            Ok(value) => {
+                let bytes = value.get().as_bytes();
+                parse_impl(bytes, buffers, &mut buf)?;
+            }
+            Err(e) => {
+                return Err(PolarsError::ComputeError(
+                    format!("error parsing line: {}", e).into(),
+                ))
+            }
+        }
     }
     Ok(())
 }
