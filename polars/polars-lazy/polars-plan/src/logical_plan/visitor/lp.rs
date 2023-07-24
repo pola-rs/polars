@@ -1,5 +1,7 @@
 use std::borrow::Cow;
+
 use polars_core::schema::SchemaRef;
+
 use super::*;
 use crate::prelude::*;
 
@@ -75,17 +77,15 @@ impl ALogicalPlanNode {
         self.with_arena_mut(|arena| arena.get_mut(node))
     }
 
-    pub fn schema(&self) -> Cow<SchemaRef>{
-        self.with_arena(|arena| {
-            arena.get(self.node).schema(arena)
-        })
+    pub fn schema(&self) -> Cow<SchemaRef> {
+        self.with_arena(|arena| arena.get(self.node).schema(arena))
     }
 
     /// Take a `Node` and convert it an `ALogicalPlanNode` and call
     /// `F` with `self` and the new created `ALogicalPlanNode`
     pub fn binary<F, T>(&self, other: Node, op: F) -> T
-        where
-            F: FnOnce(&ALogicalPlanNode, &ALogicalPlanNode) -> T,
+    where
+        F: FnOnce(&ALogicalPlanNode, &ALogicalPlanNode) -> T,
     {
         // this is safe as we remain in context
         let other = unsafe { ALogicalPlanNode::from_raw(other, self.arena) };

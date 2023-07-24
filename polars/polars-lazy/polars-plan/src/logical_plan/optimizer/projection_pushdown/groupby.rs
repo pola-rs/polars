@@ -89,7 +89,7 @@ pub(super) fn process_groupby(
 
         let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena).groupby(
             keys,
-            projected_aggs.into(),
+            projected_aggs,
             apply,
             maintain_order,
             options,

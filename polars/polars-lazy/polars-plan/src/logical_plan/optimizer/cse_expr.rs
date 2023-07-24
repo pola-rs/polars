@@ -135,7 +135,11 @@ impl ExprIdentifierVisitor<'_> {
     fn accept_node(&self, ae: &AExpr) -> bool {
         match ae {
             // skip window functions for now until we properly implemented the physical side
-            AExpr::Column(_) | AExpr::Count | AExpr::Literal(_) | AExpr::Window { .. } | AExpr::Alias(_, _) => false,
+            AExpr::Column(_)
+            | AExpr::Count
+            | AExpr::Literal(_)
+            | AExpr::Window { .. }
+            | AExpr::Alias(_, _) => false,
             #[cfg(feature = "random")]
             AExpr::Function {
                 function: FunctionExpr::Random { .. },
@@ -517,7 +521,6 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                 if let Some(aggs) =
                     self.find_cse(aggs, &mut expr_arena, &mut id_array_offsets, true)?
                 {
-
                     let keys = keys.clone();
                     let options = options.clone();
                     let schema = schema.clone();
@@ -539,7 +542,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         options,
                         schema,
                         maintain_order,
-                        apply
+                        apply,
                     };
                     node.replace(lp);
                 }

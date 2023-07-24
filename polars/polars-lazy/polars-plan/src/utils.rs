@@ -233,15 +233,13 @@ pub(crate) fn aexpr_to_column_nodes_iter<'a>(
     root: Node,
     arena: &'a Arena<AExpr>,
 ) -> FlatMap<AExprIter<'a>, Option<Node>, fn((Node, &'a AExpr)) -> Option<Node>> {
-    arena.iter(root).flat_map(
-        |(node, ae)| {
-            if is_column_aexpr(ae) {
-                Some(node)
-            } else {
-                None
-            }
-        },
-    )
+    arena.iter(root).flat_map(|(node, ae)| {
+        if is_column_aexpr(ae) {
+            Some(node)
+        } else {
+            None
+        }
+    })
 }
 
 pub(crate) fn aexpr_to_column_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node> {

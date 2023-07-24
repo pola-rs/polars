@@ -24,7 +24,7 @@ use crate::prelude::optimizer::projection_pushdown::projection::process_projecti
 use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::{
-    aexpr_assign_renamed_leaf, aexpr_to_leaf_names, aexpr_to_column_nodes, check_input_node,
+    aexpr_assign_renamed_leaf, aexpr_to_column_nodes, aexpr_to_leaf_names, check_input_node,
     expr_is_projected_upstream,
 };
 
