@@ -557,7 +557,7 @@ impl PredicatePushDown {
 
             }
             // Pushed down passed these nodes
-            lp@ FileSink {..} => {
+            lp@ FileSink {..} | lp @ CloudSink {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {

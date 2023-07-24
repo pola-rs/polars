@@ -255,6 +255,10 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         payload: FileSinkOptions,
     },
+    CloudSink {
+        input: Box<LogicalPlan>,
+        payload: CloudSinkOptions,
+    },
 }
 
 impl Default for LogicalPlan {

@@ -232,6 +232,10 @@ impl LogicalPlan {
                 write!(f, "{:indent$}FILE_SINK", "")?;
                 input._format(f, sub_indent)
             }
+            CloudSink { input, .. } => {
+                write!(f, "{:indent$}CLOUD_SINK", "")?;
+                input._format(f, sub_indent)
+            }
         }
     }
 }
