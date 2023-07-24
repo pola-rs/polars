@@ -508,10 +508,10 @@ impl LazyFrame {
         let streaming = self.opt_state.streaming;
         #[cfg(feature = "cse")]
         if streaming && self.opt_state.comm_subplan_elim {
-            polars_warn!("Cannot combine 'streaming' with 'common_subplan_elimination'. CSE will be turned off.");
+            polars_warn!(
+                "Cannot combine 'streaming' with 'comm_subplan_elim'. CSE will be turned off."
+            );
             opt_state.comm_subplan_elim = false;
-            // TODO! toggle on once implemented on the physical side
-            opt_state.comm_subexpr_elim = false;
         }
         let lp_top = optimize(self.logical_plan, opt_state, lp_arena, expr_arena, scratch)?;
 

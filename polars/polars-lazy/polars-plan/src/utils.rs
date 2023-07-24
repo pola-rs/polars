@@ -5,6 +5,7 @@ use std::sync::Arc;
 use polars_core::prelude::*;
 use smartstring::alias::String as SmartString;
 
+use crate::constants::CSE_REPLACED;
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
@@ -410,4 +411,16 @@ pub fn expr_is_projected_upstream(
         .unwrap();
     let output_name = output_field.name();
     projected_names.contains(output_name.as_str())
+}
+
+pub fn rename_cse_tmp_series(s: &mut Series) {
+    if s.name().starts_with(CSE_REPLACED) {
+        let field = s.field().into_owned();
+        let name = &field.name;
+        let pat = r#"col("#;
+        let offset = name.rfind(pat).unwrap() + pat.len();
+        // -1 is `)` of `col(foo)`
+        let name = &name[offset..name.len() - 1];
+        s.rename(name);
+    }
 }
