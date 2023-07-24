@@ -25,9 +25,18 @@ fn main() -> PolarsResult<()> {
         )
         .unwrap();
 
-    // let path = "/tmp/polars_write_example.parquet".into();
-    // let df = df.lazy().sink_parquet(path, Default::default()).unwrap();
-    let uri = "file///tmp/polars_write_example.parquet".to_string();
+    let path = "/tmp/polars_write_example.parquet".into();
+    let df = df.lazy().sink_parquet(path, Default::default()).unwrap();
+
+    dbg!(df);
+
+    let df =
+        df!(
+            "foo" => &[1, 2, 3],
+            "bar" => &[None, Some("bak"), Some("baz")],
+        )
+        .unwrap();
+    let uri = "file:///tmp/polars_write_example.parquet".to_string();
     let df = df.lazy().sink_parquet_cloud(uri, None, Default::default()).unwrap();
 
     // let df = LazyFrame::scan_parquet(TEST_S3, args)?
