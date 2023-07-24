@@ -305,11 +305,18 @@ fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> Pol
 
     // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
     // It is used to properly iterate over the lines without re-implementing the splitlines logic when this does the same thing.
-    let mut iter =
+    let iter =
         serde_json::Deserializer::from_slice(bytes).into_iter::<Box<serde_json::value::RawValue>>();
-    while let Some(Ok(value)) = iter.next() {
-        let bytes = value.get().as_bytes();
-        parse_impl(bytes, buffers, &mut buf)?;
+    for value_result in iter {
+        match value_result {
+            Ok(value) => {
+                let bytes = value.get().as_bytes();
+                parse_impl(bytes, buffers, &mut buf)?;
+            }
+            Err(e) => {
+                polars_bail!(ComputeError: "error parsing ndjson {}", e)
+            }
+        }
     }
     Ok(())
 }
