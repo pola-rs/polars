@@ -7,7 +7,7 @@ import warnings
 from collections import defaultdict
 from dis import get_instructions
 from inspect import signature
-from itertools import islice
+from itertools import zip_longest
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
 
 if TYPE_CHECKING:
@@ -59,20 +59,25 @@ _UNARY_OPCODES = {
 _SYNTHETIC_OPS = {
     "POLARS_EXPRESSION",
 }
-_SIMPLE_EXPR_OPS = {
-    "BINARY_OP",
-    "COMPARE_OP",
-    "CONTAINS_OP",
-    "IS_OP",
+_LOAD_OPS = {
     "LOAD_CONST",
     "LOAD_DEREF",
     "LOAD_FAST",
     "LOAD_GLOBAL",
 }
-_SIMPLE_EXPR_OPS |= set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES) | _SYNTHETIC_OPS
+_SIMPLE_EXPR_OPS = {
+    "BINARY_OP",
+    "COMPARE_OP",
+    "CONTAINS_OP",
+    "IS_OP",
+}
+_SIMPLE_EXPR_OPS |= (
+    set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES) | _LOAD_OPS | _SYNTHETIC_OPS
+)
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
 _UNARY_OPCODE_VALUES = set(_UNARY_OPCODES.values())
 _UPGRADE_BINARY_OPS = sys.version_info < (3, 11)
+_LOAD_OPS |= {"LOAD_METHOD", "LOAD_ATTR"}
 
 # numpy functions that we can map to a native expression
 _NUMPY_MODULE_ALIASES = {"np", "numpy"}
@@ -84,7 +89,6 @@ _PYTHON_METHOD_MAP = {
     "lower": "str.to_lowercase",
     "title": "str.to_titlecase",
     "upper": "str.to_uppercase",
-    "loads": "str.json_extract",
 }
 
 
@@ -340,7 +344,7 @@ class InstructionTranslator:
             for inst in instructions:
                 stack.append(
                     inst.argrepr
-                    if inst.opname.startswith("LOAD_")
+                    if inst.opname in _LOAD_OPS
                     else (
                         StackValue(
                             operator=self.op(inst),
@@ -380,8 +384,7 @@ class RewrittenInstructions:
     _ignored_ops = frozenset(["COPY_FREE_VARS", "PRECALL", "RESUME", "RETURN_VALUE"])
 
     def __init__(self, instructions: Iterator[Instruction]):
-        self._instructions = instructions
-        self._rewritten_instructions = self._apply_rules(
+        self._rewritten_instructions = self._rewrite(
             self._upgrade_instruction(inst)
             for inst in instructions
             if inst.opname not in self._ignored_ops
@@ -396,7 +399,42 @@ class RewrittenInstructions:
     def __getitem__(self, item: Any) -> Instruction:
         return self._rewritten_instructions[item]
 
-    def _apply_rules(self, instructions: Iterator[Instruction]) -> list[Instruction]:
+    def _matches(
+        self,
+        idx: int,
+        *,
+        opnames: list[str],
+        argvals: list[set[Any] | dict[Any, Any]] | None,
+    ) -> list[Instruction]:
+        """
+        Check if a sequence of Instructions matches the specified ops/argvals.
+
+        Parameters
+        ----------
+        idx
+            The index of the first instruction to check.
+        opnames
+            The full opname sequence that defines a match.
+        argvals
+            Associated argvals that must also match (in same position as opnames).
+        """
+        n_required_ops, argvals = len(opnames), argvals or []
+        instructions = self._instructions[idx : idx + n_required_ops]
+        if len(instructions) == n_required_ops and all(
+            (
+                inst.opname == match_opname
+                if match_opname[-1] != "*"
+                else inst.opname.startswith(match_opname[:-1])
+            )
+            and (match_argval is None or inst.argval in match_argval)
+            for inst, match_opname, match_argval in zip_longest(
+                instructions, opnames, argvals
+            )
+        ):
+            return instructions
+        return []
+
+    def _rewrite(self, instructions: Iterator[Instruction]) -> list[Instruction]:
         """
         Apply rewrite rules, potentially injecting synthetic operations.
 
@@ -404,11 +442,13 @@ class RewrittenInstructions:
         it as needed, pushing updates into "updated_instructions" and
         returning True/False to indicate if any changes were made.
         """
-        self._instructions = instructions
+        self._instructions = list(instructions)
         updated_instructions: list[Instruction] = []
-        for inst in instructions:
-            if not any(
-                apply_rewrite(inst, updated_instructions)
+        idx = 0
+        while idx < len(self._instructions):
+            inst, increment = self._instructions[idx], 1
+            if inst.opname not in _LOAD_OPS or not any(
+                (increment := apply_rewrite(idx, updated_instructions))
                 for apply_rewrite in (
                     # add any other rewrite methods here
                     self._rewrite_functions,
@@ -417,88 +457,72 @@ class RewrittenInstructions:
                 )
             ):
                 updated_instructions.append(inst)
+            idx += increment or 1
         return updated_instructions
 
     def _rewrite_builtins(
-        self, inst: Instruction, instructions: list[Instruction]
-    ) -> bool:
-        if inst.opname == "LOAD_GLOBAL" and inst.argval in _PYTHON_CASTS_MAP:
-            instruction_buffer = list(islice(self._instructions, 2))
-            if (
-                len(instruction_buffer) == 2
-                and instruction_buffer[0].opname == "LOAD_FAST"
-                and instruction_buffer[1].opname.startswith("CALL")
-                and (dtype := _PYTHON_CASTS_MAP.get(inst.argval)) is not None
-            ):
-                synthetic_call = inst._replace(
-                    opname="POLARS_EXPRESSION",
-                    argval=f"cast(pl.{dtype})",
-                    argrepr=f"cast(pl.{dtype})",
-                    offset=instruction_buffer[0].offset,
-                )
-                operand = instruction_buffer[0]._replace(offset=inst.offset)
-                instructions.extend((operand, synthetic_call))
-            else:
-                instructions.append(inst)
-                instructions.extend(instruction_buffer)
-            return True
-        return False
+        self, idx: int, updated_instructions: list[Instruction]
+    ) -> int:
+        """Replace builtin function calls with a synthetic POLARS_EXPRESSION op."""
+        if matching_instructions := self._matches(
+            idx,
+            opnames=["LOAD_GLOBAL", "LOAD_FAST", "CALL*"],
+            argvals=[_PYTHON_CASTS_MAP],
+        ):
+            inst1, inst2 = matching_instructions[:2]
+            dtype = _PYTHON_CASTS_MAP[inst1.argval]
+            synthetic_call = inst1._replace(
+                opname="POLARS_EXPRESSION",
+                argval=f"cast(pl.{dtype})",
+                argrepr=f"cast(pl.{dtype})",
+                offset=inst2.offset,
+            )
+            # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
+            operand = inst2._replace(offset=inst1.offset)
+            updated_instructions.extend((operand, synthetic_call))
+
+        return len(matching_instructions)
 
     def _rewrite_functions(
-        self, inst: Instruction, instructions: list[Instruction]
-    ) -> bool:
+        self, idx: int, updated_instructions: list[Instruction]
+    ) -> int:
         """Replace numpy/json function calls with a synthetic POLARS_EXPRESSION op."""
-        if inst.opname == "LOAD_GLOBAL" and (
-            inst.argval in _NUMPY_MODULE_ALIASES or inst.argval == "json"
+        if matching_instructions := self._matches(
+            idx,
+            opnames=["LOAD_GLOBAL", "LOAD_*", "LOAD_*", "CALL*"],
+            argvals=[_NUMPY_MODULE_ALIASES | {"json"}, _NUMPY_FUNCTIONS | {"loads"}],
         ):
-            instruction_buffer = list(islice(self._instructions, 3))
-            if (
-                len(instruction_buffer) == 3
-                and (
-                    instruction_buffer[0].argval == "loads"
-                    or instruction_buffer[0].argval in _NUMPY_FUNCTIONS
-                )
-                and instruction_buffer[1].opname.startswith("LOAD_")
-                and instruction_buffer[2].opname.startswith("CALL")
-            ):
-                # note: synthetic POLARS_EXPRESSION is mapped as a unary
-                # op, so we switch the instruction order on injection
-                expr_name = instruction_buffer[0].argval
-                expr_name = _PYTHON_METHOD_MAP.get(expr_name, expr_name)
-                synthetic_call = inst._replace(
-                    opname="POLARS_EXPRESSION",
-                    argval=expr_name,
-                    argrepr=expr_name,
-                    offset=instruction_buffer[1].offset,
-                )
-                operand = instruction_buffer[1]._replace(offset=inst.offset)
-                instructions.extend((operand, synthetic_call))
-            else:
-                instructions.append(inst)
-                instructions.extend(instruction_buffer)
-            return True
-        return False
+            inst1, inst2, inst3 = matching_instructions[:3]
+            expr_name = "str.json_extract" if inst1.argval == "json" else inst2.argval
+            synthetic_call = inst1._replace(
+                opname="POLARS_EXPRESSION",
+                argval=expr_name,
+                argrepr=expr_name,
+                offset=inst3.offset,
+            )
+            # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
+            operand = inst3._replace(offset=inst1.offset)
+            updated_instructions.extend((operand, synthetic_call))
+
+        return len(matching_instructions)
 
     def _rewrite_methods(
-        self, inst: Instruction, instructions: list[Instruction]
-    ) -> bool:
+        self, idx: int, updated_instructions: list[Instruction]
+    ) -> int:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
-        if inst.opname == "LOAD_METHOD" and inst.argval in _PYTHON_METHOD_MAP:
-            if (
-                instruction_buffer := list(islice(self._instructions, 1))
-            ) and instruction_buffer[0].opname.startswith("CALL"):
-                expr_name = _PYTHON_METHOD_MAP[inst.argval]
-                synthetic_call = inst._replace(
-                    opname="POLARS_EXPRESSION",
-                    argval=expr_name,
-                    argrepr=expr_name,
-                )
-                instructions.append(synthetic_call)
-            else:
-                instructions.append(inst)
-                instructions.extend(instruction_buffer)
-            return True
-        return False
+        if matching_instructions := self._matches(
+            idx,
+            opnames=["LOAD_METHOD", "CALL*"],
+            argvals=[_PYTHON_METHOD_MAP],
+        ):
+            inst = matching_instructions[0]
+            expr_name = _PYTHON_METHOD_MAP[inst.argval]
+            synthetic_call = inst._replace(
+                opname="POLARS_EXPRESSION", argval=expr_name, argrepr=expr_name
+            )
+            updated_instructions.append(synthetic_call)
+
+        return len(matching_instructions)
 
     @staticmethod
     def _upgrade_instruction(inst: Instruction) -> Instruction:
