@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
+#[cfg(feature = "cse")]
 use polars_plan::utils::rename_cse_tmp_series;
 
 use crate::expressions::PhysicalPipedExpr;

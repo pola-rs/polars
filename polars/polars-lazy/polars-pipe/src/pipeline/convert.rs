@@ -401,7 +401,7 @@ fn get_hstack<F>(
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
     input_schema: SchemaRef,
-    cse_exprs: Option<Box<HstackOperator>>,
+    #[cfg(feature = "cse")] cse_exprs: Option<Box<HstackOperator>>,
 ) -> PolarsResult<HstackOperator>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -409,6 +409,7 @@ where
     Ok(operators::HstackOperator {
         exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(&input_schema))?,
         input_schema,
+        #[cfg(feature = "cse")]
         cse_exprs,
     })
 }
@@ -476,6 +477,7 @@ where
                 expr_arena,
                 to_physical,
                 (*input_schema).clone(),
+                #[cfg(feature = "cse")]
                 cse_exprs,
             )?;
 
