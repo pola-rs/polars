@@ -22,7 +22,7 @@ trait SinkWriter {
 }
 
 #[cfg(feature = "parquet")]
-impl SinkWriter for polars_io::parquet::BatchedWriter<std::fs::File> {
+impl<W: std::io::Write> SinkWriter for polars_io::parquet::BatchedWriter<W> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)
     }
@@ -34,7 +34,7 @@ impl SinkWriter for polars_io::parquet::BatchedWriter<std::fs::File> {
 }
 
 #[cfg(feature = "ipc")]
-impl SinkWriter for polars_io::ipc::BatchedWriter<std::fs::File> {
+impl<W: std::io::Write> SinkWriter for polars_io::ipc::BatchedWriter<W> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)
     }
@@ -76,6 +76,50 @@ impl ParquetSink {
             receiver,
             writer,
             options.maintain_order,
+            morsels_per_sink,
+        )));
+
+        Ok(FilesSink {
+            sender,
+            io_thread_handle,
+        })
+    }
+}
+
+#[cfg(all(feature = "parquet"))]
+// #[cfg(all(feature = "cloud", feature = "parquet"))]
+pub struct ParquetCloudSink {}
+#[cfg(all(feature = "parquet"))]
+// #[cfg(all(feature = "cloud", feature = "parquet"))]
+impl ParquetCloudSink {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(
+        uri: &str,
+        cloud_options: Option<&polars_core::cloud::CloudOptions>,
+        parquet_options: ParquetWriteOptions,
+        schema: &Schema,
+    ) -> PolarsResult<FilesSink> {
+        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options)?;
+        let writer = ParquetWriter::new(cloud_writer)
+            .with_compression(parquet_options.compression)
+            .with_data_pagesize_limit(parquet_options.data_pagesize_limit)
+            .with_statistics(parquet_options.statistics)
+            .with_row_group_size(parquet_options.row_group_size)
+            // This is important! Otherwise we will deadlock
+            // See: #7074
+            .set_parallel(false)
+            .batched(schema)?;
+
+        let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
+
+        let morsels_per_sink = morsels_per_sink();
+        let backpressure = morsels_per_sink * 2;
+        let (sender, receiver) = bounded(backpressure);
+
+        let io_thread_handle = Arc::new(Some(init_writer_thread(
+            receiver,
+            writer,
+            parquet_options.maintain_order,
             morsels_per_sink,
         )));
 
