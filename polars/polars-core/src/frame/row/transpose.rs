@@ -91,10 +91,10 @@ impl DataFrame {
         let names_t = match new_col_names {
             None => (0..self.height()).map(|i| format!("column_{i}")).collect(),
             Some(cn) => match cn {
-                Either::Left(cname) => {
-                    let new_names = self.column(&cname).and_then(|x| x.utf8())?;
+                Either::Left(name) => {
+                    let new_names = self.column(&name).and_then(|x| x.utf8())?;
                     polars_ensure!(!new_names.has_validity(), ComputeError: "Column with new names can't have null values");
-                    df = Cow::Owned(self.drop(&cname)?);
+                    df = Cow::Owned(self.drop(&name)?);
                     new_names
                         .into_no_null_iter()
                         .map(|s| s.to_owned())
