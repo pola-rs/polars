@@ -86,11 +86,11 @@ impl ParquetSink {
     }
 }
 
-#[cfg(all(feature = "parquet"))]
-// #[cfg(all(feature = "cloud", feature = "parquet"))]
+// TODO: Add cloud feature?
+#[cfg(feature = "parquet")]
 pub struct ParquetCloudSink {}
-#[cfg(all(feature = "parquet"))]
-// #[cfg(all(feature = "cloud", feature = "parquet"))]
+// TODO: Add cloud feature?
+#[cfg(feature = "parquet")]
 impl ParquetCloudSink {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(

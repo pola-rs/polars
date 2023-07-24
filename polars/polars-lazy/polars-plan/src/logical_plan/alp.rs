@@ -116,6 +116,10 @@ pub enum ALogicalPlan {
         input: Node,
         payload: FileSinkOptions,
     },
+    CloudSink {
+        input: Node,
+        payload: CloudSinkOptions,
+    }
 }
 
 impl Default for ALogicalPlan {
