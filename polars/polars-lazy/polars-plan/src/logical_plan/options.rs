@@ -306,7 +306,7 @@ pub enum FileType {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct CloudSinkOptions {
-    pub uri: Arc<str>,
+    pub uri: Arc<String>,
     pub cloud_options: Option<CloudOptions>,
     pub parquet_options: ParquetWriteOptions,
 }

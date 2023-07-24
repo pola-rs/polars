@@ -609,6 +609,30 @@ impl LazyFrame {
         Ok(())
     }
 
+    /// Stream a query result into a parquet file on an ObjectStore-compatible cloud service. This is useful if the final result doesn't fit
+    /// into memory, and where you do not want to write to a local file but to a location in the cloud.
+    /// This method will return an error if the query cannot be completely done in a
+    /// streaming fashion.
+    #[cfg(feature = "parquet")]
+    pub fn sink_parquet_cloud(mut self, uri: String, cloud_options: Option<polars_core::cloud::CloudOptions>, parquet_options: ParquetWriteOptions) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
+        self.logical_plan = LogicalPlan::CloudSink {
+            input: Box::new(self.logical_plan),
+            payload: CloudSinkOptions {
+                uri: Arc::new(uri),
+                cloud_options,
+                parquet_options,
+            },
+        };
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+        polars_ensure!(
+            is_streaming,
+            ComputeError: "cannot run the whole query in a streaming order"
+        );
+        let _ = physical_plan.execute(&mut state)?;
+        Ok(())
+    }
+
     /// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
