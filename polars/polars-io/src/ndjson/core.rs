@@ -314,9 +314,7 @@ fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> Pol
                 parse_impl(bytes, buffers, &mut buf)?;
             }
             Err(e) => {
-                return Err(PolarsError::ComputeError(
-                    format!("error parsing line: {}", e).into(),
-                ))
+                polars_bail!(ComputeError: "error parsing ndjson {}", e)
             }
         }
     }
