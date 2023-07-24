@@ -401,7 +401,8 @@ fn get_hstack<F>(
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
     input_schema: SchemaRef,
-    #[cfg(feature = "cse")] cse_exprs: Option<Box<HstackOperator>>,
+    cse_exprs: Option<Box<HstackOperator>>,
+    unchecked: bool,
 ) -> PolarsResult<HstackOperator>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -409,8 +410,8 @@ where
     Ok(operators::HstackOperator {
         exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(&input_schema))?,
         input_schema,
-        #[cfg(feature = "cse")]
         cse_exprs,
+        unchecked,
     })
 }
 
@@ -428,9 +429,7 @@ where
         Projection { expr, input, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
-            #[cfg(feature = "cse")]
             let cse_exprs = expr.cse_exprs();
-            #[cfg(feature = "cse")]
             let cse_exprs = if cse_exprs.is_empty() {
                 None
             } else {
@@ -440,6 +439,7 @@ where
                     to_physical,
                     (*input_schema).clone(),
                     None,
+                    true,
                 )?)
             };
 
@@ -450,7 +450,6 @@ where
                     &to_physical,
                     Some(&input_schema),
                 )?,
-                #[cfg(feature = "cse")]
                 cse_exprs,
             };
             Box::new(op) as Box<dyn Operator>
@@ -458,9 +457,7 @@ where
         HStack { exprs, input, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
-            #[cfg(feature = "cse")]
             let cse_exprs = exprs.cse_exprs();
-            #[cfg(feature = "cse")]
             let cse_exprs = if cse_exprs.is_empty() {
                 None
             } else {
@@ -470,6 +467,7 @@ where
                     to_physical,
                     (*input_schema).clone(),
                     None,
+                    true,
                 )?))
             };
             let op = get_hstack(
@@ -477,8 +475,8 @@ where
                 expr_arena,
                 to_physical,
                 (*input_schema).clone(),
-                #[cfg(feature = "cse")]
                 cse_exprs,
+                false,
             )?;
 
             Box::new(op) as Box<dyn Operator>

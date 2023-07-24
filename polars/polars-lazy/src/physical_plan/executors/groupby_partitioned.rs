@@ -11,6 +11,7 @@ pub struct PartitionGroupByExec {
     input: Box<dyn Executor>,
     phys_keys: Vec<Arc<dyn PhysicalExpr>>,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
+    cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
     maintain_order: bool,
     slice: Option<(i64, usize)>,
     input_schema: SchemaRef,
@@ -28,6 +29,7 @@ impl PartitionGroupByExec {
         input: Box<dyn Executor>,
         phys_keys: Vec<Arc<dyn PhysicalExpr>>,
         phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
+        cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
         maintain_order: bool,
         slice: Option<(i64, usize)>,
         input_schema: SchemaRef,
@@ -40,6 +42,7 @@ impl PartitionGroupByExec {
             input,
             phys_keys,
             phys_aggs,
+            cse_exprs,
             maintain_order,
             slice,
             input_schema,
@@ -70,6 +73,8 @@ fn run_partitions(
     n_threads: usize,
     maintain_order: bool,
 ) -> PolarsResult<Vec<DataFrame>> {
+    add_cse_columns(df, &exec.cse_exprs, state)?;
+
     // We do a partitioned groupby.
     // Meaning that we first do the groupby operation arbitrarily
     // split on several threads. Than the final result we apply the same groupby again.
@@ -287,6 +292,7 @@ impl PartitionGroupByExec {
                     original_df,
                     keys,
                     &self.phys_aggs,
+                    &[],
                     None,
                     state,
                     self.maintain_order,
@@ -346,7 +352,16 @@ impl PartitionGroupByExec {
                 .zip(&df.get_columns()[self.phys_keys.len()..])
                 .map(|(expr, partitioned_s)| {
                     let agg_expr = expr.as_partitioned_aggregator().unwrap();
-                    agg_expr.finalize(partitioned_s.clone(), groups, state)
+                    let out = agg_expr.finalize(partitioned_s.clone(), groups, state);
+
+                    if !self.cse_exprs.is_empty() {
+                        out.map(|mut s| {
+                            rename_cse_tmp_series(&mut s);
+                            s
+                        })
+                    } else {
+                        out
+                    }
                 })
                 .collect();
 

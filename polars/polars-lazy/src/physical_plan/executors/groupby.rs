@@ -2,11 +2,47 @@ use rayon::prelude::*;
 
 use super::*;
 
+pub(super) fn add_cse_columns(
+    df: &mut DataFrame,
+    cse_exprs: &[Arc<dyn PhysicalExpr>],
+    state: &ExecutionState,
+) -> PolarsResult<()> {
+    let tmp_cols = run_exprs_par(df, cse_exprs, state)?;
+    // put the cse expressions at the end
+    unsafe {
+        df.hstack_mut_unchecked(&tmp_cols);
+    }
+    Ok(())
+}
+
+pub(super) fn evaluate_aggs(
+    df: &DataFrame,
+    aggs: &[Arc<dyn PhysicalExpr>],
+    cse_exprs: &[Arc<dyn PhysicalExpr>],
+    groups: &GroupsProxy,
+    state: &mut ExecutionState,
+) -> PolarsResult<Vec<Series>> {
+    POOL.install(|| {
+        aggs.par_iter()
+            .map(|expr| {
+                let mut agg = expr.evaluate_on_groups(df, groups, state)?.finalize();
+                polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
+
+                if !cse_exprs.is_empty() {
+                    rename_cse_tmp_series(&mut agg)
+                }
+                Ok(agg)
+            })
+            .collect::<PolarsResult<Vec<_>>>()
+    })
+}
+
 /// Take an input Executor and a multiple expressions
 pub struct GroupByExec {
     input: Box<dyn Executor>,
     keys: Vec<Arc<dyn PhysicalExpr>>,
     aggs: Vec<Arc<dyn PhysicalExpr>>,
+    cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
     apply: Option<Arc<dyn DataFrameUdf>>,
     maintain_order: bool,
     input_schema: SchemaRef,
@@ -14,10 +50,12 @@ pub struct GroupByExec {
 }
 
 impl GroupByExec {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         input: Box<dyn Executor>,
         keys: Vec<Arc<dyn PhysicalExpr>>,
         aggs: Vec<Arc<dyn PhysicalExpr>>,
+        cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
         input_schema: SchemaRef,
@@ -27,6 +65,7 @@ impl GroupByExec {
             input,
             keys,
             aggs,
+            cse_exprs,
             apply,
             maintain_order,
             input_schema,
@@ -35,16 +74,21 @@ impl GroupByExec {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn groupby_helper(
     mut df: DataFrame,
     keys: Vec<Series>,
     aggs: &[Arc<dyn PhysicalExpr>],
+    cse_exprs: &[Arc<dyn PhysicalExpr>],
     apply: Option<Arc<dyn DataFrameUdf>>,
     state: &mut ExecutionState,
     maintain_order: bool,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
     df.as_single_chunk_par();
+    if !cse_exprs.is_empty() {
+        add_cse_columns(&mut df, cse_exprs, state)?;
+    }
     let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
@@ -66,15 +110,7 @@ pub(super) fn groupby_helper(
     let (mut columns, agg_columns) = POOL.install(|| {
         let get_columns = || gb.keys_sliced(slice);
 
-        let get_agg = || {
-            aggs.par_iter()
-                .map(|expr| {
-                    let agg = expr.evaluate_on_groups(&df, groups, state)?.finalize();
-                    polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
-                    Ok(agg)
-                })
-                .collect::<PolarsResult<Vec<_>>>()
-        };
+        let get_agg = || evaluate_aggs(&df, aggs, cse_exprs, groups, state);
 
         rayon::join(get_columns, get_agg)
     });
@@ -100,6 +136,7 @@ impl GroupByExec {
             df,
             keys,
             &self.aggs,
+            &self.cse_exprs,
             self.apply.take(),
             state,
             self.maintain_order,

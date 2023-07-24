@@ -36,6 +36,7 @@ pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
 pub use type_coercion::TypeCoercionRule;
+use crate::constants::CSE_REPLACED;
 
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
@@ -198,15 +199,16 @@ pub fn optimize(
     // during debug we check if the optimizations have not modified the final schema
     #[cfg(debug_assertions)]
     {
-        // only check by names because we may supercast types.
-        assert_eq!(
-            prev_schema.iter_names().collect::<Vec<_>>(),
-            lp_arena
-                .get(lp_top)
-                .schema(lp_arena)
-                .iter_names()
-                .collect::<Vec<_>>()
-        );
+        let new_schema = lp_arena
+            .get(lp_top)
+            .schema(lp_arena);
+
+        for (before, after) in prev_schema.iter_names().zip(new_schema.iter_names()) {
+            // only check by names because we may supercast types.
+            if !after.starts_with(CSE_REPLACED) {
+                assert_eq!(before, after)
+            }
+        }
     };
 
     Ok(lp_top)

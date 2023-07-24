@@ -698,9 +698,6 @@ impl ALogicalPlan {
                 input,
                 schema,
             } => {
-                if expr.has_sub_exprs() {
-                    polars_warn!("some columns show temporary names because of cse optimization")
-                }
                 let i = convert_to_lp(input, lp_arena);
 
                 LogicalPlan::Projection {

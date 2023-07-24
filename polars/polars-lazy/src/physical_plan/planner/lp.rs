@@ -1,3 +1,4 @@
+use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_core::POOL;
 
@@ -386,12 +387,23 @@ pub fn create_physical_plan(
                 &mut Default::default(),
             )?;
             let phys_aggs = create_physical_expressions(
-                &aggs,
+                aggs.default_exprs(),
                 Context::Aggregation,
                 expr_arena,
                 Some(&input_schema),
                 &mut Default::default(),
             )?;
+            let cse_exprs = create_physical_expressions(
+                aggs.cse_exprs(),
+                Context::Default,
+                expr_arena,
+                Some(&input_schema),
+                &mut Default::default(),
+            )?;
+            dbg!(cse_exprs.len());
+            if !cse_exprs.is_empty() && verbose() {
+                println!("will apply groupby with {} CSE", {cse_exprs.len()});
+            }
 
             let _slice = options.slice;
             #[cfg(feature = "dynamic_groupby")]
@@ -401,6 +413,7 @@ pub fn create_physical_plan(
                     input,
                     keys: phys_keys,
                     aggs: phys_aggs,
+                    cse_exprs,
                     options,
                     input_schema,
                     slice: _slice,
@@ -415,6 +428,7 @@ pub fn create_physical_plan(
                     input,
                     keys: phys_keys,
                     aggs: phys_aggs,
+                    cse_exprs,
                     options,
                     input_schema,
                     slice: _slice,
@@ -445,6 +459,7 @@ pub fn create_physical_plan(
                     input,
                     phys_keys,
                     phys_aggs,
+                    cse_exprs,
                     maintain_order,
                     options.slice,
                     input_schema,
@@ -459,6 +474,7 @@ pub fn create_physical_plan(
                     input,
                     phys_keys,
                     phys_aggs,
+                    cse_exprs,
                     apply,
                     maintain_order,
                     input_schema,
