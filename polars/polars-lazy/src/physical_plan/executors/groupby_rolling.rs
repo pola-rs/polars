@@ -10,7 +10,6 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) keys: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
     #[cfg(feature = "dynamic_groupby")]
     pub(crate) options: RollingGroupOptions,
     pub(crate) input_schema: SchemaRef,
@@ -26,9 +25,6 @@ impl GroupByRollingExec {
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         df.as_single_chunk_par();
-        if !self.cse_exprs.is_empty() {
-            add_cse_columns(&mut df, &self.cse_exprs, state)?;
-        }
 
         let keys = self
             .keys
@@ -85,7 +81,7 @@ impl GroupByRollingExec {
         };
 
         state.expr_cache = Some(Default::default());
-        let agg_columns = evaluate_aggs(&df, &self.aggs, &self.cse_exprs, groups, state)?;
+        let agg_columns = evaluate_aggs(&df, &self.aggs, groups, state)?;
         state.expr_cache = None;
 
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());

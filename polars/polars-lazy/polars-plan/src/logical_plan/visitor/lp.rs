@@ -75,7 +75,7 @@ impl ALogicalPlanNode {
         self.with_arena_mut(|arena| arena.get_mut(node))
     }
 
-    pub(crate) fn schema(&self) -> Cow<SchemaRef>{
+    pub fn schema(&self) -> Cow<SchemaRef>{
         self.with_arena(|arena| {
             arena.get(self.node).schema(arena)
         })
