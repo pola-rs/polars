@@ -9,15 +9,12 @@ use futures::executor::block_on;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
 use futures::{AsyncRead, AsyncSeek, Future, TryFutureExt};
-
+use object_store::path::Path;
+use object_store::{MultipartId, ObjectStore};
 use polars_core::cloud::CloudOptions;
 use polars_error::PolarsResult;
 use tokio::io::AsyncWrite;
 use tokio_util::io::SyncIoBridge;
-
-use object_store::path::Path;
-use object_store::MultipartId;
-use object_store::ObjectStore;
 
 type OptionalFuture = Arc<Mutex<Option<BoxFuture<'static, std::io::Result<Vec<u8>>>>>>;
 
@@ -137,7 +134,6 @@ impl AsyncSeek for CloudReader {
     }
 }
 
-
 /// Adaptor which wraps the asynchronous interface of [ObjectStore::put_multipart](https://docs.rs/object_store/latest/object_store/trait.ObjectStore.html#tymethod.put_multipart)
 /// exposing a synchronous interface which implements `std::io::Write`.
 ///
@@ -184,7 +180,10 @@ impl CloudWriter {
     pub fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
         let (cloud_location, object_store) = crate::cloud::build(uri, cloud_options)?;
         let object_store = Arc::from(object_store);
-        Ok(Self::new_with_object_store(object_store, cloud_location.prefix.into()))
+        Ok(Self::new_with_object_store(
+            object_store,
+            cloud_location.prefix.into(),
+        ))
     }
 
     async fn build_writer(
@@ -242,12 +241,10 @@ impl Drop for CloudWriter {
 #[cfg(test)]
 mod tests {
     use object_store::ObjectStore;
+    use polars_core::df;
+    use polars_core::prelude::{DataFrame, NamedFrom};
 
     use super::*;
-
-    use polars_core::df;
-    use polars_core::prelude::DataFrame;
-    use polars_core::prelude::NamedFrom;
 
     fn example_dataframe() -> DataFrame {
         df!(
@@ -285,7 +282,8 @@ mod tests {
 
         let mut df = example_dataframe();
 
-        let mut cloud_writer = CloudWriter::new("file:///tmp/cloud_writer_example2.csv", None).unwrap();
+        let mut cloud_writer =
+            CloudWriter::new("file:///tmp/cloud_writer_example2.csv", None).unwrap();
 
         CsvWriter::new(&mut cloud_writer)
             .finish(&mut df)
