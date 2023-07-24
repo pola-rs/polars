@@ -1360,16 +1360,16 @@ impl PyDataFrame {
     #[pyo3(signature = (keep_names_as, column_names))]
     pub fn transpose(&self, keep_names_as: Option<&str>, column_names: &PyAny) -> PyResult<Self> {
         // It doesn't automatically translate Python types to Either :-(
-        let cnames = if let Ok(cn) = column_names.extract::<Vec<String>>() {
-            Some(Either::Right(cn))
-        } else if let Ok(cn) = column_names.extract::<String>() {
-            Some(Either::Left(cn))
+        let new_col_names = if let Ok(name) = column_names.extract::<Vec<String>>() {
+            Some(Either::Right(name))
+        } else if let Ok(name) = column_names.extract::<String>() {
+            Some(Either::Left(name))
         } else {
             None
         };
         Ok(self
             .df
-            .transpose(keep_names_as, cnames)
+            .transpose(keep_names_as, new_col_names)
             .map_err(PyPolarsErr::from)?
             .into())
     }
