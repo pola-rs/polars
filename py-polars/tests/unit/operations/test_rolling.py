@@ -17,7 +17,7 @@ else:
     from backports.zoneinfo._zoneinfo import ZoneInfo
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import ClosedInterval
@@ -819,3 +819,21 @@ def test_rolling_empty_window_9406() -> None:
             ]
         ),
     )
+
+def test_rolling_weighted_quantile_10031() -> None:
+    assert_series_equal(
+        pl.Series([1, 2]).rolling_median(window_size=2, weights=[0, 1]),
+        pl.Series([None, 2.0])
+    )
+    
+    assert_series_equal(
+        pl.Series([1, 2, 3, 5]).rolling_quantile(.7, "linear", 3, [.1, .3, .6]),
+        pl.Series([None, None, 2.55, 4.1])
+    )
+    
+    
+    assert_series_equal(
+        pl.Series([1, 2, 3, 5, 8]).rolling_quantile(.7, "linear", 4, [.1, .2, 0, .3]),
+        pl.Series([None, None, None, 3.5, 5.5])
+    )
+    
