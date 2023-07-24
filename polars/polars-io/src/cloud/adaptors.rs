@@ -137,6 +137,7 @@ impl AsyncSeek for CloudReader {
     }
 }
 
+
 /// Adaptor which wraps the asynchronous interface of [ObjectStore::put_multipart](https://docs.rs/object_store/latest/object_store/trait.ObjectStore.html#tymethod.put_multipart)
 /// exposing a synchronous interface which implements `std::io::Write`.
 ///
@@ -152,7 +153,7 @@ pub struct CloudWriter {
     // The Tokio runtime which the writer uses internally.
     runtime: tokio::runtime::Runtime,
     // Internal writer, constructed at creation
-    writer: SyncIoBridge<Box<dyn AsyncWrite + Send + Unpin>>,
+    writer: std::sync::Mutex<SyncIoBridge<Box<dyn AsyncWrite + Send + Unpin>>>,
 }
 
 impl CloudWriter {
@@ -191,13 +192,13 @@ impl CloudWriter {
         path: &Path,
     ) -> (
         MultipartId,
-        SyncIoBridge<Box<dyn AsyncWrite + Send + Unpin>>,
+        std::sync::Mutex<SyncIoBridge<Box<dyn AsyncWrite + Send + Unpin>>>,
     ) {
         let (multipart_id, async_s3_writer) = object_store
             .put_multipart(path)
             .await
             .expect("Could not create location to write to");
-        let sync_s3_uploader = SyncIoBridge::new(async_s3_writer);
+        let sync_s3_uploader = std::sync::Mutex::new(SyncIoBridge::new(async_s3_writer));
         (multipart_id, sync_s3_uploader)
     }
 
@@ -212,7 +213,8 @@ impl CloudWriter {
 
 impl std::io::Write for CloudWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let res = self.writer.write(buf);
+        let mut writer = self.writer.lock().unwrap();
+        let res = writer.write(buf);
         if res.is_err() {
             self.abort();
         }
@@ -220,7 +222,8 @@ impl std::io::Write for CloudWriter {
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        let res = self.writer.flush();
+        let mut writer = self.writer.lock().unwrap();
+        let res = writer.flush();
         if res.is_err() {
             self.abort();
         }
@@ -230,7 +233,8 @@ impl std::io::Write for CloudWriter {
 
 impl Drop for CloudWriter {
     fn drop(&mut self) {
-        let _ = self.writer.shutdown();
+        let mut writer = self.writer.lock().unwrap();
+        let _ = writer.shutdown();
     }
 }
 
