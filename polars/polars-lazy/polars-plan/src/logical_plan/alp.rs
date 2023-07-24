@@ -169,6 +169,7 @@ impl ALogicalPlan {
             Union { .. } => "union",
             ExtContext { .. } => "ext_context",
             FileSink { .. } => "file_sink",
+            CloudSink { .. } => "cloud_sink",
         }
     }
 
@@ -202,7 +203,7 @@ impl ALogicalPlan {
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
-            Distinct { input, .. } | FileSink { input, .. } => {
+            Distinct { input, .. } | FileSink { input, .. } | CloudSink { input, ..} => {
                 return arena.get(*input).schema(arena)
             }
             Slice { input, .. } => return arena.get(*input).schema(arena),
@@ -384,6 +385,10 @@ impl ALogicalPlan {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
+            CloudSink { payload, .. } => CloudSink {
+                input: inputs.pop().unwrap(),
+                payload: payload.clone(),
+            },
         }
     }
 
@@ -424,7 +429,7 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
-            ExtContext { .. } | FileSink { .. } => {}
+            ExtContext { .. } | FileSink { .. } | CloudSink { .. } => {}
         }
     }
 
@@ -470,6 +475,7 @@ impl ALogicalPlan {
             Distinct { input, .. } => *input,
             MapFunction { input, .. } => *input,
             FileSink { input, .. } => *input,
+            CloudSink { input, .. } => *input,
             ExtContext {
                 input, contexts, ..
             } => {

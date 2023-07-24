@@ -303,9 +303,8 @@ pub enum FileType {
 }
 
 
-#[cfg_attr(all(feature = "parquet", feature = "serde"), derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
-#[cfg(feature = "parquet")]
 pub struct CloudSinkOptions {
     pub uri: Arc<str>,
     pub cloud_options: Option<CloudOptions>,
