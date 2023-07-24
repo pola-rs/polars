@@ -1355,6 +1355,7 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
     }
 }
 
+#[cfg(feature = "ipc")]
 impl FromPyObject<'_> for Wrap<IpcCompression> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
