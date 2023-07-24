@@ -209,7 +209,9 @@ pub(super) fn construct(
                 final_sink
             }
         },
-        CloudSink { ..} => todo!(),
+        CloudSink {..} => {
+            final_sink
+        },
         _ => unreachable!(),
     };
     // keep the original around for formatting purposes
