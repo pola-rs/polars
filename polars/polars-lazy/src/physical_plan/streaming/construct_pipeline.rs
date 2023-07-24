@@ -59,36 +59,28 @@ fn jit_insert_slice(
     // slice AFTER the join has happened and the join will be an
     // operator
     use ALogicalPlan::*;
-    match lp_arena.get(node) {
-        Join {
-            options:
-                JoinOptions {
-                    args:
-                        JoinArgs {
-                            slice: Some((offset, len)),
-                            ..
-                        },
-                    ..
-                },
-            ..
+    let (offset, len) = match lp_arena.get(node) {
+        Join { options, .. } if options.args.slice.is_some() => {
+            let Some((offset, len)) = options.args.slice else { unreachable!()};
+            (offset, len)
         }
-        | Union {
+        Union {
             options:
                 UnionOptions {
                     slice: Some((offset, len)),
                     ..
                 },
             ..
-        } => {
-            let slice_node = lp_arena.add(Slice {
-                input: Node::default(),
-                offset: *offset,
-                len: *len as IdxSize,
-            });
-            sink_nodes.push((operator_offset + 1, slice_node, Rc::new(RefCell::new(1))));
-        }
-        _ => {}
-    }
+        } => (*offset, *len),
+        _ => return,
+    };
+
+    let slice_node = lp_arena.add(Slice {
+        input: Node::default(),
+        offset,
+        len: len as IdxSize,
+    });
+    sink_nodes.push((operator_offset + 1, slice_node, Rc::new(RefCell::new(1))));
 }
 
 pub(super) fn construct(

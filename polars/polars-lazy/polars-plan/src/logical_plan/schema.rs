@@ -131,12 +131,15 @@ pub fn set_estimated_row_counts(
                 right_on,
             } = lp_arena.take(root)
             {
+                let mut_options = Arc::make_mut(&mut options);
                 let (known_size, estimated_size, filter_count_left) =
                     set_estimated_row_counts(input_left, lp_arena, expr_arena, 0);
-                options.rows_left = estimate_sizes(known_size, estimated_size, filter_count_left);
+                mut_options.rows_left =
+                    estimate_sizes(known_size, estimated_size, filter_count_left);
                 let (known_size, estimated_size, filter_count_right) =
                     set_estimated_row_counts(input_right, lp_arena, expr_arena, 0);
-                options.rows_right = estimate_sizes(known_size, estimated_size, filter_count_right);
+                mut_options.rows_right =
+                    estimate_sizes(known_size, estimated_size, filter_count_right);
 
                 let mut out = match options.args.how {
                     JoinType::Left => {

@@ -146,7 +146,7 @@ pub enum LogicalPlan {
         function: Arc<dyn AnonymousScan>,
         file_info: FileInfo,
         predicate: Option<Expr>,
-        options: AnonymousScanOptions,
+        options: Arc<AnonymousScanOptions>,
     },
     #[cfg(feature = "python")]
     PythonScan { options: PythonOptions },
@@ -200,7 +200,7 @@ pub enum LogicalPlan {
         #[cfg_attr(feature = "serde", serde(skip))]
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        options: GroupbyOptions,
+        options: Arc<GroupbyOptions>,
     },
     /// Join operation
     Join {
@@ -209,7 +209,7 @@ pub enum LogicalPlan {
         schema: SchemaRef,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
-        options: JoinOptions,
+        options: Arc<JoinOptions>,
     },
     /// Adding columns to the table without a Join
     HStack {

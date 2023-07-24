@@ -114,7 +114,8 @@ impl SlicePushDown {
                 // TODO! we currently skip slice pushdown if there is a predicate.
                 // we can modify the readers to only limit after predicates have been applied
                 Some(state)) if state.offset == 0 && predicate.is_none() => {
-                options.n_rows = Some(state.len as usize);
+                let mut_options = Arc::make_mut(&mut options);
+                mut_options.n_rows = Some(state.len as usize);
                 let lp = AnonymousScan {
                     function,
                     file_info,
@@ -206,7 +207,8 @@ impl SlicePushDown {
 
                 // then assign the slice state to the join operation
 
-                options.args.slice = Some((state.offset, state.len as usize));
+                let mut_options = Arc::make_mut(&mut options);
+                mut_options.args.slice = Some((state.offset, state.len as usize));
 
                 Ok(Join {
                     input_left,
@@ -223,7 +225,8 @@ impl SlicePushDown {
                 let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
                 let input= lp_arena.add(input_lp);
 
-                options.slice = Some((state.offset, state.len as usize));
+                let mut_options= Arc::make_mut(&mut options);
+                mut_options.slice = Some((state.offset, state.len as usize));
 
                 Ok(Aggregate {
                     input,

@@ -321,6 +321,7 @@ pub fn create_physical_plan(
             output_schema,
             ..
         } => {
+            let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             let predicate = predicate
                 .map(|pred| {
                     create_physical_expr(
@@ -376,6 +377,7 @@ pub fn create_physical_plan(
             options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
+            let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             let phys_keys = create_physical_expressions(
                 &keys,
                 Context::Default,
@@ -503,6 +505,7 @@ pub fn create_physical_plan(
                 None,
                 &mut Default::default(),
             )?;
+            let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             Ok(Box::new(executors::JoinExec::new(
                 input_left,
                 input_right,

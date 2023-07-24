@@ -233,7 +233,8 @@ impl PartitionGroupByExec {
         let groupby_options = GroupbyOptions {
             slice: self.slice,
             ..Default::default()
-        };
+        }
+        .into();
         let lp = LogicalPlan::Aggregate {
             input: Box::new(original_df.lazy().logical_plan),
             keys: Arc::new(std::mem::take(&mut self.keys)),

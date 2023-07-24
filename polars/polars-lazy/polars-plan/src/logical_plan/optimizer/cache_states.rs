@@ -74,6 +74,7 @@ pub(super) fn set_cache_states(
                 // also self-referencing plans can deadlock on the files they lock
                 Join { options, .. } if has_caches && options.allow_parallel => {
                     if let Join { options, .. } = lp_arena.get_mut(current_node) {
+                        let options = Arc::make_mut(options);
                         options.allow_parallel = false;
                     }
                 }

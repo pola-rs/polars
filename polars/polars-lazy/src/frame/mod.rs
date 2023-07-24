@@ -1408,7 +1408,7 @@ impl LazyGroupBy {
             schema,
             apply: Some(Arc::new(f)),
             maintain_order: self.maintain_order,
-            options,
+            options: Arc::new(options),
         };
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
@@ -1523,7 +1523,8 @@ impl JoinBuilder {
                     force_parallel: self.force_parallel,
                     args,
                     ..Default::default()
-                },
+                }
+                .into(),
             )
             .build();
         LazyFrame::from_logical_plan(lp, opt_state)
