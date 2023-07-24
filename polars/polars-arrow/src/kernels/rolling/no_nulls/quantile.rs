@@ -169,7 +169,7 @@ where
     // Once the cumulative weight crosses h, we've found our ind{ex/ices}. The definition may look
     // odd but it's the equivalent of taking h = p * (n - 1) + 1 if your data is indexed from 1.
     let h: f64 = p * (wsum - buf[0].1) + buf[0].1;
-    for &(v, w) in buf.iter().filter(|(_, w)| *w != 0.0) {
+    for &(v, w) in buf.iter() {
         if s > h {
             break;
         }
@@ -219,17 +219,21 @@ where
         + PartialOrd,
 {
     assert_eq!(weights.len(), window_size);
-    let mut buf = vec![(T::zero(), 0.0); window_size];
+    // Keep nonzero weights and their indices to know which values we need each iteration.
+    let nz_idx_wts: Vec<_> = weights.iter().enumerate().filter(|x| x.1 != &0.0).collect();
+    let mut buf = vec![(T::zero(), 0.0); nz_idx_wts.len()];
     let len = values.len();
     let out = (0..len)
         .map(|idx| {
-            let (start, end) = det_offsets_fn(idx, window_size, len);
-            let vals = unsafe { values.get_unchecked(start..end) };
+            // Don't need end. Window size is constant and we computed offsets from start above.
+            let (start, _) = det_offsets_fn(idx, window_size, len);
 
             // Sorting is not ideal, see https://github.com/tobiasschoch/wquantile for something faster
-            buf.iter_mut()
-                .zip(vals.iter().zip(weights))
-                .for_each(|(b, (v, w))| *b = (*v, *w));
+            unsafe {
+                buf.iter_mut()
+                    .zip(nz_idx_wts.iter())
+                    .for_each(|(b, (i, w))| *b = (*values.get_unchecked(i + start), **w));
+            }
             buf.sort_unstable_by(|&a, &b| compare_fn_nan_max(&a.0, &b.0));
             compute_wq(&buf, p, wsum, interpolation)
         })
