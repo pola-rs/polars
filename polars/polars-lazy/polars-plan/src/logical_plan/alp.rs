@@ -20,7 +20,7 @@ pub enum ALogicalPlan {
         file_info: FileInfo,
         output_schema: Option<SchemaRef>,
         predicate: Option<Node>,
-        options: AnonymousScanOptions,
+        options: Arc<AnonymousScanOptions>,
     },
     #[cfg(feature = "python")]
     PythonScan {
@@ -81,7 +81,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        options: GroupbyOptions,
+        options: Arc<GroupbyOptions>,
     },
     Join {
         input_left: Node,
@@ -89,7 +89,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         left_on: Vec<Node>,
         right_on: Vec<Node>,
-        options: JoinOptions,
+        options: Arc<JoinOptions>,
     },
     HStack {
         input: Node,
@@ -499,5 +499,15 @@ impl ALogicalPlan {
         let mut inputs = [None, None];
         self.copy_inputs(&mut inputs);
         inputs[0]
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_alp_size() {
+        assert!(std::mem::size_of::<ALogicalPlan>() <= 152);
     }
 }

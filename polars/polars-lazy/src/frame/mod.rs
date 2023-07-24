@@ -508,10 +508,10 @@ impl LazyFrame {
         let streaming = self.opt_state.streaming;
         #[cfg(feature = "cse")]
         if streaming && self.opt_state.comm_subplan_elim {
-            polars_warn!("Cannot combine 'streaming' with 'common_subplan_elimination'. CSE will be turned off.");
+            polars_warn!(
+                "Cannot combine 'streaming' with 'comm_subplan_elim'. CSE will be turned off."
+            );
             opt_state.comm_subplan_elim = false;
-            // TODO! toggle on once implemented on the physical side
-            opt_state.comm_subexpr_elim = false;
         }
         let lp_top = optimize(self.logical_plan, opt_state, lp_arena, expr_arena, scratch)?;
 
@@ -1408,7 +1408,7 @@ impl LazyGroupBy {
             schema,
             apply: Some(Arc::new(f)),
             maintain_order: self.maintain_order,
-            options,
+            options: Arc::new(options),
         };
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
@@ -1523,7 +1523,8 @@ impl JoinBuilder {
                     force_parallel: self.force_parallel,
                     args,
                     ..Default::default()
-                },
+                }
+                .into(),
             )
             .build();
         LazyFrame::from_logical_plan(lp, opt_state)

@@ -174,3 +174,40 @@ def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
     out = capfd.readouterr().out
     assert "run ProjectionExec with 2 CSE" in out
     assert "run StackExec with 2 CSE" in out
+
+
+def test_cse_expr_selection_streaming(monkeypatch: Any, capfd: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    q = pl.LazyFrame(
+        {
+            "a": [1, 2, 3, 4],
+            "b": [1, 2, 3, 4],
+            "c": [1, 2, 3, 4],
+        }
+    )
+
+    derived = pl.col("a") * pl.col("b")
+    derived2 = derived * derived
+
+    exprs = [
+        derived.alias("d1"),
+        derived2.alias("d2"),
+        (derived2 * 10).alias("d3"),
+    ]
+
+    assert q.select(exprs).collect(comm_subexpr_elim=True, streaming=True).to_dict(
+        False
+    ) == {"d1": [1, 4, 9, 16], "d2": [1, 16, 81, 256], "d3": [10, 160, 810, 2560]}
+    assert q.with_columns(exprs).collect(
+        comm_subexpr_elim=True, streaming=True
+    ).to_dict(False) == {
+        "a": [1, 2, 3, 4],
+        "b": [1, 2, 3, 4],
+        "c": [1, 2, 3, 4],
+        "d1": [1, 4, 9, 16],
+        "d2": [1, 16, 81, 256],
+        "d3": [10, 160, 810, 2560],
+    }
+    err = capfd.readouterr().err
+    assert "df -> projection[cse] -> ordered_sink" in err
+    assert "df -> hstack[cse] -> ordered_sink" in err

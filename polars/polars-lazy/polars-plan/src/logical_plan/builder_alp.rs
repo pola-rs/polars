@@ -125,7 +125,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         aggs: Vec<Node>,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        options: GroupbyOptions,
+        options: Arc<GroupbyOptions>,
     ) -> Self {
         let current_schema = self.schema();
         // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
@@ -176,7 +176,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         other: Node,
         left_on: Vec<Node>,
         right_on: Vec<Node>,
-        options: JoinOptions,
+        options: Arc<JoinOptions>,
     ) -> Self {
         let schema_left = self.schema();
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);

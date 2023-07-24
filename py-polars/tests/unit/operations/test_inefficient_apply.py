@@ -4,15 +4,13 @@ import json
 from typing import Any, Callable
 
 import numpy
-import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal
 from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
-
-MY_CONSTANT = 3
+from tests.test_udfs import MY_CONSTANT, TEST_CASES
 
 
 @pytest.mark.parametrize(
@@ -31,34 +29,7 @@ def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
 
 @pytest.mark.parametrize(
     ("col", "func"),
-    [
-        # numeric expr: math, comparison, logic ops
-        ("a", lambda x: x + 1 - (2 / 3)),
-        ("a", lambda x: x // 1 % 2),
-        ("a", lambda x: x & True),
-        ("a", lambda x: x | False),
-        ("a", lambda x: x != 3),
-        ("a", lambda x: int(x) > 1),
-        ("a", lambda x: not (x > 1) or x == 2),
-        ("a", lambda x: x is None),
-        ("a", lambda x: x is not None),
-        ("a", lambda x: ((x * -x) ** x) * 1.0),
-        ("a", lambda x: 1.0 * (x * (x**x))),
-        ("a", lambda x: (x / x) + ((x * x) - x)),
-        ("a", lambda x: (10 - x) / (((x * 4) - x) // (2 + (x * (x - 1))))),
-        ("a", lambda x: x in (2, 3, 4)),
-        ("a", lambda x: x not in (2, 3, 4)),
-        ("a", lambda x: x in (1, 2, 3, 4, 3) and x % 2 == 0 and x > 0),
-        ("a", lambda x: MY_CONSTANT + x),
-        ("a", lambda x: 0 + numpy.cbrt(x)),
-        ("a", lambda x: np.sin(x) + 1),
-        ("a", lambda x: (float(x) * int(x)) // 2),
-        # string expr: case/cast ops
-        ("a", lambda x: str(x).title()),
-        ("b", lambda x: x.lower() + ":" + x.upper() + ":" + x.title()),
-        # json expr: load/extract
-        ("c", lambda x: json.loads(x)),
-    ],
+    [(test_case[0], test_case[1]) for test_case in TEST_CASES],
 )
 def test_parse_apply_functions(col: str, func: Callable[[Any], Any]) -> None:
     with pytest.warns(

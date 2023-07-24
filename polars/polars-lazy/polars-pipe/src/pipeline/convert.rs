@@ -7,6 +7,7 @@ use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 use polars_plan::prelude::*;
 
+use crate::executors::operators::HstackOperator;
 use crate::executors::sinks::groupby::aggregates::convert_to_hash_agg;
 use crate::executors::sinks::groupby::GenericGroupby2;
 use crate::executors::sinks::*;
@@ -395,6 +396,24 @@ pub fn get_dummy_operator() -> Box<dyn Operator> {
     Box::new(operators::PlaceHolder {})
 }
 
+fn get_hstack<F>(
+    exprs: &[Node],
+    expr_arena: &mut Arena<AExpr>,
+    to_physical: &F,
+    input_schema: SchemaRef,
+    #[cfg(feature = "cse")] cse_exprs: Option<Box<HstackOperator>>,
+) -> PolarsResult<HstackOperator>
+where
+    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+{
+    Ok(operators::HstackOperator {
+        exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(&input_schema))?,
+        input_schema,
+        #[cfg(feature = "cse")]
+        cse_exprs,
+    })
+}
+
 pub fn get_operator<F>(
     node: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -408,17 +427,60 @@ where
     let op = match lp_arena.get(node) {
         Projection { expr, input, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
+
+            #[cfg(feature = "cse")]
+            let cse_exprs = expr.cse_exprs();
+            #[cfg(feature = "cse")]
+            let cse_exprs = if cse_exprs.is_empty() {
+                None
+            } else {
+                Some(get_hstack(
+                    cse_exprs,
+                    expr_arena,
+                    to_physical,
+                    (*input_schema).clone(),
+                    None,
+                )?)
+            };
+
             let op = operators::ProjectionOperator {
-                exprs: exprs_to_physical(expr, expr_arena, &to_physical, Some(&input_schema))?,
+                exprs: exprs_to_physical(
+                    expr.default_exprs(),
+                    expr_arena,
+                    &to_physical,
+                    Some(&input_schema),
+                )?,
+                #[cfg(feature = "cse")]
+                cse_exprs,
             };
             Box::new(op) as Box<dyn Operator>
         }
         HStack { exprs, input, .. } => {
-            let input_schema = (*lp_arena.get(*input).schema(lp_arena)).clone();
-            let op = operators::HstackOperator {
-                exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(&input_schema))?,
-                input_schema,
+            let input_schema = lp_arena.get(*input).schema(lp_arena);
+
+            #[cfg(feature = "cse")]
+            let cse_exprs = exprs.cse_exprs();
+            #[cfg(feature = "cse")]
+            let cse_exprs = if cse_exprs.is_empty() {
+                None
+            } else {
+                Some(Box::new(get_hstack(
+                    cse_exprs,
+                    expr_arena,
+                    to_physical,
+                    (*input_schema).clone(),
+                    None,
+                )?))
             };
+            let op = get_hstack(
+                exprs.default_exprs(),
+                expr_arena,
+                to_physical,
+                (*input_schema).clone(),
+                #[cfg(feature = "cse")]
+                cse_exprs,
+            )?;
+
             Box::new(op) as Box<dyn Operator>
         }
         Selection { predicate, input } => {

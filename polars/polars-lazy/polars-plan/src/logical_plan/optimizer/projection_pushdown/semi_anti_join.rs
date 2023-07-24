@@ -8,7 +8,7 @@ pub(super) fn process_semi_anti_join(
     input_right: Node,
     left_on: Vec<Node>,
     right_on: Vec<Node>,
-    options: JoinOptions,
+    options: Arc<JoinOptions>,
     acc_projections: Vec<Node>,
     _projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,

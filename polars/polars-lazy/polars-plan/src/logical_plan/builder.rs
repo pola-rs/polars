@@ -103,7 +103,7 @@ impl LogicalPlanBuilder {
             function,
             file_info,
             predicate: None,
-            options: AnonymousScanOptions {
+            options: Arc::new(AnonymousScanOptions {
                 fmt_str: name,
                 schema,
                 skip_rows,
@@ -111,7 +111,7 @@ impl LogicalPlanBuilder {
                 output_schema: None,
                 with_columns: None,
                 predicate: None,
-            },
+            }),
         }
         .into())
     }
@@ -612,7 +612,7 @@ impl LogicalPlanBuilder {
             schema: Arc::new(schema),
             apply,
             maintain_order,
-            options,
+            options: Arc::new(options),
         }
         .into()
     }
@@ -732,7 +732,7 @@ impl LogicalPlanBuilder {
         other: LogicalPlan,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
-        options: JoinOptions,
+        options: Arc<JoinOptions>,
     ) -> Self {
         for e in left_on.iter().chain(right_on.iter()) {
             if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {

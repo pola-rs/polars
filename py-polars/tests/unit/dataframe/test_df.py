@@ -3656,3 +3656,15 @@ def test_sum_empty_column_names() -> None:
         {"x": [0], "y": [0]}, schema={"x": pl.UInt32, "y": pl.UInt32}
     )
     assert_frame_equal(df.sum(), expected)
+
+
+def test_flags() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    assert df.flags == {
+        "a": {"SORTED_ASC": False, "SORTED_DESC": False},
+        "b": {"SORTED_ASC": False, "SORTED_DESC": False},
+    }
+    assert df.set_sorted("a").flags == {
+        "a": {"SORTED_ASC": True, "SORTED_DESC": False},
+        "b": {"SORTED_ASC": False, "SORTED_DESC": False},
+    }
