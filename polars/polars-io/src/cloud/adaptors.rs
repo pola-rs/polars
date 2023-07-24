@@ -160,6 +160,7 @@ impl CloudWriter {
     /// TODO: Naming?
     pub fn new_with_object_store(object_store: Arc<dyn ObjectStore>, path: Path) -> Self {
         let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
             .build()
             .unwrap();
         let (multipart_id, writer) =
