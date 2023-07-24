@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use either::Either;
 
 use super::*;
@@ -7,26 +9,34 @@ impl DataFrame {
         &self,
         dtype: &DataType,
         keep_names_as: Option<&str>,
-        colnames: &[String],
+        col_names: &[String],
     ) -> PolarsResult<DataFrame> {
         let new_width = self.height();
         let new_height = self.width();
-
+        let mut series_t = match keep_names_as {
+            None => Vec::<Series>::with_capacity(new_width),
+            Some(name) => {
+                let mut tmp = Vec::<Series>::with_capacity(new_width + 1);
+                tmp.push(Utf8Chunked::new(name, self.get_column_names()).into());
+                tmp
+            }
+        };
+        //let series_t = Vec::<Series>::with_capacity(new_width + keep_names_as.is_some() as usize);
         let mut out = match dtype {
             #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => numeric_transpose::<Int8Type>(&self.columns),
+            DataType::Int8 => numeric_transpose::<Int8Type>(&self.columns, col_names),
             #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => numeric_transpose::<Int16Type>(&self.columns),
-            DataType::Int32 => numeric_transpose::<Int32Type>(&self.columns),
-            DataType::Int64 => numeric_transpose::<Int64Type>(&self.columns),
+            DataType::Int16 => numeric_transpose::<Int16Type>(&self.columns, col_names),
+            DataType::Int32 => numeric_transpose::<Int32Type>(&self.columns, col_names),
+            DataType::Int64 => numeric_transpose::<Int64Type>(&self.columns, col_names),
             #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => numeric_transpose::<UInt8Type>(&self.columns),
+            DataType::UInt8 => numeric_transpose::<UInt8Type>(&self.columns, col_names),
             #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => numeric_transpose::<UInt16Type>(&self.columns),
-            DataType::UInt32 => numeric_transpose::<UInt32Type>(&self.columns),
-            DataType::UInt64 => numeric_transpose::<UInt64Type>(&self.columns),
-            DataType::Float32 => numeric_transpose::<Float32Type>(&self.columns),
-            DataType::Float64 => numeric_transpose::<Float64Type>(&self.columns),
+            DataType::UInt16 => numeric_transpose::<UInt16Type>(&self.columns, col_names),
+            DataType::UInt32 => numeric_transpose::<UInt32Type>(&self.columns, col_names),
+            DataType::UInt64 => numeric_transpose::<UInt64Type>(&self.columns, col_names),
+            DataType::Float32 => numeric_transpose::<Float32Type>(&self.columns, col_names),
+            DataType::Float64 => numeric_transpose::<Float64Type>(&self.columns, col_names),
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 // this requires to support `Object` in Series::iter which we don't yet
@@ -66,7 +76,7 @@ impl DataFrame {
                 Ok(DataFrame::new_no_checks(cols))
             }
         }?;
-        out.set_column_names(colnames)?;
+        out.set_column_names(col_names)?;
         match keep_names_as {
             Some(cn) => {
                 let namecol = Utf8Chunked::new(cn, self.get_column_names());
@@ -82,14 +92,14 @@ impl DataFrame {
         keep_names_as: Option<&str>,
         column_names: Option<Either<String, Vec<String>>>,
     ) -> PolarsResult<DataFrame> {
-        let mut df = self.clone(); // Must be owned so we get the same type if dropping a column.
+        let mut df = Cow::Borrowed(self); // Must be owned so we get the same type if dropping a column.
         let colnames_t = match column_names {
             None => (0..self.height()).map(|i| format!("column_{i}")).collect(),
             Some(cn) => match cn {
                 Either::Left(cname) => {
                     let new_names = self.column(&cname).and_then(|x| x.utf8())?;
                     polars_ensure!(!new_names.has_validity(), ComputeError: "Column with new names can't have null values");
-                    df = self.drop(&cname)?;
+                    df = Cow::Owned(self.drop(&cname)?);
                     new_names
                         .into_no_null_iter()
                         .map(|s| s.to_owned())
@@ -151,9 +161,10 @@ unsafe fn add_value<T: NumericNative>(
     *el_ptr.add(row_idx) = value;
 }
 
-pub(super) fn numeric_transpose<T>(cols: &[Series]) -> PolarsResult<DataFrame>
+pub(super) fn numeric_transpose<T>(cols: &[Series], names: &[String]) -> PolarsResult<DataFrame>
 where
     T: PolarsNumericType,
+    //S: AsRef<str>,
     ChunkedArray<T>: IntoSeries,
 {
     let new_width = cols[0].len();
@@ -219,8 +230,8 @@ where
         values_buf
             .into_par_iter()
             .zip(validity_buf)
-            .enumerate()
-            .map(|(i, (mut values, validity))| {
+            .zip(names)
+            .map(|((mut values, validity), name)| {
                 // Safety:
                 // all values are written we can now set len
                 unsafe {
@@ -243,7 +254,6 @@ where
                     values.into(),
                     validity,
                 );
-                let name = format!("column_{i}");
                 unsafe {
                     ChunkedArray::<T>::from_chunks(&name, vec![Box::new(arr) as ArrayRef])
                         .into_series()
