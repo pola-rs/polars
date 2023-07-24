@@ -573,7 +573,7 @@ mod test {
         let id_array_offset = id_array.len();
         let mut visit_stack = vec![];
         let mut visitor =
-            ExprIdentifierVisitor::new(&mut se_count, &mut id_array, &mut visit_stack);
+            ExprIdentifierVisitor::new(&mut se_count, &mut id_array, &mut visit_stack, false);
 
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
 
