@@ -119,7 +119,7 @@ pub enum ALogicalPlan {
     CloudSink {
         input: Node,
         payload: CloudSinkOptions,
-    }
+    },
 }
 
 impl Default for ALogicalPlan {
@@ -203,7 +203,7 @@ impl ALogicalPlan {
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
-            Distinct { input, .. } | FileSink { input, .. } | CloudSink { input, ..} => {
+            Distinct { input, .. } | FileSink { input, .. } | CloudSink { input, .. } => {
                 return arena.get(*input).schema(arena)
             }
             Slice { input, .. } => return arena.get(*input).schema(arena),

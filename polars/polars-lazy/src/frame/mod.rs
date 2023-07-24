@@ -536,7 +536,10 @@ impl LazyFrame {
 
         // file sink should be replaced
         let no_file_sink = if check_sink {
-            !matches!(lp_arena.get(lp_top), ALogicalPlan::FileSink { .. } | ALogicalPlan::CloudSink { .. } )
+            !matches!(
+                lp_arena.get(lp_top),
+                ALogicalPlan::FileSink { .. } | ALogicalPlan::CloudSink { .. }
+            )
         } else {
             true
         };
@@ -617,7 +620,12 @@ impl LazyFrame {
     /// This method will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "parquet")]
-    pub fn sink_parquet_cloud(mut self, uri: String, cloud_options: Option<polars_core::cloud::CloudOptions>, parquet_options: ParquetWriteOptions) -> PolarsResult<()> {
+    pub fn sink_parquet_cloud(
+        mut self,
+        uri: String,
+        cloud_options: Option<polars_core::cloud::CloudOptions>,
+        parquet_options: ParquetWriteOptions,
+    ) -> PolarsResult<()> {
         self.opt_state.streaming = true;
         self.logical_plan = LogicalPlan::CloudSink {
             input: Box::new(self.logical_plan),

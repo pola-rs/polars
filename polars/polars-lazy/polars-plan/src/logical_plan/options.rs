@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use polars_core::{prelude::*, cloud::CloudOptions};
+use polars_core::cloud::CloudOptions;
+use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::{CsvEncoding, NullValues};
 #[cfg(feature = "ipc")]
@@ -301,7 +302,6 @@ pub enum FileType {
     Ipc(IpcWriterOptions),
     Memory,
 }
-
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]

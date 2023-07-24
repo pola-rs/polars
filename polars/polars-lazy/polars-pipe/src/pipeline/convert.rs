@@ -149,7 +149,12 @@ where
             // TODO: support Ipc as well
             let cloud_options = &payload.cloud_options;
             let parquet_options = payload.parquet_options;
-            Box::new(ParquetCloudSink::new(uri, cloud_options.as_ref(), parquet_options, input_schema.as_ref())?) as Box<dyn Sink>
+            Box::new(ParquetCloudSink::new(
+                uri,
+                cloud_options.as_ref(),
+                parquet_options,
+                input_schema.as_ref(),
+            )?) as Box<dyn Sink>
         }
         Join {
             input_left,

@@ -153,9 +153,7 @@ pub fn create_physical_plan(
         FileSink { .. } => panic!(
             "sink_parquet not yet supported in standard engine. Use 'collect().write_parquet()'"
         ),
-        CloudSink { .. } => panic!(
-            "Cloud Sink not supported in standard engine."
-        ),
+        CloudSink { .. } => panic!("Cloud Sink not supported in standard engine."),
         Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()

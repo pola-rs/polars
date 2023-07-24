@@ -128,7 +128,10 @@ pub(super) fn construct(
         // the file sink is always to the top of the tree
         // not every branch has a final sink. For instance rhs join branches
         if let Some(node) = branch.get_final_sink() {
-            if matches!(lp_arena.get(node), ALogicalPlan::FileSink { .. } | ALogicalPlan::CloudSink { .. }) {
+            if matches!(
+                lp_arena.get(node),
+                ALogicalPlan::FileSink { .. } | ALogicalPlan::CloudSink { .. }
+            ) {
                 final_sink = Some(node)
             }
         }
@@ -208,10 +211,8 @@ pub(super) fn construct(
                 // default case if the tree ended with a file_sink
                 final_sink
             }
-        },
-        CloudSink {..} => {
-            final_sink
-        },
+        }
+        CloudSink { .. } => final_sink,
         _ => unreachable!(),
     };
     // keep the original around for formatting purposes
