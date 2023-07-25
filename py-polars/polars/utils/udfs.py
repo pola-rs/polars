@@ -4,6 +4,7 @@ from __future__ import annotations
 import dis
 import sys
 import warnings
+from bisect import bisect_left
 from collections import defaultdict
 from dis import get_instructions
 from inspect import signature
@@ -46,11 +47,11 @@ _BINARY_OPCODES = {
 _CONTROL_FLOW_OPCODES = {
     # note: once we add additional JUMP op support, we'll need to disambiguate
     # between and/or (what we currently support) and if/else (which we don't)
-    # "POP_JUMP_FORWARD_IF_FALSE": "?",
-    # "POP_JUMP_FORWARD_IF_TRUE": "?",
-    # "POP_JUMP_IF_FALSE": "?",
-    # "POP_JUMP_IF_TRUE": "?",
-    # "JUMP_FORWARD": "?",
+    # "POP_JUMP_IF_FALSE": ...,
+    # "POP_JUMP_IF_TRUE": ...,
+    # "JUMP_FORWARD": ...,
+    "POP_JUMP_FORWARD_IF_FALSE": "&",
+    "POP_JUMP_FORWARD_IF_TRUE": "|",
     "JUMP_IF_FALSE_OR_POP": "&",
     "JUMP_IF_TRUE_OR_POP": "|",
 }
@@ -159,16 +160,11 @@ class BytecodeParser:
                     if self._apply_target == "frame"
                     else _SIMPLE_EXPR_OPS
                 )
-                if len(self._rewritten_instructions) >= 2 and all(
+                self._can_rewrite[self._apply_target] = len(
+                    self._rewritten_instructions
+                ) >= 2 and all(
                     inst.opname in simple_ops for inst in self._rewritten_instructions
-                ):
-                    # can (currently) only handle logical 'and'/'or' if they not mixed
-                    logical_ops = {
-                        _CONTROL_FLOW_OPCODES[inst.opname]
-                        for inst in self._rewritten_instructions
-                        if inst.opname in _CONTROL_FLOW_OPCODES
-                    }
-                    self._can_rewrite[self._apply_target] = len(logical_ops) <= 1
+                )
 
         return self._can_rewrite[self._apply_target]
 
@@ -196,13 +192,13 @@ class BytecodeParser:
         """The rewritten bytecode instructions from the function we are parsing."""
         return list(self._rewritten_instructions)
 
-    def to_expression(self, col: str) -> str | None:
-        """Translate postfix bytecode instructions to polars expression string."""
+    def to_expression(self, col: str, as_repr: bool = True) -> str | None:
+        """Translate postfix bytecode instructions to polars expression/string."""
         if not self.can_rewrite() or self._param_name is None:
             return None
 
         # decompose bytecode into logical 'and'/'or' expression blocks (if present)
-        logical_instruction_blocks = defaultdict(list)
+        control_flow_blocks = defaultdict(list)
         logical_instructions = []
         jump_offset = 0
         for idx, inst in enumerate(self._rewritten_instructions):
@@ -210,9 +206,9 @@ class BytecodeParser:
                 jump_offset = self._rewritten_instructions[idx + 1].offset
                 logical_instructions.append(inst)
             else:
-                logical_instruction_blocks[jump_offset].append(inst)
+                control_flow_blocks[jump_offset].append(inst)
 
-        # convert each logical block to a polars expression string
+        # convert each block to a polars expression string
         expression_strings = {
             offset: InstructionTranslator(
                 instructions=ops,
@@ -222,14 +218,50 @@ class BytecodeParser:
                 param_name=self._param_name,
                 depth=int(bool(logical_instructions)),
             )
-            for offset, ops in logical_instruction_blocks.items()
+            for offset, ops in control_flow_blocks.items()
         }
 
-        for inst in logical_instructions:
-            expression_strings[inst.offset] = InstructionTranslator.op(inst)
+        if logical_instructions:
+            # reconstruct nesting boundaries for mixed and/or ops by associating
+            # control flow jump offsets with their target expression blocks and
+            # injecting appropriate parentheses
+            combined_offset_idxs = set()
+            if len({inst.opname for inst in logical_instructions}) > 1:
+                block_offsets: list[int] = list(expression_strings.keys())
+                idx_min, idx_max = 0, len(block_offsets) - 1
+                previous_logical_opname = ""
+                for i, inst in enumerate(logical_instructions):
+                    # operator precedence means that we can combine logically connected
+                    # 'and' blocks into one (depending on follow-on logic) and should
+                    # parenthesise nested 'or' blocks
+                    logical_op = _CONTROL_FLOW_OPCODES[inst.opname]
+                    start = block_offsets[
+                        max(idx_min, bisect_left(block_offsets, inst.offset) - 1)
+                    ]
+                    if previous_logical_opname == "POP_JUMP_FORWARD_IF_FALSE":
+                        prev = block_offsets[
+                            max(idx_min, bisect_left(block_offsets, start) - 1)
+                        ]
+                        expression_strings[
+                            prev
+                        ] += f" & {expression_strings.pop(start)}"
+                        block_offsets = list(expression_strings.keys())
+                        combined_offset_idxs.add(i - 1)
+                        start = prev
 
-        # TODO: handle mixed 'and'/'or' blocks (e.g. `x > 0 AND (x > 0 OR (x == -1)`).
-        #  (need to reconstruct the correct nesting boundaries to do this properly)
+                    if logical_op == "|":
+                        end = block_offsets[
+                            min(idx_max, bisect_left(block_offsets, inst.argval) - 1)
+                        ]
+                        if not (start == 0 and end == block_offsets[-1]):
+                            expression_strings[start] = "(" + expression_strings[start]
+                            expression_strings[end] += ")"
+
+                    previous_logical_opname = inst.opname
+
+            for i, inst in enumerate(logical_instructions):
+                if i not in combined_offset_idxs:
+                    expression_strings[inst.offset] = _CONTROL_FLOW_OPCODES[inst.opname]
 
         exprs = sorted(expression_strings.items())
         polars_expr = " ".join(expr for _, expr in exprs)
@@ -239,7 +271,7 @@ class BytecodeParser:
         if "pl.col(" not in polars_expr:
             return None
 
-        return polars_expr
+        return polars_expr if as_repr else eval(polars_expr, globals())
 
     def warn(
         self,

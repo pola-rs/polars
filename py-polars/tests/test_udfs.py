@@ -68,6 +68,32 @@ TEST_CASES = [
         lambda x: (float(x) * int(x)) // 2,
         '(pl.col("a").cast(pl.Float64) * pl.col("a").cast(pl.Int64)) // 2',
     ),
+    # logical 'and/or' (validate nesting levels)
+    (
+        "a",
+        lambda x: x > 1 or (x == 1 and x == 2),
+        '(pl.col("a") > 1) | (pl.col("a") == 1) & (pl.col("a") == 2)',
+    ),
+    (
+        "a",
+        lambda x: (x > 1 or x == 1) and x == 2,
+        '((pl.col("a") > 1) | (pl.col("a") == 1)) & (pl.col("a") == 2)',
+    ),
+    (
+        "a",
+        lambda x: x > 2 or x != 3 and x not in (0, 1, 4),
+        '(pl.col("a") > 2) | (pl.col("a") != 3) & ~pl.col("a").is_in((0, 1, 4))',
+    ),
+    (
+        "a",
+        lambda x: x > 1 and x != 2 or x % 2 == 0 and x < 3,
+        '(pl.col("a") > 1) & (pl.col("a") != 2) | ((pl.col("a") % 2) == 0) & (pl.col("a") < 3)',
+    ),
+    (
+        "a",
+        lambda x: x > 1 and (x != 2 or x % 2 == 0) and x < 3,
+        '(pl.col("a") > 1) & ((pl.col("a") != 2) | ((pl.col("a") % 2) == 0)) & (pl.col("a") < 3)',
+    ),
     # string expr: case/cast ops
     ("b", lambda x: str(x).title(), 'pl.col("b").cast(pl.Utf8).str.to_titlecase()'),
     (

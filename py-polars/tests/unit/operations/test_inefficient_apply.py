@@ -19,7 +19,6 @@ from tests.test_udfs import MY_CONSTANT, TEST_CASES
         lambda x: x,
         lambda x, y: x + y,
         lambda x: x[0] + 1,
-        lambda x: x > 0 and (x < 100 or (x % 2 == 0)),
     ],
 )
 def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
