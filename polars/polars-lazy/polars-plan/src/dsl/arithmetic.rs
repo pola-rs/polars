@@ -113,6 +113,19 @@ impl Expr {
         self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::ArcTan))
     }
 
+    /// Compute the inverse tangent of the given expression, with the angle expressed as the argument of a complex number
+    #[cfg(feature = "trigonometry")]
+    pub fn arctan2(self, x: Self) -> Self {
+        Expr::Function {
+            input: vec![self, x],
+            function: FunctionExpr::Atan2,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                ..Default::default()
+            },
+        }
+    }
+
     /// Compute the hyperbolic cosine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn cosh(self) -> Self {

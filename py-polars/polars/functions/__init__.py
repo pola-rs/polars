@@ -26,6 +26,8 @@ from polars.functions.eager import align_frames, concat
 from polars.functions.lazy import (
     apply,
     approx_unique,
+    arctan2,
+    arctan2d,
     arg_sort_by,
     arg_where,
     avg,
@@ -103,6 +105,8 @@ __all__ = [
     # polars.functions.lazy
     "apply",
     "arange",
+    "arctan2",
+    "arctan2d",
     "arg_sort_by",
     "avg",
     "coalesce",

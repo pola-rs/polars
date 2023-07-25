@@ -125,6 +125,8 @@ impl FunctionExpr {
             DateOffset(_) => mapper.with_same_dtype(),
             #[cfg(feature = "trigonometry")]
             Trigonometry(_) => mapper.map_to_float_dtype(),
+            #[cfg(feature = "trigonometry")]
+            Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
             Sign => mapper.with_dtype(DataType::Int64),
             FillNull { super_type, .. } => mapper.with_dtype(super_type.clone()),

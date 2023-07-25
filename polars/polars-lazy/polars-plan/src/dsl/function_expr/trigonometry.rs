@@ -1,4 +1,5 @@
 use num::Float;
+use polars_arrow::utils::CustomIterTools;
 use polars_core::export::num;
 
 use super::*;
@@ -65,6 +66,78 @@ pub(super) fn apply_trigonometric_function(
             apply_trigonometric_function(&s, trig_function)
         }
         dt => polars_bail!(op = "trigonometry", dt),
+    }
+}
+
+pub(super) fn apply_arctan2(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+    let y = &s[0];
+    let x = &s[1];
+
+    let y_len = y.len();
+    let x_len = x.len();
+
+    match (y_len, x_len) {
+        (1, _) | (_, 1) => arctan2_on_series(y, x),
+        (len_a, len_b) if len_a == len_b => arctan2_on_series(y, x),
+        _ => polars_bail!(
+            ComputeError:
+            "y shape: {} in `arctan2` expression does not match that of x: {}",
+            y_len, x_len,
+        ),
+    }
+}
+
+fn arctan2_on_series(y: &Series, x: &Series) -> PolarsResult<Option<Series>> {
+    use DataType::*;
+    match y.dtype() {
+        Float32 => {
+            let y_ca: &ChunkedArray<Float32Type> = y.f32().unwrap();
+            arctan2_on_floats(y_ca, x)
+        }
+        Float64 => {
+            let y_ca: &ChunkedArray<Float64Type> = y.f64().unwrap();
+            arctan2_on_floats(y_ca, x)
+        }
+        _ => {
+            let y = y.cast(&DataType::Float64)?;
+            arctan2_on_series(&y, x)
+        }
+    }
+}
+
+fn arctan2_on_floats<T>(y: &ChunkedArray<T>, x: &Series) -> PolarsResult<Option<Series>>
+where
+    T: PolarsFloatType,
+    T::Native: Float,
+    ChunkedArray<T>: IntoSeries,
+{
+    let dtype = T::get_dtype();
+    let x = x.cast(&dtype)?;
+    let x = y.unpack_series_matching_type(&x).unwrap();
+
+    if x.len() == 1 {
+        let x_value = x
+            .get(0)
+            .ok_or_else(|| polars_err!(ComputeError: "arctan2 x value is null"))?;
+
+        Ok(Some(y.apply(|v| v.atan2(x_value)).into_series()))
+    } else if y.len() == 1 {
+        let y_value = y
+            .get(0)
+            .ok_or_else(|| polars_err!(ComputeError: "arctan2 y value is null"))?;
+
+        Ok(Some(x.apply(|v| y_value.atan2(v)).into_series()))
+    } else {
+        Ok(Some(
+            y.into_iter()
+                .zip(x.into_iter())
+                .map(|(opt_y, opt_x)| match (opt_y, opt_x) {
+                    (Some(y), Some(x)) => Some(y.atan2(x)),
+                    _ => None,
+                })
+                .collect_trusted::<ChunkedArray<T>>()
+                .into_series(),
+        ))
     }
 }
 
