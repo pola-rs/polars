@@ -582,6 +582,23 @@ def test_date_range_eager_explode() -> None:
     assert_series_equal(result, expected)
 
 
+def test_date_range_deprecated_eager() -> None:
+    start = pl.Series([date(2022, 1, 1), date(2022, 1, 2)])
+    end = pl.Series([date(2022, 1, 4), date(2022, 1, 3)])
+
+    with pytest.deprecated_call():
+        result = pl.date_range(start, end, eager=True)
+
+    expected = pl.Series(
+        "date",
+        [
+            [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3), date(2022, 1, 4)],
+            [date(2022, 1, 2), date(2022, 1, 3)],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+
 def test_time_range_lit_lazy() -> None:
     with pytest.deprecated_call():
         tm = pl.select(
@@ -1035,4 +1052,21 @@ def test_time_range_eager_explode() -> None:
     result = pl.time_range(start, end, eager=True)
 
     expected = pl.Series("time", [time(9, 0), time(10, 0), time(11, 0)])
+    assert_series_equal(result, expected)
+
+
+def test_time_range_deprecated_eager() -> None:
+    start = pl.Series([time(9, 0), time(10, 0)])
+    end = pl.Series([time(12, 0), time(11, 0)])
+
+    with pytest.deprecated_call():
+        result = pl.time_range(start, end, eager=True)
+
+    expected = pl.Series(
+        "time",
+        [
+            [time(9, 0), time(10, 0), time(11, 0), time(12, 0)],
+            [time(10, 0), time(11, 0)],
+        ],
+    )
     assert_series_equal(result, expected)
