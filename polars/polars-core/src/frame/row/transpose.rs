@@ -9,7 +9,7 @@ impl DataFrame {
         &self,
         dtype: &DataType,
         keep_names_as: Option<&str>,
-        names_t: &[String],
+        names_out: &[String],
     ) -> PolarsResult<DataFrame> {
         let new_width = self.height();
         let new_height = self.width();
@@ -26,19 +26,19 @@ impl DataFrame {
         let cols = &self.columns;
         match dtype {
             #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => numeric_transpose::<Int8Type>(cols, names_t, &mut cols_t),
+            DataType::Int8 => numeric_transpose::<Int8Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => numeric_transpose::<Int16Type>(cols, names_t, &mut cols_t),
-            DataType::Int32 => numeric_transpose::<Int32Type>(cols, names_t, &mut cols_t),
-            DataType::Int64 => numeric_transpose::<Int64Type>(cols, names_t, &mut cols_t),
+            DataType::Int16 => numeric_transpose::<Int16Type>(cols, names_out, &mut cols_t),
+            DataType::Int32 => numeric_transpose::<Int32Type>(cols, names_out, &mut cols_t),
+            DataType::Int64 => numeric_transpose::<Int64Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => numeric_transpose::<UInt8Type>(cols, names_t, &mut cols_t),
+            DataType::UInt8 => numeric_transpose::<UInt8Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => numeric_transpose::<UInt16Type>(cols, names_t, &mut cols_t),
-            DataType::UInt32 => numeric_transpose::<UInt32Type>(cols, names_t, &mut cols_t),
-            DataType::UInt64 => numeric_transpose::<UInt64Type>(cols, names_t, &mut cols_t),
-            DataType::Float32 => numeric_transpose::<Float32Type>(cols, names_t, &mut cols_t),
-            DataType::Float64 => numeric_transpose::<Float64Type>(cols, names_t, &mut cols_t),
+            DataType::UInt16 => numeric_transpose::<UInt16Type>(cols, names_out, &mut cols_t),
+            DataType::UInt32 => numeric_transpose::<UInt32Type>(cols, names_out, &mut cols_t),
+            DataType::UInt64 => numeric_transpose::<UInt64Type>(cols, names_out, &mut cols_t),
+            DataType::Float32 => numeric_transpose::<Float32Type>(cols, names_out, &mut cols_t),
+            DataType::Float64 => numeric_transpose::<Float64Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 // this requires to support `Object` in Series::iter which we don't yet
@@ -71,7 +71,7 @@ impl DataFrame {
                         }
                     });
                 }
-                cols_t.extend(buffers.into_iter().zip(names_t).map(|(buf, name)| {
+                cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
                     let mut s = buf.into_series().cast(dtype).unwrap();
                     s.rename(name);
                     s
@@ -88,7 +88,7 @@ impl DataFrame {
         new_col_names: Option<Either<String, Vec<String>>>,
     ) -> PolarsResult<DataFrame> {
         let mut df = Cow::Borrowed(self); // Can't use self because we might drop a name column
-        let names_t = match new_col_names {
+        let names_out = match new_col_names {
             None => (0..self.height()).map(|i| format!("column_{i}")).collect(),
             Some(cn) => match cn {
                 Either::Left(name) => {
@@ -109,7 +109,7 @@ impl DataFrame {
         if let Some(cn) = keep_names_as {
             // Check that the column name we're using for the original column names is unique before
             // wasting time transposing
-            polars_ensure!(names_t.iter().all(|a| a.as_str() != cn), Duplicate: "{} is already in output column names", cn)
+            polars_ensure!(names_out.iter().all(|a| a.as_str() != cn), Duplicate: "{} is already in output column names", cn)
         }
         polars_ensure!(
             df.height() != 0 && df.width() != 0,
@@ -140,7 +140,7 @@ impl DataFrame {
             }
             _ => {}
         }
-        df.transpose_from_dtype(&dtype, keep_names_as, &names_t)
+        df.transpose_from_dtype(&dtype, keep_names_as, &names_out)
     }
 }
 
@@ -158,7 +158,7 @@ unsafe fn add_value<T: NumericNative>(
 
 // This just fills a pre-allocated mutable series vector, which may have a name column.
 // Nothing is returned and the actual DataFrame is constructed above.
-pub(super) fn numeric_transpose<T>(cols: &[Series], names_t: &[String], cols_t: &mut Vec<Series>)
+pub(super) fn numeric_transpose<T>(cols: &[Series], names_out: &[String], cols_t: &mut Vec<Series>)
 where
     T: PolarsNumericType,
     //S: AsRef<str>,
@@ -227,7 +227,7 @@ where
         values_buf
             .into_par_iter()
             .zip(validity_buf)
-            .zip(names_t)
+            .zip(names_out)
             .map(|((mut values, validity), name)| {
                 // Safety:
                 // all values are written we can now set len
