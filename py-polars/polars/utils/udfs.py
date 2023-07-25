@@ -79,8 +79,14 @@ _SIMPLE_EXPR_OPS |= (
 )
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
 _UNARY_OPCODE_VALUES = set(_UNARY_OPCODES.values())
-_UPGRADE_BINARY_OPS = sys.version_info < (3, 11)
 _LOAD_OPS |= {"LOAD_METHOD", "LOAD_ATTR"}
+
+if sys.version_info < (3, 11):
+    _UPGRADE_BINARY_OPS = True
+    _CALL_OP = "CALL_*"
+else:
+    _UPGRADE_BINARY_OPS = False
+    _CALL_OP = "CALL"
 
 # numpy functions that we can map to a native expression
 _NUMPY_MODULE_ALIASES = {"np", "numpy"}
@@ -474,7 +480,7 @@ class RewrittenInstructions:
         """Replace builtin function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_FAST", "CALL"],
+            opnames=["LOAD_GLOBAL", "LOAD_FAST", _CALL_OP],
             argvals=[_PYTHON_CASTS_MAP],
         ):
             inst1, inst2 = matching_instructions[:2]
@@ -497,7 +503,7 @@ class RewrittenInstructions:
         """Replace numpy/json function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_*", "LOAD_*", "CALL"],
+            opnames=["LOAD_GLOBAL", "LOAD_*", "LOAD_*", _CALL_OP],
             argvals=[_NUMPY_MODULE_ALIASES | {"json"}, _NUMPY_FUNCTIONS | {"loads"}],
         ):
             inst1, inst2, inst3 = matching_instructions[:3]
@@ -520,7 +526,7 @@ class RewrittenInstructions:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_METHOD", "CALL"],
+            opnames=["LOAD_METHOD", _CALL_OP],
             argvals=[_PYTHON_METHOD_MAP],
         ):
             inst = matching_instructions[0]
