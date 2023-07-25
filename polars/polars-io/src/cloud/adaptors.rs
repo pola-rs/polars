@@ -161,6 +161,7 @@ impl CloudWriter {
     pub fn new_with_object_store(object_store: Arc<dyn ObjectStore>, path: Path) -> Self {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_io()
+            .enable_time()
             .build()
             .unwrap();
         let (multipart_id, writer) =
@@ -255,6 +256,8 @@ mod tests {
         .unwrap()
     }
 
+    // Skip this tests on Windows since it does not have a convenient /tmp/ location.
+    #[cfg_attr(target_os = "windows", ignore)]
     #[test]
     fn csv_to_local_objectstore_cloudwriter() {
         use crate::csv::CsvWriter;
@@ -276,6 +279,8 @@ mod tests {
             .expect("Could not write dataframe as CSV to remote location");
     }
 
+    // Skip this tests on Windows since it does not have a convenient /tmp/ location.
+    #[cfg_attr(target_os = "windows", ignore)]
     #[test]
     fn cloudwriter_from_cloudlocation_test() {
         use crate::csv::CsvWriter;
