@@ -23,7 +23,7 @@ pub mod take_agg;
 mod time;
 
 #[cfg(feature = "timezones")]
-pub use time::replace_timezone;
+pub use time::replace_time_zone;
 
 /// Internal state of [SlicesIterator]
 #[derive(Debug, PartialEq)]

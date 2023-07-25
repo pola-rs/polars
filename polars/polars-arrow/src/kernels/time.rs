@@ -91,7 +91,7 @@ fn convert_to_timestamp(
 }
 
 #[cfg(feature = "timezones")]
-pub fn replace_timezone(
+pub fn replace_time_zone(
     arr: &PrimitiveArray<i64>,
     tu: TimeUnit,
     from: &str,

@@ -42,9 +42,7 @@ pub enum TemporalFunction {
     DSTOffset,
     Round(String, String),
     #[cfg(feature = "timezones")]
-    CastTimezone(Option<TimeZone>, Option<bool>),
-    #[cfg(feature = "timezones")]
-    TzLocalize(TimeZone),
+    ReplaceTimeZone(Option<TimeZone>, Option<bool>),
     DateRange {
         every: Duration,
         closed: ClosedWindow,
@@ -102,9 +100,7 @@ impl Display for TemporalFunction {
             DSTOffset => "dst_offset",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
-            CastTimezone(_, _) => "replace_timezone",
-            #[cfg(feature = "timezones")]
-            TzLocalize(_) => "tz_localize",
+            ReplaceTimeZone(_, _) => "replace_time_zone",
             DateRange { .. } => return write!(f, "date_range"),
             DateRanges { .. } => return write!(f, "date_ranges"),
             TimeRange { .. } => return write!(f, "time_range"),
@@ -325,7 +321,7 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
 }
 
 #[cfg(feature = "timezones")]
-pub(super) fn replace_timezone(
+pub(super) fn replace_time_zone(
     s: &Series,
     time_zone: Option<&str>,
     use_earliest: Option<bool>,
@@ -333,17 +329,4 @@ pub(super) fn replace_timezone(
     let ca = s.datetime()?;
     ca.replace_time_zone(time_zone, use_earliest)
         .map(|ca| ca.into_series())
-}
-
-#[cfg(feature = "timezones")]
-#[deprecated(note = "use replace_time_zone")]
-pub(super) fn tz_localize(s: &Series, tz: &str) -> PolarsResult<Series> {
-    let ca = s.datetime()?.clone();
-    polars_ensure!(
-        ca.time_zone().as_ref().map_or(true, |tz| tz.is_empty()),
-        ComputeError:
-        "cannot localize a tz-aware datetime \
-        (consider using 'dt.convert_time_zone' or 'dt.replace_time_zone')"
-    );
-    Ok(ca.replace_time_zone(Some(tz), None)?.into_series())
 }

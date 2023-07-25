@@ -93,17 +93,6 @@ impl DateLikeNameSpace {
         )
     }
 
-    /// Localize tz-naive Datetime Series to tz-aware Datetime Series.
-    //
-    // This method takes a naive Datetime Series and makes this time zone aware.
-    // It does not move the time to another time zone.
-    #[cfg(feature = "timezones")]
-    #[deprecated(note = "use replace_time_zone")]
-    pub fn tz_localize(self, tz: TimeZone) -> Expr {
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TzLocalize(tz)))
-    }
-
     /// Get the year of a Date/Datetime
     pub fn year(self) -> Expr {
         self.0
@@ -283,11 +272,9 @@ impl DateLikeNameSpace {
         time_zone: Option<TimeZone>,
         use_earliest: Option<bool>,
     ) -> Expr {
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimezone(
-                time_zone,
-                use_earliest,
-            )))
+        self.0.map_private(FunctionExpr::TemporalExpr(
+            TemporalFunction::ReplaceTimeZone(time_zone, use_earliest),
+        ))
     }
 
     pub fn combine(self, time: Expr, tu: TimeUnit) -> Expr {
