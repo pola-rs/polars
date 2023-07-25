@@ -24,7 +24,7 @@ use crate::prelude::optimizer::projection_pushdown::projection::process_projecti
 use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::{
-    aexpr_assign_renamed_leaf, aexpr_to_leaf_names, aexpr_to_leaf_nodes, check_input_node,
+    aexpr_assign_renamed_leaf, aexpr_to_column_nodes, aexpr_to_leaf_names, check_input_node,
     expr_is_projected_upstream,
 };
 
@@ -101,8 +101,8 @@ fn add_expr_to_accumulated(
     projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
 ) {
-    for root_node in aexpr_to_leaf_nodes(expr, expr_arena) {
-        for name in aexpr_to_leaf_names(root_node, expr_arena) {
+    for root_node in aexpr_to_column_nodes_iter(expr, expr_arena) {
+        for name in aexpr_to_leaf_names_iter(root_node, expr_arena) {
             if projected_names.insert(name) {
                 acc_projections.push(root_node)
             }
@@ -223,7 +223,7 @@ impl ProjectionPushDown {
         let mut pushed_at_least_one = false;
         let mut already_projected = false;
         let names = aexpr_to_leaf_names(proj, expr_arena);
-        let root_projections = aexpr_to_leaf_nodes(proj, expr_arena);
+        let root_projections = aexpr_to_column_nodes(proj, expr_arena);
 
         for (name, root_projection) in names.into_iter().zip(root_projections) {
             let is_in_left = names_left.contains(&name);
@@ -487,7 +487,7 @@ impl ProjectionPushDown {
                 if !acc_projections.is_empty() {
                     // Make sure that the column(s) used for the sort is projected
                     by_column.iter().for_each(|node| {
-                        aexpr_to_leaf_nodes(*node, expr_arena)
+                        aexpr_to_column_nodes(*node, expr_arena)
                             .iter()
                             .for_each(|root| {
                                 add_expr_to_accumulated(

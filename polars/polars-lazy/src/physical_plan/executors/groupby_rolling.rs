@@ -81,16 +81,7 @@ impl GroupByRollingExec {
         };
 
         state.expr_cache = Some(Default::default());
-        let agg_columns = POOL.install(|| {
-            self.aggs
-                .par_iter()
-                .map(|expr| {
-                    let agg = expr.evaluate_on_groups(&df, groups, state)?.aggregated();
-                    polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
-                    Ok(agg)
-                })
-                .collect::<PolarsResult<Vec<_>>>()
-        })?;
+        let agg_columns = evaluate_aggs(&df, &self.aggs, groups, state)?;
         state.expr_cache = None;
 
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());

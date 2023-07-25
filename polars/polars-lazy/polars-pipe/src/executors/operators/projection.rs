@@ -3,7 +3,6 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
-#[cfg(feature = "cse")]
 use polars_plan::utils::rename_cse_tmp_series;
 
 use crate::expressions::PhysicalPipedExpr;
@@ -48,7 +47,6 @@ impl Operator for FastProjectionOperator {
 #[derive(Clone)]
 pub(crate) struct ProjectionOperator {
     pub(crate) exprs: Vec<Arc<dyn PhysicalPipedExpr>>,
-    #[cfg(feature = "cse")]
     pub(crate) cse_exprs: Option<HstackOperator>,
 }
 
@@ -59,9 +57,7 @@ impl Operator for ProjectionOperator {
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
         // add temporary cse column to the chunk
-        #[cfg(feature = "cse")]
         let cse_owned_chunk;
-        #[cfg(feature = "cse")]
         let chunk = if let Some(hstack) = &mut self.cse_exprs {
             let OperatorResult::Finished(out) = hstack.execute(context, chunk)? else { unreachable!() };
             cse_owned_chunk = out;
@@ -80,7 +76,6 @@ impl Operator for ProjectionOperator {
                 let mut s = e.evaluate(chunk, context.execution_state.as_any())?;
 
                 // correct the cse name
-                #[cfg(feature = "cse")]
                 if self.cse_exprs.is_some() {
                     rename_cse_tmp_series(&mut s);
                 }
@@ -113,16 +108,11 @@ impl Operator for ProjectionOperator {
         Box::new(self.clone())
     }
     fn fmt(&self) -> &str {
-        #[cfg(feature = "cse")]
-        {
-            if self.cse_exprs.is_some() {
-                "projection[cse]"
-            } else {
-                "projection"
-            }
+        if self.cse_exprs.is_some() {
+            "projection[cse]"
+        } else {
+            "projection"
         }
-        #[cfg(not(feature = "cse"))]
-        "projection"
     }
 }
 
@@ -130,8 +120,11 @@ impl Operator for ProjectionOperator {
 pub(crate) struct HstackOperator {
     pub(crate) exprs: Vec<Arc<dyn PhysicalPipedExpr>>,
     pub(crate) input_schema: SchemaRef,
-    #[cfg(feature = "cse")]
     pub(crate) cse_exprs: Option<Box<Self>>,
+    // add columns without any checks
+    // this is needed for cse, as the temporary columns
+    // may have a different size
+    pub(crate) unchecked: bool,
 }
 
 impl Operator for HstackOperator {
@@ -141,11 +134,8 @@ impl Operator for HstackOperator {
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
         // add temporary cse column to the chunk
-        #[cfg(feature = "cse")]
         let width = chunk.data.width();
-        #[cfg(feature = "cse")]
         let cse_owned_chunk;
-        #[cfg(feature = "cse")]
         let chunk = if let Some(hstack) = &mut self.cse_exprs {
             let OperatorResult::Finished(out) = hstack.execute(context, chunk)? else { unreachable!() };
             cse_owned_chunk = out;
@@ -161,7 +151,6 @@ impl Operator for HstackOperator {
                 #[allow(unused_mut)]
                 let mut res = e.evaluate(chunk, context.execution_state.as_any());
 
-                #[cfg(feature = "cse")]
                 if self.cse_exprs.is_some() {
                     res = res.map(|mut s| {
                         rename_cse_tmp_series(&mut s);
@@ -172,13 +161,14 @@ impl Operator for HstackOperator {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        #[cfg(feature = "cse")]
         let mut df = DataFrame::new_no_checks(chunk.data.get_columns()[..width].to_vec());
-        #[cfg(not(feature = "cse"))]
-        let mut df = chunk.data.clone();
 
         let schema = &*self.input_schema;
-        df._add_columns(projected, schema)?;
+        if self.unchecked {
+            unsafe { df.get_columns_mut().extend(projected) }
+        } else {
+            df._add_columns(projected, schema)?;
+        }
 
         let chunk = chunk.with_data(df);
         Ok(OperatorResult::Finished(chunk))
@@ -187,15 +177,10 @@ impl Operator for HstackOperator {
         Box::new(self.clone())
     }
     fn fmt(&self) -> &str {
-        #[cfg(feature = "cse")]
-        {
-            if self.cse_exprs.is_some() {
-                "hstack[cse]"
-            } else {
-                "hstack"
-            }
+        if self.cse_exprs.is_some() {
+            "hstack[cse]"
+        } else {
+            "hstack"
         }
-        #[cfg(not(feature = "cse"))]
-        "hstack"
     }
 }

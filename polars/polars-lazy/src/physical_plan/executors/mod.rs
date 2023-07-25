@@ -140,7 +140,7 @@ fn execute_projection_cached_window_fns(
 fn run_exprs_par(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
-    state: &mut ExecutionState,
+    state: &ExecutionState,
 ) -> PolarsResult<Vec<Series>> {
     POOL.install(|| {
         exprs

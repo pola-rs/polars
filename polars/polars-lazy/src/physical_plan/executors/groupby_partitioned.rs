@@ -346,7 +346,12 @@ impl PartitionGroupByExec {
                 .zip(&df.get_columns()[self.phys_keys.len()..])
                 .map(|(expr, partitioned_s)| {
                     let agg_expr = expr.as_partitioned_aggregator().unwrap();
-                    agg_expr.finalize(partitioned_s.clone(), groups, state)
+                    agg_expr
+                        .finalize(partitioned_s.clone(), groups, state)
+                        .map(|mut s| {
+                            rename_cse_tmp_series(&mut s);
+                            s
+                        })
                 })
                 .collect();
 

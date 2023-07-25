@@ -1,3 +1,7 @@
+use std::borrow::Cow;
+
+use polars_core::schema::SchemaRef;
+
 use super::*;
 use crate::prelude::*;
 
@@ -12,6 +16,12 @@ impl ALogicalPlanNode {
     /// # Safety
     /// This will keep a pointer to `arena`. The caller must ensure it stays alive.
     unsafe fn new(node: Node, arena: &mut Arena<ALogicalPlan>) -> Self {
+        Self { node, arena }
+    }
+
+    /// # Safety
+    /// This will keep a pointer to `arena`. The caller must ensure it stays alive.
+    pub(crate) unsafe fn from_raw(node: Node, arena: *mut Arena<ALogicalPlan>) -> Self {
         Self { node, arena }
     }
 
@@ -65,6 +75,21 @@ impl ALogicalPlanNode {
     pub fn to_alp_mut(&mut self) -> &mut ALogicalPlan {
         let node = self.node;
         self.with_arena_mut(|arena| arena.get_mut(node))
+    }
+
+    pub fn schema(&self) -> Cow<SchemaRef> {
+        self.with_arena(|arena| arena.get(self.node).schema(arena))
+    }
+
+    /// Take a `Node` and convert it an `ALogicalPlanNode` and call
+    /// `F` with `self` and the new created `ALogicalPlanNode`
+    pub fn binary<F, T>(&self, other: Node, op: F) -> T
+    where
+        F: FnOnce(&ALogicalPlanNode, &ALogicalPlanNode) -> T,
+    {
+        // this is safe as we remain in context
+        let other = unsafe { ALogicalPlanNode::from_raw(other, self.arena) };
+        op(self, &other)
     }
 }
 

@@ -186,6 +186,11 @@ impl AexprNode {
             }
         })
     }
+
+    #[cfg(feature = "cse")]
+    pub(crate) fn is_leaf(&self) -> bool {
+        matches!(self.to_aexpr(), AExpr::Column(_) | AExpr::Literal(_))
+    }
 }
 
 impl PartialEq for AexprNode {

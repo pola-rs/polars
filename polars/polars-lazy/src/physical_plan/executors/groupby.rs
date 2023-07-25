@@ -2,6 +2,25 @@ use rayon::prelude::*;
 
 use super::*;
 
+pub(super) fn evaluate_aggs(
+    df: &DataFrame,
+    aggs: &[Arc<dyn PhysicalExpr>],
+    groups: &GroupsProxy,
+    state: &mut ExecutionState,
+) -> PolarsResult<Vec<Series>> {
+    POOL.install(|| {
+        aggs.par_iter()
+            .map(|expr| {
+                let mut agg = expr.evaluate_on_groups(df, groups, state)?.finalize();
+                polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
+
+                rename_cse_tmp_series(&mut agg);
+                Ok(agg)
+            })
+            .collect::<PolarsResult<Vec<_>>>()
+    })
+}
+
 /// Take an input Executor and a multiple expressions
 pub struct GroupByExec {
     input: Box<dyn Executor>,
@@ -14,6 +33,7 @@ pub struct GroupByExec {
 }
 
 impl GroupByExec {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         input: Box<dyn Executor>,
         keys: Vec<Arc<dyn PhysicalExpr>>,
@@ -35,6 +55,7 @@ impl GroupByExec {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn groupby_helper(
     mut df: DataFrame,
     keys: Vec<Series>,
@@ -66,15 +87,7 @@ pub(super) fn groupby_helper(
     let (mut columns, agg_columns) = POOL.install(|| {
         let get_columns = || gb.keys_sliced(slice);
 
-        let get_agg = || {
-            aggs.par_iter()
-                .map(|expr| {
-                    let agg = expr.evaluate_on_groups(&df, groups, state)?.finalize();
-                    polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
-                    Ok(agg)
-                })
-                .collect::<PolarsResult<Vec<_>>>()
-        };
+        let get_agg = || evaluate_aggs(&df, aggs, groups, state);
 
         rayon::join(get_columns, get_agg)
     });

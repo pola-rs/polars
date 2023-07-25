@@ -224,28 +224,26 @@ pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     }
 }
 
-fn is_leaf_aexpr(ae: &AExpr) -> bool {
+fn is_column_aexpr(ae: &AExpr) -> bool {
     matches!(ae, AExpr::Column(_) | AExpr::Wildcard)
 }
 
 #[allow(clippy::type_complexity)]
-pub(crate) fn aexpr_to_leaf_nodes_iter<'a>(
+pub(crate) fn aexpr_to_column_nodes_iter<'a>(
     root: Node,
     arena: &'a Arena<AExpr>,
 ) -> FlatMap<AExprIter<'a>, Option<Node>, fn((Node, &'a AExpr)) -> Option<Node>> {
-    arena.iter(root).flat_map(
-        |(node, ae)| {
-            if is_leaf_aexpr(ae) {
-                Some(node)
-            } else {
-                None
-            }
-        },
-    )
+    arena.iter(root).flat_map(|(node, ae)| {
+        if is_column_aexpr(ae) {
+            Some(node)
+        } else {
+            None
+        }
+    })
 }
 
-pub(crate) fn aexpr_to_leaf_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node> {
-    aexpr_to_leaf_nodes_iter(root, arena).collect()
+pub(crate) fn aexpr_to_column_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node> {
+    aexpr_to_column_nodes_iter(root, arena).collect()
 }
 
 /// Rename the roots of the expression to a single name.
@@ -277,7 +275,7 @@ pub(crate) fn rename_matching_aexpr_leaf_names(
     current: &str,
     new_name: &str,
 ) -> Node {
-    let mut leaves = aexpr_to_leaf_nodes_iter(node, arena);
+    let mut leaves = aexpr_to_column_nodes_iter(node, arena);
 
     if leaves.any(|node| matches!(arena.get(node), AExpr::Column(name) if &**name == current)) {
         // we convert to expression as we cannot easily copy the aexpr.
@@ -303,7 +301,7 @@ pub(crate) fn aexpr_assign_renamed_leaf(
     current: &str,
     new_name: &str,
 ) -> Node {
-    let leafs = aexpr_to_leaf_nodes_iter(node, arena);
+    let leafs = aexpr_to_column_nodes_iter(node, arena);
 
     for node in leafs {
         match arena.get(node) {
@@ -344,7 +342,7 @@ pub fn aexpr_to_leaf_names_iter(
     node: Node,
     arena: &Arena<AExpr>,
 ) -> impl Iterator<Item = Arc<str>> + '_ {
-    aexpr_to_leaf_nodes_iter(node, arena).map(|node| match arena.get(node) {
+    aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node) {
         // expecting only columns here, wildcards and dtypes should already be replaced
         AExpr::Column(name) => name.clone(),
         e => {

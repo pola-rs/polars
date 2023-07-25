@@ -88,6 +88,8 @@ struct ExprIdentifierVisitor<'a> {
     id_array_offset: usize,
     // whether the expression replaced a subexpression
     has_sub_expr: bool,
+    // During aggregation we only identify element-wise operations
+    is_groupby: bool,
 }
 
 impl ExprIdentifierVisitor<'_> {
@@ -95,6 +97,7 @@ impl ExprIdentifierVisitor<'_> {
         se_count: &'a mut SubExprCount,
         identifier_array: &'a mut IdentifierArray,
         visit_stack: &'a mut Vec<VisitRecord>,
+        is_groupby: bool,
     ) -> ExprIdentifierVisitor<'a> {
         let id_array_offset = identifier_array.len();
         ExprIdentifierVisitor {
@@ -105,6 +108,7 @@ impl ExprIdentifierVisitor<'_> {
             visit_stack,
             id_array_offset,
             has_sub_expr: false,
+            is_groupby,
         }
     }
 
@@ -129,11 +133,33 @@ impl ExprIdentifierVisitor<'_> {
     }
 
     fn accept_node(&self, ae: &AExpr) -> bool {
-        // skip windows for now until we properly implemented the physical side
-        !matches!(
-            ae,
-            AExpr::Column(_) | AExpr::Count | AExpr::Literal(_) | AExpr::Window { .. }
-        )
+        match ae {
+            // skip window functions for now until we properly implemented the physical side
+            AExpr::Column(_)
+            | AExpr::Count
+            | AExpr::Literal(_)
+            | AExpr::Window { .. }
+            | AExpr::Alias(_, _) => false,
+            #[cfg(feature = "random")]
+            AExpr::Function {
+                function: FunctionExpr::Random { .. },
+                ..
+            } => false,
+            _ => {
+                // during aggregation we only store elementwise operation in the state
+                // other operations we cannot add to the state as they have the output size of the
+                // groups, not the original dataframe
+                if self.is_groupby {
+                    match ae {
+                        AExpr::Agg(_) | AExpr::AnonymousFunction { .. } => false,
+                        AExpr::Function { options, .. } => !options.is_groups_sensitive(),
+                        _ => true,
+                    }
+                } else {
+                    true
+                }
+            }
+        }
     }
 }
 
@@ -269,7 +295,14 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         // placeholder not overwritten, so we can skip this sub-expression
         if id.is_empty() {
             self.visited_idx += 1;
-            return Ok(RewriteRecursion::Stop);
+            let recurse = if ae_node.is_leaf() {
+                RewriteRecursion::Stop
+            } else {
+                // continue visit its children to see
+                // if there are cse
+                RewriteRecursion::NoMutateAndContinue
+            };
+            return Ok(recurse);
         }
 
         let (node, count) = self.sub_expr_map.get(id).unwrap();
@@ -342,11 +375,16 @@ impl<'a> CommonSubExprOptimizer<'a> {
         }
     }
 
-    fn visit_expression(&mut self, ae_node: AexprNode) -> PolarsResult<(usize, bool)> {
+    fn visit_expression(
+        &mut self,
+        ae_node: AexprNode,
+        is_groupby: bool,
+    ) -> PolarsResult<(usize, bool)> {
         let mut visitor = ExprIdentifierVisitor::new(
             &mut self.se_count,
             &mut self.id_array,
             &mut self.visit_stack,
+            is_groupby,
         );
         ae_node.visit(&mut visitor).map(|_| ())?;
         Ok((visitor.id_array_offset, visitor.has_sub_expr))
@@ -367,12 +405,11 @@ impl<'a> CommonSubExprOptimizer<'a> {
 
     fn find_cse(
         &mut self,
-        expr: &ProjectionExprs,
+        expr: &[Node],
         expr_arena: &mut Arena<AExpr>,
         id_array_offsets: &mut Vec<u32>,
+        is_groupby: bool,
     ) -> PolarsResult<Option<ProjectionExprs>> {
-        debug_assert!(!expr.has_sub_exprs());
-
         let mut has_sub_expr = false;
 
         // first get all cse's
@@ -384,7 +421,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
             // visit expressions and collect sub-expression counts
             let (id_array_offset, this_expr_has_se) =
                 AexprNode::with_context(*node, expr_arena, |ae_node| {
-                    self.visit_expression(ae_node)
+                    self.visit_expression(ae_node, is_groupby)
                 })?;
             id_array_offsets.push(id_array_offset as u32);
             has_sub_expr |= this_expr_has_se;
@@ -422,7 +459,9 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
     fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<RewriteRecursion> {
         use ALogicalPlan::*;
         Ok(match node.to_alp() {
-            Projection { .. } | HStack { .. } => RewriteRecursion::MutateAndContinue,
+            Projection { .. } | HStack { .. } | Aggregate { .. } => {
+                RewriteRecursion::MutateAndContinue
+            }
             _ => RewriteRecursion::NoMutateAndContinue,
         })
     }
@@ -443,7 +482,9 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                 expr,
                 schema,
             } => {
-                if let Some(expr) = self.find_cse(expr, &mut expr_arena, &mut id_array_offsets)? {
+                if let Some(expr) =
+                    self.find_cse(expr, &mut expr_arena, &mut id_array_offsets, false)?
+                {
                     let lp = ALogicalPlan::Projection {
                         input: *input,
                         expr,
@@ -457,11 +498,51 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                 exprs,
                 schema,
             } => {
-                if let Some(exprs) = self.find_cse(exprs, &mut expr_arena, &mut id_array_offsets)? {
+                if let Some(exprs) =
+                    self.find_cse(exprs, &mut expr_arena, &mut id_array_offsets, false)?
+                {
                     let lp = ALogicalPlan::HStack {
                         input: *input,
                         exprs,
                         schema: schema.clone(),
+                    };
+                    node.replace(lp);
+                }
+            }
+            ALogicalPlan::Aggregate {
+                input,
+                keys,
+                aggs,
+                options,
+                maintain_order,
+                apply,
+                schema,
+            } => {
+                if let Some(aggs) =
+                    self.find_cse(aggs, &mut expr_arena, &mut id_array_offsets, true)?
+                {
+                    let keys = keys.clone();
+                    let options = options.clone();
+                    let schema = schema.clone();
+                    let apply = apply.clone();
+                    let maintain_order = *maintain_order;
+                    let input = *input;
+
+                    let input = node.with_arena_mut(|lp_arena| {
+                        let lp = ALogicalPlanBuilder::new(input, &mut expr_arena, lp_arena)
+                            .with_columns(aggs.cse_exprs().to_vec())
+                            .build();
+                        lp_arena.add(lp)
+                    });
+
+                    let lp = ALogicalPlan::Aggregate {
+                        input,
+                        keys,
+                        aggs: aggs.default_exprs().to_vec(),
+                        options,
+                        schema,
+                        maintain_order,
+                        apply,
                     };
                     node.replace(lp);
                 }
@@ -492,7 +573,7 @@ mod test {
         let id_array_offset = id_array.len();
         let mut visit_stack = vec![];
         let mut visitor =
-            ExprIdentifierVisitor::new(&mut se_count, &mut id_array, &mut visit_stack);
+            ExprIdentifierVisitor::new(&mut se_count, &mut id_array, &mut visit_stack, false);
 
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
 
