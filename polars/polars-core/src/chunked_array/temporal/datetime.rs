@@ -9,7 +9,7 @@ use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
-use polars_arrow::kernels::replace_timezone;
+use polars_arrow::kernels::replace_time_zone;
 
 use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
@@ -106,7 +106,7 @@ impl DatetimeChunked {
             let chunks = self
                 .downcast_iter()
                 .map(|arr| {
-                    replace_timezone(arr, self.time_unit().to_arrow(), from, to, use_earliest)
+                    replace_time_zone(arr, self.time_unit().to_arrow(), from, to, use_earliest)
                 })
                 .collect::<PolarsResult<_>>()?;
             let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };

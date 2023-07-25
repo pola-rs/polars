@@ -50,12 +50,6 @@ impl PyExpr {
             .into()
     }
 
-    #[cfg(feature = "timezones")]
-    #[allow(deprecated)]
-    fn dt_tz_localize(&self, time_zone: String) -> Self {
-        self.inner.clone().dt().tz_localize(time_zone).into()
-    }
-
     fn dt_truncate(&self, every: String, offset: String, use_earliest: Option<bool>) -> Self {
         self.inner
             .clone()
