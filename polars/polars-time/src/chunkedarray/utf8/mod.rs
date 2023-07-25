@@ -303,7 +303,9 @@ pub trait Utf8Methods: AsUtf8 {
         ca.rename(utf8_ca.name());
         match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
-            (false, Some(tz)) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
+            (false, Some(tz)) => {
+                polars_ops::prelude::replace_time_zone(&ca.into_datetime(tu, None), Some(tz), None)
+            }
             #[cfg(feature = "timezones")]
             (true, _) => Ok(ca.into_datetime(tu, Some("UTC".to_string()))),
             _ => Ok(ca.into_datetime(tu, None)),
@@ -516,7 +518,11 @@ pub trait Utf8Methods: AsUtf8 {
             ca.rename(utf8_ca.name());
             match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
+                Some(tz) => polars_ops::prelude::replace_time_zone(
+                    &ca.into_datetime(tu, None),
+                    Some(tz),
+                    None,
+                ),
                 _ => Ok(ca.into_datetime(tu, None)),
             }
         }

@@ -32,3 +32,13 @@ pub(super) fn set_sorted_flag(s: &Series, sorted: IsSorted) -> PolarsResult<Seri
     s.set_sorted_flag(sorted);
     Ok(s)
 }
+
+#[cfg(feature = "timezones")]
+pub(super) fn replace_time_zone(
+    s: &Series,
+    time_zone: Option<&str>,
+    use_earliest: Option<bool>,
+) -> PolarsResult<Series> {
+    let ca = s.datetime().unwrap();
+    Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, use_earliest)?.into_series())
+}

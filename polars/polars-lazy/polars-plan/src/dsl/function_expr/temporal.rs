@@ -79,11 +79,12 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
     let result_naive = datetime + duration;
     match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => Ok(result_naive
-            .datetime()
-            .unwrap()
-            .replace_time_zone(Some(tz), None)?
-            .into()),
+        Some(tz) => Ok(polars_ops::prelude::replace_time_zone(
+            result_naive.datetime().unwrap(),
+            Some(tz),
+            None,
+        )?
+        .into()),
         _ => Ok(result_naive),
     }
 }
@@ -132,21 +133,22 @@ pub(super) fn temporal_range_dispatch(
     let (mut start, mut stop) = match dtype {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => (
-            start
-                .cast(&dtype)?
-                .datetime()
-                .unwrap()
-                .replace_time_zone(None, None)?
-                .into_series()
-                .to_physical_repr()
-                .cast(&DataType::Int64)?,
-            stop.cast(&dtype)?
-                .datetime()
-                .unwrap()
-                .replace_time_zone(None, None)?
-                .into_series()
-                .to_physical_repr()
-                .cast(&DataType::Int64)?,
+            polars_ops::prelude::replace_time_zone(
+                start.cast(&dtype)?.datetime().unwrap(),
+                None,
+                None,
+            )?
+            .into_series()
+            .to_physical_repr()
+            .cast(&DataType::Int64)?,
+            polars_ops::prelude::replace_time_zone(
+                stop.cast(&dtype)?.datetime().unwrap(),
+                None,
+                None,
+            )?
+            .into_series()
+            .to_physical_repr()
+            .cast(&DataType::Int64)?,
         ),
         _ => (
             start

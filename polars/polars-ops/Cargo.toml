@@ -13,6 +13,8 @@ description = "More operations on polars data structures"
 argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
 arrow.workspace = true
 base64 = { version = "0.21", optional = true }
+chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
+chrono-tz = { version = "0.8", optional = true }
 either.workspace = true
 hex = { version = "0.4", optional = true }
 indexmap.workspace = true
@@ -52,6 +54,7 @@ approx_unique = []
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
 rle = ["dtype-struct"]
+timezones = ["chrono-tz", "chrono"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
