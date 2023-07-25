@@ -406,10 +406,6 @@ impl SqlExprVisitor<'_> {
             else_result,
         } = expr
         {
-            if operand.is_some() {
-                polars_bail!(ComputeError: "CASE operand is not yet supported");
-            }
-
             polars_ensure!(
                 conditions.len() == results.len(),
                 ComputeError: "WHEN and THEN expressions must have the same length"
@@ -431,6 +427,34 @@ impl SqlExprVisitor<'_> {
                 Some(else_res) => self.visit_expr(else_res)?,
                 None => polars_bail!(ComputeError: "ELSE expression is required"),
             };
+
+            if let Some(operand_expr) = operand {
+                let first_operand_expr = self.visit_expr(operand_expr)?;
+
+                let first = first.unwrap();
+                let first_cond = first_operand_expr.eq(self.visit_expr(first.0)?);
+                let first_then = self.visit_expr(first.1)?;
+                let expr = when(first_cond).then(first_then);
+                let next = when_thens.next();
+
+                let mut when_then = if let Some((cond, res)) = next {
+                    let second_operand_expr = self.visit_expr(operand_expr)?;
+                    let cond = second_operand_expr.eq(self.visit_expr(cond)?);
+                    let res = self.visit_expr(res)?;
+                    expr.when(cond).then(res)
+                } else {
+                    return Ok(expr.otherwise(else_res));
+                };
+
+                for (cond, res) in when_thens {
+                    let new_operand_expr = self.visit_expr(operand_expr)?;
+                    let cond = new_operand_expr.eq(self.visit_expr(cond)?);
+                    let res = self.visit_expr(res)?;
+                    when_then = when_then.when(cond).then(res);
+                }
+
+                return Ok(when_then.otherwise(else_res));
+            }
 
             let first = first.unwrap();
             let first_cond = self.visit_expr(first.0)?;

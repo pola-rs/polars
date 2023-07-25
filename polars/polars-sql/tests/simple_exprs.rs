@@ -529,6 +529,30 @@ fn test_case_expr() {
 }
 
 #[test]
+fn test_case_expr_with_expression() {
+    let df = create_sample_df().unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = r#"
+        SELECT
+            CASE b%2
+                WHEN 0 THEN 'even'
+                WHEN 1 THEN 'odd'
+                ELSE 'No?'
+            END AS parity
+        FROM df"#;
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let case_expr = when((col("b") % lit(2)).eq(lit(0)))
+        .then(lit("even"))
+        .when((col("b") % lit(2)).eq(lit(1)))
+        .then(lit("odd"))
+        .otherwise(lit("No?"))
+        .alias("parity");
+    let df_pl = df.lazy().select(&[case_expr]).collect().unwrap();
+    assert!(df_sql.frame_equal(&df_pl));
+}
+
+#[test]
 fn test_sql_expr() {
     let df = create_sample_df().unwrap();
     let expr = sql_expr("MIN(a)").unwrap();
