@@ -223,7 +223,6 @@ where
 
 /// Booleans are casted to 1 or 0.
 impl BooleanChunked {
-    /// Returns `None` if the array is empty or only contains null values.
     pub fn sum(&self) -> Option<IdxSize> {
         Some(if self.is_empty() {
             0
