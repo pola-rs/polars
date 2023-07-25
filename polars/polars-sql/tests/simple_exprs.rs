@@ -545,7 +545,7 @@ fn test_case_expr_with_expression() {
     let case_expr = when((col("b") % lit(2)).eq(lit(0)))
         .then(lit("even"))
         .when((col("b") % lit(2)).eq(lit(1)))
-        .then(lit("odd_"))
+        .then(lit("odd"))
         .otherwise(lit("No?"))
         .alias("parity");
     let df_pl = df.lazy().select(&[case_expr]).collect().unwrap();
