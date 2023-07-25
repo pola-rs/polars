@@ -3,7 +3,9 @@ use std::borrow::Cow;
 use std::convert::TryFrom;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
+use arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
 use polars_arrow::array::PolarsArray;
+use polars_arrow::bitmap::unary_mut;
 use polars_arrow::trusted_len::TrustedLenPush;
 
 use crate::prelude::*;
@@ -319,14 +321,64 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     where
         F: Fn(bool) -> bool + Copy,
     {
-        apply!(self, f)
+        self.apply_kernel(&|arr| {
+            let values = arrow::bitmap::unary(arr.values(), |chunk| {
+                let bytes = chunk.to_ne_bytes();
+
+                // different output as that might lead
+                // to better internal parallelism
+                let mut out = 0u64.to_ne_bytes();
+                for i in 0..64 {
+                    unsafe {
+                        let val = get_bit_unchecked(&bytes, i);
+                        let res = f(val);
+                        set_bit_unchecked(&mut out, i, res)
+                    };
+                }
+                u64::from_ne_bytes(out)
+            });
+            BooleanArray::from_data_default(values, arr.validity().cloned()).boxed()
+        })
     }
 
     fn try_apply<F>(&self, f: F) -> PolarsResult<Self>
     where
         F: Fn(bool) -> PolarsResult<bool> + Copy,
     {
-        try_apply!(self, f)
+        let mut failed: Option<PolarsError> = None;
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let values = unary_mut(arr.values(), |chunk| {
+                    let bytes = chunk.to_ne_bytes();
+
+                    // different output as that might lead
+                    // to better internal parallelism
+                    let mut out = 0u64.to_ne_bytes();
+                    for i in 0..64 {
+                        unsafe {
+                            let val = get_bit_unchecked(&bytes, i);
+                            match f(val) {
+                                Ok(res) => set_bit_unchecked(&mut out, i, res),
+                                Err(e) => {
+                                    if failed.is_none() {
+                                        failed = Some(e)
+                                    }
+                                }
+                            }
+                        };
+                    }
+                    u64::from_ne_bytes(out)
+                });
+                Ok(BooleanArray::from_data_default(values, arr.validity().cloned()).boxed())
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        if let Some(e) = failed {
+            return Err(e);
+        }
+
+        Ok(unsafe { BooleanChunked::from_chunks(self.name(), chunks) })
     }
 
     fn apply_on_opt<F>(&'a self, f: F) -> Self
