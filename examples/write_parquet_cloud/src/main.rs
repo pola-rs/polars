@@ -11,8 +11,6 @@ fn main() -> PolarsResult<()> {
     sink_cloud_local();
     sink_aws();
 
-
-
     Ok(())
 }
 
@@ -47,7 +45,13 @@ fn sink_aws() {
 
     let df = example_dataframe();
 
-    df.lazy().sink_parquet_cloud(TEST_S3_LOCATION.to_string(), cloud_options, Default::default()).unwrap();
+    df.lazy()
+        .sink_parquet_cloud(
+            TEST_S3_LOCATION.to_string(),
+            cloud_options,
+            Default::default(),
+        )
+        .unwrap();
 }
 
 fn example_dataframe() -> DataFrame {
