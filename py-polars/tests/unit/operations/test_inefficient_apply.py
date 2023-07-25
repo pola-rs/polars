@@ -28,16 +28,18 @@ def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
 
 
 @pytest.mark.parametrize(
-    ("col", "func"),
-    [(test_case[0], test_case[1]) for test_case in TEST_CASES],
+    ("col", "func", "expr_repr"),
+    TEST_CASES,
 )
-def test_parse_apply_functions(col: str, func: Callable[[Any], Any]) -> None:
+def test_parse_apply_functions(
+    col: str, func: Callable[[Any], Any], expr_repr: str
+) -> None:
     with pytest.warns(
         PolarsInefficientApplyWarning, match="In this case, you can replace"
     ):
         parser = BytecodeParser(func, apply_target="expr")
         suggested_expression = parser.to_expression(col)
-        assert isinstance(suggested_expression, str)
+        assert suggested_expression == expr_repr
 
         df = pl.DataFrame(
             {
@@ -46,15 +48,15 @@ def test_parse_apply_functions(col: str, func: Callable[[Any], Any]) -> None:
                 "c": ['{"a": 1}', '{"b": 2}', '{"c": 3}'],
             }
         )
-        result = df.select(
+        result_frame = df.select(
             x=col,
             y=eval(suggested_expression),
         )
-        expected = df.select(
+        expected_frame = df.select(
             x=pl.col(col),
             y=pl.col(col).apply(func),
         )
-        assert_frame_equal(result, expected)
+        assert_frame_equal(result_frame, expected_frame)
 
 
 def test_parse_apply_raw_functions() -> None:

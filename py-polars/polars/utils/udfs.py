@@ -43,11 +43,14 @@ _BINARY_OPCODES = {
     "BINARY_TRUE_DIVIDE": "/",
     "BINARY_XOR": "^",
 }
-_LOGICAL_OPCODES = {
-    "POP_JUMP_FORWARD_IF_FALSE": "&",
-    "POP_JUMP_FORWARD_IF_TRUE": "|",
-    "POP_JUMP_IF_FALSE": "&",
-    "POP_JUMP_IF_TRUE": "|",
+_CONTROL_FLOW_OPCODES = {
+    # note: once we add additional JUMP op support, we'll need to disambiguate
+    # between and/or (what we currently support) and if/else (which we don't)
+    # "POP_JUMP_FORWARD_IF_FALSE": "?",
+    # "POP_JUMP_FORWARD_IF_TRUE": "?",
+    # "POP_JUMP_IF_FALSE": "?",
+    # "POP_JUMP_IF_TRUE": "?",
+    # "JUMP_FORWARD": "?",
     "JUMP_IF_FALSE_OR_POP": "&",
     "JUMP_IF_TRUE_OR_POP": "|",
 }
@@ -57,7 +60,7 @@ _UNARY_OPCODES = {
     "UNARY_NOT": "~",
 }
 _SYNTHETIC_OPS = {
-    "POLARS_EXPRESSION",
+    "POLARS_EXPRESSION": 1,
 }
 _LOAD_OPS = {
     "LOAD_CONST",
@@ -72,12 +75,18 @@ _SIMPLE_EXPR_OPS = {
     "IS_OP",
 }
 _SIMPLE_EXPR_OPS |= (
-    set(_UNARY_OPCODES) | set(_LOGICAL_OPCODES) | _LOAD_OPS | _SYNTHETIC_OPS
+    set(_UNARY_OPCODES) | set(_CONTROL_FLOW_OPCODES) | set(_SYNTHETIC_OPS) | _LOAD_OPS
 )
 _SIMPLE_FRAME_OPS = _SIMPLE_EXPR_OPS | {"BINARY_SUBSCR"}
 _UNARY_OPCODE_VALUES = set(_UNARY_OPCODES.values())
-_UPGRADE_BINARY_OPS = sys.version_info < (3, 11)
 _LOAD_OPS |= {"LOAD_METHOD", "LOAD_ATTR"}
+
+if sys.version_info < (3, 11):
+    _UPGRADE_BINARY_OPS = True
+    _CALL_OP = "CALL_*"
+else:
+    _UPGRADE_BINARY_OPS = False
+    _CALL_OP = "CALL"
 
 # numpy functions that we can map to a native expression
 _NUMPY_MODULE_ALIASES = {"np", "numpy"}
@@ -155,9 +164,9 @@ class BytecodeParser:
                 ):
                     # can (currently) only handle logical 'and'/'or' if they not mixed
                     logical_ops = {
-                        _LOGICAL_OPCODES[inst.opname]
+                        _CONTROL_FLOW_OPCODES[inst.opname]
                         for inst in self._rewritten_instructions
-                        if inst.opname in _LOGICAL_OPCODES
+                        if inst.opname in _CONTROL_FLOW_OPCODES
                     }
                     self._can_rewrite[self._apply_target] = len(logical_ops) <= 1
 
@@ -197,7 +206,7 @@ class BytecodeParser:
         logical_instructions = []
         jump_offset = 0
         for idx, inst in enumerate(self._rewritten_instructions):
-            if inst.opname in _LOGICAL_OPCODES:
+            if inst.opname in _CONTROL_FLOW_OPCODES:
                 jump_offset = self._rewritten_instructions[idx + 1].offset
                 logical_instructions.append(inst)
             else:
@@ -215,6 +224,7 @@ class BytecodeParser:
             )
             for offset, ops in logical_instruction_blocks.items()
         }
+
         for inst in logical_instructions:
             expression_strings[inst.offset] = InstructionTranslator.op(inst)
 
@@ -290,8 +300,8 @@ class InstructionTranslator:
     @classmethod
     def op(cls, inst: Instruction) -> str:
         """Convert bytecode instruction to suitable intermediate op string."""
-        if inst.opname in _LOGICAL_OPCODES:
-            return _LOGICAL_OPCODES[inst.opname]
+        if inst.opname in _CONTROL_FLOW_OPCODES:
+            return _CONTROL_FLOW_OPCODES[inst.opname]
         elif inst.argrepr:
             return inst.argrepr
         elif inst.opname == "IS_OP":
@@ -325,7 +335,11 @@ class InstructionTranslator:
                     return f"{e1}.is_{not_}null()"
                 elif op in ("in", "not in"):
                     not_ = "" if op == "in" else "~"
-                    return f"{not_}({e1}.is_in({e2}))"
+                    return (
+                        f"{not_}({e1}.is_in({e2}))"
+                        if " " in e1
+                        else f"{not_}{e1}.is_in({e2})"
+                    )
                 else:
                     expr = f"{e1} {op} {e2}"
                     return f"({expr})" if depth else expr
@@ -354,7 +368,7 @@ class InstructionTranslator:
                         )
                         if (
                             inst.opname in _UNARY_OPCODES
-                            or inst.opname in _SYNTHETIC_OPS
+                            or _SYNTHETIC_OPS.get(inst.opname) == 1
                         )
                         else StackValue(
                             operator=self.op(inst),
@@ -466,7 +480,7 @@ class RewrittenInstructions:
         """Replace builtin function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_FAST", "CALL*"],
+            opnames=["LOAD_GLOBAL", "LOAD_FAST", _CALL_OP],
             argvals=[_PYTHON_CASTS_MAP],
         ):
             inst1, inst2 = matching_instructions[:2]
@@ -489,7 +503,7 @@ class RewrittenInstructions:
         """Replace numpy/json function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_*", "LOAD_*", "CALL*"],
+            opnames=["LOAD_GLOBAL", "LOAD_*", "LOAD_*", _CALL_OP],
             argvals=[_NUMPY_MODULE_ALIASES | {"json"}, _NUMPY_FUNCTIONS | {"loads"}],
         ):
             inst1, inst2, inst3 = matching_instructions[:3]
@@ -512,7 +526,7 @@ class RewrittenInstructions:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_METHOD", "CALL*"],
+            opnames=["LOAD_METHOD", _CALL_OP],
             argvals=[_PYTHON_METHOD_MAP],
         ):
             inst = matching_instructions[0]
