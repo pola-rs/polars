@@ -41,6 +41,29 @@ def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T
     return deco
 
 
+def deprecated(reason: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """
+    Decorator which can be used to mark functions as deprecated.
+
+    It will result in a warning being emitted when the function is used.
+
+    """
+
+    def deco(function: Callable[P, T]) -> Callable[P, T]:
+        @wraps(function)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            warnings.warn(
+                message=f"Call to deprecated function {function.__name__}. ({reason})",
+                category=DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
+            return function(*args, **kwargs)
+
+        return wrapper
+
+    return deco
+
+
 def warn_closed_future_change() -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
     Warn that user should pass in 'closed' as default value will change.

@@ -63,9 +63,7 @@ impl GroupByDynamicExec {
             }
         }
 
-        state.expr_cache = Some(Default::default());
         let agg_columns = evaluate_aggs(&df, &self.aggs, groups, state)?;
-        state.expr_cache = None;
 
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
         columns.extend_from_slice(&keys);

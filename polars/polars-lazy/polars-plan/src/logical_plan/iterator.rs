@@ -92,7 +92,6 @@ macro_rules! push_expr {
             }
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
-            Cache { input, .. } => $push(input),
             RenameAlias { expr, .. } => $push(expr),
             // pass
             Selector(_) => {}

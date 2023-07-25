@@ -49,7 +49,11 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias, warn_closed_future_change
+from polars.utils.decorators import (
+    deprecated,
+    deprecated_alias,
+    warn_closed_future_change,
+)
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
 
@@ -8554,15 +8558,19 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
+    @deprecated("Since version 0.8.9 'cache' is a no-op")
     def cache(self) -> Self:
         """
-        Cache this expression so that it only is executed once per context.
+        A no-op.
 
-        This can actually hurt performance and can have a lot of contention.
-        It is advised not to use it until actually benchmarked on your problem.
+        Don't use this, it does nothing. Activate `comm_subexpr_elim` to automatically
+        cache expression that are equal.
+
+        .. deprecated:: 0.8.9
+            Since version this method doesn't do anything.
 
         """
-        return self._from_pyexpr(self._pyexpr.cache())
+        return self
 
     def map_dict(
         self,

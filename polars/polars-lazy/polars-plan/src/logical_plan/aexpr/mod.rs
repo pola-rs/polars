@@ -175,10 +175,6 @@ pub enum AExpr {
     },
     Count,
     Nth(i64),
-    Cache {
-        input: Node,
-        id: usize,
-    },
 }
 
 impl AExpr {
@@ -228,7 +224,6 @@ impl AExpr {
             | Ternary { .. }
             | Wildcard
             | Cast { .. }
-            | Cache{..}
             | Filter { .. } => false,
         }
     }
@@ -257,7 +252,6 @@ impl AExpr {
                 container.push(*left);
             }
             Cast { expr, .. } => container.push(*expr),
-            Cache { input, .. } => container.push(*input),
             Sort { expr, .. } => container.push(*expr),
             Take { expr, idx } => {
                 container.push(*idx);
@@ -335,7 +329,7 @@ impl AExpr {
             Column(_) | Literal(_) | Wildcard | Count | Nth(_) => return self,
             Alias(input, _) => input,
             Cast { expr, .. } => expr,
-            Explode(input) | Slice { input, .. } | Cache { input, .. } => input,
+            Explode(input) | Slice { input, .. } => input,
             BinaryExpr { left, right, .. } => {
                 *right = inputs[0];
                 *left = inputs[1];

@@ -157,8 +157,6 @@ pub(super) fn evaluate_physical_expressions(
     state: &mut ExecutionState,
     has_windows: bool,
 ) -> PolarsResult<Vec<Series>> {
-    state.expr_cache = Some(Default::default());
-
     let selected_columns = if !cse_exprs.is_empty() {
         let tmp_cols = run_exprs_par(df, cse_exprs, state)?;
         let width = df.width();
@@ -187,7 +185,6 @@ pub(super) fn evaluate_physical_expressions(
     };
 
     state.clear_window_expr_cache();
-    state.expr_cache = None;
 
     Ok(selected_columns)
 }

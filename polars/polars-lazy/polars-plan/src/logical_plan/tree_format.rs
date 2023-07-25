@@ -55,7 +55,6 @@ impl UpperExp for AExpr {
             AExpr::Slice { .. } => "slice",
             AExpr::Count => "count",
             AExpr::Nth(v) => return write!(f, "nth({})", v),
-            AExpr::Cache { id, .. } => return write!(f, "cache({id:x})"),
         };
 
         write!(f, "{s}")
