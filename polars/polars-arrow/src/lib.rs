@@ -1,7 +1,7 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 pub mod array;
 pub mod bit_util;
-mod bitmap;
+pub mod bitmap;
 pub mod compute;
 pub mod conversion;
 pub mod data_types;
