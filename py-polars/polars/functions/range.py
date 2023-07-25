@@ -205,7 +205,7 @@ def int_range(
     Returns
     -------
     Expr or Series
-        Column of data type ``Int64``.
+        Column of data type :class:`Int64`.
 
     See Also
     --------
@@ -424,7 +424,7 @@ def date_range(
     Returns
     -------
     Expr or Series
-        Column of data type ``Date`` or ``Datetime``.
+        Column of data type :class:`Date` or :class:`Datetime`.
 
     Notes
     -----
@@ -770,7 +770,7 @@ def time_range(
     Returns
     -------
     Expr or Series
-        Column of data type ``Time``.
+        Column of data type `:class:Time`.
 
     See Also
     --------

@@ -204,7 +204,9 @@ class Config(contextlib.ContextDecorator):
 
         Returns
         -------
-        str : json string containing current Config options, or filepath where saved.
+        str
+            JSON string containing current Config options, or the path to the file where
+            the options are saved.
 
         """
         environment_vars = {

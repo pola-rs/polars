@@ -3087,7 +3087,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Returns
         -------
-        A new LazyFrame with the columns added.
+        LazyFrame
+            A new LazyFrame with the columns added.
 
         Notes
         -----
@@ -4361,7 +4362,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Returns
         -------
-        DataFrame with unique rows.
+        LazyFrame
+            LazyFrame with unique rows.
 
         Warnings
         --------

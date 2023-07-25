@@ -331,7 +331,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series[u32]
+        Series
+            Series of data type :class:`UInt32`.
 
         Examples
         --------
@@ -354,7 +355,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series[u32]
+        Series
+            Series of data type :class:`UInt32`.
 
         Notes
         -----
@@ -387,7 +389,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series of dtype Utf8
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -436,7 +439,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -543,7 +547,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Utf8 array with values encoded using provided encoding
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -612,8 +617,9 @@ class StringNameSpace:
 
         Returns
         -------
-        Utf8 array. Contain null if original value is null or the json_path return
-        nothing.
+        Series
+            Series of data type :class:`Utf8`. Contains null values if the original
+            value is null or the json_path returns nothing.
 
         Examples
         --------
@@ -647,6 +653,12 @@ class StringNameSpace:
             Group 0 mean the whole pattern, first group begin at index 1
             Default to the first capture group
 
+        Returns
+        -------
+        Series
+            Series of data type :class:`Utf8`. Contains null values if the original
+            value is null or regex captures nothing.
+
         Notes
         -----
         To modify regular expression behaviour (such as multi-line matching)
@@ -670,10 +682,6 @@ class StringNameSpace:
         See the regex crate's section on `grouping and flags
         <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
         additional information about the use of inline expression modifiers.
-
-        Returns
-        -------
-        Utf8 array. Contain null if original value is null or regex capture nothing.
 
         Examples
         --------
@@ -749,7 +757,8 @@ class StringNameSpace:
 
         Returns
         -------
-        List[Utf8]
+        Series
+            Series of data type ``List(Utf8)``.
 
         Examples
         --------
@@ -776,7 +785,9 @@ class StringNameSpace:
 
         Returns
         -------
-        UInt32 array. Contain null if original value is null or regex capture nothing.
+        Series
+            Series of data type :class:`UInt32`. Contains null values if the original
+            value is null or if the regex captures nothing.
 
         Examples
         --------
@@ -805,7 +816,8 @@ class StringNameSpace:
 
         Returns
         -------
-        List of Utf8 type
+        Series
+            Series of data type ``List(Utf8)``.
 
         """
 
@@ -864,7 +876,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Struct of Utf8 type
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         """
 
@@ -921,7 +934,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Struct of Utf8 type
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         """
         s = wrap_s(self._s)
@@ -1268,7 +1282,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of dtype Utf8.
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         Examples
         --------
@@ -1303,7 +1317,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Exploded column with string datatype.
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -1340,7 +1355,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series of parsed integers in i32 format
+        Series
+            Series of data type :class:`Int32`.
 
         Examples
         --------

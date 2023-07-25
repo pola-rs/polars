@@ -455,10 +455,6 @@ class DataFrame:
           Support type specification or override of one or more columns; note that
           any dtypes inferred from the columns param will be overridden.
 
-        Returns
-        -------
-        DataFrame
-
         """
         return cls._from_pydf(
             dict_to_pydf(data, schema=schema, schema_overrides=schema_overrides)
@@ -500,10 +496,6 @@ class DataFrame:
             this does not yield conclusive results, column orientation is used.
         infer_schema_length
             How many rows to scan to determine the column type.
-
-        Returns
-        -------
-        DataFrame
 
         """
         return cls._from_pydf(
@@ -550,10 +542,6 @@ class DataFrame:
             the orientation is inferred by matching the columns and data dimensions. If
             this does not yield conclusive results, column orientation is used.
 
-        Returns
-        -------
-        DataFrame
-
         """
         return cls._from_pydf(
             numpy_to_pydf(
@@ -595,10 +583,6 @@ class DataFrame:
             any dtypes inferred from the columns param will be overridden.
         rechunk : bool, default True
             Make sure that all data is in contiguous memory.
-
-        Returns
-        -------
-        DataFrame
 
         """
         return cls._from_pydf(
@@ -647,10 +631,6 @@ class DataFrame:
             If the data contains NaN values they will be converted to null/None.
         include_index : bool, default False
             Load any non-default pandas indexes as columns.
-
-        Returns
-        -------
-        DataFrame
 
         """
         return cls._from_pydf(
@@ -895,10 +875,6 @@ class DataFrame:
         n_rows
             Stop reading from Apache Avro file after reading ``n_rows``.
 
-        Returns
-        -------
-        DataFrame
-
         """
         if isinstance(source, (str, Path)):
             source = normalise_filepath(source)
@@ -941,10 +917,6 @@ class DataFrame:
             Make sure that all data is contiguous.
         memory_map
             Memory map the file
-
-        Returns
-        -------
-        DataFrame
 
         """
         if isinstance(source, (str, Path)):
@@ -2052,7 +2024,7 @@ class DataFrame:
             of null values. Subsequent operations on the resulting pandas DataFrame may
             trigger conversion to NumPy arrays if that operation is not supported by
             pyarrow compute functions.
-        kwargs
+        **kwargs
             Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
 
         Returns
@@ -5637,7 +5609,7 @@ class DataFrame:
 
         Returns
         -------
-            Joined DataFrame
+        DataFrame
 
         See Also
         --------
@@ -6084,7 +6056,8 @@ class DataFrame:
 
         Returns
         -------
-        The dropped column.
+        Series
+            The dropped column.
 
         Examples
         --------
@@ -6312,6 +6285,7 @@ class DataFrame:
 
         Returns
         -------
+        DataFrame
             DataFrame with None values replaced by the filling strategy.
 
         See Also
@@ -6391,11 +6365,12 @@ class DataFrame:
         Parameters
         ----------
         value
-            Value to fill NaN with.
+            Value with which to replace NaN values.
 
         Returns
         -------
-            DataFrame with NaN replaced with fill_value
+        DataFrame
+            DataFrame with NaN values replaced by the given value.
 
         Warnings
         --------
@@ -7336,7 +7311,8 @@ class DataFrame:
 
         Returns
         -------
-        A new DataFrame with the columns added.
+        DataFrame
+            A new DataFrame with the columns added.
 
         Notes
         -----
@@ -7998,7 +7974,8 @@ class DataFrame:
 
         Returns
         -------
-        DataFrame with unique rows.
+        DataFrame
+            DataFrame with unique rows.
 
         Warnings
         --------
@@ -8360,7 +8337,7 @@ class DataFrame:
 
         Returns
         -------
-        Tuple (default) or dictionary of row values.
+        tuple (default) or dictionary of row values
 
         Notes
         -----
@@ -8484,7 +8461,7 @@ class DataFrame:
 
         Returns
         -------
-        A list of tuples (default) or dictionaries of row values.
+        list of tuples (default) or dictionaries of row values
 
         Examples
         --------
@@ -8725,7 +8702,7 @@ class DataFrame:
 
         Returns
         -------
-        An iterator of tuples (default) or dictionaries (if named) of python row values.
+        iterator of tuples (default) or dictionaries (if named) of python row values
 
         Examples
         --------

@@ -64,9 +64,7 @@ class GroupBy:
         """
         Allows iteration over the groups of the groupby operation.
 
-        Returns
-        -------
-        Iterator returning tuples of (name, data) for each group.
+        Each group is represented by a tuple of (name, data).
 
         Examples
         --------

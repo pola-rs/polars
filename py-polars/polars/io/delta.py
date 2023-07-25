@@ -285,16 +285,12 @@ def _get_delta_lake_table(
     delta_table_options: dict[str, Any] | None = None,
 ) -> deltalake.DeltaTable:
     """
-    Initialise a Delta lake table for use in read and scan operations.
+    Initialize a Delta lake table for use in read and scan operations.
 
     Notes
     -----
     Make sure to install deltalake>=0.8.0. Read the documentation
     `here <https://delta-io.github.io/delta-rs/python/installation.html>`_.
-
-    Returns
-    -------
-    DeltaTable
 
     """
     _check_if_delta_available()
