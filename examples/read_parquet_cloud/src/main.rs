@@ -4,7 +4,7 @@ use polars::prelude::*;
 
 // Login to your aws account and then copy the ../datasets/foods1.parquet file to your own bucket.
 // Adjust the link below.
-const TEST_S3: &str = "s3://lov2test/polars/datasets/*.parquet";
+const TEST_S3: &str = "s3://polarstestbucket/*.parquet";
 
 fn main() -> PolarsResult<()> {
     let cred = Credentials::default().unwrap();
@@ -14,7 +14,7 @@ fn main() -> PolarsResult<()> {
     let cloud_options = cloud::CloudOptions::default().with_aws([
         (Key::AccessKeyId, &cred.access_key.unwrap()),
         (Key::SecretAccessKey, &cred.secret_key.unwrap()),
-        (Key::Region, &"us-west-2".into()),
+        (Key::Region, &"eu-central-1".into()),
     ]);
     args.cloud_options = Some(cloud_options);
     let df = LazyFrame::scan_parquet(TEST_S3, args)?

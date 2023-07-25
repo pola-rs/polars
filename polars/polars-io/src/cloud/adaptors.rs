@@ -161,6 +161,7 @@ impl CloudWriter {
     pub fn new_with_object_store(object_store: Arc<dyn ObjectStore>, path: Path) -> Self {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_io()
+            .enable_time()
             .build()
             .unwrap();
         let (multipart_id, writer) =
@@ -213,18 +214,23 @@ impl CloudWriter {
 
 impl std::io::Write for CloudWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        dbg!("Writing");
         let mut writer = self.writer.lock().unwrap();
+        dbg!(&buf);
         let res = writer.write(buf);
         if res.is_err() {
+            dbg!("aborting");
             self.abort();
         }
         res
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
+        dbg!("Flushing");
         let mut writer = self.writer.lock().unwrap();
         let res = writer.flush();
         if res.is_err() {
+            dbg!("aborting");
             self.abort();
         }
         res
@@ -233,8 +239,11 @@ impl std::io::Write for CloudWriter {
 
 impl Drop for CloudWriter {
     fn drop(&mut self) {
+        dbg!("Dropping");
         let mut writer = self.writer.lock().unwrap();
-        let _ = writer.shutdown();
+        dbg!("before shutdown");
+        // let _ = writer.shutdown();
+        dbg!("End of drop");
     }
 }
 
