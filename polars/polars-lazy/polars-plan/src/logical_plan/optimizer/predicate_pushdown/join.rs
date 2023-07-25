@@ -11,12 +11,17 @@ fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> bool {
                 | FunctionExpr::FillNull { .. },
             ..
         } => join_produces_null(how),
+        // joins can produce duplicates
         #[cfg(feature = "is_unique")]
         Function {
             function:
                 FunctionExpr::Boolean(BooleanFunction::IsUnique)
-                | FunctionExpr::Boolean(BooleanFunction::IsDuplicated)
-                | FunctionExpr::Boolean(BooleanFunction::IsFirst),
+                | FunctionExpr::Boolean(BooleanFunction::IsDuplicated),
+            ..
+        } => true,
+        #[cfg(feature = "is_first")]
+        Function {
+            function: FunctionExpr::Boolean(BooleanFunction::IsFirst),
             ..
         } => true,
         // any operation that checks for equality or ordering can be wrong because

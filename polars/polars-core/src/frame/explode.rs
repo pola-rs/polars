@@ -37,6 +37,7 @@ pub struct MeltArgs {
 
 impl DataFrame {
     pub fn explode_impl(&self, mut columns: Vec<Series>) -> PolarsResult<DataFrame> {
+        polars_ensure!(!columns.is_empty(), InvalidOperation: "no columns provided in explode");
         let mut df = self.clone();
         if self.height() == 0 {
             for s in &columns {
