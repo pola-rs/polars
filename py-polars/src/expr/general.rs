@@ -1180,8 +1180,4 @@ impl PyExpr {
         };
         self.inner.clone().set_sorted_flag(is_sorted).into()
     }
-
-    fn cache(&self) -> Self {
-        self.inner.clone().cache().into()
-    }
 }

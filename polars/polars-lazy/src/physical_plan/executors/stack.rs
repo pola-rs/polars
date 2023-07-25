@@ -14,8 +14,6 @@ impl StackExec {
         state: &mut ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        state.expr_cache = Some(Default::default());
-
         let res = evaluate_physical_expressions(
             &mut df,
             &self.cse_exprs,
@@ -24,7 +22,6 @@ impl StackExec {
             self.has_windows,
         )?;
         state.clear_window_expr_cache();
-        state.expr_cache = None;
 
         let schema = &*self.input_schema;
         df._add_columns(res, schema)?;
