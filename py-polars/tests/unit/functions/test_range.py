@@ -245,7 +245,7 @@ def test_range_invalid_unit() -> None:
 
 def test_date_range_lazy_with_literals() -> None:
     df = pl.DataFrame({"misc": ["x"]}).with_columns(
-        pl.date_range(
+        pl.date_ranges(
             date(2000, 1, 1),
             date(2023, 8, 31),
             interval="987d",
@@ -303,15 +303,18 @@ def test_date_range_lazy_time_zones_invalid() -> None:
 def test_date_range_lazy_with_expressions(
     low: str | pl.Expr, high: str | pl.Expr
 ) -> None:
-    ldf = (
-        pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
-        .with_columns(
-            pl.date_range(low, high, interval="678d", eager=False).alias("dts")
-        )
-        .lazy()
+    lf = pl.LazyFrame(
+        {
+            "start": [date(2015, 6, 30)],
+            "stop": [date(2022, 12, 31)],
+        }
     )
 
-    assert ldf.collect().rows() == [
+    result = lf.with_columns(
+        pl.date_ranges(low, high, interval="678d", eager=False).alias("dts")
+    )
+
+    assert result.collect().rows() == [
         (
             date(2015, 6, 30),
             date(2022, 12, 31),
@@ -325,20 +328,16 @@ def test_date_range_lazy_with_expressions(
         )
     ]
 
-    assert pl.DataFrame(
+    df = pl.DataFrame(
         {
             "start": [date(2000, 1, 1), date(2022, 6, 1)],
             "stop": [date(2000, 1, 2), date(2022, 6, 2)],
         }
-    ).with_columns(
-        pl.date_range(
-            low,
-            high,
-            interval="1d",
-        ).alias("dts")
-    ).to_dict(
-        False
-    ) == {
+    )
+
+    result_df = df.with_columns(pl.date_ranges(low, high, interval="1d").alias("dts"))
+
+    assert result_df.to_dict(False) == {
         "start": [date(2000, 1, 1), date(2022, 6, 1)],
         "stop": [date(2000, 1, 2), date(2022, 6, 2)],
         "dts": [
@@ -347,20 +346,16 @@ def test_date_range_lazy_with_expressions(
         ],
     }
 
-    assert pl.DataFrame(
+    df = pl.DataFrame(
         {
             "start": [datetime(2000, 1, 1), datetime(2022, 6, 1)],
             "stop": [datetime(2000, 1, 2), datetime(2022, 6, 2)],
         }
-    ).with_columns(
-        pl.date_range(
-            low,
-            high,
-            interval="1d",
-        ).alias("dts")
-    ).to_dict(
-        False
-    ) == {
+    )
+
+    result_df = df.with_columns(pl.date_ranges(low, high, interval="1d").alias("dts"))
+
+    assert result_df.to_dict(False) == {
         "start": [datetime(2000, 1, 1, 0, 0), datetime(2022, 6, 1, 0, 0)],
         "stop": [datetime(2000, 1, 2, 0, 0), datetime(2022, 6, 2, 0, 0)],
         "dts": [
@@ -379,7 +374,7 @@ def test_date_range_single_row_lazy_7110() -> None:
         }
     )
     result = df.with_columns(
-        pl.date_range(
+        pl.date_ranges(
             start=pl.col("from"),
             end=pl.col("to"),
             interval="1d",
@@ -554,20 +549,21 @@ def test_date_range_name() -> None:
     result_eager = pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=True)
     assert result_eager.name == expected_name
 
-    result_lazy = pl.select(
-        pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=False)
-    ).to_series()
+    with pytest.deprecated_call():
+        result_lazy = pl.select(
+            pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=False)
+        ).to_series()
     assert result_lazy.name == expected_name
 
 
-def test_date_range_eager() -> None:
+def test_date_ranges_eager() -> None:
     start = pl.Series([date(2022, 1, 1), date(2022, 1, 2)])
     end = pl.Series([date(2022, 1, 4), date(2022, 1, 3)])
 
-    result = pl.date_range(start, end, eager=True)
+    result = pl.date_ranges(start, end, eager=True)
 
     expected = pl.Series(
-        "date",
+        "date_range",
         [
             [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3), date(2022, 1, 4)],
             [date(2022, 1, 2), date(2022, 1, 3)],
@@ -586,54 +582,113 @@ def test_date_range_eager_explode() -> None:
     assert_series_equal(result, expected)
 
 
-def test_time_range_lit() -> None:
-    for eager in (True, False):
+def test_date_range_deprecated_eager() -> None:
+    start = pl.Series([date(2022, 1, 1), date(2022, 1, 2)])
+    end = pl.Series([date(2022, 1, 4), date(2022, 1, 3)])
+
+    with pytest.deprecated_call():
+        result = pl.date_range(start, end, eager=True)
+
+    expected = pl.Series(
+        "date",
+        [
+            [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3), date(2022, 1, 4)],
+            [date(2022, 1, 2), date(2022, 1, 3)],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+
+def test_time_range_lit_lazy() -> None:
+    with pytest.deprecated_call():
         tm = pl.select(
             pl.time_range(
                 start=time(1, 2, 3),
                 end=time(23, 59, 59),
                 interval="5h45m10s333ms",
                 closed="right",
-                eager=eager,
             ).alias("tm")
         )
-        if not eager:
-            tm = tm.select(pl.col("tm").explode())
-        assert tm["tm"].to_list() == [
-            time(6, 47, 13, 333000),
-            time(12, 32, 23, 666000),
-            time(18, 17, 33, 999000),
-        ]
+    tm = tm.select(pl.col("tm").explode())
+    assert tm["tm"].to_list() == [
+        time(6, 47, 13, 333000),
+        time(12, 32, 23, 666000),
+        time(18, 17, 33, 999000),
+    ]
 
-        # validate unset start/end
+    # validate unset start/end
+    with pytest.deprecated_call():
+        tm = pl.select(pl.time_range(interval="5h45m10s333ms").alias("tm"))
+    tm = tm.select(pl.col("tm").explode())
+    assert tm["tm"].to_list() == [
+        time(0, 0),
+        time(5, 45, 10, 333000),
+        time(11, 30, 20, 666000),
+        time(17, 15, 30, 999000),
+        time(23, 0, 41, 332000),
+    ]
+
+    with pytest.deprecated_call():
         tm = pl.select(
             pl.time_range(
-                interval="5h45m10s333ms",
-                eager=eager,
+                start=pl.lit(time(23, 59, 59, 999980)), interval="10000ns"
             ).alias("tm")
         )
-        if not eager:
-            tm = tm.select(pl.col("tm").explode())
-        assert tm["tm"].to_list() == [
-            time(0, 0),
-            time(5, 45, 10, 333000),
-            time(11, 30, 20, 666000),
-            time(17, 15, 30, 999000),
-            time(23, 0, 41, 332000),
-        ]
+    tm = tm.select(pl.col("tm").explode())
+    assert tm["tm"].to_list() == [
+        time(23, 59, 59, 999980),
+        time(23, 59, 59, 999990),
+    ]
 
-        tm = pl.select(
-            pl.time_range(
-                start=pl.lit(time(23, 59, 59, 999980)),
-                interval="10000ns",
-                eager=eager,
-            ).alias("tm")
-        )
+
+def test_time_range_lit_eager() -> None:
+    eager = True
+    tm = pl.select(
+        pl.time_range(
+            start=time(1, 2, 3),
+            end=time(23, 59, 59),
+            interval="5h45m10s333ms",
+            closed="right",
+            eager=eager,
+        ).alias("tm")
+    )
+    if not eager:
         tm = tm.select(pl.col("tm").explode())
-        assert tm["tm"].to_list() == [
-            time(23, 59, 59, 999980),
-            time(23, 59, 59, 999990),
-        ]
+    assert tm["tm"].to_list() == [
+        time(6, 47, 13, 333000),
+        time(12, 32, 23, 666000),
+        time(18, 17, 33, 999000),
+    ]
+
+    # validate unset start/end
+    tm = pl.select(
+        pl.time_range(
+            interval="5h45m10s333ms",
+            eager=eager,
+        ).alias("tm")
+    )
+    if not eager:
+        tm = tm.select(pl.col("tm").explode())
+    assert tm["tm"].to_list() == [
+        time(0, 0),
+        time(5, 45, 10, 333000),
+        time(11, 30, 20, 666000),
+        time(17, 15, 30, 999000),
+        time(23, 0, 41, 332000),
+    ]
+
+    tm = pl.select(
+        pl.time_range(
+            start=pl.lit(time(23, 59, 59, 999980)),
+            interval="10000ns",
+            eager=eager,
+        ).alias("tm")
+    )
+    tm = tm.select(pl.col("tm").explode())
+    assert tm["tm"].to_list() == [
+        time(23, 59, 59, 999980),
+        time(23, 59, 59, 999990),
+    ]
 
 
 def test_time_range_expr() -> None:
@@ -642,9 +697,7 @@ def test_time_range_expr() -> None:
             "start": pl.time_range(interval="6h", eager=True),
             "stop": pl.time_range(start=time(2, 59), interval="5h59m", eager=True),
         }
-    ).with_columns(
-        intervals=pl.time_range("start", pl.col("stop"), interval="1h29m", eager=False)
-    )
+    ).with_columns(intervals=pl.time_ranges("start", pl.col("stop"), interval="1h29m"))
     # shape: (4, 3)
     # ┌──────────┬──────────┬────────────────────────────────┐
     # │ start    ┆ stop     ┆ intervals                      │
@@ -669,7 +722,10 @@ def test_time_range_name() -> None:
     result_eager = pl.time_range(time(10), time(12), eager=True)
     assert result_eager.name == expected_name
 
-    result_lazy = pl.select(pl.time_range(time(10), time(12), eager=False)).to_series()
+    with pytest.deprecated_call():
+        result_lazy = pl.select(
+            pl.time_range(time(10), time(12), eager=False)
+        ).to_series()
     assert result_lazy.name == expected_name
 
 
@@ -738,7 +794,7 @@ def test_date_range_schema(
         .lazy()
     )
     result = df.with_columns(
-        pl.date_range(
+        pl.date_ranges(
             pl.col("start"),
             pl.col("end"),
             time_zone=input_time_zone,
@@ -813,7 +869,7 @@ def test_date_range_schema_no_upcast(
 ) -> None:
     df = pl.DataFrame({"start": [date(2020, 1, 1)], "end": [date(2020, 1, 3)]}).lazy()
     result = df.with_columns(
-        pl.date_range(
+        pl.date_ranges(
             pl.col("start"),
             pl.col("end"),
             interval=interval,
@@ -909,7 +965,7 @@ def test_date_range_schema_upcasts_to_datetime(
 ) -> None:
     df = pl.DataFrame({"start": [date(2020, 1, 1)], "end": [date(2020, 1, 3)]}).lazy()
     result = df.with_columns(
-        pl.date_range(
+        pl.date_ranges(
             pl.col("start"),
             pl.col("end"),
             interval=interval,
@@ -947,11 +1003,11 @@ def test_date_range_no_alias_schema_9037() -> None:
     df = pl.DataFrame(
         {"start": [datetime(2020, 1, 1)], "end": [datetime(2020, 1, 2)]}
     ).lazy()
-    result = df.with_columns(pl.date_range(pl.col("start"), pl.col("end")))
+    result = df.with_columns(pl.date_ranges(pl.col("start"), pl.col("end")))
     expected_schema = {
         "start": pl.Datetime(time_unit="us", time_zone=None),
         "end": pl.Datetime(time_unit="us", time_zone=None),
-        "date": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
+        "date_range": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
     }
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
@@ -959,9 +1015,7 @@ def test_date_range_no_alias_schema_9037() -> None:
 
 def test_time_range_schema() -> None:
     df = pl.DataFrame({"start": [time(1)], "end": [time(1, 30)]}).lazy()
-    result = df.with_columns(
-        pl.time_range(pl.col("start"), pl.col("end")).alias("time_range")
-    )
+    result = df.with_columns(pl.time_ranges(pl.col("start"), pl.col("end")))
     expected_schema = {"start": pl.Time, "end": pl.Time, "time_range": pl.List(pl.Time)}
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
@@ -969,20 +1023,20 @@ def test_time_range_schema() -> None:
 
 def test_time_range_no_alias_schema_9037() -> None:
     df = pl.DataFrame({"start": [time(1)], "end": [time(1, 30)]}).lazy()
-    result = df.with_columns(pl.time_range(pl.col("start"), pl.col("end")))
-    expected_schema = {"start": pl.Time, "end": pl.Time, "time": pl.List(pl.Time)}
+    result = df.with_columns(pl.time_ranges(pl.col("start"), pl.col("end")))
+    expected_schema = {"start": pl.Time, "end": pl.Time, "time_range": pl.List(pl.Time)}
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
 
 
-def test_time_range_eager() -> None:
+def test_time_ranges_eager() -> None:
     start = pl.Series([time(9, 0), time(10, 0)])
     end = pl.Series([time(12, 0), time(11, 0)])
 
-    result = pl.time_range(start, end, eager=True)
+    result = pl.time_ranges(start, end, eager=True)
 
     expected = pl.Series(
-        "time",
+        "time_range",
         [
             [time(9, 0), time(10, 0), time(11, 0), time(12, 0)],
             [time(10, 0), time(11, 0)],
@@ -998,4 +1052,21 @@ def test_time_range_eager_explode() -> None:
     result = pl.time_range(start, end, eager=True)
 
     expected = pl.Series("time", [time(9, 0), time(10, 0), time(11, 0)])
+    assert_series_equal(result, expected)
+
+
+def test_time_range_deprecated_eager() -> None:
+    start = pl.Series([time(9, 0), time(10, 0)])
+    end = pl.Series([time(12, 0), time(11, 0)])
+
+    with pytest.deprecated_call():
+        result = pl.time_range(start, end, eager=True)
+
+    expected = pl.Series(
+        "time",
+        [
+            [time(9, 0), time(10, 0), time(11, 0), time(12, 0)],
+            [time(10, 0), time(11, 0)],
+        ],
+    )
     assert_series_equal(result, expected)

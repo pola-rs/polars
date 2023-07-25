@@ -56,10 +56,10 @@ def test_list_zip_with_logical_type() -> None:
     )
 
     df = df.with_columns(
-        pl.date_range(
+        pl.date_ranges(
             pl.col("start"), pl.col("stop"), interval="1h", eager=False, closed="left"
         ).alias("interval_1"),
-        pl.date_range(
+        pl.date_ranges(
             pl.col("start"), pl.col("stop"), interval="1h", eager=False, closed="left"
         ).alias("interval_2"),
     )
