@@ -26,19 +26,19 @@ impl DataFrame {
         let cols = &self.columns;
         match dtype {
             #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => numeric_transpose::<Int8Type>(&cols, names_t, &mut cols_t),
+            DataType::Int8 => numeric_transpose::<Int8Type>(cols, names_t, &mut cols_t),
             #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => numeric_transpose::<Int16Type>(&cols, names_t, &mut cols_t),
-            DataType::Int32 => numeric_transpose::<Int32Type>(&cols, names_t, &mut cols_t),
-            DataType::Int64 => numeric_transpose::<Int64Type>(&cols, names_t, &mut cols_t),
+            DataType::Int16 => numeric_transpose::<Int16Type>(cols, names_t, &mut cols_t),
+            DataType::Int32 => numeric_transpose::<Int32Type>(cols, names_t, &mut cols_t),
+            DataType::Int64 => numeric_transpose::<Int64Type>(cols, names_t, &mut cols_t),
             #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => numeric_transpose::<UInt8Type>(&cols, names_t, &mut cols_t),
+            DataType::UInt8 => numeric_transpose::<UInt8Type>(cols, names_t, &mut cols_t),
             #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => numeric_transpose::<UInt16Type>(&cols, names_t, &mut cols_t),
-            DataType::UInt32 => numeric_transpose::<UInt32Type>(&cols, names_t, &mut cols_t),
-            DataType::UInt64 => numeric_transpose::<UInt64Type>(&cols, names_t, &mut cols_t),
-            DataType::Float32 => numeric_transpose::<Float32Type>(&cols, names_t, &mut cols_t),
-            DataType::Float64 => numeric_transpose::<Float64Type>(&cols, names_t, &mut cols_t),
+            DataType::UInt16 => numeric_transpose::<UInt16Type>(cols, names_t, &mut cols_t),
+            DataType::UInt32 => numeric_transpose::<UInt32Type>(cols, names_t, &mut cols_t),
+            DataType::UInt64 => numeric_transpose::<UInt64Type>(cols, names_t, &mut cols_t),
+            DataType::Float32 => numeric_transpose::<Float32Type>(cols, names_t, &mut cols_t),
+            DataType::Float64 => numeric_transpose::<Float64Type>(cols, names_t, &mut cols_t),
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 // this requires to support `Object` in Series::iter which we don't yet
@@ -224,8 +224,11 @@ where
     });
 
     cols_t.par_extend(POOL.install(|| {
-        values_buf.into_par_iter().zip(validity_buf).zip(names_t).map(
-            |((mut values, validity), name)| {
+        values_buf
+            .into_par_iter()
+            .zip(validity_buf)
+            .zip(names_t)
+            .map(|((mut values, validity), name)| {
                 // Safety:
                 // all values are written we can now set len
                 unsafe {
@@ -249,11 +252,10 @@ where
                     validity,
                 );
                 unsafe {
-                    ChunkedArray::<T>::from_chunks(&name, vec![Box::new(arr) as ArrayRef])
+                    ChunkedArray::<T>::from_chunks(name, vec![Box::new(arr) as ArrayRef])
                         .into_series()
                 }
-            },
-        )
+            })
     }));
 }
 
