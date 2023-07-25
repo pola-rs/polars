@@ -253,8 +253,15 @@ impl LogicalPlanBuilder {
         try_parse_dates: bool,
     ) -> PolarsResult<Self> {
         let path = path.into();
-        let mut file = std::fs::File::open(&path)
-            .map_err(|e| polars_err!(ComputeError: "error open file: '{:?}', {:?}", path, e))?;
+        let mut file = std::fs::File::open(&path).map_err(|e| {
+            let path = path.to_string_lossy();
+            if path.len() > 88 {
+                let path: String = path.chars().skip(path.len() - 88).collect();
+                polars_err!(ComputeError: "error open file: ...{}, {}", path, e)
+            } else {
+                polars_err!(ComputeError: "error open file: {}, {}", path, e)
+            }
+        })?;
         let mut magic_nr = [0u8; 2];
         file.read_exact(&mut magic_nr)
             .map_err(|_| polars_err!(NoData: "empty csv"))?;
