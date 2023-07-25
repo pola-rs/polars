@@ -264,6 +264,8 @@ mod tests {
         .unwrap()
     }
 
+    // Skip this tests on Windows since it does not have a convenient /tmp/ location.
+    #[cfg_attr(target_os = "windows", ignore)]
     #[test]
     fn csv_to_local_objectstore_cloudwriter() {
         use crate::csv::CsvWriter;
@@ -285,6 +287,8 @@ mod tests {
             .expect("Could not write dataframe as CSV to remote location");
     }
 
+    // Skip this tests on Windows since it does not have a convenient /tmp/ location.
+    #[cfg_attr(target_os = "windows", ignore)]
     #[test]
     fn cloudwriter_from_cloudlocation_test() {
         use crate::csv::CsvWriter;
