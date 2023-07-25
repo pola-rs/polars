@@ -22,7 +22,7 @@ fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> bool {
         // any operation that checks for equality or ordering can be wrong because
         // the join can produce null values
         // TODO! check if we can be less conservative here
-        BinaryExpr { op, .. } => !matches!(op, Operator::NotEq),
+        BinaryExpr { op, .. } => !matches!(op, Operator::NotEq) && join_produces_null(how),
         _ => false,
     }
 }
@@ -58,8 +58,8 @@ pub(super) fn process_join(
     let schema_left = lp_arena.get(input_left).schema(lp_arena);
     let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
-    let mut pushdown_left = optimizer::init_hashmap(Some(acc_predicates.len()));
-    let mut pushdown_right = optimizer::init_hashmap(Some(acc_predicates.len()));
+    let mut pushdown_left = init_hashmap(Some(acc_predicates.len()));
+    let mut pushdown_right = init_hashmap(Some(acc_predicates.len()));
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
     for (_, predicate) in acc_predicates {
