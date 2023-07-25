@@ -1,4 +1,7 @@
+use std::collections::hash_map::RandomState;
+use std::hash::Hash;
 use std::rc::Rc;
+use polars_core::hashing::_boost_hash_combine;
 
 use polars_utils::vec::CapacityByFactor;
 
@@ -13,21 +16,21 @@ use crate::prelude::visitor::{ALogicalPlanNode, AexprNode, RewritingVisitor, Tre
 /// have little collisions
 /// We will do a full expression comparison to check if the
 /// expressions with equal identifiers are truly equal
-// TODO! try to use a hash `usize` for this?
-type Identifier = Rc<str>;
+type Identifier = u64;
+type PrevisitIdx = usize;
 /// Identifier maps to Expr Node and count.
 type SubExprCount = PlHashMap<Identifier, (Node, usize)>;
 /// (post_visit_idx, identifier);
-type IdentifierArray = Vec<(usize, Identifier)>;
+type IdentifierArray = Vec<(usize, Option<Identifier>)>;
 
-fn replace_name(id: &str) -> String {
+fn replace_name(id: Identifier, count: u32) -> String {
     format!("{}{}", CSE_REPLACED, id)
 }
 
 #[derive(Debug)]
 enum VisitRecord {
     /// entered a new expression
-    Entered(usize),
+    Entered(PrevisitIdx),
     /// every visited sub-expression pushes their identifier to the stack
     SubExprId(Identifier),
 }
@@ -90,6 +93,7 @@ struct ExprIdentifierVisitor<'a> {
     has_sub_expr: bool,
     // During aggregation we only identify element-wise operations
     is_groupby: bool,
+    hasher: ahash::RandomState
 }
 
 impl ExprIdentifierVisitor<'_> {
@@ -109,6 +113,8 @@ impl ExprIdentifierVisitor<'_> {
             id_array_offset,
             has_sub_expr: false,
             is_groupby,
+            // easier to debug if it is stable
+            hasher: ahash::RandomState::with_seed(0)
         }
     }
 
@@ -118,15 +124,14 @@ impl ExprIdentifierVisitor<'_> {
     /// If we traverse another expression in the mean time, it will get popped of the stack first
     /// so the returned identifier belongs to a single sub-expression
     fn pop_until_entered(&mut self) -> (usize, Identifier) {
-        let mut id = String::new();
+        let mut id = 0u64;
 
         while let Some(item) = self.visit_stack.pop() {
             match item {
-                VisitRecord::Entered(idx) => return (idx, Rc::from(id)),
-                VisitRecord::SubExprId(s) => {
-                    id.push('!');
-                    id.push_str(s.as_ref());
-                }
+                VisitRecord::Entered(idx) => return (idx, id),
+                VisitRecord::SubExprId(hash) => {
+                    id = _boost_hash_combine(id, hash)
+                },
             }
         }
         unreachable!()
@@ -173,13 +178,14 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 
         // implement default placeholders
         self.identifier_array
-            .push((self.id_array_offset, "".into()));
+            .push((self.id_array_offset, None));
 
         Ok(VisitRecursion::Continue)
     }
 
     fn post_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
         let ae = node.to_aexpr();
+        let hash = self.hasher.hash_one(std::mem::discriminant(ae));
         self.post_visit_idx += 1;
 
         let (pre_visit_idx, sub_expr_id) = self.pop_until_entered();
@@ -188,21 +194,22 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         // we only push the visit_stack, so the parents know the trail
         if !self.accept_node(ae) {
             self.identifier_array[pre_visit_idx + self.id_array_offset].0 = self.post_visit_idx;
+
             self.visit_stack
-                .push(VisitRecord::SubExprId(Rc::from(format!("{:E}", ae))));
+                .push(VisitRecord::SubExprId(hash));
             return Ok(VisitRecursion::Continue);
         }
 
         // create the id of this node
-        let id: Identifier = Rc::from(format!("{:E}{}", ae, sub_expr_id));
+        let id: Identifier = _boost_hash_combine(hash, sub_expr_id);
 
         // store the created id
         self.identifier_array[pre_visit_idx + self.id_array_offset] =
-            (self.post_visit_idx, id.clone());
+            (self.post_visit_idx, Some(id));
 
         // We popped until entered, push this Id on the stack so the trail
         // is available for the parent expression
-        self.visit_stack.push(VisitRecord::SubExprId(id.clone()));
+        self.visit_stack.push(VisitRecord::SubExprId(id));
 
         let (_, se_count) = self.se_count.entry(id).or_insert_with(|| (node.node(), 0));
 
@@ -226,6 +233,7 @@ struct CommonSubExprRewriter<'a> {
     /// Offset in the identifier array
     /// this allows us to use a single `vec` on multiple expressions
     id_array_offset: usize,
+    rename_count: u32
 }
 
 impl<'a> CommonSubExprRewriter<'a> {
@@ -242,6 +250,7 @@ impl<'a> CommonSubExprRewriter<'a> {
             max_post_visit_idx: 0,
             visited_idx: 0,
             id_array_offset,
+            rename_count: 0
         }
     }
 }
@@ -293,7 +302,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         let id = &self.identifier_array[self.visited_idx + self.id_array_offset].1;
 
         // placeholder not overwritten, so we can skip this sub-expression
-        if id.is_empty() {
+        if id.is_none() {
             self.visited_idx += 1;
             let recurse = if ae_node.is_leaf() {
                 RewriteRecursion::Stop
@@ -304,14 +313,15 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             };
             return Ok(recurse);
         }
+        let id = id.unwrap();
 
-        let (node, count) = self.sub_expr_map.get(id).unwrap();
+        let (node, count) = self.sub_expr_map.get(&id).unwrap();
         if *count > 1
             // this does a full expression traversal to check if the expression is truly
             // the same
             && ae_node.binary(*node, |l, r| l == r)
         {
-            self.replaced_identifiers.insert(id.clone());
+            self.replaced_identifiers.insert(id);
             // rewrite this sub-expression, don't visit its children
             Ok(RewriteRecursion::MutateAndStop)
         } else {
@@ -326,6 +336,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         let (post_visit_count, id) =
             &self.identifier_array[self.visited_idx + self.id_array_offset];
         self.visited_idx += 1;
+        let id = id.expect("impl error");
 
         // TODO!: check if we ever hit this branch
         if *post_visit_count < self.max_post_visit_idx {
@@ -344,7 +355,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             self.visited_idx += 1;
         }
 
-        let name = replace_name(id.as_ref());
+        let name = replace_name(id);
         node.assign(AExpr::col(name.as_ref()));
 
         Ok(node)
@@ -440,7 +451,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
             // Add the tmp columns
             for id in &self.replaced_identifiers {
                 let (node, _count) = self.se_count.get(id).unwrap();
-                let name = replace_name(id.as_ref());
+                let name = replace_name(*id);
                 let ae = AExpr::Alias(*node, Arc::from(name));
                 let node = expr_arena.add(ae);
                 new_expr.push(node)
