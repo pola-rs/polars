@@ -436,7 +436,7 @@ impl SqlExprVisitor<'_> {
                 let first_then = self.visit_expr(first.1)?;
                 let expr = when(first_cond).then(first_then);
                 let next = when_thens.next();
-    
+
                 let mut when_then = if let Some((cond, res)) = next {
                     let second_operand_expr = self.visit_expr(operand_expr)?;
                     let cond = second_operand_expr.eq(self.visit_expr(cond)?);
@@ -445,14 +445,14 @@ impl SqlExprVisitor<'_> {
                 } else {
                     return Ok(expr.otherwise(else_res));
                 };
-    
+
                 for (cond, res) in when_thens {
                     let new_operand_expr = self.visit_expr(operand_expr)?;
                     let cond = new_operand_expr.eq(self.visit_expr(cond)?);
                     let res = self.visit_expr(res)?;
                     when_then = when_then.when(cond).then(res);
                 }
-    
+
                 return Ok(when_then.otherwise(else_res));
             }
 
