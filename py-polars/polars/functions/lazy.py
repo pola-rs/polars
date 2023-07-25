@@ -1115,6 +1115,7 @@ def map(
     Returns
     -------
     Expr
+        Expression with the data type given by ``return_dtype``.
 
     Examples
     --------
@@ -1191,6 +1192,7 @@ def apply(
     Returns
     -------
     Expr
+        Expression with the data type given by ``return_dtype``.
 
     Examples
     --------
@@ -1766,7 +1768,7 @@ def collect_all(
 
     Returns
     -------
-    List[DataFrame]
+    list of DataFrames
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """

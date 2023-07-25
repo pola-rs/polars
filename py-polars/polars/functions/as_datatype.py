@@ -55,7 +55,8 @@ def datetime_(
 
     Returns
     -------
-    Expr of type `pl.Datetime`
+    Expr
+        Expression of data type :class:`Datetime`.
 
     """
     year_expr = parse_as_expression(year)
@@ -103,7 +104,8 @@ def date_(
 
     Returns
     -------
-    Expr of type pl.Date
+    Expr
+        Expression of data type :class:`Date`.
 
     """
     return datetime_(year, month, day).cast(Date).alias("date")
@@ -131,7 +133,8 @@ def time_(
 
     Returns
     -------
-    Expr of type pl.Date
+    Expr
+        Expression of data type :class:`Date`.
 
     """
     epoch_start = (1970, 1, 1)
@@ -158,7 +161,8 @@ def duration(
 
     Returns
     -------
-    Expr of type `pl.Duration`
+    Expr
+        Expression of data type :class:`Duration`.
 
     Examples
     --------

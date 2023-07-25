@@ -377,6 +377,7 @@ class Series:
         -------
         dict
             Dictionary containing the flag name and the value
+
         """
         out = {
             "SORTED_ASC": self._s.is_sorted_ascending_flag(),
@@ -1218,7 +1219,8 @@ class Series:
 
         Returns
         -------
-        Boolean literal
+        Series
+            Series of data type :class:`Boolean`.
 
         """
         return self.to_frame().select(F.col(self.name).any(drop_nulls)).to_series()[0]
@@ -1229,7 +1231,8 @@ class Series:
 
         Returns
         -------
-        Boolean literal
+        Series
+            Series of data type :class:`Boolean`.
 
         """
         return self.to_frame().select(F.col(self.name).all(drop_nulls)).to_series()[0]
@@ -1314,7 +1317,8 @@ class Series:
 
         Returns
         -------
-        Dictionary with summary statistics of a Series.
+        DataFrame
+            Mapping with summary statistics of a Series.
 
         Examples
         --------
@@ -1648,7 +1652,7 @@ class Series:
         category_label
             Name given to the category column. Only used if series == False
         series
-            If True, return the a categorical series in the data's original order.
+            If True, return a categorical Series in the data's original order.
         left_closed
             Whether intervals should be [) instead of (]
         include_breaks
@@ -1766,7 +1770,7 @@ class Series:
         category_label
             Name given to the category column. Only used if series == False.
         series
-            If True, return a categorical series in the data's original order
+            If True, return a categorical Series in the data's original order
         left_closed
             Whether intervals should be [) instead of (]
         allow_duplicates
@@ -1876,7 +1880,8 @@ class Series:
 
         Returns
         -------
-            A Struct Series containing "lengths" and "values" Fields
+        Series
+            Series of data type :class:`Struct` with Fields "lengths" and "values".
 
         Examples
         --------
@@ -1908,8 +1913,11 @@ class Series:
 
         Returns
         -------
-            Series
+        Series
 
+        See Also
+        --------
+        rle
 
         Examples
         --------
@@ -2789,7 +2797,7 @@ class Series:
 
         Returns
         -------
-        Integer
+        int
 
         Examples
         --------
@@ -2806,7 +2814,7 @@ class Series:
 
         Returns
         -------
-        Integer
+        int
 
         Examples
         --------
@@ -2947,7 +2955,8 @@ class Series:
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -2970,7 +2979,8 @@ class Series:
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -2993,7 +3003,8 @@ class Series:
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -3016,7 +3027,8 @@ class Series:
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -3039,7 +3051,8 @@ class Series:
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -3063,7 +3076,8 @@ class Series:
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -3087,7 +3101,8 @@ class Series:
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -3137,7 +3152,8 @@ class Series:
 
         Returns
         -------
-        UInt32 Series
+        Series
+            Series of data type :class:`UInt32`.
 
         Examples
         --------
@@ -3158,7 +3174,8 @@ class Series:
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -3181,7 +3198,8 @@ class Series:
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
 
         """
 
@@ -3191,7 +3209,8 @@ class Series:
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -3216,7 +3235,8 @@ class Series:
 
         Returns
         -------
-        Exploded Series of same dtype
+        Series
+            Series with the data type of the list elements.
 
         See Also
         --------
@@ -3924,7 +3944,8 @@ class Series:
 
         Returns
         -------
-        the series mutated
+        Series
+            The mutated series.
 
         Notes
         -----
@@ -4625,7 +4646,7 @@ class Series:
 
         Returns
         -------
-        New Series
+        Series
 
         Examples
         --------
@@ -5877,9 +5898,10 @@ class Series:
         Returns
         -------
         Series
-            If a single dimension is given, results in a flat Series of shape (len,).
-            If a multiple dimensions are given, results in a Series of Lists with shape
-            (rows, cols).
+            If a single dimension is given, results in a Series of the original
+            data type.
+            If a multiple dimensions are given, results in a Series of data type
+            :class:`List` with shape (rows, cols).
 
         See Also
         --------

@@ -437,7 +437,8 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -471,7 +472,8 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Series of dtype Utf8
+        Expr
+            Expression of data type :class:`Utf8`.
 
         Examples
         --------
@@ -496,7 +498,9 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Expr
+            Expression of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         Examples
         --------
@@ -525,7 +529,9 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Expr
+            Expression of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         Examples
         --------
@@ -704,7 +710,8 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Exploded column with the datatype of the list elements.
+        Expr
+            Expression with the data type of the list elements.
 
         See Also
         --------

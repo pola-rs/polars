@@ -60,7 +60,7 @@ def from_dict(
 
     Returns
     -------
-    :class:`DataFrame`
+    DataFrame
 
     Examples
     --------
@@ -120,7 +120,7 @@ def from_dicts(
 
     Returns
     -------
-    :class:`DataFrame`
+    DataFrame
 
     Examples
     --------
@@ -224,7 +224,7 @@ def from_records(
 
     Returns
     -------
-    :class:`DataFrame`
+    DataFrame
 
     Examples
     --------
@@ -488,7 +488,7 @@ def from_numpy(
 
     Returns
     -------
-    :class:`DataFrame`
+    DataFrame
 
     Examples
     --------
@@ -559,7 +559,7 @@ def from_arrow(
 
     Returns
     -------
-    :class:`DataFrame` or :class:`Series`
+    DataFrame or Series
 
     Examples
     --------
@@ -679,7 +679,7 @@ def from_pandas(
 
     Returns
     -------
-    :class:`DataFrame`
+    DataFrame
 
     Examples
     --------

@@ -82,7 +82,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type `Date`/`Datetime`
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
 
         Examples
         --------
@@ -257,7 +258,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type `Date`/`Datetime`
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
 
         Warnings
         --------
@@ -505,7 +507,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Year as Int32
+        Expr
+            Expression of data type :class:`Int32`.
 
         Examples
         --------
@@ -551,7 +554,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Leap year info as Boolean
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -598,7 +602,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        ISO Year as Int32
+        Expr
+            Expression of data type :class:`Int32`.
 
         Examples
         --------
@@ -644,7 +649,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Quarter as UInt32
+        Expr
+            Expression of data type :class:`UInt32`.
 
         Examples
         --------
@@ -691,7 +697,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Month as UInt32
+        Expr
+            Expression of data type :class:`UInt32`.
 
         Examples
         --------
@@ -738,7 +745,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Week number as UInt32
+        Expr
+            Expression of data type :class:`UInt32`.
 
         Examples
         --------
@@ -784,7 +792,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Week day as UInt32
+        Expr
+            Expression of data type :class:`UInt32`.
 
         See Also
         --------
@@ -842,7 +851,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Day as UInt32
+        Expr
+            Expression of data type :class:`UInt32`.
 
         See Also
         --------
@@ -900,7 +910,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Day as UInt32
+        Expr
+            Expression of data type :class:`UInt32`.
 
         See Also
         --------
@@ -955,7 +966,9 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type `Time`
+        Expr
+            Expression of data type :class:`Time`.
+
         """
         return wrap_expr(self._pyexpr.dt_time())
 
@@ -967,7 +980,9 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type `Date`
+        Expr
+            Expression of data type :class:`Date`.
+
         """
         return wrap_expr(self._pyexpr.dt_date())
 
@@ -979,7 +994,9 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type `Datetime`
+        Expr
+            Expression of data type :class:`Datetime`.
+
         """
         return wrap_expr(self._pyexpr.dt_datetime())
 
@@ -993,7 +1010,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Hour as UInt32
+        Expr
+            Expression of data type :class:`UInt32`.
 
         Examples
         --------
@@ -1039,7 +1057,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Minute as UInt32
+        Expr
+            Expression of data type :class:`UInt32`.
 
         Examples
         --------
@@ -1092,7 +1111,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Second as UInt32 (or Float64)
+        Expr
+            Expression of data type :class:`UInt32` or :class:`Float64`.
 
         Examples
         --------
@@ -1187,7 +1207,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Milliseconds as UInt32
+        Expr
+            Expression of data type :class:`UInt32`.
 
         """
         return wrap_expr(self._pyexpr.dt_millisecond())
@@ -1200,7 +1221,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Microseconds as UInt32
+        Expr
+            Expression of data type :class:`UInt32`.
 
         Examples
         --------
@@ -1249,7 +1271,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Nanoseconds as UInt32
+        Expr
+            Expression of data type :class:`UInt32`.
 
         """
         return wrap_expr(self._pyexpr.dt_nanosecond())
@@ -1573,7 +1596,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type Int64
+        Expr
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1611,7 +1635,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type Int64
+        Expr
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1650,7 +1675,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type Int64
+        Expr
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1689,7 +1715,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type `Int64`
+        Expr
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1732,7 +1759,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type Int64
+        Expr
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1779,7 +1807,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type Int64
+        Expr
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1826,7 +1855,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Expression of data type Int64
+        Expr
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1903,7 +1933,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Date/Datetime expression
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
 
         Examples
         --------
@@ -1965,7 +1996,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Date/Datetime expression
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
 
         Notes
         -----
@@ -2011,7 +2043,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Date/Datetime expression
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime`.
 
         Notes
         -----
@@ -2061,7 +2094,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Duration expression
+        Expr
+            Expression of data type :class:`Duration`.
 
         See Also
         --------
@@ -2095,7 +2129,8 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Duration expression
+        Expr
+            Expression of data type :class:`Duration`.
 
         See Also
         --------

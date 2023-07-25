@@ -323,7 +323,8 @@ class Expr:
 
         Returns
         -------
-        Boolean literal
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -375,7 +376,8 @@ class Expr:
 
         Returns
         -------
-        Boolean literal
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -1046,8 +1048,8 @@ class Expr:
 
         Returns
         -------
-        out
-            Series of type Boolean
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -1077,8 +1079,8 @@ class Expr:
 
         Returns
         -------
-        out
-            Series of type Boolean
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -2018,7 +2020,7 @@ class Expr:
         Returns
         -------
         Expr
-            Series of dtype UInt32.
+            Expression of data type :class:`UInt32`.
 
         Examples
         --------
@@ -2280,7 +2282,8 @@ class Expr:
 
         Returns
         -------
-        Values taken by index
+        Expr
+            Expression of the same data type.
 
         Examples
         --------
@@ -3173,7 +3176,8 @@ class Expr:
 
         Returns
         -------
-        Boolean Series
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -3486,7 +3490,8 @@ class Expr:
 
         Returns
         -------
-            A Struct Series containing "lengths" and "values" Fields
+        Expr
+            Expression of data type :class:`Struct` with Fields "lengths" and "values".
 
         Examples
         --------
@@ -3892,13 +3897,14 @@ class Expr:
 
     def explode(self) -> Self:
         """
-        Explode a list Series.
+        Explode a list expression.
 
         This means that every item is expanded to a new row.
 
         Returns
         -------
-        Exploded Series of same dtype
+        Expr
+            Expression with the data type of the list elements.
 
         See Also
         --------
@@ -4755,7 +4761,8 @@ class Expr:
 
         Returns
         -------
-        Expr that evaluates to a Boolean Series.
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -4799,7 +4806,9 @@ class Expr:
 
         Returns
         -------
-        Series of type List
+        Expr
+            Expression of data type :class:`List`, where the inner data type is equal
+            to the original data type.
 
         Examples
         --------
@@ -4847,7 +4856,8 @@ class Expr:
 
         Returns
         -------
-        Expr that evaluates to a Boolean Series.
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -7449,7 +7459,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7473,7 +7484,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7497,7 +7509,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7521,7 +7534,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7545,7 +7559,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7569,7 +7584,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7593,7 +7609,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7617,7 +7634,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7641,7 +7659,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7665,7 +7684,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7689,7 +7709,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7713,7 +7734,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7737,7 +7759,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7769,7 +7792,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7807,9 +7831,10 @@ class Expr:
         Returns
         -------
         Expr
-            If a single dimension is given, results in a flat Series of shape (len,).
-            If a multiple dimensions are given, results in a Series of Lists with shape
-            (rows, cols).
+            If a single dimension is given, results in an expression of the original
+            data type.
+            If a multiple dimensions are given, results in an expression of data type
+            :class:`List` with shape (rows, cols).
 
         Examples
         --------
@@ -8258,7 +8283,8 @@ class Expr:
 
         Returns
         -------
-        Dtype Struct
+        Expr
+            Expression of data type :class:`Struct`.
 
         Examples
         --------
