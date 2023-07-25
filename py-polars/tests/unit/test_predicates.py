@@ -169,3 +169,15 @@ def test_predicate_pushdown_cumsum_9566() -> None:
     q = df.lazy().sort(["B", "A"]).filter(pl.col("A").is_in([8, 2]).cumsum() == 1)
 
     assert q.collect()["A"].to_list() == [8, 9, 0, 1]
+
+
+def test_predicate_pushdown_join_fill_null_10058() -> None:
+    ids = pl.LazyFrame({"id": [0, 1, 2]})
+    filters = pl.LazyFrame({"id": [0, 1], "filter": [True, False]})
+
+    assert (
+        ids.join(filters, how="left", on="id")
+        .filter(pl.col("filter").fill_null(True))
+        .collect()
+        .to_dict(False)["id"]
+    ) == [0, 2]
