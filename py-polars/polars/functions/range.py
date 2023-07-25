@@ -204,7 +204,8 @@ def int_range(
 
     Returns
     -------
-    Column of data type ``Int64``.
+    Expr or Series
+        Column of data type ``Int64``.
 
     See Also
     --------
@@ -295,7 +296,8 @@ def int_ranges(
 
     Returns
     -------
-    Column of data type ``List(dtype)``.
+    Expr or Series
+        Column of data type ``List(dtype)``.
 
     See Also
     --------
@@ -421,7 +423,8 @@ def date_range(
 
     Returns
     -------
-    Column of data type ``Date`` or ``Datetime``.
+    Expr or Series
+        Column of data type ``Date`` or ``Datetime``.
 
     Notes
     -----
@@ -648,7 +651,8 @@ def date_ranges(
 
     Returns
     -------
-    Column of data type ``List(Date)`` or ``List(Datetime)``.
+    Expr or Series
+        Column of data type ``List(Date)`` or ``List(Datetime)``.
 
     Examples
     --------
@@ -765,7 +769,8 @@ def time_range(
 
     Returns
     -------
-    Column of data type ``Time``.
+    Expr or Series
+        Column of data type ``Time``.
 
     See Also
     --------
@@ -893,7 +898,8 @@ def time_ranges(
 
     Returns
     -------
-    Column of data type ``List(Time)``.
+    Expr or Series
+        Column of data type ``List(Time)``.
 
     See Also
     --------
