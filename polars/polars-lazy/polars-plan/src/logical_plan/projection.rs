@@ -26,11 +26,8 @@ pub(super) fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<str>
 
 pub fn remove_exclude(mut expr: Expr) -> Expr {
     expr.mutate().apply(|e| {
-        match e {
-            Expr::Exclude(input, _) => {
-                *e = remove_exclude(std::mem::take(input));
-            }
-            _ => {}
+        if let Expr::Exclude(input, _) = e {
+            *e = remove_exclude(std::mem::take(input));
         }
         // always keep iterating all inputs
         true
