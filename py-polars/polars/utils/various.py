@@ -186,8 +186,10 @@ def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> st
     # don't use pathlib here as it modifies slashes (s3:// -> s3:/)
     path = os.path.expanduser(path)  # noqa: PTH111
     if (
-        check_not_directory and os.path.exists(path) and os.path.isdir(path)
-    ):  # noqa: PTH110 PTH112
+        check_not_directory
+        and os.path.exists(path)
+        and os.path.isdir(path)  # noqa: PTH110 PTH112
+    ):
         raise IsADirectoryError(f"Expected a file path; {path!r} is a directory")
     return path
 
