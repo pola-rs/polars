@@ -679,12 +679,35 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
             }
             _ => {
                 let Some(av) = lv.to_anyvalue() else {return Ok(None)};
-                // casting null always remains null
-                if let AnyValue::Null = av {
-                    return Ok(None);
-                };
-                let out = av.cast(dtype)?;
-                out.try_into()?
+                match (av, dtype) {
+                    // casting null always remains null
+                    (AnyValue::Null, _) => return Ok(None),
+                    // series cast should do this one
+                    #[cfg(feature = "dtype-datetime")]
+                    (AnyValue::Datetime(_, _, _), DataType::Datetime(_, _)) => return Ok(None),
+                    #[cfg(feature = "dtype-duration")]
+                    (AnyValue::Duration(_, _), _) => return Ok(None),
+                    #[cfg(feature = "dtype-categorical")]
+                    (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_)) => {
+                        return Ok(None)
+                    }
+                    #[cfg(feature = "dtype-struct")]
+                    (_, DataType::Struct(_)) => return Ok(None),
+                    (av, _) => {
+                        // raise in debug builds so we can fix them
+                        // in release we continue and apply the cast later
+                        #[cfg(debug_assertions)]
+                        let out = { av.cast(dtype)? };
+                        #[cfg(not(debug_assertions))]
+                        let out = {
+                            match av.cast(&DataType) {
+                                Ok(out) => out,
+                                Err(_) => return Ok(None),
+                            }
+                        };
+                        out.try_into()?
+                    }
+                }
             }
         },
         _ => return Ok(None),
