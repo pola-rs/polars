@@ -131,6 +131,53 @@ class BytecodeParser:
         except ValueError:
             return None
 
+    def _inject_nesting(
+        self,
+        expression_blocks: dict[int, str],
+        logical_instructions: list[Instruction],
+    ) -> list[tuple[int, str]]:
+        """Inject nesting boundaries into expression blocks (as parentheses)."""
+        if logical_instructions:
+            # reconstruct nesting boundaries for mixed and/or ops by associating
+            # control flow jump offsets with their target expression blocks and
+            # injecting appropriate parentheses
+            combined_offset_idxs = set()
+            if len({inst.opname for inst in logical_instructions}) > 1:
+                block_offsets: list[int] = list(expression_blocks.keys())
+                previous_logical_opname = ""
+                for i, inst in enumerate(logical_instructions):
+                    # operator precedence means that we can combine logically connected
+                    # 'and' blocks into one (depending on follow-on logic) and should
+                    # parenthesise nested 'or' blocks
+                    logical_op = OpNames.CONTROL_FLOW[inst.opname]
+                    start = block_offsets[bisect_left(block_offsets, inst.offset) - 1]
+                    if previous_logical_opname == (
+                        "POP_JUMP_FORWARD_IF_FALSE"
+                        if _MIN_PY311
+                        else "POP_JUMP_IF_FALSE"
+                    ):
+                        # combine logical '&' blocks (and update start/block_offsets)
+                        prev = block_offsets[bisect_left(block_offsets, start) - 1]
+                        expression_blocks[prev] += f" & {expression_blocks.pop(start)}"
+                        block_offsets = list(expression_blocks.keys())
+                        combined_offset_idxs.add(i - 1)
+                        start = prev
+
+                    if logical_op == "|":
+                        # parenthesise connected 'or' blocks
+                        end = block_offsets[bisect_left(block_offsets, inst.argval) - 1]
+                        if not (start == 0 and end == block_offsets[-1]):
+                            expression_blocks[start] = "(" + expression_blocks[start]
+                            expression_blocks[end] += ")"
+
+                    previous_logical_opname = inst.opname
+
+            for i, inst in enumerate(logical_instructions):
+                if i not in combined_offset_idxs:
+                    expression_blocks[inst.offset] = OpNames.CONTROL_FLOW[inst.opname]
+
+        return sorted(expression_blocks.items())
+
     @property
     def apply_target(self) -> ApplyTarget:
         """The apply target, eg: one of 'expr', 'frame', or 'series'."""
@@ -199,66 +246,21 @@ class BytecodeParser:
                 control_flow_blocks[jump_offset].append(inst)
 
         # convert each block to a polars expression string
-        expression_strings = {
-            offset: InstructionTranslator(
-                instructions=ops,
-                apply_target=self._apply_target,
-            ).to_expression(
-                col=col,
-                param_name=self._param_name,
-                depth=int(bool(logical_instructions)),
-            )
-            for offset, ops in control_flow_blocks.items()
-        }
-
-        if logical_instructions:
-            # reconstruct nesting boundaries for mixed and/or ops by associating
-            # control flow jump offsets with their target expression blocks and
-            # injecting appropriate parentheses
-            combined_offset_idxs = set()
-            if len({inst.opname for inst in logical_instructions}) > 1:
-                block_offsets: list[int] = list(expression_strings.keys())
-                idx_min, idx_max = 0, len(block_offsets) - 1
-                previous_logical_opname = ""
-                for i, inst in enumerate(logical_instructions):
-                    # operator precedence means that we can combine logically connected
-                    # 'and' blocks into one (depending on follow-on logic) and should
-                    # parenthesise nested 'or' blocks
-                    logical_op = OpNames.CONTROL_FLOW[inst.opname]
-                    start = block_offsets[
-                        max(idx_min, bisect_left(block_offsets, inst.offset) - 1)
-                    ]
-                    if previous_logical_opname == (
-                        "POP_JUMP_FORWARD_IF_FALSE"
-                        if _MIN_PY311
-                        else "POP_JUMP_IF_FALSE"
-                    ):
-                        prev = block_offsets[
-                            max(idx_min, bisect_left(block_offsets, start) - 1)
-                        ]
-                        expression_strings[
-                            prev
-                        ] += f" & {expression_strings.pop(start)}"
-                        block_offsets = list(expression_strings.keys())
-                        combined_offset_idxs.add(i - 1)
-                        start = prev
-
-                    if logical_op == "|":
-                        end = block_offsets[
-                            min(idx_max, bisect_left(block_offsets, inst.argval) - 1)
-                        ]
-                        if not (start == 0 and end == block_offsets[-1]):
-                            expression_strings[start] = "(" + expression_strings[start]
-                            expression_strings[end] += ")"
-
-                    previous_logical_opname = inst.opname
-
-            for i, inst in enumerate(logical_instructions):
-                if i not in combined_offset_idxs:
-                    expression_strings[inst.offset] = OpNames.CONTROL_FLOW[inst.opname]
-
-        exprs = sorted(expression_strings.items())
-        polars_expr = " ".join(expr for _, expr in exprs)
+        expression_blocks = self._inject_nesting(
+            {
+                offset: InstructionTranslator(
+                    instructions=ops,
+                    apply_target=self._apply_target,
+                ).to_expression(
+                    col=col,
+                    param_name=self._param_name,
+                    depth=int(bool(logical_instructions)),
+                )
+                for offset, ops in control_flow_blocks.items()
+            },
+            logical_instructions,
+        )
+        polars_expr = " ".join(expr for _offset, expr in expression_blocks)
 
         # note: if no 'pl.col' in the expression, it likely represents a compound
         # constant value (e.g. `lambda x: CONST + 123`), so we don't want to warn
