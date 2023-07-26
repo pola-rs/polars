@@ -10,16 +10,12 @@ import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
-from tests.test_udfs import MY_CONSTANT, TEST_CASES
+from tests.test_udfs import MY_CONSTANT, NOOP_TEST_CASES, TEST_CASES
 
 
 @pytest.mark.parametrize(
     "func",
-    [
-        lambda x: x,
-        lambda x, y: x + y,
-        lambda x: x[0] + 1,
-    ],
+    NOOP_TEST_CASES,
 )
 def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
     # functions we don't offer suggestions for (at all, or just not yet)

@@ -118,6 +118,13 @@ TEST_CASES = [
     ("c", lambda x: json.loads(x), 'pl.col("c").str.json_extract()'),
 ]
 
+NOOP_TEST_CASES = [
+    lambda x: x,
+    lambda x, y: x + y,
+    lambda x: x[0] + 1,
+    lambda x: np.sin(1) + x,
+]
+
 
 @pytest.mark.parametrize(
     ("col", "func", "expected"),
@@ -130,3 +137,12 @@ def test_bytecode_parser_expression(
     bytecode_parser = udfs.BytecodeParser(func, apply_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected
+
+
+@pytest.mark.parametrize(
+    "func",
+    NOOP_TEST_CASES,
+)
+def test_bytecode_parser_expression_noop(func: Callable[[Any], Any]) -> None:
+    udfs = pytest.importorskip("udfs")
+    assert not udfs.BytecodeParser(func, apply_target="expr").can_rewrite()
