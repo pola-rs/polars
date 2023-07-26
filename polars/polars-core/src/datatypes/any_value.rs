@@ -4,6 +4,7 @@ use arrow::temporal_conversions::{
 use arrow::types::PrimitiveType;
 #[cfg(feature = "dtype-struct")]
 use polars_arrow::trusted_len::TrustedLenPush;
+use polars_utils::format_smartstring;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "dtype-categorical")]
@@ -456,6 +457,7 @@ impl<'a> AnyValue<'a> {
                     DataType::Duration(tu) => AnyValue::Duration($av as i64, *tu),
                     #[cfg(feature="dtype-time")]
                     DataType::Time => AnyValue::Time($av as i64),
+                    DataType::Utf8 => AnyValue::Utf8Owned(format_smartstring!("{}", $av)),
                     _ => polars_bail!(
                         ComputeError: "cannot cast any-value {:?} to dtype '{}'", self, dtype,
                     ),

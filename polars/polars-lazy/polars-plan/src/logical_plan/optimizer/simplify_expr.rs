@@ -623,11 +623,12 @@ impl OptimizationRule for SimplifyExprRule {
                 }
             }
             AExpr::Cast {
-                expr, data_type, ..
+                expr,
+                data_type,
+                strict,
             } => {
                 let input = expr_arena.get(*expr);
-                // faster casts (we only do strict casts)
-                inline_cast(input, data_type)
+                inline_cast(input, data_type, *strict)?
             }
             // flatten nested concat_str calls
             #[cfg(all(feature = "strings", feature = "concat_str"))]
@@ -665,17 +666,53 @@ impl OptimizationRule for SimplifyExprRule {
     }
 }
 
-fn inline_cast(input: &AExpr, dtype: &DataType) -> Option<AExpr> {
-    match (input, dtype) {
-        #[cfg(feature = "dtype-duration")]
-        (AExpr::Literal(lv), _) if !matches!(dtype, DataType::Unknown) => {
-            let av = lv.to_anyvalue()?;
-            let out = av.cast(dtype).ok()?;
-            let lv: LiteralValue = out.try_into().ok()?;
-            Some(AExpr::Literal(lv))
-        }
-        _ => None,
-    }
+fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Option<AExpr>> {
+    let lv = match (input, dtype) {
+        (AExpr::Literal(lv), _) if !matches!(dtype, DataType::Unknown) => match lv {
+            LiteralValue::Series(s) => {
+                let s = if strict {
+                    s.strict_cast(dtype)
+                } else {
+                    s.cast(dtype)
+                }?;
+                LiteralValue::Series(SpecialEq::new(s))
+            }
+            _ => {
+                let Some(av) = lv.to_anyvalue() else {return Ok(None)};
+                match (av, dtype) {
+                    // casting null always remains null
+                    (AnyValue::Null, _) => return Ok(None),
+                    // series cast should do this one
+                    #[cfg(feature = "dtype-datetime")]
+                    (AnyValue::Datetime(_, _, _), DataType::Datetime(_, _)) => return Ok(None),
+                    #[cfg(feature = "dtype-duration")]
+                    (AnyValue::Duration(_, _), _) => return Ok(None),
+                    #[cfg(feature = "dtype-categorical")]
+                    (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_)) => {
+                        return Ok(None)
+                    }
+                    #[cfg(feature = "dtype-struct")]
+                    (_, DataType::Struct(_)) => return Ok(None),
+                    (av, _) => {
+                        // raise in debug builds so we can fix them
+                        // in release we continue and apply the cast later
+                        #[cfg(debug_assertions)]
+                        let out = { av.cast(dtype)? };
+                        #[cfg(not(debug_assertions))]
+                        let out = {
+                            match av.cast(&dtype) {
+                                Ok(out) => out,
+                                Err(_) => return Ok(None),
+                            }
+                        };
+                        out.try_into()?
+                    }
+                }
+            }
+        },
+        _ => return Ok(None),
+    };
+    Ok(Some(AExpr::Literal(lv)))
 }
 
 #[test]
