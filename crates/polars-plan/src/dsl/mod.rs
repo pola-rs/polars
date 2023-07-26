@@ -1475,6 +1475,7 @@ impl Expr {
     }
 
     #[cfg(feature = "cutqcut")]
+    #[allow(clippy::too_many_arguments)]
     pub fn qcut(
         self,
         probs: Vec<f64>,
