@@ -3531,23 +3531,10 @@ class DataFrame:
         │ col2   ┆ 3   ┆ 4   ┆ 6   │
         └────────┴─────┴─────┴─────┘
         """
-        pydf = self._df
-        if isinstance(column_names, str):
-            pydf = self.drop(column_names)._df
-            column_names = self._df.column(column_names).to_list()
-        df = self._from_pydf(pydf.transpose(include_header, header_name))
-        if column_names is not None:
-            names = []
-            n = df.width
-            if include_header:
-                names.append(header_name)
-                n -= 1
-
-            column_names = iter(column_names)
-            for _ in range(n):
-                names.append(next(column_names))
-            df.columns = names
-        return df
+        keep_names_as = header_name if include_header else None
+        if isinstance(column_names, Generator):
+            column_names = [next(column_names) for _ in range(self.height)]
+        return self._from_pydf(self._df.transpose(keep_names_as, column_names))
 
     def reverse(self) -> DataFrame:
         """
