@@ -233,17 +233,28 @@ impl PySeries {
     ) -> PyResult<Self> {
         let val = vec_extract_wrapped(val);
         let out = Series::new(name, &val);
-        match out.dtype() {
-            DataType::List(list_inner) => {
-                let out = out
-                    .cast(&DataType::Array(
-                        Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
-                        width,
-                    ))
-                    .map_err(PyPolarsErr::from)?;
-                Ok(out.into())
+        if out.len() == 0 {
+            // no inner list present
+            let out = out
+                .cast(&DataType::Array(
+                    Box::new(inner.map(|dt| dt.0).unwrap()),
+                    width,
+                ))
+                .map_err(PyPolarsErr::from)?;
+            Ok(out.into())
+        } else {
+            match out.dtype() {
+                DataType::List(list_inner) => {
+                    let out = out
+                        .cast(&DataType::Array(
+                            Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
+                            width,
+                        ))
+                        .map_err(PyPolarsErr::from)?;
+                    Ok(out.into())
+                }
+                _ => Err(PyValueError::new_err("could not create Array from input")),
             }
-            _ => Err(PyValueError::new_err("could not create Array from input")),
         }
     }
 
