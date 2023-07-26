@@ -24,6 +24,17 @@ pub(super) fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<str>
     expr
 }
 
+pub fn remove_exclude(mut expr: Expr) -> Expr {
+    expr.mutate().apply(|e| {
+        if let Expr::Exclude(input, _) = e {
+            *e = remove_exclude(std::mem::take(input));
+        }
+        // always keep iterating all inputs
+        true
+    });
+    expr
+}
+
 fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
     // the blocks are added by cargo fmt
     #[allow(clippy::blocks_in_if_conditions)]
@@ -102,7 +113,7 @@ fn expand_regex(
         regex::Regex::new(pattern).map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
     for name in schema.iter_names() {
         if re.is_match(name) && !exclude.contains(name.as_str()) {
-            let mut new_expr = expr.clone();
+            let mut new_expr = remove_exclude(expr.clone());
 
             new_expr.mutate().apply(|e| match &e {
                 Expr::Column(pat) if pat.as_ref() == pattern => {
@@ -113,7 +124,7 @@ fn expand_regex(
             });
 
             let new_expr = rewrite_special_aliases(new_expr)?;
-            result.push(new_expr)
+            result.push(new_expr);
         }
     }
     Ok(())
@@ -131,7 +142,6 @@ fn replace_regex(
     result: &mut Vec<Expr>,
     schema: &Schema,
     exclude: &PlHashSet<Arc<str>>,
-    has_exclude: bool,
 ) -> PolarsResult<()> {
     let roots = expr_to_leaf_column_names(expr);
     let mut regex = None;
@@ -140,19 +150,7 @@ fn replace_regex(
             match regex {
                 None => {
                     regex = Some(name);
-                    if has_exclude {
-                        // iterate until we find the Exclude node
-                        // we remove that node from the expression
-                        // the `exclude` set is already filled
-                        // by prepare exclude
-                        for e in expr.into_iter() {
-                            if let Expr::Exclude(e, _) = e {
-                                expand_regex(e, result, schema, name, exclude)?;
-                                return Ok(());
-                            }
-                        }
-                    }
-                    expand_regex(expr, result, schema, name, exclude)?
+                    expand_regex(expr, result, schema, name, exclude)?;
                 }
                 Some(r) => {
                     polars_ensure!(
@@ -276,13 +274,7 @@ fn prepare_excluded(
                         match to_exclude_single {
                             Excluded::Name(name) => {
                                 let e = Expr::Column(name.clone());
-                                replace_regex(
-                                    &e,
-                                    &mut buf,
-                                    schema,
-                                    &Default::default(),
-                                    has_exclude,
-                                )?;
+                                replace_regex(&e, &mut buf, schema, &Default::default())?;
                                 // we cannot loop because of bchck
                                 while let Some(col) = buf.pop() {
                                     if let Expr::Column(name) = col {
@@ -520,7 +512,7 @@ fn replace_and_add_to_results(
         {
             // keep track of column excluded from the dtypes
             let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
-            replace_regex(&expr, result, schema, &exclude, flags.has_exclude)?;
+            replace_regex(&expr, result, schema, &exclude)?;
         }
         #[cfg(not(feature = "regex"))]
         {
