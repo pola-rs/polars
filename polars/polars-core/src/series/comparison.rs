@@ -33,11 +33,6 @@ macro_rules! impl_compare {
             DataType::Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
             DataType::Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
             DataType::Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
-            #[cfg(feature = "dtype-duration")]
-            DataType::Duration(_) => lhs
-                .duration()
-                .unwrap()
-                .$method(rhs.duration().unwrap().deref()),
             DataType::List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => lhs
