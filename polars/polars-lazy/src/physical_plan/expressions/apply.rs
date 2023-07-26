@@ -445,7 +445,7 @@ impl ApplyExpr {
         };
         // ensure the input of the function is only a `col(..)`
         // if it does any arithmetic the code below is flawed
-        if !input.iter().all(|e| matches!(e, Expr::Column(_))) {
+        if !matches!(input[0], Expr::Column(_)) {
             return Ok(true);
         }
 
