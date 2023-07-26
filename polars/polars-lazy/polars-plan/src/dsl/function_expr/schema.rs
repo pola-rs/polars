@@ -181,7 +181,7 @@ impl FunctionExpr {
                             let fld = flds.get(index).cloned().ok_or_else(
                             || polars_err!(ComputeError: "index out of bounds in `struct.field`")
                             )?;
-                            Ok(fld.clone())
+                            Ok(fld)
                         } else {
                             polars_bail!(ComputeError: "index out of bounds in `struct.field`");
                         }
