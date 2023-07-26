@@ -178,7 +178,7 @@ impl PyExpr {
             .into()
     }
 
-    #[pyo3(signature = (breaks, labels, left_closed, include_breaks))]
+    #[pyo3(signature = (breaks, labels, left_closed, include_breaks, precision, scientific))]
     #[cfg(feature = "cutqcut")]
     fn cut(
         &self,
@@ -186,13 +186,16 @@ impl PyExpr {
         labels: Option<Vec<String>>,
         left_closed: bool,
         include_breaks: bool,
+        precision: usize,
+        scientific: bool,
     ) -> Self {
         self.inner
             .clone()
-            .cut(breaks, labels, left_closed, include_breaks)
+            .cut(breaks, labels, left_closed, include_breaks, precision, scientific)
             .into()
     }
-    #[pyo3(signature = (probs, labels, left_closed, allow_duplicates, include_breaks))]
+    #[pyo3(signature = (probs, labels, left_closed, allow_duplicates, include_breaks, precision, scientific))]
+    #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "cutqcut")]
     fn qcut(
         &self,
@@ -201,13 +204,15 @@ impl PyExpr {
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
+        precision: usize,
+        scientific: bool,
     ) -> Self {
         self.inner
             .clone()
-            .qcut(probs, labels, left_closed, allow_duplicates, include_breaks)
+            .qcut(probs, labels, left_closed, allow_duplicates, include_breaks, precision, scientific)
             .into()
     }
-    #[pyo3(signature = (n_bins, labels, left_closed, allow_duplicates, include_breaks))]
+    #[pyo3(signature = (n_bins, labels, left_closed, allow_duplicates, include_breaks, precision, scientific))]
     #[cfg(feature = "cutqcut")]
     fn qcut_uniform(
         &self,
@@ -216,6 +221,8 @@ impl PyExpr {
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
+        precision: usize,
+        scientific: bool,
     ) -> Self {
         self.inner
             .clone()
@@ -225,6 +232,8 @@ impl PyExpr {
                 left_closed,
                 allow_duplicates,
                 include_breaks,
+                precision,
+                scientific,
             )
             .into()
     }
