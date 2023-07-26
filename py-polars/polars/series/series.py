@@ -3637,8 +3637,8 @@ class Series:
         """
         Convert this Series to numpy.
 
-        This operation may clone data but is completely safe.
-        Note that:
+        This operation may clone data but is completely safe. Note that:
+
         - data which is purely numeric AND without null values is not cloned;
         - floating point ``nan`` values can be zero-copied;
         - booleans can't be zero-copied.
