@@ -33,7 +33,7 @@ StackEntry: TypeAlias = Union[str, StackValue]
 _MIN_PY311 = sys.version_info >= (3, 11)
 
 
-class OpCodes:
+class OpNames:
     BINARY = {
         "BINARY_ADD": "+",
         "BINARY_AND": "&",
@@ -152,7 +152,7 @@ class BytecodeParser:
                 self._can_rewrite[self._apply_target] = len(
                     self._rewritten_instructions
                 ) >= 2 and all(
-                    inst.opname in OpCodes.PARSEABLE_OPS
+                    inst.opname in OpNames.PARSEABLE_OPS
                     for inst in self._rewritten_instructions
                 )
 
@@ -192,7 +192,7 @@ class BytecodeParser:
         logical_instructions = []
         jump_offset = 0
         for idx, inst in enumerate(self._rewritten_instructions):
-            if inst.opname in OpCodes.CONTROL_FLOW:
+            if inst.opname in OpNames.CONTROL_FLOW:
                 jump_offset = self._rewritten_instructions[idx + 1].offset
                 logical_instructions.append(inst)
             else:
@@ -224,7 +224,7 @@ class BytecodeParser:
                     # operator precedence means that we can combine logically connected
                     # 'and' blocks into one (depending on follow-on logic) and should
                     # parenthesise nested 'or' blocks
-                    logical_op = OpCodes.CONTROL_FLOW[inst.opname]
+                    logical_op = OpNames.CONTROL_FLOW[inst.opname]
                     start = block_offsets[
                         max(idx_min, bisect_left(block_offsets, inst.offset) - 1)
                     ]
@@ -255,7 +255,7 @@ class BytecodeParser:
 
             for i, inst in enumerate(logical_instructions):
                 if i not in combined_offset_idxs:
-                    expression_strings[inst.offset] = OpCodes.CONTROL_FLOW[inst.opname]
+                    expression_strings[inst.offset] = OpNames.CONTROL_FLOW[inst.opname]
 
         exprs = sorted(expression_strings.items())
         polars_expr = " ".join(expr for _, expr in exprs)
@@ -326,16 +326,16 @@ class InstructionTranslator:
     @classmethod
     def op(cls, inst: Instruction) -> str:
         """Convert bytecode instruction to suitable intermediate op string."""
-        if inst.opname in OpCodes.CONTROL_FLOW:
-            return OpCodes.CONTROL_FLOW[inst.opname]
+        if inst.opname in OpNames.CONTROL_FLOW:
+            return OpNames.CONTROL_FLOW[inst.opname]
         elif inst.argrepr:
             return inst.argrepr
         elif inst.opname == "IS_OP":
             return "is not" if inst.argval else "is"
         elif inst.opname == "CONTAINS_OP":
             return "not in" if inst.argval else "in"
-        elif inst.opname in OpCodes.UNARY:
-            return OpCodes.UNARY[inst.opname]
+        elif inst.opname in OpNames.UNARY:
+            return OpNames.UNARY[inst.opname]
         else:
             raise AssertionError(
                 "Unrecognised opname; please report a bug to https://github.com/pola-rs/polars/issues "
@@ -350,7 +350,7 @@ class InstructionTranslator:
             op = value.operator
             e1 = cls._expr(value.left_operand, col, param_name, depth + 1)
             if value.operator_arity == 1:
-                if op not in OpCodes.UNARY_VALUES:
+                if op not in OpNames.UNARY_VALUES:
                     call = "" if op.endswith(")") else "()"
                     return f"{e1}.{op}{call}"
                 return f"{op}{e1}"
@@ -384,7 +384,7 @@ class InstructionTranslator:
             for inst in instructions:
                 stack.append(
                     inst.argrepr
-                    if inst.opname in OpCodes.LOAD
+                    if inst.opname in OpNames.LOAD
                     else (
                         StackValue(
                             operator=self.op(inst),
@@ -393,8 +393,8 @@ class InstructionTranslator:
                             right_operand=None,  # type: ignore[arg-type]
                         )
                         if (
-                            inst.opname in OpCodes.UNARY
-                            or OpCodes.SYNTHETIC.get(inst.opname) == 1
+                            inst.opname in OpNames.UNARY
+                            or OpNames.SYNTHETIC.get(inst.opname) == 1
                         )
                         else StackValue(
                             operator=self.op(inst),
@@ -487,7 +487,7 @@ class RewrittenInstructions:
         idx = 0
         while idx < len(self._instructions):
             inst, increment = self._instructions[idx], 1
-            if inst.opname not in OpCodes.LOAD or not any(
+            if inst.opname not in OpNames.LOAD or not any(
                 (increment := apply_rewrite(idx, updated_instructions))
                 for apply_rewrite in (
                     # add any other rewrite methods here
@@ -506,7 +506,7 @@ class RewrittenInstructions:
         """Replace builtin function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_FAST", OpCodes.CALL],
+            opnames=["LOAD_GLOBAL", "LOAD_FAST", OpNames.CALL],
             argvals=[_PYTHON_CASTS_MAP],
         ):
             inst1, inst2 = matching_instructions[:2]
@@ -529,7 +529,7 @@ class RewrittenInstructions:
         """Replace numpy/json function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_*", "LOAD_*", OpCodes.CALL],
+            opnames=["LOAD_GLOBAL", "LOAD_*", "LOAD_*", OpNames.CALL],
             argvals=[
                 _NUMPY_MODULE_ALIASES | {"json"},
                 _NUMPY_FUNCTIONS | {"loads"},
@@ -555,7 +555,7 @@ class RewrittenInstructions:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_METHOD", OpCodes.CALL],
+            opnames=["LOAD_METHOD", OpNames.CALL],
             argvals=[_PYTHON_METHODS_MAP],
         ):
             inst = matching_instructions[0]
@@ -570,9 +570,9 @@ class RewrittenInstructions:
     @staticmethod
     def _upgrade_instruction(inst: Instruction) -> Instruction:
         """Rewrite any older binary opcodes using py 3.11 'BINARY_OP' instead."""
-        if not _MIN_PY311 and inst.opname in OpCodes.BINARY:
+        if not _MIN_PY311 and inst.opname in OpNames.BINARY:
             inst = inst._replace(
-                argrepr=OpCodes.BINARY[inst.opname],
+                argrepr=OpNames.BINARY[inst.opname],
                 opname="BINARY_OP",
             )
         return inst
