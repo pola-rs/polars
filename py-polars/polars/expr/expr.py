@@ -3304,6 +3304,8 @@ class Expr:
         labels: list[str] | None = None,
         left_closed: bool = False,
         include_breaks: bool = False,
+        precision: int = 3,
+        scientific: bool = False,
     ) -> Self:
         """
         Bin continuous values into discrete categories.
@@ -3360,7 +3362,7 @@ class Expr:
         └─────┴─────┴───────────┘
         """
         return self._from_pyexpr(
-            self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
+            self._pyexpr.cut(breaks, labels, left_closed, include_breaks, precision, scientific)
         )
 
     @deprecate_renamed_parameter("probs", "quantiles", version="0.18.8")
@@ -3372,6 +3374,8 @@ class Expr:
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
+        precision: int = 3,
+        scientific: bool = False,
     ) -> Self:
         """
         Bin continuous values into discrete categories based on their quantiles.
@@ -3490,7 +3494,7 @@ class Expr:
             else self._pyexpr.qcut
         )
         return self._from_pyexpr(
-            expr_f(quantiles, labels, left_closed, allow_duplicates, include_breaks)
+            expr_f(q, labels, left_closed, allow_duplicates, include_breaks, precision, scientific)
         )
 
     def rle(self) -> Self:

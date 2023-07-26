@@ -1649,6 +1649,8 @@ class Series:
         series: bool = True,
         left_closed: bool = False,
         include_breaks: bool = False,
+        precision: int = 3,
+        scientific: bool = False,
     ) -> DataFrame | Series:
         """
         Bin continuous values into discrete categories.
@@ -1740,14 +1742,14 @@ class Series:
             return (
                 self.to_frame()
                 .with_columns(
-                    F.col(n).cut(breaks, labels, left_closed, True).alias(n + "_bin")
+                    F.col(n).cut(breaks, labels, left_closed, True, precision, scientific).alias(n + "_bin")
                 )
                 .unnest(n + "_bin")
                 .rename({"brk": break_point_label, n + "_bin": category_label})
             )
         res = (
             self.to_frame()
-            .select(F.col(n).cut(breaks, labels, left_closed, include_breaks))
+            .select(F.col(n).cut(breaks, labels, left_closed, include_breaks, precision, scientific))
             .to_series()
         )
         if include_breaks:
@@ -1766,6 +1768,8 @@ class Series:
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
+        precision: int = 3,
+        scientific: bool = False,
     ) -> DataFrame | Series:
         """
         Discretize continuous values into discrete categories based on their quantiles.
@@ -1871,7 +1875,7 @@ class Series:
                 self.to_frame()
                 .with_columns(
                     F.col(n)
-                    .qcut(quantiles, labels, left_closed, allow_duplicates, True)
+                    .qcut(q, labels, left_closed, allow_duplicates, True, precision, scientific)
                     .alias(n + "_bin")
                 )
                 .unnest(n + "_bin")
@@ -1880,9 +1884,7 @@ class Series:
         res = (
             self.to_frame()
             .select(
-                F.col(n).qcut(
-                    quantiles, labels, left_closed, allow_duplicates, include_breaks
-                )
+                F.col(n).qcut(q, labels, left_closed, allow_duplicates, include_breaks, precision, scientific)
             )
             .to_series()
         )
