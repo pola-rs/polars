@@ -146,10 +146,18 @@ def _prepare_file_arg(
             from fsspec.utils import infer_storage_options
 
             if not has_non_utf8_non_utf8_lossy_encoding:
+                if "*" in file:
+                    raise ValueError(
+                        "globbing patterns not supported when scanning non-local files"
+                    )
                 if infer_storage_options(file)["protocol"] == "file":
                     return managed_file(normalise_filepath(file, check_not_dir))
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
+        else:
+            # todo! add azure/ gcp/ ?
+            if file.startswith("s3://"):
+                raise ImportError("fsspec needs to be installed to read files from s3")
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:
