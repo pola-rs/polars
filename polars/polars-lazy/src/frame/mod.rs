@@ -510,8 +510,6 @@ impl LazyFrame {
         mut self,
         check_sink: bool,
     ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
-        dbg!(self.describe_plan());
-        dbg!(self.describe_optimized_plan().unwrap());
         let file_caching = self.opt_state.file_caching;
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
@@ -543,7 +541,6 @@ impl LazyFrame {
         } else {
             true
         };
-        dbg!(no_file_sink);
         let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         let state = ExecutionState::with_finger_prints(finger_prints);
