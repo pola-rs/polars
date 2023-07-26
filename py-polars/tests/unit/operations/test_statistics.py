@@ -159,21 +159,44 @@ def test_cut_null_values() -> None:
         check_names=False,
     )
 
-def test_cut_precision_scientific() -> None:
+
+def test_cut_precision() -> None:
     s = pl.Series([-1, 0, 1, 4, 5])
-    cut_p_1 = s.qcut([.3333, .754321], precision = 1)
-    cut_p_4 = s.qcut([.3333, .754321], precision = 4)
-    res_p_1 = pl.Series(["(-inf, 0.3]", "(-inf, 0.3]", "[0.3, 4)", "[0.3, 4)", "[4, inf)"])
-    res_p_4 = pl.Series([
-        "[-inf, 0.3332)"
-        "[-inf, 0.3332)"
-        "[0.3332, 4.0173)"
-        "[0.3332, 4.0173)"
-        "[4.0173, inf)"
-    ])
+    cut_p_1 = cast(pl.Series, s.qcut([0.3333, 0.754321], precision=1))
+    cut_p_4 = cast(pl.Series, s.qcut([0.3333, 0.754321], precision=4, left_closed=True))
+    res_p_1 = pl.Series(
+        ["(-inf, 0.3]", "(-inf, 0.3]", "(0.3, 4]", "(0.3, 4]", "(4, inf]"]
+    )
+    res_p_4 = pl.Series(
+        [
+            "[-inf, 0.3332)",
+            "[-inf, 0.3332)",
+            "[0.3332, 4.0173)",
+            "[0.3332, 4.0173)",
+            "[4.0173, inf)",
+        ]
+    )
 
     assert_series_equal(cut_p_1, res_p_1, check_dtype=False, check_names=False)
     assert_series_equal(cut_p_4, res_p_4, check_dtype=False, check_names=False)
+
+    # Increase precision when needed
+    s2 = pl.Series([1, 1.001, 1.0015, 2])
+    cuts = cast(pl.Series, s2.qcut([0.2, 0.51, 0.9], precision=3))
+    res = pl.Series(
+        ["(-inf, 1.0006]", "(1.0006, 1.0013]", "(1.0013, 1.7005]", "(1.7005, inf]"]
+    )
+    assert_series_equal(cuts, res, check_dtype=False, check_names=False)
+
+
+def test_cut_scientific() -> None:
+    s = pl.Series([10000, 10120, 11000])
+    cut_p_2 = cast(pl.Series, s.qcut([0.3, 0.6], scientific=True, precision=2))
+    cut_p_3 = cast(pl.Series, s.qcut([0.3, 0.6], scientific=True, precision=3))
+    res_p_2 = pl.Series(["(-inf, 1.01e4]", "(1.01e4, 1.03e4]", "(1.03e4, inf]"])
+    res_p_3 = pl.Series(["(-inf, 1.007e4]", "(1.007e4, 1.03e4]", "(1.03e4, inf]"])
+    assert_series_equal(cut_p_2, res_p_2, check_dtype=False, check_names=False)
+    assert_series_equal(cut_p_3, res_p_3, check_dtype=False, check_names=False)
 
 
 def test_median_quantile_duration() -> None:

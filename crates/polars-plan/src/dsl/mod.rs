@@ -1497,6 +1497,7 @@ impl Expr {
     }
 
     #[cfg(feature = "cutqcut")]
+    #[allow(clippy::too_many_arguments)]
     pub fn qcut_uniform(
         self,
         n_bins: usize,

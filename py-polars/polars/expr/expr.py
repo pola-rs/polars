@@ -3371,7 +3371,9 @@ class Expr:
         └─────┴─────┴───────────┘
         """
         return self._from_pyexpr(
-            self._pyexpr.cut(breaks, labels, left_closed, include_breaks, precision, scientific)
+            self._pyexpr.cut(
+                breaks, labels, left_closed, include_breaks, precision, scientific
+            )
         )
 
     @deprecate_renamed_parameter("probs", "quantiles", version="0.18.8")
@@ -3512,7 +3514,15 @@ class Expr:
             else self._pyexpr.qcut
         )
         return self._from_pyexpr(
-            expr_f(q, labels, left_closed, allow_duplicates, include_breaks, precision, scientific)
+            expr_f(
+                q,
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
+                precision,
+                scientific,
+            )
         )
 
     def rle(self) -> Self:

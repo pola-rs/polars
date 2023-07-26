@@ -1751,14 +1751,20 @@ class Series:
             return (
                 self.to_frame()
                 .with_columns(
-                    F.col(n).cut(breaks, labels, left_closed, True, precision, scientific).alias(n + "_bin")
+                    F.col(n)
+                    .cut(breaks, labels, left_closed, True, precision, scientific)
+                    .alias(n + "_bin")
                 )
                 .unnest(n + "_bin")
                 .rename({"brk": break_point_label, n + "_bin": category_label})
             )
         res = (
             self.to_frame()
-            .select(F.col(n).cut(breaks, labels, left_closed, include_breaks, precision, scientific))
+            .select(
+                F.col(n).cut(
+                    breaks, labels, left_closed, include_breaks, precision, scientific
+                )
+            )
             .to_series()
         )
         if include_breaks:
@@ -1893,7 +1899,15 @@ class Series:
                 self.to_frame()
                 .with_columns(
                     F.col(n)
-                    .qcut(q, labels, left_closed, allow_duplicates, True, precision, scientific)
+                    .qcut(
+                        q,
+                        labels,
+                        left_closed,
+                        allow_duplicates,
+                        True,
+                        precision,
+                        scientific,
+                    )
                     .alias(n + "_bin")
                 )
                 .unnest(n + "_bin")
@@ -1902,7 +1916,15 @@ class Series:
         res = (
             self.to_frame()
             .select(
-                F.col(n).qcut(q, labels, left_closed, allow_duplicates, include_breaks, precision, scientific)
+                F.col(n).qcut(
+                    q,
+                    labels,
+                    left_closed,
+                    allow_duplicates,
+                    include_breaks,
+                    precision,
+                    scientific,
+                )
             )
             .to_series()
         )

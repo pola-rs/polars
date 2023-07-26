@@ -62,7 +62,7 @@ const MAX_PRECISION: usize = 32;
 
 fn find_label_precision(sorted_breaks: &[f64], precision: usize, scientific: bool) -> usize {
     // Find a level of precision such that the numbers printed in labels are distinct.
-    if !sorted_breaks.is_empty() {
+    if sorted_breaks.is_empty() {
         return precision;
     }
     // The following finds a level of precision such that every break has a unique string
@@ -73,23 +73,28 @@ fn find_label_precision(sorted_breaks: &[f64], precision: usize, scientific: boo
         false => |b, p| format!("{0:.1$}", b, p),
         true => |b, p| format!("{0:.1$e}", b, p),
     };
-    let mut precision = precision;
-    'outer: while precision < MAX_PRECISION {
-        let mut last_str = format_fn(sorted_breaks[0], precision);
+    let mut precision_out = precision;
+    'outer: while precision_out < MAX_PRECISION {
+        let mut last_str = format_fn(sorted_breaks[0], precision_out);
         for b in sorted_breaks.iter().skip(1) {
-            let b_str: String = format_fn(*b, precision);
+            let b_str: String = format_fn(*b, precision_out);
             if b_str == last_str {
-                precision += 1;
+                precision_out += 1;
                 continue 'outer;
             }
             last_str = b_str;
         }
         break;
     }
-    precision
+    precision_out
 }
 
-fn make_labels(sorted_breaks: &[f64], left_closed: bool, precision: usize, scientific: bool) -> Vec<String> {
+fn make_labels(
+    sorted_breaks: &[f64],
+    left_closed: bool,
+    precision: usize,
+    scientific: bool,
+) -> Vec<String> {
     let precision = find_label_precision(sorted_breaks, precision, scientific);
     // This seems to be the most straightforward way to get rid of trailing zeros.
     let (re, replacement) = match scientific {
@@ -185,7 +190,23 @@ pub fn qcut(
             }
         };
         qbreaks.dedup();
-        return cut(&s, qbreaks, lfilt, left_closed, include_breaks, precision, scientific);
+        return cut(
+            &s,
+            qbreaks,
+            lfilt,
+            left_closed,
+            include_breaks,
+            precision,
+            scientific,
+        );
     }
-    cut(&s, qbreaks, labels, left_closed, include_breaks, precision, scientific)
+    cut(
+        &s,
+        qbreaks,
+        labels,
+        left_closed,
+        include_breaks,
+        precision,
+        scientific,
+    )
 }

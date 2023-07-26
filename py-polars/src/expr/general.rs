@@ -191,7 +191,14 @@ impl PyExpr {
     ) -> Self {
         self.inner
             .clone()
-            .cut(breaks, labels, left_closed, include_breaks, precision, scientific)
+            .cut(
+                breaks,
+                labels,
+                left_closed,
+                include_breaks,
+                precision,
+                scientific,
+            )
             .into()
     }
     #[pyo3(signature = (probs, labels, left_closed, allow_duplicates, include_breaks, precision, scientific))]
@@ -209,11 +216,20 @@ impl PyExpr {
     ) -> Self {
         self.inner
             .clone()
-            .qcut(probs, labels, left_closed, allow_duplicates, include_breaks, precision, scientific)
+            .qcut(
+                probs,
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
+                precision,
+                scientific,
+            )
             .into()
     }
     #[pyo3(signature = (n_bins, labels, left_closed, allow_duplicates, include_breaks, precision, scientific))]
     #[cfg(feature = "cutqcut")]
+    #[allow(clippy::too_many_arguments)]
     fn qcut_uniform(
         &self,
         n_bins: usize,
