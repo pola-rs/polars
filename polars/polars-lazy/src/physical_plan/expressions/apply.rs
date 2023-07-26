@@ -443,6 +443,11 @@ impl ApplyExpr {
             } => (function, input),
             _ => return Ok(true),
         };
+        // ensure the input of the function is only a `col(..)`
+        // if it does any arithmetic the code below is flawed
+        if !matches!(input[0], Expr::Column(_)) {
+            return Ok(true);
+        }
 
         match function {
             FunctionExpr::Boolean(BooleanFunction::IsNull) => {

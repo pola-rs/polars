@@ -1,12 +1,6 @@
 //! Comparison operations on Series.
 
-#[cfg(any(
-    feature = "dtype-duration",
-    feature = "dtype-datetime",
-    feature = "dtype-date",
-    feature = "dtype-time",
-    feature = "dtype-struct"
-))]
+#[cfg(feature = "dtype-struct")]
 use std::ops::Deref;
 
 use super::Series;
