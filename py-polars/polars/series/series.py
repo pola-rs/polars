@@ -3637,9 +3637,12 @@ class Series:
         """
         Convert this Series to numpy.
 
-        This operation clones data (unless `zero_copy_only=True`)
-        but is completely safe.
-        If you want a zero-copy view and know what you are doing, use `.view()`.
+        This operation clones data unless it is purely numeric with no null values.
+        Note that floating point ``nan`` values can be zero-copied, whereas as
+        booleans can't. To ensure that no data is cloned, set ``zero_copy_only=True``.
+
+        Alternatively, if you want a zero-copy view and know what you are doing,
+        use `.view()`.
 
         Parameters
         ----------
