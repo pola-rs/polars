@@ -14,7 +14,7 @@ use object_store::{MultipartId, ObjectStore};
 use polars_core::cloud::CloudOptions;
 use polars_error::PolarsResult;
 use tokio::io::AsyncWrite;
-use tokio_util::io::SyncIoBridge;
+use tokio::io::AsyncWriteExt;
 
 type OptionalFuture = Arc<Mutex<Option<BoxFuture<'static, std::io::Result<Vec<u8>>>>>>;
 
@@ -149,7 +149,7 @@ pub struct CloudWriter {
     // The Tokio runtime which the writer uses internally.
     runtime: tokio::runtime::Runtime,
     // Internal writer, constructed at creation
-    writer: std::sync::Mutex<SyncIoBridge<Box<dyn AsyncWrite + Send + Unpin>>>,
+    writer: std::sync::Mutex<Box<dyn AsyncWrite + Send + Unpin>>,
 }
 
 impl CloudWriter {
@@ -193,13 +193,13 @@ impl CloudWriter {
         path: &Path,
     ) -> (
         MultipartId,
-        std::sync::Mutex<SyncIoBridge<Box<dyn AsyncWrite + Send + Unpin>>>,
+        std::sync::Mutex<Box<dyn AsyncWrite + Send + Unpin>>,
     ) {
         let (multipart_id, async_s3_writer) = object_store
             .put_multipart(path)
             .await
             .expect("Could not create location to write to");
-        let sync_s3_uploader = std::sync::Mutex::new(SyncIoBridge::new(async_s3_writer));
+        let sync_s3_uploader = std::sync::Mutex::new(async_s3_writer);
         (multipart_id, sync_s3_uploader)
     }
 
@@ -214,23 +214,18 @@ impl CloudWriter {
 
 impl std::io::Write for CloudWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        dbg!("Writing");
         let mut writer = self.writer.lock().unwrap();
-        dbg!(&buf);
-        let res = writer.write(buf);
+        let res = self.runtime.block_on(writer.write(buf));
         if res.is_err() {
-            dbg!("aborting");
             self.abort();
         }
         res
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        dbg!("Flushing");
         let mut writer = self.writer.lock().unwrap();
-        let res = writer.flush();
+        let res = self.runtime.block_on(writer.flush());
         if res.is_err() {
-            dbg!("aborting");
             self.abort();
         }
         res
@@ -239,11 +234,8 @@ impl std::io::Write for CloudWriter {
 
 impl Drop for CloudWriter {
     fn drop(&mut self) {
-        dbg!("Dropping");
         let mut writer = self.writer.lock().unwrap();
-        dbg!("before shutdown");
-        // let _ = writer.shutdown();
-        dbg!("End of drop");
+        let _ = self.runtime.block_on(writer.shutdown());
     }
 }
 
