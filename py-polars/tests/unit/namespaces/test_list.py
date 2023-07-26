@@ -508,3 +508,14 @@ def test_list_set_operations() -> None:
     exp = [[2, 3], [3, 1], [3]]
     assert r1 == exp
     assert r2 == exp
+
+
+def test_list_take_oob_10079() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
+            "b": [["2"], ["3"], [None], ["3", "Hi"]],
+        }
+    )
+    with pytest.raises(pl.ComputeError, match="take indices are out of bounds"):
+        df.select(pl.col("a").take(999))
