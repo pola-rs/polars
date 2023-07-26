@@ -20,7 +20,7 @@ impl AnonymousScan for LazyJsonLineReader {
     }
 
     fn schema(&self, infer_schema_length: Option<usize>) -> PolarsResult<Schema> {
-        let f = std::fs::File::open(&self.path)?;
+        let f = polars_utils::open_file(&self.path)?;
         let mut reader = std::io::BufReader::new(f);
 
         let data_type =

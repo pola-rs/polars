@@ -323,7 +323,7 @@ impl<'a> CsvReader<'a, File> {
     /// This is the recommended way to create a csv reader as this allows for fastest parsing.
     pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
         let path = resolve_homedir(&path.into());
-        let f = std::fs::File::open(&path)?;
+        let f = polars_utils::open_file(&path)?;
         Ok(Self::new(f).with_path(Some(path)))
     }
 }

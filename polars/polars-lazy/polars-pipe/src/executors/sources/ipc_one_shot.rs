@@ -15,7 +15,7 @@ pub struct IpcSourceOneShot {
 impl IpcSourceOneShot {
     #[allow(unused_variables)]
     pub(crate) fn new(path: &Path) -> PolarsResult<Self> {
-        let file = File::open(path)?;
+        let file = polars_utils::open_file(path)?;
         let reader = Some(IpcReader::new(file));
 
         Ok(IpcSourceOneShot { reader })

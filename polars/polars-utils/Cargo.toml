@@ -16,6 +16,7 @@ once_cell.workspace = true
 rayon.workspace = true
 smartstring.workspace = true
 sysinfo = { version = "0.29", default-features = false, optional = true }
+polars-error = { version = "0.31.1", path = "../polars-error" }
 
 [features]
 bigidx = []
