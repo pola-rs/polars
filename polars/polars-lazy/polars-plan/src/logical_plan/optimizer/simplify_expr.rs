@@ -124,9 +124,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
-                {
-                    Some(expr_arena.get(*right).clone())
-                }
+            {
+                Some(expr_arena.get(*right).clone())
+            }
             // x AND true => x
             AExpr::BinaryExpr {
                 left,
@@ -136,9 +136,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 expr_arena.get(*right),
                 AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
-                {
-                    Some(expr_arena.get(*left).clone())
-                }
+            {
+                Some(expr_arena.get(*left).clone())
+            }
             // x AND false -> false
             AExpr::BinaryExpr {
                 op: Operator::And,
@@ -148,9 +148,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 expr_arena.get(*right),
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
-                {
-                    Some(AExpr::Literal(LiteralValue::Boolean(false)))
-                }
+            {
+                Some(AExpr::Literal(LiteralValue::Boolean(false)))
+            }
             // false AND x -> false
             AExpr::BinaryExpr {
                 left,
@@ -160,9 +160,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
-                {
-                    Some(AExpr::Literal(LiteralValue::Boolean(false)))
-                }
+            {
+                Some(AExpr::Literal(LiteralValue::Boolean(false)))
+            }
             // false or x => x
             AExpr::BinaryExpr {
                 left,
@@ -172,9 +172,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
-                {
-                    Some(expr_arena.get(*right).clone())
-                }
+            {
+                Some(expr_arena.get(*right).clone())
+            }
             // x or false => x
             AExpr::BinaryExpr {
                 left,
@@ -185,9 +185,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 expr_arena.get(*right),
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
-                {
-                    Some(expr_arena.get(*left).clone())
-                }
+            {
+                Some(expr_arena.get(*left).clone())
+            }
 
             // false OR x => x
             AExpr::BinaryExpr {
@@ -198,9 +198,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
-                {
-                    Some(expr_arena.get(*right).clone())
-                }
+            {
+                Some(expr_arena.get(*right).clone())
+            }
 
             // true OR x => true
             AExpr::BinaryExpr {
@@ -211,9 +211,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 expr_arena.get(*right),
                 AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
-                {
-                    Some(AExpr::Literal(LiteralValue::Boolean(true)))
-                }
+            {
+                Some(AExpr::Literal(LiteralValue::Boolean(true)))
+            }
 
             // x OR true => true
             AExpr::BinaryExpr {
@@ -224,18 +224,18 @@ impl OptimizationRule for SimplifyBooleanRule {
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
-                {
-                    Some(AExpr::Literal(LiteralValue::Boolean(true)))
-                }
+            {
+                Some(AExpr::Literal(LiteralValue::Boolean(true)))
+            }
             AExpr::Ternary {
                 truthy, predicate, ..
             } if matches!(
                 expr_arena.get(*predicate),
                 AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
-                {
-                    Some(expr_arena.get(*truthy).clone())
-                }
+            {
+                Some(expr_arena.get(*truthy).clone())
+            }
             AExpr::Ternary {
                 truthy,
                 falsy,
@@ -244,14 +244,14 @@ impl OptimizationRule for SimplifyBooleanRule {
                 expr_arena.get(*predicate),
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
-                {
-                    let names = aexpr_to_leaf_names(*truthy, expr_arena);
-                    if names.is_empty() {
-                        None
-                    } else {
-                        Some(AExpr::Alias(*falsy, names[0].clone()))
-                    }
+            {
+                let names = aexpr_to_leaf_names(*truthy, expr_arena);
+                if names.is_empty() {
+                    None
+                } else {
+                    Some(AExpr::Alias(*falsy, names[0].clone()))
                 }
+            }
             AExpr::Function {
                 input,
                 function: FunctionExpr::Boolean(BooleanFunction::IsNot),
@@ -280,8 +280,8 @@ impl OptimizationRule for SimplifyBooleanRule {
 }
 
 fn eval_bitwise<F>(left: &AExpr, right: &AExpr, operation: F) -> Option<AExpr>
-    where
-        F: Fn(bool, bool) -> bool,
+where
+    F: Fn(bool, bool) -> bool,
 {
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = (left, right) {
         return match (lit_left, lit_right) {
@@ -328,8 +328,8 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_left,
                         function:
-                        ref
-                        fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep_l)),
+                            ref
+                            fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep_l)),
                         options,
                     },
                     AExpr::Function {
@@ -356,7 +356,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input,
                         function:
-                        ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
+                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
                         options,
                     },
                     _,
@@ -379,7 +379,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_right,
                         function:
-                        ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
+                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
                         options,
                     },
                 ) => {
@@ -457,7 +457,7 @@ impl OptimizationRule for SimplifyExprRule {
 
                 // lit(left) + lit(right) => lit(left + right)
                 #[allow(clippy::manual_map)]
-                    let out = match op {
+                let out = match op {
                     Plus => {
                         match eval_binary_same_type!(left_aexpr, +, right_aexpr) {
                             Some(new) => Some(new),
@@ -634,7 +634,7 @@ impl OptimizationRule for SimplifyExprRule {
             AExpr::Function {
                 input,
                 function:
-                ref function @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
+                    ref function @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
                 options,
             } if sep.is_empty() => {
                 if input
