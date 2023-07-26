@@ -23,7 +23,9 @@ MY_CONSTANT = 3
 
 # column_name, function, expected_suggestion
 TEST_CASES = [
+    # ---------------------------------------------
     # numeric expr: math, comparison, logic ops
+    # ---------------------------------------------
     ("a", lambda x: x + 1 - (2 / 3), '(pl.col("a") + 1) - 0.6666666666666666'),
     ("a", lambda x: x // 1 % 2, '(pl.col("a") // 1) % 2'),
     ("a", lambda x: x & True, 'pl.col("a") & True'),
@@ -68,14 +70,46 @@ TEST_CASES = [
         lambda x: (float(x) * int(x)) // 2,
         '(pl.col("a").cast(pl.Float64) * pl.col("a").cast(pl.Int64)) // 2',
     ),
+    # ---------------------------------------------
+    # logical 'and/or' (validate nesting levels)
+    # ---------------------------------------------
+    (
+        "a",
+        lambda x: x > 1 or (x == 1 and x == 2),
+        '(pl.col("a") > 1) | (pl.col("a") == 1) & (pl.col("a") == 2)',
+    ),
+    (
+        "a",
+        lambda x: (x > 1 or x == 1) and x == 2,
+        '((pl.col("a") > 1) | (pl.col("a") == 1)) & (pl.col("a") == 2)',
+    ),
+    (
+        "a",
+        lambda x: x > 2 or x != 3 and x not in (0, 1, 4),
+        '(pl.col("a") > 2) | (pl.col("a") != 3) & ~pl.col("a").is_in((0, 1, 4))',
+    ),
+    (
+        "a",
+        lambda x: x > 1 and x != 2 or x % 2 == 0 and x < 3,
+        '(pl.col("a") > 1) & (pl.col("a") != 2) | ((pl.col("a") % 2) == 0) & (pl.col("a") < 3)',
+    ),
+    (
+        "a",
+        lambda x: x > 1 and (x != 2 or x % 2 == 0) and x < 3,
+        '(pl.col("a") > 1) & ((pl.col("a") != 2) | ((pl.col("a") % 2) == 0)) & (pl.col("a") < 3)',
+    ),
+    # ---------------------------------------------
     # string expr: case/cast ops
+    # ---------------------------------------------
     ("b", lambda x: str(x).title(), 'pl.col("b").cast(pl.Utf8).str.to_titlecase()'),
     (
         "b",
         lambda x: x.lower() + ":" + x.upper() + ":" + x.title(),
         '(((pl.col("b").str.to_lowercase() + \':\') + pl.col("b").str.to_uppercase()) + \':\') + pl.col("b").str.to_titlecase()',
     ),
+    # ---------------------------------------------
     # json expr: load/extract
+    # ---------------------------------------------
     ("c", lambda x: json.loads(x), 'pl.col("c").str.json_extract()'),
 ]
 
