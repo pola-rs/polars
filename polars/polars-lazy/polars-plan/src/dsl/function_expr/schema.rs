@@ -177,9 +177,14 @@ impl FunctionExpr {
                 match s {
                     FieldByIndex(index) => {
                         let (index, _) = slice_offsets(*index, 0, fields.len());
-                        fields.get(index).cloned().ok_or_else(
-                            || polars_err!(ComputeError: "index out of bounds in `struct.field`"),
-                        )
+                        if let DataType::Struct(flds) = &fields[0].dtype {
+                            let fld = flds.get(index).cloned().ok_or_else(
+                            || polars_err!(ComputeError: "index out of bounds in `struct.field`")
+                            )?;
+                            Ok(fld.clone())
+                        } else {
+                            polars_bail!(ComputeError: "index out of bounds in `struct.field`");
+                        }
                     }
                     FieldByName(name) => {
                         if let DataType::Struct(flds) = &fields[0].dtype {
