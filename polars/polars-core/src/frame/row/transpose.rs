@@ -1,25 +1,44 @@
+use std::borrow::Cow;
+
+use either::Either;
+
 use super::*;
 
 impl DataFrame {
-    pub(crate) fn transpose_from_dtype(&self, dtype: &DataType) -> PolarsResult<DataFrame> {
+    pub(crate) fn transpose_from_dtype(
+        &self,
+        dtype: &DataType,
+        keep_names_as: Option<&str>,
+        names_out: &[String],
+    ) -> PolarsResult<DataFrame> {
         let new_width = self.height();
         let new_height = self.width();
+        // Allocate space for the transposed columns, putting the "row names" first if needed
+        let mut cols_t = match keep_names_as {
+            None => Vec::<Series>::with_capacity(new_width),
+            Some(name) => {
+                let mut tmp = Vec::<Series>::with_capacity(new_width + 1);
+                tmp.push(Utf8Chunked::new(name, self.get_column_names()).into());
+                tmp
+            }
+        };
 
+        let cols = &self.columns;
         match dtype {
             #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => numeric_transpose::<Int8Type>(&self.columns),
+            DataType::Int8 => numeric_transpose::<Int8Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => numeric_transpose::<Int16Type>(&self.columns),
-            DataType::Int32 => numeric_transpose::<Int32Type>(&self.columns),
-            DataType::Int64 => numeric_transpose::<Int64Type>(&self.columns),
+            DataType::Int16 => numeric_transpose::<Int16Type>(cols, names_out, &mut cols_t),
+            DataType::Int32 => numeric_transpose::<Int32Type>(cols, names_out, &mut cols_t),
+            DataType::Int64 => numeric_transpose::<Int64Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => numeric_transpose::<UInt8Type>(&self.columns),
+            DataType::UInt8 => numeric_transpose::<UInt8Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => numeric_transpose::<UInt16Type>(&self.columns),
-            DataType::UInt32 => numeric_transpose::<UInt32Type>(&self.columns),
-            DataType::UInt64 => numeric_transpose::<UInt64Type>(&self.columns),
-            DataType::Float32 => numeric_transpose::<Float32Type>(&self.columns),
-            DataType::Float64 => numeric_transpose::<Float64Type>(&self.columns),
+            DataType::UInt16 => numeric_transpose::<UInt16Type>(cols, names_out, &mut cols_t),
+            DataType::UInt32 => numeric_transpose::<UInt32Type>(cols, names_out, &mut cols_t),
+            DataType::UInt64 => numeric_transpose::<UInt64Type>(cols, names_out, &mut cols_t),
+            DataType::Float32 => numeric_transpose::<Float32Type>(cols, names_out, &mut cols_t),
+            DataType::Float64 => numeric_transpose::<Float64Type>(cols, names_out, &mut cols_t),
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 // this requires to support `Object` in Series::iter which we don't yet
@@ -52,27 +71,51 @@ impl DataFrame {
                         }
                     });
                 }
-                let cols = buffers
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, buf)| {
-                        let mut s = buf.into_series().cast(dtype).unwrap();
-                        s.rename(&format!("column_{i}"));
-                        s
-                    })
-                    .collect::<Vec<_>>();
-                Ok(DataFrame::new_no_checks(cols))
+                cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
+                    let mut s = buf.into_series().cast(dtype).unwrap();
+                    s.rename(name);
+                    s
+                }));
             }
-        }
+        };
+        Ok(DataFrame::new_no_checks(cols_t))
     }
 
     /// Transpose a DataFrame. This is a very expensive operation.
-    pub fn transpose(&self) -> PolarsResult<DataFrame> {
+    pub fn transpose(
+        &self,
+        keep_names_as: Option<&str>,
+        new_col_names: Option<Either<String, Vec<String>>>,
+    ) -> PolarsResult<DataFrame> {
+        let mut df = Cow::Borrowed(self); // Can't use self because we might drop a name column
+        let names_out = match new_col_names {
+            None => (0..self.height()).map(|i| format!("column_{i}")).collect(),
+            Some(cn) => match cn {
+                Either::Left(name) => {
+                    let new_names = self.column(&name).and_then(|x| x.utf8())?;
+                    polars_ensure!(!new_names.has_validity(), ComputeError: "Column with new names can't have null values");
+                    df = Cow::Owned(self.drop(&name)?);
+                    new_names
+                        .into_no_null_iter()
+                        .map(|s| s.to_owned())
+                        .collect()
+                }
+                Either::Right(names) => {
+                    polars_ensure!(names.len() == self.height(), ShapeMismatch: "Length of new column names must be the same as the row count");
+                    names
+                }
+            },
+        };
+        if let Some(cn) = keep_names_as {
+            // Check that the column name we're using for the original column names is unique before
+            // wasting time transposing
+            polars_ensure!(names_out.iter().all(|a| a.as_str() != cn), Duplicate: "{} is already in output column names", cn)
+        }
         polars_ensure!(
-            self.height() != 0 && self.width() != 0,
+            df.height() != 0 && df.width() != 0,
             NoData: "unable to transpose an empty dataframe"
         );
-        let dtype = self.get_supertype().unwrap()?;
+        let dtype = df.get_supertype().unwrap()?;
         match dtype {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
@@ -97,7 +140,7 @@ impl DataFrame {
             }
             _ => {}
         }
-        self.transpose_from_dtype(&dtype)
+        df.transpose_from_dtype(&dtype, keep_names_as, &names_out)
     }
 }
 
@@ -113,9 +156,12 @@ unsafe fn add_value<T: NumericNative>(
     *el_ptr.add(row_idx) = value;
 }
 
-pub(super) fn numeric_transpose<T>(cols: &[Series]) -> PolarsResult<DataFrame>
+// This just fills a pre-allocated mutable series vector, which may have a name column.
+// Nothing is returned and the actual DataFrame is constructed above.
+pub(super) fn numeric_transpose<T>(cols: &[Series], names_out: &[String], cols_t: &mut Vec<Series>)
 where
     T: PolarsNumericType,
+    //S: AsRef<str>,
     ChunkedArray<T>: IntoSeries,
 {
     let new_width = cols[0].len();
@@ -177,12 +223,12 @@ where
         })
     });
 
-    let series = POOL.install(|| {
+    cols_t.par_extend(POOL.install(|| {
         values_buf
             .into_par_iter()
             .zip(validity_buf)
-            .enumerate()
-            .map(|(i, (mut values, validity))| {
+            .zip(names_out)
+            .map(|((mut values, validity), name)| {
                 // Safety:
                 // all values are written we can now set len
                 unsafe {
@@ -205,16 +251,12 @@ where
                     values.into(),
                     validity,
                 );
-                let name = format!("column_{i}");
                 unsafe {
-                    ChunkedArray::<T>::from_chunks(&name, vec![Box::new(arr) as ArrayRef])
+                    ChunkedArray::<T>::from_chunks(name, vec![Box::new(arr) as ArrayRef])
                         .into_series()
                 }
             })
-            .collect()
-    });
-
-    Ok(DataFrame::new_no_checks(series))
+    }));
 }
 
 #[cfg(test)]
@@ -228,7 +270,7 @@ mod test {
             "b" => [10, 20, 30],
         ]?;
 
-        let out = df.transpose()?;
+        let out = df.transpose(None, None)?;
         let expected = df![
             "column_0" => [1, 10],
             "column_1" => [2, 20],
@@ -241,7 +283,7 @@ mod test {
             "a" => [Some(1), None, Some(3)],
             "b" => [Some(10), Some(20), None],
         ]?;
-        let out = df.transpose()?;
+        let out = df.transpose(None, None)?;
         let expected = df![
             "column_0" => [1, 10],
             "column_1" => [None, Some(20)],
@@ -254,7 +296,7 @@ mod test {
             "a" => ["a", "b", "c"],
             "b" => [Some(10), Some(20), None],
         ]?;
-        let out = df.transpose()?;
+        let out = df.transpose(None, None)?;
         let expected = df![
             "column_0" => ["a", "10"],
             "column_1" => ["b", "20"],

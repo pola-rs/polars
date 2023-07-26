@@ -269,7 +269,13 @@ impl IsIn for BooleanChunked {
             DataType::Boolean => {
                 let other = other.bool().unwrap();
                 let has_true = other.any();
-                let has_false = !other.all();
+                let nc = other.null_count();
+
+                let has_false = if nc == 0 {
+                    !other.all()
+                } else {
+                    !(other.sum().unwrap() as usize + nc) == other.len()
+                };
                 Ok(self.apply(|v| if v { has_true } else { has_false }))
             }
             _ => polars_bail!(opq = is_in, self.dtype(), other.dtype()),
