@@ -1262,6 +1262,9 @@ def test_mode() -> None:
     )
     assert pl.Series([1.0, 2.0, 3.0, 2.0]).mode().item() == 2.0
 
+    # sorted data
+    assert pl.int_range(0, 3, eager=True).mode().to_list() == [2, 1, 0]
+
 
 def test_rank() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
