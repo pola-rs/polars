@@ -148,16 +148,32 @@ def test_cut_null_values() -> None:
         }
     )
     assert_frame_equal(
-        cast(pl.DataFrame, s.qcut([0.2, 0.3], series=False)),
+        cast(pl.DataFrame, s.qcut([0.2, 0.3], series=False, precision=16)),
         exp,
         check_dtype=False,
     )
     assert_series_equal(
-        cast(pl.Series, s.qcut([0.2, 0.3], series=True)),
+        cast(pl.Series, s.qcut([0.2, 0.3], series=True, precision=16)),
         exp.get_column("category"),
         check_dtype=False,
         check_names=False,
     )
+
+def test_cut_precision_scientific() -> None:
+    s = pl.Series([-1, 0, 1, 4, 5])
+    cut_p_1 = s.qcut([.3333, .754321], precision = 1)
+    cut_p_4 = s.qcut([.3333, .754321], precision = 4)
+    res_p_1 = pl.Series(["(-inf, 0.3]", "(-inf, 0.3]", "[0.3, 4)", "[0.3, 4)", "[4, inf)"])
+    res_p_4 = pl.Series([
+        "[-inf, 0.3332)"
+        "[-inf, 0.3332)"
+        "[0.3332, 4.0173)"
+        "[0.3332, 4.0173)"
+        "[4.0173, inf)"
+    ])
+
+    assert_series_equal(cut_p_1, res_p_1, check_dtype=False, check_names=False)
+    assert_series_equal(cut_p_4, res_p_4, check_dtype=False, check_names=False)
 
 
 def test_median_quantile_duration() -> None:

@@ -3321,6 +3321,15 @@ class Expr:
         include_breaks
             Include the the right endpoint of the bin each observation falls in.
             If True, the resulting column will be a Struct.
+        precision
+            Determines the number of digits past the decimal point to display when
+            formatting break numbers if labels are not provided. If this is too small
+            for unique breaks to have unique string representations, it will increase
+            until they can. Trailing zeros, however, will be dropped.
+        scientific
+            If True and labels are not provided, format break numbers using scientific
+            notation. Note that precision will now refer to significant figures and not
+            what is after the decimal point in the original number.
 
         Examples
         --------
@@ -3397,6 +3406,15 @@ class Expr:
         include_breaks
             Include the the right endpoint of the bin each observation falls in.
             If True, the resulting column will be a Struct.
+        precision
+            Determines the number of digits past the decimal point to display when
+            formatting break numbers if labels are not provided. If this is too small
+            for unique breaks to have unique string representations, it will increase
+            until they can. Trailing zeros, however, will be dropped.
+        scientific
+            If True and labels are not provided, format break numbers using scientific
+            notation. Note that precision will now refer to significant figures and not
+            what is after the decimal point in the original number.
 
         Examples
         --------

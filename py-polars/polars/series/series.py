@@ -1675,6 +1675,15 @@ class Series:
             Include the the right endpoint of the bin each observation falls in.
             If returning a DataFrame, it will be a column, and if returning a Series
             it will be a field in a Struct
+        precision
+            Determines the number of digits past the decimal point to display when
+            formatting break numbers if labels are not provided. If this is too small
+            for unique breaks to have unique string representations, it will increase
+            until they can. Trailing zeros, however, will be dropped.
+        scientific
+            If True and labels are not provided, format break numbers using scientific
+            notation. Note that precision will now refer to significant figures and not
+            what is after the decimal point in the original number.
 
         Returns
         -------
@@ -1799,6 +1808,15 @@ class Series:
             Include the the right endpoint of the bin each observation falls in.
             If returning a DataFrame, it will be a column, and if returning a Series
             it will be a field in a Struct
+        precision
+            Determines the number of digits past the decimal point to display when
+            formatting break numbers if labels are not provided. If this is too small
+            for unique breaks to have unique string representations, it will increase
+            until they can. Trailing zeros, however, will be dropped.
+        scientific
+            If True and labels are not provided, format break numbers using scientific
+            notation. Note that precision will now refer to significant figures and not
+            what is after the decimal point in the original number.
 
         Returns
         -------

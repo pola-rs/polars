@@ -593,9 +593,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 breaks.clone(),
                 labels.clone(),
                 left_closed,
-                include_breaks
+                include_breaks,
                 precision,
-                scientific,
+                scientific
             ),
             #[cfg(feature = "cutqcut")]
             QCut {
@@ -614,7 +614,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 allow_duplicates,
                 include_breaks,
                 precision,
-                scientific,
+                scientific
             ),
             #[cfg(feature = "rle")]
             RLE => map!(rle),
