@@ -78,7 +78,38 @@ where
 }
 
 #[cfg(feature = "mode")]
-#[allow(clippy::needless_collect)]
+fn mode_indices(groups: GroupsProxy) -> Vec<IdxSize> {
+    match groups {
+        GroupsProxy::Idx(groups) => {
+            let mut groups = groups.into_iter().collect_trusted::<Vec<_>>();
+            groups.sort_unstable_by_key(|k| k.1.len());
+            let last = &groups.last().unwrap();
+            let max_occur = last.1.len();
+            groups
+                .iter()
+                .rev()
+                .take_while(|v| v.1.len() == max_occur)
+                .map(|v| v.0)
+                .collect()
+        }
+        GroupsProxy::Slice { groups, .. } => {
+            let last = groups.last().unwrap();
+            let max_occur = last[1];
+
+            groups
+                .iter()
+                .rev()
+                .take_while(|v| {
+                    let len = v[1];
+                    len == max_occur
+                })
+                .map(|v| v[0])
+                .collect()
+        }
+    }
+}
+
+#[cfg(feature = "mode")]
 fn mode<T: PolarsDataType>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     ChunkedArray<T>: IntoGroupsProxy + ChunkTake,
@@ -86,28 +117,12 @@ where
     if ca.is_empty() {
         return ca.clone();
     }
-    let mut groups = ca
-        .group_tuples(true, false)
-        .unwrap()
-        .into_idx()
-        .into_iter()
-        .collect_trusted::<Vec<_>>();
-    groups.sort_unstable_by_key(|k| k.1.len());
-    let last = &groups.last().unwrap();
+    let groups = ca.group_tuples(true, false).unwrap();
+    let idx = mode_indices(groups);
 
-    let max_occur = last.1.len();
-
-    // collect until we don't take with trusted len anymore
-    // TODO! take directly from iter, but first remove standard trusted-length collect.
-    let idx = groups
-        .iter()
-        .rev()
-        .take_while(|v| v.1.len() == max_occur)
-        .map(|v| v.0)
-        .collect::<Vec<_>>();
     // Safety:
     // group indices are in bounds
-    unsafe { ca.take_unchecked(idx.into_iter().map(|i| i as usize).into()) }
+    unsafe { ca.take_unchecked(idx.as_slice().into()) }
 }
 
 macro_rules! arg_unique_ca {
