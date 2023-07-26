@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::fs::File;
+use std::path::Path;
 
 use polars_error::*;
 
