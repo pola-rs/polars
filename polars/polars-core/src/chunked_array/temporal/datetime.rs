@@ -8,8 +8,6 @@ use chrono::format::{DelayedFormat, StrftimeItems};
 use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
-#[cfg(feature = "timezones")]
-use polars_arrow::kernels::replace_time_zone;
 
 use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
@@ -92,29 +90,6 @@ impl DatetimeChunked {
             DataType::Datetime(_, tz) => tz,
             _ => unreachable!(),
         }
-    }
-
-    #[cfg(feature = "timezones")]
-    pub fn replace_time_zone(
-        &self,
-        time_zone: Option<&str>,
-        use_earliest: Option<bool>,
-    ) -> PolarsResult<DatetimeChunked> {
-        let out: PolarsResult<_> = {
-            let from = self.time_zone().as_deref().unwrap_or("UTC");
-            let to = time_zone.unwrap_or("UTC");
-            let chunks = self
-                .downcast_iter()
-                .map(|arr| {
-                    replace_time_zone(arr, self.time_unit().to_arrow(), from, to, use_earliest)
-                })
-                .collect::<PolarsResult<_>>()?;
-            let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
-            Ok(out.into_datetime(self.time_unit(), time_zone.map(|x| x.to_string())))
-        };
-        let mut out = out?;
-        out.set_sorted_flag(self.is_sorted_flag());
-        Ok(out)
     }
 
     /// Convert from Datetime into Utf8 with the given format.

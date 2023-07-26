@@ -1590,6 +1590,8 @@ dependencies = [
  "argminmax",
  "arrow2",
  "base64",
+ "chrono",
+ "chrono-tz",
  "either",
  "hex",
  "indexmap 2.0.0",

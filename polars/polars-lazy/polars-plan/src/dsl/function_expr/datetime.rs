@@ -141,11 +141,10 @@ pub(super) fn ordinal_day(s: &Series) -> PolarsResult<Series> {
 pub(super) fn time(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
-        DataType::Datetime(_, Some(_)) => s
-            .datetime()
-            .unwrap()
-            .replace_time_zone(None, None)?
-            .cast(&DataType::Time),
+        DataType::Datetime(_, Some(_)) => {
+            polars_ops::prelude::replace_time_zone(s.datetime().unwrap(), None, None)?
+                .cast(&DataType::Time)
+        }
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Time),
         DataType::Date => s.datetime().unwrap().cast(&DataType::Time),
         DataType::Time => Ok(s.clone()),
@@ -156,11 +155,10 @@ pub(super) fn date(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(tz)) => {
-            let mut out = s
-                .datetime()
-                .unwrap()
-                .replace_time_zone(None, None)?
-                .cast(&DataType::Date)?;
+            let mut out = {
+                polars_ops::chunked_array::replace_time_zone(s.datetime().unwrap(), None, None)?
+                    .cast(&DataType::Date)?
+            };
             if tz != "UTC" {
                 // DST transitions may not preserve sortedness.
                 out.set_sorted_flag(IsSorted::Not);
@@ -176,11 +174,10 @@ pub(super) fn datetime(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
         DataType::Datetime(tu, Some(tz)) => {
-            let mut out = s
-                .datetime()
-                .unwrap()
-                .replace_time_zone(None, None)?
-                .cast(&DataType::Datetime(*tu, None))?;
+            let mut out = {
+                polars_ops::chunked_array::replace_time_zone(s.datetime().unwrap(), None, None)?
+                    .cast(&DataType::Datetime(*tu, None))?
+            };
             if tz != "UTC" {
                 // DST transitions may not preserve sortedness.
                 out.set_sorted_flag(IsSorted::Not);
@@ -318,15 +315,4 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
         DataType::Date => s.date().unwrap().round(every, offset, None)?.into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })
-}
-
-#[cfg(feature = "timezones")]
-pub(super) fn replace_time_zone(
-    s: &Series,
-    time_zone: Option<&str>,
-    use_earliest: Option<bool>,
-) -> PolarsResult<Series> {
-    let ca = s.datetime()?;
-    ca.replace_time_zone(time_zone, use_earliest)
-        .map(|ca| ca.into_series())
 }

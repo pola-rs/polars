@@ -746,7 +746,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz, use_earliest) => {
-                map!(datetime::replace_time_zone, tz.as_deref(), use_earliest)
+                map!(dispatch::replace_time_zone, tz.as_deref(), use_earliest)
             }
             Combine(tu) => map_as_slice!(temporal::combine, tu),
             DateRange {

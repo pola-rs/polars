@@ -523,14 +523,14 @@ pub(crate) fn to_datetime(
                 Pattern::DatetimeYMDZ => infer.coerce_utf8(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
                     ca.set_time_unit(tu);
-                    ca.replace_time_zone(Some("UTC"), None)
+                    polars_ops::prelude::replace_time_zone(&ca, Some("UTC"), None)
                 })?,
                 _ => infer.coerce_utf8(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
                     ca.set_time_unit(tu);
                     match tz {
                         #[cfg(feature = "timezones")]
-                        Some(tz) => ca.replace_time_zone(Some(tz), None),
+                        Some(tz) => polars_ops::prelude::replace_time_zone(&ca, Some(tz), None),
                         _ => Ok(ca),
                     }
                 })?,

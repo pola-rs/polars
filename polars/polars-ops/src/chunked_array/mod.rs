@@ -1,6 +1,8 @@
 #[cfg(feature = "dtype-array")]
 pub mod array;
 mod binary;
+#[cfg(feature = "timezones")]
+pub mod datetime;
 #[cfg(feature = "interpolate")]
 mod interpolate;
 pub mod list;
@@ -13,6 +15,8 @@ mod sum;
 mod top_k;
 
 pub use binary::*;
+#[cfg(feature = "timezones")]
+pub use datetime::*;
 #[cfg(feature = "interpolate")]
 pub use interpolate::*;
 pub use list::*;
