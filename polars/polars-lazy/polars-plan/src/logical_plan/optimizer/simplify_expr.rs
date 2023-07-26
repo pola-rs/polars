@@ -700,7 +700,7 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                         let out = { av.cast(dtype)? };
                         #[cfg(not(debug_assertions))]
                         let out = {
-                            match av.cast(&DataType) {
+                            match av.cast(&dtype) {
                                 Ok(out) => out,
                                 Err(_) => return Ok(None),
                             }
