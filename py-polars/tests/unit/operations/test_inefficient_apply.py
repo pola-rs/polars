@@ -8,7 +8,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
 from tests.test_udfs import MY_CONSTANT, TEST_CASES
 
@@ -124,3 +124,34 @@ def test_parse_apply_miscellaneous() -> None:
         lambda x: MY_CONSTANT + 42, apply_target="expr"
     ).to_expression(col="colx")
     assert suggested_expression is None
+
+
+@pytest.mark.parametrize(
+    ("data", "func", "expr_repr"),
+    [
+        (
+            [1, 2, 3],
+            lambda x: str(x),
+            "s.cast(pl.Utf8)",
+        ),
+        (
+            [-20, -12, -5, 0, 5, 12, 20],
+            lambda x: (abs(x) != 12) and (x > 10 or x < -10 or x == 0),
+            "(s.abs() != 12) & ((s > 10) | ((s < -10) | (s == 0)))",
+        ),
+    ],
+)
+def test_parse_apply_series(
+    data: list[Any], func: Callable[[Any], Any], expr_repr: str
+) -> None:
+    # expression/series generate same warning, with 's' as the series placeholder
+    with pytest.warns(PolarsInefficientApplyWarning):
+        s = pl.Series("srs", data)
+
+        parser = BytecodeParser(func, apply_target="series")
+        suggested_expression = parser.to_expression(s.name)
+        assert suggested_expression == expr_repr
+
+        expected_series = s.apply(func)
+        result_series = eval(suggested_expression)
+        assert_series_equal(expected_series, result_series)

@@ -4576,16 +4576,14 @@ class Series:
         Series
 
         """
-        # TODO:
-        # from polars.utils.udfs import warn_on_inefficient_apply
-        # warn_on_inefficient_apply(
-        #     function, columns=[self.name], apply_target="series"
-        # )
+        from polars.utils.udfs import warn_on_inefficient_apply
 
         if return_dtype is None:
             pl_return_dtype = None
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
+
+        warn_on_inefficient_apply(function, columns=[self.name], apply_target="series")
         return self._from_pyseries(
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )
