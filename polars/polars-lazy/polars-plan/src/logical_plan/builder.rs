@@ -144,7 +144,7 @@ impl LogicalPlanBuilder {
                 ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?
             }
         } else {
-            let file = std::fs::File::open(&path)?;
+            let file = polars_utils::open_file(&path)?;
             let mut reader = ParquetReader::new(file);
             (reader.schema()?, reader.num_rows()?)
         };
@@ -195,7 +195,7 @@ impl LogicalPlanBuilder {
         use polars_io::SerReader as _;
 
         let path = path.into();
-        let file = std::fs::File::open(&path)?;
+        let file = polars_utils::open_file(&path)?;
         let mut reader = IpcReader::new(file);
 
         let mut schema = reader.schema()?;
@@ -253,7 +253,15 @@ impl LogicalPlanBuilder {
         try_parse_dates: bool,
     ) -> PolarsResult<Self> {
         let path = path.into();
-        let mut file = std::fs::File::open(&path)?;
+        let mut file = polars_utils::open_file(&path).map_err(|e| {
+            let path = path.to_string_lossy();
+            if path.len() > 88 {
+                let path: String = path.chars().skip(path.len() - 88).collect();
+                polars_err!(ComputeError: "error open file: ...{}, {}", path, e)
+            } else {
+                polars_err!(ComputeError: "error open file: {}, {}", path, e)
+            }
+        })?;
         let mut magic_nr = [0u8; 2];
         file.read_exact(&mut magic_nr)
             .map_err(|_| polars_err!(NoData: "empty csv"))?;

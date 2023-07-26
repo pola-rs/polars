@@ -210,9 +210,9 @@ impl<'a> LazyCsvReader<'a> {
                 Some(globresult) => globresult?,
                 None => polars_bail!(ComputeError: "globbing pattern did not match any files"),
             };
-            std::fs::File::open(&path)
+            polars_utils::open_file(&path)
         } else {
-            std::fs::File::open(&self.path)
+            polars_utils::open_file(&self.path)
         }?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
         let mut skip_rows = self.skip_rows;

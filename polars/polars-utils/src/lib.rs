@@ -27,3 +27,6 @@ pub mod macros;
 pub mod vec;
 #[cfg(target_family = "wasm")]
 pub mod wasm;
+
+pub mod io;
+pub use io::open_file;

@@ -16,7 +16,7 @@ use crate::executors::sinks::sort::source::SortSource;
 use crate::operators::FinalizedSink;
 
 pub(super) fn read_df(path: &Path) -> PolarsResult<DataFrame> {
-    let file = std::fs::File::open(path)?;
+    let file = polars_utils::open_file(path)?;
     IpcReader::new(file).set_rechunk(false).finish()
 }
 
