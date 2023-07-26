@@ -4,70 +4,75 @@ use pyo3::prelude::*;
 use crate::PyExpr;
 
 #[pyfunction]
-pub fn when(predicate: PyExpr) -> When {
-    When { predicate }
+pub fn when(predicate: PyExpr) -> PyWhen {
+    PyWhen {
+        inner: dsl::when(predicate.inner),
+    }
 }
 
 #[pyclass]
 #[derive(Clone)]
-pub struct When {
-    predicate: PyExpr,
+pub struct PyWhen {
+    inner: dsl::When,
 }
 
 #[pyclass]
 #[derive(Clone)]
-pub struct WhenThen {
-    predicate: PyExpr,
-    then: PyExpr,
+pub struct PyThen {
+    inner: dsl::Then,
 }
 
 #[pyclass]
 #[derive(Clone)]
-pub struct WhenThenThen {
-    inner: dsl::WhenThenThen,
+pub struct PyChainedWhen {
+    inner: dsl::ChainedWhen,
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyChainedThen {
+    inner: dsl::ChainedThen,
 }
 
 #[pymethods]
-impl When {
-    fn then(&self, expr: PyExpr) -> WhenThen {
-        WhenThen {
-            predicate: self.predicate.clone(),
-            then: expr,
-        }
-    }
-}
-
-#[pymethods]
-impl WhenThen {
-    fn when(&self, predicate: PyExpr) -> WhenThenThen {
-        let e = dsl::when(self.predicate.inner.clone())
-            .then(self.then.inner.clone())
-            .when(predicate.inner);
-        WhenThenThen { inner: e }
-    }
-
-    fn otherwise(&self, expr: PyExpr) -> PyExpr {
-        dsl::ternary_expr(
-            self.predicate.inner.clone(),
-            self.then.inner.clone(),
-            expr.inner,
-        )
-        .into()
-    }
-}
-
-#[pymethods]
-impl WhenThenThen {
-    fn when(&self, predicate: PyExpr) -> Self {
-        Self {
-            inner: self.inner.clone().when(predicate.inner),
-        }
-    }
-    fn then(&self, expr: PyExpr) -> Self {
-        Self {
+impl PyWhen {
+    fn then(&self, expr: PyExpr) -> PyThen {
+        PyThen {
             inner: self.inner.clone().then(expr.inner),
         }
     }
+}
+
+#[pymethods]
+impl PyThen {
+    fn when(&self, predicate: PyExpr) -> PyChainedWhen {
+        PyChainedWhen {
+            inner: self.inner.clone().when(predicate.inner),
+        }
+    }
+
+    fn otherwise(&self, expr: PyExpr) -> PyExpr {
+        self.inner.clone().otherwise(expr.inner).into()
+    }
+}
+
+#[pymethods]
+impl PyChainedWhen {
+    fn then(&self, expr: PyExpr) -> PyChainedThen {
+        PyChainedThen {
+            inner: self.inner.clone().then(expr.inner),
+        }
+    }
+}
+
+#[pymethods]
+impl PyChainedThen {
+    fn when(&self, predicate: PyExpr) -> PyChainedWhen {
+        PyChainedWhen {
+            inner: self.inner.clone().when(predicate.inner),
+        }
+    }
+
     fn otherwise(&self, expr: PyExpr) -> PyExpr {
         self.inner.clone().otherwise(expr.inner).into()
     }

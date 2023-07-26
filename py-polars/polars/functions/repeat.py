@@ -18,17 +18,13 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import (
-        IntoExpr,
-        PolarsDataType,
-        PolarsExprType,
-    )
+    from polars.type_aliases import IntoExpr, PolarsDataType
 
 
 @overload
 def repeat(
     value: IntoExpr | None,
-    n: int | PolarsExprType,
+    n: int | Expr,
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[False] = ...,
@@ -40,7 +36,7 @@ def repeat(
 @overload
 def repeat(
     value: IntoExpr | None,
-    n: int | PolarsExprType,
+    n: int | Expr,
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[True],
@@ -52,7 +48,7 @@ def repeat(
 @overload
 def repeat(
     value: IntoExpr | None,
-    n: int | PolarsExprType,
+    n: int | Expr,
     *,
     dtype: PolarsDataType | None = ...,
     eager: bool,
@@ -63,7 +59,7 @@ def repeat(
 
 def repeat(
     value: IntoExpr | None,
-    n: int | PolarsExprType,
+    n: int | Expr,
     *,
     dtype: PolarsDataType | None = None,
     eager: bool = False,
@@ -145,7 +141,7 @@ def repeat(
 
 @overload
 def ones(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[False] = ...,
@@ -155,7 +151,7 @@ def ones(
 
 @overload
 def ones(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[True],
@@ -165,7 +161,7 @@ def ones(
 
 @overload
 def ones(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: bool,
@@ -174,7 +170,7 @@ def ones(
 
 
 def ones(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = Float64,
     *,
     eager: bool = False,
@@ -221,7 +217,7 @@ def ones(
 
 @overload
 def zeros(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[False] = ...,
@@ -231,7 +227,7 @@ def zeros(
 
 @overload
 def zeros(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[True],
@@ -241,7 +237,7 @@ def zeros(
 
 @overload
 def zeros(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: bool,
@@ -250,7 +246,7 @@ def zeros(
 
 
 def zeros(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = Float64,
     *,
     eager: bool = False,

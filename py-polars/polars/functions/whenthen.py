@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+import polars._reexport as pl
 from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import when as _when
+    import polars.polars as plr
 
 if TYPE_CHECKING:
-    from polars import Expr
     from polars.type_aliases import IntoExpr
 
 
-def when(expr: IntoExpr) -> When:
+def when(expr: IntoExpr) -> pl.When:
     """
     Start a "when, then, otherwise" expression.
 
@@ -92,94 +91,5 @@ def when(expr: IntoExpr) -> When:
 
 
     """
-    expr = parse_as_expression(expr)
-    pywhen = _when(expr)
-    return When(pywhen)
-
-
-class When:
-    """Utility class. See the `when` function."""
-
-    def __init__(self, pywhen: Any):
-        self._pywhen = pywhen
-
-    def then(self, expr: IntoExpr) -> WhenThen:
-        """
-        Values to return in case of the predicate being `True`.
-
-        See Also
-        --------
-        pl.when : Documentation for `when, then, otherwise`
-
-        """
-        expr = parse_as_expression(expr, str_as_lit=True)
-        pywhenthen = self._pywhen.then(expr)
-        return WhenThen(pywhenthen)
-
-
-class WhenThen:
-    """Utility class. See the `when` function."""
-
-    def __init__(self, pywhenthen: Any):
-        self._pywhenthen = pywhenthen
-
-    def when(self, predicate: IntoExpr) -> WhenThenThen:
-        """Start another "when, then, otherwise" layer."""
-        predicate = parse_as_expression(predicate)
-        return WhenThenThen(self._pywhenthen.when(predicate))
-
-    def otherwise(self, expr: IntoExpr) -> Expr:
-        """
-        Values to return in case of the predicate being `False`.
-
-        See Also
-        --------
-        pl.when : Documentation for `when, then, otherwise`
-
-        """
-        expr = parse_as_expression(expr, str_as_lit=True)
-        return wrap_expr(self._pywhenthen.otherwise(expr))
-
-    def __getattr__(self, item: str) -> Any:
-        expr = self.otherwise(None)
-        return getattr(expr, item)
-
-
-class WhenThenThen:
-    """Utility class. See the `when` function."""
-
-    def __init__(self, pywhenthenthen: Any):
-        self.pywhenthenthen = pywhenthenthen
-
-    def when(self, predicate: IntoExpr) -> WhenThenThen:
-        """Start another "when, then, otherwise" layer."""
-        predicate = parse_as_expression(predicate)
-        return WhenThenThen(self.pywhenthenthen.when(predicate))
-
-    def then(self, expr: IntoExpr) -> WhenThenThen:
-        """
-        Values to return in case of the predicate being `True`.
-
-        See Also
-        --------
-        pl.when : Documentation for `when, then, otherwise`
-
-        """
-        expr = parse_as_expression(expr, str_as_lit=True)
-        return WhenThenThen(self.pywhenthenthen.then(expr))
-
-    def otherwise(self, expr: IntoExpr) -> Expr:
-        """
-        Values to return in case of the predicate being `False`.
-
-        See Also
-        --------
-        pl.when : Documentation for `when, then, otherwise`
-
-        """
-        expr = parse_as_expression(expr, str_as_lit=True)
-        return wrap_expr(self.pywhenthenthen.otherwise(expr))
-
-    def __getattr__(self, item: str) -> Any:
-        expr = self.otherwise(None)
-        return getattr(expr, item)
+    pyexpr = parse_as_expression(expr)
+    return pl.When(plr.when(pyexpr))

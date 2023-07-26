@@ -132,8 +132,6 @@ def parse_as_expression(
     elif isinstance(input, list):
         expr = F.lit(pl.Series("", [input]))
         structify = False
-    elif isinstance(input, (F.whenthen.WhenThen, F.whenthen.WhenThenThen)):
-        expr = input.otherwise(None)  # implicitly add the null branch.
     else:
         raise TypeError(
             f"did not expect value {input!r} of type {type(input)}, maybe disambiguate with"
