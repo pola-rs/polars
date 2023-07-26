@@ -143,12 +143,13 @@ pub fn cut(
             polars_ensure!(ll.len() == sorted_breaks.len() + 1, ShapeMismatch: "Provide nbreaks + 1 labels");
             ll
         }
-        None => make_labels(&sorted_breaks, left_closed, precision, scientific),
+        None => make_labels(sorted_breaks, left_closed, precision, scientific),
     };
 
     map_cats(s, &cutlabs, sorted_breaks, left_closed, include_breaks)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn qcut(
     s: &Series,
     probs: Vec<f64>,
