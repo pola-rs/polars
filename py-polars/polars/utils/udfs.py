@@ -542,7 +542,10 @@ class RewrittenInstructions:
         if matching_instructions := self._matches(
             idx,
             opnames=["LOAD_GLOBAL", "LOAD_*", "LOAD_*", OpNames.CALL],
-            argvals=[_NUMPY_MODULE_ALIASES | {"json"}, _NUMPY_FUNCTIONS | {"loads"}],
+            argvals=[
+                _NUMPY_MODULE_ALIASES | {"json"},
+                _NUMPY_FUNCTIONS | {"loads"},
+            ],
             param_name_index=2,
         ):
             inst1, inst2, inst3 = matching_instructions[:3]
