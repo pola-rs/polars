@@ -13,8 +13,7 @@ use object_store::path::Path;
 use object_store::{MultipartId, ObjectStore};
 use polars_core::cloud::CloudOptions;
 use polars_error::PolarsResult;
-use tokio::io::AsyncWrite;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 type OptionalFuture = Arc<Mutex<Option<BoxFuture<'static, std::io::Result<Vec<u8>>>>>>;
 
