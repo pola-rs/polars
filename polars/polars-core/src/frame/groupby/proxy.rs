@@ -312,7 +312,7 @@ impl GroupsProxy {
         match self {
             GroupsProxy::Idx(groups) => groups,
             GroupsProxy::Slice { groups, .. } => {
-                eprintln!("Had to reallocate groups, missed an optimization opportunity. Please open an issue.");
+                polars_warn!("Had to reallocate groups, missed an optimization opportunity. Please open an issue.");
                 groups
                     .iter()
                     .map(|&[first, len]| (first, (first..first + len).collect_trusted::<Vec<_>>()))

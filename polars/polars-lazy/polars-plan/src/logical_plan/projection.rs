@@ -24,6 +24,20 @@ pub(super) fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<str>
     expr
 }
 
+pub fn remove_exclude(mut expr: Expr) -> Expr {
+    expr.mutate().apply(|e| {
+        match e {
+            Expr::Exclude(input, _) => {
+                *e = remove_exclude(std::mem::take(input));
+            }
+            _ => {}
+        }
+        // always keep iterating all inputs
+        true
+    });
+    expr
+}
+
 fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
     // the blocks are added by cargo fmt
     #[allow(clippy::blocks_in_if_conditions)]
@@ -102,7 +116,7 @@ fn expand_regex(
         regex::Regex::new(pattern).map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
     for name in schema.iter_names() {
         if re.is_match(name) && !exclude.contains(name.as_str()) {
-            let mut new_expr = replace_wildcard_with_column(expr.clone(), Arc::from(name.as_str()));
+            let mut new_expr = remove_exclude(expr.clone());
 
             new_expr.mutate().apply(|e| match &e {
                 Expr::Column(pat) if pat.as_ref() == pattern => {
