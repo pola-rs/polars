@@ -3635,8 +3635,10 @@ class Series:
         use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
-        Convert this Series to numpy. This operation clones data but is completely safe.
+        Convert this Series to numpy.
 
+        This operation clones data (unless `zero_copy_only=True`)
+        but is completely safe.
         If you want a zero-copy view and know what you are doing, use `.view()`.
 
         Parameters
