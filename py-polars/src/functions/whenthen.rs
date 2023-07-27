@@ -4,9 +4,9 @@ use pyo3::prelude::*;
 use crate::PyExpr;
 
 #[pyfunction]
-pub fn when(predicate: PyExpr) -> PyWhen {
+pub fn when(condition: PyExpr) -> PyWhen {
     PyWhen {
-        inner: dsl::when(predicate.inner),
+        inner: dsl::when(condition.inner),
     }
 }
 
@@ -36,44 +36,44 @@ pub struct PyChainedThen {
 
 #[pymethods]
 impl PyWhen {
-    fn then(&self, expr: PyExpr) -> PyThen {
+    fn then(&self, statement: PyExpr) -> PyThen {
         PyThen {
-            inner: self.inner.clone().then(expr.inner),
+            inner: self.inner.clone().then(statement.inner),
         }
     }
 }
 
 #[pymethods]
 impl PyThen {
-    fn when(&self, predicate: PyExpr) -> PyChainedWhen {
+    fn when(&self, condition: PyExpr) -> PyChainedWhen {
         PyChainedWhen {
-            inner: self.inner.clone().when(predicate.inner),
+            inner: self.inner.clone().when(condition.inner),
         }
     }
 
-    fn otherwise(&self, expr: PyExpr) -> PyExpr {
-        self.inner.clone().otherwise(expr.inner).into()
+    fn otherwise(&self, statement: PyExpr) -> PyExpr {
+        self.inner.clone().otherwise(statement.inner).into()
     }
 }
 
 #[pymethods]
 impl PyChainedWhen {
-    fn then(&self, expr: PyExpr) -> PyChainedThen {
+    fn then(&self, statement: PyExpr) -> PyChainedThen {
         PyChainedThen {
-            inner: self.inner.clone().then(expr.inner),
+            inner: self.inner.clone().then(statement.inner),
         }
     }
 }
 
 #[pymethods]
 impl PyChainedThen {
-    fn when(&self, predicate: PyExpr) -> PyChainedWhen {
+    fn when(&self, condition: PyExpr) -> PyChainedWhen {
         PyChainedWhen {
-            inner: self.inner.clone().when(predicate.inner),
+            inner: self.inner.clone().when(condition.inner),
         }
     }
 
-    fn otherwise(&self, expr: PyExpr) -> PyExpr {
-        self.inner.clone().otherwise(expr.inner).into()
+    fn otherwise(&self, statement: PyExpr) -> PyExpr {
+        self.inner.clone().otherwise(statement.inner).into()
     }
 }

@@ -1,78 +1,91 @@
 use super::*;
 
-/// Intermediate state of `when(..).then(..).otherwise(..)` expression.
+/// Utility struct for the `when-then-otherwise` expression.
+///
+/// Represents the state of the expression after [when] is called.
+///
+/// In this state, `then` must be called to continue to finish the expression.
 #[derive(Clone)]
 pub struct When {
-    predicate: Expr,
+    condition: Expr,
 }
 
-/// Intermediate state of `when(..).then(..).otherwise(..)` expression.
+/// Utility struct for the `when-then-otherwise` expression.
+///
+/// Represents the state of the expression after `when(...).then(...)` is called.
 #[derive(Clone)]
 pub struct Then {
-    predicate: Expr,
-    then: Expr,
+    condition: Expr,
+    statement: Expr,
 }
 
-/// Intermediate state of a chained `when(..).then(..).otherwise(..)` expression.
+/// Utility struct for the `when-then-otherwise` expression.
+///
+/// Represents the state of the expression after an additional `when` is called.
+///
+/// In this state, `then` must be called to continue to finish the expression.
 #[derive(Clone)]
 pub struct ChainedWhen {
-    predicates: Vec<Expr>,
-    thens: Vec<Expr>,
+    conditions: Vec<Expr>,
+    statements: Vec<Expr>,
 }
 
-/// Intermediate state of a chained `when(..).then(..).otherwise(..)` expression.
+/// Utility struct for the `when-then-otherwise` expression.
+///
+/// Represents the state of the expression after an additional `then` is called.
 #[derive(Clone)]
 pub struct ChainedThen {
-    predicates: Vec<Expr>,
-    thens: Vec<Expr>,
+    conditions: Vec<Expr>,
+    statements: Vec<Expr>,
 }
 
 impl When {
+    /// Add a condition to the `when-then-otherwise` expression.
     pub fn then<E: Into<Expr>>(self, expr: E) -> Then {
         Then {
-            predicate: self.predicate,
-            then: expr.into(),
+            condition: self.condition,
+            statement: expr.into(),
         }
     }
 }
 
 impl Then {
-    pub fn when<E: Into<Expr>>(self, predicate: E) -> ChainedWhen {
+    /// Attach a statement to the corresponding condition.
+    pub fn when<E: Into<Expr>>(self, condition: E) -> ChainedWhen {
         ChainedWhen {
-            predicates: vec![self.predicate, predicate.into()],
-            thens: vec![self.then],
+            conditions: vec![self.condition, condition.into()],
+            statements: vec![self.statement],
         }
     }
 
-    pub fn otherwise<E: Into<Expr>>(self, expr: E) -> Expr {
-        Expr::Ternary {
-            predicate: Box::new(self.predicate),
-            truthy: Box::new(self.then),
-            falsy: Box::new(expr.into()),
-        }
+    /// Define a default for the `when-then-otherwise` expression.
+    pub fn otherwise<E: Into<Expr>>(self, statement: E) -> Expr {
+        ternary_expr(self.condition, self.statement, statement.into())
     }
 }
 
 impl ChainedWhen {
-    pub fn then<E: Into<Expr>>(mut self, expr: E) -> ChainedThen {
-        self.thens.push(expr.into());
+    pub fn then<E: Into<Expr>>(mut self, statement: E) -> ChainedThen {
+        self.statements.push(statement.into());
         ChainedThen {
-            predicates: self.predicates,
-            thens: self.thens,
+            conditions: self.conditions,
+            statements: self.statements,
         }
     }
 }
 
 impl ChainedThen {
-    pub fn when<E: Into<Expr>>(mut self, predicate: E) -> ChainedWhen {
-        self.predicates.push(predicate.into());
+    /// Add another condition to the `when-then-otherwise` expression.
+    pub fn when<E: Into<Expr>>(mut self, condition: E) -> ChainedWhen {
+        self.conditions.push(condition.into());
 
         ChainedWhen {
-            predicates: self.predicates,
-            thens: self.thens,
+            conditions: self.conditions,
+            statements: self.statements,
         }
     }
 
+    /// Define a default for the `when-then-otherwise` expression.
     pub fn otherwise<E: Into<Expr>>(self, expr: E) -> Expr {
         // we iterate the preds/ exprs last in first out
         // and nest them.
@@ -98,31 +111,29 @@ impl ChainedThen {
         // which will be used in the next layer `outer`
         //
 
-        let pred_iter = self.predicates.into_iter().rev();
-        let mut then_iter = self.thens.into_iter().rev();
+        let conditions_iter = self.conditions.into_iter().rev();
+        let mut statements_iter = self.statements.into_iter().rev();
 
         let mut otherwise = expr.into();
 
-        for e in pred_iter {
-            otherwise = Expr::Ternary {
-                predicate: Box::new(e),
-                truthy: Box::new(
-                    then_iter
-                        .next()
-                        .expect("expr expected, did you call when().then().otherwise?"),
-                ),
-                falsy: Box::new(otherwise),
-            }
+        for e in conditions_iter {
+            otherwise = ternary_expr(
+                e,
+                statements_iter
+                    .next()
+                    .expect("expr expected, did you call when().then().otherwise?"),
+                otherwise,
+            );
         }
 
         otherwise
     }
 }
 
-/// Start a `when(..).then(..).otherwise(..)` expression
-pub fn when<E: Into<Expr>>(predicate: E) -> When {
+/// Start a `when-then-otherwise` expression.
+pub fn when<E: Into<Expr>>(condition: E) -> When {
     When {
-        predicate: predicate.into(),
+        condition: condition.into(),
     }
 }
 
