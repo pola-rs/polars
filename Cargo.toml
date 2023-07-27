@@ -33,11 +33,11 @@ strum_macros = "0.25"
 
 [workspace.dependencies.arrow]
 package = "arrow2"
-# git = "https://github.com/jorgecarleitao/arrow2"
-git = "https://github.com/ritchie46/arrow2"
-# rev = "2d2e7053f9a50810bfe9cecff25ab39089aef98e"
+git = "https://github.com/jorgecarleitao/arrow2"
+# git = "https://github.com/ritchie46/arrow2"
+rev = "d5c78e7ba45fcebfbafd55a82ba2601ee3ea9617"
 # path = "../arrow2"
-branch = "duration_json"
+# branch = "duration_json"
 version = "0.17.2"
 default-features = false
 features = [

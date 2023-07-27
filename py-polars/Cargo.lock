@@ -108,7 +108,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.17.3"
-source = "git+https://github.com/ritchie46/arrow2?branch=duration_json#c63cdd6dcd7c22f143c907eb0a28079b58525c99"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=d5c78e7ba45fcebfbafd55a82ba2601ee3ea9617#d5c78e7ba45fcebfbafd55a82ba2601ee3ea9617"
 dependencies = [
  "ahash",
  "arrow-format",

@@ -4,10 +4,10 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use polars_arrow::export::arrow::array::{BooleanArray, PrimitiveArray};
 use polars_arrow::export::arrow::compute::arity::unary;
 #[cfg(feature = "dtype-time")]
-use polars_arrow::export::arrow::temporal_conversions::time64ns_to_time;
+use polars_arrow::export::arrow::temporal_conversions::time64ns_to_time_opt;
 use polars_arrow::export::arrow::temporal_conversions::{
-    date32_to_datetime, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
-    timestamp_us_to_datetime,
+    date32_to_datetime_opt, timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt,
+    timestamp_us_to_datetime_opt,
 };
 
 use super::super::windows::calendar::*;
@@ -44,13 +44,17 @@ impl PolarsIso for NaiveDate {
 }
 
 macro_rules! to_temporal_unit {
-    ($name: ident, $chrono_method: ident, $to_datetime_fn: expr, $dtype_in: ty, $dtype_out:expr) => {
-        pub(crate) fn $name(arr: &PrimitiveArray<$dtype_in>) -> ArrayRef {
+    ($name: ident, $chrono_method: ident, $to_datetime_fn: expr,
+    $primitive_in: ty,
+    $primitive_out: ty,
+    $dtype_out:expr) => {
+        pub(crate) fn $name(arr: &PrimitiveArray<$primitive_in>) -> ArrayRef {
             Box::new(unary(
                 arr,
                 |value| {
-                    let dt = $to_datetime_fn(value);
-                    dt.$chrono_method()
+                    $to_datetime_fn(value)
+                        .map(|dt| dt.$chrono_method())
+                        .unwrap_or(value as $primitive_out)
                 },
                 $dtype_out,
             )) as ArrayRef
@@ -65,8 +69,9 @@ macro_rules! to_boolean_temporal_unit {
                 .values()
                 .iter()
                 .map(|value| {
-                    let dt = $to_datetime_fn(*value);
-                    $boolean_method(dt.$chrono_method())
+                    $to_datetime_fn(*value)
+                        .map(|dt| $boolean_method(dt.$chrono_method()))
+                        .unwrap_or(false)
                 })
                 .collect::<Vec<_>>();
             Box::new(BooleanArray::new(
@@ -83,15 +88,17 @@ macro_rules! to_boolean_temporal_unit {
 to_temporal_unit!(
     date_to_iso_week,
     week,
-    date32_to_datetime,
+    date32_to_datetime_opt,
     i32,
+    u32,
     ArrowDataType::UInt32
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
     date_to_iso_year,
     iso_year,
-    date32_to_datetime,
+    date32_to_datetime_opt,
+    i32,
     i32,
     ArrowDataType::Int32
 );
@@ -99,15 +106,17 @@ to_temporal_unit!(
 to_temporal_unit!(
     date_to_iso_weekday,
     p_weekday,
-    date32_to_datetime,
+    date32_to_datetime_opt,
     i32,
+    u32,
     ArrowDataType::UInt32
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
     date_to_year,
     year,
-    date32_to_datetime,
+    date32_to_datetime_opt,
+    i32,
     i32,
     ArrowDataType::Int32
 );
@@ -116,31 +125,34 @@ to_boolean_temporal_unit!(
     date_to_is_leap_year,
     year,
     is_leap_year,
-    date32_to_datetime,
+    date32_to_datetime_opt,
     i32
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
     date_to_month,
     month,
-    date32_to_datetime,
+    date32_to_datetime_opt,
     i32,
+    u32,
     ArrowDataType::UInt32
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
     date_to_day,
     day,
-    date32_to_datetime,
+    date32_to_datetime_opt,
     i32,
+    u32,
     ArrowDataType::UInt32
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
     date_to_ordinal,
     ordinal,
-    date32_to_datetime,
+    date32_to_datetime_opt,
     i32,
+    u32,
     ArrowDataType::UInt32
 );
 
@@ -149,32 +161,36 @@ to_temporal_unit!(
 to_temporal_unit!(
     time_to_hour,
     hour,
-    time64ns_to_time,
+    time64ns_to_time_opt,
     i64,
+    u32,
     ArrowDataType::UInt32
 );
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
     time_to_minute,
     minute,
-    time64ns_to_time,
+    time64ns_to_time_opt,
     i64,
+    u32,
     ArrowDataType::UInt32
 );
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
     time_to_second,
     second,
-    time64ns_to_time,
+    time64ns_to_time_opt,
     i64,
+    u32,
     ArrowDataType::UInt32
 );
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
     time_to_nanosecond,
     nanosecond,
-    time64ns_to_time,
+    time64ns_to_time_opt,
     i64,
+    u32,
     ArrowDataType::UInt32
 );
 
@@ -182,8 +198,9 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_ordinal_ns,
     ordinal,
-    timestamp_ns_to_datetime,
+    timestamp_ns_to_datetime_opt,
     i64,
+    u32,
     ArrowDataType::UInt32
 );
 
@@ -191,16 +208,18 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_ordinal_ms,
     ordinal,
-    timestamp_ms_to_datetime,
+    timestamp_ms_to_datetime_opt,
     i64,
+    u32,
     ArrowDataType::UInt32
 );
 #[cfg(feature = "dtype-datetime")]
 to_temporal_unit!(
     datetime_to_ordinal_us,
     ordinal,
-    timestamp_us_to_datetime,
+    timestamp_us_to_datetime_opt,
     i64,
+    u32,
     ArrowDataType::UInt32
 );
 
@@ -208,8 +227,9 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_iso_year_ns,
     iso_year,
-    timestamp_ns_to_datetime,
+    timestamp_ns_to_datetime_opt,
     i64,
+    i32,
     ArrowDataType::Int32
 );
 
@@ -217,8 +237,9 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_iso_year_us,
     iso_year,
-    timestamp_us_to_datetime,
+    timestamp_us_to_datetime_opt,
     i64,
+    i32,
     ArrowDataType::Int32
 );
 
@@ -226,8 +247,9 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_iso_year_ms,
     iso_year,
-    timestamp_ms_to_datetime,
+    timestamp_ms_to_datetime_opt,
     i64,
+    i32,
     ArrowDataType::Int32
 );
 #[cfg(feature = "dtype-datetime")]
@@ -235,7 +257,7 @@ to_boolean_temporal_unit!(
     datetime_to_is_leap_year_ns,
     year,
     is_leap_year,
-    timestamp_ns_to_datetime,
+    timestamp_ns_to_datetime_opt,
     i64
 );
 #[cfg(feature = "dtype-datetime")]
@@ -243,7 +265,7 @@ to_boolean_temporal_unit!(
     datetime_to_is_leap_year_us,
     year,
     is_leap_year,
-    timestamp_us_to_datetime,
+    timestamp_us_to_datetime_opt,
     i64
 );
 #[cfg(feature = "dtype-datetime")]
@@ -251,6 +273,6 @@ to_boolean_temporal_unit!(
     datetime_to_is_leap_year_ms,
     year,
     is_leap_year,
-    timestamp_ms_to_datetime,
+    timestamp_ms_to_datetime_opt,
     i64
 );
