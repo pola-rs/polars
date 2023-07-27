@@ -191,8 +191,10 @@ def test_expr_exact_warning_message() -> None:
         '  - pl.col("a").apply(lambda x: ...)\n'
         '  + pl.col("a") + 1\n'
     )
-    # Check the EXACT warning message.
-    # Make sure to keep the `^` and `$`.
-    with pytest.warns(PolarsInefficientApplyWarning, match=f"^{msg}$"):
+    # Check the EXACT warning message. If modifying the message in the future,
+    # please make sure to keep the `^` and `$`,
+    # and to keep the assertion on `len(warnings)`.
+    with pytest.warns(PolarsInefficientApplyWarning, match=rf"^{msg}$") as warnings:
         df = pl.DataFrame({"a": [1, 2, 3]})
         df.select(pl.col("a").apply(lambda x: x + 1))
+    assert len(warnings) == 1
