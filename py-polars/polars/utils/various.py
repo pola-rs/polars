@@ -454,3 +454,23 @@ def in_terminal_that_supports_colour() -> bool:
             )
         ) or os.environ.get("PYCHARM_HOSTED") == "1"
     return False
+
+
+def get_all_caller_variables() -> dict[str, Any]:
+    """Get all local and global variables from caller's frame."""
+    pkg_dir = Path(pl.__file__).parent
+    test_dir = pkg_dir / "tests"
+
+    # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
+    frame = inspect.currentframe()
+    n = 0
+    while frame:
+        fname = inspect.getfile(frame)
+        if fname.startswith(str(pkg_dir)) and not fname.startswith(str(test_dir)):
+            frame = frame.f_back
+            n += 1
+        else:
+            break
+    if frame is None:
+        return {}
+    return {**frame.f_locals, **frame.f_globals}
