@@ -30,7 +30,7 @@ TEST_CASES = [
     ("a", lambda x: x // 1 % 2, '(pl.col("a") // 1) % 2'),
     ("a", lambda x: x & True, 'pl.col("a") & True'),
     ("a", lambda x: x | False, 'pl.col("a") | False'),
-    ("a", lambda x: x != 3, 'pl.col("a") != 3'),
+    ("a", lambda x: abs(x) != 3, 'pl.col("a").abs() != 3'),
     ("a", lambda x: int(x) > 1, 'pl.col("a").cast(pl.Int64) > 1'),
     ("a", lambda x: not (x > 1) or x == 2, '~(pl.col("a") > 1) | (pl.col("a") == 2)'),
     ("a", lambda x: x is None, 'pl.col("a") is None'),
