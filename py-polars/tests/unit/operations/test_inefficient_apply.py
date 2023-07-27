@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Callable
 
 import numpy
@@ -179,3 +180,21 @@ def test_parse_apply_series(
         expected_series = s.apply(func)
         result_series = eval(suggested_expression)
         assert_series_equal(expected_series, result_series)
+
+
+def test_expr_exact_warning_message() -> None:
+    msg = re.escape(
+        "\n"
+        "Expr.apply is significantly slower than the native expressions API.\n"
+        "Only use if you absolutely CANNOT implement your logic otherwise.\n"
+        "In this case, you can replace your `apply` with the following:\n"
+        '  - pl.col("a").apply(lambda x: ...)\n'
+        '  + pl.col("a") + 1\n'
+    )
+    # Check the EXACT warning message. If modifying the message in the future,
+    # please make sure to keep the `^` and `$`,
+    # and to keep the assertion on `len(warnings)`.
+    with pytest.warns(PolarsInefficientApplyWarning, match=rf"^{msg}$") as warnings:
+        df = pl.DataFrame({"a": [1, 2, 3]})
+        df.select(pl.col("a").apply(lambda x: x + 1))
+    assert len(warnings) == 1
