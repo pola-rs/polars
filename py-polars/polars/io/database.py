@@ -6,15 +6,17 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
+from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     from polars import DataFrame
     from polars.type_aliases import DbReadEngine
 
 
+@deprecated_alias(connection_uri="connection")
 def read_database(
     query: list[str] | str,
-    connection_uri: str,
+    connection: str,
     *,
     partition_on: str | None = None,
     partition_range: tuple[int, int] | None = None,
@@ -29,7 +31,7 @@ def read_database(
     ----------
     query
         Raw SQL query (or queries).
-    connection_uri
+    connection
         A connectorx or ADBC connection URI that starts with the backend's
         driver name, for example:
 
@@ -112,7 +114,7 @@ def read_database(
     if engine == "connectorx":
         return _read_sql_connectorx(
             query,
-            connection_uri,
+            connection,
             partition_on=partition_on,
             partition_range=partition_range,
             partition_num=partition_num,
@@ -121,7 +123,7 @@ def read_database(
     elif engine == "adbc":
         if not isinstance(query, str):
             raise ValueError("Only a single SQL query string is accepted for adbc.")
-        return _read_sql_adbc(query, connection_uri)
+        return _read_sql_adbc(query, connection)
     else:
         raise ValueError(f"Engine {engine!r} not implemented; use connectorx or adbc.")
 
@@ -154,11 +156,9 @@ def _read_sql_connectorx(
 
 
 def _read_sql_adbc(query: str, connection_uri: str) -> DataFrame:
-    with _open_adbc_connection(connection_uri) as conn:
-        cursor = conn.cursor()
+    with _open_adbc_connection(connection_uri) as conn, conn.cursor() as cursor:
         cursor.execute(query)
         tbl = cursor.fetch_arrow_table()
-        cursor.close()
     return from_arrow(tbl)  # type: ignore[return-value]
 
 

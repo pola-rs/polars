@@ -3146,10 +3146,11 @@ class DataFrame:
                 file, compression, compression_level, statistics, row_group_size
             )
 
+    @deprecated_alias(connection_uri="connection")
     def write_database(
         self,
         table_name: str,
-        connection_uri: str,
+        connection: str,
         *,
         if_exists: DbWriteMode = "fail",
         engine: DbWriteEngine = "sqlalchemy",
@@ -3162,8 +3163,8 @@ class DataFrame:
         table_name
             Name of the table to create or append to in the target SQL database.
             If your table name contains special characters, it should be quoted.
-        connection_uri
-            Connection URI, for example:
+        connection
+            Connection URI string, for example:
 
             * "postgresql://user:pass@server:port/database"
             * "sqlite:////path/to/database.db"
@@ -3189,10 +3190,8 @@ class DataFrame:
                     f"Value for 'if_exists'={if_exists} was unexpected. "
                     f"Choose one of: {'fail', 'replace', 'append'}."
                 )
-            with _open_adbc_connection(connection_uri) as conn:
-                cursor = conn.cursor()
+            with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
                 cursor.adbc_ingest(table_name, self.to_arrow(), mode)
-                cursor.close()
                 conn.commit()
 
         elif engine == "sqlalchemy":
@@ -3223,7 +3222,7 @@ class DataFrame:
 
             # ensure conversion to pandas uses the pyarrow extension array option
             # so that we can make use of the sql/db export without copying data
-            engine_sa = create_engine(connection_uri)
+            engine_sa = create_engine(connection)
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
                 name=table_name,
                 schema=db_schema,
