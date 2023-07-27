@@ -804,9 +804,16 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
         }
 
         fn get_object(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
-            // this is slow, but hey don't use objects
-            let v = &ObjectValue { inner: ob.into() };
-            Ok(Wrap(AnyValue::ObjectOwned(OwnedObject(v.to_boxed()))))
+            #[cfg(feature = "object")]
+            {
+                // this is slow, but hey don't use objects
+                let v = &ObjectValue { inner: ob.into() };
+                Ok(Wrap(AnyValue::ObjectOwned(OwnedObject(v.to_boxed()))))
+            }
+            #[cfg(not(feature = "object"))]
+            {
+                panic!("activate object")
+            }
         }
 
         // TYPE key
