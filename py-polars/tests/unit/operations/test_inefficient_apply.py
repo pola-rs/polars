@@ -125,6 +125,17 @@ def test_parse_apply_miscellaneous() -> None:
     ).to_expression(col="colx")
     assert suggested_expression is None
 
+    # literals as method parameters
+    with pytest.warns(
+        PolarsInefficientApplyWarning,
+        match=r"\(np\.cos\(3\) \+ s\) - abs\(-1\)",
+    ):
+        s = pl.Series("srs", [0, 1, 2, 3, 4])
+        assert_series_equal(
+            s.apply(lambda x: numpy.cos(3) + x - abs(-1)),
+            numpy.cos(3) + s - 1,
+        )
+
 
 @pytest.mark.parametrize(
     ("data", "func", "expr_repr"),

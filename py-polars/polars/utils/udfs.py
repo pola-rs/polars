@@ -90,7 +90,7 @@ _NUMPY_FUNCTIONS = frozenset(
 
 # python functions that we can map to native expressions
 _PYTHON_CASTS_MAP = {"float": "Float64", "int": "Int64", "str": "Utf8"}
-_PYTHON_BUILTINS = frozenset(_PYTHON_CASTS_MAP) | {"abs", "len"}
+_PYTHON_BUILTINS = frozenset(_PYTHON_CASTS_MAP) | {"abs"}
 _PYTHON_METHODS_MAP = {
     "lower": "str.to_lowercase",
     "title": "str.to_titlecase",
@@ -366,6 +366,12 @@ class InstructionTranslator:
             e1 = cls._expr(value.left_operand, col, param_name, depth + 1)
             if value.operator_arity == 1:
                 if op not in OpNames.UNARY_VALUES:
+                    if not e1.startswith("pl.col("):
+                        # support use of consts as numpy/builtin params, eg:
+                        # "np.sin(3) + np.cos(x)", or "len('const_string') + len(x)"
+                        pfx = "np." if op in _NUMPY_FUNCTIONS else ""
+                        return f"{pfx}{op}({e1})"
+
                     call = "" if op.endswith(")") else "()"
                     return f"{e1}.{op}{call}"
                 return f"{op}{e1}"
@@ -521,7 +527,7 @@ class RewrittenInstructions:
         """Replace builtin function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_FAST", OpNames.CALL],
+            opnames=["LOAD_GLOBAL", "LOAD_*", OpNames.CALL],
             argvals=[_PYTHON_BUILTINS],
         ):
             inst1, inst2 = matching_instructions[:2]
