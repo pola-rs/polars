@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import dis
+import re
 import sys
 import warnings
 from bisect import bisect_left
 from collections import defaultdict
 from dis import get_instructions
 from inspect import signature
-from itertools import zip_longest
+from itertools import count, zip_longest
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
 
 if TYPE_CHECKING:
@@ -82,13 +83,15 @@ class OpNames:
     UNARY_VALUES = frozenset(UNARY.values())
 
 
-# numpy functions that we can map to a native expression
+# numpy functions that we can map to native expressions
 _NUMPY_MODULE_ALIASES = frozenset(("np", "numpy"))
 _NUMPY_FUNCTIONS = frozenset(
     ("cbrt", "cos", "cosh", "sin", "sinh", "sqrt", "tan", "tanh")
 )
-# python function that we can map to a native expression
+
+# python functions that we can map to native expressions
 _PYTHON_CASTS_MAP = {"float": "Float64", "int": "Int64", "str": "Utf8"}
+_PYTHON_BUILTINS = frozenset(_PYTHON_CASTS_MAP) | {"abs"}
 _PYTHON_METHODS_MAP = {
     "lower": "str.to_lowercase",
     "title": "str.to_titlecase",
@@ -100,6 +103,7 @@ class BytecodeParser:
     """Introspect UDF bytecode and determine if we can rewrite as native expression."""
 
     _can_rewrite: dict[str, bool]
+    _apply_target_name: str | None = None
 
     def __init__(self, function: Callable[[Any], Any], apply_target: ApplyTarget):
         try:
@@ -159,8 +163,8 @@ class BytecodeParser:
                         # combine logical '&' blocks (and update start/block_offsets)
                         prev = block_offsets[bisect_left(block_offsets, start) - 1]
                         expression_blocks[prev] += f" & {expression_blocks.pop(start)}"
-                        block_offsets = list(expression_blocks.keys())
                         combined_offset_idxs.add(i - 1)
+                        block_offsets.remove(start)
                         start = prev
 
                     if logical_op == "|":
@@ -177,6 +181,31 @@ class BytecodeParser:
                     expression_blocks[inst.offset] = OpNames.CONTROL_FLOW[inst.opname]
 
         return sorted(expression_blocks.items())
+
+    def _get_target_name(self, col: str, expression: str) -> str:
+        """The name of the object against which the 'apply' is being invoked."""
+        if self._apply_target_name is not None:
+            return self._apply_target_name
+        else:
+            col_expr = f'pl.col("{col}")'
+            if self._apply_target == "expr":
+                return col_expr
+            elif self._apply_target == "series":
+                # note: handle overlapping name from global variables; fallback
+                # through "s", "srs", "series" and (finally) srs0 -> srsN...
+                search_expr = expression.replace(col_expr, "")
+                for name in ("s", "srs", "series"):
+                    if not re.search(rf"\b{name}\b", search_expr):
+                        self._apply_target_name = name
+                        return name
+                n = count()
+                while True:
+                    name = f"srs{next(n)}"
+                    if not re.search(rf"\b{name}\b", search_expr):
+                        self._apply_target_name = name
+                        return name
+
+        raise NotImplementedError(f"TODO: apply_target = {self._apply_target!r}")
 
     @property
     def apply_target(self) -> ApplyTarget:
@@ -229,8 +258,9 @@ class BytecodeParser:
         """The rewritten bytecode instructions from the function we are parsing."""
         return list(self._rewritten_instructions)
 
-    def to_expression(self, col: str, as_repr: bool = True) -> str | None:
+    def to_expression(self, col: str) -> str | None:
         """Translate postfix bytecode instructions to polars expression/string."""
+        self._apply_target_name = None
         if not self.can_rewrite() or self._param_name is None:
             return None
 
@@ -246,7 +276,7 @@ class BytecodeParser:
                 control_flow_blocks[jump_offset].append(inst)
 
         # convert each block to a polars expression string
-        expression_blocks = self._inject_nesting(
+        expression_strings = self._inject_nesting(
             {
                 offset: InstructionTranslator(
                     instructions=ops,
@@ -260,14 +290,19 @@ class BytecodeParser:
             },
             logical_instructions,
         )
-        polars_expr = " ".join(expr for _offset, expr in expression_blocks)
+        polars_expr = " ".join(expr for _offset, expr in expression_strings)
 
         # note: if no 'pl.col' in the expression, it likely represents a compound
         # constant value (e.g. `lambda x: CONST + 123`), so we don't want to warn
         if "pl.col(" not in polars_expr:
             return None
-
-        return polars_expr if as_repr else eval(polars_expr, globals())
+        elif self._apply_target == "series":
+            return polars_expr.replace(
+                f'pl.col("{col}")',
+                self._get_target_name(col, polars_expr),
+            )
+        else:
+            return polars_expr
 
     def warn(
         self,
@@ -284,7 +319,9 @@ class BytecodeParser:
         )
 
         suggested_expression = suggestion_override or self.to_expression(col)
+
         if suggested_expression is not None:
+            target_name = self._get_target_name(col, suggested_expression)
             func_name = udf_override or self._function.__name__ or "..."
             if func_name == "<lambda>":
                 func_name = f"lambda {self._param_name}: ..."
@@ -294,21 +331,28 @@ class BytecodeParser:
                 if 'pl.col("")' in suggested_expression
                 else ""
             )
+            if self._apply_target == "expr":
+                apitype = "expressions"
+                clsname = "Expr"
+            else:
+                apitype = "series"
+                clsname = "Series"
+
             before_after_suggestion = (
                 (
-                    f'  \033[31m-  pl.col("{col}").apply({func_name})\033[0m\n'
+                    f"  \033[31m-  {target_name}.apply({func_name})\033[0m\n"
                     f"  \033[32m+  {suggested_expression}\033[0m\n{addendum}"
                 )
                 if in_terminal_that_supports_colour()
                 else (
-                    f'  - pl.col("{col}").apply({func_name})\n'
+                    f"  - {target_name}.apply({func_name})\n"
                     f"  + {suggested_expression}\n{addendum}"
                 )
             )
             warnings.warn(
-                "\nExpr.apply is significantly slower than the native expressions API.\n"
+                f"\n{clsname}.apply is significantly slower than the native {apitype} API.\n"
                 "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-                "In this case, you can replace your `apply` with an expression:\n"
+                "In this case, you can replace your `apply` with the following:\n"
                 f"{before_after_suggestion}",
                 PolarsInefficientApplyWarning,
                 stacklevel=find_stacklevel(),
@@ -353,6 +397,12 @@ class InstructionTranslator:
             e1 = cls._expr(value.left_operand, col, param_name, depth + 1)
             if value.operator_arity == 1:
                 if op not in OpNames.UNARY_VALUES:
+                    if not e1.startswith("pl.col("):
+                        # support use of consts as numpy/builtin params, eg:
+                        # "np.sin(3) + np.cos(x)", or "len('const_string') + len(x)"
+                        pfx = "np." if op in _NUMPY_FUNCTIONS else ""
+                        return f"{pfx}{op}({e1})"
+
                     call = "" if op.endswith(")") else "()"
                     return f"{e1}.{op}{call}"
                 return f"{op}{e1}"
@@ -381,7 +431,7 @@ class InstructionTranslator:
         self, instructions: list[Instruction], apply_target: ApplyTarget
     ) -> StackEntry:
         """Take postfix bytecode and convert to an intermediate natural-order stack."""
-        if apply_target == "expr":
+        if apply_target in ("expr", "series"):
             stack: list[StackEntry] = []
             for inst in instructions:
                 stack.append(
@@ -508,15 +558,18 @@ class RewrittenInstructions:
         """Replace builtin function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_FAST", OpNames.CALL],
-            argvals=[_PYTHON_CASTS_MAP],
+            opnames=["LOAD_GLOBAL", "LOAD_*", OpNames.CALL],
+            argvals=[_PYTHON_BUILTINS],
         ):
             inst1, inst2 = matching_instructions[:2]
-            dtype = _PYTHON_CASTS_MAP[inst1.argval]
+            if (argval := inst1.argval) in _PYTHON_CASTS_MAP:
+                dtype = _PYTHON_CASTS_MAP[argval]
+                argval = f"cast(pl.{dtype})"
+
             synthetic_call = inst1._replace(
                 opname="POLARS_EXPRESSION",
-                argval=f"cast(pl.{dtype})",
-                argrepr=f"cast(pl.{dtype})",
+                argval=argval,
+                argrepr=argval,
                 offset=inst2.offset,
             )
             # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
@@ -623,7 +676,7 @@ def warn_on_inefficient_apply(
         The target of the ``apply`` call. One of ``"expr"``, ``"frame"``,
         or ``"series"``.
     """
-    if apply_target in ("frame", "series"):
+    if apply_target == "frame":
         raise NotImplementedError("TODO: 'frame' and 'series' apply-function parsing")
 
     # note: we only consider simple functions with a single col/param

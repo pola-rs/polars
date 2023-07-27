@@ -30,7 +30,7 @@ TEST_CASES = [
     ("a", lambda x: x // 1 % 2, '(pl.col("a") // 1) % 2'),
     ("a", lambda x: x & True, 'pl.col("a") & True'),
     ("a", lambda x: x | False, 'pl.col("a") | False'),
-    ("a", lambda x: x != 3, 'pl.col("a") != 3'),
+    ("a", lambda x: abs(x) != 3, 'pl.col("a").abs() != 3'),
     ("a", lambda x: int(x) > 1, 'pl.col("a").cast(pl.Int64) > 1'),
     ("a", lambda x: not (x > 1) or x == 2, '~(pl.col("a") > 1) | (pl.col("a") == 2)'),
     ("a", lambda x: x is None, 'pl.col("a") is None'),
@@ -65,6 +65,11 @@ TEST_CASES = [
     ("a", lambda x: MY_CONSTANT + x, 'MY_CONSTANT + pl.col("a")'),
     ("a", lambda x: 0 + numpy.cbrt(x), '0 + pl.col("a").cbrt()'),
     ("a", lambda x: np.sin(x) + 1, 'pl.col("a").sin() + 1'),
+    (
+        "a",  # note: functions operate on consts
+        lambda x: np.sin(3.14159265358979) + (x - 1) + abs(-3),
+        '(np.sin(3.14159265358979) + (pl.col("a") - 1)) + abs(-3)',
+    ),
     (
         "a",
         lambda x: (float(x) * int(x)) // 2,
@@ -113,6 +118,12 @@ TEST_CASES = [
     ("c", lambda x: json.loads(x), 'pl.col("c").str.json_extract()'),
 ]
 
+NOOP_TEST_CASES = [
+    lambda x: x,
+    lambda x, y: x + y,
+    lambda x: x[0] + 1,
+]
+
 
 @pytest.mark.parametrize(
     ("col", "func", "expected"),
@@ -125,3 +136,12 @@ def test_bytecode_parser_expression(
     bytecode_parser = udfs.BytecodeParser(func, apply_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected
+
+
+@pytest.mark.parametrize(
+    "func",
+    NOOP_TEST_CASES,
+)
+def test_bytecode_parser_expression_noop(func: Callable[[Any], Any]) -> None:
+    udfs = pytest.importorskip("udfs")
+    assert not udfs.BytecodeParser(func, apply_target="expr").can_rewrite()
