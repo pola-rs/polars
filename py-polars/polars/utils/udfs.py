@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import dis
+import re
 import sys
 import warnings
 from bisect import bisect_left
 from collections import defaultdict
 from dis import get_instructions
 from inspect import signature
-from itertools import zip_longest
+from itertools import count, zip_longest
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
 
 if TYPE_CHECKING:
@@ -102,6 +103,7 @@ class BytecodeParser:
     """Introspect UDF bytecode and determine if we can rewrite as native expression."""
 
     _can_rewrite: dict[str, bool]
+    _apply_target_name: str | None = None
 
     def __init__(self, function: Callable[[Any], Any], apply_target: ApplyTarget):
         try:
@@ -180,6 +182,30 @@ class BytecodeParser:
 
         return sorted(expression_blocks.items())
 
+    def _get_target_name(self, col: str, expression: str) -> str:
+        """The name of the object against which the 'apply' is being invoked."""
+        if self._apply_target_name is not None:
+            return self._apply_target_name
+        else:
+            col_expr = f'pl.col("{col}")'
+            if self._apply_target == "expr":
+                return col_expr
+            elif self._apply_target == "series":
+                # note: handle overlapping name from global variables; fallback
+                # through "s", "srs", "series" and (finally) srs0 -> srsN...
+                search_expr = expression.replace(col_expr, "")
+                for name in ("s", "srs", "series"):
+                    if not re.search(rf"\b{name}\b", search_expr):
+                        self._apply_target_name = name
+                        return name
+                n = count()
+                while True:
+                    name = f"srs{next(n)}"
+                    if not re.search(rf"\b{name}\b", search_expr):
+                        return name
+
+        raise NotImplementedError(f"TODO: apply_target = {self._apply_target!r}")
+
     @property
     def apply_target(self) -> ApplyTarget:
         """The apply target, eg: one of 'expr', 'frame', or 'series'."""
@@ -233,6 +259,7 @@ class BytecodeParser:
 
     def to_expression(self, col: str) -> str | None:
         """Translate postfix bytecode instructions to polars expression/string."""
+        self._apply_target_name = None
         if not self.can_rewrite() or self._param_name is None:
             return None
 
@@ -269,7 +296,10 @@ class BytecodeParser:
         if "pl.col(" not in polars_expr:
             return None
         elif self._apply_target == "series":
-            return polars_expr.replace(f'pl.col("{col}")', "s")
+            return polars_expr.replace(
+                f'pl.col("{col}")',
+                self._get_target_name(col, polars_expr),
+            )
         else:
             return polars_expr
 
@@ -288,7 +318,9 @@ class BytecodeParser:
         )
 
         suggested_expression = suggestion_override or self.to_expression(col)
+
         if suggested_expression is not None:
+            target_name = self._get_target_name(col, suggested_expression)
             func_name = udf_override or self._function.__name__ or "..."
             if func_name == "<lambda>":
                 func_name = f"lambda {self._param_name}: ..."
@@ -299,27 +331,25 @@ class BytecodeParser:
                 else ""
             )
             if self._apply_target == "expr":
-                apiname = "expressions"
+                apitype = "expressions"
                 clsname = "Expr"
-                target = f'pl.col("{col}")'
             else:
-                apiname = "series"
+                apitype = "series"
                 clsname = "Series"
-                target = "s"
 
             before_after_suggestion = (
                 (
-                    f"  \033[31m-  {target}.apply({func_name})\033[0m\n"
+                    f"  \033[31m-  {target_name}.apply({func_name})\033[0m\n"
                     f"  \033[32m+  {suggested_expression}\033[0m\n{addendum}"
                 )
                 if in_terminal_that_supports_colour()
                 else (
-                    f'  - pl.col("{col}").apply({func_name})\n'
+                    f"  - {target_name}.apply({func_name})\n"
                     f"  + {suggested_expression}\n{addendum}"
                 )
             )
             warnings.warn(
-                f"\n{clsname}.apply is significantly slower than the native {apiname} API.\n"
+                f"\n{clsname}.apply is significantly slower than the native {apitype} API.\n"
                 "Only use if you absolutely CANNOT implement your logic otherwise.\n"
                 "In this case, you can replace your `apply` with the following:\n"
                 f"{before_after_suggestion}",
