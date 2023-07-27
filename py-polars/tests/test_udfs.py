@@ -66,6 +66,11 @@ TEST_CASES = [
     ("a", lambda x: 0 + numpy.cbrt(x), '0 + pl.col("a").cbrt()'),
     ("a", lambda x: np.sin(x) + 1, 'pl.col("a").sin() + 1'),
     (
+        "a",  # note: functions operate on consts
+        lambda x: np.sin(3.14159265358979) + (x - 1) + abs(-3),
+        '(np.sin(3.14159265358979) + (pl.col("a") - 1)) + abs(-3)',
+    ),
+    (
         "a",
         lambda x: (float(x) * int(x)) // 2,
         '(pl.col("a").cast(pl.Float64) * pl.col("a").cast(pl.Int64)) // 2',
