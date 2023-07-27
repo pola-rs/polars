@@ -23,6 +23,7 @@ def read_database(
     partition_num: int | None = None,
     protocol: str | None = None,
     engine: DbReadEngine = "connectorx",
+    db_options: dict[str, str] | None = None,
 ) -> DataFrame:
     """
     Read a SQL query into a DataFrame.
@@ -62,6 +63,10 @@ def read_database(
           an up-to-date list of drivers please see the ADBC docs:
 
           * https://arrow.apache.org/adbc/
+    db_options
+        Any additional arguments to pass to adbc ``connect()``, see
+        https://arrow.apache.org/adbc/main/driver/snowflake.html#snowflake-driver
+        for available options.
 
     Notes
     -----
@@ -123,7 +128,7 @@ def read_database(
     elif engine == "adbc":
         if not isinstance(query, str):
             raise ValueError("Only a single SQL query string is accepted for adbc.")
-        return _read_sql_adbc(query, connection)
+        return _read_sql_adbc(query, connection, db_kwargs=db_options)
     else:
         raise ValueError(f"Engine {engine!r} not implemented; use connectorx or adbc.")
 
@@ -155,14 +160,16 @@ def _read_sql_connectorx(
     return from_arrow(tbl)  # type: ignore[return-value]
 
 
-def _read_sql_adbc(query: str, connection_uri: str) -> DataFrame:
-    with _open_adbc_connection(connection_uri) as conn, conn.cursor() as cursor:
+def _read_sql_adbc(query: str, connection_uri: str, db_kwargs: dict[str, str] | None) -> DataFrame:
+    with _open_adbc_connection(connection_uri, db_kwargs=db_kwargs) as conn, conn.cursor() as cursor:
         cursor.execute(query)
         tbl = cursor.fetch_arrow_table()
     return from_arrow(tbl)  # type: ignore[return-value]
 
 
-def _open_adbc_connection(connection_uri: str) -> Any:
+def _open_adbc_connection(
+    connection_uri: str, db_kwargs: dict[str, str] | None = None
+) -> Any:
     driver_name = connection_uri.split(":", 1)[0].lower()
 
     # map uri prefix to module when not 1:1
@@ -184,4 +191,4 @@ def _open_adbc_connection(connection_uri: str) -> Any:
     if driver_name in ("sqlite", "snowflake"):
         connection_uri = re.sub(f"^{driver_name}:/{{,3}}", "", connection_uri)
 
-    return adbc_driver.connect(connection_uri)
+    return adbc_driver.connect(connection_uri, db_kwargs=db_kwargs)
