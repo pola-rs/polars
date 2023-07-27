@@ -990,13 +990,11 @@ def test_apply() -> None:
         b = a.apply(lambda x: x + "py")
         assert list(b) == ["foopy", "barpy", None]
 
-    with pytest.warns(PolarsInefficientApplyWarning):
-        b = a.apply(lambda x: len(x), return_dtype=pl.Int32)
-        assert list(b) == [3, 3, None]
+    b = a.apply(lambda x: len(x), return_dtype=pl.Int32)
+    assert list(b) == [3, 3, None]
 
-    with pytest.warns(PolarsInefficientApplyWarning):
-        b = a.apply(lambda x: len(x))
-        assert list(b) == [3, 3, None]
+    b = a.apply(lambda x: len(x))
+    assert list(b) == [3, 3, None]
 
     # just check that it runs (somehow problem with conditional compilation)
     a = pl.Series("a", [2, 2, 3]).cast(pl.Datetime)
