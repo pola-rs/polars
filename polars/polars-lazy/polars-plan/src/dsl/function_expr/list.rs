@@ -226,7 +226,7 @@ pub(super) fn take(args: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
     let idx = &args[1];
     let ca = ca.list()?;
 
-    if idx.len() == 1 {
+    if idx.len() == 1 && null_on_oob {
         // fast path
         let idx = idx.get(0)?.try_extract::<i64>()?;
         let out = ca.lst_get(idx)?;
