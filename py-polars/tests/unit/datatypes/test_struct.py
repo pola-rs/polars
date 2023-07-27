@@ -857,3 +857,9 @@ def test_struct_null_count_strict_cast() -> None:
     s = pl.Series([{"a": None}]).cast(pl.Struct({"a": pl.Categorical}))
     assert s.dtype == pl.Struct([pl.Field("a", pl.Categorical)])
     assert s.to_list() == [{"a": None}]
+
+
+def test_struct_get_field_by_index() -> None:
+    df = pl.DataFrame({"val": [{"a": 1, "b": 2}]})
+    expected = {"b": [2]}
+    assert df.select(pl.all().struct[1]).to_dict(as_series=False) == expected
