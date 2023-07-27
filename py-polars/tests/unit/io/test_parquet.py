@@ -52,14 +52,24 @@ def test_write_parquet_using_pyarrow_write_to_dataset_with_partitioning(
     compression: ParquetCompression,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    df = pl.DataFrame({"a": [1, 2, 3], "watermark": [1, 2, 2]})
+    df = pl.DataFrame({"a": [1, 2, 3], "partition_col": ["one", "two", "two"]})
+    path_to_write = tmp_path / "test.parquet"
     df.write_parquet(
-        tmp_path / "test.parquet",
+        file=path_to_write,
         statistics=True,
         use_pyarrow=True,
         row_group_size=128,
-        pyarrow_options={"partition_cols": ["watermark"], "compression": compression},
+        pyarrow_options={
+            "partition_cols": ["partition_col"],
+            "compression": compression,
+        },
     )
+
+    # cast is necessary as pyarrow writes partitions as categorical type
+    read_df = pl.read_parquet(path_to_write, use_pyarrow=True).with_columns(
+        pl.col("partition_col").cast(pl.Utf8)
+    )
+    assert_frame_equal(df, read_df)
 
 
 @pytest.fixture()
