@@ -7,7 +7,7 @@ use polars_core::series::IsSorted;
 use polars_core::utils::ensure_sorted_arg;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
-use polars_utils::slice::SortedSlice;
+use polars_utils::slice::{GetSaferUnchecked, SortedSlice};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -638,15 +638,19 @@ fn update_subgroups_idx(
     sub_groups
         .iter()
         .map(|&[first, len]| {
-            let new_first = unsafe { *base_g.1.get_unchecked(first as usize) };
+            let new_first = if len == 0 {
+                // in case the group is empty
+                // keep the original first so that the
+                // groupby keys still point to the original group
+                base_g.0
+            } else {
+                unsafe { *base_g.1.get_unchecked_release(first as usize) }
+            };
 
             let first = first as usize;
             let len = len as usize;
             let idx = (first..first + len)
-                .map(|i| {
-                    debug_assert!(i < base_g.1.len());
-                    unsafe { *base_g.1.get_unchecked(i) }
-                })
+                .map(|i| unsafe { *base_g.1.get_unchecked_release(i) })
                 .collect_trusted::<Vec<_>>();
             (new_first, idx)
         })
