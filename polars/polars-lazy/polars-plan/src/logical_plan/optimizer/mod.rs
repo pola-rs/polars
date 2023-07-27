@@ -75,7 +75,7 @@ pub fn optimize(
     let comm_subexpr_elim = opt_state.comm_subexpr_elim;
 
     #[allow(unused_variables)]
-    let agg_scan_projection = opt_state.file_caching;
+    let agg_scan_projection = opt_state.file_caching && !streaming;
 
     // gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
