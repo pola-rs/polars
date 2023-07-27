@@ -183,10 +183,15 @@ def can_create_dicts_with_pyarrow(dtypes: Sequence[PolarsDataType]) -> bool:
 
 def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> str:
     """Create a string path, expanding the home directory if present."""
-    path = Path(path).expanduser()
-    if check_not_directory and path.exists() and path.is_dir():
+    # don't use pathlib here as it modifies slashes (s3:// -> s3:/)
+    path = os.path.expanduser(path)  # noqa: PTH111
+    if (
+        check_not_directory
+        and os.path.exists(path)  # noqa: PTH110
+        and os.path.isdir(path)  # noqa: PTH112
+    ):
         raise IsADirectoryError(f"Expected a file path; {path!r} is a directory")
-    return str(path)
+    return path
 
 
 def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
