@@ -122,7 +122,6 @@ NOOP_TEST_CASES = [
     lambda x: x,
     lambda x, y: x + y,
     lambda x: x[0] + 1,
-    lambda x: np.sin(1) + x,
 ]
 
 

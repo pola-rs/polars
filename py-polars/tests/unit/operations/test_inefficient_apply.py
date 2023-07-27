@@ -12,13 +12,15 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
 from tests.test_udfs import MY_CONSTANT, NOOP_TEST_CASES, TEST_CASES
 
+EVAL_ENVIRONMENT = {"np": numpy, "pl": pl, "MY_CONSTANT": MY_CONSTANT}
+
 
 @pytest.mark.parametrize(
     "func",
     NOOP_TEST_CASES,
 )
 def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
-    # functions we don't offer suggestions for (at all, or just not yet)
+    # functions we don't (yet?) offer suggestions for
     assert not BytecodeParser(func, apply_target="expr").can_rewrite()
 
 
@@ -45,7 +47,7 @@ def test_parse_apply_functions(
         )
         result_frame = df.select(
             x=col,
-            y=eval(suggested_expression),
+            y=eval(suggested_expression, EVAL_ENVIRONMENT),
         )
         expected_frame = df.select(
             x=pl.col(col),

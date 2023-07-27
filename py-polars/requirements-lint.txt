@@ -1,4 +1,4 @@
-black[d]==23.7.0
+black==23.7.0
 blackdoc==0.3.8
 mypy==1.4.1
 ruff==0.0.278
