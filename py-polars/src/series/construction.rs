@@ -231,12 +231,12 @@ impl PySeries {
         val: Vec<Wrap<AnyValue>>,
         _strict: bool,
     ) -> PyResult<Self> {
-        let val = vec_extract_wrapped(val);
         if val.is_empty() {
             let series =
                 Series::new_empty(name, &DataType::Array(Box::new(inner.unwrap().0), width));
             Ok(series.into())
         } else {
+            let val = vec_extract_wrapped(val);
             let series = Series::new(name, &val);
             match series.dtype() {
                 DataType::List(list_inner) => {
