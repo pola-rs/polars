@@ -693,3 +693,28 @@ def test_streaming_groupby_list_9758() -> None:
         .to_dict(False)
         == payload
     )
+
+
+@pytest.mark.write_disk()
+def test_streaming_10115(tmp_path: Path) -> None:
+    in_path = tmp_path / "in.parquet"
+    out_path = tmp_path / "out.parquet"
+
+    # this fails if the schema will be incorrectly due to the projection
+    # pushdown
+    (pl.DataFrame([{"x": 1, "y": "foo"}]).write_parquet(in_path))
+
+    joiner = pl.LazyFrame([{"y": "foo", "z": "_"}])
+
+    (
+        pl.scan_parquet(in_path)
+        .join(joiner, how="left", on="y")
+        .select("x", "y", "z")
+        .sink_parquet(out_path)  #
+    )
+
+    assert pl.read_parquet(out_path).to_dict(False) == {
+        "x": [1],
+        "y": ["foo"],
+        "z": ["_"],
+    }
