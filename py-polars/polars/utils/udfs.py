@@ -202,6 +202,7 @@ class BytecodeParser:
                 while True:
                     name = f"srs{next(n)}"
                     if not re.search(rf"\b{name}\b", search_expr):
+                        self._apply_target_name = name
                         return name
 
         raise NotImplementedError(f"TODO: apply_target = {self._apply_target!r}")
