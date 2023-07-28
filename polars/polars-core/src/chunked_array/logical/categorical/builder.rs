@@ -380,7 +380,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
             let cache = &mut crate::STRING_CACHE.lock_map();
             id = cache.uuid;
 
-            for (s, h) in values.values_iter().zip(hashes.into_iter()) {
+            for (s, h) in values.values_iter().zip(hashes) {
                 let global_idx = cache.insert_from_hash(h, s);
                 // safety:
                 // we allocated enough
@@ -558,7 +558,7 @@ mod test {
             let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
             let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);
             builder1.drain_iter(vec![None, Some("hello"), Some("vietnam")]);
-            builder2.drain_iter(vec![Some("hello"), None, Some("world")].into_iter());
+            builder2.drain_iter(vec![Some("hello"), None, Some("world")]);
 
             let s = builder1.finish().into_series();
             assert_eq!(s.str_value(0).unwrap(), "null");

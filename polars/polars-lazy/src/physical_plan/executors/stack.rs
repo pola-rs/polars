@@ -11,7 +11,7 @@ pub struct StackExec {
 impl StackExec {
     fn execute_impl(
         &mut self,
-        state: &mut ExecutionState,
+        state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         let res = evaluate_physical_expressions(

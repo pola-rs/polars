@@ -154,7 +154,7 @@ pub(super) fn evaluate_physical_expressions(
     df: &mut DataFrame,
     cse_exprs: &[Arc<dyn PhysicalExpr>],
     exprs: &[Arc<dyn PhysicalExpr>],
-    state: &mut ExecutionState,
+    state: &ExecutionState,
     has_windows: bool,
 ) -> PolarsResult<Vec<Series>> {
     let selected_columns = if !cse_exprs.is_empty() {

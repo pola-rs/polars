@@ -603,7 +603,7 @@ fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
                 )) as ArrayRef;
                 let polars_fields = _fields
                     .iter()
-                    .zip(dtypes.into_iter())
+                    .zip(dtypes)
                     .map(|(field, dtype)| Field::new(&field.name, dtype))
                     .collect();
                 (vec![arrow_array], DataType::Struct(polars_fields))

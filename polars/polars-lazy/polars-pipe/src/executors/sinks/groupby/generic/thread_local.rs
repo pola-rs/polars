@@ -171,10 +171,7 @@ impl SpillPartitions {
                 other.finish();
                 let other_payloads = std::mem::take(&mut other.finished_payloads);
 
-                for (part_self, part_other) in self
-                    .finished_payloads
-                    .iter_mut()
-                    .zip(other_payloads.into_iter())
+                for (part_self, part_other) in self.finished_payloads.iter_mut().zip(other_payloads)
                 {
                     part_self.extend(part_other)
                 }
@@ -214,7 +211,7 @@ impl SpillPartitions {
                     },
                 )
             })
-            .chain(flattened.into_iter())
+            .chain(flattened)
     }
 }
 
@@ -280,7 +277,7 @@ impl ThreadLocalTable {
     }
 
     pub(super) fn combine(&mut self, other: &mut Self) {
-        self.inner_map.combine(&mut other.inner_map);
+        self.inner_map.combine(&other.inner_map);
         self.spill_partitions.combine(&mut other.spill_partitions);
     }
 

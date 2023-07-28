@@ -336,7 +336,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 
-        for (opt_s, opt_pat) in ca.into_iter().zip(pat.into_iter()) {
+        for (opt_s, opt_pat) in ca.into_iter().zip(pat) {
             match (opt_s, opt_pat) {
                 (_, None) | (None, _) => builder.append_null(),
                 (Some(s), Some(pat)) => {

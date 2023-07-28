@@ -588,7 +588,9 @@ fn replace_selector(expr: &mut Expr, schema: &Schema, keys: &[Expr]) -> PolarsRe
                 members
                     .into_iter()
                     .map(|e| {
-                        let Expr::Column(name) = e else {unreachable!()};
+                        let Expr::Column(name) = e else {
+                            unreachable!()
+                        };
                         name.to_string()
                     })
                     .collect(),

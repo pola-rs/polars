@@ -152,14 +152,14 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         false
     }
 
-    pub(super) fn combine(&mut self, other: &mut Self) {
+    pub(super) fn combine(&mut self, other: &Self) {
         self.combine_impl(other, |_hash| true)
     }
 
     pub(super) fn combine_on_partition<const FIXED_OTHER: bool>(
         &mut self,
         partition: usize,
-        other: &mut AggHashTable<FIXED_OTHER>,
+        other: &AggHashTable<FIXED_OTHER>,
     ) {
         let partition = partition as u64;
         self.combine_impl(other, |hash| {
@@ -169,7 +169,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
 
     pub(super) fn combine_impl<const FIXED_OTHER: bool, C>(
         &mut self,
-        other: &mut AggHashTable<FIXED_OTHER>,
+        other: &AggHashTable<FIXED_OTHER>,
         on_condition: C,
     )
     // takes a hash and if true, this keys will be combined

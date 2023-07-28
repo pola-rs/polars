@@ -287,7 +287,9 @@ pub(crate) fn insert_streaming_nodes(
             } if *offset >= 0 => {
                 insert_slice(root, *offset, *len as IdxSize, lp_arena, &mut state);
                 state.streamable = true;
-                let Union {inputs, ..} =  lp_arena.get(root) else {unreachable!()};
+                let Union { inputs, .. } = lp_arena.get(root) else {
+                    unreachable!()
+                };
                 for (i, input) in inputs.iter().enumerate() {
                     let mut state = if i == 0 {
                         // note the clone!

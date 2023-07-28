@@ -6,7 +6,7 @@ pub(super) fn evaluate_aggs(
     df: &DataFrame,
     aggs: &[Arc<dyn PhysicalExpr>],
     groups: &GroupsProxy,
-    state: &mut ExecutionState,
+    state: &ExecutionState,
 ) -> PolarsResult<Vec<Series>> {
     POOL.install(|| {
         aggs.par_iter()
@@ -61,7 +61,7 @@ pub(super) fn groupby_helper(
     keys: Vec<Series>,
     aggs: &[Arc<dyn PhysicalExpr>],
     apply: Option<Arc<dyn DataFrameUdf>>,
-    state: &mut ExecutionState,
+    state: &ExecutionState,
     maintain_order: bool,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
@@ -97,11 +97,7 @@ pub(super) fn groupby_helper(
 }
 
 impl GroupByExec {
-    fn execute_impl(
-        &mut self,
-        state: &mut ExecutionState,
-        df: DataFrame,
-    ) -> PolarsResult<DataFrame> {
+    fn execute_impl(&mut self, state: &ExecutionState, df: DataFrame) -> PolarsResult<DataFrame> {
         let keys = self
             .keys
             .iter()

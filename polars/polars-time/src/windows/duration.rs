@@ -45,7 +45,7 @@ pub struct Duration {
 
 impl PartialOrd<Self> for Duration {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.duration_ns().partial_cmp(&other.duration_ns())
+        Some(self.cmp(other))
     }
 }
 

@@ -15,7 +15,9 @@ pub unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxArr) -> F
     ) {
         let idx = indices.values().as_slice();
         let child_values = values.values();
-        let DataType::FixedSizeList(_, width) = values.data_type() else {unreachable!()};
+        let DataType::FixedSizeList(_, width) = values.data_type() else {
+            unreachable!()
+        };
 
         with_match_primitive_type!(primitive, |$T| {
             let arr: &PrimitiveArray<$T> = child_values.as_any().downcast_ref().unwrap();

@@ -37,7 +37,7 @@ where
 
     let res = xs
         .into_iter()
-        .zip(ys.into_iter())
+        .zip(ys)
         .enumerate()
         .map(|(i, (opt_x, opt_y))| {
             let is_observation = opt_x.is_some() && opt_y.is_some();

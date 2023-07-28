@@ -65,10 +65,8 @@ fn any_values_to_decimal(
     }
     let Some((s_min, s_max)) = scale_range else {
         // empty array or all nulls, return a decimal array with given scale (or 0 if inferring)
-        return Ok(
-            Int128Chunked::full_null("", avs.len())
-                .into_decimal_unchecked(precision, scale.unwrap_or(0))
-        );
+        return Ok(Int128Chunked::full_null("", avs.len())
+            .into_decimal_unchecked(precision, scale.unwrap_or(0)));
     };
     let scale = scale.unwrap_or(s_max);
     if s_max > scale {

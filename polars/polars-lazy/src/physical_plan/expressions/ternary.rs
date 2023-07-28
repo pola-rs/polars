@@ -199,7 +199,7 @@ impl PhysicalExpr for TernaryExpr {
                     check_length(ca, mask)?;
                     let mut out: ListChunked = ca
                         .into_iter()
-                        .zip(mask.into_iter())
+                        .zip(mask)
                         .map(|(truthy, take)| match (truthy, take) {
                             (Some(v), Some(true)) => Some(v),
                             (Some(_), Some(false)) => None,
@@ -217,7 +217,7 @@ impl PhysicalExpr for TernaryExpr {
                     check_length(ca, mask)?;
                     let mut out: ListChunked = ca
                         .into_iter()
-                        .zip(mask.into_iter())
+                        .zip(mask)
                         .map(|(falsy, take)| match (falsy, take) {
                             (Some(_), Some(true)) => None,
                             (Some(v), Some(false)) => Some(v),
@@ -239,7 +239,7 @@ impl PhysicalExpr for TernaryExpr {
                     check_length(ca, mask)?;
                     let mut out: ListChunked = ca
                         .into_iter()
-                        .zip(mask.into_iter())
+                        .zip(mask)
                         .map(|(falsy, take)| match (falsy, take) {
                             (Some(_), Some(true)) => Some(literal.clone()),
                             (Some(v), Some(false)) => Some(v),
@@ -256,7 +256,7 @@ impl PhysicalExpr for TernaryExpr {
                     check_length(ca, mask)?;
                     let mut out: ListChunked = ca
                         .into_iter()
-                        .zip(mask.into_iter())
+                        .zip(mask)
                         .map(|(truthy, take)| match (truthy, take) {
                             (Some(v), Some(true)) => Some(v),
                             (Some(_), Some(false)) => Some(literal.clone()),

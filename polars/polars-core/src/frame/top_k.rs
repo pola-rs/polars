@@ -33,7 +33,7 @@ impl Ord for CompareRow<'_> {
 
 impl PartialOrd for CompareRow<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.bytes.partial_cmp(other.bytes)
+        Some(self.cmp(other))
     }
 }
 

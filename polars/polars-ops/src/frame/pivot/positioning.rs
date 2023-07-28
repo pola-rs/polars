@@ -131,6 +131,8 @@ where
                 let col_locations = &col_locations[offset..offset + len];
                 let value_agg_phys = value_agg_phys.slice(offset as i64, len);
 
+                // todo! remove lint silencing
+                #[allow(clippy::useless_conversion)]
                 for ((row_idx, col_idx), val) in row_locations
                     .iter()
                     .zip(col_locations)

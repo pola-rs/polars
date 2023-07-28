@@ -47,52 +47,52 @@ fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> PolarsResult<Seri
         DataType::Int8 => {
             let ca: &mut ChunkedArray<Int8Type> = mutable_s.as_mut();
             let values = values.i8()?;
-            std::mem::take(ca).set_at_idx2(idx, values.into_iter())
+            std::mem::take(ca).set_at_idx2(idx, values)
         }
         DataType::Int16 => {
             let ca: &mut ChunkedArray<Int16Type> = mutable_s.as_mut();
             let values = values.i16()?;
-            std::mem::take(ca).set_at_idx2(idx, values.into_iter())
+            std::mem::take(ca).set_at_idx2(idx, values)
         }
         DataType::Int32 => {
             let ca: &mut ChunkedArray<Int32Type> = mutable_s.as_mut();
             let values = values.i32()?;
-            std::mem::take(ca).set_at_idx2(idx, values.into_iter())
+            std::mem::take(ca).set_at_idx2(idx, values)
         }
         DataType::Int64 => {
             let ca: &mut ChunkedArray<Int64Type> = mutable_s.as_mut();
             let values = values.i64()?;
-            std::mem::take(ca).set_at_idx2(idx, values.into_iter())
+            std::mem::take(ca).set_at_idx2(idx, values)
         }
         DataType::UInt8 => {
             let ca: &mut ChunkedArray<UInt8Type> = mutable_s.as_mut();
             let values = values.u8()?;
-            std::mem::take(ca).set_at_idx2(idx, values.into_iter())
+            std::mem::take(ca).set_at_idx2(idx, values)
         }
         DataType::UInt16 => {
             let ca: &mut ChunkedArray<UInt16Type> = mutable_s.as_mut();
             let values = values.u16()?;
-            std::mem::take(ca).set_at_idx2(idx, values.into_iter())
+            std::mem::take(ca).set_at_idx2(idx, values)
         }
         DataType::UInt32 => {
             let ca: &mut ChunkedArray<UInt32Type> = mutable_s.as_mut();
             let values = values.u32()?;
-            std::mem::take(ca).set_at_idx2(idx, values.into_iter())
+            std::mem::take(ca).set_at_idx2(idx, values)
         }
         DataType::UInt64 => {
             let ca: &mut ChunkedArray<UInt64Type> = mutable_s.as_mut();
             let values = values.u64()?;
-            std::mem::take(ca).set_at_idx2(idx, values.into_iter())
+            std::mem::take(ca).set_at_idx2(idx, values)
         }
         DataType::Float32 => {
             let ca: &mut ChunkedArray<Float32Type> = mutable_s.as_mut();
             let values = values.f32()?;
-            std::mem::take(ca).set_at_idx2(idx, values.into_iter())
+            std::mem::take(ca).set_at_idx2(idx, values)
         }
         DataType::Float64 => {
             let ca: &mut ChunkedArray<Float64Type> = mutable_s.as_mut();
             let values = values.f64()?;
-            std::mem::take(ca).set_at_idx2(idx, values.into_iter())
+            std::mem::take(ca).set_at_idx2(idx, values)
         }
         DataType::Boolean => {
             let ca = s.bool()?;

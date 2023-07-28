@@ -324,7 +324,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         };
         Ok(arrow_schema_to_empty_df(&schema))
     } else {
-        accumulate_dataframes_vertical(dfs.into_iter())
+        accumulate_dataframes_vertical(dfs)
     }
 }
 

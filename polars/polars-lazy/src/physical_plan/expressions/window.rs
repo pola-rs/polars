@@ -704,7 +704,7 @@ where
         }
     }
     let mut values = Vec::with_capacity(len);
-    let ptr = values.as_mut_ptr() as *mut T::Native;
+    let ptr: *mut T::Native = values.as_mut_ptr();
     // safety:
     // we will write from different threads but we will never alias.
     let sync_ptr_values = unsafe { SyncPtr::new(ptr) };

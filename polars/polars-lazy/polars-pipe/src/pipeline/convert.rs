@@ -18,7 +18,7 @@ use crate::pipeline::PipeLine;
 
 fn exprs_to_physical<F>(
     exprs: &[Node],
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
     to_physical: &F,
     schema: Option<&SchemaRef>,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalPipedExpr>>>
@@ -119,7 +119,7 @@ where
 
 pub fn get_sink<F>(
     node: Node,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
 ) -> PolarsResult<Box<dyn Sink>>
@@ -398,7 +398,7 @@ pub fn get_dummy_operator() -> Box<dyn Operator> {
 
 fn get_hstack<F>(
     exprs: &[Node],
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
     to_physical: &F,
     input_schema: SchemaRef,
     cse_exprs: Option<Box<HstackOperator>>,
@@ -417,8 +417,8 @@ where
 
 pub fn get_operator<F>(
     node: Node,
-    lp_arena: &mut Arena<ALogicalPlan>,
-    expr_arena: &mut Arena<AExpr>,
+    lp_arena: &Arena<ALogicalPlan>,
+    expr_arena: &Arena<AExpr>,
     to_physical: &F,
 ) -> PolarsResult<Box<dyn Operator>>
 where
@@ -518,7 +518,7 @@ pub fn create_pipeline<F>(
     operators: Vec<Box<dyn Operator>>,
     operator_nodes: Vec<Node>,
     sink_nodes: Vec<(usize, Node, Rc<RefCell<u32>>)>,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
     verbose: bool,

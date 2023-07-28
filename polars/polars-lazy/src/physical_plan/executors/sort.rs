@@ -9,7 +9,7 @@ pub(crate) struct SortExec {
 impl SortExec {
     fn execute_impl(
         &mut self,
-        state: &mut ExecutionState,
+        state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         df.as_single_chunk_par();

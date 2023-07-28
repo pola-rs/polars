@@ -190,7 +190,7 @@ fn deserialize_all<'a>(
         Value::Array(arr) => {
             let Some(inner_dtype) = dtype.inner_dtype() else {
                 if ignore_errors {
-                    return Ok(AnyValue::Null)
+                    return Ok(AnyValue::Null);
                 }
                 polars_bail!(ComputeError: "expected list/array in json value, got {}", dtype);
             };

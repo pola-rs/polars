@@ -97,7 +97,7 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
 
             list_ca
                 .amortized_iter()
-                .zip(length_ca.into_iter())
+                .zip(length_ca)
                 .map(|(opt_s, opt_length)| match (opt_s, opt_length) {
                     (Some(s), Some(length)) => Some(s.as_ref().slice(offset, length as usize)),
                     _ => None,
@@ -134,8 +134,8 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
 
             list_ca
                 .amortized_iter()
-                .zip(offset_ca.into_iter())
-                .zip(length_ca.into_iter())
+                .zip(offset_ca)
+                .zip(length_ca)
                 .map(
                     |((opt_s, opt_offset), opt_length)| match (opt_s, opt_offset, opt_length) {
                         (Some(s), Some(offset), Some(length)) => {

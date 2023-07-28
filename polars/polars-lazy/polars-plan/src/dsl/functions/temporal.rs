@@ -138,12 +138,12 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
 
         let ca: Int64Chunked = year
             .into_iter()
-            .zip(month.into_iter())
-            .zip(day.into_iter())
-            .zip(hour.into_iter())
-            .zip(minute.into_iter())
-            .zip(second.into_iter())
-            .zip(microsecond.into_iter())
+            .zip(month)
+            .zip(day)
+            .zip(hour)
+            .zip(minute)
+            .zip(second)
+            .zip(microsecond)
             .map(|((((((y, m), d), h), mnt), s), us)| {
                 if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(us)) =
                     (y, m, d, h, mnt, s, us)

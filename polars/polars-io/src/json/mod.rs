@@ -243,8 +243,8 @@ where
                         let dtype = infer(&json_value)?;
                         if let Some(overwrite) = self.schema_overwrite {
                             let ArrowDataType::Struct(fields) = dtype else {
-                                    polars_bail!(ComputeError: "can only deserialize json objects")
-                                };
+                                polars_bail!(ComputeError: "can only deserialize json objects")
+                            };
 
                             let mut schema = Schema::from_iter(fields.iter());
                             overwrite_schema(&mut schema, overwrite)?;

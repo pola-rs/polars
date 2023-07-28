@@ -678,7 +678,9 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                 LiteralValue::Series(SpecialEq::new(s))
             }
             _ => {
-                let Some(av) = lv.to_anyvalue() else {return Ok(None)};
+                let Some(av) = lv.to_anyvalue() else {
+                    return Ok(None);
+                };
                 match (av, dtype) {
                     // casting null always remains null
                     (AnyValue::Null, _) => return Ok(None),

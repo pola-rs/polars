@@ -192,7 +192,9 @@ impl<'a> CoreReader<'a> {
     pub fn batched_read(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReaderRead<'a>> {
         let reader_bytes = self.reader_bytes.take().unwrap();
 
-        let ReaderBytes::Mapped(bytes, mut file) = &reader_bytes else { unreachable!() };
+        let ReaderBytes::Mapped(bytes, mut file) = &reader_bytes else {
+            unreachable!()
+        };
         let (_, starting_point_offset) =
             self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
         if let Some(starting_point_offset) = starting_point_offset {

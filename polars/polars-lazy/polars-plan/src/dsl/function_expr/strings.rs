@@ -187,8 +187,9 @@ pub(super) fn lengths(s: &Series) -> PolarsResult<Series> {
 
 #[cfg(feature = "regex")]
 pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResult<Series> {
-    let ca = &s[0].utf8()?;
-    let pat = &s[1].utf8()?;
+    // TODO! move to polars-ops
+    let ca = s[0].utf8()?;
+    let pat = s[1].utf8()?;
 
     let mut out: BooleanChunked = match pat.len() {
         1 => match pat.get(0) {
@@ -204,7 +205,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
         _ => {
             if literal {
                 ca.into_iter()
-                    .zip(pat.into_iter())
+                    .zip(pat)
                     .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
                         (Some(src), Some(pat)) => src.contains(pat),
                         _ => false,
@@ -212,7 +213,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                     .collect_trusted()
             } else if strict {
                 ca.into_iter()
-                    .zip(pat.into_iter())
+                    .zip(pat)
                     .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
                         (Some(src), Some(pat)) => {
                             let re = Regex::new(pat)?;
@@ -223,7 +224,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                     .collect::<PolarsResult<_>>()?
             } else {
                 ca.into_iter()
-                    .zip(pat.into_iter())
+                    .zip(pat)
                     .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
                         (Some(src), Some(pat)) => Regex::new(pat).ok().map(|re| re.is_match(src)),
                         _ => Some(false),
@@ -238,8 +239,8 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
 }
 
 pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = &s[0].utf8()?;
-    let sub = &s[1].utf8()?;
+    let ca = s[0].utf8()?;
+    let sub = s[1].utf8()?;
 
     let mut out: BooleanChunked = match sub.len() {
         1 => match sub.get(0) {
@@ -248,7 +249,7 @@ pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
         },
         _ => ca
             .into_iter()
-            .zip(sub.into_iter())
+            .zip(sub)
             .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
                 (Some(src), Some(val)) => src.ends_with(val),
                 _ => false,
@@ -261,8 +262,8 @@ pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
 }
 
 pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = &s[0].utf8()?;
-    let sub = &s[1].utf8()?;
+    let ca = s[0].utf8()?;
+    let sub = s[1].utf8()?;
 
     let mut out: BooleanChunked = match sub.len() {
         1 => match sub.get(0) {
@@ -271,7 +272,7 @@ pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
         },
         _ => ca
             .into_iter()
-            .zip(sub.into_iter())
+            .zip(sub)
             .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
                 (Some(src), Some(val)) => src.starts_with(val),
                 _ => false,
@@ -537,7 +538,7 @@ where
 {
     let mut out: Utf8Chunked = ca
         .into_iter()
-        .zip(val.into_iter())
+        .zip(val)
         .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
             (Some(src), Some(val)) => Some(f(src, val)),
             _ => None,

@@ -61,7 +61,9 @@ fn jit_insert_slice(
     use ALogicalPlan::*;
     let (offset, len) = match lp_arena.get(node) {
         Join { options, .. } if options.args.slice.is_some() => {
-            let Some((offset, len)) = options.args.slice else { unreachable!()};
+            let Some((offset, len)) = options.args.slice else {
+                unreachable!()
+            };
             (offset, len)
         }
         Union {
@@ -185,7 +187,9 @@ pub(super) fn construct(
     // also pipelines are not ready to receive inputs otherwise
     pipelines.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let Some(final_sink) = final_sink else { return Ok(None) };
+    let Some(final_sink) = final_sink else {
+        return Ok(None);
+    };
     let insertion_location = match lp_arena.get(final_sink) {
         FileSink {
             input,
@@ -211,7 +215,9 @@ pub(super) fn construct(
         None
     };
 
-    let Some((_, mut most_left)) = pipelines.pop() else {unreachable!()};
+    let Some((_, mut most_left)) = pipelines.pop() else {
+        unreachable!()
+    };
     while let Some((_, rhs)) = pipelines.pop() {
         most_left = most_left.with_other_branch(rhs)
     }

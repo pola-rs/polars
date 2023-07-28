@@ -14,7 +14,9 @@ impl ListCategoricalChunkedBuilder {
     ) -> Self {
         let inner =
             ListPrimitiveChunkedBuilder::new(name, capacity, values_capacity, logical_type.clone());
-        let DataType::Categorical(Some(rev_map)) = logical_type else { panic!("expected categorical type") };
+        let DataType::Categorical(Some(rev_map)) = logical_type else {
+            panic!("expected categorical type")
+        };
         Self {
             inner,
             inner_dtype: RevMapMerger::new(rev_map),
@@ -24,7 +26,9 @@ impl ListCategoricalChunkedBuilder {
 
 impl ListBuilderTrait for ListCategoricalChunkedBuilder {
     fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
-        let DataType::Categorical(Some(rev_map)) = s.dtype() else { polars_bail!(ComputeError: "expected categorical type")};
+        let DataType::Categorical(Some(rev_map)) = s.dtype() else {
+            polars_bail!(ComputeError: "expected categorical type")
+        };
         self.inner_dtype.merge_map(rev_map)?;
         self.inner.append_series(s)
     }

@@ -32,7 +32,7 @@ where
         }
         let iter = self
             .into_iter()
-            .zip(by.into_iter())
+            .zip(by)
             .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize)));
 
         // Safety:
@@ -64,7 +64,7 @@ impl RepeatBy for BooleanChunked {
 
         let iter = self
             .into_iter()
-            .zip(by.into_iter())
+            .zip(by)
             .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize)));
 
         // Safety:
@@ -93,7 +93,7 @@ impl RepeatBy for Utf8Chunked {
 
         let iter = self
             .into_iter()
-            .zip(by.into_iter())
+            .zip(by)
             .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize)));
 
         // Safety:
@@ -124,7 +124,7 @@ impl RepeatBy for BinaryChunked {
         }
         let iter = self
             .into_iter()
-            .zip(by.into_iter())
+            .zip(by)
             .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize)));
 
         // Safety:

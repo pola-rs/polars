@@ -174,7 +174,7 @@ impl GlobalTable {
         }
     }
 
-    pub(super) fn merge_local_map(&self, finalized_local_map: &mut AggHashTable<true>) {
+    pub(super) fn merge_local_map(&self, finalized_local_map: &AggHashTable<true>) {
         // TODO! maybe parallelize?
         // needs unsafe, first benchmark.
         for (partition_i, pt_map) in self.inner_maps.iter().enumerate() {

@@ -232,10 +232,8 @@ mod test {
         builder.append_series(&Series::new("", &[1, 1])).unwrap();
         let ca = builder.finish();
 
-        ca.amortized_iter()
-            .zip(ca.into_iter())
-            .for_each(|(s1, s2)| {
-                assert!(s1.unwrap().as_ref().series_equal(&s2.unwrap()));
-            });
+        ca.amortized_iter().zip(&ca).for_each(|(s1, s2)| {
+            assert!(s1.unwrap().as_ref().series_equal(&s2.unwrap()));
+        });
     }
 }

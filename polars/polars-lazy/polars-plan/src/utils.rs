@@ -397,7 +397,7 @@ where
 pub fn expr_is_projected_upstream(
     e: &Node,
     input: Node,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &Arena<AExpr>,
     projected_names: &PlHashSet<Arc<str>>,
 ) -> bool {

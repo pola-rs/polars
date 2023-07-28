@@ -617,7 +617,9 @@ mod test {
         })
         .unwrap();
 
-        let ALogicalPlan::Projection {expr, ..} = out.to_alp() else { unreachable!() };
+        let ALogicalPlan::Projection { expr, .. } = out.to_alp() else {
+            unreachable!()
+        };
 
         let default = expr.default_exprs();
         assert_eq!(default.len(), 3);

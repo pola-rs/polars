@@ -290,7 +290,7 @@ pub trait ListNameSpaceImpl: AsList {
                 let idx_ca = idx.list().unwrap();
                 let mut out = list_ca
                     .amortized_iter()
-                    .zip(idx_ca.into_iter())
+                    .zip(idx_ca)
                     .map(|(opt_s, opt_idx)| {
                         {
                             match (opt_s, opt_idx) {

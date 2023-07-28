@@ -265,7 +265,7 @@ fn rename_predicate_columns_due_to_aliased_projection(
 /// Implementation for both Hstack and Projection
 pub(super) fn rewrite_projection_node(
     expr_arena: &mut Arena<AExpr>,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &Arena<ALogicalPlan>,
     acc_predicates: &mut PlHashMap<Arc<str>, Node>,
     projections: Vec<Node>,
     input: Node,
