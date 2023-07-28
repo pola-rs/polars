@@ -67,7 +67,6 @@ class OpNames:
     )
     LOAD_VALUES = frozenset(("LOAD_CONST", "LOAD_DEREF", "LOAD_FAST", "LOAD_GLOBAL"))
     LOAD = LOAD_VALUES | {"LOAD_METHOD", "LOAD_ATTR"}
-    LOOKUP = "BINARY_SUBSCR"
     SYNTHETIC = {
         "POLARS_EXPRESSION": 1,
     }
@@ -588,7 +587,7 @@ class RewrittenInstructions:
         """Replace dictionary lookups with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_FAST", OpNames.LOOKUP],
+            opnames=["LOAD_GLOBAL", "LOAD_FAST", "BINARY_SUBSCR"],
             argvals=[],
         ):
             inst1, inst2 = matching_instructions[:2]
