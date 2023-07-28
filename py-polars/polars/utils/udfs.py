@@ -536,7 +536,7 @@ class RewrittenInstructions:
         n_required_ops, argvals = len(opnames), argvals or []
         instructions = self._instructions[idx : idx + n_required_ops]
         if len(instructions) == n_required_ops and all(
-            any(inst.opname == match_opname for match_opname in match_opnames)
+            inst.opname in match_opnames
             and (match_argval is None or inst.argval in match_argval)
             for inst, match_opnames, match_argval in zip_longest(
                 instructions, opnames, argvals
