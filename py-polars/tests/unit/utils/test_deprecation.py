@@ -16,7 +16,7 @@ def test_issue_deprecation_warning() -> None:
 
 
 class Foo:  # noqa: D101
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "baz"])
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "baz"], version="0.1.2")
     def bar(  # noqa: D102
         self, baz: str, ham: str | None = None, foobar: str | None = None
     ) -> None:
