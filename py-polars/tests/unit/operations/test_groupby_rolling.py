@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -258,3 +258,42 @@ def test_groupby_rolling_dynamic_sortedness_check() -> None:
         match=r"argument in operation 'groupby_rolling' is not explicitly sorted",
     ):
         df.groupby_rolling("idx", period="2i").agg(pl.col("idx").alias("idx1"))
+
+
+def test_groupby_rolling_empty_groups_9973() -> None:
+    dt1 = date(2001, 1, 1)
+    dt2 = date(2001, 1, 2)
+
+    data = pl.DataFrame(
+        {
+            "id": ["A", "A", "B", "B", "C", "C"],
+            "date": [dt1, dt2, dt1, dt2, dt1, dt2],
+            "value": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        }
+    ).sort(by=["id", "date"])
+
+    expected = pl.DataFrame(
+        {
+            "id": ["A", "A", "B", "B", "C", "C"],
+            "date": [
+                date(2001, 1, 1),
+                date(2001, 1, 2),
+                date(2001, 1, 1),
+                date(2001, 1, 2),
+                date(2001, 1, 1),
+                date(2001, 1, 2),
+            ],
+            "value": [[2.0], [], [4.0], [], [6.0], []],
+        }
+    )
+
+    out = data.groupby_rolling(
+        index_column="date",
+        by="id",
+        period="2d",
+        offset="1d",
+        closed="left",
+        check_sorted=True,
+    ).agg(pl.col("value"))
+
+    assert_frame_equal(out, expected)

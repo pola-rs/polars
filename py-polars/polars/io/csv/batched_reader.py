@@ -128,7 +128,7 @@ class BatchedCsvReader:
 
         Returns
         -------
-        Sequence of DataFrames
+        list of DataFrames
 
         """
         batches = self._reader.next_batches(n)

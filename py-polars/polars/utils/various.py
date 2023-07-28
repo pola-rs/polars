@@ -183,10 +183,15 @@ def can_create_dicts_with_pyarrow(dtypes: Sequence[PolarsDataType]) -> bool:
 
 def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> str:
     """Create a string path, expanding the home directory if present."""
-    path = Path(path).expanduser()
-    if check_not_directory and path.exists() and path.is_dir():
+    # don't use pathlib here as it modifies slashes (s3:// -> s3:/)
+    path = os.path.expanduser(path)  # noqa: PTH111
+    if (
+        check_not_directory
+        and os.path.exists(path)  # noqa: PTH110
+        and os.path.isdir(path)  # noqa: PTH112
+    ):
         raise IsADirectoryError(f"Expected a file path; {path!r} is a directory")
-    return str(path)
+    return path
 
 
 def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
@@ -353,20 +358,19 @@ NoDefault = Literal[_NoDefault.no_default]
 
 def find_stacklevel() -> int:
     """
-    Find the first place in the stack that is not inside polars (tests notwithstanding).
+    Find the first place in the stack that is not inside polars.
 
     Taken from:
     https://github.com/pandas-dev/pandas/blob/ab89c53f48df67709a533b6a95ce3d911871a0a8/pandas/util/_exceptions.py#L30-L51
     """
     pkg_dir = Path(pl.__file__).parent
-    test_dir = pkg_dir / "tests"
 
     # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
     frame = inspect.currentframe()
     n = 0
     while frame:
         fname = inspect.getfile(frame)
-        if fname.startswith(str(pkg_dir)) and not fname.startswith(str(test_dir)):
+        if fname.startswith(str(pkg_dir)):
             frame = frame.f_back
             n += 1
         else:

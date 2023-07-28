@@ -19,6 +19,8 @@ These functions are available from the polars module root and can be used as exp
    apply
    approx_unique
    arange
+   arctan2
+   arctan2d
    arg_sort_by
    arg_where
    avg
@@ -35,6 +37,7 @@ These functions are available from the polars module root and can be used as exp
    date
    datetime
    date_range
+   date_ranges
    duration
    element
    exclude
@@ -72,6 +75,7 @@ These functions are available from the polars module root and can be used as exp
    tail
    time
    time_range
+   time_ranges
    var
    when
    zeros

@@ -59,9 +59,10 @@ class ExprMetaNameSpace:
 
         Returns
         -------
-        A list of expressions which in most cases will have a unit length.
-        This is not the case when an expression has multiple inputs.
-        For instance in a ``fold`` expression.
+        list of Expr
+            A list of expressions which in most cases will have a unit length.
+            This is not the case when an expression has multiple inputs.
+            For instance in a ``fold`` expression.
 
         """
         return [wrap_expr(e) for e in self._pyexpr.meta_pop()]

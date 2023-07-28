@@ -1891,7 +1891,7 @@ def test_iso_year() -> None:
     assert pl.Series([date(2022, 1, 1)]).dt.iso_year()[0] == 2021
 
 
-def test_replace_timezone() -> None:
+def test_replace_time_zone() -> None:
     ny = ZoneInfo("America/New_York")
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_columns(
         pl.col("a").dt.replace_time_zone("America/New_York").alias("b")
@@ -1910,7 +1910,7 @@ def test_replace_timezone() -> None:
 )
 @pytest.mark.parametrize("from_tz", ["Asia/Seoul", None])
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
-def test_replace_timezone_from_to(
+def test_replace_time_zone_from_to(
     from_tz: str,
     to_tz: str,
     tzinfo: timezone | ZoneInfo,
@@ -1957,16 +1957,14 @@ def test_strptime_with_invalid_tz() -> None:
 
 
 def test_utc_deprecation() -> None:
-    with pytest.warns(
-        DeprecationWarning,
-        match="The `utc` argument is now a no-op and has no effect. You can safely remove it",
+    with pytest.deprecated_call(
+        match="The `utc` argument is now a no-op and has no effect. You can safely remove it"
     ):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(
             pl.Datetime("us"), "%Y-%m-%d %H:%M:%S", utc=True
         )
-    with pytest.warns(
-        DeprecationWarning,
-        match="The `utc` argument is now a no-op and has no effect. You can safely remove it",
+    with pytest.deprecated_call(
+        match="The `utc` argument is now a no-op and has no effect. You can safely remove it"
     ):
         pl.Series(["2020-01-01 03:00:00"]).str.to_datetime(
             "%Y-%m-%d %H:%M:%S", utc=True

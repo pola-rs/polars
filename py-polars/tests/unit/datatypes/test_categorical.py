@@ -77,20 +77,6 @@ def test_cat_to_dummies() -> None:
     }
 
 
-def test_comp_categorical_lit_dtype() -> None:
-    df = pl.DataFrame(
-        data={"column": ["a", "b", "e"], "values": [1, 5, 9]},
-        schema=[("column", pl.Categorical), ("more", pl.Int32)],
-    )
-
-    assert df.with_columns(
-        pl.when(pl.col("column") == "e")
-        .then("d")
-        .otherwise(pl.col("column"))
-        .alias("column")
-    ).dtypes == [pl.Categorical, pl.Int32]
-
-
 def test_categorical_describe_3487() -> None:
     # test if we don't err
     df = pl.DataFrame({"cats": ["a", "b"]})

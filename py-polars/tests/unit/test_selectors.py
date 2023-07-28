@@ -432,3 +432,16 @@ def test_selector_expr_dispatch() -> None:
 def test_regex_expansion_groupby_9947() -> None:
     df = pl.DataFrame({"g": [3], "abc": [1], "abcd": [3]})
     assert df.groupby("g").agg(pl.col("^ab.*$")).columns == ["g", "abc", "abcd"]
+
+
+def test_regex_expansion_exclude_10002() -> None:
+    df = pl.DataFrame({"col_1": [1, 2, 3], "col_2": [2, 4, 3]})
+    expected = {"col_1": [10, 20, 30], "col_2": [0.2, 0.4, 0.3]}
+
+    assert (
+        df.select(
+            pl.col("^col_.*$").exclude("col_2").mul(10),
+            pl.col("^col_.*$").exclude("col_1") / 10,
+        ).to_dict(as_series=False)
+        == expected
+    )

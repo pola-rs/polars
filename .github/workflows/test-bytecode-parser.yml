@@ -1,0 +1,49 @@
+name: Test Bytecode Parser
+
+on:
+  pull_request:
+    paths:
+      - py-polars/**
+      - .github/workflows/test-bytecode-parser.yml
+  push:
+    branches:
+      - main
+    paths:
+      - py-polars/**
+      - .github/workflows/test-bytecode-parser.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: py-polars
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: pip install numpy pytest
+
+      - name: Run tests
+        if: github.ref_name != 'main'
+        run: PYTHONPATH=polars/utils pytest tests/test_udfs.py

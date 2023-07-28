@@ -25,7 +25,7 @@ def test_scan_csv(io_files_path: Path) -> None:
 
 def test_scan_csv_no_cse_deadlock(io_files_path: Path) -> None:
     dfs = [pl.scan_csv(io_files_path / "small.csv")] * (pl.threadpool_size() + 1)
-    pl.concat(dfs, parallel=True).collect(common_subplan_elimination=False)
+    pl.concat(dfs, parallel=True).collect(comm_subplan_elim=False)
 
 
 def test_scan_empty_csv(io_files_path: Path) -> None:

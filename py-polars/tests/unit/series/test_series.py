@@ -23,7 +23,7 @@ from polars.datatypes import (
     UInt64,
     Unknown,
 )
-from polars.exceptions import ShapeError
+from polars.exceptions import PolarsInefficientApplyWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
 
@@ -980,13 +980,15 @@ def test_fill_nan() -> None:
 
 
 def test_apply() -> None:
-    a = pl.Series("a", [1, 2, None])
-    b = a.apply(lambda x: x**2)
-    assert list(b) == [1, 4, None]
+    with pytest.warns(PolarsInefficientApplyWarning):
+        a = pl.Series("a", [1, 2, None])
+        b = a.apply(lambda x: x**2)
+        assert list(b) == [1, 4, None]
 
-    a = pl.Series("a", ["foo", "bar", None])
-    b = a.apply(lambda x: x + "py")
-    assert list(b) == ["foopy", "barpy", None]
+    with pytest.warns(PolarsInefficientApplyWarning):
+        a = pl.Series("a", ["foo", "bar", None])
+        b = a.apply(lambda x: x + "py")
+        assert list(b) == ["foopy", "barpy", None]
 
     b = a.apply(lambda x: len(x), return_dtype=pl.Int32)
     assert list(b) == [3, 3, None]
@@ -1261,6 +1263,9 @@ def test_mode() -> None:
         == "bar"
     )
     assert pl.Series([1.0, 2.0, 3.0, 2.0]).mode().item() == 2.0
+
+    # sorted data
+    assert pl.int_range(0, 3, eager=True).mode().to_list() == [2, 1, 0]
 
 
 def test_rank() -> None:

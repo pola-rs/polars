@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 
 import polars as pl
+from polars.testing import assert_series_equal
 
 
 def test_struct_logical_is_in() -> None:
@@ -28,10 +29,10 @@ def test_struct_logical_is_in() -> None:
 
 
 def test_is_in_bool() -> None:
-    bool_value_to_filter_on = {True, None}
+    vals = [True, None]
     df = pl.DataFrame({"A": [True, False, None]})
-    assert df.filter(pl.col("A").is_in(bool_value_to_filter_on)).to_dict(False) == {
-        "A": [True, False]
+    assert df.select(pl.col("A").is_in(vals)).to_dict(False) == {
+        "A": [True, False, None]
     }
 
 
@@ -101,3 +102,10 @@ def test_is_in_series() -> None:
 
     with pytest.raises(pl.ComputeError, match=r"cannot compare"):
         df.select(pl.col("b").is_in(["x", "x"]))
+
+    # check we don't shallow-copy and accidentally modify 'a' (see: #10072)
+    a = pl.Series("a", [1, 2])
+    b = pl.Series("b", [1, 3]).is_in(a)
+
+    assert a.name == "a"
+    assert_series_equal(b, pl.Series("b", [True, False]))

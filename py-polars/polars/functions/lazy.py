@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
@@ -27,7 +26,7 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -322,10 +321,9 @@ def count(column: str | Series | None = None) -> Expr | int:
         return wrap_expr(plr.count())
 
     if isinstance(column, pl.Series):
-        warnings.warn(
+        issue_deprecation_warning(
             "passing a Series to `count` is deprecated. Use `Series.len()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.8",
         )
         return column.len()
     return col(column).count()
@@ -384,10 +382,9 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
+        issue_deprecation_warning(
             "passing a Series to `std` is deprecated. Use `Series.std()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.8",
         )
         return column.std(ddof)
     return col(column).std(ddof)
@@ -433,10 +430,9 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
+        issue_deprecation_warning(
             "passing a Series to `var` is deprecated. Use `Series.var()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.8",
         )
         return column.var(ddof)
     return col(column).var(ddof)
@@ -471,10 +467,9 @@ def mean(column: str | Series) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
+        issue_deprecation_warning(
             "passing a Series to `mean` is deprecated. Use `Series.mean()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.8",
         )
         return column.mean()
     return col(column).mean()
@@ -540,10 +535,9 @@ def median(column: str | Series) -> Expr | float | int | None:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
+        issue_deprecation_warning(
             "passing a Series to `median` is deprecated. Use `Series.median()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.8",
         )
         return column.median()
     return col(column).median()
@@ -578,10 +572,9 @@ def n_unique(column: str | Series) -> Expr | int:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
+        issue_deprecation_warning(
             "passing a Series to `n_unique` is deprecated. Use `Series.n_unique()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.8",
         )
         return column.n_unique()
     return col(column).n_unique()
@@ -673,10 +666,9 @@ def first(column: str | Series | None = None) -> Expr | Any:
         return wrap_expr(plr.first())
 
     if isinstance(column, pl.Series):
-        warnings.warn(
+        issue_deprecation_warning(
             "passing a Series to `first` is deprecated. Use `series[0]` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.8",
         )
         if column.len() > 0:
             return column[0]
@@ -739,10 +731,9 @@ def last(column: str | Series | None = None) -> Expr:
         return wrap_expr(plr.last())
 
     if isinstance(column, pl.Series):
-        warnings.warn(
+        issue_deprecation_warning(
             "passing a Series to `last` is deprecated. Use `series[-1]` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.8",
         )
         if column.len() > 0:
             return column[-1]
@@ -799,10 +790,9 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
+        issue_deprecation_warning(
             "passing a Series to `head` is deprecated. Use `Series.head()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.8",
         )
         return column.head(n)
     return col(column).head(n)
@@ -856,10 +846,9 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
+        issue_deprecation_warning(
             "passing a Series to `tail` is deprecated. Use `Series.tail()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.8",
         )
         return column.tail(n)
     return col(column).tail(n)
@@ -1114,6 +1103,7 @@ def map(
     Returns
     -------
     Expr
+        Expression with the data type given by ``return_dtype``.
 
     Examples
     --------
@@ -1190,6 +1180,7 @@ def apply(
     Returns
     -------
     Expr
+        Expression with the data type given by ``return_dtype``.
 
     Examples
     --------
@@ -1552,6 +1543,100 @@ def cumreduce(
     return wrap_expr(plr.cumreduce(function, exprs))
 
 
+def arctan2(y: str | Expr, x: str | Expr) -> Expr:
+    """
+    Compute two argument arctan in radians.
+
+    Returns the angle (in radians) in the plane between the
+    positive x-axis and the ray from the origin to (x,y).
+
+    Parameters
+    ----------
+    y
+        Column name or Expression.
+    x
+        Column name or Expression.
+
+    Examples
+    --------
+    >>> import math
+    >>> twoRootTwo = math.sqrt(2) / 2
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "y": [twoRootTwo, -twoRootTwo, twoRootTwo, -twoRootTwo],
+    ...         "x": [twoRootTwo, twoRootTwo, -twoRootTwo, -twoRootTwo],
+    ...     }
+    ... )
+    >>> df.select(
+    ...     pl.arctan2d("y", "x").alias("atan2d"), pl.arctan2("y", "x").alias("atan2")
+    ... )
+    shape: (4, 2)
+    ┌────────┬───────────┐
+    │ atan2d ┆ atan2     │
+    │ ---    ┆ ---       │
+    │ f64    ┆ f64       │
+    ╞════════╪═══════════╡
+    │ 45.0   ┆ 0.785398  │
+    │ -45.0  ┆ -0.785398 │
+    │ 135.0  ┆ 2.356194  │
+    │ -135.0 ┆ -2.356194 │
+    └────────┴───────────┘
+
+    """
+    if isinstance(y, str):
+        y = col(y)
+    if isinstance(x, str):
+        x = col(x)
+    return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
+
+
+def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
+    """
+    Compute two argument arctan in degrees.
+
+    Returns the angle (in degrees) in the plane between the positive x-axis
+    and the ray from the origin to (x,y).
+
+    Parameters
+    ----------
+    y
+        Column name or Expression.
+    x
+        Column name or Expression.
+
+    Examples
+    --------
+    >>> import math
+    >>> twoRootTwo = math.sqrt(2) / 2
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "y": [twoRootTwo, -twoRootTwo, twoRootTwo, -twoRootTwo],
+    ...         "x": [twoRootTwo, twoRootTwo, -twoRootTwo, -twoRootTwo],
+    ...     }
+    ... )
+    >>> df.select(
+    ...     pl.arctan2d("y", "x").alias("atan2d"), pl.arctan2("y", "x").alias("atan2")
+    ... )
+    shape: (4, 2)
+    ┌────────┬───────────┐
+    │ atan2d ┆ atan2     │
+    │ ---    ┆ ---       │
+    │ f64    ┆ f64       │
+    ╞════════╪═══════════╡
+    │ 45.0   ┆ 0.785398  │
+    │ -45.0  ┆ -0.785398 │
+    │ 135.0  ┆ 2.356194  │
+    │ -135.0 ┆ -2.356194 │
+    └────────┴───────────┘
+
+    """
+    if isinstance(y, str):
+        y = col(y)
+    if isinstance(x, str):
+        x = col(x)
+    return wrap_expr(plr.arctan2d(y._pyexpr, x._pyexpr))
+
+
 def exclude(
     columns: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
     *more_columns: str | PolarsDataType,
@@ -1721,6 +1806,7 @@ def arg_sort_by(
     return wrap_expr(plr.arg_sort_by(exprs, descending))
 
 
+@deprecated_alias(common_subplan_elimination="comm_subplan_elim")
 def collect_all(
     lazy_frames: Sequence[LazyFrame],
     *,
@@ -1730,7 +1816,8 @@ def collect_all(
     simplify_expression: bool = True,
     no_optimization: bool = False,
     slice_pushdown: bool = True,
-    common_subplan_elimination: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
     streaming: bool = False,
 ) -> list[DataFrame]:
     """
@@ -1754,14 +1841,16 @@ def collect_all(
         Turn off optimizations.
     slice_pushdown
         Slice pushdown optimization.
-    common_subplan_elimination
+    comm_subplan_elim
         Will try to cache branching subplans that occur on self-joins or unions.
+    comm_subexpr_elim
+        Common subexpressions will be cached and reused.
     streaming
         Run parts of the query in a streaming fashion (this is in an alpha state)
 
     Returns
     -------
-    List[DataFrame]
+    list of DataFrames
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
@@ -1769,7 +1858,8 @@ def collect_all(
         predicate_pushdown = False
         projection_pushdown = False
         slice_pushdown = False
-        common_subplan_elimination = False
+        comm_subplan_elim = False
+        comm_subexpr_elim = False
 
     prepared = []
 
@@ -1780,7 +1870,8 @@ def collect_all(
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
-            common_subplan_elimination,
+            comm_subplan_elim,
+            comm_subexpr_elim,
             streaming,
         )
         prepared.append(ldf)

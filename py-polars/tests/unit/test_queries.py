@@ -30,30 +30,6 @@ def test_sort_by_bools() -> None:
     assert out.shape == (3, 4)
 
 
-def test_type_coercion_when_then_otherwise_2806() -> None:
-    out = (
-        pl.DataFrame({"names": ["foo", "spam", "spam"], "nrs": [1, 2, 3]})
-        .select(
-            [
-                pl.when(pl.col("names") == "spam")
-                .then(pl.col("nrs") * 2)
-                .otherwise(pl.lit("other"))
-                .alias("new_col"),
-            ]
-        )
-        .to_series()
-    )
-    expected = pl.Series("new_col", ["other", "4", "6"])
-    assert out.to_list() == expected.to_list()
-
-    # test it remains float32
-    assert (
-        pl.Series("a", [1.0, 2.0, 3.0], dtype=pl.Float32)
-        .to_frame()
-        .select(pl.when(pl.col("a") > 2.0).then(pl.col("a")).otherwise(0.0))
-    ).to_series().dtype == pl.Float32
-
-
 def test_repeat_expansion_in_groupby() -> None:
     out = (
         pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
@@ -298,37 +274,6 @@ def test_ternary_none_struct() -> None:
             {"sum": 2, "count": 1},
         ],
     }
-
-
-def test_when_then_edge_cases_3994() -> None:
-    df = pl.DataFrame(data={"id": [1, 1], "type": [2, 2]})
-
-    # this tests if lazy correctly assigns the list schema to the column aggregation
-    assert (
-        df.lazy()
-        .groupby(["id"])
-        .agg(pl.col("type"))
-        .with_columns(
-            pl.when(pl.col("type").list.lengths() == 0)
-            .then(pl.lit(None))
-            .otherwise(pl.col("type"))
-            .keep_name()
-        )
-        .collect()
-    ).to_dict(False) == {"id": [1], "type": [[2, 2]]}
-
-    # this tests ternary with an empty argument
-    assert (
-        df.filter(pl.col("id") == 42)
-        .groupby(["id"])
-        .agg(pl.col("type"))
-        .with_columns(
-            pl.when(pl.col("type").list.lengths() == 0)
-            .then(pl.lit(None))
-            .otherwise(pl.col("type"))
-            .keep_name()
-        )
-    ).to_dict(False) == {"id": [], "type": []}
 
 
 def test_edge_cast_string_duplicates_4259() -> None:

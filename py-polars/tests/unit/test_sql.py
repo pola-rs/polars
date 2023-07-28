@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import warnings
 from pathlib import Path
 
@@ -164,6 +165,33 @@ def test_sql_equal_not_equal() -> None:
         "5_eq_aware": [True, True, True, False, False],
         "6_neq_aware": [False, False, False, True, True],
     }
+
+
+def test_sql_arctan2() -> None:
+    twoRootTwo = math.sqrt(2) / 2.0
+    df = pl.DataFrame(
+        {
+            "y": [twoRootTwo, -twoRootTwo, twoRootTwo, -twoRootTwo],
+            "x": [twoRootTwo, twoRootTwo, -twoRootTwo, -twoRootTwo],
+        }
+    )
+
+    sql = pl.SQLContext(df=df)
+    res = sql.execute(
+        """
+        SELECT
+        ATAN2D(y,x) as "atan2d",
+        ATAN2(y,x) as "atan2"
+        FROM df
+        """,
+        eager=True,
+    )
+
+    df_result = pl.DataFrame({"atan2d": [45.0, -45.0, 135.0, -135.0]})
+    df_result = df_result.with_columns(pl.col("atan2d").cast(pl.Float64))
+    df_result = df_result.with_columns(pl.col("atan2d").radians().alias("atan2"))
+
+    assert_frame_equal(df_result, res)
 
 
 def test_sql_trig() -> None:

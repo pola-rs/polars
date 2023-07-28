@@ -116,8 +116,9 @@ def _lazy_import(module_name: str) -> tuple[ModuleType, bool]:
 
     Returns
     -------
-    tuple[Module, bool]: a lazy-loading module and a boolean indicating if the
-    requested/underlying module exists (if not, the returned module is a proxy).
+    tuple of (Module, bool)
+        A lazy-loading module and a boolean indicating if the requested/underlying
+        module exists (if not, the returned module is a proxy).
 
     """
     # check if module is LOADED

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -211,7 +211,8 @@ class ListNameSpace:
 
         Returns
         -------
-        Series of dtype Utf8
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -243,7 +244,8 @@ class ListNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Series
+            Series of data type :class:`Boolean`.
 
         """
 
@@ -253,7 +255,9 @@ class ListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Series
+            Series of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         """
 
@@ -263,7 +267,9 @@ class ListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Series
+            Series of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         """
 
@@ -404,7 +410,8 @@ class ListNameSpace:
 
         Returns
         -------
-        Exploded column with the datatype of the list elements.
+        Series
+            Series with the data type of the list elements.
 
         See Also
         --------

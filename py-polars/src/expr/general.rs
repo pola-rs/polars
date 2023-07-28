@@ -493,6 +493,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "trigonometry")]
+    fn arctan2(&self, y: Self) -> Self {
+        self.clone().inner.arctan2(y.inner).into()
+    }
+
+    #[cfg(feature = "trigonometry")]
     fn sinh(&self) -> Self {
         self.clone().inner.sinh().into()
     }
@@ -1174,9 +1179,5 @@ impl PyExpr {
             IsSorted::Ascending
         };
         self.inner.clone().set_sorted_flag(is_sorted).into()
-    }
-
-    fn cache(&self) -> Self {
-        self.inner.clone().cache().into()
     }
 }

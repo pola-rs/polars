@@ -4,7 +4,6 @@ from __future__ import annotations
 import contextlib
 import os
 import random
-import warnings
 from collections import defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
@@ -87,12 +86,11 @@ from polars.utils._construction import (
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
     can_create_dicts_with_pyarrow,
-    find_stacklevel,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
@@ -455,10 +453,6 @@ class DataFrame:
           Support type specification or override of one or more columns; note that
           any dtypes inferred from the columns param will be overridden.
 
-        Returns
-        -------
-        DataFrame
-
         """
         return cls._from_pydf(
             dict_to_pydf(data, schema=schema, schema_overrides=schema_overrides)
@@ -500,10 +494,6 @@ class DataFrame:
             this does not yield conclusive results, column orientation is used.
         infer_schema_length
             How many rows to scan to determine the column type.
-
-        Returns
-        -------
-        DataFrame
 
         """
         return cls._from_pydf(
@@ -550,10 +540,6 @@ class DataFrame:
             the orientation is inferred by matching the columns and data dimensions. If
             this does not yield conclusive results, column orientation is used.
 
-        Returns
-        -------
-        DataFrame
-
         """
         return cls._from_pydf(
             numpy_to_pydf(
@@ -595,10 +581,6 @@ class DataFrame:
             any dtypes inferred from the columns param will be overridden.
         rechunk : bool, default True
             Make sure that all data is in contiguous memory.
-
-        Returns
-        -------
-        DataFrame
 
         """
         return cls._from_pydf(
@@ -647,10 +629,6 @@ class DataFrame:
             If the data contains NaN values they will be converted to null/None.
         include_index : bool, default False
             Load any non-default pandas indexes as columns.
-
-        Returns
-        -------
-        DataFrame
 
         """
         return cls._from_pydf(
@@ -895,10 +873,6 @@ class DataFrame:
         n_rows
             Stop reading from Apache Avro file after reading ``n_rows``.
 
-        Returns
-        -------
-        DataFrame
-
         """
         if isinstance(source, (str, Path)):
             source = normalise_filepath(source)
@@ -941,10 +915,6 @@ class DataFrame:
             Make sure that all data is contiguous.
         memory_map
             Memory map the file
-
-        Returns
-        -------
-        DataFrame
 
         """
         if isinstance(source, (str, Path)):
@@ -1179,6 +1149,18 @@ class DataFrame:
 
         """
         return self._df.dtypes()
+
+    @property
+    def flags(self) -> dict[str, dict[str, bool]]:
+        """
+        Get flags that are set on the columns of this DataFrame.
+
+        Returns
+        -------
+        dict
+            Mapping from column names to column flags.
+        """
+        return {name: self[name].flags for name in self.columns}
 
     @property
     def schema(self) -> SchemaDict:
@@ -2040,7 +2022,7 @@ class DataFrame:
             of null values. Subsequent operations on the resulting pandas DataFrame may
             trigger conversion to NumPy arrays if that operation is not supported by
             pyarrow compute functions.
-        kwargs
+        **kwargs
             Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
 
         Returns
@@ -3162,10 +3144,11 @@ class DataFrame:
                 file, compression, compression_level, statistics, row_group_size
             )
 
+    @deprecated_alias(connection_uri="connection")
     def write_database(
         self,
         table_name: str,
-        connection_uri: str,
+        connection: str,
         *,
         if_exists: DbWriteMode = "fail",
         engine: DbWriteEngine = "sqlalchemy",
@@ -3178,8 +3161,8 @@ class DataFrame:
         table_name
             Name of the table to create or append to in the target SQL database.
             If your table name contains special characters, it should be quoted.
-        connection_uri
-            Connection URI, for example:
+        connection
+            Connection URI string, for example:
 
             * "postgresql://user:pass@server:port/database"
             * "sqlite:////path/to/database.db"
@@ -3205,10 +3188,8 @@ class DataFrame:
                     f"Value for 'if_exists'={if_exists} was unexpected. "
                     f"Choose one of: {'fail', 'replace', 'append'}."
                 )
-            with _open_adbc_connection(connection_uri) as conn:
-                cursor = conn.cursor()
+            with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
                 cursor.adbc_ingest(table_name, self.to_arrow(), mode)
-                cursor.close()
                 conn.commit()
 
         elif engine == "sqlalchemy":
@@ -3239,7 +3220,7 @@ class DataFrame:
 
             # ensure conversion to pandas uses the pyarrow extension array option
             # so that we can make use of the sql/db export without copying data
-            engine_sa = create_engine(connection_uri)
+            engine_sa = create_engine(connection)
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
                 name=table_name,
                 schema=db_schema,
@@ -3547,23 +3528,10 @@ class DataFrame:
         │ col2   ┆ 3   ┆ 4   ┆ 6   │
         └────────┴─────┴─────┴─────┘
         """
-        pydf = self._df
-        if isinstance(column_names, str):
-            pydf = self.drop(column_names)._df
-            column_names = self._df.column(column_names).to_list()
-        df = self._from_pydf(pydf.transpose(include_header, header_name))
-        if column_names is not None:
-            names = []
-            n = df.width
-            if include_header:
-                names.append(header_name)
-                n -= 1
-
-            column_names = iter(column_names)
-            for _ in range(n):
-                names.append(next(column_names))
-            df.columns = names
-        return df
+        keep_names_as = header_name if include_header else None
+        if isinstance(column_names, Generator):
+            column_names = [next(column_names) for _ in range(self.height)]
+        return self._from_pydf(self._df.transpose(keep_names_as, column_names))
 
     def reverse(self) -> DataFrame:
         """
@@ -4177,7 +4145,7 @@ class DataFrame:
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
-                common_subplan_elimination=False,
+                comm_subplan_elim=False,
                 slice_pushdown=True,
             )
         )
@@ -4269,7 +4237,7 @@ class DataFrame:
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
-                common_subplan_elimination=False,
+                comm_subplan_elim=False,
                 slice_pushdown=True,
             )
         )
@@ -5625,7 +5593,7 @@ class DataFrame:
 
         Returns
         -------
-            Joined DataFrame
+        DataFrame
 
         See Also
         --------
@@ -6072,7 +6040,8 @@ class DataFrame:
 
         Returns
         -------
-        The dropped column.
+        Series
+            The dropped column.
 
         Examples
         --------
@@ -6300,6 +6269,7 @@ class DataFrame:
 
         Returns
         -------
+        DataFrame
             DataFrame with None values replaced by the filling strategy.
 
         See Also
@@ -6379,11 +6349,12 @@ class DataFrame:
         Parameters
         ----------
         value
-            Value to fill NaN with.
+            Value with which to replace NaN values.
 
         Returns
         -------
-            DataFrame with NaN replaced with fill_value
+        DataFrame
+            DataFrame with NaN values replaced by the given value.
 
         Warnings
         --------
@@ -6577,12 +6548,11 @@ class DataFrame:
             columns = [columns]
 
         if aggregate_function is no_default:
-            warnings.warn(
+            issue_deprecation_warning(
                 "In a future version of polars, the default `aggregate_function` "
                 "will change from `'first'` to `None`. Please pass `'first'` to keep the "
                 "current behaviour, or `None` to accept the new one.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.16.16",
             )
             aggregate_function = "first"
 
@@ -7324,7 +7294,8 @@ class DataFrame:
 
         Returns
         -------
-        A new DataFrame with the columns added.
+        DataFrame
+            A new DataFrame with the columns added.
 
         Notes
         -----
@@ -7986,7 +7957,8 @@ class DataFrame:
 
         Returns
         -------
-        DataFrame with unique rows.
+        DataFrame
+            DataFrame with unique rows.
 
         Warnings
         --------
@@ -8348,7 +8320,7 @@ class DataFrame:
 
         Returns
         -------
-        Tuple (default) or dictionary of row values.
+        tuple (default) or dictionary of row values
 
         Notes
         -----
@@ -8472,7 +8444,7 @@ class DataFrame:
 
         Returns
         -------
-        A list of tuples (default) or dictionaries of row values.
+        list of tuples (default) or dictionaries of row values
 
         Examples
         --------
@@ -8713,7 +8685,7 @@ class DataFrame:
 
         Returns
         -------
-        An iterator of tuples (default) or dictionaries (if named) of python row values.
+        iterator of tuples (default) or dictionaries (if named) of python row values
 
         Examples
         --------

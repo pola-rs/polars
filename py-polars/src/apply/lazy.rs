@@ -137,7 +137,7 @@ pub fn map_single(
 
 pub(crate) fn call_lambda_with_series_slice(
     py: Python,
-    s: &mut [Series],
+    s: &[Series],
     lambda: &PyObject,
     polars_module: &PyObject,
 ) -> PyObject {

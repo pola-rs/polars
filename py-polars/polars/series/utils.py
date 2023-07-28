@@ -138,7 +138,7 @@ def get_ffi_func(
     name: str, dtype: PolarsDataType, obj: PySeries
 ) -> Callable[..., Any] | None:
     """
-    Dynamically obtain the proper ffi function/ method.
+    Dynamically obtain the proper FFI function/ method.
 
     Parameters
     ----------
@@ -153,7 +153,8 @@ def get_ffi_func(
 
     Returns
     -------
-    ffi function, or None if not found
+    callable or None
+        FFI function, or None if not found.
 
     """
     ffi_name = dtype_to_ffiname(dtype)
