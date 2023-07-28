@@ -160,8 +160,12 @@ def _read_sql_connectorx(
     return from_arrow(tbl)  # type: ignore[return-value]
 
 
-def _read_sql_adbc(query: str, connection_uri: str, db_kwargs: dict[str, str] | None) -> DataFrame:
-    with _open_adbc_connection(connection_uri, db_kwargs=db_kwargs) as conn, conn.cursor() as cursor:
+def _read_sql_adbc(
+    query: str, connection_uri: str, db_kwargs: dict[str, str] | None
+) -> DataFrame:
+    with _open_adbc_connection(
+        connection_uri, db_kwargs=db_kwargs
+    ) as conn, conn.cursor() as cursor:
         cursor.execute(query)
         tbl = cursor.fetch_arrow_table()
     return from_arrow(tbl)  # type: ignore[return-value]
