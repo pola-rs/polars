@@ -68,6 +68,8 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 // update the inner state
                 unsafe { *self.inner.as_mut() = array_ref };
 
+                // last iteration could have set the sorted flag (e.g. in compute_len)
+                self.series_container.clear_settings();
                 // make sure that the length is correct
                 self.series_container._get_inner_mut().compute_len();
 
@@ -135,11 +137,13 @@ impl ListChunked {
         // Safety:
         // inner type passed as physical type
         let series_container = unsafe {
-            Box::new(Series::from_chunks_and_dtype_unchecked(
+            let mut s = Series::from_chunks_and_dtype_unchecked(
                 name,
                 vec![inner_values.clone()],
                 &iter_dtype,
-            ))
+            );
+            s.clear_settings();
+            Box::new(s)
         };
 
         let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;

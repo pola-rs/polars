@@ -25,6 +25,9 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
+    fn _clear_settings(&mut self) {
+        // no-op
+    }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0
             .apply_fields(|s| s.explode_by_offsets(offsets))

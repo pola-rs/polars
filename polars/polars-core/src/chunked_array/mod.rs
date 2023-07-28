@@ -174,6 +174,10 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
     }
 
+    pub(crate) fn clear_settings(&mut self) {
+        self.bit_settings.bits = 0;
+    }
+
     pub fn is_sorted_flag(&self) -> IsSorted {
         if self.is_sorted_ascending_flag() {
             IsSorted::Ascending

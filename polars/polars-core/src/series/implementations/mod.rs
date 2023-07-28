@@ -91,6 +91,10 @@ macro_rules! impl_dyn_series {
                 self.0.ref_field().data_type()
             }
 
+            fn _clear_settings(&mut self) {
+                self.0.clear_settings()
+            }
+
             fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
                 self.0.explode_by_offsets(offsets)
             }

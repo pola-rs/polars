@@ -197,6 +197,11 @@ impl Series {
         inner._set_sorted_flag(sorted)
     }
 
+    pub(crate) fn clear_settings(&mut self) {
+        let inner = self._get_inner_mut();
+        inner._clear_settings()
+    }
+
     pub fn into_frame(self) -> DataFrame {
         DataFrame::new_no_checks(vec![self])
     }

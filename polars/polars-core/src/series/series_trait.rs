@@ -77,6 +77,8 @@ pub(crate) mod private {
 
         fn _dtype(&self) -> &DataType;
 
+        fn _clear_settings(&mut self);
+
         fn compute_len(&mut self);
 
         fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
