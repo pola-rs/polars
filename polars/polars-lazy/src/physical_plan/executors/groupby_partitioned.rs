@@ -270,7 +270,6 @@ impl PartitionGroupByExec {
         }
     }
 
-    #[allow(clippy::needless_pass_by_ref_mut)]
     fn execute_impl(
         &mut self,
         state: &mut ExecutionState,

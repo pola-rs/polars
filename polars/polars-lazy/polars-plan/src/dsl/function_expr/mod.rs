@@ -1,4 +1,3 @@
-#![allow(clippy::needless_pass_by_ref_mut)] // TODO: remove once false positives are fixed in rustc
 #[cfg(feature = "abs")]
 mod abs;
 #[cfg(feature = "arg_where")]

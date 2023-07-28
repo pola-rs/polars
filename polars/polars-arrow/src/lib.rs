@@ -1,4 +1,5 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
+#![cfg_attr(feature = "nightly", allow(clippy::incorrect_partial_ord_impl_on_ord_type))] // remove once stable
 pub mod array;
 pub mod bit_util;
 pub mod bitmap;

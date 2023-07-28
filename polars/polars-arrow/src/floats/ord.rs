@@ -12,7 +12,6 @@ use crate::kernels::rolling::compare_fn_nan_max;
 #[repr(transparent)]
 pub struct OrdFloat<T>(T);
 
-#[allow(clippy::incorrect_partial_ord_impl_on_ord_type)]
 impl<T: IsFloat + PartialEq + PartialOrd> PartialOrd for OrdFloat<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(compare_fn_nan_max(&self.0, &other.0))
