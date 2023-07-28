@@ -160,7 +160,7 @@ mod test {
 
         let expected: Vec<(PathBuf, DataFrame)> = ["a=1/b=2", "a=2/b=3", "a=3/b=4"]
             .into_iter()
-            .zip(expected_dfs.into_iter())
+            .zip(expected_dfs)
             .map(|(p, df)| (rootdir.join(p), df))
             .collect();
 
