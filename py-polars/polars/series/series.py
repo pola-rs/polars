@@ -4562,7 +4562,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.apply(lambda x: x + 10)
+        >>> s.apply(lambda x: x + 10)  # doctest: +SKIP
         shape: (3,)
         Series: 'a' [i64]
         [
