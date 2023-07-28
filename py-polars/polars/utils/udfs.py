@@ -49,7 +49,7 @@ class OpNames:
         "BINARY_TRUE_DIVIDE": "/",
         "BINARY_XOR": "^",
     }
-    CALL = {"CALL"} if _MIN_PY311 else {"CALL_FUNCTION", "CALL_METHOD"}
+    CALL = {"CALL*"} if _MIN_PY311 else {"CALL_FUNCTION*", "CALL_METHOD*"}
     CONTROL_FLOW = (
         {
             "POP_JUMP_FORWARD_IF_FALSE": "&",
@@ -66,7 +66,8 @@ class OpNames:
         }
     )
     LOAD_VALUES = frozenset(("LOAD_CONST", "LOAD_DEREF", "LOAD_FAST", "LOAD_GLOBAL"))
-    LOAD = LOAD_VALUES | {"LOAD_METHOD", "LOAD_ATTR"}
+    LOAD_ATTR = {"LOAD_ATTR"} if _MIN_PY311 else {"LOAD_METHOD"}
+    LOAD = LOAD_VALUES | {'LOAD_ATTR', 'LOAD_METHOD'}
     SYNTHETIC = {
         "POLARS_EXPRESSION": 1,
     }
@@ -608,7 +609,7 @@ class RewrittenInstructions:
         """Replace dictionary lookups with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=[{"LOAD_GLOBAL"}, {"LOAD_FAST"}, {"BINARY_SUBSCR"}],
+            opnames=[{"LOAD_GLOBAL"}, {"LOAD_FAST"}, {"BINARY_SUBSCR*"}],
             argvals=[],
         ):
             inst1, inst2 = matching_instructions[:2]
@@ -638,7 +639,7 @@ class RewrittenInstructions:
             idx,
             opnames=[
                 {"LOAD_GLOBAL"},
-                {"LOAD_METHOD"},
+                OpNames.LOAD_ATTR,
                 {"LOAD_FAST", "LOAD_CONST"},
                 OpNames.CALL,
             ],
