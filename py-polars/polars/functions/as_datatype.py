@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from typing import TYPE_CHECKING, Iterable, overload
 
 from polars import functions as F
@@ -11,7 +10,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_expr
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -376,11 +375,9 @@ def struct(
 
     """
     if "exprs" in named_exprs:
-        warnings.warn(
+        issue_deprecation_warning(
             "passing expressions to `struct` using the keyword argument `exprs` is"
-            " deprecated. Use positional syntax instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            " deprecated. Use positional syntax instead."
         )
         first_input = named_exprs.pop("exprs")
         pyexprs = parse_as_list_of_expressions(first_input, *exprs, **named_exprs)

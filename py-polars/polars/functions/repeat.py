@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
 from polars.datatypes import Float64
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -122,10 +121,8 @@ def repeat(
 
     """
     if name is not None:
-        warnings.warn(
-            "the `name` argument is deprecated. Use the `alias` method instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "the `name` argument is deprecated. Use the `alias` method instead."
         )
 
     if isinstance(n, int):

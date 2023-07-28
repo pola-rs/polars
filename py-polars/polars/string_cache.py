@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from typing import TYPE_CHECKING
 
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import enable_string_cache as _enable_string_cache
@@ -129,11 +128,9 @@ def toggle_string_cache(toggle: bool) -> None:
     .. deprecated:: 0.17.0
 
     """
-    warnings.warn(
-        "`toggle_string_cache` has been renamed; this"
-        " redirect is temporary, please use `enable_string_cache` instead",
-        category=DeprecationWarning,
-        stacklevel=find_stacklevel(),
+    issue_deprecation_warning(
+        "`toggle_string_cache` has been renamed;"
+        " this redirect is temporary, please use `enable_string_cache` instead"
     )
     enable_string_cache(toggle)
 
