@@ -513,7 +513,7 @@ def get_str_ints_df(n: int) -> pl.DataFrame:
     strs = pl.Series("strs", random.choices(string.ascii_lowercase, k=n))
     strs = pl.select(
         pl.when(strs == "a")
-        .then("")
+        .then(pl.lit(""))
         .when(strs == "b")
         .then(None)
         .otherwise(strs)
@@ -534,7 +534,7 @@ def test_sort_row_fmt() -> None:
     df_pd = df.to_pandas()
 
     for descending in [True, False]:
-        pl.testing.assert_frame_equal(
+        assert_frame_equal(
             df.sort(["strs", "vals"], nulls_last=True, descending=descending),
             pl.from_pandas(
                 df_pd.sort_values(["strs", "vals"], ascending=not descending)

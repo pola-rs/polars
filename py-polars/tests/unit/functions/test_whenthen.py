@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_when_then() -> None:
@@ -28,7 +28,12 @@ def test_when_then() -> None:
 def test_when_then_chained() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
 
-    expr = pl.when(pl.col("a") < 3).then(pl.lit("x")).when(pl.col("a") > 4).then("z")
+    expr = (
+        pl.when(pl.col("a") < 3)
+        .then(pl.lit("x"))
+        .when(pl.col("a") > 4)
+        .then(pl.lit("z"))
+    )
 
     result = df.select(
         expr.otherwise(pl.lit("y")).alias("a"),
@@ -48,19 +53,17 @@ def test_when_then_invalid_chains() -> None:
     with pytest.raises(AttributeError):
         pl.when("a").when("b")  # type: ignore[attr-defined]
     with pytest.raises(AttributeError):
-        pl.when("a").otherwise("b")  # type: ignore[attr-defined]
+        pl.when("a").otherwise(2)  # type: ignore[attr-defined]
     with pytest.raises(AttributeError):
-        pl.when("a").then("b").then("c")  # type: ignore[attr-defined]
+        pl.when("a").then(1).then(2)  # type: ignore[attr-defined]
     with pytest.raises(AttributeError):
-        pl.when("a").then("b").otherwise("c").otherwise("d")  # type: ignore[attr-defined]
+        pl.when("a").then(1).otherwise(2).otherwise(3)  # type: ignore[attr-defined]
     with pytest.raises(AttributeError):
-        pl.when("a").then("b").otherwise("c").otherwise("d")  # type: ignore[attr-defined]
+        pl.when("a").then(1).when("b").when("c")  # type: ignore[attr-defined]
     with pytest.raises(AttributeError):
-        pl.when("a").then("b").when("c").when("d")  # type: ignore[attr-defined]
+        pl.when("a").then(1).when("b").otherwise("2")  # type: ignore[attr-defined]
     with pytest.raises(AttributeError):
-        pl.when("a").then("b").when("c").otherwise("d")  # type: ignore[attr-defined]
-    with pytest.raises(AttributeError):
-        pl.when("a").then("b").when("c").then("d").when("e").when("f")  # type: ignore[attr-defined]
+        pl.when("a").then(1).when("b").then(2).when("c").when("d")  # type: ignore[attr-defined]
 
 
 def test_when_then_implicit_none() -> None:
@@ -72,8 +75,8 @@ def test_when_then_implicit_none() -> None:
     )
 
     result = df.select(
-        pl.when(pl.col("points") > 7).then("Foo"),
-        pl.when(pl.col("points") > 7).then("Foo").alias("bar"),
+        pl.when(pl.col("points") > 7).then(pl.lit("Foo")),
+        pl.when(pl.col("points") > 7).then(pl.lit("Foo")).alias("bar"),
     )
 
     expected = pl.DataFrame(
@@ -101,18 +104,20 @@ def test_nested_when_then_and_wildcard_expansion_6284() -> None:
 
     out0 = df.with_columns(
         pl.when(pl.any_horizontal(pl.all() == "a"))
-        .then("a")
+        .then(pl.lit("a"))
         .otherwise(
-            pl.when(pl.any_horizontal(pl.all() == "d")).then("d").otherwise(None)
+            pl.when(pl.any_horizontal(pl.all() == "d"))
+            .then(pl.lit("d"))
+            .otherwise(None)
         )
         .alias("result")
     )
 
     out1 = df.with_columns(
         pl.when(pl.any_horizontal(pl.all() == "a"))
-        .then("a")
+        .then(pl.lit("a"))
         .when(pl.any_horizontal(pl.all() == "d"))
-        .then("d")
+        .then(pl.lit("d"))
         .otherwise(None)
         .alias("result")
     )
@@ -221,3 +226,33 @@ def test_object_when_then_4702() -> None:
         "Type": [pl.Date, pl.UInt8],
         "New_Type": [pl.UInt16, pl.UInt8],
     }
+
+
+def test_comp_categorical_lit_dtype() -> None:
+    df = pl.DataFrame(
+        data={"column": ["a", "b", "e"], "values": [1, 5, 9]},
+        schema=[("column", pl.Categorical), ("more", pl.Int32)],
+    )
+
+    assert df.with_columns(
+        pl.when(pl.col("column") == "e")
+        .then(pl.lit("d"))
+        .otherwise(pl.col("column"))
+        .alias("column")
+    ).dtypes == [pl.Categorical, pl.Int32]
+
+
+def test_when_then_deprecated_string_input() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [True, False],
+            "b": [1, 2],
+            "c": [3, 4],
+        }
+    )
+
+    with pytest.deprecated_call():
+        result = df.select(pl.when("a").then("b").otherwise("c").alias("when"))
+
+    expected = pl.Series("when", ["b", "c"])
+    assert_series_equal(result.to_series(), expected)

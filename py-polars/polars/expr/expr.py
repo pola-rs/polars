@@ -8598,6 +8598,7 @@ class Expr:
             Dictionary containing the before/after values to map.
         default
             Value to use when the remapping dict does not contain the lookup value.
+            Accepts expression input. Non-expression inputs are parsed as literals.
             Use ``pl.first()``, to keep the original value.
         return_dtype
             Set return dtype to override automatic return dtype determination.
@@ -8923,6 +8924,9 @@ class Expr:
                     is_keys=False,
                 )
 
+            default_parsed = self._from_pyexpr(
+                parse_as_expression(default, str_as_lit=True)
+            )
             return (
                 (
                     df.lazy()
@@ -8942,7 +8946,7 @@ class Expr:
                     .select(
                         F.when(F.col(is_remapped_column).is_not_null())
                         .then(F.col(remap_value_column))
-                        .otherwise(default)
+                        .otherwise(default_parsed)
                         .alias(column)
                     )
                 )
