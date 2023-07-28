@@ -25,8 +25,8 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
-    fn _clear_settings(&mut self) {
-        // no-op
+    unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+        Ok(())
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0

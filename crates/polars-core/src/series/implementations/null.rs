@@ -48,8 +48,10 @@ impl PrivateSeries for NullChunked {
     fn _field(&self) -> Cow<Field> {
         Cow::Owned(Field::new(self.name(), DataType::Null))
     }
-    fn _clear_settings(&mut self) {
-        // no-op
+
+    #[allow(unused)]
+    unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+        Ok(())
     }
 
     fn _dtype(&self) -> &DataType {

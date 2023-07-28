@@ -38,8 +38,9 @@ where
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _clear_settings(&mut self) {
-        self.0.clear_settings()
+
+    unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+        self.0.set_flags(flags)
     }
 
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
