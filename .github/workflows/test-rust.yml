@@ -37,10 +37,10 @@ jobs:
       - name: Set up Rust
         run: rustup show
 
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref_name == 'main' }}
+      # - name: Cache Rust
+      #   uses: Swatinem/rust-cache@v2
+      #   with:
+      #     save-if: ${{ github.ref_name == 'main' }}
 
       - name: Compile tests
         run: >
