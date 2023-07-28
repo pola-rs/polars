@@ -50,10 +50,7 @@ unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 
 /// Create an extension Array that can be sent to arrow and (once wrapped in `[PolarsExtension]` will
 /// also call drop on `T`, when the array is dropped.
-pub(crate) fn create_extension<
-    I: IntoIterator<Item = Option<T>> + TrustedLen,
-    T: Sized + Default,
->(
+pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Sized + Default>(
     iter: I,
 ) -> PolarsExtension {
     let env = "POLARS_ALLOW_EXTENSION";
@@ -174,7 +171,7 @@ mod test {
         };
 
         let vals = vec![Some(foo), Some(foo2)];
-        create_extension(vals);
+        create_extension(vals.into_iter());
     }
 
     #[test]
