@@ -259,6 +259,7 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         payload: FileSinkOptions,
     },
+    #[cfg(feature = "cloud")]
     CloudSink {
         input: Box<LogicalPlan>,
         payload: CloudSinkOptions,

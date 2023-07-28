@@ -117,6 +117,7 @@ pub enum ALogicalPlan {
         input: Node,
         payload: FileSinkOptions,
     },
+    #[cfg(feature = "cloud")]
     CloudSink {
         input: Node,
         payload: CloudSinkOptions,
@@ -170,6 +171,7 @@ impl ALogicalPlan {
             Union { .. } => "union",
             ExtContext { .. } => "ext_context",
             FileSink { .. } => "file_sink",
+            #[cfg(feature = "cloud")]
             CloudSink { .. } => "cloud_sink",
         }
     }
@@ -204,9 +206,11 @@ impl ALogicalPlan {
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
-            Distinct { input, .. } | FileSink { input, .. } | CloudSink { input, .. } => {
+            Distinct { input, .. } | FileSink { input, .. } => {
                 return arena.get(*input).schema(arena)
             }
+            #[cfg(feature = "cloud")]
+            CloudSink { input, .. } => return arena.get(*input).schema(arena),
             Slice { input, .. } => return arena.get(*input).schema(arena),
             MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);
@@ -386,6 +390,7 @@ impl ALogicalPlan {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
+            #[cfg(feature = "cloud")]
             CloudSink { payload, .. } => CloudSink {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
@@ -430,7 +435,10 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
-            ExtContext { .. } | FileSink { .. } | CloudSink { .. } => {}
+            ExtContext { .. } | FileSink { .. } => {}
+
+            #[cfg(feature = "cloud")]
+            CloudSink { .. } => {}
         }
     }
 
@@ -476,6 +484,7 @@ impl ALogicalPlan {
             Distinct { input, .. } => *input,
             MapFunction { input, .. } => *input,
             FileSink { input, .. } => *input,
+            #[cfg(feature = "cloud")]
             CloudSink { input, .. } => *input,
             ExtContext {
                 input, contexts, ..
