@@ -174,7 +174,7 @@ mod test {
         };
 
         let vals = vec![Some(foo), Some(foo2)];
-        create_extension(vals.into_iter());
+        create_extension(vals);
     }
 
     #[test]
