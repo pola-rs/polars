@@ -73,7 +73,7 @@ fn get_scan_columns(
 fn split_acc_projections(
     acc_projections: Vec<Node>,
     down_schema: &Schema,
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
     expands_schema: bool,
 ) -> (Vec<Node>, Vec<Node>, PlHashSet<Arc<str>>) {
     // If node above has as many columns as the projection there is nothing to pushdown.
@@ -99,7 +99,7 @@ fn add_expr_to_accumulated(
     expr: Node,
     acc_projections: &mut Vec<Node>,
     projected_names: &mut PlHashSet<Arc<str>>,
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
 ) {
     for root_node in aexpr_to_column_nodes_iter(expr, expr_arena) {
         for name in aexpr_to_leaf_names_iter(root_node, expr_arena) {
@@ -218,7 +218,7 @@ impl ProjectionPushDown {
         pushdown_right: &mut Vec<Node>,
         names_left: &mut PlHashSet<Arc<str>>,
         names_right: &mut PlHashSet<Arc<str>>,
-        expr_arena: &mut Arena<AExpr>,
+        expr_arena: &Arena<AExpr>,
     ) -> (bool, bool) {
         let mut pushed_at_least_one = false;
         let mut already_projected = false;

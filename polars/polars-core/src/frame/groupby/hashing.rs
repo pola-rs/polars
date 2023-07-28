@@ -68,7 +68,7 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
             items
         };
         out.sort_unstable_by_key(|g| g.0);
-        let mut idx = GroupsIdx::from_iter(out.into_iter());
+        let mut idx = GroupsIdx::from_iter(out);
         idx.sorted = true;
         GroupsProxy::Idx(idx)
     } else {
@@ -123,8 +123,7 @@ fn finish_group_order_vecs(
                         // give the compiler some info
                         // maybe it may elide some loop counters
                         assert_eq!(first.len(), all.len());
-                        for (i, (first, all)) in first.into_iter().zip(all.into_iter()).enumerate()
-                        {
+                        for (i, (first, all)) in first.into_iter().zip(all).enumerate() {
                             std::ptr::write(items_ptr.add(i), (first, all))
                         }
                     }
@@ -136,7 +135,7 @@ fn finish_group_order_vecs(
         // sort again
         items.sort_unstable_by_key(|g| g.0);
 
-        let mut idx = GroupsIdx::from_iter(items.into_iter());
+        let mut idx = GroupsIdx::from_iter(items);
         idx.sorted = true;
         GroupsProxy::Idx(idx)
     } else {

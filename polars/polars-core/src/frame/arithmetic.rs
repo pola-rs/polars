@@ -8,12 +8,9 @@ use crate::utils::try_get_supertype;
 /// Get the supertype that is valid for all columns in the DataFrame.
 /// This reduces casting of the rhs in arithmetic.
 fn get_supertype_all(df: &DataFrame, rhs: &Series) -> PolarsResult<DataType> {
-    df.columns
-        .iter()
-        .fold(Ok(rhs.dtype().clone()), |dt, s| match dt {
-            Ok(dt) => try_get_supertype(s.dtype(), &dt),
-            e => e,
-        })
+    df.columns.iter().try_fold(rhs.dtype().clone(), |dt, s| {
+        try_get_supertype(s.dtype(), &dt)
+    })
 }
 
 macro_rules! impl_arithmetic {

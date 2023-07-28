@@ -45,7 +45,7 @@ fn floor_div_array<T: NumericNative>(
     } else {
         let iter = a
             .into_iter()
-            .zip(b.into_iter())
+            .zip(b)
             .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
                 (Some(&a), Some(&b)) => Some(floor_div_element(a, b)),
                 _ => None,

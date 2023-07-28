@@ -167,8 +167,8 @@ impl<T: PolarsObject> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
         let mut ca: Self = left
             .as_ref()
             .into_iter()
-            .zip(right.into_iter())
-            .zip(mask.into_iter())
+            .zip(right.as_ref())
+            .zip(mask.as_ref())
             .map(|((left_c, right_c), mask_c)| match mask_c {
                 Some(true) => left_c.cloned(),
                 Some(false) => right_c.cloned(),

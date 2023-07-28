@@ -134,7 +134,7 @@ impl<'a> AnyValue<'a> {
                         // so we set the array pointer with values of the dictionary array.
                         #[cfg(feature = "dtype-categorical")]
                         {
-                            use polars_arrow::is_valid::{IsValid as _};
+                            use polars_arrow::is_valid::IsValid as _;
                             if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
                                 let keys = arr.keys();
                                 let values = arr.values();
@@ -144,14 +144,14 @@ impl<'a> AnyValue<'a> {
 
                                 if arr.is_valid_unchecked(idx) {
                                     let v = arr.value_unchecked(idx);
-                                    let DataType::Categorical(Some(rev_map)) = fld.data_type() else {
+                                    let DataType::Categorical(Some(rev_map)) = fld.data_type()
+                                    else {
                                         unimplemented!()
                                     };
                                     AnyValue::Categorical(v, rev_map, SyncPtr::from_const(values))
                                 } else {
                                     AnyValue::Null
                                 }
-
                             } else {
                                 arr_to_any_value(&**arr, idx, fld.data_type())
                             }

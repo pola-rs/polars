@@ -186,7 +186,7 @@ pub(super) fn temporal_range_dispatch(
                 start.len() * 5,
                 DataType::Int32,
             );
-            for (start, stop) in start.into_iter().zip(stop.into_iter()) {
+            for (start, stop) in start.into_iter().zip(stop) {
                 match (start, stop) {
                     (Some(start), Some(stop)) => {
                         let rng = date_range_impl(
@@ -215,7 +215,7 @@ pub(super) fn temporal_range_dispatch(
                 start.len() * 5,
                 DataType::Int64,
             );
-            for (start, stop) in start.into_iter().zip(stop.into_iter()) {
+            for (start, stop) in start.into_iter().zip(stop) {
                 match (start, stop) {
                     (Some(start), Some(stop)) => {
                         let rng = date_range_impl("", start, stop, every, closed, tu, tz.as_ref())?;
@@ -233,7 +233,7 @@ pub(super) fn temporal_range_dispatch(
                 start.len() * 5,
                 DataType::Int64,
             );
-            for (start, stop) in start.into_iter().zip(stop.into_iter()) {
+            for (start, stop) in start.into_iter().zip(stop) {
                 match (start, stop) {
                     (Some(start), Some(stop)) => {
                         let rng = date_range_impl(

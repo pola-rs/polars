@@ -15,7 +15,7 @@ pub struct ProjectionExec {
 impl ProjectionExec {
     fn execute_impl(
         &mut self,
-        state: &mut ExecutionState,
+        state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         #[allow(clippy::let_and_return)]

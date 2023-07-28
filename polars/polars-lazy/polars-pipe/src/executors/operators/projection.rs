@@ -59,7 +59,9 @@ impl Operator for ProjectionOperator {
         // add temporary cse column to the chunk
         let cse_owned_chunk;
         let chunk = if let Some(hstack) = &mut self.cse_exprs {
-            let OperatorResult::Finished(out) = hstack.execute(context, chunk)? else { unreachable!() };
+            let OperatorResult::Finished(out) = hstack.execute(context, chunk)? else {
+                unreachable!()
+            };
             cse_owned_chunk = out;
             &cse_owned_chunk
         } else {
@@ -137,7 +139,9 @@ impl Operator for HstackOperator {
         let width = chunk.data.width();
         let cse_owned_chunk;
         let chunk = if let Some(hstack) = &mut self.cse_exprs {
-            let OperatorResult::Finished(out) = hstack.execute(context, chunk)? else { unreachable!() };
+            let OperatorResult::Finished(out) = hstack.execute(context, chunk)? else {
+                unreachable!()
+            };
             cse_owned_chunk = out;
             &cse_owned_chunk
         } else {

@@ -23,7 +23,7 @@ impl GroupByDynamicExec {
     #[cfg(feature = "dynamic_groupby")]
     fn execute_impl(
         &mut self,
-        state: &mut ExecutionState,
+        state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         df.as_single_chunk_par();

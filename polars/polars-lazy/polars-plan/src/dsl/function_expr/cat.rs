@@ -54,7 +54,9 @@ fn set_ordering(s: &Series, lexical: bool) -> PolarsResult<Series> {
 fn get_categories(s: &Series) -> PolarsResult<Series> {
     // categorical check
     let ca = s.categorical()?;
-    let DataType::Categorical(Some(rev_map)) = ca.dtype() else { unreachable!()  };
+    let DataType::Categorical(Some(rev_map)) = ca.dtype() else {
+        unreachable!()
+    };
     let arr = rev_map.get_categories().clone().boxed();
     Series::try_from((ca.name(), arr))
 }

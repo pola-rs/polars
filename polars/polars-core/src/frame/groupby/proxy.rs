@@ -240,7 +240,7 @@ impl IntoIterator for GroupsIdx {
     fn into_iter(mut self) -> Self::IntoIter {
         let first = std::mem::take(&mut self.first);
         let all = std::mem::take(&mut self.all);
-        first.into_iter().zip(all.into_iter())
+        first.into_iter().zip(all)
     }
 }
 

@@ -28,7 +28,9 @@ impl DtypeMerger {
         match self {
             #[cfg(feature = "dtype-categorical")]
             DtypeMerger::Categorical(merger) => {
-                let DataType::Categorical(Some(rev_map)) = dtype else { polars_bail!(ComputeError: "expected categorical rev-map") };
+                let DataType::Categorical(Some(rev_map)) = dtype else {
+                    polars_bail!(ComputeError: "expected categorical rev-map")
+                };
                 return merger.merge_map(rev_map);
             }
             DtypeMerger::Other(Some(set_dtype)) => {

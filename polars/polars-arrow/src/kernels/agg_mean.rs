@@ -1,4 +1,7 @@
-use std::simd::{Mask, Simd, SimdCast, SimdElement, SimdFloat, StdFloat, ToBitMask};
+use std::simd::{
+    LaneCount, Mask, Simd, SimdCast, SimdElement, SimdFloat, SimdInt, SimdUint, StdFloat,
+    SupportedLaneCount, ToBitMask,
+};
 
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::utils::{BitChunkIterExact, BitChunksExact};
@@ -11,10 +14,43 @@ use num_traits::ToPrimitive;
 use crate::data_types::IsFloat;
 use crate::utils::with_match_primitive_type;
 
+// TODO! try to remove this if we can cast again directly
+pub trait SimdCastPl<const N: usize>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
+    fn cast_custom<U: SimdCast>(self) -> Simd<U, N>;
+}
+
+macro_rules! impl_cast_custom {
+    ($_type:ty) => {
+        impl<const N: usize> SimdCastPl<N> for Simd<$_type, N>
+        where
+            LaneCount<N>: SupportedLaneCount,
+        {
+            fn cast_custom<U: SimdCast>(self) -> Simd<U, N> {
+                self.cast::<U>()
+            }
+        }
+    };
+}
+
+impl_cast_custom!(u8);
+impl_cast_custom!(u16);
+impl_cast_custom!(u32);
+impl_cast_custom!(u64);
+impl_cast_custom!(i8);
+impl_cast_custom!(i16);
+impl_cast_custom!(i32);
+impl_cast_custom!(i64);
+impl_cast_custom!(f32);
+impl_cast_custom!(f64);
+
 #[multiversion(targets = "simd")]
 fn nonnull_sum_as_f64<T>(values: &[T]) -> f64
 where
     T: NativeType + SimdElement + ToPrimitive + SimdCast,
+    Simd<T, 8>: SimdCastPl<8>,
 {
     // we choose 8 as that the maximum size of f64x8 -> 512bit wide
     const LANES: usize = 8;
@@ -22,7 +58,7 @@ where
 
     let mut reduced: Simd<f64, LANES> = Simd::splat(0.0);
     for chunk in simd_vals {
-        reduced += chunk.cast::<f64>();
+        reduced += chunk.cast_custom::<f64>();
     }
 
     unsafe {
@@ -43,6 +79,7 @@ fn null_sum_as_f64_impl<T, I>(values: &[T], mut validity_masks: I) -> f64
 where
     T: NativeType + SimdElement + ToPrimitive + IsFloat + SimdCast,
     I: BitChunkIterExact<u8>,
+    Simd<T, 8>: SimdCastPl<8>,
 {
     const LANES: usize = 8;
     let mut chunks = values.chunks_exact(LANES);
@@ -54,7 +91,7 @@ where
         |acc, (chunk, validity_chunk)| {
             // safety: exact size chunks
             let chunk: [T; LANES] = unsafe { chunk.try_into().unwrap_unchecked() };
-            let chunk = Simd::from(chunk).cast::<f64>();
+            let chunk = Simd::from(chunk).cast_custom::<f64>();
 
             // construct [bools]
             let mask = Mask::<i8, LANES>::from_bitmask(validity_chunk);
@@ -107,6 +144,7 @@ where
 fn null_sum_as_f64<T>(values: &[T], bitmap: &Bitmap) -> f64
 where
     T: NativeType + SimdElement + ToPrimitive + IsFloat + SimdCast,
+    Simd<T, 8>: SimdCastPl<8>,
 {
     let (slice, offset, length) = bitmap.as_slice();
     if offset == 0 {

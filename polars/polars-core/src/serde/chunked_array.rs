@@ -38,7 +38,7 @@ where
         S: Serializer,
     {
         let iter: I = self.iter.borrow_mut().take().unwrap();
-        serializer.collect_seq(iter.into_iter())
+        serializer.collect_seq(iter)
     }
 }
 

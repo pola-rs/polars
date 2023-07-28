@@ -68,7 +68,13 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     };
 
     if convert_supertypes {
-        let LogicalPlan::Union {mut inputs, options} = lf.logical_plan else { unreachable!()} ;
+        let LogicalPlan::Union {
+            mut inputs,
+            options,
+        } = lf.logical_plan
+        else {
+            unreachable!()
+        };
         let mut schema = inputs[0].schema()?.as_ref().as_ref().clone();
 
         let mut changed = false;
@@ -141,7 +147,7 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
     let lfs_with_all_columns = lfs
         .into_iter()
         // Zip Frames with their Schemas
-        .zip(schemas.into_iter())
+        .zip(schemas)
         .map(|(mut lf, lf_schema)| {
             for (name, dtype) in total_schema.iter() {
                 // If a name from Total Schema is not present - append

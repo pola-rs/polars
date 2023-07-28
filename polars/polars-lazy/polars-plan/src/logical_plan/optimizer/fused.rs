@@ -26,7 +26,9 @@ fn check_eligible(
     expr_arena: &Arena<AExpr>,
     lp_arena: &Arena<ALogicalPlan>,
 ) -> PolarsResult<(Option<bool>, Option<Field>)> {
-    let Some(input_node) = lp_arena.get(lp_node).get_input() else {return Ok((None, None))};
+    let Some(input_node) = lp_arena.get(lp_node).get_input() else {
+        return Ok((None, None));
+    };
     let schema = lp_arena.get(input_node).schema(lp_arena);
     let field_left = expr_arena
         .get(*left)

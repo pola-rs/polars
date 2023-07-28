@@ -782,7 +782,7 @@ impl<'df> GroupBy<'df> {
                 let mut new_cols = Vec::with_capacity(self.selected_keys.len() + agg.len());
                 new_cols.extend_from_slice(&self.selected_keys);
                 let cols = self.df.select_series(agg)?;
-                new_cols.extend(cols.into_iter());
+                new_cols.extend(cols);
                 Ok(DataFrame::new_no_checks(new_cols))
             }
         } else {

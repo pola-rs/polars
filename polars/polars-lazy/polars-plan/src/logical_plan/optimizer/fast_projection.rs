@@ -32,7 +32,7 @@ impl FastProjectionAndCollapse {
 fn impl_fast_projection(
     input: Node,
     expr: &[Node],
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
 ) -> Option<ALogicalPlan> {
     let mut columns = Vec::with_capacity(expr.len());
     for node in expr.iter() {

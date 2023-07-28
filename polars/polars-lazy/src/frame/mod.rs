@@ -374,7 +374,7 @@ impl LazyFrame {
         let mut existing_vec: Vec<SmartString> = Vec::with_capacity(cap);
         let mut new_vec: Vec<SmartString> = Vec::with_capacity(cap);
 
-        for (existing, new) in iter.zip(new.into_iter()) {
+        for (existing, new) in iter.zip(new) {
             let existing = existing.as_ref();
             let new = new.as_ref();
 

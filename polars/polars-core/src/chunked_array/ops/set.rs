@@ -55,7 +55,7 @@ where
                 if self.chunks.len() == 1 {
                     let arr = set_at_idx_no_null(
                         self.downcast_iter().next().unwrap(),
-                        idx.into_iter(),
+                        idx,
                         value,
                         T::get_dtype().to_arrow(),
                     )?;
@@ -113,7 +113,7 @@ where
             // slow path, could be optimized.
             let ca = mask
                 .into_iter()
-                .zip(self.into_iter())
+                .zip(self)
                 .map(|(mask_val, opt_val)| match mask_val {
                     Some(true) => value,
                     _ => opt_val,
@@ -166,7 +166,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         check_bounds!(self, mask);
         let ca = mask
             .into_iter()
-            .zip(self.into_iter())
+            .zip(self)
             .map(|(mask_val, opt_val)| match mask_val {
                 Some(true) => value,
                 _ => opt_val,
@@ -229,7 +229,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         check_bounds!(self, mask);
         let ca = mask
             .into_iter()
-            .zip(self.into_iter())
+            .zip(self)
             .map(|(mask_val, opt_val)| match mask_val {
                 Some(true) => value,
                 _ => opt_val,
@@ -293,7 +293,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
         check_bounds!(self, mask);
         let ca = mask
             .into_iter()
-            .zip(self.into_iter())
+            .zip(self)
             .map(|(mask_val, opt_val)| match mask_val {
                 Some(true) => value,
                 _ => opt_val,

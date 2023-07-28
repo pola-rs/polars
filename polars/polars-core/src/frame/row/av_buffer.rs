@@ -358,51 +358,73 @@ impl<'a> AnyValueBufferTrusted<'a> {
         use AnyValueBufferTrusted::*;
         match self {
             Boolean(builder) => {
-                let AnyValue::Boolean(v) = val else { unreachable_unchecked_release!() };
+                let AnyValue::Boolean(v) = val else {
+                    unreachable_unchecked_release!()
+                };
                 builder.append_value(*v)
             }
             #[cfg(feature = "dtype-i8")]
             Int8(builder) => {
-                let AnyValue::Int8(v) = val else { unreachable_unchecked_release!() };
+                let AnyValue::Int8(v) = val else {
+                    unreachable_unchecked_release!()
+                };
                 builder.append_value(*v)
             }
             #[cfg(feature = "dtype-i16")]
             Int16(builder) => {
-                let AnyValue::Int16(v) = val else { unreachable_unchecked_release!() };
+                let AnyValue::Int16(v) = val else {
+                    unreachable_unchecked_release!()
+                };
                 builder.append_value(*v)
             }
             Int32(builder) => {
-                let AnyValue::Int32(v) = val else { unreachable_unchecked_release!() };
+                let AnyValue::Int32(v) = val else {
+                    unreachable_unchecked_release!()
+                };
                 builder.append_value(*v)
             }
             Int64(builder) => {
-                let AnyValue::Int64(v) = val else { unreachable_unchecked_release!() };
+                let AnyValue::Int64(v) = val else {
+                    unreachable_unchecked_release!()
+                };
                 builder.append_value(*v)
             }
             #[cfg(feature = "dtype-u8")]
             UInt8(builder) => {
-                let AnyValue::UInt8(v) = val else { unreachable_unchecked_release!() };
+                let AnyValue::UInt8(v) = val else {
+                    unreachable_unchecked_release!()
+                };
                 builder.append_value(*v)
             }
             #[cfg(feature = "dtype-u16")]
             UInt16(builder) => {
-                let AnyValue::UInt16(v) = val else { unreachable_unchecked_release!() };
+                let AnyValue::UInt16(v) = val else {
+                    unreachable_unchecked_release!()
+                };
                 builder.append_value(*v)
             }
             UInt32(builder) => {
-                let AnyValue::UInt32(v) = val else { unreachable_unchecked_release!() };
+                let AnyValue::UInt32(v) = val else {
+                    unreachable_unchecked_release!()
+                };
                 builder.append_value(*v)
             }
             UInt64(builder) => {
-                let AnyValue::UInt64(v) = val else { unreachable_unchecked_release!() };
+                let AnyValue::UInt64(v) = val else {
+                    unreachable_unchecked_release!()
+                };
                 builder.append_value(*v)
             }
             Float32(builder) => {
-                let AnyValue::Float32(v) = val else { unreachable_unchecked_release!() };
+                let AnyValue::Float32(v) = val else {
+                    unreachable_unchecked_release!()
+                };
                 builder.append_value(*v)
             }
             Float64(builder) => {
-                let AnyValue::Float64(v) = val else { unreachable_unchecked_release!() };
+                let AnyValue::Float64(v) = val else {
+                    unreachable_unchecked_release!()
+                };
                 builder.append_value(*v)
             }
             _ => {
@@ -426,12 +448,16 @@ impl<'a> AnyValueBufferTrusted<'a> {
             _ => {
                 match self {
                     Utf8(builder) => {
-                        let AnyValue::Utf8Owned(v) = val else { unreachable_unchecked_release!() };
+                        let AnyValue::Utf8Owned(v) = val else {
+                            unreachable_unchecked_release!()
+                        };
                         builder.append_value(v)
                     }
                     #[cfg(feature = "dtype-struct")]
                     Struct(builders) => {
-                        let AnyValue::StructOwned(payload) = val else { unreachable_unchecked_release!() };
+                        let AnyValue::StructOwned(payload) = val else {
+                            unreachable_unchecked_release!()
+                        };
                         let avs = &*payload.0;
                         // amortize loop counter
                         for i in 0..avs.len() {
@@ -461,12 +487,16 @@ impl<'a> AnyValueBufferTrusted<'a> {
             _ => {
                 match self {
                     Utf8(builder) => {
-                        let AnyValue::Utf8(v) = val else { unreachable_unchecked_release!() };
+                        let AnyValue::Utf8(v) = val else {
+                            unreachable_unchecked_release!()
+                        };
                         builder.append_value(v)
                     }
                     #[cfg(feature = "dtype-struct")]
                     Struct(builders) => {
-                        let AnyValue::Struct(idx, arr, fields) = val else { unreachable_unchecked_release!() };
+                        let AnyValue::Struct(idx, arr, fields) = val else {
+                            unreachable_unchecked_release!()
+                        };
                         let arrays = arr.values();
                         // amortize loop counter
                         for i in 0..fields.len() {

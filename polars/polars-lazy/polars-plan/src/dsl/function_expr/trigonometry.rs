@@ -130,7 +130,7 @@ where
     } else {
         Ok(Some(
             y.into_iter()
-                .zip(x.into_iter())
+                .zip(x)
                 .map(|(opt_y, opt_x)| match (opt_y, opt_x) {
                     (Some(y), Some(x)) => Some(y.atan2(x)),
                     _ => None,

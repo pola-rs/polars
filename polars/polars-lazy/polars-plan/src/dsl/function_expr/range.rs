@@ -136,7 +136,7 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
         DataType::Int64,
     );
 
-    for (opt_start, opt_end) in start.into_iter().zip(end.into_iter()) {
+    for (opt_start, opt_end) in start.into_iter().zip(end) {
         match (opt_start, opt_end) {
             (Some(start_v), Some(end_v)) => match step {
                 1 => {

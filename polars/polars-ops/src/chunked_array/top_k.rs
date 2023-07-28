@@ -17,7 +17,7 @@ impl<T: PartialOrd + IsFloat> PartialEq for Compare<T> {
 
 impl<T: PartialOrd + IsFloat> PartialOrd for Compare<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(compare_fn_nan_max(&self.0, &other.0))
+        Some(self.cmp(other))
     }
 }
 
@@ -25,9 +25,7 @@ impl<T: PartialOrd + IsFloat> Eq for Compare<T> {}
 
 impl<T: PartialOrd + IsFloat> Ord for Compare<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Safety:
-        // we always return Some
-        unsafe { self.partial_cmp(other).unwrap_unchecked() }
+        compare_fn_nan_max(&self.0, &other.0)
     }
 }
 

@@ -36,7 +36,7 @@ where
 
     if exponent.len() == 1 {
         let Some(exponent_value) = exponent.get(0) else {
-            return Ok(Some(Series::full_null(base.name(), base.len(), &dtype)))
+            return Ok(Some(Series::full_null(base.name(), base.len(), &dtype)));
         };
         let s = match exponent_value.to_f64().unwrap() {
             a if a == 1.0 => base.clone().into_series(),
@@ -65,7 +65,7 @@ where
     } else {
         Ok(Some(
             base.into_iter()
-                .zip(exponent.into_iter())
+                .zip(exponent)
                 .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
                     (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
                     _ => None,

@@ -51,7 +51,9 @@ pub(super) fn process_asof_join(
     let mut names_right = PlHashSet::with_capacity(n);
     let mut local_projection = Vec::with_capacity(n);
 
-    let JoinType::AsOf(asof_options) = &options.args.how else {unreachable!()};
+    let JoinType::AsOf(asof_options) = &options.args.how else {
+        unreachable!()
+    };
 
     // if there are no projections we don't have to do anything (all columns are projected)
     // otherwise we build local projections to sort out proper column names due to the
