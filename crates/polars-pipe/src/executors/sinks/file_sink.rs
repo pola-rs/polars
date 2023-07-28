@@ -66,7 +66,7 @@ impl ParquetSink {
             .set_parallel(false)
             .batched(schema)?;
 
-        let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
+        let writer = Box::new(writer) as Box<dyn SinkWriter + Send>;
 
         let morsels_per_sink = morsels_per_sink();
         let backpressure = morsels_per_sink * 2;
@@ -110,7 +110,7 @@ impl ParquetCloudSink {
             .set_parallel(false)
             .batched(schema)?;
 
-        let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
+        let writer = Box::new(writer) as Box<dyn SinkWriter + Send>;
 
         let morsels_per_sink = morsels_per_sink();
         let backpressure = morsels_per_sink * 2;
@@ -141,7 +141,7 @@ impl IpcSink {
             .with_compression(options.compression)
             .batched(schema)?;
 
-        let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
+        let writer = Box::new(writer) as Box<dyn SinkWriter + Send>;
 
         let morsels_per_sink = morsels_per_sink();
         let backpressure = morsels_per_sink * 2;
@@ -164,7 +164,7 @@ impl IpcSink {
 #[cfg(any(feature = "parquet", feature = "ipc"))]
 fn init_writer_thread(
     receiver: Receiver<Option<DataChunk>>,
-    mut writer: Box<dyn SinkWriter + Send + Sync>,
+    mut writer: Box<dyn SinkWriter + Send>,
     maintain_order: bool,
     // this is used to determine when a batch of chunks should be written to disk
     // all chunks per push should be collected to determine in which order they should

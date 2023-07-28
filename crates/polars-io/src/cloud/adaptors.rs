@@ -148,7 +148,7 @@ pub struct CloudWriter {
     // The Tokio runtime which the writer uses internally.
     runtime: tokio::runtime::Runtime,
     // Internal writer, constructed at creation
-    writer: std::sync::Mutex<Box<dyn AsyncWrite + Send + Unpin>>,
+    writer: Box<dyn AsyncWrite + Send + Unpin>,
 }
 
 impl CloudWriter {
@@ -198,11 +198,10 @@ impl CloudWriter {
         path: &Path,
     ) -> object_store::Result<(
         MultipartId,
-        std::sync::Mutex<Box<dyn AsyncWrite + Send + Unpin>>,
+        Box<dyn AsyncWrite + Send + Unpin>,
     )> {
-        let (multipart_id, async_s3_writer) = object_store.put_multipart(path).await?;
-        let sync_s3_uploader = std::sync::Mutex::new(async_s3_writer);
-        Ok((multipart_id, sync_s3_uploader))
+        let (multipart_id, s3_writer) = object_store.put_multipart(path).await?;
+        Ok((multipart_id, s3_writer))
     }
 
     fn abort(&self) {
@@ -216,8 +215,7 @@ impl CloudWriter {
 
 impl std::io::Write for CloudWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let mut writer = self.writer.lock().unwrap();
-        let res = self.runtime.block_on(writer.write(buf));
+        let res = self.runtime.block_on(self.writer.write(buf));
         if res.is_err() {
             self.abort();
         }
@@ -225,8 +223,7 @@ impl std::io::Write for CloudWriter {
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        let mut writer = self.writer.lock().unwrap();
-        let res = self.runtime.block_on(writer.flush());
+        let res = self.runtime.block_on(self.writer.flush());
         if res.is_err() {
             self.abort();
         }
@@ -236,8 +233,7 @@ impl std::io::Write for CloudWriter {
 
 impl Drop for CloudWriter {
     fn drop(&mut self) {
-        let mut writer = self.writer.lock().unwrap();
-        let _ = self.runtime.block_on(writer.shutdown());
+        let _ = self.runtime.block_on(self.writer.shutdown());
     }
 }
 
