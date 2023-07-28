@@ -3,13 +3,13 @@ name: Build Rust documentation
 on:
   pull_request:
     paths:
-      - polars/**
+      - crates/**
       - .github/workflows/docs-rust.yml
   push:
     branches:
       - main
     paths:
-      - polars/**
+      - crates/**
       - .github/workflows/docs-rust.yml
 
 concurrency:
@@ -32,7 +32,7 @@ jobs:
       - name: Build Rust documentation
         env:
           RUSTDOCFLAGS: --cfg docsrs -D warnings
-        working-directory: polars
+        working-directory: crates
         run: make doctest
 
       - name: Create redirect to Polars crate and set no-jekyll
