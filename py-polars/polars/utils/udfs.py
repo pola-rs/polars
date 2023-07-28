@@ -49,7 +49,7 @@ class OpNames:
         "BINARY_TRUE_DIVIDE": "/",
         "BINARY_XOR": "^",
     }
-    CALL = {"CALL*"} if _MIN_PY311 else {"CALL_FUNCTION*", "CALL_METHOD*"}
+    CALL = {"CALL"} if _MIN_PY311 else {"CALL_FUNCTION", "CALL_METHOD"}
     CONTROL_FLOW = (
         {
             "POP_JUMP_FORWARD_IF_FALSE": "&",
@@ -67,7 +67,7 @@ class OpNames:
     )
     LOAD_VALUES = frozenset(("LOAD_CONST", "LOAD_DEREF", "LOAD_FAST", "LOAD_GLOBAL"))
     LOAD_ATTR = {"LOAD_ATTR"} if _MIN_PY311 else {"LOAD_METHOD"}
-    LOAD = LOAD_VALUES | {'LOAD_ATTR', 'LOAD_METHOD'}
+    LOAD = LOAD_VALUES | {"LOAD_METHOD", "LOAD_ATTR"}
     SYNTHETIC = {
         "POLARS_EXPRESSION": 1,
     }
@@ -536,12 +536,7 @@ class RewrittenInstructions:
         n_required_ops, argvals = len(opnames), argvals or []
         instructions = self._instructions[idx : idx + n_required_ops]
         if len(instructions) == n_required_ops and all(
-            any(
-                inst.opname == match_opname
-                if match_opname[-1] != "*"
-                else inst.opname.startswith(match_opname[:-1])
-                for match_opname in match_opnames
-            )
+            any(inst.opname == match_opname for match_opname in match_opnames)
             and (match_argval is None or inst.argval in match_argval)
             for inst, match_opnames, match_argval in zip_longest(
                 instructions, opnames, argvals
@@ -609,7 +604,7 @@ class RewrittenInstructions:
         """Replace dictionary lookups with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=[{"LOAD_GLOBAL"}, {"LOAD_FAST"}, {"BINARY_SUBSCR*"}],
+            opnames=[{"LOAD_GLOBAL"}, {"LOAD_FAST"}, {"BINARY_SUBSCR"}],
             argvals=[],
         ):
             inst1, inst2 = matching_instructions[:2]
