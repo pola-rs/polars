@@ -6,7 +6,7 @@ use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{col, lit, when};
 use sqlparser::ast::{
     ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
-    Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, SelectItem,
+    Expr as SqlExpr, Function as SQLFunction, Ident, JoinConstraint, OrderByExpr, Query as Subquery, SelectItem,
     TrimWhereField, UnaryOperator, Value as SqlValue,
 };
 use sqlparser::dialect::GenericDialect;
@@ -53,6 +53,15 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
     })
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+pub enum SubqueryRestriction {
+    SingleValue,
+    SingleColumn,
+    SingleRow,
+    Array
+}
+
 /// Recursively walks a SQL Expr to create a polars Expr
 pub(crate) struct SqlExprVisitor<'a> {
     ctx: &'a SQLContext,
@@ -89,7 +98,8 @@ impl SqlExprVisitor<'_> {
                 expr,
                 list,
                 negated,
-            } => self.visit_is_in(expr, list, *negated),
+            } => self.visit_in_list(expr, list, *negated),
+            SqlExpr::InSubquery { expr, subquery, negated } => self.visit_in_subquery(expr, subquery, *negated),
             SqlExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
             },
@@ -117,10 +127,38 @@ impl SqlExprVisitor<'_> {
         }
     }
 
+    fn visit_subquery(&self, subquery: &Subquery, restriction: SubqueryRestriction) -> PolarsResult<Expr>
+    {
+        if subquery.with.is_some()  {
+            polars_bail!(InvalidOperation: "SQL subquery cannot be given CTEs");
+        }
+
+        let lf = self.ctx.execute_query_no_ctes(&subquery)?;
+
+        let schema = lf.schema()?;
+        if restriction == SubqueryRestriction::SingleColumn {
+            if  schema.len() != 1 
+            {
+                polars_bail!(InvalidOperation: "SQL subquery will return more than one column");
+            }
+
+            if let Some((name, _)) = schema.get_at_index(0) {
+                return Ok(col(name));
+            } else {
+                polars_bail!(
+                    ColumnNotFound: "no column not found in table"
+                )
+            }
+        };
+
+        polars_bail!(InvalidOperation: "SQL subquery type not implemented");
+
+    }
+
     /// Visit a compound identifier
     ///
     /// e.g. df.column or "df"."column"
-    fn visit_compound_identifier(&self, idents: &[sqlparser::ast::Ident]) -> PolarsResult<Expr> {
+    fn visit_compound_identifier(&self, idents: &[Ident]) -> PolarsResult<Expr> {
         match idents {
             [tbl_name, column_name] => {
                 let lf = self.ctx.table_map.get(&tbl_name.value).ok_or_else(|| {
@@ -161,7 +199,7 @@ impl SqlExprVisitor<'_> {
     /// Visit a single identifier
     ///
     /// e.g. column
-    fn visit_identifier(&self, ident: &sqlparser::ast::Ident) -> PolarsResult<Expr> {
+    fn visit_identifier(&self, ident: &Ident) -> PolarsResult<Expr> {
         Ok(col(&ident.value))
     }
 
@@ -418,7 +456,7 @@ impl SqlExprVisitor<'_> {
     }
 
     /// Visit a SQL `IN` expression
-    fn visit_is_in(&self, expr: &SqlExpr, list: &[SqlExpr], negated: bool) -> PolarsResult<Expr> {
+    fn visit_in_list(&self, expr: &SqlExpr, list: &[SqlExpr], negated: bool) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
         let list = list
             .iter()
@@ -437,6 +475,18 @@ impl SqlExprVisitor<'_> {
             Ok(expr.is_in(lit(s)).not())
         } else {
             Ok(expr.is_in(lit(s)))
+        }
+    }
+
+    fn visit_in_subquery(&self, expr: &SqlExpr, subquery: &Subquery, negated: bool) -> PolarsResult<Expr> {
+        let expr = self.visit_expr(expr)?;
+
+        let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
+
+        if negated {
+            Ok(expr.is_in(subquery_result).not())
+        } else {
+            Ok(expr.is_in(subquery_result))
         }
     }
 
@@ -603,7 +653,7 @@ pub(super) fn process_join_constraint(
 /// # }
 /// ```
 pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
-    let ctx = SQLContext::new();
+    let mut ctx = SQLContext::new();
 
     let mut parser = Parser::new(&GenericDialect);
     parser = parser.with_options(ParserOptions {
@@ -616,10 +666,10 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
 
     Ok(match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
-            let expr = parse_sql_expr(expr, &ctx)?;
+            let expr = parse_sql_expr(expr, &mut ctx)?;
             expr.alias(&alias.value)
         },
-        SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &ctx)?,
+        SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx)?,
         _ => polars_bail!(InvalidOperation: "Unable to parse '{}' as Expr", s.as_ref()),
     })
 }

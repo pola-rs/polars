@@ -38,7 +38,7 @@ impl Default for SQLContext {
 }
 
 impl SQLContext {
-    /// Create a new SQLContext.
+    /// Create a new SQLContext
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # fn main() {
@@ -55,7 +55,7 @@ impl SQLContext {
         tables
     }
 
-    /// Register a [`LazyFrame`] as a table in the SQLContext.
+    /// Register a LazyFrame as a table in the SQLContext.
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # use polars_core::prelude::*;
@@ -139,7 +139,7 @@ impl SQLContext {
         self.cte_map.borrow_mut().insert(name.to_owned(), lf);
     }
 
-    fn get_table_from_current_scope(&mut self, name: &str) -> Option<LazyFrame> {
+    fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
         let table_name = self.table_map.get(name).cloned();
         table_name.or_else(|| self.cte_map.borrow().get(name).cloned())
     }
@@ -163,14 +163,20 @@ impl SQLContext {
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
+
+        self.execute_query_no_ctes(query)
+    }
+
+    pub fn execute_query_no_ctes(&self, query: &Query) -> PolarsResult<LazyFrame> {
         let lf = self.process_set_expr(&query.body, query)?;
+
         self.process_limit_offset(lf, &query.limit, &query.offset)
     }
 
-    fn process_set_expr(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
+    pub fn process_set_expr(&self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
         match expr {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query),
-            SetExpr::Query(query) => self.execute_query(query),
+            SetExpr::Query(query) => self.execute_query_no_ctes(query),
             SetExpr::SetOperation {
                 op: SetOperator::Union,
                 set_quantifier,
@@ -185,7 +191,7 @@ impl SQLContext {
     }
 
     fn process_union(
-        &mut self,
+        &self,
         left: &SetExpr,
         right: &SetExpr,
         quantifier: &SetQuantifier,
@@ -259,7 +265,7 @@ impl SQLContext {
     }
 
     /// execute the 'FROM' part of the query
-    fn execute_from_statement(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
+    fn execute_from_statement(&self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
         let (tbl_name, mut lf) = self.get_table(&tbl_expr.relation)?;
         if !tbl_expr.joins.is_empty() {
             for tbl in &tbl_expr.joins {
@@ -294,8 +300,8 @@ impl SQLContext {
         Ok(lf)
     }
 
-    /// Execute the 'SELECT' part of the query.
-    fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
+    // Execute the 'SELECT' part of the query.
+    fn execute_select(&self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // Determine involved dataframes.
         // Implicit joins require some more work in query parsers, explicit joins are preferred for now.
         let sql_tbl: &TableWithJoins = select_stmt
@@ -477,7 +483,11 @@ impl SQLContext {
             None => lf,
         };
 
-        Ok(lf)
+        if query.order_by.is_empty() {
+            Ok(lf)
+        } else {
+            self.process_order_by(lf, &query.order_by)
+        }
     }
 
     fn execute_create_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
@@ -511,7 +521,7 @@ impl SQLContext {
         }
     }
 
-    fn get_table(&mut self, relation: &TableFactor) -> PolarsResult<(String, LazyFrame)> {
+    fn get_table(&self, relation: &TableFactor) -> PolarsResult<(String, LazyFrame)> {
         match relation {
             TableFactor::Table {
                 name, alias, args, ..
@@ -627,7 +637,7 @@ impl SQLContext {
     }
 
     fn process_limit_offset(
-        &mut self,
+        &self,
         lf: LazyFrame,
         limit: &Option<SqlExpr>,
         offset: &Option<Offset>,
