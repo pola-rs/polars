@@ -144,6 +144,7 @@ where
                 FileType::Memory => Box::new(OrderedSink::new()) as Box<dyn Sink>,
             }
         }
+        #[cfg(all(feature = "cloud", feature = "parquet"))]
         CloudSink { input, payload } => {
             let uri = payload.uri.as_ref().as_str();
             let input_schema = lp_arena.get(*input).schema(lp_arena);
