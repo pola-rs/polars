@@ -143,7 +143,7 @@ def test_bytecode_parser_expression(
     try:
         import udfs
     except ModuleNotFoundError as exc:
-        assert "No module named 'udfs'" in str(exc)
+        assert "No module named 'udfs'" in str(exc)  # noqa: PT017
         # Skip test if udfs can't be imported because it's not in the path.
         # Prefer this over importorskip, so that if `udfs` can't be
         # imported for some other reason, then the test
@@ -162,7 +162,7 @@ def test_bytecode_parser_expression_noop(func: Callable[[Any], Any]) -> None:
     try:
         import udfs
     except ModuleNotFoundError as exc:
-        assert "No module named 'udfs'" in str(exc)
+        assert "No module named 'udfs'" in str(exc)  # noqa: PT017
         # Skip test if udfs can't be imported because it's not in the path.
         # Prefer this over importorskip, so that if `udfs` can't be
         # imported for some other reason, then the test

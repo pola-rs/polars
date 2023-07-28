@@ -1,9 +1,8 @@
 """Utilities related to user defined functions (such as those passed to `apply`)."""
 from __future__ import annotations
-import inspect
-from pathlib import Path
 
 import dis
+import inspect
 import re
 import sys
 import warnings
@@ -12,6 +11,7 @@ from collections import defaultdict
 from dis import get_instructions
 from inspect import signature
 from itertools import count, zip_longest
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
 
 if TYPE_CHECKING:
