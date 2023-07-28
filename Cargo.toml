@@ -1,10 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-  "polars",
+  "crates/*",
   "polars-cli",
-  "polars/polars-*",
-  "polars/polars-lazy/polars-*",
   "contribution/*",
   "examples/*",
 ]
