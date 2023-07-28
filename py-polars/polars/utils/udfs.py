@@ -49,7 +49,7 @@ class OpNames:
         "BINARY_TRUE_DIVIDE": "/",
         "BINARY_XOR": "^",
     }
-    CALL = "CALL" if _MIN_PY311 else "CALL_*"
+    CALL = {"CALL"} if _MIN_PY311 else {"CALL_FUNCTION", "CALL_METHOD"}
     CONTROL_FLOW = (
         {
             "POP_JUMP_FORWARD_IF_FALSE": "&",
@@ -66,6 +66,7 @@ class OpNames:
         }
     )
     LOAD_VALUES = frozenset(("LOAD_CONST", "LOAD_DEREF", "LOAD_FAST", "LOAD_GLOBAL"))
+    LOAD_ATTR = {"LOAD_ATTR"} if _MIN_PY311 else {"LOAD_METHOD"}
     LOAD = LOAD_VALUES | {"LOAD_METHOD", "LOAD_ATTR"}
     SYNTHETIC = {
         "POLARS_EXPRESSION": 1,
@@ -333,6 +334,7 @@ class BytecodeParser:
     ) -> None:
         """Generate warning that suggests an equivalent native polars expression."""
         # Import these here so that udfs can be imported without polars installed.
+
         from polars.exceptions import PolarsInefficientApplyWarning
         from polars.utils.various import (
             find_stacklevel,
@@ -516,7 +518,7 @@ class RewrittenInstructions:
         self,
         idx: int,
         *,
-        opnames: list[str],
+        opnames: list[set[str]],
         argvals: list[set[Any] | frozenset[Any] | dict[Any, Any]] | None,
     ) -> list[Instruction]:
         """
@@ -534,13 +536,9 @@ class RewrittenInstructions:
         n_required_ops, argvals = len(opnames), argvals or []
         instructions = self._instructions[idx : idx + n_required_ops]
         if len(instructions) == n_required_ops and all(
-            (
-                inst.opname == match_opname
-                if match_opname[-1] != "*"
-                else inst.opname.startswith(match_opname[:-1])
-            )
+            inst.opname in match_opnames
             and (match_argval is None or inst.argval in match_argval)
-            for inst, match_opname, match_argval in zip_longest(
+            for inst, match_opnames, match_argval in zip_longest(
                 instructions, opnames, argvals
             )
         ):
@@ -580,7 +578,7 @@ class RewrittenInstructions:
         """Replace builtin function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_*", OpNames.CALL],
+            opnames=[{"LOAD_GLOBAL"}, {"LOAD_FAST", "LOAD_CONST"}, OpNames.CALL],
             argvals=[_PYTHON_BUILTINS],
         ):
             inst1, inst2 = matching_instructions[:2]
@@ -606,7 +604,7 @@ class RewrittenInstructions:
         """Replace dictionary lookups with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_FAST", "BINARY_SUBSCR"],
+            opnames=[{"LOAD_GLOBAL"}, {"LOAD_FAST"}, {"BINARY_SUBSCR"}],
             argvals=[],
         ):
             inst1, inst2 = matching_instructions[:2]
@@ -634,7 +632,12 @@ class RewrittenInstructions:
         """Replace numpy/json function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_GLOBAL", "LOAD_*", "LOAD_*", OpNames.CALL],
+            opnames=[
+                {"LOAD_GLOBAL"},
+                OpNames.LOAD_ATTR,
+                {"LOAD_FAST", "LOAD_CONST"},
+                OpNames.CALL,
+            ],
             argvals=[
                 _NUMPY_MODULE_ALIASES | {"json"},
                 _NUMPY_FUNCTIONS | {"loads"},
@@ -660,7 +663,7 @@ class RewrittenInstructions:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=["LOAD_METHOD", OpNames.CALL],
+            opnames=[{"LOAD_METHOD"}, OpNames.CALL],
             argvals=[_PYTHON_METHODS_MAP],
         ):
             inst = matching_instructions[0]
