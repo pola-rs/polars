@@ -1,5 +1,7 @@
 """Utilities related to user defined functions (such as those passed to `apply`)."""
 from __future__ import annotations
+import inspect
+from pathlib import Path
 
 import dis
 import re
@@ -11,8 +13,6 @@ from dis import get_instructions
 from inspect import signature
 from itertools import count, zip_longest
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
-
-from polars.utils.various import get_all_caller_variables
 
 if TYPE_CHECKING:
     from dis import Instruction
@@ -100,6 +100,24 @@ _PYTHON_METHODS_MAP = {
     "upper": "str.to_uppercase",
 }
 
+def _get_all_caller_variables() -> dict[str, Any]:
+    """Get all local and global variables from caller's frame."""
+    pkg_dir = Path(__file__).parent.parent.parent
+    test_dir = pkg_dir / "tests"
+
+    # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
+    frame = inspect.currentframe()
+    n = 0
+    while frame:
+        fname = inspect.getfile(frame)
+        if fname.startswith(str(pkg_dir)) and not fname.startswith(str(test_dir)):
+            frame = frame.f_back
+            n += 1
+        else:
+            break
+    if frame is None:
+        return {}
+    return {**frame.f_locals, **frame.f_globals}
 
 class BytecodeParser:
     """Introspect UDF bytecode and determine if we can rewrite as native expression."""
@@ -314,6 +332,7 @@ class BytecodeParser:
     ) -> None:
         """Generate warning that suggests an equivalent native polars expression."""
         # Import these here so that udfs can be imported without polars installed.
+
         from polars.exceptions import PolarsInefficientApplyWarning
         from polars.utils.various import (
             find_stacklevel,
@@ -592,7 +611,7 @@ class RewrittenInstructions:
             argvals=[],
         ):
             inst1, inst2 = matching_instructions[:2]
-            variables = get_all_caller_variables()
+            variables = _get_all_caller_variables()
             if isinstance(variables.get(argval := inst1.argval, None), dict):
                 argval = f"map_dict({inst1.argval})"
             else:
