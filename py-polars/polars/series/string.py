@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING
 
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -262,14 +260,12 @@ class StringNameSpace:
         ]
         """
         if utc is not None:
-            warnings.warn(
+            issue_deprecation_warning(
                 "The `utc` argument is now a no-op and has no effect. "
                 "You can safely remove it. "
                 "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
                 "and offset-aware strings are converted to "
-                '``pl.Datetime(time_unit, "UTC")``.',
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                '``pl.Datetime(time_unit, "UTC")``.'
             )
         s = wrap_s(self._s)
         return (

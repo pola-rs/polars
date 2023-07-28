@@ -6,7 +6,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 
 if TYPE_CHECKING:
     from polars import DataFrame

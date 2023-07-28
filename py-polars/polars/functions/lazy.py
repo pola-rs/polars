@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
@@ -27,8 +26,7 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -323,10 +321,8 @@ def count(column: str | Series | None = None) -> Expr | int:
         return wrap_expr(plr.count())
 
     if isinstance(column, pl.Series):
-        warnings.warn(
-            "passing a Series to `count` is deprecated. Use `Series.len()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "passing a Series to `count` is deprecated. Use `Series.len()` instead."
         )
         return column.len()
     return col(column).count()
@@ -385,10 +381,8 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
-            "passing a Series to `std` is deprecated. Use `Series.std()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "passing a Series to `std` is deprecated. Use `Series.std()` instead."
         )
         return column.std(ddof)
     return col(column).std(ddof)
@@ -434,10 +428,8 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
-            "passing a Series to `var` is deprecated. Use `Series.var()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "passing a Series to `var` is deprecated. Use `Series.var()` instead."
         )
         return column.var(ddof)
     return col(column).var(ddof)
@@ -472,10 +464,8 @@ def mean(column: str | Series) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
-            "passing a Series to `mean` is deprecated. Use `Series.mean()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "passing a Series to `mean` is deprecated. Use `Series.mean()` instead."
         )
         return column.mean()
     return col(column).mean()
@@ -541,10 +531,8 @@ def median(column: str | Series) -> Expr | float | int | None:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
-            "passing a Series to `median` is deprecated. Use `Series.median()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "passing a Series to `median` is deprecated. Use `Series.median()` instead."
         )
         return column.median()
     return col(column).median()
@@ -579,10 +567,8 @@ def n_unique(column: str | Series) -> Expr | int:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
-            "passing a Series to `n_unique` is deprecated. Use `Series.n_unique()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "passing a Series to `n_unique` is deprecated. Use `Series.n_unique()` instead."
         )
         return column.n_unique()
     return col(column).n_unique()
@@ -674,10 +660,8 @@ def first(column: str | Series | None = None) -> Expr | Any:
         return wrap_expr(plr.first())
 
     if isinstance(column, pl.Series):
-        warnings.warn(
-            "passing a Series to `first` is deprecated. Use `series[0]` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "passing a Series to `first` is deprecated. Use `series[0]` instead."
         )
         if column.len() > 0:
             return column[0]
@@ -740,10 +724,8 @@ def last(column: str | Series | None = None) -> Expr:
         return wrap_expr(plr.last())
 
     if isinstance(column, pl.Series):
-        warnings.warn(
-            "passing a Series to `last` is deprecated. Use `series[-1]` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "passing a Series to `last` is deprecated. Use `series[-1]` instead."
         )
         if column.len() > 0:
             return column[-1]
@@ -800,10 +782,8 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
-            "passing a Series to `head` is deprecated. Use `Series.head()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "passing a Series to `head` is deprecated. Use `Series.head()` instead."
         )
         return column.head(n)
     return col(column).head(n)
@@ -857,10 +837,8 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
 
     """
     if isinstance(column, pl.Series):
-        warnings.warn(
-            "passing a Series to `tail` is deprecated. Use `Series.tail()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "passing a Series to `tail` is deprecated. Use `Series.tail()` instead."
         )
         return column.tail(n)
     return col(column).tail(n)

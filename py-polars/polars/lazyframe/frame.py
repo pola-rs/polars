@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import warnings
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -55,12 +54,11 @@ from polars.utils._parse_expr_input import (
 )
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
 from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    find_stacklevel,
     normalise_filepath,
 )
 
@@ -2089,11 +2087,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         if "exprs" in named_exprs:
-            warnings.warn(
+            issue_deprecation_warning(
                 "passing expressions to `select` using the keyword argument `exprs` is"
-                " deprecated. Use positional syntax instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                " deprecated. Use positional syntax instead."
             )
             first_input = named_exprs.pop("exprs")
             pyexprs = parse_as_list_of_expressions(
@@ -3216,11 +3212,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         if "exprs" in named_exprs:
-            warnings.warn(
+            issue_deprecation_warning(
                 "passing expressions to `with_columns` using the keyword argument"
-                " `exprs` is deprecated. Use positional syntax instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                " `exprs` is deprecated. Use positional syntax instead."
             )
             first_input = named_exprs.pop("exprs")
             pyexprs = parse_as_list_of_expressions(

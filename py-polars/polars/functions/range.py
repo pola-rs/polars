@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from datetime import time, timedelta
 from typing import TYPE_CHECKING, overload
 
@@ -12,8 +11,7 @@ from polars.utils._wrap import wrap_expr
 from polars.utils.convert import (
     _timedelta_to_pl_duration,
 )
-from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -119,14 +117,12 @@ def arange(
     """
     # This check is not water-proof, but we cannot check for literal expressions here
     if not (isinstance(start, int) and isinstance(end, int)):
-        warnings.warn(
+        issue_deprecation_warning(
             " `arange` has been replaced by two new functions:"
             " `int_range` for generating a single range,"
             " and `int_ranges` for generating a list column with multiple ranges."
             " `arange` will remain available as an alias for `int_range`, which means its behaviour will change."
-            " To silence this warning, use either of the new functions.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            " To silence this warning, use either of the new functions."
         )
 
     start = parse_as_expression(start)
@@ -534,10 +530,8 @@ def date_range(
 
     """
     if name is not None:
-        warnings.warn(
-            "the `name` argument is deprecated. Use the `alias` method instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "the `name` argument is deprecated. Use the `alias` method instead."
         )
 
     interval = _parse_interval_argument(interval)
@@ -795,10 +789,8 @@ def time_range(
 
     """
     if name is not None:
-        warnings.warn(
-            "the `name` argument is deprecated. Use the `alias` method instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+        issue_deprecation_warning(
+            "the `name` argument is deprecated. Use the `alias` method instead."
         )
 
     interval = _parse_interval_argument(interval)
@@ -958,20 +950,16 @@ def _parse_interval_argument(interval: str | timedelta) -> str:
 
 
 def _warn_for_deprecation_date_range() -> None:
-    warnings.warn(
+    issue_deprecation_warning(
         "behavior of `date_range` will change in a future version."
         " The result will be a single range of type Date or Datetime instead of List."
-        " Use the new `date_ranges` function to retain the old functionality and silence this warning.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
+        " Use the new `date_ranges` function to retain the old functionality and silence this warning."
     )
 
 
 def _warn_for_deprecation_time_range() -> None:
-    warnings.warn(
+    issue_deprecation_warning(
         "behavior of `time_range` will change in a future version."
         " The result will be a single range of type Time instead of List."
-        " Use the new `date_ranges` function to retain the old functionality and silence this warning.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
+        " Use the new `date_ranges` function to retain the old functionality and silence this warning."
     )

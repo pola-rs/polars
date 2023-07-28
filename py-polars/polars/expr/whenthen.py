@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any
 
 import polars.functions as F
 from polars.expr.expr import Expr
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
 
 if TYPE_CHECKING:
     from polars.polars import PyExpr
@@ -182,9 +180,7 @@ class ChainedThen(Expr):
 
 
 def _warn_for_deprecated_string_input_behavior(input: str) -> None:
-    warnings.warn(
+    issue_deprecation_warning(
         "in a future version, string input will be parsed as a column name rather than a string literal."
-        f" To silence this warning, pass the input as an expression instead: `pl.lit({input!r})`",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
+        f" To silence this warning, pass the input as an expression instead: `pl.lit({input!r})`"
     )

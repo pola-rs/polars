@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import math
 import os
-import warnings
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -89,11 +88,10 @@ from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
 )
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
-    find_stacklevel,
     parse_version,
     range_to_series,
     range_to_slice,
@@ -412,11 +410,9 @@ class Series:
     @property
     def time_unit(self) -> TimeUnit | None:
         """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
-        warnings.warn(
+        issue_deprecation_warning(
             "`Series.time_unit` is deprecated and will be removed in a future version,"
-            " please use `Series.dtype.time_unit` instead",
-            category=DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            " please use `Series.dtype.time_unit` instead"
         )
         return self._s.time_unit()
 
@@ -2156,12 +2152,10 @@ class Series:
             # if 'in_place' is not None, this indicates that the parameter was
             # explicitly set by the caller, and we should warn against it (use
             # of NoDefault only applies when one of the valid values is None).
-            warnings.warn(
+            issue_deprecation_warning(
                 "the `in_place` parameter is deprecated and will be removed in a future"
                 " version; note that renaming is a shallow-copy operation with"
-                " essentially zero cost.",
-                category=DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                " essentially zero cost."
             )
         if in_place:
             self._s.rename(name)
@@ -2410,12 +2404,10 @@ class Series:
 
         """
         if append_chunks is not None:
-            warnings.warn(
+            issue_deprecation_warning(
                 "the `append_chunks` argument will be removed and `append` will change"
                 " to always behave like `append_chunks=True` (the previous default)."
-                " For the behavior of `append_chunks=False`, use `Series.extend`.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                " For the behavior of `append_chunks=False`, use `Series.extend`."
             )
         else:
             append_chunks = True

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
