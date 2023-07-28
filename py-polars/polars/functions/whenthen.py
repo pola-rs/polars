@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars.utils._parse_expr_input import parse_as_expression
+from polars.utils.decorators import deprecated_alias
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -13,9 +14,10 @@ if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr
 
 
-def when(expr: IntoExpr) -> pl.When:
+@deprecated_alias(expr="condition")
+def when(condition: IntoExpr) -> pl.When:
     """
-    Start a "when, then, otherwise" expression.
+    Start a `when-then-otherwise` expression.
 
     Expression similar to an `if-else` statement in Python. Always initiated by a
     `pl.when(<condition>).then(<value if condition>)`. Optionally followed by chaining
@@ -23,6 +25,12 @@ def when(expr: IntoExpr) -> pl.When:
     are `True`, an optional `.otherwise(<value if all statements are false>)` can be
     appended at the end. If not appended, and none of the conditions are `True`, `None`
     will be returned.
+
+    Parameters
+    ----------
+    condition
+        The condition for applying the subsequent statement.
+        Accepts a boolean expression. String input is parsed as a column name.
 
     Examples
     --------
@@ -89,7 +97,6 @@ def when(expr: IntoExpr) -> pl.When:
     │ 4   ┆ 0   ┆ 1    │
     └─────┴─────┴──────┘
 
-
     """
-    pyexpr = parse_as_expression(expr)
-    return pl.When(plr.when(pyexpr))
+    condition_pyexpr = parse_as_expression(condition)
+    return pl.When(plr.when(condition_pyexpr))

@@ -4,6 +4,7 @@ import inspect
 from pathlib import Path
 
 import dis
+import inspect
 import re
 import sys
 import warnings
@@ -12,6 +13,7 @@ from collections import defaultdict
 from dis import get_instructions
 from inspect import signature
 from itertools import count, zip_longest
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
 
 if TYPE_CHECKING:
@@ -118,6 +120,25 @@ def _get_all_caller_variables() -> dict[str, Any]:
     if frame is None:
         return {}
     return {**frame.f_locals, **frame.f_globals}
+
+def _get_all_caller_variables() -> dict[str, Any]:
+    """Get all local and global variables from caller's frame."""
+    pkg_dir = Path(__file__).parent.parent
+
+    # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
+    frame = inspect.currentframe()
+    n = 0
+    while frame:
+        fname = inspect.getfile(frame)
+        if fname.startswith(str(pkg_dir)):
+            frame = frame.f_back
+            n += 1
+        else:
+            break
+    if frame is None:
+        return {}
+    return {**frame.f_locals, **frame.f_globals}
+
 
 class BytecodeParser:
     """Introspect UDF bytecode and determine if we can rewrite as native expression."""
