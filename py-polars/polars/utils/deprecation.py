@@ -63,7 +63,7 @@ def deprecated_name(
 
     Notes
     -----
-    For deprecating renamed class methods, use the `redirect` class decorator instead.
+    For deprecating renamed class methods, use the ``redirect`` class decorator instead.
 
     """
     return deprecated(f"It has been renamed to `{new_name}`.", version=version)
