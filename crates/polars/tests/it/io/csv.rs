@@ -4,7 +4,7 @@ use polars::io::RowCount;
 
 use super::*;
 
-const FOODS_CSV: &str = "../examples/datasets/foods1.csv";
+const FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
 
 #[test]
 fn write_csv() {
