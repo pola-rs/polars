@@ -61,8 +61,14 @@ pub(super) fn replace_lit_n_char(
 
             // set the end of this string region
             // safety: invariant of Utf8Array tells us that there is a next offset.
-            if let Some(next) = offsets_iter.next() {
-                end = *next as usize - 1;
+
+            // must loop to skip null values, as they have the same offsets
+            for next in offsets_iter.by_ref() {
+                let new_end = *next as usize - 1;
+                if new_end != end {
+                    end = new_end;
+                    break;
+                }
             }
         }
     }
