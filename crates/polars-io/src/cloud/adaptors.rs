@@ -169,10 +169,7 @@ impl CloudWriter {
         let build_result =
             runtime.block_on(async { Self::build_writer(&object_store, &path).await });
         match build_result {
-            Err(error) => Err(PolarsError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("object store error {error:?}"),
-            ))),
+            Err(error) => Err(PolarsError::from(error)),
             Ok((multipart_id, writer)) => Ok(CloudWriter {
                 object_store,
                 path,
