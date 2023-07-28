@@ -122,7 +122,8 @@ def arange(
             " `int_range` for generating a single range,"
             " and `int_ranges` for generating a list column with multiple ranges."
             " `arange` will remain available as an alias for `int_range`, which means its behaviour will change."
-            " To silence this warning, use either of the new functions."
+            " To silence this warning, use either of the new functions.",
+            version="0.18.5",
         )
 
     start = parse_as_expression(start)
@@ -531,7 +532,8 @@ def date_range(
     """
     if name is not None:
         issue_deprecation_warning(
-            "the `name` argument is deprecated. Use the `alias` method instead."
+            "the `name` argument is deprecated. Use the `alias` method instead.",
+            version="0.18.0",
         )
 
     interval = _parse_interval_argument(interval)
@@ -790,7 +792,8 @@ def time_range(
     """
     if name is not None:
         issue_deprecation_warning(
-            "the `name` argument is deprecated. Use the `alias` method instead."
+            "the `name` argument is deprecated. Use the `alias` method instead.",
+            version="0.18.0",
         )
 
     interval = _parse_interval_argument(interval)
@@ -953,7 +956,8 @@ def _warn_for_deprecation_date_range() -> None:
     issue_deprecation_warning(
         "behavior of `date_range` will change in a future version."
         " The result will be a single range of type Date or Datetime instead of List."
-        " Use the new `date_ranges` function to retain the old functionality and silence this warning."
+        " Use the new `date_ranges` function to retain the old functionality and silence this warning.",
+        version="0.18.9",
     )
 
 
@@ -961,5 +965,6 @@ def _warn_for_deprecation_time_range() -> None:
     issue_deprecation_warning(
         "behavior of `time_range` will change in a future version."
         " The result will be a single range of type Time instead of List."
-        " Use the new `date_ranges` function to retain the old functionality and silence this warning."
+        " Use the new `date_ranges` function to retain the old functionality and silence this warning.",
+        version="0.18.9",
     )

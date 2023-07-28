@@ -19,30 +19,54 @@ if TYPE_CHECKING:
     T = TypeVar("T")
 
 
-def issue_deprecation_warning(message: str) -> None:
-    """Issue a DeprecationWarning."""
+def issue_deprecation_warning(message: str, *, version: str) -> None:
+    """
+    Issue a deprecation warning.
+
+    Parameters
+    ----------
+    message
+        The message associated with the warning.
+    version
+        The Polars version number in which the warning is first issued.
+        This argument is used to help developers determine when to remove the
+        deprecated functionality.
+
+    """
     warnings.warn(message, DeprecationWarning, stacklevel=find_stacklevel())
 
 
-def deprecated(reason: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
-    """
-    Decorator which can be used to mark functions as deprecated.
-
-    It will result in a warning being emitted when the function is used.
-
-    """
+def deprecated(
+    message: str, *, version: str
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """Decorator to mark a function as deprecated."""
 
     def deco(function: Callable[P, T]) -> Callable[P, T]:
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             issue_deprecation_warning(
-                message=f"Call to deprecated function {function.__name__}. ({reason})"
+                f"`{function.__name__}` is deprecated and will be removed in a future version. {message}",
+                version=version,
             )
             return function(*args, **kwargs)
 
         return wrapper
 
     return deco
+
+
+def deprecated_name(
+    new_name: str, *, version: str
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """
+    Decorator to mark a function as deprecated due to being renamed.
+
+    Notes
+    -----
+    For deprecating renamed class methods, use the `redirect` class decorator instead.
+
+    """
+    return deprecated(f"It has been renamed to `{new_name}`.", version=version)
 
 
 def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
@@ -65,6 +89,31 @@ def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T
         return wrapper
 
     return deco
+
+
+def _rename_kwargs(
+    func_name: str,
+    kwargs: dict[str, object],
+    aliases: dict[str, str],
+) -> None:
+    """
+    Rename the keyword arguments of a function.
+
+    Helper function for deprecating function and method arguments.
+    """
+    for alias, new in aliases.items():
+        if alias in kwargs:
+            if new in kwargs:
+                raise TypeError(
+                    f"{func_name} received both {alias} and {new} as arguments!"
+                    f" {alias} is deprecated, use {new} instead."
+                )
+            issue_deprecation_warning(
+                f"`{alias}` is deprecated as an argument to `{func_name}`;"
+                f" use `{new}` instead.",
+                version="",
+            )
+            kwargs[new] = kwargs.pop(alias)
 
 
 def warn_closed_future_change() -> Callable[[Callable[P, T]], Callable[P, T]]:
@@ -97,30 +146,6 @@ def warn_closed_future_change() -> Callable[[Callable[P, T]], Callable[P, T]]:
         return wrapper
 
     return deco
-
-
-def _rename_kwargs(
-    func_name: str,
-    kwargs: dict[str, object],
-    aliases: dict[str, str],
-) -> None:
-    """
-    Rename the keyword arguments of a function.
-
-    Helper function for deprecating function and method arguments.
-    """
-    for alias, new in aliases.items():
-        if alias in kwargs:
-            if new in kwargs:
-                raise TypeError(
-                    f"{func_name} received both {alias} and {new} as arguments!"
-                    f" {alias} is deprecated, use {new} instead."
-                )
-            issue_deprecation_warning(
-                f"`{alias}` is deprecated as an argument to `{func_name}`;"
-                f" use `{new}` instead."
-            )
-            kwargs[new] = kwargs.pop(alias)
 
 
 def deprecate_nonkeyword_arguments(
@@ -180,7 +205,7 @@ def deprecate_nonkeyword_arguments(
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             if len(args) > num_allowed_args:
-                issue_deprecation_warning(msg)
+                issue_deprecation_warning(msg, version="")
             return function(*args, **kwargs)
 
         wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
@@ -223,7 +248,8 @@ def redirect(
             new_item_name = new_item if isinstance(new_item, str) else new_item[0]
             issue_deprecation_warning(
                 f"`{type(obj).__name__}.{item}` has been renamed;"
-                f" this redirect is temporary, please use `.{new_item_name}` instead"
+                f" this redirect is temporary, please use `.{new_item_name}` instead",
+                version="",
             )
             item = new_item_name
 

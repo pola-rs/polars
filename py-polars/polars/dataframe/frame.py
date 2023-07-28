@@ -6551,7 +6551,8 @@ class DataFrame:
             issue_deprecation_warning(
                 "In a future version of polars, the default `aggregate_function` "
                 "will change from `'first'` to `None`. Please pass `'first'` to keep the "
-                "current behaviour, or `None` to accept the new one."
+                "current behaviour, or `None` to accept the new one.",
+                version="0.16.16",
             )
             aggregate_function = "first"
 

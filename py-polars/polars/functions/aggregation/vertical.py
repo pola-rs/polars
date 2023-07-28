@@ -90,7 +90,8 @@ def all(
             return F.col("*")
         elif isinstance(exprs, pl.Series):
             issue_deprecation_warning(
-                "passing a Series to `all` is deprecated. Use `Series.all()` instead."
+                "passing a Series to `all` is deprecated. Use `Series.all()` instead.",
+                version="0.18.7",
             )
             return exprs.all()
         elif isinstance(exprs, str):
@@ -160,7 +161,8 @@ def any(
     if not more_exprs:
         if isinstance(exprs, pl.Series):
             issue_deprecation_warning(
-                "passing a Series to `any` is deprecated. Use `Series.any()` instead."
+                "passing a Series to `any` is deprecated. Use `Series.any()` instead.",
+                version="0.18.7",
             )
             return exprs.any()
         elif isinstance(exprs, str):
@@ -252,7 +254,8 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     if not more_exprs:
         if isinstance(exprs, pl.Series):
             issue_deprecation_warning(
-                "passing a Series to `max` is deprecated. Use `Series.max()` instead."
+                "passing a Series to `max` is deprecated. Use `Series.max()` instead.",
+                version="0.18.7",
             )
             return exprs.max()
         elif isinstance(exprs, str):
@@ -346,7 +349,8 @@ def min(
     if not more_exprs:
         if isinstance(exprs, pl.Series):
             issue_deprecation_warning(
-                "passing a Series to `min` is deprecated. Use `Series.min()` instead."
+                "passing a Series to `min` is deprecated. Use `Series.min()` instead.",
+                version="0.18.7",
             )
             return exprs.min()
         elif isinstance(exprs, str):
@@ -441,7 +445,8 @@ def sum(
     if not more_exprs:
         if isinstance(exprs, pl.Series):
             issue_deprecation_warning(
-                "passing a Series to `sum` is deprecated. Use `Series.sum()` instead."
+                "passing a Series to `sum` is deprecated. Use `Series.sum()` instead.",
+                version="0.18.7",
             )
             return exprs.sum()
         elif isinstance(exprs, str):
@@ -513,7 +518,8 @@ def cumsum(
     if not more_exprs:
         if isinstance(exprs, pl.Series):
             issue_deprecation_warning(
-                "passing a Series to `cumsum` is deprecated. Use `Series.cumsum()` instead."
+                "passing a Series to `cumsum` is deprecated. Use `Series.cumsum()` instead.",
+                version="0.18.7",
             )
             return exprs.cumsum()
         elif isinstance(exprs, str):
@@ -525,5 +531,6 @@ def cumsum(
 
 def _warn_for_deprecated_horizontal_use(name: str) -> None:
     issue_deprecation_warning(
-        f"using `{name}` for horizontal computation is deprecated. Use `{name}_horizontal` instead."
+        f"using `{name}` for horizontal computation is deprecated. Use `{name}_horizontal` instead.",
+        version="0.18.7",
     )

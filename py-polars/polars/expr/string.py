@@ -141,7 +141,8 @@ class ExprStringNameSpace:
                 "You can safely remove it. "
                 "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
                 "and offset-aware strings are converted to "
-                '``pl.Datetime(time_unit, "UTC")``.'
+                '``pl.Datetime(time_unit, "UTC")``.',
+                version="0.17.15",
             )
         return wrap_expr(
             self._pyexpr.str_to_datetime(

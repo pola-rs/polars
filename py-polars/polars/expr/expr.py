@@ -8565,16 +8565,20 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
-    @deprecated("Since version 0.8.9 'cache' is a no-op")
+    @deprecated(
+        "This method now does nothing. It has been superseded by the"
+        " `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically"
+        " caches expressions that are equal.",
+        version="0.18.9",
+    )
     def cache(self) -> Self:
         """
-        A no-op.
+        Cache this expression so that it only is executed once per context.
 
-        Don't use this, it does nothing. Activate `comm_subexpr_elim` to automatically
-        cache expression that are equal.
-
-        .. deprecated:: 0.8.9
-            Since version this method doesn't do anything.
+        .. deprecated:: 0.18.9
+            This method now does nothing. It has been superseded by the
+            `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically
+            caches expressions that are equal.
 
         """
         return self

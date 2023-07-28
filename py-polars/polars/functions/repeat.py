@@ -122,7 +122,8 @@ def repeat(
     """
     if name is not None:
         issue_deprecation_warning(
-            "the `name` argument is deprecated. Use the `alias` method instead."
+            "the `name` argument is deprecated. Use the `alias` method instead.",
+            version="0.18.0",
         )
 
     if isinstance(n, int):

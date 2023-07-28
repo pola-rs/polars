@@ -322,7 +322,8 @@ def count(column: str | Series | None = None) -> Expr | int:
 
     if isinstance(column, pl.Series):
         issue_deprecation_warning(
-            "passing a Series to `count` is deprecated. Use `Series.len()` instead."
+            "passing a Series to `count` is deprecated. Use `Series.len()` instead.",
+            version="0.18.8",
         )
         return column.len()
     return col(column).count()
@@ -382,7 +383,8 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
     """
     if isinstance(column, pl.Series):
         issue_deprecation_warning(
-            "passing a Series to `std` is deprecated. Use `Series.std()` instead."
+            "passing a Series to `std` is deprecated. Use `Series.std()` instead.",
+            version="0.18.8",
         )
         return column.std(ddof)
     return col(column).std(ddof)
@@ -429,7 +431,8 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
     """
     if isinstance(column, pl.Series):
         issue_deprecation_warning(
-            "passing a Series to `var` is deprecated. Use `Series.var()` instead."
+            "passing a Series to `var` is deprecated. Use `Series.var()` instead.",
+            version="0.18.8",
         )
         return column.var(ddof)
     return col(column).var(ddof)
@@ -465,7 +468,8 @@ def mean(column: str | Series) -> Expr | float | None:
     """
     if isinstance(column, pl.Series):
         issue_deprecation_warning(
-            "passing a Series to `mean` is deprecated. Use `Series.mean()` instead."
+            "passing a Series to `mean` is deprecated. Use `Series.mean()` instead.",
+            version="0.18.8",
         )
         return column.mean()
     return col(column).mean()
@@ -532,7 +536,8 @@ def median(column: str | Series) -> Expr | float | int | None:
     """
     if isinstance(column, pl.Series):
         issue_deprecation_warning(
-            "passing a Series to `median` is deprecated. Use `Series.median()` instead."
+            "passing a Series to `median` is deprecated. Use `Series.median()` instead.",
+            version="0.18.8",
         )
         return column.median()
     return col(column).median()
@@ -568,7 +573,8 @@ def n_unique(column: str | Series) -> Expr | int:
     """
     if isinstance(column, pl.Series):
         issue_deprecation_warning(
-            "passing a Series to `n_unique` is deprecated. Use `Series.n_unique()` instead."
+            "passing a Series to `n_unique` is deprecated. Use `Series.n_unique()` instead.",
+            version="0.18.8",
         )
         return column.n_unique()
     return col(column).n_unique()
@@ -661,7 +667,8 @@ def first(column: str | Series | None = None) -> Expr | Any:
 
     if isinstance(column, pl.Series):
         issue_deprecation_warning(
-            "passing a Series to `first` is deprecated. Use `series[0]` instead."
+            "passing a Series to `first` is deprecated. Use `series[0]` instead.",
+            version="0.18.8",
         )
         if column.len() > 0:
             return column[0]
@@ -725,7 +732,8 @@ def last(column: str | Series | None = None) -> Expr:
 
     if isinstance(column, pl.Series):
         issue_deprecation_warning(
-            "passing a Series to `last` is deprecated. Use `series[-1]` instead."
+            "passing a Series to `last` is deprecated. Use `series[-1]` instead.",
+            version="0.18.8",
         )
         if column.len() > 0:
             return column[-1]
@@ -783,7 +791,8 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
     """
     if isinstance(column, pl.Series):
         issue_deprecation_warning(
-            "passing a Series to `head` is deprecated. Use `Series.head()` instead."
+            "passing a Series to `head` is deprecated. Use `Series.head()` instead.",
+            version="0.18.8",
         )
         return column.head(n)
     return col(column).head(n)
@@ -838,7 +847,8 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
     """
     if isinstance(column, pl.Series):
         issue_deprecation_warning(
-            "passing a Series to `tail` is deprecated. Use `Series.tail()` instead."
+            "passing a Series to `tail` is deprecated. Use `Series.tail()` instead.",
+            version="0.18.8",
         )
         return column.tail(n)
     return col(column).tail(n)

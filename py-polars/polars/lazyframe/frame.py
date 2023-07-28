@@ -2089,7 +2089,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if "exprs" in named_exprs:
             issue_deprecation_warning(
                 "passing expressions to `select` using the keyword argument `exprs` is"
-                " deprecated. Use positional syntax instead."
+                " deprecated. Use positional syntax instead.",
+                version="0.18.1",
             )
             first_input = named_exprs.pop("exprs")
             pyexprs = parse_as_list_of_expressions(
@@ -3214,7 +3215,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if "exprs" in named_exprs:
             issue_deprecation_warning(
                 "passing expressions to `with_columns` using the keyword argument"
-                " `exprs` is deprecated. Use positional syntax instead."
+                " `exprs` is deprecated. Use positional syntax instead.",
+                version="0.18.1",
             )
             first_input = named_exprs.pop("exprs")
             pyexprs = parse_as_list_of_expressions(
