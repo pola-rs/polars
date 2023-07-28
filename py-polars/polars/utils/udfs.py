@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dis
+import inspect
 import re
 import sys
 import warnings
@@ -10,9 +11,8 @@ from collections import defaultdict
 from dis import get_instructions
 from inspect import signature
 from itertools import count, zip_longest
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
-
-from polars.utils.various import get_all_caller_variables
 
 if TYPE_CHECKING:
     from dis import Instruction
@@ -99,6 +99,25 @@ _PYTHON_METHODS_MAP = {
     "title": "str.to_titlecase",
     "upper": "str.to_uppercase",
 }
+
+
+def _get_all_caller_variables() -> dict[str, Any]:
+    """Get all local and global variables from caller's frame."""
+    pkg_dir = Path(__file__).parent.parent
+
+    # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
+    frame = inspect.currentframe()
+    n = 0
+    while frame:
+        fname = inspect.getfile(frame)
+        if fname.startswith(str(pkg_dir)):
+            frame = frame.f_back
+            n += 1
+        else:
+            break
+    if frame is None:
+        return {}
+    return {**frame.f_locals, **frame.f_globals}
 
 
 class BytecodeParser:
@@ -591,7 +610,7 @@ class RewrittenInstructions:
             argvals=[],
         ):
             inst1, inst2 = matching_instructions[:2]
-            variables = get_all_caller_variables()
+            variables = _get_all_caller_variables()
             if isinstance(variables.get(argval := inst1.argval, None), dict):
                 argval = f"map_dict({inst1.argval})"
             else:

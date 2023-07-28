@@ -140,7 +140,15 @@ NOOP_TEST_CASES = [
 def test_bytecode_parser_expression(
     col: str, func: Callable[[Any], Any], expected: str
 ) -> None:
-    udfs = pytest.importorskip("udfs")
+    try:
+        import udfs  # type: ignore[import]
+    except ModuleNotFoundError as exc:
+        assert "No module named 'udfs'" in str(exc)  # noqa: PT017
+        # Skip test if udfs can't be imported because it's not in the path.
+        # Prefer this over importorskip, so that if `udfs` can't be
+        # imported for some other reason, then the test
+        # won't be skipped.
+        return
     bytecode_parser = udfs.BytecodeParser(func, apply_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected
@@ -151,5 +159,13 @@ def test_bytecode_parser_expression(
     NOOP_TEST_CASES,
 )
 def test_bytecode_parser_expression_noop(func: Callable[[Any], Any]) -> None:
-    udfs = pytest.importorskip("udfs")
+    try:
+        import udfs
+    except ModuleNotFoundError as exc:
+        assert "No module named 'udfs'" in str(exc)  # noqa: PT017
+        # Skip test if udfs can't be imported because it's not in the path.
+        # Prefer this over importorskip, so that if `udfs` can't be
+        # imported for some other reason, then the test
+        # won't be skipped.
+        return
     assert not udfs.BytecodeParser(func, apply_target="expr").can_rewrite()
