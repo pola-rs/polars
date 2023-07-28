@@ -453,4 +453,3 @@ def in_terminal_that_supports_colour() -> bool:
             )
         ) or os.environ.get("PYCHARM_HOSTED") == "1"
     return False
-

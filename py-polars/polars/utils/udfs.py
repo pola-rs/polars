@@ -100,6 +100,7 @@ _PYTHON_METHODS_MAP = {
     "upper": "str.to_uppercase",
 }
 
+
 def _get_all_caller_variables() -> dict[str, Any]:
     """Get all local and global variables from caller's frame."""
     pkg_dir = Path(__file__).parent.parent
@@ -117,6 +118,7 @@ def _get_all_caller_variables() -> dict[str, Any]:
     if frame is None:
         return {}
     return {**frame.f_locals, **frame.f_globals}
+
 
 class BytecodeParser:
     """Introspect UDF bytecode and determine if we can rewrite as native expression."""
