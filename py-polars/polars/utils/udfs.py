@@ -12,6 +12,8 @@ from inspect import signature
 from itertools import count, zip_longest
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
 
+from polars.utils.various import get_all_caller_variables
+
 if TYPE_CHECKING:
     from dis import Instruction
 
@@ -546,6 +548,7 @@ class RewrittenInstructions:
                     self._rewrite_functions,
                     self._rewrite_methods,
                     self._rewrite_builtins,
+                    self._rewrite_lookups,
                 )
             ):
                 updated_instructions.append(inst)
@@ -565,6 +568,34 @@ class RewrittenInstructions:
             if (argval := inst1.argval) in _PYTHON_CASTS_MAP:
                 dtype = _PYTHON_CASTS_MAP[argval]
                 argval = f"cast(pl.{dtype})"
+
+            synthetic_call = inst1._replace(
+                opname="POLARS_EXPRESSION",
+                argval=argval,
+                argrepr=argval,
+                offset=inst2.offset,
+            )
+            # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
+            operand = inst2._replace(offset=inst1.offset)
+            updated_instructions.extend((operand, synthetic_call))
+
+        return len(matching_instructions)
+
+    def _rewrite_lookups(
+        self, idx: int, updated_instructions: list[Instruction]
+    ) -> int:
+        """Replace dictionary lookups with a synthetic POLARS_EXPRESSION op."""
+        if matching_instructions := self._matches(
+            idx,
+            opnames=["LOAD_GLOBAL", "LOAD_FAST", "BINARY_SUBSCR"],
+            argvals=[],
+        ):
+            inst1, inst2 = matching_instructions[:2]
+            variables = get_all_caller_variables()
+            if isinstance(variables.get(argval := inst1.argval, None), dict):
+                argval = f"map_dict({inst1.argval})"
+            else:
+                return 0
 
             synthetic_call = inst1._replace(
                 opname="POLARS_EXPRESSION",

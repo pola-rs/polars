@@ -11,9 +11,15 @@ import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
-from tests.test_udfs import MY_CONSTANT, NOOP_TEST_CASES, TEST_CASES
+from tests.test_udfs import MY_CONSTANT, MY_DICT, MY_LIST, NOOP_TEST_CASES, TEST_CASES
 
-EVAL_ENVIRONMENT = {"np": numpy, "pl": pl, "MY_CONSTANT": MY_CONSTANT}
+EVAL_ENVIRONMENT = {
+    "np": numpy,
+    "pl": pl,
+    "MY_CONSTANT": MY_CONSTANT,
+    "MY_DICT": MY_DICT,
+    "MY_LIST": MY_LIST,
+}
 
 
 @pytest.mark.parametrize(

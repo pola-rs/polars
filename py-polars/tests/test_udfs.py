@@ -20,6 +20,8 @@ import numpy as np
 import pytest
 
 MY_CONSTANT = 3
+MY_DICT = {1: "1", 2: "2", 3: "3"}
+MY_LIST = [1, 2, 3]
 
 # column_name, function, expected_suggestion
 TEST_CASES = [
@@ -116,12 +118,18 @@ TEST_CASES = [
     # json expr: load/extract
     # ---------------------------------------------
     ("c", lambda x: json.loads(x), 'pl.col("c").str.json_extract()'),
+    # ---------------------------------------------
+    # map_dict
+    # ---------------------------------------------
+    ("a", lambda x: MY_DICT[x], 'pl.col("a").map_dict(MY_DICT)'),
 ]
 
 NOOP_TEST_CASES = [
     lambda x: x,
     lambda x, y: x + y,
     lambda x: x[0] + 1,
+    lambda x: MY_LIST[x],
+    lambda x: MY_DICT[1],
 ]
 
 
