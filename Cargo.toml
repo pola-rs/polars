@@ -4,7 +4,6 @@ members = [
   "polars",
   "polars-cli",
   "polars/polars-*",
-  "polars/polars-lazy/polars-*",
   "contribution/*",
   "examples/*",
 ]
