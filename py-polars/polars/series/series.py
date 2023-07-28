@@ -89,7 +89,7 @@ from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
 )
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,

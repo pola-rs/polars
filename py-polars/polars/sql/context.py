@@ -13,7 +13,7 @@ from polars.dataframe import DataFrame
 from polars.lazyframe import LazyFrame
 from polars.type_aliases import FrameType
 from polars.utils._wrap import wrap_ldf
-from polars.utils.decorators import deprecated_alias, redirect
+from polars.utils.deprecation import deprecated_alias, redirect
 from polars.utils.various import _get_stack_locals
 
 with contextlib.suppress(ImportError):  # Module not available when building docs

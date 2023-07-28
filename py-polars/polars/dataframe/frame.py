@@ -87,7 +87,7 @@ from polars.utils._construction import (
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,

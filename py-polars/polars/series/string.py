@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:

@@ -7,7 +7,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time

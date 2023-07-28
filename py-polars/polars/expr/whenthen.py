@@ -7,7 +7,7 @@ import polars.functions as F
 from polars.expr.expr import Expr
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:

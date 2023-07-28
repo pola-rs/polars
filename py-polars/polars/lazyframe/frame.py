@@ -55,7 +55,7 @@ from polars.utils._parse_expr_input import (
 )
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,

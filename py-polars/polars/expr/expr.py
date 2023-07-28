@@ -50,7 +50,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import (
+from polars.utils.deprecation import (
     deprecated,
     deprecated_alias,
     warn_closed_future_change,

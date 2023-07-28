@@ -15,7 +15,7 @@ from polars.utils.convert import (
     _timedelta_to_pl_duration,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.decorators import deprecate_nonkeyword_arguments, redirect
+from polars.utils.deprecation import deprecate_nonkeyword_arguments, redirect
 from polars.utils.meta import get_idx_type
 from polars.utils.various import _in_notebook, parse_version
 

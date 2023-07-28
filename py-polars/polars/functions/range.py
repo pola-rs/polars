@@ -12,7 +12,7 @@ from polars.utils._wrap import wrap_expr
 from polars.utils.convert import (
     _timedelta_to_pl_duration,
 )
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs

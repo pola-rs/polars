@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Iterable, overload
 
 import polars._reexport as pl
 import polars.functions as F
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
