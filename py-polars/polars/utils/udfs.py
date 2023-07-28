@@ -51,7 +51,7 @@ class OpNames:
         "BINARY_TRUE_DIVIDE": "/",
         "BINARY_XOR": "^",
     }
-    CALL = "CALL" if _MIN_PY311 else "CALL_FUNCTION"
+    CALL = {"CALL"} if _MIN_PY311 else {"CALL_FUNCTION", "CALL_METHOD"}
     CONTROL_FLOW = (
         {
             "POP_JUMP_FORWARD_IF_FALSE": "&",
@@ -602,7 +602,7 @@ class RewrittenInstructions:
         """Replace builtin function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=[{"LOAD_GLOBAL"}, {"LOAD_FAST", "LOAD_CONST"}, {OpNames.CALL}],
+            opnames=[{"LOAD_GLOBAL"}, {"LOAD_FAST", "LOAD_CONST"}, OpNames.CALL],
             argvals=[_PYTHON_BUILTINS],
         ):
             inst1, inst2 = matching_instructions[:2]
@@ -660,7 +660,7 @@ class RewrittenInstructions:
                 {"LOAD_GLOBAL"},
                 {"LOAD_METHOD"},
                 {"LOAD_FAST", "LOAD_CONST"},
-                {OpNames.CALL},
+                OpNames.CALL,
             ],
             argvals=[
                 _NUMPY_MODULE_ALIASES | {"json"},
@@ -687,7 +687,7 @@ class RewrittenInstructions:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=[{"LOAD_METHOD"}, {OpNames.CALL}],
+            opnames=[{"LOAD_METHOD"}, OpNames.CALL],
             argvals=[_PYTHON_METHODS_MAP],
         ):
             inst = matching_instructions[0]
