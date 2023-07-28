@@ -412,7 +412,8 @@ class Series:
         """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
         issue_deprecation_warning(
             "`Series.time_unit` is deprecated and will be removed in a future version,"
-            " please use `Series.dtype.time_unit` instead"
+            " please use `Series.dtype.time_unit` instead",
+            version="0.17.5",
         )
         return self._s.time_unit()
 
@@ -2155,7 +2156,8 @@ class Series:
             issue_deprecation_warning(
                 "the `in_place` parameter is deprecated and will be removed in a future"
                 " version; note that renaming is a shallow-copy operation with"
-                " essentially zero cost."
+                " essentially zero cost.",
+                version="0.17.15",
             )
         if in_place:
             self._s.rename(name)
@@ -2407,7 +2409,8 @@ class Series:
             issue_deprecation_warning(
                 "the `append_chunks` argument will be removed and `append` will change"
                 " to always behave like `append_chunks=True` (the previous default)."
-                " For the behavior of `append_chunks=False`, use `Series.extend`."
+                " For the behavior of `append_chunks=False`, use `Series.extend`.",
+                version="0.18.8",
             )
         else:
             append_chunks = True

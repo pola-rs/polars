@@ -377,7 +377,8 @@ def struct(
     if "exprs" in named_exprs:
         issue_deprecation_warning(
             "passing expressions to `struct` using the keyword argument `exprs` is"
-            " deprecated. Use positional syntax instead."
+            " deprecated. Use positional syntax instead.",
+            version="0.18.1",
         )
         first_input = named_exprs.pop("exprs")
         pyexprs = parse_as_list_of_expressions(first_input, *exprs, **named_exprs)

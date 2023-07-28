@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING
 
-from polars.utils.deprecation import issue_deprecation_warning
+from polars.utils.deprecation import deprecated_name
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import enable_string_cache as _enable_string_cache
@@ -118,6 +118,7 @@ def enable_string_cache(enable: bool) -> None:
     _enable_string_cache(enable)
 
 
+@deprecated_name(new_name="enable_string_cache", version="0.17.0")
 def toggle_string_cache(toggle: bool) -> None:
     """
     Enable (or disable) the global string cache.
@@ -128,10 +129,6 @@ def toggle_string_cache(toggle: bool) -> None:
     .. deprecated:: 0.17.0
 
     """
-    issue_deprecation_warning(
-        "`toggle_string_cache` has been renamed;"
-        " this redirect is temporary, please use `enable_string_cache` instead"
-    )
     enable_string_cache(toggle)
 
 

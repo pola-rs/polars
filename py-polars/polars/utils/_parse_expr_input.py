@@ -57,7 +57,8 @@ def _parse_regular_inputs(
         issue_deprecation_warning(
             "In the next breaking release, combining list input and positional input will result in an error."
             " To silence this warning, either unpack the list , or append the positional inputs to the list first."
-            " The resulting behavior will be identical"
+            " The resulting behavior will be identical",
+            version="0.18.4",
         )
 
     input_list = _first_input_to_list(inputs[0])
@@ -73,7 +74,8 @@ def _first_input_to_list(
             "In the next breaking release, passing `None` as the first expression input will evaluate to `lit(None)`,"
             " rather than be ignored."
             " To silence this warning, either pass no arguments or an empty list to retain the current behavior,"
-            " or pass `lit(None)` to opt into the new behavior."
+            " or pass `lit(None)` to opt into the new behavior.",
+            version="0.18.0",
         )
         return []
     elif not isinstance(inputs, Iterable) or isinstance(inputs, (str, pl.Series)):

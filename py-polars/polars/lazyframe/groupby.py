@@ -143,7 +143,8 @@ class LazyGroupBy:
         if "aggs" in named_aggs:
             issue_deprecation_warning(
                 "passing expressions to `agg` using the keyword argument `aggs` is"
-                " deprecated. Use positional syntax instead."
+                " deprecated. Use positional syntax instead.",
+                version="0.18.1",
             )
             first_input = named_aggs.pop("aggs")
             pyexprs = parse_as_list_of_expressions(first_input, *aggs, **named_aggs)

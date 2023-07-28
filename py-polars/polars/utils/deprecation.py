@@ -19,24 +19,34 @@ if TYPE_CHECKING:
     T = TypeVar("T")
 
 
-def issue_deprecation_warning(message: str) -> None:
-    """Issue a DeprecationWarning."""
+def issue_deprecation_warning(message: str, *, version: str) -> None:
+    """
+    Issue a deprecation warning.
+
+    Parameters
+    ----------
+    message
+        The message associated with the warning.
+    version
+        The Polars version number in which the warning is first issued.
+        This argument is used to help developers determine when to remove the
+        deprecated functionality.
+
+    """
     warnings.warn(message, DeprecationWarning, stacklevel=find_stacklevel())
 
 
-def deprecated(reason: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
-    """
-    Decorator which can be used to mark functions as deprecated.
-
-    It will result in a warning being emitted when the function is used.
-
-    """
+def deprecated(
+    message: str, *, version: str
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """Decorator to mark a function as deprecated."""
 
     def deco(function: Callable[P, T]) -> Callable[P, T]:
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             issue_deprecation_warning(
-                message=f"Call to deprecated function {function.__name__}. ({reason})"
+                f"`{function.__name__}` is deprecated and will be removed in a future version. {message}",
+                version=version,
             )
             return function(*args, **kwargs)
 
@@ -45,53 +55,36 @@ def deprecated(reason: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
     return deco
 
 
+def deprecated_name(
+    new_name: str, *, version: str
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """
+    Decorator to mark a function as deprecated due to being renamed.
+
+    Notes
+    -----
+    For deprecating renamed class methods, use the ``redirect`` class decorator instead.
+
+    """
+    return deprecated(f"It has been renamed to `{new_name}`.", version=version)
+
+
 def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
-    Deprecate a function or method argument.
+    Decorator to mark function arguments as deprecated due to being renamed.
 
-    Decorator for deprecated function and method arguments. Use as follows:
+    Use as follows::
 
-    @deprecated_alias(old_arg='new_arg')
-    def myfunc(new_arg):
-        ...
+        @deprecated_alias(old_arg='new_arg')
+        def myfunc(new_arg):
+            ...
+
     """
 
     def deco(function: Callable[P, T]) -> Callable[P, T]:
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             _rename_kwargs(function.__name__, kwargs, aliases)
-            return function(*args, **kwargs)
-
-        return wrapper
-
-    return deco
-
-
-def warn_closed_future_change() -> Callable[[Callable[P, T]], Callable[P, T]]:
-    """
-    Warn that user should pass in 'closed' as default value will change.
-
-    Decorator for rolling function. Use as follows:
-
-    @warn_closed_future_change()
-    def myfunc():
-        ...
-    """
-
-    def deco(function: Callable[P, T]) -> Callable[P, T]:
-        @wraps(function)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            # we only warn if 'by' is passed in, otherwise 'closed' is not used
-            if (kwargs.get("by") is not None) and ("closed" not in kwargs):
-                warnings.warn(
-                    message=(
-                        "The default argument for closed, 'left', will be changed to 'right' in the future."
-                        "Fix this warning by explicitly passing in a value for closed"
-                    ),
-                    category=FutureWarning,
-                    stacklevel=find_stacklevel(),
-                )
-
             return function(*args, **kwargs)
 
         return wrapper
@@ -107,25 +100,62 @@ def _rename_kwargs(
     """
     Rename the keyword arguments of a function.
 
-    Helper function for deprecating function and method arguments.
+    Helper function for deprecating function arguments.
+
     """
     for alias, new in aliases.items():
         if alias in kwargs:
             if new in kwargs:
                 raise TypeError(
-                    f"{func_name} received both {alias} and {new} as arguments!"
-                    f" {alias} is deprecated, use {new} instead."
+                    f"`{func_name}` received both `{alias}` and `{new}` as arguments."
+                    f" `{alias}` is deprecated, use `{new}` instead."
                 )
             issue_deprecation_warning(
                 f"`{alias}` is deprecated as an argument to `{func_name}`;"
-                f" use `{new}` instead."
+                f" use `{new}` instead.",
+                version="",
             )
             kwargs[new] = kwargs.pop(alias)
 
 
+def redirect(
+    from_to: dict[str, str | tuple[str, dict[str, Any]]]
+) -> Callable[[type[T]], type[T]]:
+    """
+    Class decorator allowing deprecation/transition from one method name to another.
+
+    The parameters must be the same (unless they are being renamed, in which case
+    you can use this in conjunction with @deprecated_alias). If you need to redirect
+    with custom kwargs, can redirect to a method name and associated kwargs dict.
+
+    """
+
+    def _redirecting_getattr_(obj: T, item: Any) -> Any:
+        if isinstance(item, str) and item in from_to:
+            new_item = from_to[item]
+            new_item_name = new_item if isinstance(new_item, str) else new_item[0]
+            issue_deprecation_warning(
+                f"`{type(obj).__name__}.{item}` has been renamed;"
+                f" this redirect is temporary, please use `.{new_item_name}` instead",
+                version="",
+            )
+            item = new_item_name
+
+        attr = obj.__getattribute__(item)
+        if isinstance(new_item, tuple):
+            attr = partial(attr, **new_item[1])
+        return attr
+
+    def _cls_(cls: type[T]) -> type[T]:
+        # note: __getattr__ is only invoked if item isn't found on the class
+        cls.__getattr__ = _redirecting_getattr_  # type: ignore[attr-defined]
+        return cls
+
+    return _cls_
+
+
 def deprecate_nonkeyword_arguments(
-    allowed_args: list[str] | None = None,
-    message: str | None = None,
+    allowed_args: list[str] | None = None, message: str | None = None, *, version: str
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
     Decorator to deprecate the use of non-keyword arguments of a function.
@@ -139,6 +169,11 @@ def deprecate_nonkeyword_arguments(
         default value.
     message
         Optionally overwrite the default warning message.
+    version
+        The Polars version number in which the warning is first issued.
+        This argument is used to help developers determine when to remove the
+        deprecated functionality.
+
     """
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
@@ -180,7 +215,7 @@ def deprecate_nonkeyword_arguments(
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             if len(args) > num_allowed_args:
-                issue_deprecation_warning(msg)
+                issue_deprecation_warning(msg, version=version)
             return function(*args, **kwargs)
 
         wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
@@ -206,35 +241,34 @@ def _format_argument_list(allowed_args: list[str]) -> str:
         return f" except for {args} and {last!r}"
 
 
-def redirect(
-    from_to: dict[str, str | tuple[str, dict[str, Any]]]
-) -> Callable[[type[T]], type[T]]:
+def warn_closed_future_change() -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
-    Class decorator allowing deprecation/transition from one method name to another.
+    Warn that user should pass in 'closed' as default value will change.
 
-    The parameters must be the same (unless they are being renamed, in which case
-    you can use this in conjunction with @deprecated_alias). If you need to redirect
-    with custom kwargs, can redirect to a method name and associated kwargs dict.
+    Decorator for rolling function. Use as follows::
+
+        @warn_closed_future_change()
+        def myfunc():
+            ...
+
     """
 
-    def _redirecting_getattr_(obj: T, item: Any) -> Any:
-        if isinstance(item, str) and item in from_to:
-            new_item = from_to[item]
-            new_item_name = new_item if isinstance(new_item, str) else new_item[0]
-            issue_deprecation_warning(
-                f"`{type(obj).__name__}.{item}` has been renamed;"
-                f" this redirect is temporary, please use `.{new_item_name}` instead"
-            )
-            item = new_item_name
+    def deco(function: Callable[P, T]) -> Callable[P, T]:
+        @wraps(function)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            # we only warn if 'by' is passed in, otherwise 'closed' is not used
+            if (kwargs.get("by") is not None) and ("closed" not in kwargs):
+                warnings.warn(
+                    message=(
+                        "The default argument for closed, 'left', will be changed to 'right' in the future."
+                        "Fix this warning by explicitly passing in a value for closed"
+                    ),
+                    category=FutureWarning,
+                    stacklevel=find_stacklevel(),
+                )
 
-        attr = obj.__getattribute__(item)
-        if isinstance(new_item, tuple):
-            attr = partial(attr, **new_item[1])
-        return attr
+            return function(*args, **kwargs)
 
-    def _cls_(cls: type[T]) -> type[T]:
-        # note: __getattr__ is only invoked if item isn't found on the class
-        cls.__getattr__ = _redirecting_getattr_  # type: ignore[attr-defined]
-        return cls
+        return wrapper
 
-    return _cls_
+    return deco
