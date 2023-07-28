@@ -176,6 +176,14 @@ impl Settings {
 }
 
 impl<T: PolarsDataType> ChunkedArray<T> {
+
+    pub(crate) fn set_flags(&mut self, flags: u8){
+        match Settings::from_bits(flags){
+            None => polars_warn!("Ignoring incorrect bit settings for {}: {}",self.dtype(),flags),
+            Some(s) => {self.bit_settings = s}
+        }
+    }
+
     pub(crate) fn is_sorted_ascending_flag(&self) -> bool {
         self.bit_settings.contains(Settings::SORTED_ASC)
     }

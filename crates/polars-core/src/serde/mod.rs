@@ -5,6 +5,7 @@ pub mod series;
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use crate::series::IsSorted;
 
     #[test]
     fn test_serde() -> PolarsResult<()> {
@@ -34,6 +35,17 @@ mod test {
 
         let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap(); // uses `DeserializeOwned`
         assert!(ca.into_series().series_equal_missing(&out));
+    }
+
+    #[test]
+    fn test_serde_flags() {
+        let mut ca = UInt32Chunked::new("foo", &[Some(2), Some(1), None]);
+        ca.set_sorted_flag(IsSorted::Descending);
+
+        let json = serde_json::to_string(&ca).unwrap();
+        let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
+
+        assert!(&ca.bit_settings.eq(&out.u32().unwrap().bit_settings));
     }
 
     fn sample_dataframe() -> DataFrame {
