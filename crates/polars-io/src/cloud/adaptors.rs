@@ -196,10 +196,7 @@ impl CloudWriter {
     async fn build_writer(
         object_store: &Arc<dyn ObjectStore>,
         path: &Path,
-    ) -> object_store::Result<(
-        MultipartId,
-        Box<dyn AsyncWrite + Send + Unpin>,
-    )> {
+    ) -> object_store::Result<(MultipartId, Box<dyn AsyncWrite + Send + Unpin>)> {
         let (multipart_id, s3_writer) = object_store.put_multipart(path).await?;
         Ok((multipart_id, s3_writer))
     }
