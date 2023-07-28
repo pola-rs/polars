@@ -64,6 +64,9 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
+    fn _clear_settings(&mut self) {
+        self.0.logical_mut().clear_settings()
+    }
 
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         // TODO! explode by offset should return concrete type

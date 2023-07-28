@@ -39,6 +39,9 @@ macro_rules! impl_dyn_series {
             fn _dtype(&self) -> &DataType {
                 self.0.dtype()
             }
+            fn _clear_settings(&mut self) {
+                self.0.clear_settings()
+            }
 
             fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
                 self.0

@@ -38,6 +38,9 @@ where
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
+    fn _clear_settings(&mut self) {
+        self.0.clear_settings()
+    }
 
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
