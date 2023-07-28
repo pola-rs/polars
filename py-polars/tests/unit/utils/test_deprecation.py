@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import inspect
 import warnings
 
@@ -66,9 +68,7 @@ class Foo:  # noqa: D101
 
 def test_deprecate_nonkeyword_arguments_method_signature() -> None:
     # Note the added star indicating keyword-only arguments after 'baz'
-    expected = (
-        "(self, baz: str, *, ham: str | None = None, foobar: str | None = None) -> None"
-    )
+    expected = "(self, baz: 'str', *, ham: 'str | None' = None, foobar: 'str | None' = None) -> 'None'"
     assert str(inspect.signature(Foo.bar)) == expected
 
 
