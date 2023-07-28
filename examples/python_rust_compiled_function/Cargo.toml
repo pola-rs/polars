@@ -9,6 +9,6 @@ name = "my_polars_functions"
 crate-type = ["cdylib"]
 
 [dependencies]
-polars = { path = "../../polars" }
+polars = { path = "../../polars/polars" }
 polars-arrow = { path = "../../polars/polars-arrow" }
 pyo3 = { version = "0.19", features = ["extension-module"] }

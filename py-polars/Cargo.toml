@@ -123,7 +123,7 @@ default = [
 ]
 
 [dependencies.polars]
-path = "../polars"
+path = "../polars/polars"
 default-features = false
 features = [
   "dynamic_groupby",
