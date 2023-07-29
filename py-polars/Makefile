@@ -2,7 +2,13 @@
 
 PYTHONPATH=
 SHELL=/bin/bash
-VENV = .venv
+VENV_DEFAULT=.venv
+
+ifeq ($(VIRTUAL_ENV), )
+	VENV=VENV_DEFAULT
+else
+	VENV=$(VIRTUAL_ENV)
+endif
 
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts
