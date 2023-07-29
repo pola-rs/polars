@@ -167,13 +167,13 @@ impl SQLContext {
         self.execute_query_no_ctes(query)
     }
 
-    pub fn execute_query_no_ctes(&self, query: &Query) -> PolarsResult<LazyFrame> {
+    pub(crate) fn execute_query_no_ctes(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         let lf = self.process_set_expr(&query.body, query)?;
 
         self.process_limit_offset(lf, &query.limit, &query.offset)
     }
 
-    pub fn process_set_expr(&self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
+    fn process_set_expr(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
         match expr {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query),
             SetExpr::Query(query) => self.execute_query_no_ctes(query),
@@ -191,7 +191,7 @@ impl SQLContext {
     }
 
     fn process_union(
-        &self,
+        &mut self,
         left: &SetExpr,
         right: &SetExpr,
         quantifier: &SetQuantifier,
@@ -265,7 +265,7 @@ impl SQLContext {
     }
 
     /// execute the 'FROM' part of the query
-    fn execute_from_statement(&self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
+    fn execute_from_statement(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
         let (tbl_name, mut lf) = self.get_table(&tbl_expr.relation)?;
         if !tbl_expr.joins.is_empty() {
             for tbl in &tbl_expr.joins {
@@ -301,7 +301,7 @@ impl SQLContext {
     }
 
     // Execute the 'SELECT' part of the query.
-    fn execute_select(&self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
+    fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // Determine involved dataframes.
         // Implicit joins require some more work in query parsers, explicit joins are preferred for now.
         let sql_tbl: &TableWithJoins = select_stmt
@@ -521,7 +521,7 @@ impl SQLContext {
         }
     }
 
-    fn get_table(&self, relation: &TableFactor) -> PolarsResult<(String, LazyFrame)> {
+    fn get_table(&mut self, relation: &TableFactor) -> PolarsResult<(String, LazyFrame)> {
         match relation {
             TableFactor::Table {
                 name, alias, args, ..

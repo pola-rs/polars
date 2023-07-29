@@ -1030,3 +1030,57 @@ def test_sql_expr() -> None:
         pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
     ):
         pl.sql_expr("xyz.*")
+
+def test_sql_expr() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["xyz", "abcde", None]})
+    sql_exprs = pl.sql_expr(
+        [
+            "MIN(a)",
+            "POWER(a,a) AS aa",
+            "SUBSTR(b,1,2) AS b2",
+        ]
+    )
+    expected = pl.DataFrame(
+        {"a": [1, 1, 1], "aa": [1, 4, 27], "b2": ["yz", "bc", None]}
+    )
+    assert df.select(*sql_exprs).frame_equal(expected)
+
+    # expect expressions that can't reasonably be parsed as expressions to raise
+    # (for example: those that explicitly reference tables and/or use wildcards)
+    with pytest.raises(
+        pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
+    ):
+        pl.sql_expr("xyz.*")
+
+
+def test_sql_in_subquery() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 2, 3],
+            "y": [2, 3, 4],
+        }
+    )
+
+    df_other = pl.DataFrame(
+        {
+            "x": [1, 2, 3],
+            "y": [2, 3, 4],
+        }
+    )
+
+    sql = pl.SQLContext(register_globals=True)
+
+    res_1 = sql.execute(
+        """
+        SELECT
+        df.x as x
+        FROM df
+        WHERE x IN (SELECT y FROM df)
+        """
+        , eager = True)
+    
+    df_expected_1 = pl.DataFrame({"x": [2,3]})
+    assert_frame_equal(
+        left=df_expected_1,
+        right=res,
+    )
