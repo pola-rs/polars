@@ -895,5 +895,7 @@ def test_struct_null_count_10130() -> None:
         [{"a": None, "b": None}], dtype=pl.Struct({"a": pl.Int64, "b": pl.Int64})
     )
     s.append(r)
+    assert s.null_count() == 1
 
+    s = pl.Series([{"a": None}])
     assert s.null_count() == 1
