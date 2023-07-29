@@ -3386,7 +3386,11 @@ class DataFrame:
         ... )  # doctest: +SKIP
 
         """
-        from polars.io.delta import _check_if_delta_available, _resolve_delta_lake_uri, _create_delta_compatible_schema
+        from polars.io.delta import (
+            _check_if_delta_available,
+            _create_delta_compatible_schema,
+            _resolve_delta_lake_uri,
+        )
 
         _check_if_delta_available()
 
