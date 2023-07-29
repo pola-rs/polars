@@ -292,6 +292,10 @@ impl SQLContext {
             None => lf,
         };
 
+        if !query.order_by.is_empty() {
+            lf = self.process_order_by(lf, &query.order_by)?;
+        }
+
         // Column Projections
         let projections: Vec<_> = select_stmt
             .projection
@@ -381,11 +385,7 @@ impl SQLContext {
             None => lf,
         };
 
-        if query.order_by.is_empty() {
-            Ok(lf)
-        } else {
-            self.process_order_by(lf, &query.order_by)
-        }
+        return Ok(lf);
     }
 
     fn execute_create_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
