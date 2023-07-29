@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import pyarrow as pa
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
+from functools import reduce
 
 from polars.convert import from_arrow
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
+
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
@@ -314,3 +317,75 @@ def _check_if_delta_available() -> None:
         raise ImportError(
             "deltalake is not installed. Please run `pip install deltalake>=0.9.0`."
         )
+
+
+def _reconstruct_field_type(
+    field: pa.Field, field_head: pa.Field, reconstructed_field=None
+) -> pa.Field:
+    """Recursive function that traveres through pyArrow fields to change timestamps to US and reconstructing  it later.
+
+    Args:
+        field (pa.Field): _description_
+        field_head (pa.Field): field head to retain column names
+        reconstructed_field (List, optional): . Defaults to None.
+
+    Returns:
+        pa.Field: Reconstructed pyArrow field
+    """
+    if isinstance(field.type, pa.TimestampType):
+        if reconstructed_field is None:
+            return pa.field(
+                name=field.name,
+                type=pa.timestamp("us", tz=field.type.tz),
+            )
+        else:
+            reconstructed_field.append(pa.timestamp("us", tz=field.type.tz))
+            return pa.field(
+                name=field_head.name,
+                type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+            )
+    elif isinstance(field.type, pa.LargeListType) and (
+        "timestamp" in str(field.type)
+    ):  # some checks to just skip traversing non timestamps and US timestamps
+        if reconstructed_field is None:
+            reconstructed_field = [pa.large_list]
+            return _reconstruct_field_type(
+                field.type.value_field, field_head, reconstructed_field
+            )
+        else:
+            reconstructed_field.append(pa.large_list)
+            return _reconstruct_field_type(
+                field.type.value_field, field_head, reconstructed_field
+            )
+    elif isinstance(field.type, pa.StructType) and ("timestamp" in str(field.type)):
+        if reconstructed_field is None:
+            return pa.field(
+                name=field_head.name,
+                type=pa.struct([*map(_reconstruct_field_type, field.type, field.type)]),
+            )
+        else:
+            reconstructed_field.append(
+                pa.struct([*map(_reconstruct_field_type, field.type, field.type)])
+            )
+            return pa.field(
+                name=field_head.name,
+                type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+            )
+    else:
+        return field
+
+
+def _create_delta_compatible_schema(schema: pa.schema) -> pa.Schema:
+    """Makes the dataframe schema compatible with Delta
+
+    Args:
+        schema (pa.schema): input schema
+
+    Returns:
+        pa.Schema: delta compatible schema
+    """
+    schema_out = [*map(_reconstruct_field_type, schema, schema)]
+
+    schema = pa.schema(schema_out, metadata=schema.metadata)
+
+    return schema
