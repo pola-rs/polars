@@ -63,6 +63,9 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         self.0.deref_mut().set_flags(flags)
     }
+    fn _get_flags(&self) -> u8 {
+        self.0.deref().get_flags()
+    }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         self.0.equal_element(idx_self, idx_other, other)

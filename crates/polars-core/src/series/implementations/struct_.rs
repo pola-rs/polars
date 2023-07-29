@@ -28,6 +28,9 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
     unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         Ok(())
     }
+    fn _get_flags(&self) -> u8 {
+        0u8
+    }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0
             .apply_fields(|s| s.explode_by_offsets(offsets))

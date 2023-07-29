@@ -204,6 +204,10 @@ impl Series {
         }
     }
 
+    pub(crate) fn get_flags(&self) -> u8 {
+        self.0._get_flags()
+    }
+
     pub(crate) unsafe fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         let inner = self._get_inner_mut();
         unsafe { inner._set_flags(flags) }

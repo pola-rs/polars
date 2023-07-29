@@ -42,7 +42,9 @@ where
     unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         self.0.set_flags(flags)
     }
-
+    fn _get_flags(&self) -> u8 {
+        self.0.get_flags()
+    }
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }

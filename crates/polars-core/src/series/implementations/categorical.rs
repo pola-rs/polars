@@ -64,7 +64,9 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-
+    fn _get_flags(&self) -> u8 {
+        self.0.logical_mut.get_flags()
+    }
     unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         self.0.logical_mut.set_flags(flags)
     }

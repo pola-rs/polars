@@ -65,6 +65,10 @@ impl PrivateSeries for NullChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         ExplodeByOffsets::explode_by_offsets(self, offsets)
     }
+
+    fn _get_flags(&self) -> u8 {
+        0u8
+    }
 }
 
 impl SeriesTrait for NullChunked {
