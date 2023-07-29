@@ -76,7 +76,7 @@ impl<'de> Deserialize<'de> for Series {
     where
         D: Deserializer<'de>,
     {
-        const FIELDS: &[&str] = &["name", "datatype","bit_settings", "values"];
+        const FIELDS: &[&str] = &["name", "datatype", "bit_settings", "values"];
 
         struct SeriesVisitor;
 
@@ -94,7 +94,7 @@ impl<'de> Deserialize<'de> for Series {
             {
                 let mut name: Option<Cow<'de, str>> = None;
                 let mut dtype = None;
-                let mut bit_settings : Option<u8> = None;
+                let mut bit_settings: Option<u8> = None;
                 let mut values_set = false;
                 while let Some(key) = map.next_key::<Cow<str>>().unwrap() {
                     match key.as_ref() {
@@ -106,8 +106,8 @@ impl<'de> Deserialize<'de> for Series {
                         }
                         "datatype" => {
                             dtype = Some(map.next_value()?);
-                        },
-                        "bit_settings" =>{
+                        }
+                        "bit_settings" => {
                             bit_settings = Some(map.next_value()?);
                         }
                         "values" => {
@@ -124,7 +124,7 @@ impl<'de> Deserialize<'de> for Series {
                 let name = name.ok_or_else(|| de::Error::missing_field("name"))?;
                 let dtype = dtype.ok_or_else(|| de::Error::missing_field("datatype"))?;
 
-                match dtype {
+                let mut s = match dtype {
                     #[cfg(feature = "dtype-i8")]
                     DataType::Int8 => {
                         let values: Vec<Option<i8>> = map.next_value()?;
@@ -151,9 +151,7 @@ impl<'de> Deserialize<'de> for Series {
                     }
                     DataType::UInt32 => {
                         let values: Vec<Option<u32>> = map.next_value()?;
-                        let mut ca = UInt32Chunked::new(&name,values);
-                        if let Some(f) = bit_settings { ca.set_flags(f); }
-                        Ok(ca.into_series())
+                        Ok(Series::new(&name, values))
                     }
                     DataType::Int64 => {
                         let values: Vec<Option<i64>> = map.next_value()?;
@@ -229,6 +227,15 @@ impl<'de> Deserialize<'de> for Series {
                     dt => {
                         panic!("{dt:?} dtype deserialization not yet implemented")
                     }
+                }?;
+
+                if let Some(f) = bit_settings {
+                    match unsafe { s.set_flags(f) } {
+                        Ok(_) => Ok(s),
+                        Err(_) => Err(de::Error::custom("Bit flags are corrupt")),
+                    }
+                } else {
+                    Ok(s)
                 }
             }
         }

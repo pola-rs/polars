@@ -20,7 +20,7 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
-    
+
     unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         self.0.set_flags(flags)
     }

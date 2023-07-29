@@ -2,8 +2,8 @@ use std::cell::RefCell;
 
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
-use crate::chunked_array::Settings;
 
+use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 pub struct IterSer<I>
@@ -58,7 +58,7 @@ where
     let mut state = serializer.serialize_map(Some(4))?;
     state.serialize_entry("name", name)?;
     state.serialize_entry("datatype", dtype)?;
-    state.serialize_entry("bit_settings",&bit_settings.bits())?;
+    state.serialize_entry("bit_settings", &bit_settings.bits())?;
     state.serialize_entry("values", &IterSer::new(ca.into_iter()))?;
     state.end()
 }
@@ -75,7 +75,13 @@ where
     where
         S: Serializer,
     {
-        serialize_impl(serializer, self.name(), self.dtype(),&self.bit_settings, self)
+        serialize_impl(
+            serializer,
+            self.name(),
+            self.dtype(),
+            &self.bit_settings,
+            self,
+        )
     }
 }
 
@@ -92,7 +98,13 @@ where
     where
         S: Serializer,
     {
-        serialize_impl(serializer, self.name(), self.dtype(),&self.bit_settings, self)
+        serialize_impl(
+            serializer,
+            self.name(),
+            self.dtype(),
+            &self.bit_settings,
+            self,
+        )
     }
 }
 
@@ -109,7 +121,7 @@ macro_rules! impl_serialize {
                 let mut state = serializer.serialize_map(Some(4))?;
                 state.serialize_entry("name", self.name())?;
                 state.serialize_entry("datatype", self.dtype())?;
-                state.serialize_entry("bit_settings",&self.bit_settings.bits())?;
+                state.serialize_entry("bit_settings", &self.bit_settings.bits())?;
                 state.serialize_entry("values", &IterSer::new(self.into_iter()))?;
                 state.end()
             }

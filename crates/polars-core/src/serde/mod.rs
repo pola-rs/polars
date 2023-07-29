@@ -39,7 +39,7 @@ mod test {
 
     #[test]
     fn test_serde_flags() {
-        let mut ca = UInt32Chunked::new("foo", &[Some(2), Some(1), None]);
+        let mut ca = Series::new("foo", &[Some(2), Some(1), None]);
         ca.set_sorted_flag(IsSorted::Descending);
 
         let json = serde_json::to_string(&ca).unwrap();

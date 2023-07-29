@@ -198,9 +198,15 @@ impl Series {
     }
 
     pub(crate) fn clear_settings(&mut self) {
-        let inner = self._get_inner_mut();
         // Safety: No flags set should not fail when parsing u8 into Bitflags object
-        unsafe { let _ = inner._set_flags(0u8); }
+        unsafe {
+            let _ = self.set_flags(0u8);
+        }
+    }
+
+    pub(crate) unsafe fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+        let inner = self._get_inner_mut();
+        unsafe { inner._set_flags(flags) }
     }
 
     pub fn into_frame(self) -> DataFrame {
