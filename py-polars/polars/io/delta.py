@@ -336,10 +336,14 @@ def _reconstruct_field_type(
         if reconstructed_field is None:
             return pa.field(
                 name=field.name,
-                type=pa.timestamp("us", tz=field.type.tz),
+                type=pa.timestamp("us"
+                                #   , tz=field.type.tz
+                                  ),
             )
         else:
-            reconstructed_field.append(pa.timestamp("us", tz=field.type.tz))
+            reconstructed_field.append(pa.timestamp("us", 
+                                                    # tz=field.type.tz
+                                                    ))
             return pa.field(
                 name=field_head.name,
                 type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
@@ -396,10 +400,7 @@ def _create_delta_compatible_schema(schema: pa.schema) -> pa.Schema:
     Returns:
         pa.Schema: delta compatible schema
     """
-    if any(dtype in str(schema.types) for dtype in ['uint', 'timestamp[ms]', 'timestamp[ns]']):
-        schema_out = [*map(_reconstruct_field_type, schema, schema)]
-    else:
-        schema_out = schema
+    schema_out = [*map(_reconstruct_field_type, schema, schema)]
     schema = pa.schema(schema_out, metadata=schema.metadata)
 
     return schema
