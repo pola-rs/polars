@@ -4,6 +4,7 @@ pub mod series;
 
 #[cfg(test)]
 mod test {
+    use crate::chunked_array::Settings;
     use crate::prelude::*;
     use crate::series::IsSorted;
 
@@ -37,17 +38,6 @@ mod test {
         assert!(ca.into_series().series_equal_missing(&out));
     }
 
-    #[test]
-    fn test_serde_flags() {
-        let mut ca = Series::new("foo", &[Some(2), Some(1), None]);
-        ca.set_sorted_flag(IsSorted::Descending);
-
-        let json = serde_json::to_string(&ca).unwrap();
-        let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
-
-        assert!(&ca.bit_settings.eq(&out.u32().unwrap().bit_settings));
-    }
-
     fn sample_dataframe() -> DataFrame {
         let s1 = Series::new("foo", &[1, 2, 3]);
         let s2 = Series::new("bar", &[Some(true), None, Some(false)]);
@@ -55,6 +45,20 @@ mod test {
         let s_list = Series::new("list", &[s1.clone(), s1.clone(), s1.clone()]);
 
         DataFrame::new(vec![s1, s2, s3, s_list]).unwrap()
+    }
+
+    #[test]
+    fn test_serde_flags() {
+        let df = sample_dataframe();
+
+        for mut column in df.columns {
+            column.set_sorted_flag(IsSorted::Descending);
+            let json = serde_json::to_string(&column).unwrap();
+            let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
+            let f = out.get_flags();
+            assert_ne!(f, 0u8);
+            assert_eq!(column.get_flags(), out.get_flags());
+        }
     }
 
     #[test]
