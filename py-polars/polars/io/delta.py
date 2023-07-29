@@ -322,7 +322,7 @@ def _check_if_delta_available() -> None:
 def _reconstruct_field_type(
     field: pa.Field, field_head: pa.Field, reconstructed_field=None
 ) -> pa.Field:
-    """Recursive function that traveres through pyArrow fields to change timestamps to US and reconstructing  it later.
+    """Recursive function that traverses through pyArrow fields to change timestamps to US and reconstructing  it later.
 
     Args:
         field (pa.Field): _description_
@@ -344,8 +344,20 @@ def _reconstruct_field_type(
                 name=field_head.name,
                 type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
             )
+    elif 'uint' in str(field.type) and not any(isinstance(field.type, dtype) for dtype in [pa.StructType, pa.LargeListType]):
+        if reconstructed_field is None:
+            return pa.field(
+                name=field.name,
+                type=getattr(pa, str(field.type).strip('u'))()
+            )
+        else:
+            reconstructed_field.append(getattr(pa, str(field.type).strip('u'))())
+            return pa.field(
+                name=field_head.name,
+                type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+            )
     elif isinstance(field.type, pa.LargeListType) and (
-        "timestamp" in str(field.type)
+        "timestamp" in str(field.type) or 'uint' in str(field.type)
     ):  # some checks to just skip traversing non timestamps and US timestamps
         if reconstructed_field is None:
             reconstructed_field = [pa.large_list]
@@ -384,8 +396,10 @@ def _create_delta_compatible_schema(schema: pa.schema) -> pa.Schema:
     Returns:
         pa.Schema: delta compatible schema
     """
-    schema_out = [*map(_reconstruct_field_type, schema, schema)]
-
+    if any(dtype in str(schema.types) for dtype in ['uint', 'timestamp[ms]', 'timestamp[ns]']):
+        schema_out = [*map(_reconstruct_field_type, schema, schema)]
+    else:
+        schema_out = schema
     schema = pa.schema(schema_out, metadata=schema.metadata)
 
     return schema
