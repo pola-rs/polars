@@ -65,10 +65,10 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0.dtype()
     }
     fn _get_flags(&self) -> u8 {
-        self.0.logical_mut.get_flags()
+        self.0.get_flags()
     }
     unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
-        self.0.logical_mut.set_flags(flags)
+        self.0.set_flags(flags)
     }
 
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {

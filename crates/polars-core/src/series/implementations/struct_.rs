@@ -25,6 +25,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
+    #[allow(unused)]
     unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         Ok(())
     }

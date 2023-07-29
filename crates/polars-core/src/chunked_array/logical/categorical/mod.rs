@@ -83,6 +83,21 @@ impl CategoricalChunked {
         out
     }
 
+    pub(crate) fn get_flags(&self) -> u8 {
+        self.bit_settings.bits
+    }
+
+    /// Set flags for the Chunked Array
+    ///
+    /// # Safety
+    /// The caller must ensure the flags are correct for the underlying chunks
+    pub(crate) unsafe fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+        let settings = BitSettings::from_bits(flags)
+            .ok_or(polars_err!(ComputeError : "Corrupt flags {} for {}",flags,self.dtype()))?;
+        self.bit_settings = settings;
+        Ok(())
+    }
+
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
     pub(crate) fn from_chunks_original(
         name: &str,

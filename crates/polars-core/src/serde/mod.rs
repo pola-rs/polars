@@ -4,7 +4,6 @@ pub mod series;
 
 #[cfg(test)]
 mod test {
-    use crate::chunked_array::Settings;
     use crate::prelude::*;
     use crate::series::IsSorted;
 
