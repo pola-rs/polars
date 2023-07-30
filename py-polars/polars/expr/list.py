@@ -908,7 +908,7 @@ class ExprListNameSpace:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.col("a").list.union("b").alias("union")
+        ...     pl.col("a").list.set_union("b").alias("union")
         ... )  # doctest: +IGNORE_RESULT
         shape: (4, 3)
         ┌───────────┬──────────────┬───────────────┐
