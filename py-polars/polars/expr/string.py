@@ -1093,6 +1093,51 @@ class ExprStringNameSpace:
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
             )
 
+    def captures(self, pattern: str) -> Expr:
+        r"""
+        Extract all capture groups for the given regex pattern.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as "verbose" mode and/or
+        case-sensitive matching) with flags, use the inline ``(?iLmsuxU)`` syntax.
+        For example:
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Struct` with fields of data type
+            :class:`Utf8`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+        >>> df.select(
+        ...     pl.col("foo").str.extract_all(r"\d+").alias("extracted_nrs"),
+        ... )
+        shape: (2, 1)
+        ┌────────────────┐
+        │ extracted_nrs  │
+        │ ---            │
+        │ list[str]      │
+        ╞════════════════╡
+        │ ["123", "45"]  │
+        │ ["678", "910"] │
+        └────────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_captures(pattern))
+
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
         r"""
         Extract the target capture group from provided patterns.

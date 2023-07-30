@@ -232,6 +232,10 @@ impl PyExpr {
             .into()
     }
 
+    fn str_captures(&self, pat: &str) -> Self {
+        self.inner.clone().str().captures(pat).into()
+    }
+
     fn str_extract(&self, pat: &str, group_index: usize) -> Self {
         self.inner.clone().str().extract(pat, group_index).into()
     }

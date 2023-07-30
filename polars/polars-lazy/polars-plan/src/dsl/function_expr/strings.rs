@@ -29,6 +29,9 @@ pub enum StringFunction {
     CountMatch(String),
     EndsWith,
     Explode,
+    Captures {
+        pat: String,
+    },
     Extract {
         pat: String,
         group_index: usize,
@@ -88,6 +91,7 @@ impl StringFunction {
             CountMatch(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Explode => mapper.with_same_dtype(),
+            Captures { .. } => mapper.with_same_dtype(),
             Extract { .. } => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
             #[cfg(feature = "string_from_radix")]
@@ -120,6 +124,7 @@ impl Display for StringFunction {
             StringFunction::Contains { .. } => "contains",
             StringFunction::CountMatch(_) => "count_match",
             StringFunction::EndsWith { .. } => "ends_with",
+            StringFunction::Captures { .. } => "captures",
             StringFunction::Extract { .. } => "extract",
             #[cfg(feature = "concat_str")]
             StringFunction::ConcatHorizontal(_) => "concat_horizontal",
@@ -281,6 +286,13 @@ pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
 
     out.rename(ca.name());
     Ok(out.into_series())
+}
+
+pub(super) fn captures(s: &Series, pat: &str) -> PolarsResult<Series> {
+    let pat = pat.to_string();
+
+    let ca = s.utf8()?;
+    ca.captures(&pat).map(|ca| ca.into_series())
 }
 
 /// Extract a regex pattern from the a string value.

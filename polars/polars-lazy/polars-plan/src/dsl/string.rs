@@ -54,6 +54,11 @@ impl StringNameSpace {
         )
     }
 
+    pub fn captures(self, pat: &str) -> Expr {
+        let pat = pat.to_string();
+        self.0.map_private(StringFunction::Captures { pat }.into())
+    }
+
     /// Extract a regex pattern from the a string value. If `group_index` is out of bounds, null is returned.
     pub fn extract(self, pat: &str, group_index: usize) -> Expr {
         let pat = pat.to_string();
