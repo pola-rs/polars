@@ -203,7 +203,7 @@ impl Series {
             let _ = self.set_flags(0u8);
         }
     }
-
+    #[allow(dead_code)]
     pub(crate) fn get_flags(&self) -> u8 {
         self.0._get_flags()
     }
