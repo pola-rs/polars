@@ -218,7 +218,7 @@ impl StructChunked {
                         validity_agg =
                             validity_agg.map_or(Some(v.clone()), |agg| Some(v.bitor(&agg)));
                         // n.b. This is "free" since any bitops trigger a count.
-                        n_nulls = Some(validity_agg.as_ref().unwrap().unset_bits());
+                        n_nulls = validity_agg.as_ref().map(|v| v.unset_bits());
                     }
                 }
             }
