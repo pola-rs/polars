@@ -18,7 +18,7 @@ fn hamming_distance(series_a: &PyAny, series_b: &PyAny) -> PyResult<PyObject> {
 fn hamming_distance_impl(a: &Series, b: &Series) -> PolarsResult<UInt32Chunked> {
     Ok(a.utf8()?
         .into_iter()
-        .zip(b.utf8()?.into_iter())
+        .zip(b.utf8()?)
         .map(|(lhs, rhs)| hamming_distance_strs(lhs, rhs))
         .collect())
 }

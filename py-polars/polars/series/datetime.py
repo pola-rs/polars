@@ -6,7 +6,7 @@ from polars.datatypes import Date
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_date, _to_python_datetime
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias
 
 if TYPE_CHECKING:
     import datetime as dt

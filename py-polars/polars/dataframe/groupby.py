@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.functions.whenthen import WhenThen, WhenThenThen
 from polars.utils.convert import _timedelta_to_pl_duration
 
 if TYPE_CHECKING:
@@ -108,10 +107,7 @@ class GroupBy:
         # When grouping by a single column, group name is a single value
         # When grouping by multiple columns, group name is a tuple of values
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if (
-            isinstance(self.by, (str, pl.Expr, WhenThen, WhenThenThen))
-            and not self.more_by
-        ):
+        if isinstance(self.by, (str, pl.Expr)) and not self.more_by:
             self._group_names = iter(group_names.to_series())
         else:
             self._group_names = group_names.iter_rows()
@@ -326,7 +322,7 @@ class GroupBy:
 
         if isinstance(self.by, str):
             by = [self.by]
-        elif isinstance(self.by, Iterable) and all(isinstance(c, str) for c in self.by):  # type: ignore[union-attr]
+        elif isinstance(self.by, Iterable) and all(isinstance(c, str) for c in self.by):
             by = list(self.by)  # type: ignore[arg-type]
         else:
             raise TypeError("Cannot call `apply` when grouping by an expression.")

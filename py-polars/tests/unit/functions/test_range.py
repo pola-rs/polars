@@ -171,9 +171,7 @@ def test_date_range() -> None:
             time_unit=time_unit,
             eager=True,
         )
-        with pytest.warns(
-            DeprecationWarning, match="`Series.time_unit` is deprecated.*"
-        ):
+        with pytest.deprecated_call(match="`Series.time_unit` is deprecated.*"):
             assert rng.time_unit == time_unit
         assert rng.shape == (13,)
         assert rng.dt[0] == datetime(2020, 1, 1)

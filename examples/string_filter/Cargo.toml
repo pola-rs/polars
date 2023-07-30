@@ -6,4 +6,4 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars = { path = "../../polars", features = ["strings", "lazy"] }
+polars = { path = "../../crates/polars", features = ["strings", "lazy"] }

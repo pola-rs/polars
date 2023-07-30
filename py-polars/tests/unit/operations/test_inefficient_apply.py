@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Callable
 
 import numpy
@@ -8,22 +9,25 @@ import pytest
 
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
-from tests.test_udfs import MY_CONSTANT, TEST_CASES
+from tests.test_udfs import MY_CONSTANT, MY_DICT, MY_LIST, NOOP_TEST_CASES, TEST_CASES
+
+EVAL_ENVIRONMENT = {
+    "np": numpy,
+    "pl": pl,
+    "MY_CONSTANT": MY_CONSTANT,
+    "MY_DICT": MY_DICT,
+    "MY_LIST": MY_LIST,
+}
 
 
 @pytest.mark.parametrize(
     "func",
-    [
-        lambda x: x,
-        lambda x, y: x + y,
-        lambda x: x[0] + 1,
-        lambda x: x > 0 and (x < 100 or (x % 2 == 0)),
-    ],
+    NOOP_TEST_CASES,
 )
 def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
-    # functions we don't offer suggestions for (at all, or just not yet)
+    # functions we don't (yet?) offer suggestions for
     assert not BytecodeParser(func, apply_target="expr").can_rewrite()
 
 
@@ -35,7 +39,8 @@ def test_parse_apply_functions(
     col: str, func: Callable[[Any], Any], expr_repr: str
 ) -> None:
     with pytest.warns(
-        PolarsInefficientApplyWarning, match="In this case, you can replace"
+        PolarsInefficientApplyWarning,
+        match=r"(?s)Expr\.apply.*In this case, you can replace",
     ):
         parser = BytecodeParser(func, apply_target="expr")
         suggested_expression = parser.to_expression(col)
@@ -50,7 +55,7 @@ def test_parse_apply_functions(
         )
         result_frame = df.select(
             x=col,
-            y=eval(suggested_expression),
+            y=eval(suggested_expression, EVAL_ENVIRONMENT),
         )
         expected_frame = df.select(
             x=pl.col(col),
@@ -73,7 +78,7 @@ def test_parse_apply_raw_functions() -> None:
         # ...but we ARE still able to warn
         with pytest.warns(
             PolarsInefficientApplyWarning,
-            match=rf"(?s)In this case, you can replace.*np\.{func_name}",
+            match=rf"(?s)Expr\.apply.*In this case, you can replace.*np\.{func_name}",
         ):
             df1 = lf.select(pl.col("a").apply(func)).collect()
             df2 = lf.select(getattr(pl.col("a"), func_name)()).collect()
@@ -83,7 +88,7 @@ def test_parse_apply_raw_functions() -> None:
     result_frames = []
     with pytest.warns(
         PolarsInefficientApplyWarning,
-        match=r"(?s)In this case, you can replace.*\.str\.json_extract",
+        match=r"(?s)Expr\.apply.*In this case, you can replace.*\.str\.json_extract",
     ):
         for expr in (
             pl.col("value").str.json_extract(),
@@ -102,7 +107,7 @@ def test_parse_apply_raw_functions() -> None:
     for py_cast, pl_dtype in ((str, pl.Utf8), (int, pl.Int64), (float, pl.Float64)):
         with pytest.warns(
             PolarsInefficientApplyWarning,
-            match=rf'(?s) replace.*pl\.col\("a"\)\.cast\(pl\.{pl_dtype.__name__}\)',
+            match=rf'(?s)replace.*pl\.col\("a"\)\.cast\(pl\.{pl_dtype.__name__}\)',
         ):
             assert_frame_equal(
                 lf.select(pl.col("a").apply(py_cast)).collect(),
@@ -125,3 +130,77 @@ def test_parse_apply_miscellaneous() -> None:
         lambda x: MY_CONSTANT + 42, apply_target="expr"
     ).to_expression(col="colx")
     assert suggested_expression is None
+
+    # literals as method parameters
+    with pytest.warns(
+        PolarsInefficientApplyWarning,
+        match=r"(?s)Series\.apply.*replace.*\(np\.cos\(3\) \+ s\) - abs\(-1\)",
+    ):
+        pl_series = pl.Series("srs", [0, 1, 2, 3, 4])
+        assert_series_equal(
+            pl_series.apply(lambda x: numpy.cos(3) + x - abs(-1)),
+            numpy.cos(3) + pl_series - 1,
+        )
+
+    # if 's' is already the name of a global variable then the series alias
+    # used in the user warning will fall back (in priority order) through
+    # various aliases until it finds one that is available.
+    s, srs, series = -1, 0, 1
+    expr1 = BytecodeParser(lambda x: x + s, apply_target="series")
+    expr2 = BytecodeParser(lambda x: srs + x + s, apply_target="series")
+    expr3 = BytecodeParser(lambda x: srs + x + s - x + series, apply_target="series")
+
+    assert expr1.to_expression(col="srs") == "srs + s"
+    assert expr2.to_expression(col="srs") == "(srs + series) + s"
+    assert expr3.to_expression(col="srs") == "(((srs + srs0) + s) - srs0) + series"
+
+
+@pytest.mark.parametrize(
+    ("data", "func", "expr_repr"),
+    [
+        (
+            [1, 2, 3],
+            lambda x: str(x),
+            "s.cast(pl.Utf8)",
+        ),
+        (
+            [-20, -12, -5, 0, 5, 12, 20],
+            lambda x: (abs(x) != 12) and (x > 10 or x < -10 or x == 0),
+            "(s.abs() != 12) & ((s > 10) | ((s < -10) | (s == 0)))",
+        ),
+    ],
+)
+def test_parse_apply_series(
+    data: list[Any], func: Callable[[Any], Any], expr_repr: str
+) -> None:
+    # expression/series generate same warning, with 's' as the series placeholder
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match=r"(?s)Series\.apply.*s\.\w+\("
+    ):
+        s = pl.Series("srs", data)
+
+        parser = BytecodeParser(func, apply_target="series")
+        suggested_expression = parser.to_expression(s.name)
+        assert suggested_expression == expr_repr
+
+        expected_series = s.apply(func)
+        result_series = eval(suggested_expression)
+        assert_series_equal(expected_series, result_series)
+
+
+def test_expr_exact_warning_message() -> None:
+    msg = re.escape(
+        "\n"
+        "Expr.apply is significantly slower than the native expressions API.\n"
+        "Only use if you absolutely CANNOT implement your logic otherwise.\n"
+        "In this case, you can replace your `apply` with the following:\n"
+        '  - pl.col("a").apply(lambda x: ...)\n'
+        '  + pl.col("a") + 1\n'
+    )
+    # Check the EXACT warning message. If modifying the message in the future,
+    # please make sure to keep the `^` and `$`,
+    # and to keep the assertion on `len(warnings)`.
+    with pytest.warns(PolarsInefficientApplyWarning, match=rf"^{msg}$") as warnings:
+        df = pl.DataFrame({"a": [1, 2, 3]})
+        df.select(pl.col("a").apply(lambda x: x + 1))
+    assert len(warnings) == 1

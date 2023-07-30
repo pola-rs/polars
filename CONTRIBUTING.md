@@ -114,7 +114,7 @@ If this all runs correctly, you're ready to start contributing to the Polars cod
 
 Create a new git branch from the `main` branch in your local repository, and start coding!
 
-The Rust codebase is located in the `polars` directory, while the Python codebase is located in the `py-polars` directory.
+The Rust code is located in the `crates` directory, while the Python codebase is located in the `py-polars` directory.
 Both directories contain a `Makefile` with helpful commands. Most notably:
 
 - `make test` to run the test suite (see the [test suite docs](/py-polars/tests/README.md) for more info)

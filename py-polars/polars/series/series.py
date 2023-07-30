@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import math
 import os
-import warnings
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -89,11 +88,10 @@ from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
 )
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
-    find_stacklevel,
     parse_version,
     range_to_series,
     range_to_slice,
@@ -412,11 +410,10 @@ class Series:
     @property
     def time_unit(self) -> TimeUnit | None:
         """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
-        warnings.warn(
+        issue_deprecation_warning(
             "`Series.time_unit` is deprecated and will be removed in a future version,"
             " please use `Series.dtype.time_unit` instead",
-            category=DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.17.5",
         )
         return self._s.time_unit()
 
@@ -2156,12 +2153,11 @@ class Series:
             # if 'in_place' is not None, this indicates that the parameter was
             # explicitly set by the caller, and we should warn against it (use
             # of NoDefault only applies when one of the valid values is None).
-            warnings.warn(
+            issue_deprecation_warning(
                 "the `in_place` parameter is deprecated and will be removed in a future"
                 " version; note that renaming is a shallow-copy operation with"
                 " essentially zero cost.",
-                category=DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.17.15",
             )
         if in_place:
             self._s.rename(name)
@@ -2410,12 +2406,11 @@ class Series:
 
         """
         if append_chunks is not None:
-            warnings.warn(
+            issue_deprecation_warning(
                 "the `append_chunks` argument will be removed and `append` will change"
                 " to always behave like `append_chunks=True` (the previous default)."
                 " For the behavior of `append_chunks=False`, use `Series.extend`.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.18.8",
             )
         else:
             append_chunks = True
@@ -3635,9 +3630,18 @@ class Series:
         use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
-        Convert this Series to numpy. This operation clones data but is completely safe.
+        Convert this Series to numpy.
 
-        If you want a zero-copy view and know what you are doing, use `.view()`.
+        This operation may clone data but is completely safe. Note that:
+
+        - data which is purely numeric AND without null values is not cloned;
+        - floating point ``nan`` values can be zero-copied;
+        - booleans can't be zero-copied.
+
+        To ensure that no data is cloned, set ``zero_copy_only=True``.
+
+        Alternatively, if you want a zero-copy view and know what you are doing,
+        use `.view()`.
 
         Parameters
         ----------
@@ -4553,7 +4557,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.apply(lambda x: x + 10)
+        >>> s.apply(lambda x: x + 10)  # doctest: +SKIP
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -4567,16 +4571,14 @@ class Series:
         Series
 
         """
-        # TODO:
-        # from polars.utils.udfs import warn_on_inefficient_apply
-        # warn_on_inefficient_apply(
-        #     function, columns=[self.name], apply_target="series"
-        # )
+        from polars.utils.udfs import warn_on_inefficient_apply
 
         if return_dtype is None:
             pl_return_dtype = None
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
+
+        warn_on_inefficient_apply(function, columns=[self.name], apply_target="series")
         return self._from_pyseries(
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )

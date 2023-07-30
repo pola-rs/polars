@@ -723,3 +723,17 @@ def test_titlecase() -> None:
             "And\tA\t Tab",
         ]
     }
+
+
+def test_string_replace_with_nulls_10124() -> None:
+    df = pl.DataFrame({"col1": ["S", "S", "S", None, "S", "S", "S", "S"]})
+
+    assert df.select(
+        pl.col("col1"),
+        pl.col("col1").str.replace("S", "O", n=1).alias("n_1"),
+        pl.col("col1").str.replace("S", "O", n=3).alias("n_3"),
+    ).to_dict(False) == {
+        "col1": ["S", "S", "S", None, "S", "S", "S", "S"],
+        "n_1": ["O", "O", "O", None, "O", "O", "O", "O"],
+        "n_3": ["O", "O", "O", None, "O", "O", "O", "O"],
+    }

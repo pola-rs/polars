@@ -4,7 +4,6 @@ from __future__ import annotations
 import contextlib
 import os
 import random
-import warnings
 from collections import defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
@@ -87,12 +86,11 @@ from polars.utils._construction import (
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
     can_create_dicts_with_pyarrow,
-    find_stacklevel,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
@@ -3146,10 +3144,11 @@ class DataFrame:
                 file, compression, compression_level, statistics, row_group_size
             )
 
+    @deprecated_alias(connection_uri="connection")
     def write_database(
         self,
         table_name: str,
-        connection_uri: str,
+        connection: str,
         *,
         if_exists: DbWriteMode = "fail",
         engine: DbWriteEngine = "sqlalchemy",
@@ -3162,8 +3161,8 @@ class DataFrame:
         table_name
             Name of the table to create or append to in the target SQL database.
             If your table name contains special characters, it should be quoted.
-        connection_uri
-            Connection URI, for example:
+        connection
+            Connection URI string, for example:
 
             * "postgresql://user:pass@server:port/database"
             * "sqlite:////path/to/database.db"
@@ -3189,10 +3188,8 @@ class DataFrame:
                     f"Value for 'if_exists'={if_exists} was unexpected. "
                     f"Choose one of: {'fail', 'replace', 'append'}."
                 )
-            with _open_adbc_connection(connection_uri) as conn:
-                cursor = conn.cursor()
+            with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
                 cursor.adbc_ingest(table_name, self.to_arrow(), mode)
-                cursor.close()
                 conn.commit()
 
         elif engine == "sqlalchemy":
@@ -3223,7 +3220,7 @@ class DataFrame:
 
             # ensure conversion to pandas uses the pyarrow extension array option
             # so that we can make use of the sql/db export without copying data
-            engine_sa = create_engine(connection_uri)
+            engine_sa = create_engine(connection)
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
                 name=table_name,
                 schema=db_schema,
@@ -6551,12 +6548,11 @@ class DataFrame:
             columns = [columns]
 
         if aggregate_function is no_default:
-            warnings.warn(
+            issue_deprecation_warning(
                 "In a future version of polars, the default `aggregate_function` "
                 "will change from `'first'` to `None`. Please pass `'first'` to keep the "
                 "current behaviour, or `None` to accept the new one.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.16.16",
             )
             aggregate_function = "first"
 

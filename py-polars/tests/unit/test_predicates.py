@@ -24,23 +24,6 @@ def test_predicate_4906() -> None:
     ).collect().to_dict(False) == {"dt": [date(2022, 9, 10), date(2022, 9, 20)]}
 
 
-def test_when_then_implicit_none() -> None:
-    df = pl.DataFrame(
-        {
-            "team": ["A", "A", "A", "B", "B", "C"],
-            "points": [11, 8, 10, 6, 6, 5],
-        }
-    )
-
-    assert df.select(
-        pl.when(pl.col("points") > 7).then("Foo"),
-        pl.when(pl.col("points") > 7).then("Foo").alias("bar"),
-    ).to_dict(False) == {
-        "literal": ["Foo", "Foo", "Foo", None, None, None],
-        "bar": ["Foo", "Foo", "Foo", None, None, None],
-    }
-
-
 def test_predicate_null_block_asof_join() -> None:
     left = (
         pl.DataFrame(
@@ -106,12 +89,6 @@ def test_streaming_empty_df() -> None:
     )
 
     assert result.to_dict(False) == {"a": [], "b": [], "b_right": []}
-
-
-def test_when_then_empty_list_5547() -> None:
-    out = pl.DataFrame({"a": []}).select([pl.when(pl.col("a") > 1).then([1])])
-    assert out.shape == (0, 1)
-    assert out.dtypes == [pl.List(pl.Int64)]
 
 
 def test_predicate_strptime_6558() -> None:

@@ -5,6 +5,7 @@ import math
 import operator
 import os
 import random
+import warnings
 from datetime import timedelta
 from functools import partial, reduce
 from typing import (
@@ -35,7 +36,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.exceptions import PolarsPanicError
+from polars.exceptions import PolarsInefficientApplyWarning, PolarsPanicError
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -49,7 +50,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import (
+from polars.utils.deprecation import (
     deprecated,
     deprecated_alias,
     warn_closed_future_change,
@@ -3822,14 +3823,20 @@ class Expr:
                 def inner(s: Series) -> Series:  # pragma: no cover
                     return function(s.alias(x.name))
 
-                return x.apply(inner, return_dtype=return_dtype, skip_nulls=skip_nulls)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", PolarsInefficientApplyWarning)
+                    return x.apply(
+                        inner, return_dtype=return_dtype, skip_nulls=skip_nulls
+                    )
 
         else:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
-                return x.apply(
-                    function, return_dtype=return_dtype, skip_nulls=skip_nulls
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", PolarsInefficientApplyWarning)
+                    return x.apply(
+                        function, return_dtype=return_dtype, skip_nulls=skip_nulls
+                    )
 
         if strategy == "thread_local":
             return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
@@ -8558,16 +8565,20 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
-    @deprecated("Since version 0.8.9 'cache' is a no-op")
+    @deprecated(
+        "This method now does nothing. It has been superseded by the"
+        " `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically"
+        " caches expressions that are equal.",
+        version="0.18.9",
+    )
     def cache(self) -> Self:
         """
-        A no-op.
+        Cache this expression so that it only is executed once per context.
 
-        Don't use this, it does nothing. Activate `comm_subexpr_elim` to automatically
-        cache expression that are equal.
-
-        .. deprecated:: 0.8.9
-            Since version this method doesn't do anything.
+        .. deprecated:: 0.18.9
+            This method now does nothing. It has been superseded by the
+            `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically
+            caches expressions that are equal.
 
         """
         return self
@@ -8591,6 +8602,7 @@ class Expr:
             Dictionary containing the before/after values to map.
         default
             Value to use when the remapping dict does not contain the lookup value.
+            Accepts expression input. Non-expression inputs are parsed as literals.
             Use ``pl.first()``, to keep the original value.
         return_dtype
             Set return dtype to override automatic return dtype determination.
@@ -8916,6 +8928,9 @@ class Expr:
                     is_keys=False,
                 )
 
+            default_parsed = self._from_pyexpr(
+                parse_as_expression(default, str_as_lit=True)
+            )
             return (
                 (
                     df.lazy()
@@ -8935,7 +8950,7 @@ class Expr:
                     .select(
                         F.when(F.col(is_remapped_column).is_not_null())
                         .then(F.col(remap_value_column))
-                        .otherwise(default)
+                        .otherwise(default_parsed)
                         .alias(column)
                     )
                 )

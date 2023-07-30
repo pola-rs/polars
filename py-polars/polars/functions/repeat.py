@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
 from polars.datatypes import Float64
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -18,17 +17,13 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import (
-        IntoExpr,
-        PolarsDataType,
-        PolarsExprType,
-    )
+    from polars.type_aliases import IntoExpr, PolarsDataType
 
 
 @overload
 def repeat(
     value: IntoExpr | None,
-    n: int | PolarsExprType,
+    n: int | Expr,
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[False] = ...,
@@ -40,7 +35,7 @@ def repeat(
 @overload
 def repeat(
     value: IntoExpr | None,
-    n: int | PolarsExprType,
+    n: int | Expr,
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[True],
@@ -52,7 +47,7 @@ def repeat(
 @overload
 def repeat(
     value: IntoExpr | None,
-    n: int | PolarsExprType,
+    n: int | Expr,
     *,
     dtype: PolarsDataType | None = ...,
     eager: bool,
@@ -63,7 +58,7 @@ def repeat(
 
 def repeat(
     value: IntoExpr | None,
-    n: int | PolarsExprType,
+    n: int | Expr,
     *,
     dtype: PolarsDataType | None = None,
     eager: bool = False,
@@ -126,10 +121,9 @@ def repeat(
 
     """
     if name is not None:
-        warnings.warn(
+        issue_deprecation_warning(
             "the `name` argument is deprecated. Use the `alias` method instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.0",
         )
 
     if isinstance(n, int):
@@ -145,7 +139,7 @@ def repeat(
 
 @overload
 def ones(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[False] = ...,
@@ -155,7 +149,7 @@ def ones(
 
 @overload
 def ones(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[True],
@@ -165,7 +159,7 @@ def ones(
 
 @overload
 def ones(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: bool,
@@ -174,7 +168,7 @@ def ones(
 
 
 def ones(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = Float64,
     *,
     eager: bool = False,
@@ -221,7 +215,7 @@ def ones(
 
 @overload
 def zeros(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[False] = ...,
@@ -231,7 +225,7 @@ def zeros(
 
 @overload
 def zeros(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[True],
@@ -241,7 +235,7 @@ def zeros(
 
 @overload
 def zeros(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = ...,
     *,
     eager: bool,
@@ -250,7 +244,7 @@ def zeros(
 
 
 def zeros(
-    n: int | PolarsExprType,
+    n: int | Expr,
     dtype: PolarsDataType = Float64,
     *,
     eager: bool = False,
