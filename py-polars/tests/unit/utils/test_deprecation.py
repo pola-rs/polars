@@ -42,7 +42,7 @@ def test_redirect() -> None:
         warnings.simplefilter("ignore", DeprecationWarning)
 
         # one-to-one redirection
-        @redirect({"foo": "bar"})
+        @redirect({"foo": "bar"}, version="0.1.2")
         class DemoClass1:
             def bar(self, upper: bool = False) -> str:
                 return "BAZ" if upper else "baz"
@@ -50,7 +50,7 @@ def test_redirect() -> None:
         assert DemoClass1().foo() == "baz"  # type: ignore[attr-defined]
 
         # redirection with **kwargs
-        @redirect({"foo": ("bar", {"upper": True})})
+        @redirect({"foo": ("bar", {"upper": True})}, version="0.2.1")
         class DemoClass2:
             def bar(self, upper: bool = False) -> str:
                 return "BAZ" if upper else "baz"
