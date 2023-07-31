@@ -138,9 +138,9 @@ where
     current_expr.into_iter().any(matches)
 }
 
-/// Check if root expression is a literal
+/// Check if leaf expression is a literal
 #[cfg(feature = "is_in")]
-pub(crate) fn has_root_literal_expr(e: &Expr) -> bool {
+pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
     match e {
         Expr::Literal(_) => true,
         _ => {

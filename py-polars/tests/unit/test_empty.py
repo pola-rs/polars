@@ -1,7 +1,7 @@
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_empty_str_concat_lit() -> None:
@@ -87,3 +87,9 @@ def test_empty_list_namespace_output_9585() -> None:
     assert df.select(
         [eval(f"pl.col('A').list.{name}().suffix(f'_{name}')") for name in names]
     ).dtypes == [dtype] * len(names)
+
+
+def test_empty_is_in() -> None:
+    assert_series_equal(
+        pl.Series("a", [1, 2, 3]).is_in([]), pl.Series("a", [False] * 3)
+    )

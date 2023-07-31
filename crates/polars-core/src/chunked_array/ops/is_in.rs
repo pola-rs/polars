@@ -45,7 +45,7 @@ where
         match other.dtype() {
             DataType::List(dt) => {
                 let st = try_get_supertype(self.dtype(), dt)?;
-                if &st != self.dtype() {
+                if &st != self.dtype() || **dt != st {
                     let left = self.cast(&st)?;
                     let right = other.cast(&DataType::List(Box::new(st)))?;
                     return left.is_in(&right);
@@ -65,6 +65,7 @@ where
                         })
                         .collect_trusted()
                 } else {
+                    polars_ensure!(self.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", self.len(), other.len());
                     self.into_iter()
                         .zip(other.list()?.amortized_iter())
                         .map(|(value, series)| match (value, series) {
@@ -192,6 +193,7 @@ impl IsIn for BinaryChunked {
                         })
                         .collect_trusted()
                 } else {
+                    polars_ensure!(self.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", self.len(), other.len());
                     self.into_iter()
                         .zip(other.list()?.amortized_iter())
                         .map(|(value, series)| match (value, series) {
@@ -252,6 +254,7 @@ impl IsIn for BooleanChunked {
                             .collect_trusted()
                     }
                 } else {
+                    polars_ensure!(self.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", self.len(), other.len());
                     self.into_iter()
                         .zip(other.list()?.amortized_iter())
                         .map(|(value, series)| match (value, series) {
@@ -310,6 +313,7 @@ impl IsIn for StructChunked {
                         })
                         .collect()
                 } else {
+                    polars_ensure!(self.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", self.len(), other.len());
                     self.into_iter()
                         .zip(other.list()?.amortized_iter())
                         .map(|(value, series)| match (value, series) {
