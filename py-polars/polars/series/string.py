@@ -636,22 +636,6 @@ class StringNameSpace:
 
         """
 
-    def captures(self, pattern: str) -> Series:
-        r"""
-        Return all capture groups from provided pattern as a struct.
-
-        Parameters
-        ----------
-        pattern
-            A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
-        """
-
     def extract(self, pattern: str, group_index: int = 1) -> Series:
         r"""
         Extract the target capture group from provided patterns.
@@ -785,6 +769,22 @@ class StringNameSpace:
         ]
 
         '''
+
+    def extract_captures(self, pattern: str) -> Series:
+        r"""
+        Return all capture groups from provided pattern as a struct.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+        """
 
     def count_match(self, pattern: str) -> Series:
         r"""

@@ -233,16 +233,16 @@ impl PyExpr {
             .into()
     }
 
-    fn str_captures(&self, pat: &str) -> Self {
-        self.inner.clone().str().captures(pat).into()
-    }
-
     fn str_extract(&self, pat: &str, group_index: usize) -> Self {
         self.inner.clone().str().extract(pat, group_index).into()
     }
 
     fn str_extract_all(&self, pat: Self) -> Self {
         self.inner.clone().str().extract_all(pat.inner).into()
+    }
+
+    fn str_extract_captures(&self, pat: &str) -> Self {
+        self.inner.clone().str().extract_captures(pat).into()
     }
 
     fn str_count_match(&self, pat: &str) -> Self {

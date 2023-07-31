@@ -295,59 +295,6 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(ca.apply_mut(f))
     }
 
-    #[cfg(feature = "dtype-struct")]
-    /// Return all capture groups from pattern as a struct
-    fn captures(&self, pat: &str) -> PolarsResult<StructChunked> {
-        let ca = self.as_utf8();
-        let reg = Regex::new(pat)?;
-
-        let n_fields = reg.captures_len();
-
-        let idxs = (0..n_fields).map(|idx| idx.to_string()).collect::<Vec<_>>();
-
-        let mut builders = idxs
-            .iter()
-            .zip(reg.capture_names())
-            .map(|(idx, name)| {
-                let name = match name {
-                    Some(name) => name,
-                    _ => idx,
-                };
-                Utf8ChunkedBuilder::new(name, ca.len(), ca.get_values_size())
-            })
-            .collect::<Vec<_>>();
-
-        for opt_s in ca.into_iter() {
-            match opt_s {
-                None => builders
-                    .iter_mut()
-                    .for_each(|builder| builder.append_null()),
-                Some(s) => {
-                    let caps = reg.captures(s);
-                    match caps {
-                        Some(caps) => {
-                            caps.iter()
-                                .zip(builders.iter_mut())
-                                .for_each(|(m, builder)| match m {
-                                    Some(m) => builder.append_value(m.as_str()),
-                                    None => builder.append_null(),
-                                })
-                        }
-                        None => builders
-                            .iter_mut()
-                            .for_each(|builder| builder.append_null()),
-                    }
-                }
-            }
-        }
-        let fields = builders
-            .iter()
-            .map(|builder| builder.clone().finish().into_series())
-            .collect::<Vec<_>>();
-
-        Ok(StructChunked::new(ca.name(), &fields).unwrap())
-    }
-
     /// Extract the nth capture group from pattern
     fn extract(&self, pat: &str, group_index: usize) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
@@ -404,6 +351,59 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             }
         }
         Ok(builder.finish())
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    /// Extract all capture groups from pattern and return as a struct
+    fn extract_captures(&self, pat: &str) -> PolarsResult<StructChunked> {
+        let ca = self.as_utf8();
+        let reg = Regex::new(pat)?;
+
+        let n_fields = reg.captures_len();
+
+        let idxs = (0..n_fields).map(|idx| idx.to_string()).collect::<Vec<_>>();
+
+        let mut builders = idxs
+            .iter()
+            .zip(reg.capture_names())
+            .map(|(idx, name)| {
+                let name = match name {
+                    Some(name) => name,
+                    _ => idx,
+                };
+                Utf8ChunkedBuilder::new(name, ca.len(), ca.get_values_size())
+            })
+            .collect::<Vec<_>>();
+
+        for opt_s in ca.into_iter() {
+            match opt_s {
+                None => builders
+                    .iter_mut()
+                    .for_each(|builder| builder.append_null()),
+                Some(s) => {
+                    let caps = reg.captures(s);
+                    match caps {
+                        Some(caps) => {
+                            caps.iter()
+                                .zip(builders.iter_mut())
+                                .for_each(|(m, builder)| match m {
+                                    Some(m) => builder.append_value(m.as_str()),
+                                    None => builder.append_null(),
+                                })
+                        }
+                        None => builders
+                            .iter_mut()
+                            .for_each(|builder| builder.append_null()),
+                    }
+                }
+            }
+        }
+        let fields = builders
+            .iter()
+            .map(|builder| builder.clone().finish().into_series())
+            .collect::<Vec<_>>();
+
+        Ok(StructChunked::new(ca.name(), &fields).unwrap())
     }
 
     /// Count all successive non-overlapping regex matches.

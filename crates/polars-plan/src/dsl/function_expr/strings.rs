@@ -29,14 +29,14 @@ pub enum StringFunction {
     CountMatch(String),
     EndsWith,
     Explode,
-    Captures {
-        pat: String,
-    },
     Extract {
         pat: String,
         group_index: usize,
     },
     ExtractAll,
+    ExtractCaptures {
+        pat: String,
+    },
     #[cfg(feature = "string_from_radix")]
     FromRadix(u32, bool),
     NChars,
@@ -91,9 +91,9 @@ impl StringFunction {
             CountMatch(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Explode => mapper.with_same_dtype(),
-            Captures { .. } => mapper.with_same_dtype(),
             Extract { .. } => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
+            ExtractCaptures { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "string_from_radix")]
             FromRadix { .. } => mapper.with_dtype(DataType::Int32),
             #[cfg(feature = "extract_jsonpath")]
@@ -124,7 +124,6 @@ impl Display for StringFunction {
             StringFunction::Contains { .. } => "contains",
             StringFunction::CountMatch(_) => "count_match",
             StringFunction::EndsWith { .. } => "ends_with",
-            StringFunction::Captures { .. } => "captures",
             StringFunction::Extract { .. } => "extract",
             #[cfg(feature = "concat_str")]
             StringFunction::ConcatHorizontal(_) => "concat_horizontal",
@@ -132,6 +131,7 @@ impl Display for StringFunction {
             StringFunction::ConcatVertical(_) => "concat_vertical",
             StringFunction::Explode => "explode",
             StringFunction::ExtractAll => "extract_all",
+            StringFunction::ExtractCaptures { .. } => "extract_captures",
             #[cfg(feature = "string_from_radix")]
             StringFunction::FromRadix { .. } => "from_radix",
             #[cfg(feature = "extract_jsonpath")]
@@ -289,19 +289,20 @@ pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
     Ok(out.into_series())
 }
 
-pub(super) fn captures(s: &Series, pat: &str) -> PolarsResult<Series> {
-    let pat = pat.to_string();
-
-    let ca = s.utf8()?;
-    ca.captures(&pat).map(|ca| ca.into_series())
-}
-
 /// Extract a regex pattern from the a string value.
 pub(super) fn extract(s: &Series, pat: &str, group_index: usize) -> PolarsResult<Series> {
     let pat = pat.to_string();
 
     let ca = s.utf8()?;
     ca.extract(&pat, group_index).map(|ca| ca.into_series())
+}
+
+/// Extract all capture groups from a regex pattern as a struct
+pub(super) fn extract_captures(s: &Series, pat: &str) -> PolarsResult<Series> {
+    let pat = pat.to_string();
+
+    let ca = s.utf8()?;
+    ca.extract_captures(&pat).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "string_justify")]

@@ -639,14 +639,14 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
-            Captures { pat } => {
-                map!(strings::captures, &pat)
-            }
             Extract { pat, group_index } => {
                 map!(strings::extract, &pat, group_index)
             }
             ExtractAll => {
                 map_as_slice!(strings::extract_all)
+            }
+            ExtractCaptures { pat } => {
+                map!(strings::extract_captures, &pat)
             }
             NChars => map!(strings::n_chars),
             Length => map!(strings::lengths),
