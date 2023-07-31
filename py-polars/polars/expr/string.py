@@ -1285,19 +1285,28 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
-        >>> df.select(
-        ...     pl.col("foo").str.extract_all(r"\d+").alias("extracted_nrs"),
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "url": [
+        ...             "http://vote.com/ballon_dor?candidate=messi&ref=python",
+        ...             "http://vote.com/ballon_dor?candidate=haaland&ref=polars",
+        ...             "http://vote.com/ballon_dor?error=404&ref=rust",
+        ...         ]
+        ...     }
         ... )
-        shape: (2, 1)
-        ┌────────────────┐
-        │ extracted_nrs  │
-        │ ---            │
-        │ list[str]      │
-        ╞════════════════╡
-        │ ["123", "45"]  │
-        │ ["678", "910"] │
-        └────────────────┘
+        >>> df.select(
+        ...     captures = pl.col("url").str.extract_groups(r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)")
+        ... ).unnest("captures")
+        shape: (3, 3)
+        ┌──────────────────────────────┬───────────┬────────┐
+        │ 0                            ┆ candidate ┆ ref    │
+        │ ---                          ┆ ---       ┆ ---    │
+        │ str                          ┆ str       ┆ str    │
+        ╞══════════════════════════════╪═══════════╪════════╡
+        │ candidate=messi&ref=python   ┆ messi     ┆ python │
+        │ candidate=haaland&ref=polars ┆ haaland   ┆ polars │
+        │ null                         ┆ null      ┆ null   │
+        └──────────────────────────────┴───────────┴────────┘
 
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))

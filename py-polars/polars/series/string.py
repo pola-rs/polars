@@ -772,7 +772,7 @@ class StringNameSpace:
 
     def extract_groups(self, pattern: str) -> Series:
         r"""
-        Return all capture groups from provided pattern as a struct.
+        Extract all capture groups for the given regex pattern.
 
         Parameters
         ----------
@@ -784,6 +784,26 @@ class StringNameSpace:
         -------
         Series
             Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     name="url",
+        ...     values=[
+        ...         "http://vote.com/ballon_dor?candidate=messi&ref=python",
+        ...         "http://vote.com/ballon_dor?candidate=haaland&ref=polars",
+        ...         "http://vote.com/ballon_dor?error=404&ref=rust",
+        ...     ],
+        ... )
+        >>> s.str.extract_groups(r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)")
+        shape: (3,)
+        Series: 'url' [struct[3]]
+        [
+            {"candidate=messi&ref=python","messi","python"}
+            {"candidate=haaland&ref=polars","haaland","polars"}
+            {null,null,null}
+        ]
+
         """
 
     def count_match(self, pattern: str) -> Series:
