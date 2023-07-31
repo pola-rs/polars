@@ -106,7 +106,7 @@ class ExprMetaNameSpace:
         >>> e_sum_over.meta.output_name()
         "foo"
         >>> e_sum_slice = pl.sum("foo").slice(pl.count() - 10, pl.col("bar"))
-        >>> e_sum_over.meta.output_name()
+        >>> e_sum_slice.meta.output_name()
         "foo"
         >>> e_count = pl.count()
         >>> e.meta.output_name()
@@ -125,15 +125,57 @@ class ExprMetaNameSpace:
         This is not the case when an expression has multiple inputs.
         For instance in a ``fold`` expression.
 
+        Examples
+        --------
+        >>> e = pl.col("foo")
+        >>> e.meta.pop()
+        [<polars.expr.expr.Expr at 0x10975a890>]
+        >>> e_alias = pl.col("foo").alias("bar")
+        >>> first = e.meta.pop()[0]
+        >>> first.meta == pl.col("foo")
+        True
+        >>> first.meta == pl.col("bar")
+        False
+
         """
         return [wrap_expr(e) for e in self._pyexpr.meta_pop()]
 
     def root_names(self) -> list[str]:
-        """Get a list with the root column name."""
+        """
+        Get a list with the root column name.
+
+        Examples
+        --------
+        >>> e = pl.col("foo") * pl.col("bar")
+        >>> e.meta.root_names()
+        ['foo', 'bar']
+        >>> e_filter = pl.col("foo").filter(pl.col("bar") == 13)
+        >>> e_filter.meta.root_names()
+        ['foo', 'bar']
+        >>> e_sum_over = pl.sum("foo").over("groups")
+        >>> e_sum_over.meta.root_names()
+        ['foo', 'groups']
+        >>> e_sum_slice = pl.sum("foo").slice(pl.count() - 10, pl.col("bar"))
+        >>> e_sum_slice.meta.root_names()
+        "foo"
+
+        """
         return self._pyexpr.meta_root_names()
 
     def undo_aliases(self) -> Expr:
-        """Undo any renaming operation like ``alias`` or ``keep_name``."""
+        """
+        Undo any renaming operation like ``alias`` or ``keep_name``.
+
+        Examples
+        --------
+        >>> e = pl.col("foo").alias("bar")
+        >>> e.meta.undo_aliases().meta == pl.col("foo")
+        True
+        >>> e = pl.col("foo").sum().over("bar")
+        >>> e.keep_name().meta.undo_aliases().meta == e
+        True
+
+        """
         return wrap_expr(self._pyexpr.meta_undo_aliases())
 
     def _as_selector(self) -> Expr:
