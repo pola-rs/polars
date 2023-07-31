@@ -247,3 +247,25 @@ def test_cse_expr_groupby() -> None:
     for streaming in [True, False]:
         out = q.collect(comm_subexpr_elim=True, streaming=streaming)
         assert_frame_equal(out, expected)
+
+
+def test_windows_cse_excluded() -> None:
+    lf = pl.LazyFrame(
+        data=[
+            ("a", "aaa", 1),
+            ("a", "bbb", 3),
+            ("a", "ccc", 1),
+            ("c", "xxx", 2),
+            ("c", "yyy", 3),
+            ("c", "zzz", 4),
+            ("b", "qqq", 0),
+        ],
+        schema=["a", "b", "c"],
+    )
+    assert lf.select(
+        c_diff=pl.col("c").diff(1),
+        c_diff_by_a=pl.col("c").diff(1).over("a"),
+    ).collect(comm_subexpr_elim=True).to_dict(False) == {
+        "c_diff": [None, 2, -2, 1, 1, 1, -4],
+        "c_diff_by_a": [None, 2, -2, None, 1, 1, None],
+    }
