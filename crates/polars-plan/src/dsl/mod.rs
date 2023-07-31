@@ -62,7 +62,7 @@ pub use crate::logical_plan::lit;
 use crate::prelude::*;
 use crate::utils::has_expr;
 #[cfg(feature = "is_in")]
-use crate::utils::has_root_literal_expr;
+use crate::utils::has_leaf_literal;
 
 impl Expr {
     /// Modify the Options passed to the `Function` node.
@@ -1045,16 +1045,7 @@ impl Expr {
     #[cfg(feature = "is_in")]
     pub fn is_in<E: Into<Expr>>(self, other: E) -> Self {
         let other = other.into();
-        let has_literal = has_root_literal_expr(&other);
-        if has_literal
-            && match &other {
-                Expr::Literal(LiteralValue::Series(s)) if s.is_empty() => true,
-                Expr::Literal(LiteralValue::Null) => true,
-                _ => false,
-            }
-        {
-            return Expr::Literal(LiteralValue::Boolean(false));
-        }
+        let has_literal = has_leaf_literal(&other);
 
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
