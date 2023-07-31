@@ -2,6 +2,7 @@ use std::mem::MaybeUninit;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
+use arrow::compute::arithmetics::rem;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
 use polars_utils::slice::*;
@@ -197,6 +198,11 @@ pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEn
                     MaybeUninit::new(get_null_sentinel(field))
             };
             let end_offset = *offset + T::ENCODED_LEN;
+
+            // initialize remaining bytes
+            let remainder = values.get_unchecked_release_mut(*offset + 1..end_offset);
+            remainder.fill(MaybeUninit::new(0));
+
             *offset = end_offset;
         }
     }
