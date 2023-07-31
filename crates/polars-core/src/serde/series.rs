@@ -230,9 +230,9 @@ impl<'de> Deserialize<'de> for Series {
                 }?;
 
                 if let Some(f) = bit_settings {
-                    match unsafe { s.set_flags(f) } {
-                        Ok(_) => Ok(s),
-                        Err(_) => Err(de::Error::custom("Bit flags are corrupt")),
+                    unsafe {
+                        s.set_flags(f)
+                            .map_or(Err(de::Error::custom("bit flags are corrupt")), |_| Ok(s))
                     }
                 } else {
                     Ok(s)
