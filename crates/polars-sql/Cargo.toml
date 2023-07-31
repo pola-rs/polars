@@ -23,6 +23,3 @@ serde = "1"
 serde_json = { version = "1" }
 # sqlparser = { git = "https://github.com/sqlparser-rs/sqlparser-rs.git", rev = "ae3b5844c839072c235965fe0d1bddc473dced87" }
 sqlparser = "0.34"
-
-[build-dependencies]
-version_check = { workspace = true }

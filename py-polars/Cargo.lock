@@ -1445,7 +1445,6 @@ dependencies = [
  "polars-core",
  "polars-lazy",
  "polars-ops",
- "version_check",
 ]
 
 [[package]]
@@ -1507,7 +1506,6 @@ dependencies = [
  "arrow2",
  "regex",
  "thiserror",
- "version_check",
 ]
 
 [[package]]
@@ -1543,7 +1541,6 @@ dependencies = [
  "simd-json",
  "simdutf8",
  "tokio",
- "version_check",
 ]
 
 [[package]]
@@ -1560,7 +1557,6 @@ dependencies = [
  "polars-error",
  "polars-utils",
  "simd-json",
- "version_check",
 ]
 
 [[package]]
@@ -1663,7 +1659,6 @@ dependencies = [
  "arrow2",
  "polars-error",
  "polars-utils",
- "version_check",
 ]
 
 [[package]]
@@ -1677,7 +1672,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlparser",
- "version_check",
 ]
 
 [[package]]
@@ -1697,7 +1691,6 @@ dependencies = [
  "regex",
  "serde",
  "smartstring",
- "version_check",
 ]
 
 [[package]]
