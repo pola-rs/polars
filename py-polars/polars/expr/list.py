@@ -7,7 +7,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecated_alias
+from polars.utils.deprecation import deprecated_alias, redirect
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -16,6 +16,15 @@ if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
 
 
+@redirect(
+    {
+        "difference": "set_difference",
+        "symmetric_difference": "set_symmetric_difference",
+        "intersection": "set_intersection",
+        "union": "set_union",
+    },
+    version="0.18.10",
+)
 class ExprListNameSpace:
     """Namespace for list related expressions."""
 
@@ -881,7 +890,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
 
-    def union(self, other: Expr | IntoExpr) -> Expr:
+    def set_union(self, other: Expr | IntoExpr) -> Expr:
         """
         Compute the SET UNION between the elements in this list and the elements of ``other``.
 
@@ -899,7 +908,7 @@ class ExprListNameSpace:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.col("a").list.union("b").alias("union")
+        ...     pl.col("a").list.set_union("b").alias("union")
         ... )  # doctest: +IGNORE_RESULT
         shape: (4, 3)
         ┌───────────┬──────────────┬───────────────┐
@@ -917,7 +926,7 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "union"))
 
-    def difference(self, other: Expr | IntoExpr) -> Expr:
+    def set_difference(self, other: Expr | IntoExpr) -> Expr:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
 
@@ -934,7 +943,7 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("a").list.difference("b").alias("difference"))
+        >>> df.with_columns(pl.col("a").list.set_difference("b").alias("difference"))
         shape: (4, 3)
         ┌───────────┬──────────────┬────────────┐
         │ a         ┆ b            ┆ difference │
@@ -955,7 +964,7 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "difference"))
 
-    def intersection(self, other: Expr | IntoExpr) -> Expr:
+    def set_intersection(self, other: Expr | IntoExpr) -> Expr:
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
 
@@ -972,7 +981,9 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("a").list.intersection("b").alias("intersection"))
+        >>> df.with_columns(
+        ...     pl.col("a").list.set_intersection("b").alias("intersection")
+        ... )
         shape: (4, 3)
         ┌───────────┬──────────────┬──────────────┐
         │ a         ┆ b            ┆ intersection │
@@ -989,7 +1000,7 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "intersection"))
 
-    def symmetric_difference(self, other: Expr | IntoExpr) -> Expr:
+    def set_symmetric_difference(self, other: Expr | IntoExpr) -> Expr:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
 
@@ -1007,7 +1018,9 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("b").list.symmetric_difference("a").alias("sdiff"))
+        >>> df.with_columns(
+        ...     pl.col("b").list.set_symmetric_difference("a").alias("sdiff")
+        ... )
         shape: (4, 3)
         ┌───────────┬──────────────┬───────────┐
         │ a         ┆ b            ┆ sdiff     │

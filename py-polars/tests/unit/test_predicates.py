@@ -158,3 +158,18 @@ def test_predicate_pushdown_join_fill_null_10058() -> None:
         .collect()
         .to_dict(False)["id"]
     ) == [0, 2]
+
+
+def test_is_in_join_blocked() -> None:
+    df1 = pl.DataFrame(
+        {"Groups": ["A", "B", "C", "D", "E", "F"], "values0": [1, 2, 3, 4, 5, 6]}
+    ).lazy()
+
+    df2 = pl.DataFrame(
+        {"values22": [1, 2, None, 4, 5, 6], "values20": [1, 2, 3, 4, 5, 6]}
+    ).lazy()
+
+    df_all = df2.join(df1, left_on="values20", right_on="values0", how="left")
+    assert df_all.filter(~pl.col("Groups").is_in(["A", "B", "F"])).collect().to_dict(
+        False
+    ) == {"values22": [None, 4, 5], "values20": [3, 4, 5], "Groups": ["C", "D", "E"]}

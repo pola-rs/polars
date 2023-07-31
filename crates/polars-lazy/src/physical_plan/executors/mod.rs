@@ -157,8 +157,14 @@ pub(super) fn evaluate_physical_expressions(
     state: &ExecutionState,
     has_windows: bool,
 ) -> PolarsResult<Vec<Series>> {
+    let runner = if has_windows {
+        execute_projection_cached_window_fns
+    } else {
+        run_exprs_par
+    };
+
     let selected_columns = if !cse_exprs.is_empty() {
-        let tmp_cols = run_exprs_par(df, cse_exprs, state)?;
+        let tmp_cols = runner(df, cse_exprs, state)?;
         let width = df.width();
 
         // put the cse expressions at the end
@@ -178,10 +184,8 @@ pub(super) fn evaluate_physical_expressions(
         }
 
         result
-    } else if has_windows {
-        execute_projection_cached_window_fns(df, exprs, state)?
     } else {
-        run_exprs_par(df, exprs, state)?
+        runner(df, exprs, state)?
     };
 
     state.clear_window_expr_cache();
