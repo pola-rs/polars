@@ -16,9 +16,15 @@ else
 	VENV_BIN=$(VENV)/bin
 endif
 
+
 .venv:  ## Set up virtual environment and install requirements
 	python3 -m venv $(VENV)
 	$(MAKE) requirements
+
+
+testing:  ## stuff
+    ## https://gist.github.com/rueycheng/42e355d1480fd7a33ee81c866c7fdf78
+	@echo $(dir $(VENV_BIN))
 
 .PHONY: requirements
 requirements: .venv  ## Install/refresh all project requirements
