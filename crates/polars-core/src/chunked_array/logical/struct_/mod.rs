@@ -190,12 +190,12 @@ impl StructChunked {
         // If there is at least one field with no null values, no rows are null. However, we still
         // have to count the number of nulls per field to get the total number. Fortunately this is
         // cheap since null counts per chunk are pre-computed.
-        let (could_have_nulls, total_null_count) =
+        let (could_have_null_rows, total_null_count) =
             self.fields().iter().fold((true, 0), |acc, s| {
                 (acc.0 & (s.null_count() != 0), acc.1 + s.null_count())
             });
         self.total_null_count = total_null_count;
-        if !could_have_nulls {
+        if !could_have_null_rows {
             return;
         }
         // A row is null if all values in it are null, so we bitor every validity bitmask since a
@@ -216,7 +216,7 @@ impl StructChunked {
                     (None, _, _) | (_, _, true) => n_nulls = Some(0),
                     (Some(v), _, _) => {
                         validity_agg =
-                            validity_agg.map_or(Some(v.clone()), |agg| Some(v.bitor(&agg)));
+                            validity_agg.map_or_else(|| Some(v.clone()), |agg| Some(v.bitor(&agg)));
                         // n.b. This is "free" since any bitops trigger a count.
                         n_nulls = validity_agg.as_ref().map(|v| v.unset_bits());
                     }
