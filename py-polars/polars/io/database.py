@@ -112,7 +112,7 @@ def read_database(
 
     """  # noqa: W505
     if not isinstance(connection, str):
-        raise ValueError(
+        raise TypeError(
             f"Expect connection to be a URI string; found {type(connection)}"
         )
     elif engine is None:

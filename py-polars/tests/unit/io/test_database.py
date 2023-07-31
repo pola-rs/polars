@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import sys
 from datetime import date
 from pathlib import Path
@@ -31,8 +32,6 @@ def sample_df() -> pl.DataFrame:
 
 
 def create_temp_sqlite_db(test_db: str) -> None:
-    import sqlite3
-
     Path(test_db).unlink(missing_ok=True)
 
     # NOTE: at the time of writing adcb/connectorx have weak SQLite support (poor or
@@ -142,6 +141,14 @@ def test_read_database(
             "ADBC mysql driver not detected",
             id="Unavailable adbc driver",
         ),
+        pytest.param(
+            "adbc",
+            "SELECT * FROM test_data",
+            sqlite3.connect(":memory:"),
+            TypeError,
+            "Expect connection to be a URI string",
+            id="Invalid connection URI",
+        ),
     ],
 )
 def test_read_database_exceptions(
@@ -152,9 +159,10 @@ def test_read_database_exceptions(
     err: str,
     tmp_path: Path,
 ) -> None:
+    conn = f"{database}://test" if isinstance(database, str) else database
     with pytest.raises(errclass, match=err):
         pl.read_database(
-            connection=f"{database}://test",
+            connection=conn,
             query=query,
             engine=engine,
         )
