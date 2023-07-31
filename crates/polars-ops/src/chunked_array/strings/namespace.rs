@@ -355,7 +355,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     #[cfg(feature = "dtype-struct")]
     /// Extract all capture groups from pattern and return as a struct
-    fn extract_captures(&self, pat: &str) -> PolarsResult<StructChunked> {
+    fn extract_groups(&self, pat: &str) -> PolarsResult<StructChunked> {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
 

@@ -1257,7 +1257,7 @@ class ExprStringNameSpace:
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_extract_all(pattern))
 
-    def extract_captures(self, pattern: str) -> Expr:
+    def extract_groups(self, pattern: str) -> Expr:
         r"""
         Extract all capture groups for the given regex pattern.
 
@@ -1300,7 +1300,7 @@ class ExprStringNameSpace:
         └────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_extract_captures(pattern))
+        return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
     def count_match(self, pattern: str) -> Expr:
         r"""

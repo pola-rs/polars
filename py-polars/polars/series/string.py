@@ -770,7 +770,7 @@ class StringNameSpace:
 
         '''
 
-    def extract_captures(self, pattern: str) -> Series:
+    def extract_groups(self, pattern: str) -> Series:
         r"""
         Return all capture groups from provided pattern as a struct.
 

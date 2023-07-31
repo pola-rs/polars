@@ -62,9 +62,10 @@ impl StringNameSpace {
     }
 
     // Extract all captures groups from a regex pattern as a struct
-    pub fn extract_captures(self, pat: &str) -> Expr {
+    pub fn extract_groups(self, pat: &str) -> Expr {
         let pat = pat.to_string();
-        self.0.map_private(StringFunction::ExtractCaptures { pat }.into())
+        self.0
+            .map_private(StringFunction::ExtractGroups { pat }.into())
     }
 
     /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
