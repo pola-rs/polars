@@ -22,17 +22,17 @@ def read_database(
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
     protocol: str | None = None,
-    engine: DbReadEngine = "connectorx",
+    engine: DbReadEngine | None = None,
 ) -> DataFrame:
     """
-    Read a SQL query into a DataFrame.
+    Read the results of a SQL query into a DataFrame.
 
     Parameters
     ----------
     query
         Raw SQL query (or queries).
     connection
-        A connectorx or ADBC connection URI that starts with the backend's
+        A connectorx or ADBC connection URI string that starts with the backend's
         driver name, for example:
 
         * "postgresql://user:pass@server:port/database"
@@ -47,7 +47,7 @@ def read_database(
         Backend-specific transfer protocol directive (connectorx); see connectorx
         documentation for more details.
     engine : {'connectorx', 'adbc'}
-        Selects the engine used for reading the database:
+        Selects the engine used for reading the database (defaulting to connectorx):
 
         * ``'connectorx'``
           Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
@@ -111,6 +111,13 @@ def read_database(
     ... )  # doctest: +SKIP
 
     """  # noqa: W505
+    if not isinstance(connection, str):
+        raise TypeError(
+            f"Expect connection to be a URI string; found {type(connection)}"
+        )
+    elif engine is None:
+        engine = "connectorx"
+
     if engine == "connectorx":
         return _read_sql_connectorx(
             query,
