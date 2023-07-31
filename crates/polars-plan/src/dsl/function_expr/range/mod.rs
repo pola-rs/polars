@@ -1,5 +1,7 @@
 #[cfg(feature = "temporal")]
 mod date_range;
+#[cfg(feature = "dtype-datetime")]
+mod datetime_range;
 mod int_range;
 #[cfg(feature = "dtype-time")]
 mod time_range;
@@ -37,6 +39,20 @@ pub enum RangeFunction {
     },
     #[cfg(feature = "temporal")]
     DateRanges {
+        every: Duration,
+        closed: ClosedWindow,
+        time_unit: Option<TimeUnit>,
+        time_zone: Option<TimeZone>,
+    },
+    #[cfg(feature = "dtype-datetime")]
+    DatetimeRange {
+        every: Duration,
+        closed: ClosedWindow,
+        time_unit: Option<TimeUnit>,
+        time_zone: Option<TimeZone>,
+    },
+    #[cfg(feature = "dtype-datetime")]
+    DatetimeRanges {
         every: Duration,
         closed: ClosedWindow,
         time_unit: Option<TimeUnit>,
@@ -93,6 +109,33 @@ impl RangeFunction {
                     DataType::List(Box::new(inner_dtype)),
                 ));
             },
+            #[cfg(feature = "temporal")]
+            DatetimeRange {
+                every: _,
+                closed: _,
+                time_unit,
+                time_zone,
+            } => {
+                // output dtype may change based on `every`, `time_unit`, and `time_zone`
+                let dtype =
+                    mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_deref())?;
+                return Ok(Field::new("datetime", dtype));
+            },
+            #[cfg(feature = "temporal")]
+            DatetimeRanges {
+                every: _,
+                closed: _,
+                time_unit,
+                time_zone,
+            } => {
+                // output dtype may change based on `every`, `time_unit`, and `time_zone`
+                let inner_dtype =
+                    mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_deref())?;
+                return Ok(Field::new(
+                    "datetime_range",
+                    DataType::List(Box::new(inner_dtype)),
+                ));
+            },
             #[cfg(feature = "dtype-time")]
             TimeRange { .. } => {
                 return Ok(Field::new("time", DataType::Time));
@@ -119,6 +162,10 @@ impl Display for RangeFunction {
             DateRange { .. } => "date_range",
             #[cfg(feature = "temporal")]
             DateRanges { .. } => "date_ranges",
+            #[cfg(feature = "dtype-datetime")]
+            DatetimeRange { .. } => "datetime_range",
+            #[cfg(feature = "dtype-datetime")]
+            DatetimeRanges { .. } => "datetime_ranges",
             #[cfg(feature = "dtype-time")]
             TimeRange { .. } => "time_range",
             #[cfg(feature = "dtype-time")]
@@ -162,6 +209,36 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             } => {
                 map_as_slice!(
                     date_range::temporal_ranges,
+                    every,
+                    closed,
+                    time_unit,
+                    time_zone.clone()
+                )
+            },
+            #[cfg(feature = "dtype-datetime")]
+            DatetimeRange {
+                every,
+                closed,
+                time_unit,
+                time_zone,
+            } => {
+                map_as_slice!(
+                    datetime_range::datetime_range,
+                    every,
+                    closed,
+                    time_unit,
+                    time_zone.clone()
+                )
+            },
+            #[cfg(feature = "dtype-datetime")]
+            DatetimeRanges {
+                every,
+                closed,
+                time_unit,
+                time_zone,
+            } => {
+                map_as_slice!(
+                    datetime_range::datetime_ranges,
                     every,
                     closed,
                     time_unit,

@@ -93,6 +93,64 @@ pub fn date_ranges(
     }
 }
 
+/// Create a datetime range from a `start` and `stop` expression.
+#[cfg(feature = "temporal")]
+pub fn datetime_range(
+    start: Expr,
+    end: Expr,
+    every: Duration,
+    closed: ClosedWindow,
+    time_unit: Option<TimeUnit>,
+    time_zone: Option<TimeZone>,
+) -> Expr {
+    let input = vec![start, end];
+
+    Expr::Function {
+        input,
+        function: FunctionExpr::Range(RangeFunction::DatetimeRange {
+            every,
+            closed,
+            time_unit,
+            time_zone,
+        }),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: true,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
+}
+
+/// Create a column of datetime ranges from a `start` and `stop` expression.
+#[cfg(feature = "temporal")]
+pub fn datetime_ranges(
+    start: Expr,
+    end: Expr,
+    every: Duration,
+    closed: ClosedWindow,
+    time_unit: Option<TimeUnit>,
+    time_zone: Option<TimeZone>,
+) -> Expr {
+    let input = vec![start, end];
+
+    Expr::Function {
+        input,
+        function: FunctionExpr::Range(RangeFunction::DatetimeRanges {
+            every,
+            closed,
+            time_unit,
+            time_zone,
+        }),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: true,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
+}
+
 /// Generate a time range.
 #[cfg(feature = "dtype-time")]
 pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
