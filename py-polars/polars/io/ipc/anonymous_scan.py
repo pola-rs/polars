@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 import polars.io.ipc
-from polars.dependencies import pickle
 from polars.io._utils import _prepare_file_arg
 
 if TYPE_CHECKING:
@@ -17,13 +16,12 @@ def _scan_ipc_fsspec(
     storage_options: dict[str, object] | None = None,
 ) -> LazyFrame:
     func = partial(_scan_ipc_impl, source, storage_options=storage_options)
-    func_serialized = pickle.dumps(func)
 
     storage_options = storage_options or {}
     with _prepare_file_arg(source, **storage_options) as data:
         schema = polars.io.ipc.read_ipc_schema(data)
 
-    return pl.LazyFrame._scan_python_function(schema, func_serialized)
+    return pl.LazyFrame._scan_python_function(schema, func)
 
 
 def _scan_ipc_impl(  # noqa: D417
