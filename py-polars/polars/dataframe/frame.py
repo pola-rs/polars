@@ -3094,6 +3094,11 @@ class DataFrame:
         pyarrow_options
             Arguments passed to ``pyarrow.parquet.write_table``.
 
+            If you pass ``partition_cols`` here, the dataset will be written
+            using ``pyarrow.parquet.write_to_dataset``.
+            The ``partition_cols`` parameter leads to write the dataset to a directory.
+            Similar to Spark's partitioned datasets.
+
         Examples
         --------
         >>> import pathlib
@@ -3108,11 +3113,27 @@ class DataFrame:
         >>> path: pathlib.Path = dirpath / "new_file.parquet"
         >>> df.write_parquet(path)
 
+        We can use pyarrow with use_pyarrow_write_to_dataset=True
+        to write partitioned datasets. The following example will
+        write the first row to ../watermark=1/*.parquet and the
+        other rows to ../watermark=2/*.parquet.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "watermark": [1, 2, 2]})
+        >>> path: pathlib.Path = dirpath / "partitioned_object"
+        >>> df.write_parquet(
+        ...     path,
+        ...     use_pyarrow=True,
+        ...     pyarrow_options={"partition_cols": ["watermark"]},
+        ... )
+
         """
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
+                file = normalise_filepath(file, check_not_directory=True)
+            else:
+                file = normalise_filepath(file)
 
         if use_pyarrow:
             tbl = self.to_arrow()
@@ -3130,15 +3151,30 @@ class DataFrame:
             # needed below
             import pyarrow.parquet  # noqa: F401
 
-            pa.parquet.write_table(
-                table=tbl,
-                where=file,
-                row_group_size=row_group_size,
-                compression=None if compression == "uncompressed" else compression,
-                compression_level=compression_level,
-                write_statistics=statistics,
-                **(pyarrow_options or {}),
-            )
+            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
+                pyarrow_options["compression"] = (
+                    None if compression == "uncompressed" else compression
+                )
+                pyarrow_options["compression_level"] = compression_level
+                pyarrow_options["write_statistics"] = statistics
+                pyarrow_options["row_group_size"] = row_group_size
+
+                pa.parquet.write_to_dataset(
+                    table=tbl,
+                    root_path=file,
+                    **(pyarrow_options or {}),
+                )
+            else:
+                pa.parquet.write_table(
+                    table=tbl,
+                    where=file,
+                    row_group_size=row_group_size,
+                    compression=None if compression == "uncompressed" else compression,
+                    compression_level=compression_level,
+                    write_statistics=statistics,
+                    **(pyarrow_options or {}),
+                )
+
         else:
             self._df.write_parquet(
                 file, compression, compression_level, statistics, row_group_size
