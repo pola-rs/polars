@@ -119,7 +119,9 @@ def _rename_kwargs(
 
 
 def redirect(
-    from_to: dict[str, str | tuple[str, dict[str, Any]]]
+    from_to: dict[str, str | tuple[str, dict[str, Any]]],
+    *,
+    version: str,
 ) -> Callable[[type[T]], type[T]]:
     """
     Class decorator allowing deprecation/transition from one method name to another.

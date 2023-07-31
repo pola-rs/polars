@@ -30,7 +30,7 @@ if TYPE_CHECKING:
         from typing_extensions import Self
 
 
-@redirect({"query": ("execute", {"eager": True})})
+@redirect({"query": ("execute", {"eager": True})}, version="0.17.13")
 class SQLContext(Generic[FrameType]):
     """
     Run SQL queries against DataFrame/LazyFrame data.
