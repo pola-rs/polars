@@ -26,7 +26,10 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -1806,7 +1809,9 @@ def arg_sort_by(
     return wrap_expr(plr.arg_sort_by(exprs, descending))
 
 
-@deprecated_alias(common_subplan_elimination="comm_subplan_elim")
+@deprecate_renamed_parameter(
+    "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+)
 def collect_all(
     lazy_frames: Sequence[LazyFrame],
     *,

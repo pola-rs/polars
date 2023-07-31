@@ -7,7 +7,10 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecated_alias, redirect
+from polars.utils.deprecation import (
+    deprecate_renamed_methods,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -16,14 +19,19 @@ if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
 
 
-@redirect(
+@deprecate_renamed_methods(
     {
         "difference": "set_difference",
         "symmetric_difference": "set_symmetric_difference",
         "intersection": "set_intersection",
         "union": "set_union",
     },
-    version="0.18.10",
+    versions={
+        "difference": "0.18.10",
+        "symmetric_difference": "0.18.10",
+        "intersection": "0.18.10",
+        "union": "0.18.10",
+    },
 )
 class ExprListNameSpace:
     """Namespace for list related expressions."""
@@ -777,7 +785,7 @@ class ExprListNameSpace:
         element = parse_as_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_count_match(element))
 
-    @deprecated_alias(name_generator="fields")
+    @deprecate_renamed_parameter("name_generator", "fields", version="0.17.12")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",

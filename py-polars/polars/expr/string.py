@@ -7,7 +7,10 @@ from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
@@ -193,7 +196,8 @@ class ExprStringNameSpace:
         _validate_format_argument(format)
         return wrap_expr(self._pyexpr.str_to_time(format, strict, cache))
 
-    @deprecated_alias(datatype="dtype", fmt="format")
+    @deprecate_renamed_parameter("datatype", "dtype", version="0.17.3")
+    @deprecate_renamed_parameter("fmt", "format", version="0.17.3")
     def strptime(
         self,
         dtype: PolarsTemporalType,
