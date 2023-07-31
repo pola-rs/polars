@@ -236,7 +236,7 @@ class BytecodeParser:
 
     def can_rewrite(self) -> bool:
         """
-        Determine if bytecode indicates only simple binary ops and/or comparisons.
+        Determine if bytecode indicates that we can offer a native expression instead.
 
         Note that `lambda x: x` is inefficient, but we ignore it because it is not
         guaranteed that using the equivalent bare constant value will return the
@@ -247,11 +247,20 @@ class BytecodeParser:
         else:
             self._can_rewrite[self._apply_target] = False
             if self._rewritten_instructions and self._param_name is not None:
-                self._can_rewrite[self._apply_target] = len(
-                    self._rewritten_instructions
-                ) >= 2 and all(
-                    inst.opname in OpNames.PARSEABLE_OPS
-                    for inst in self._rewritten_instructions
+                self._can_rewrite[self._apply_target] = (
+                    # check minimum number of ops, ensure all are whitelisted
+                    len(self._rewritten_instructions) >= 2
+                    and all(
+                        inst.opname in OpNames.PARSEABLE_OPS
+                        for inst in self._rewritten_instructions
+                    )
+                    # exclude constructs/functions with multiple RETURN_VALUE ops
+                    and sum(
+                        1
+                        for inst in self.original_instructions
+                        if inst.opname == "RETURN_VALUE"
+                    )
+                    == 1
                 )
 
         return self._can_rewrite[self._apply_target]
@@ -268,7 +277,7 @@ class BytecodeParser:
     @property
     def original_instructions(self) -> list[Instruction]:
         """The original bytecode instructions from the function we are parsing."""
-        return list(get_instructions(self._function))
+        return list(self._rewritten_instructions._original_instructions)
 
     @property
     def param_name(self) -> str | None:
@@ -363,8 +372,8 @@ class BytecodeParser:
 
             before_after_suggestion = (
                 (
-                    f"  \033[31m-  {target_name}.apply({func_name})\033[0m\n"
-                    f"  \033[32m+  {suggested_expression}\033[0m\n{addendum}"
+                    f"  \033[31m- {target_name}.apply({func_name})\033[0m\n"
+                    f"  \033[32m+ {suggested_expression}\033[0m\n{addendum}"
                 )
                 if in_terminal_that_supports_colour()
                 else (
@@ -499,9 +508,10 @@ class RewrittenInstructions:
     _ignored_ops = frozenset(["COPY_FREE_VARS", "PRECALL", "RESUME", "RETURN_VALUE"])
 
     def __init__(self, instructions: Iterator[Instruction]):
+        self._original_instructions = list(instructions)
         self._rewritten_instructions = self._rewrite(
             self._upgrade_instruction(inst)
-            for inst in instructions
+            for inst in self._original_instructions
             if inst.opname not in self._ignored_ops
         )
 
