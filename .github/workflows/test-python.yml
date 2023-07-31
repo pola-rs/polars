@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - py-polars/**
-      - crates/**
+      - polars/**
       - .github/workflows/test-python.yml
   push:
     branches:
       - main
     paths:
-      - crates/**
+      - polars/**
       - py-polars/**
       - .github/workflows/test-python.yml
 
