@@ -1,44 +1,114 @@
 use std::hash::Hash;
+use std::ops::Add;
+
+use arrow::compute;
+use arrow::types::simd::Simd;
 
 use crate::prelude::*;
-use crate::utils::{try_get_supertype, CustomIterTools};
+#[cfg(feature = "search_sorted")]
+use crate::series::ops::search_sorted::*;
+use crate::series::IsSorted;
+use crate::utils::try_get_supertype;
 
 unsafe fn is_in_helper<T, P>(ca: &ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
 where
     T: PolarsNumericType,
-    P: Eq + Hash + Copy,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
+    P: Eq + Hash + Copy + Ord + Default,
 {
-    let mut set = PlHashSet::with_capacity(other.len());
+    let can_use_binary_search =
+        cfg!(feature = "search_sorted") && !matches!(other.is_sorted_flag(), IsSorted::Not);
+    let ca_name = ca.name();
 
     let other = ca.unpack_series_matching_type(other)?;
-    other.downcast_iter().for_each(|iter| {
-        iter.into_iter().for_each(|opt_val| {
-            // Safety
-            // bit sizes are/ should be equal
-            let ptr = &opt_val.copied() as *const Option<T::Native> as *const Option<P>;
-            let opt_val = *ptr;
-            set.insert(opt_val);
-        })
-    });
+    let other_has_nulls = other.null_count() > 0;
 
-    let name = ca.name();
-    let mut ca: BooleanChunked = ca
-        .into_iter()
-        .map(|opt_val| {
-            // Safety
-            // bit sizes are/ should be equal
-            let ptr = &opt_val as *const Option<T::Native> as *const Option<P>;
-            let opt_val = *ptr;
-            set.contains(&opt_val)
-        })
-        .collect_trusted();
-    ca.rename(name);
+    let mut ca: BooleanChunked = if !can_use_binary_search && ca.len() <= 10 {
+        // For small, unsorted `ca`, constructing the set of values in `other` is slower than just using many `.equal()` calls.
+        ca.into_iter()
+            .map(|opt_val| opt_val.map_or(other_has_nulls, |ca_val| other.equal(ca_val).any()))
+            .collect_trusted()
+    } else if can_use_binary_search && ca.len() * (other.len().ilog2() as usize) < other.len() {
+        // For sorted `other`, binary search can be faster than constructing the set of values in `other`.
+        // Complexity of hash set: construction: O(other) * O(1) + lookups: O(ca) * O(1)
+        // Complexity of binary search: lookups: O(ca) * O(log2(other))
+        // O(hash set)       <  O(binary search)              <=>
+        // O(other) + O(ca)  <  O(ca) * O(log2(other))        <=>
+        // O(other)          <  O(ca) * (O(log2(other)) - 1)  <=>
+        // O(other)          <  O(ca) * O(log2(other))
+        ca.into_iter()
+            .map(|opt_val| {
+                opt_val.map_or(other_has_nulls, |ca_val| {
+                    other.downcast_iter().any(|other_array| {
+                        let mut out = Vec::with_capacity(1);
+                        binary_search_array(
+                            SearchSortedSide::Right,
+                            &mut out,
+                            other_array,
+                            other_array.len(),
+                            ca_val,
+                            false, // TODO what needs to be passed here?
+                        );
+                        let insertion_point = *out.get(0).unwrap();
+                        insertion_point > 0
+                            && insertion_point < other_array.len().try_into().unwrap()
+                    })
+                })
+            })
+            .collect_trusted()
+    } else {
+        // Default case, use a set of values in `other` for O(1) lookups at the cost of
+
+        macro_rules! t_to_p {
+            ($val:expr) => {
+                // Safety
+                // bit sizes are/should be equal
+                *(&$val as *const T::Native as *const P)
+            };
+        }
+
+        let mut set = PlHashSet::with_capacity(other.len());
+
+        let mut min_val: P = Default::default();
+        let mut max_val: P = Default::default();
+        let mut has_null = false;
+        other.downcast_iter().for_each(|iter| {
+            iter.into_iter().for_each(|opt_val| {
+                if let Some(val) = opt_val {
+                    let pval = t_to_p!(*val);
+                    min_val = pval.min(min_val);
+                    max_val = pval.max(max_val);
+                    set.insert(pval);
+                } else {
+                    has_null = true;
+                }
+            });
+        });
+
+        ca.into_iter()
+            .map(|opt_val| {
+                if let Some(val) = opt_val {
+                    let pval = t_to_p!(val);
+                    pval >= min_val && pval <= max_val && set.contains(&pval)
+                } else {
+                    has_null
+                }
+            })
+            .collect_trusted()
+    };
+
+    ca.rename(ca_name);
     Ok(ca)
 }
 
 impl<T> IsIn for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
 {
     fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         // We check implicitly cast to supertype here

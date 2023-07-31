@@ -31,7 +31,6 @@ mod selector;
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -47,6 +46,8 @@ pub use meta::*;
 pub use options::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
+#[cfg(feature = "search_sorted")]
+use polars_core::series::ops::search_sorted::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;

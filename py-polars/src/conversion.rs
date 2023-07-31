@@ -34,6 +34,9 @@ use crate::py_modules::{POLARS, SERIES, UTILS};
 use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
+#[cfg(feature = "search_sorted")]
+use polars_core::series::ops::search_sorted::*;
+
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
     // Safety:
     // Wrap is transparent.

@@ -5,6 +5,8 @@ use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
+#[cfg(feature = "search_sorted")]
+use polars_core::series::ops::search_sorted::*;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyFloat};

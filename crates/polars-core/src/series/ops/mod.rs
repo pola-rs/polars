@@ -11,6 +11,8 @@ mod null;
 pub mod pct_change;
 #[cfg(feature = "round_series")]
 mod round;
+#[cfg(feature = "search_sorted")]
+pub mod search_sorted;
 mod to_list;
 mod unique;
 #[cfg(feature = "serde")]

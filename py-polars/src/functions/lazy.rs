@@ -160,11 +160,13 @@ pub fn cov(a: PyExpr, b: PyExpr) -> PyExpr {
     dsl::cov(a.inner, b.inner).into()
 }
 
+#[cfg(feature="trigonometry")]
 #[pyfunction]
 pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
     y.inner.arctan2(x.inner).into()
 }
 
+#[cfg(feature="trigonometry")]
 #[pyfunction]
 pub fn arctan2d(y: PyExpr, x: PyExpr) -> PyExpr {
     y.inner.arctan2(x.inner).degrees().into()

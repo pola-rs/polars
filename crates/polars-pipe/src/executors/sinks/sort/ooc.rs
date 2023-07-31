@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use crossbeam_queue::SegQueue;
 use polars_core::prelude::*;
+use polars_core::series::ops::search_sorted::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::POOL;

@@ -1,4 +1,4 @@
-use polars_ops::prelude::search_sorted;
+use polars_core::series::ops::search_sorted::*;
 
 use super::*;
 
