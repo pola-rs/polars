@@ -6,6 +6,8 @@ __all__ = [
     "arange",
     "date_range",
     "date_ranges",
+    "datetime_range",
+    "datetime_ranges",
     "int_range",
     "int_ranges",
     "time_range",
