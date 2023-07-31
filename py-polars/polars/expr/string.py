@@ -1289,24 +1289,25 @@ class ExprStringNameSpace:
         ...     data={
         ...         "url": [
         ...             "http://vote.com/ballon_dor?candidate=messi&ref=python",
-        ...             "http://vote.com/ballon_dor?candidate=haaland&ref=polars",
+        ...             "http://vote.com/ballon_dor?candidate=weghorst&ref=polars",
         ...             "http://vote.com/ballon_dor?error=404&ref=rust",
         ...         ]
         ...     }
         ... )
-        >>> df.select(
-        ...     captures = pl.col("url").str.extract_groups(r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)")
-        ... ).unnest("captures")
-        shape: (3, 3)
-        ┌──────────────────────────────┬───────────┬────────┐
-        │ 0                            ┆ candidate ┆ ref    │
-        │ ---                          ┆ ---       ┆ ---    │
-        │ str                          ┆ str       ┆ str    │
-        ╞══════════════════════════════╪═══════════╪════════╡
-        │ candidate=messi&ref=python   ┆ messi     ┆ python │
-        │ candidate=haaland&ref=polars ┆ haaland   ┆ polars │
-        │ null                         ┆ null      ┆ null   │
-        └──────────────────────────────┴───────────┴────────┘
+        >>> pattern = r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)"
+        >>> df.select(captures=pl.col("url").str.extract_groups(pattern)).unnest(
+        ...     "captures"
+        ... )
+        shape: (3, 2)
+        ┌───────────┬────────┐
+        │ candidate ┆ ref    │
+        │ ---       ┆ ---    │
+        │ str       ┆ str    │
+        ╞═══════════╪════════╡
+        │ messi     ┆ python │
+        │ weghorst  ┆ polars │
+        │ null      ┆ null   │
+        └───────────┴────────┘
 
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))

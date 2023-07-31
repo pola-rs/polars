@@ -791,17 +791,17 @@ class StringNameSpace:
         ...     name="url",
         ...     values=[
         ...         "http://vote.com/ballon_dor?candidate=messi&ref=python",
-        ...         "http://vote.com/ballon_dor?candidate=haaland&ref=polars",
+        ...         "http://vote.com/ballon_dor?candidate=weghorst&ref=polars",
         ...         "http://vote.com/ballon_dor?error=404&ref=rust",
         ...     ],
         ... )
         >>> s.str.extract_groups(r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)")
         shape: (3,)
-        Series: 'url' [struct[3]]
+        Series: 'url' [struct[2]]
         [
-            {"candidate=messi&ref=python","messi","python"}
-            {"candidate=haaland&ref=polars","haaland","polars"}
-            {null,null,null}
+            {"messi","python"}
+            {"weghorst","polars"}
+            {null,null}
         ]
 
         """
