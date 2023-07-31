@@ -132,31 +132,42 @@ impl ExprIdentifierVisitor<'_> {
         unreachable!()
     }
 
-    fn accept_node(&self, ae: &AExpr) -> bool {
+    /// return `None` -> node is accepted
+    /// return `Some(_)` node is not accepted and apply the given recursion operation
+    fn accept_node(&self, ae: &AExpr) -> Option<VisitRecursion> {
         match ae {
+            // window expressions should `evaluate_on_groups`, not `evaluate`
+            // so we shouldn't cache the children as they are evaluated incorrectly
+            AExpr::Window { .. } => Some(VisitRecursion::Skip),
             // skip window functions for now until we properly implemented the physical side
-            AExpr::Column(_)
-            | AExpr::Count
-            | AExpr::Literal(_)
-            | AExpr::Window { .. }
-            | AExpr::Alias(_, _) => false,
+            AExpr::Column(_) | AExpr::Count | AExpr::Literal(_) | AExpr::Alias(_, _) => {
+                Some(VisitRecursion::Continue)
+            }
             #[cfg(feature = "random")]
             AExpr::Function {
                 function: FunctionExpr::Random { .. },
                 ..
-            } => false,
+            } => Some(VisitRecursion::Continue),
             _ => {
                 // during aggregation we only store elementwise operation in the state
                 // other operations we cannot add to the state as they have the output size of the
                 // groups, not the original dataframe
                 if self.is_groupby {
                     match ae {
-                        AExpr::Agg(_) | AExpr::AnonymousFunction { .. } => false,
-                        AExpr::Function { options, .. } => !options.is_groups_sensitive(),
-                        _ => true,
+                        AExpr::Agg(_) | AExpr::AnonymousFunction { .. } => {
+                            Some(VisitRecursion::Continue)
+                        }
+                        AExpr::Function { options, .. } => {
+                            if options.is_groups_sensitive() {
+                                Some(VisitRecursion::Continue)
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
                     }
                 } else {
-                    true
+                    None
                 }
             }
         }
@@ -186,11 +197,11 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 
         // if we don't store this node
         // we only push the visit_stack, so the parents know the trail
-        if !self.accept_node(ae) {
+        if let Some(recurse) = self.accept_node(ae) {
             self.identifier_array[pre_visit_idx + self.id_array_offset].0 = self.post_visit_idx;
             self.visit_stack
                 .push(VisitRecord::SubExprId(Rc::from(format!("{:E}", ae))));
-            return Ok(VisitRecursion::Continue);
+            return Ok(recurse);
         }
 
         // create the id of this node
@@ -287,6 +298,12 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             || self.max_post_visit_idx
                 > self.identifier_array[self.visited_idx + self.id_array_offset].0
         {
+            return Ok(RewriteRecursion::Stop);
+        }
+
+        // check if we can accept node
+        // we don't traverse those children
+        if matches!(ae_node.to_aexpr(), AExpr::Window { .. }) {
             return Ok(RewriteRecursion::Stop);
         }
 
