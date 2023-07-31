@@ -4,7 +4,7 @@ import sqlite3
 import sys
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -154,7 +154,7 @@ def test_read_database(
 def test_read_database_exceptions(
     engine: DbReadEngine,
     query: str,
-    database: str,
+    database: Any,
     errclass: type,
     err: str,
     tmp_path: Path,
