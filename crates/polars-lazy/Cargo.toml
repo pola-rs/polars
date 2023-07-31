@@ -30,6 +30,9 @@ pyo3 = { version = "0.19", optional = true }
 rayon.workspace = true
 smartstring.workspace = true
 
+[build-dependencies]
+version_check = { workspace = true }
+
 [features]
 nightly = ["polars-core/nightly", "polars-pipe/nightly", "polars-plan/nightly"]
 compile = ["polars-plan/compile"]

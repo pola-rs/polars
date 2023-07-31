@@ -12,3 +12,6 @@ description = "Error definitions for the Polars DataFrame library"
 arrow.workspace = true
 regex = { version = "1.6", optional = true }
 thiserror.workspace = true
+
+[build-dependencies]
+version_check = { workspace = true }

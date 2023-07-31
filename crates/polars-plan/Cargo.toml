@@ -32,6 +32,9 @@ serde = { version = "1", features = ["derive", "rc"], optional = true }
 smartstring.workspace = true
 strum_macros.workspace = true
 
+[build-dependencies]
+version_check = { workspace = true }
+
 [features]
 # debugging utility
 debugging = []

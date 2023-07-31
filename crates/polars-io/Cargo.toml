@@ -94,6 +94,9 @@ url = { version = "2.3.1", optional = true }
 [dev-dependencies]
 tempdir = "0.3.7"
 
+[build-dependencies]
+version_check = { workspace = true }
+
 [package.metadata.docs.rs]
 all-features = true
 # defines the configuration attribute `docsrs`

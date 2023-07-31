@@ -1445,6 +1445,7 @@ dependencies = [
  "polars-core",
  "polars-lazy",
  "polars-ops",
+ "version_check",
 ]
 
 [[package]]
@@ -1462,6 +1463,7 @@ dependencies = [
  "polars-error",
  "serde",
  "thiserror",
+ "version_check",
 ]
 
 [[package]]
@@ -1493,6 +1495,7 @@ dependencies = [
  "serde_json",
  "smartstring",
  "thiserror",
+ "version_check",
  "wasm-timer",
  "xxhash-rust",
 ]
@@ -1504,6 +1507,7 @@ dependencies = [
  "arrow2",
  "regex",
  "thiserror",
+ "version_check",
 ]
 
 [[package]]
@@ -1539,6 +1543,7 @@ dependencies = [
  "simd-json",
  "simdutf8",
  "tokio",
+ "version_check",
 ]
 
 [[package]]
@@ -1555,6 +1560,7 @@ dependencies = [
  "polars-error",
  "polars-utils",
  "simd-json",
+ "version_check",
 ]
 
 [[package]]
@@ -1577,6 +1583,7 @@ dependencies = [
  "pyo3",
  "rayon",
  "smartstring",
+ "version_check",
 ]
 
 [[package]]
@@ -1600,6 +1607,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smartstring",
+ "version_check",
 ]
 
 [[package]]
@@ -1620,6 +1628,7 @@ dependencies = [
  "polars-utils",
  "rayon",
  "smartstring",
+ "version_check",
 ]
 
 [[package]]
@@ -1644,6 +1653,7 @@ dependencies = [
  "serde",
  "smartstring",
  "strum_macros 0.25.1",
+ "version_check",
 ]
 
 [[package]]
@@ -1653,6 +1663,7 @@ dependencies = [
  "arrow2",
  "polars-error",
  "polars-utils",
+ "version_check",
 ]
 
 [[package]]
@@ -1666,6 +1677,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlparser",
+ "version_check",
 ]
 
 [[package]]
@@ -1685,6 +1697,7 @@ dependencies = [
  "regex",
  "serde",
  "smartstring",
+ "version_check",
 ]
 
 [[package]]
@@ -1699,6 +1712,7 @@ dependencies = [
  "rayon",
  "smartstring",
  "sysinfo",
+ "version_check",
 ]
 
 [[package]]

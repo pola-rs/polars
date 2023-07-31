@@ -23,6 +23,9 @@ regex = "1.7.1"
 serde = { version = "1", features = ["derive"], optional = true }
 smartstring.workspace = true
 
+[build-dependencies]
+version_check = { workspace = true }
+
 [features]
 dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]
 dtype-datetime = ["polars-core/dtype-date", "polars-core/temporal"]
