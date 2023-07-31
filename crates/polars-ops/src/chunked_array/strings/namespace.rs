@@ -361,11 +361,11 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
         let n_fields = reg.captures_len();
 
-        let idxs = (0..n_fields).map(|idx| idx.to_string()).collect::<Vec<_>>();
+        let idxs = (1..n_fields).map(|idx| idx.to_string()).collect::<Vec<_>>();
 
         let mut builders = idxs
             .iter()
-            .zip(reg.capture_names())
+            .zip(reg.capture_names().skip(1)) // skip 0th group
             .map(|(idx, name)| {
                 let name = match name {
                     Some(name) => name,
@@ -385,6 +385,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                     match caps {
                         Some(caps) => {
                             caps.iter()
+                                .skip(1) // skip 0th group
                                 .zip(builders.iter_mut())
                                 .for_each(|(m, builder)| match m {
                                     Some(m) => builder.append_value(m.as_str()),
