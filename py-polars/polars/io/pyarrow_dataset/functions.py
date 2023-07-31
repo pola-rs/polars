@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.io.pyarrow_dataset.anonymous_scan import _scan_pyarrow_dataset
-from polars.utils.deprecation import deprecated_name
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from polars import LazyFrame
@@ -55,7 +55,7 @@ def scan_pyarrow_dataset(
     return _scan_pyarrow_dataset(source, allow_pyarrow_filter=allow_pyarrow_filter)
 
 
-@deprecated_name(new_name="scan_pyarrow_dataset", version="0.16.10")
+@deprecate_renamed_function(new_name="scan_pyarrow_dataset", version="0.16.10")
 def scan_ds(ds: pa.dataset.Dataset, *, allow_pyarrow_filter: bool = True) -> LazyFrame:
     """
     Scan a pyarrow dataset.

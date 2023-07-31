@@ -88,7 +88,10 @@ from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
 )
-from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
@@ -1621,7 +1624,7 @@ class Series:
         """
         return wrap_df(self._s.to_dummies(separator))
 
-    @deprecated_alias(bins="breaks")
+    @deprecate_renamed_parameter("bins", "breaks", version="0.18.8")
     def cut(
         self,
         breaks: list[float],
@@ -1737,7 +1740,7 @@ class Series:
             return res.struct.rename_fields([break_point_label, category_label])
         return res
 
-    @deprecated_alias(quantiles="q")
+    @deprecate_renamed_parameter("quantiles", "q", version="0.18.8")
     def qcut(
         self,
         q: list[float] | int,
@@ -5244,7 +5247,7 @@ class Series:
 
         """
 
-    @deprecated_alias(frac="fraction")
+    @deprecate_renamed_parameter("frac", "fraction", version="0.17.0")
     def sample(
         self,
         n: int | None = None,

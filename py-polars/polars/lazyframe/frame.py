@@ -54,7 +54,10 @@ from polars.utils._parse_expr_input import (
 )
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
@@ -823,7 +826,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return function(self, *args, **kwargs)
 
-    @deprecated_alias(common_subplan_elimination="comm_subplan_elim")
+    @deprecate_renamed_parameter(
+        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+    )
     def explain(
         self,
         *,
@@ -893,7 +898,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
 
-    @deprecated_alias(common_subplan_elimination="comm_subplan_elim")
+    @deprecate_renamed_parameter(
+        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+    )
     def show_graph(
         self,
         *,
@@ -1312,7 +1319,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self._ldf.bottom_k(k, by, descending, nulls_last, maintain_order)
         )
 
-    @deprecated_alias(common_subplan_elimination="comm_subplan_elim")
+    @deprecate_renamed_parameter(
+        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+    )
     def profile(
         self,
         *,
@@ -1460,7 +1469,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return df, timings
 
-    @deprecated_alias(common_subplan_elimination="comm_subplan_elim")
+    @deprecate_renamed_parameter(
+        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+    )
     def collect(
         self,
         *,
@@ -1722,7 +1733,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
         )
 
-    @deprecated_alias(common_subplan_elimination="comm_subplan_elim")
+    @deprecate_renamed_parameter(
+        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+    )
     def fetch(
         self,
         n_rows: int = 500,

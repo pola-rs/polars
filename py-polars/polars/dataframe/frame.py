@@ -86,7 +86,10 @@ from polars.utils._construction import (
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
@@ -3180,7 +3183,7 @@ class DataFrame:
                 file, compression, compression_level, statistics, row_group_size
             )
 
-    @deprecated_alias(connection_uri="connection")
+    @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
     def write_database(
         self,
         table_name: str,
@@ -5878,7 +5881,7 @@ class DataFrame:
         else:
             return self._from_pydf(self._df.hstack([s._s for s in columns]))
 
-    @deprecated_alias(df="other")
+    @deprecate_renamed_parameter("df", "other", version="0.18.8")
     def vstack(self, other: DataFrame, *, in_place: bool = False) -> Self:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
@@ -8153,7 +8156,7 @@ class DataFrame:
         """
         return self._from_pydf(self._df.null_count())
 
-    @deprecated_alias(frac="fraction")
+    @deprecate_renamed_parameter("frac", "fraction", version="0.17.0")
     def sample(
         self,
         n: int | None = None,

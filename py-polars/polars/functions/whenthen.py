@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils.deprecation import deprecated_alias
+from polars.utils.deprecation import deprecate_renamed_parameter
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr
 
 
-@deprecated_alias(expr="condition")
+@deprecate_renamed_parameter("expr", "condition", version="0.18.9")
 def when(condition: IntoExpr) -> pl.When:
     """
     Start a `when-then-otherwise` expression.

@@ -51,8 +51,8 @@ from polars.utils._parse_expr_input import (
 )
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
-    deprecated,
-    deprecated_alias,
+    deprecate_function,
+    deprecate_renamed_parameter,
     warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
@@ -3363,7 +3363,7 @@ class Expr:
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
-    @deprecated_alias(probs="q")
+    @deprecate_renamed_parameter("probs", "q", version="0.18.8")
     def qcut(
         self,
         q: list[float] | int,
@@ -7904,7 +7904,7 @@ class Expr:
             seed = random.randint(0, 10000)
         return self._from_pyexpr(self._pyexpr.shuffle(seed, fixed_seed))
 
-    @deprecated_alias(frac="fraction")
+    @deprecate_renamed_parameter("frac", "fraction", version="0.17.0")
     def sample(
         self,
         n: int | None = None,
@@ -8565,7 +8565,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
-    @deprecated(
+    @deprecate_function(
         "This method now does nothing. It has been superseded by the"
         " `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically"
         " caches expressions that are equal.",
