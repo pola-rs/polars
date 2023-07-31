@@ -93,7 +93,7 @@ impl CategoricalChunked {
     /// The caller must ensure the flags are correct for the underlying chunks
     pub(crate) unsafe fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         let settings = BitSettings::from_bits(flags)
-            .ok_or(polars_err!(ComputeError : "Corrupt flags {} for {}",flags,self.dtype()))?;
+            .ok_or(polars_err!(ComputeError : "corrupt flags {} for {}",flags,self.dtype()))?;
         self.bit_settings = settings;
         Ok(())
     }
