@@ -85,7 +85,7 @@ impl<'de> Deserialize<'de> for Series {
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter
-                    .write_str("struct {name: <name>, datatype: <dtype>,bit_settings?: <settings>, values: <values array>}")
+                    .write_str("struct {name: <name>, datatype: <dtype>, bit_settings?: <settings>, values: <values array>}")
             }
 
             fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
