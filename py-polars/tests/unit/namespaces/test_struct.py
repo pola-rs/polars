@@ -15,6 +15,8 @@ def test_struct_various() -> None:
     assert s[1] == {"int": 2, "str": "b", "bool": None, "list": [3]}
     assert s.struct.field("list").to_list() == [[1, 2], [3]]
     assert s.struct.field("int").to_list() == [1, 2]
+    assert s.struct["list"].to_list() == [[1, 2], [3]]
+    assert s.struct["int"].to_list() == [1, 2]
 
     assert_frame_equal(df.to_struct("my_struct").struct.unnest(), df)
     assert s.struct._ipython_key_completions_() == s.struct.fields

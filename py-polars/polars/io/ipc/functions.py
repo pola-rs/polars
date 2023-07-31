@@ -121,7 +121,8 @@ def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDa
 
     Returns
     -------
-    Dictionary mapping column names to datatypes
+    dict
+        Dictionary mapping column names to datatypes
 
     """
     if isinstance(source, (str, Path)):

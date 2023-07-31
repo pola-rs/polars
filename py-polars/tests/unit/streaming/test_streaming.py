@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -326,15 +327,19 @@ def test_tree_validation_streaming() -> None:
 
 def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     q = pl.DataFrame({"a": [1, 2]}).lazy()
 
-    (
-        q.select(pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Int64)).collect(
-            streaming=True
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
+        (
+            q.select(pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Int64)).collect(
+                streaming=True
+            )
         )
-    )
-    (_, err) = capfd.readouterr()
-    assert "df -> projection -> ordered_sink" in err
+        (_, err) = capfd.readouterr()
+        assert "df -> projection -> ordered_sink" in err
 
 
 def test_streaming_ternary() -> None:
@@ -381,61 +386,84 @@ def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
     assert "df -> sort" in err
 
 
-@pytest.mark.write_disk()
-def test_streaming_groupby_ooc(monkeypatch: Any) -> None:
+@pytest.fixture(scope="module")
+def random_integers() -> pl.Series:
     np.random.seed(1)
-    s = pl.Series("a", np.random.randint(0, 10, 100))
+    return pl.Series("a", np.random.randint(0, 10, 100), dtype=pl.Int64)
 
-    for env in ["POLARS_FORCE_OOC", "_NO_OP"]:
-        monkeypatch.setenv(env, "1")
-        q = (
-            s.to_frame()
-            .lazy()
-            .groupby("a")
-            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
-            .sort("a")
-        )
 
-        assert q.collect(streaming=True).to_dict(False) == {
+@pytest.mark.write_disk()
+def test_streaming_groupby_ooc_q1(monkeypatch: Any, random_integers: pl.Series) -> None:
+    s = random_integers
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+
+    result = (
+        s.to_frame()
+        .lazy()
+        .groupby("a")
+        .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
+        .sort("a")
+        .collect(streaming=True)
+    )
+
+    expected = pl.DataFrame(
+        {
             "a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             "a_first": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             "a_last": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         }
+    )
+    assert_frame_equal(result, expected)
 
-        q = (
-            s.cast(str)
-            .to_frame()
-            .lazy()
-            .groupby("a")
-            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
-            .sort("a")
-        )
 
-        assert q.collect(streaming=True).to_dict(False) == {
+@pytest.mark.write_disk()
+def test_streaming_groupby_ooc_q2(monkeypatch: Any, random_integers: pl.Series) -> None:
+    s = random_integers
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+
+    result = (
+        s.cast(str)
+        .to_frame()
+        .lazy()
+        .groupby("a")
+        .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
+        .sort("a")
+        .collect(streaming=True)
+    )
+
+    expected = pl.DataFrame(
+        {
             "a": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
             "a_first": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
             "a_last": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
         }
+    )
+    assert_frame_equal(result, expected)
 
-        q = (
-            pl.DataFrame(
-                {
-                    "a": s,
-                    "b": s.rename("b"),
-                }
-            )
-            .lazy()
-            .groupby(["a", "b"])
-            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
-            .sort("a")
-        )
 
-        assert q.collect(streaming=True).to_dict(False) == {
+@pytest.mark.write_disk()
+def test_streaming_groupby_ooc_q3(monkeypatch: Any, random_integers: pl.Series) -> None:
+    s = random_integers
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+
+    result = (
+        pl.DataFrame({"a": s, "b": s})
+        .lazy()
+        .groupby(["a", "b"])
+        .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
+        .sort("a")
+        .collect(streaming=True)
+    )
+
+    expected = pl.DataFrame(
+        {
             "a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             "b": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             "a_first": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             "a_last": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_streaming_groupby_struct_key() -> None:
@@ -636,3 +664,57 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     for how in join_strategies:
         q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
         assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+
+
+def test_streaming_9776() -> None:
+    df = pl.DataFrame({"col_1": ["a"] * 1000, "ID": [None] + ["a"] * 999})
+    ordered = (
+        df.groupby("col_1", "ID", maintain_order=True)
+        .count()
+        .filter(pl.col("col_1") == "a")
+    )
+    unordered = (
+        df.groupby("col_1", "ID", maintain_order=False)
+        .count()
+        .filter(pl.col("col_1") == "a")
+    )
+    expected = [("a", None, 1), ("a", "a", 999)]
+    assert ordered.rows() == expected
+    assert unordered.sort(["col_1", "ID"]).rows() == expected
+
+
+def test_streaming_groupby_list_9758() -> None:
+    payload = {"a": [[1, 2]]}
+    assert (
+        pl.LazyFrame(payload)
+        .groupby("a")
+        .first()
+        .collect(streaming=True)
+        .to_dict(False)
+        == payload
+    )
+
+
+@pytest.mark.write_disk()
+def test_streaming_10115(tmp_path: Path) -> None:
+    in_path = tmp_path / "in.parquet"
+    out_path = tmp_path / "out.parquet"
+
+    # this fails if the schema will be incorrectly due to the projection
+    # pushdown
+    (pl.DataFrame([{"x": 1, "y": "foo"}]).write_parquet(in_path))
+
+    joiner = pl.LazyFrame([{"y": "foo", "z": "_"}])
+
+    (
+        pl.scan_parquet(in_path)
+        .join(joiner, how="left", on="y")
+        .select("x", "y", "z")
+        .sink_parquet(out_path)  #
+    )
+
+    assert pl.read_parquet(out_path).to_dict(False) == {
+        "x": [1],
+        "y": ["foo"],
+        "z": ["_"],
+    }

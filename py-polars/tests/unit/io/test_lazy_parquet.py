@@ -197,7 +197,7 @@ def test_parquet_stats(tmp_path: Path) -> None:
     ).collect().shape == (8, 1)
 
 
-def test_row_count_schema(parquet_file_path: Path) -> None:
+def test_row_count_schema_parquet(parquet_file_path: Path) -> None:
     assert (
         pl.scan_parquet(str(parquet_file_path), row_count_name="id")
         .select(["id", "b"])
@@ -376,3 +376,16 @@ def test_glob_n_rows(io_files_path: Path) -> None:
         "fats_g": [0.5, 6.0],
         "sugars_g": [2, 2],
     }
+
+
+@pytest.mark.write_disk()
+def test_parquet_statistics_filter_9925(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "codes.parquet"
+    df = pl.DataFrame({"code": [300964, 300972, 500_000, 26]})
+    df.write_parquet(file_path, statistics=True)
+
+    q = pl.scan_parquet(file_path).filter(
+        (pl.col("code").floordiv(100_000)).is_in([0, 3])
+    )
+    assert q.collect().to_dict(False) == {"code": [300964, 300972, 26]}

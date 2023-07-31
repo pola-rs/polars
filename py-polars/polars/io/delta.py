@@ -126,7 +126,7 @@ def read_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    resolved_uri = resolve_delta_lake_uri(source)
+    resolved_uri = _resolve_delta_lake_uri(source)
 
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
@@ -254,7 +254,7 @@ def scan_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    resolved_uri = resolve_delta_lake_uri(source)
+    resolved_uri = _resolve_delta_lake_uri(source)
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
         version=version,
@@ -266,7 +266,7 @@ def scan_delta(
     return scan_pyarrow_dataset(pa_ds)
 
 
-def resolve_delta_lake_uri(table_uri: str, strict: bool = True) -> str:
+def _resolve_delta_lake_uri(table_uri: str, strict: bool = True) -> str:
     parsed_result = urlparse(table_uri)
 
     resolved_uri = str(
@@ -285,19 +285,15 @@ def _get_delta_lake_table(
     delta_table_options: dict[str, Any] | None = None,
 ) -> deltalake.DeltaTable:
     """
-    Initialise a Delta lake table for use in read and scan operations.
+    Initialize a Delta lake table for use in read and scan operations.
 
     Notes
     -----
     Make sure to install deltalake>=0.8.0. Read the documentation
     `here <https://delta-io.github.io/delta-rs/python/installation.html>`_.
 
-    Returns
-    -------
-    DeltaTable
-
     """
-    check_if_delta_available()
+    _check_if_delta_available()
 
     if delta_table_options is None:
         delta_table_options = {}
@@ -312,7 +308,7 @@ def _get_delta_lake_table(
     return dl_tbl
 
 
-def check_if_delta_available() -> None:
+def _check_if_delta_available() -> None:
     if not _DELTALAKE_AVAILABLE:
         raise ImportError(
             "deltalake is not installed. Please run `pip install deltalake>=0.9.0`."

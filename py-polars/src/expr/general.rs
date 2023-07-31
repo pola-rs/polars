@@ -178,12 +178,21 @@ impl PyExpr {
             .into()
     }
 
-    #[pyo3(signature = (breaks, labels, left_closed))]
+    #[pyo3(signature = (breaks, labels, left_closed, include_breaks))]
     #[cfg(feature = "cutqcut")]
-    fn cut(&self, breaks: Vec<f64>, labels: Option<Vec<String>>, left_closed: bool) -> Self {
-        self.inner.clone().cut(breaks, labels, left_closed).into()
+    fn cut(
+        &self,
+        breaks: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .cut(breaks, labels, left_closed, include_breaks)
+            .into()
     }
-    #[pyo3(signature = (probs, labels, left_closed, allow_duplicates))]
+    #[pyo3(signature = (probs, labels, left_closed, allow_duplicates, include_breaks))]
     #[cfg(feature = "cutqcut")]
     fn qcut(
         &self,
@@ -191,11 +200,42 @@ impl PyExpr {
         labels: Option<Vec<String>>,
         left_closed: bool,
         allow_duplicates: bool,
+        include_breaks: bool,
     ) -> Self {
         self.inner
             .clone()
-            .qcut(probs, labels, left_closed, allow_duplicates)
+            .qcut(probs, labels, left_closed, allow_duplicates, include_breaks)
             .into()
+    }
+    #[pyo3(signature = (n_bins, labels, left_closed, allow_duplicates, include_breaks))]
+    #[cfg(feature = "cutqcut")]
+    fn qcut_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .qcut_uniform(
+                n_bins,
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
+            )
+            .into()
+    }
+
+    #[cfg(feature = "rle")]
+    fn rle(&self) -> Self {
+        self.clone().inner.rle().into()
+    }
+    #[cfg(feature = "rle")]
+    fn rle_id(&self) -> Self {
+        self.clone().inner.rle_id().into()
     }
 
     fn agg_groups(&self) -> Self {
@@ -232,6 +272,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }
@@ -243,6 +284,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }
@@ -451,6 +493,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "trigonometry")]
+    fn arctan2(&self, y: Self) -> Self {
+        self.clone().inner.arctan2(y.inner).into()
+    }
+
+    #[cfg(feature = "trigonometry")]
     fn sinh(&self) -> Self {
         self.clone().inner.sinh().into()
     }
@@ -533,6 +580,14 @@ impl PyExpr {
 
     fn pow(&self, exponent: Self) -> Self {
         self.clone().inner.pow(exponent.inner).into()
+    }
+
+    fn sqrt(&self) -> Self {
+        self.clone().inner.sqrt().into()
+    }
+
+    fn cbrt(&self) -> Self {
+        self.clone().inner.cbrt().into()
     }
 
     fn cumsum(&self, reverse: bool) -> Self {
@@ -904,9 +959,12 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default()
+            fn_params: Some(Arc::new(RollingQuantileParams {
+                prob: 0.5,
+                interpol: QuantileInterpolOptions::Linear,
+            }) as Arc<dyn Any + Send + Sync>),
         };
-        self.inner.clone().rolling_median(options).into()
+        self.inner.clone().rolling_quantile(options).into()
     }
 
     #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center, by, closed))]
@@ -929,13 +987,13 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default()
+            fn_params: Some(Arc::new(RollingQuantileParams {
+                prob: quantile,
+                interpol: interpolation.0,
+            }) as Arc<dyn Any + Send + Sync>),
         };
 
-        self.inner
-            .clone()
-            .rolling_quantile(quantile, interpolation.0, options)
-            .into()
+        self.inner.clone().rolling_quantile(options).into()
     }
 
     fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
@@ -1088,12 +1146,12 @@ impl PyExpr {
             .with_fmt("extend")
             .into()
     }
-    fn any(&self) -> Self {
-        self.inner.clone().any().into()
+    fn any(&self, drop_nulls: bool) -> Self {
+        self.inner.clone().any(drop_nulls).into()
     }
 
-    fn all(&self) -> Self {
-        self.inner.clone().all().into()
+    fn all(&self, drop_nulls: bool) -> Self {
+        self.inner.clone().all(drop_nulls).into()
     }
 
     fn log(&self, base: f64) -> Self {
@@ -1121,9 +1179,5 @@ impl PyExpr {
             IsSorted::Ascending
         };
         self.inner.clone().set_sorted_flag(is_sorted).into()
-    }
-
-    fn cache(&self) -> Self {
-        self.inner.clone().cache().into()
     }
 }

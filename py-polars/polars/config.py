@@ -10,7 +10,7 @@ from polars.utils.various import normalise_filepath
 
 
 # dummy func required (so docs build)
-def _get_float_fmt() -> str:
+def _get_float_fmt() -> str:  # pragma: no cover
     return "n/a"
 
 
@@ -156,7 +156,7 @@ class Config(contextlib.ContextDecorator):
         """
         options = json.loads(
             Path(normalise_filepath(cfg)).read_text()
-            if isinstance(cfg, Path) or os.path.exists(cfg)
+            if isinstance(cfg, Path) or Path(cfg).exists()
             else cfg
         )
         os.environ.update(options.get("environment", {}))
@@ -204,7 +204,9 @@ class Config(contextlib.ContextDecorator):
 
         Returns
         -------
-        str : json string containing current Config options, or filepath where saved.
+        str
+            JSON string containing current Config options, or the path to the file where
+            the options are saved.
 
         """
         environment_vars = {
@@ -221,9 +223,9 @@ class Config(contextlib.ContextDecorator):
             separators=(",", ":"),
         )
         if isinstance(file, (str, Path)):
-            file = os.path.abspath(normalise_filepath(file))
-            Path(file).write_text(options)
-            return file
+            file = Path(normalise_filepath(file)).resolve()
+            file.write_text(options)
+            return str(file)
 
         return options
 

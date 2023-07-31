@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import warnings
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -55,11 +54,14 @@ from polars.utils._parse_expr_input import (
 )
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    find_stacklevel,
     normalise_filepath,
 )
 
@@ -824,6 +826,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return function(self, *args, **kwargs)
 
+    @deprecate_renamed_parameter(
+        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+    )
     def explain(
         self,
         *,
@@ -833,7 +838,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
-        common_subplan_elimination: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
         streaming: bool = False,
     ) -> str:
         """
@@ -858,8 +864,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run simplify expressions optimization.
         slice_pushdown
             Slice pushdown optimization.
-        common_subplan_elimination
+        comm_subplan_elim
             Will try to cache branching subplans that occur on self-joins or unions.
+        comm_subexpr_elim
+            Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -883,18 +891,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 projection_pushdown,
                 simplify_expression,
                 slice_pushdown,
-                common_subplan_elimination,
+                comm_subplan_elim,
+                comm_subexpr_elim,
                 streaming,
             )
             return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
 
+    @deprecate_renamed_parameter(
+        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+    )
     def show_graph(
         self,
         *,
         optimized: bool = True,
         show: bool = True,
-        output_path: str | None = None,
+        output_path: str | Path | None = None,
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
         type_coercion: bool = True,
@@ -902,7 +914,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
-        common_subplan_elimination: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
         streaming: bool = False,
     ) -> str | None:
         """
@@ -930,8 +943,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run simplify expressions optimization.
         slice_pushdown
             Slice pushdown optimization.
-        common_subplan_elimination
+        comm_subplan_elim
             Will try to cache branching subplans that occur on self-joins or unions.
+        comm_subexpr_elim
+            Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -955,7 +970,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
-            common_subplan_elimination,
+            comm_subplan_elim,
+            comm_subexpr_elim,
             streaming,
         )
 
@@ -975,8 +991,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             raise ImportError("Graphviz dot binary should be on your PATH") from None
 
         if output_path:
-            with Path(output_path).open(mode="wb") as file:
-                file.write(graph)
+            Path(output_path).write_bytes(graph)
 
         if not show:
             return None
@@ -1030,6 +1045,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *more_by: IntoExpr,
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> Self:
         """
         Sort the dataframe by the given columns.
@@ -1046,6 +1062,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+            Note that if `true` streaming is not possible and performance might be
+            worse since this requires a stable search.
 
         Examples
         --------
@@ -1115,7 +1135,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         # Fast path for sorting by a single existing column
         if isinstance(by, str) and not more_by:
-            return self._from_pyldf(self._ldf.sort(by, descending, nulls_last))
+            return self._from_pyldf(
+                self._ldf.sort(by, descending, nulls_last, maintain_order)
+            )
 
         by = parse_as_list_of_expressions(by, *more_by)
 
@@ -1125,7 +1147,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             raise ValueError(
                 f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
             )
-        return self._from_pyldf(self._ldf.sort_by_exprs(by, descending, nulls_last))
+        return self._from_pyldf(
+            self._ldf.sort_by_exprs(by, descending, nulls_last, maintain_order)
+        )
 
     def top_k(
         self,
@@ -1134,6 +1158,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> Self:
         """
         Return the `k` largest elements.
@@ -1152,6 +1177,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+            Note that if `true` streaming is not possible and performance might
+            be worse since this requires a stable search.
 
         See Also
         --------
@@ -1204,7 +1233,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             raise ValueError(
                 f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
             )
-        return self._from_pyldf(self._ldf.top_k(k, by, descending, nulls_last))
+        return self._from_pyldf(
+            self._ldf.top_k(k, by, descending, nulls_last, maintain_order)
+        )
 
     def bottom_k(
         self,
@@ -1213,6 +1244,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> Self:
         """
         Return the `k` smallest elements.
@@ -1231,6 +1263,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+            Note that if `true` streaming is not possible and performance might be
+            worse since this requires a stable search.
 
         See Also
         --------
@@ -1279,8 +1315,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by = parse_as_list_of_expressions(by)
         if isinstance(descending, bool):
             descending = [descending]
-        return self._from_pyldf(self._ldf.bottom_k(k, by, descending, nulls_last))
+        return self._from_pyldf(
+            self._ldf.bottom_k(k, by, descending, nulls_last, maintain_order)
+        )
 
+    @deprecate_renamed_parameter(
+        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+    )
     def profile(
         self,
         *,
@@ -1290,7 +1331,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
-        common_subplan_elimination: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
         show_plot: bool = False,
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
@@ -1319,8 +1361,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
-        common_subplan_elimination
+        comm_subplan_elim
             Will try to cache branching subplans that occur on self-joins or unions.
+        comm_subexpr_elim
+            Common subexpressions will be cached and reused.
         show_plot
             Show a gantt chart of the profiling result
         truncate_nodes
@@ -1375,7 +1419,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
-            common_subplan_elimination,
+            comm_subplan_elim,
+            comm_subexpr_elim,
             streaming,
         )
         df, timings = ldf.profile()
@@ -1424,6 +1469,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return df, timings
 
+    @deprecate_renamed_parameter(
+        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+    )
     def collect(
         self,
         *,
@@ -1433,7 +1481,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
-        common_subplan_elimination: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
         streaming: bool = False,
     ) -> DataFrame:
         """
@@ -1456,8 +1505,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
-        common_subplan_elimination
+        comm_subplan_elim
             Will try to cache branching subplans that occur on self-joins or unions.
+        comm_subexpr_elim
+            Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -1491,10 +1542,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             predicate_pushdown = False
             projection_pushdown = False
             slice_pushdown = False
-            common_subplan_elimination = False
+            comm_subplan_elim = False
+            comm_subexpr_elim = False
 
         if streaming:
-            common_subplan_elimination = False
+            comm_subplan_elim = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -1502,7 +1554,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
-            common_subplan_elimination,
+            comm_subplan_elim,
+            comm_subexpr_elim,
             streaming,
         )
         return wrap_df(ldf.collect())
@@ -1594,7 +1647,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
-            cse=False,
+            comm_subplan_elim=False,
+            comm_subexpr_elim=False,
             streaming=True,
         )
         return lf.sink_parquet(
@@ -1669,7 +1723,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
-            cse=False,
+            comm_subplan_elim=False,
+            comm_subexpr_elim=False,
             streaming=True,
         )
         return lf.sink_ipc(
@@ -1678,6 +1733,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
         )
 
+    @deprecate_renamed_parameter(
+        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+    )
     def fetch(
         self,
         n_rows: int = 500,
@@ -1688,7 +1746,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
-        common_subplan_elimination: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
         streaming: bool = False,
     ) -> DataFrame:
         """
@@ -1718,8 +1777,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Turn off optimizations.
         slice_pushdown
             Slice pushdown optimization
-        common_subplan_elimination
+        comm_subplan_elim
             Will try to cache branching subplans that occur on self-joins or unions.
+        comm_subexpr_elim
+            Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -1752,7 +1813,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             predicate_pushdown = False
             projection_pushdown = False
             slice_pushdown = False
-            common_subplan_elimination = False
+            comm_subplan_elim = False
+            comm_subexpr_elim = False
 
         lf = self._ldf.optimization_toggle(
             type_coercion,
@@ -1760,7 +1822,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
-            common_subplan_elimination,
+            comm_subplan_elim,
+            comm_subexpr_elim,
             streaming,
         )
         return wrap_df(lf.fetch(n_rows))
@@ -2037,11 +2100,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         if "exprs" in named_exprs:
-            warnings.warn(
+            issue_deprecation_warning(
                 "passing expressions to `select` using the keyword argument `exprs` is"
                 " deprecated. Use positional syntax instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.18.1",
             )
             first_input = named_exprs.pop("exprs")
             pyexprs = parse_as_list_of_expressions(
@@ -2607,7 +2669,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "idx": pl.arange(0, 6, eager=True),
+        ...         "idx": pl.int_range(0, 6, eager=True),
         ...         "A": ["A", "A", "B", "B", "B", "C"],
         ...     }
         ... )
@@ -3035,7 +3097,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Returns
         -------
-        A new LazyFrame with the columns added.
+        LazyFrame
+            A new LazyFrame with the columns added.
 
         Notes
         -----
@@ -3163,11 +3226,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         if "exprs" in named_exprs:
-            warnings.warn(
+            issue_deprecation_warning(
                 "passing expressions to `with_columns` using the keyword argument"
                 " `exprs` is deprecated. Use positional syntax instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.18.1",
             )
             first_input = named_exprs.pop("exprs")
             pyexprs = parse_as_list_of_expressions(
@@ -4309,7 +4371,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Returns
         -------
-        DataFrame with unique rows.
+        LazyFrame
+            LazyFrame with unique rows.
 
         Warnings
         --------
@@ -4421,7 +4484,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Drop a row only if all values are null:
 
-        >>> lf.filter(~pl.all(pl.all().is_null())).collect()
+        >>> lf.filter(~pl.all_horizontal(pl.all().is_null())).collect()
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │

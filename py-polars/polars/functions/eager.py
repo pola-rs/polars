@@ -319,7 +319,7 @@ def align_frames(
 
     Now data is aligned, and you can easily calculate the row-wise dot product:
 
-    >>> (af1 * af2 * af3).fill_null(0).select(pl.sum(pl.col("*")).alias("dot"))
+    >>> (af1 * af2 * af3).fill_null(0).select(pl.sum_horizontal("*").alias("dot"))
     shape: (3, 1)
     ┌───────┐
     │ dot   │
@@ -347,17 +347,34 @@ def align_frames(
     # create aligned master frame (this is the most expensive part; afterwards
     # we just subselect out the columns representing the component frames)
     eager = isinstance(frames[0], pl.DataFrame)
-    alignment_frame: LazyFrame = (
-        reduce(  # type: ignore[attr-defined]
-            lambda x, y: x.lazy().join(  # type: ignore[arg-type, return-value]
-                y.lazy(), how=how, on=align_on, suffix=str(id(y))
-            ),
-            frames,
+
+    # we stackoverflow on many frames
+    # so we branch on an arbitrary chosen large number of frames
+    if len(frames) < 250:
+        # lazy variant
+        # this can SO
+        alignment_frame: LazyFrame = (
+            reduce(  # type: ignore[attr-defined]
+                lambda x, y: x.lazy().join(  # type: ignore[arg-type, return-value]
+                    y.lazy(), how=how, on=align_on, suffix=str(id(y))
+                ),
+                frames,
+            )
+            .sort(by=align_on, descending=descending)
+            .collect(no_optimization=True)
+            .lazy()
         )
-        .sort(by=align_on, descending=descending)
-        .collect()
-        .lazy()
-    )
+    else:
+        # eager variant
+        # this doesn't SO
+        alignment_frame = (
+            reduce(
+                lambda x, y: x.join(y, how=how, on=align_on, suffix=str(id(y))),
+                frames,
+            )
+            .sort(by=align_on, descending=descending)
+            .lazy()
+        )
 
     # select-out aligned components from the master frame
     aligned_cols = set(alignment_frame.columns)

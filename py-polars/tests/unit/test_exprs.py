@@ -63,15 +63,6 @@ def test_col_select() -> None:
     ]
 
 
-def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
-    df = fruits_cars
-    out = df.select(pl.max([pl.col("A"), pl.col("B")]))
-    assert out[:, 0].to_list() == [5, 4, 3, 4, 5]
-
-    out = df.select(pl.min([pl.col("A"), pl.col("B")]))
-    assert out[:, 0].to_list() == [1, 2, 3, 2, 1]
-
-
 def test_suffix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select([pl.all().suffix("_reverse")])
@@ -121,17 +112,6 @@ def test_filter_where() -> None:
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
     assert_frame_equal(result_where, expected)
     assert_frame_equal(result_filter, expected)
-
-
-def test_min_nulls_consistency() -> None:
-    df = pl.DataFrame({"a": [None, 2, 3], "b": [4, None, 6], "c": [7, 5, 0]})
-    out = df.select([pl.min(["a", "b", "c"])]).to_series()
-    expected = pl.Series("min", [4, 2, 0])
-    assert_series_equal(out, expected)
-
-    out = df.select([pl.max(["a", "b", "c"])]).to_series()
-    expected = pl.Series("max", [7, 5, 6])
-    assert_series_equal(out, expected)
 
 
 def test_list_join_strings() -> None:
@@ -356,24 +336,6 @@ def test_expression_appends() -> None:
 
     assert out.n_chunks() == 1
     assert out.to_series().to_list() == [None, None, None, 1, 1, 2]
-
-
-def test_regex_in_filter() -> None:
-    df = pl.DataFrame(
-        {
-            "nrs": [1, 2, 3, None, 5],
-            "names": ["foo", "ham", "spam", "egg", None],
-            "flt": [1.0, None, 3.0, 1.0, None],
-        }
-    )
-
-    res = df.filter(
-        pl.fold(
-            acc=False, function=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3)
-        )
-    ).row(0)
-    expected = (1, "foo", 1.0)
-    assert res == expected
 
 
 def test_arr_contains() -> None:
@@ -1012,23 +974,6 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(3)).to_dict(False) == {"a": [3, 4, 5]}
     assert df.select(pl.col("a").tail(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
     assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}
-
-
-def test_cache_expr(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    df = pl.DataFrame(
-        {
-            "x": [3, 3, 3, 5, 8],
-        }
-    )
-    x = (pl.col("x") * 10).cache()
-
-    assert (df.groupby(1).agg([x * x * x])).to_dict(False) == {
-        "literal": [1],
-        "x": [[27000, 27000, 27000, 125000, 512000]],
-    }
-    _, err = capfd.readouterr()
-    assert """cache hit: [(col("x")) * (10)].cache()""" in err
 
 
 @pytest.mark.parametrize(

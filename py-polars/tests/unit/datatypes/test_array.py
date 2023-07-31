@@ -37,6 +37,19 @@ def test_array_construction() -> None:
     assert s.dtype == dtype
     assert s.to_list() == payload
 
+    # create using schema
+    df = pl.DataFrame(
+        schema={
+            "a": pl.Array(width=3, inner=pl.Float32),
+            "b": pl.Array(width=5, inner=pl.Datetime("ms")),
+        }
+    )
+    assert df.dtypes == [
+        pl.Array(width=3, inner=pl.Float32),
+        pl.Array(width=5, inner=pl.Datetime("ms")),
+    ]
+    assert df.rows() == []
+
 
 def test_array_in_groupby() -> None:
     df = pl.DataFrame(
@@ -49,3 +62,15 @@ def test_array_in_groupby() -> None:
     assert next(iter(df.groupby("id", maintain_order=True)))[1]["list"].to_list() == [
         [1, 2]
     ]
+
+
+def test_array_concat() -> None:
+    a_df = pl.DataFrame({"a": [[0, 1], [1, 0]]}).select(
+        pl.col("a").cast(pl.Array(width=2, inner=pl.Int32))
+    )
+    b_df = pl.DataFrame({"a": [[1, 1], [0, 0]]}).select(
+        pl.col("a").cast(pl.Array(width=2, inner=pl.Int32))
+    )
+    assert pl.concat([a_df, b_df]).to_dict(False) == {
+        "a": [[0, 1], [1, 0], [1, 1], [0, 0]]
+    }

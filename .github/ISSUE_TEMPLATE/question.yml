@@ -6,39 +6,40 @@ body:
   - type: markdown
     attributes:
       value: >
-        Is your question related to syntax or how you could do something with the polars library?
+        Is your question related to syntax or how you could do something with the Polars library?
         Please use [Stack Overflow](https://stackoverflow.com/) and one of the following tags:
 
         * [python-polars](https://stackoverflow.com/questions/tagged/python-polars)
 
         * [rust-polars](https://stackoverflow.com/questions/tagged/rust-polars)
 
-        * [nodejs-polars](https://stackoverflow.com/questions/tagged/nodejs-polars)
-
-
         This allows us to create high quality answers that remain updated and will save us from
         answering the same questions over and over again.
 
         If a question is not yet on Stack Overflow, please create a new question and post the link here, so we are notified.
+
   - type: checkboxes
     attributes:
       label: Research
       options:
         - label: >
-            I have searched the above polars tags on Stack Overflow for similar questions.
+            I have searched the above Polars tags on Stack Overflow for similar questions.
           required: true
         - label: >
             I have asked my usage related question on [Stack Overflow](https://stackoverflow.com).
           required: false
+
   - type: input
     id: question-link
     attributes:
       label: Link to question on Stack Overflow
     validations:
       required: false
+
   - type: markdown
     attributes:
       value: ---
+
   - type: textarea
     id: question
     attributes:

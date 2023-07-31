@@ -334,7 +334,8 @@ impl PyLazyFrame {
         projection_pushdown: bool,
         simplify_expr: bool,
         slice_pushdown: bool,
-        cse: bool,
+        comm_subplan_elim: bool,
+        comm_subexpr_elim: bool,
         streaming: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
@@ -348,13 +349,20 @@ impl PyLazyFrame {
 
         #[cfg(feature = "cse")]
         {
-            ldf = ldf.with_common_subplan_elimination(cse);
+            ldf = ldf.with_comm_subplan_elim(comm_subplan_elim);
+            ldf = ldf.with_comm_subexpr_elim(comm_subexpr_elim);
         }
 
         ldf.into()
     }
 
-    fn sort(&self, by_column: &str, descending: bool, nulls_last: bool) -> Self {
+    fn sort(
+        &self,
+        by_column: &str,
+        descending: bool,
+        nulls_last: bool,
+        maintain_order: bool,
+    ) -> Self {
         let ldf = self.ldf.clone();
         ldf.sort(
             by_column,
@@ -362,21 +370,37 @@ impl PyLazyFrame {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order,
             },
         )
         .into()
     }
 
-    fn sort_by_exprs(&self, by: Vec<PyExpr>, descending: Vec<bool>, nulls_last: bool) -> Self {
+    fn sort_by_exprs(
+        &self,
+        by: Vec<PyExpr>,
+        descending: Vec<bool>,
+        nulls_last: bool,
+        maintain_order: bool,
+    ) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        ldf.sort_by_exprs(exprs, descending, nulls_last).into()
+        ldf.sort_by_exprs(exprs, descending, nulls_last, maintain_order)
+            .into()
     }
 
-    fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, descending: Vec<bool>, nulls_last: bool) -> Self {
+    fn top_k(
+        &self,
+        k: IdxSize,
+        by: Vec<PyExpr>,
+        descending: Vec<bool>,
+        nulls_last: bool,
+        maintain_order: bool,
+    ) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        ldf.top_k(k, exprs, descending, nulls_last).into()
+        ldf.top_k(k, exprs, descending, nulls_last, maintain_order)
+            .into()
     }
 
     fn bottom_k(
@@ -385,10 +409,12 @@ impl PyLazyFrame {
         by: Vec<PyExpr>,
         descending: Vec<bool>,
         nulls_last: bool,
+        maintain_order: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        ldf.bottom_k(k, exprs, descending, nulls_last).into()
+        ldf.bottom_k(k, exprs, descending, nulls_last, maintain_order)
+            .into()
     }
 
     fn cache(&self) -> Self {

@@ -4,7 +4,6 @@ from __future__ import annotations
 import contextlib
 import os
 import random
-import warnings
 from collections import defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
@@ -87,12 +86,14 @@ from polars.utils._construction import (
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
     can_create_dicts_with_pyarrow,
-    find_stacklevel,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
@@ -455,10 +456,6 @@ class DataFrame:
           Support type specification or override of one or more columns; note that
           any dtypes inferred from the columns param will be overridden.
 
-        Returns
-        -------
-        DataFrame
-
         """
         return cls._from_pydf(
             dict_to_pydf(data, schema=schema, schema_overrides=schema_overrides)
@@ -500,10 +497,6 @@ class DataFrame:
             this does not yield conclusive results, column orientation is used.
         infer_schema_length
             How many rows to scan to determine the column type.
-
-        Returns
-        -------
-        DataFrame
 
         """
         return cls._from_pydf(
@@ -550,10 +543,6 @@ class DataFrame:
             the orientation is inferred by matching the columns and data dimensions. If
             this does not yield conclusive results, column orientation is used.
 
-        Returns
-        -------
-        DataFrame
-
         """
         return cls._from_pydf(
             numpy_to_pydf(
@@ -595,10 +584,6 @@ class DataFrame:
             any dtypes inferred from the columns param will be overridden.
         rechunk : bool, default True
             Make sure that all data is in contiguous memory.
-
-        Returns
-        -------
-        DataFrame
 
         """
         return cls._from_pydf(
@@ -647,10 +632,6 @@ class DataFrame:
             If the data contains NaN values they will be converted to null/None.
         include_index : bool, default False
             Load any non-default pandas indexes as columns.
-
-        Returns
-        -------
-        DataFrame
 
         """
         return cls._from_pydf(
@@ -895,10 +876,6 @@ class DataFrame:
         n_rows
             Stop reading from Apache Avro file after reading ``n_rows``.
 
-        Returns
-        -------
-        DataFrame
-
         """
         if isinstance(source, (str, Path)):
             source = normalise_filepath(source)
@@ -941,10 +918,6 @@ class DataFrame:
             Make sure that all data is contiguous.
         memory_map
             Memory map the file
-
-        Returns
-        -------
-        DataFrame
 
         """
         if isinstance(source, (str, Path)):
@@ -991,7 +964,13 @@ class DataFrame:
         return self
 
     @classmethod
-    def _read_json(cls, source: str | Path | IOBase | bytes) -> Self:
+    def _read_json(
+        cls,
+        source: str | Path | IOBase | bytes,
+        *,
+        schema: SchemaDefinition | None = None,
+        schema_overrides: SchemaDefinition | None = None,
+    ) -> Self:
         """
         Read into a DataFrame from a JSON file.
 
@@ -1008,11 +987,20 @@ class DataFrame:
             source = normalise_filepath(source)
 
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_json(source, False)
+        self._df = PyDataFrame.read_json(
+            source, schema=schema, schema_overrides=schema_overrides
+        )
         return self
 
     @classmethod
-    def _read_ndjson(cls, source: str | Path | IOBase | bytes) -> Self:
+    def _read_ndjson(
+        cls,
+        source: str | Path | IOBase | bytes,
+        *,
+        schema: SchemaDefinition | None = None,
+        schema_overrides: SchemaDefinition | None = None,
+        ignore_errors: bool = False,
+    ) -> Self:
         """
         Read into a DataFrame from a newline delimited JSON file.
 
@@ -1029,7 +1017,12 @@ class DataFrame:
             source = normalise_filepath(source)
 
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_ndjson(source)
+        self._df = PyDataFrame.read_ndjson(
+            source,
+            ignore_errors=ignore_errors,
+            schema=schema,
+            schema_overrides=schema_overrides,
+        )
         return self
 
     @property
@@ -1159,6 +1152,18 @@ class DataFrame:
 
         """
         return self._df.dtypes()
+
+    @property
+    def flags(self) -> dict[str, dict[str, bool]]:
+        """
+        Get flags that are set on the columns of this DataFrame.
+
+        Returns
+        -------
+        dict
+            Mapping from column names to column flags.
+        """
+        return {name: self[name].flags for name in self.columns}
 
     @property
     def schema(self) -> SchemaDict:
@@ -1896,13 +1901,14 @@ class DataFrame:
 
     def to_dicts(self) -> list[dict[str, Any]]:
         """
-        Convert every row to a dictionary of python-native values.
+        Convert every row to a dictionary of Python-native values.
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that python
-        natively only supports up to ``us``-precision; if this matters you should export
-        to a different format.
+        If you have ``ns``-precision temporal values you should be aware that Python
+        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        truncated to microseconds on conversion to Python. If this matters to your
+        use-case you should export to a different format (such as Arrow or NumPy).
 
         Examples
         --------
@@ -2019,7 +2025,7 @@ class DataFrame:
             of null values. Subsequent operations on the resulting pandas DataFrame may
             trigger conversion to NumPy arrays if that operation is not supported by
             pyarrow compute functions.
-        kwargs
+        **kwargs
             Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
 
         Returns
@@ -2528,6 +2534,13 @@ class DataFrame:
         hidden_columns: Sequence[str] | None = None,
         hide_gridlines: bool = False,
         sheet_zoom: int | None = None,
+        freeze_panes: (
+            str
+            | tuple[int, int]
+            | tuple[str, int, int]
+            | tuple[int, int, int, int]
+            | None
+        ) = None,
     ) -> Workbook:
         """
         Write frame data to a table in an Excel workbook/worksheet.
@@ -2644,6 +2657,21 @@ class DataFrame:
             Do not display any gridlines on the output worksheet.
         sheet_zoom : int
             Set the default zoom level of the output worksheet.
+        freeze_panes : str | (str, int, int) | (int, int) | (int, int, int, int)
+            Freeze workbook panes.
+
+            * If (row, col) is supplied, panes are split at the top-left corner of the
+              specified cell, which are 0-indexed. Thus, to freeze only the top row,
+              supply (1, 0).
+            * Alternatively, cell notation can be used to supply the cell. For example,
+              "A2" indicates the split occurs at the top-left of cell A2, which is the
+              equivalent of (1, 0).
+            * If (row, col, top_row, top_col) are supplied, the panes are split based on
+              the `row` and `col`, and the scrolling region is inititalized to begin at
+              the `top_row` and `top_col`. Thus, to freeze only the top row and have the
+              scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
+              Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
+
 
         Notes
         -----
@@ -2959,6 +2987,12 @@ class DataFrame:
                 )
             ws.autofit()
 
+        if freeze_panes:
+            if isinstance(freeze_panes, str):
+                ws.freeze_panes(freeze_panes)
+            else:
+                ws.freeze_panes(*freeze_panes)
+
         if can_close:
             wb.close()
         return wb
@@ -3063,6 +3097,11 @@ class DataFrame:
         pyarrow_options
             Arguments passed to ``pyarrow.parquet.write_table``.
 
+            If you pass ``partition_cols`` here, the dataset will be written
+            using ``pyarrow.parquet.write_to_dataset``.
+            The ``partition_cols`` parameter leads to write the dataset to a directory.
+            Similar to Spark's partitioned datasets.
+
         Examples
         --------
         >>> import pathlib
@@ -3077,11 +3116,27 @@ class DataFrame:
         >>> path: pathlib.Path = dirpath / "new_file.parquet"
         >>> df.write_parquet(path)
 
+        We can use pyarrow with use_pyarrow_write_to_dataset=True
+        to write partitioned datasets. The following example will
+        write the first row to ../watermark=1/*.parquet and the
+        other rows to ../watermark=2/*.parquet.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "watermark": [1, 2, 2]})
+        >>> path: pathlib.Path = dirpath / "partitioned_object"
+        >>> df.write_parquet(
+        ...     path,
+        ...     use_pyarrow=True,
+        ...     pyarrow_options={"partition_cols": ["watermark"]},
+        ... )
+
         """
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
+                file = normalise_filepath(file, check_not_directory=True)
+            else:
+                file = normalise_filepath(file)
 
         if use_pyarrow:
             tbl = self.to_arrow()
@@ -3095,27 +3150,44 @@ class DataFrame:
 
             tbl = pa.table(data)
 
-            # do not remove this
+            # do not remove this import!
             # needed below
+            import pyarrow.parquet  # noqa: F401
 
-            pa.parquet.write_table(
-                table=tbl,
-                where=file,
-                row_group_size=row_group_size,
-                compression=None if compression == "uncompressed" else compression,
-                compression_level=compression_level,
-                write_statistics=statistics,
-                **(pyarrow_options or {}),
-            )
+            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
+                pyarrow_options["compression"] = (
+                    None if compression == "uncompressed" else compression
+                )
+                pyarrow_options["compression_level"] = compression_level
+                pyarrow_options["write_statistics"] = statistics
+                pyarrow_options["row_group_size"] = row_group_size
+
+                pa.parquet.write_to_dataset(
+                    table=tbl,
+                    root_path=file,
+                    **(pyarrow_options or {}),
+                )
+            else:
+                pa.parquet.write_table(
+                    table=tbl,
+                    where=file,
+                    row_group_size=row_group_size,
+                    compression=None if compression == "uncompressed" else compression,
+                    compression_level=compression_level,
+                    write_statistics=statistics,
+                    **(pyarrow_options or {}),
+                )
+
         else:
             self._df.write_parquet(
                 file, compression, compression_level, statistics, row_group_size
             )
 
+    @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
     def write_database(
         self,
         table_name: str,
-        connection_uri: str,
+        connection: str,
         *,
         if_exists: DbWriteMode = "fail",
         engine: DbWriteEngine = "sqlalchemy",
@@ -3126,11 +3198,13 @@ class DataFrame:
         Parameters
         ----------
         table_name
-            Name of the table to append to or create in the SQL database.
-        connection_uri
-            Connection uri, for example
+            Name of the table to create or append to in the target SQL database.
+            If your table name contains special characters, it should be quoted.
+        connection
+            Connection URI string, for example:
 
-            * "postgresql://username:password@server:port/database"
+            * "postgresql://user:pass@server:port/database"
+            * "sqlite:////path/to/database.db"
         if_exists : {'append', 'replace', 'fail'}
             The insert mode.
             'replace' will create a new database table, overwriting an existing one.
@@ -3153,31 +3227,46 @@ class DataFrame:
                     f"Value for 'if_exists'={if_exists} was unexpected. "
                     f"Choose one of: {'fail', 'replace', 'append'}."
                 )
-            with _open_adbc_connection(connection_uri) as conn:
-                cursor = conn.cursor()
+            with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
                 cursor.adbc_ingest(table_name, self.to_arrow(), mode)
-                cursor.close()
                 conn.commit()
+
         elif engine == "sqlalchemy":
             if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleNotFoundError(
                     f"Writing with engine 'sqlalchemy' requires Pandas 1.5.x or higher, found Pandas {pd.__version__}."
                 )
+
             try:
                 from sqlalchemy import create_engine
             except ImportError as exc:
                 raise ImportError(
                     "'sqlalchemy' not found. Install polars with 'pip install polars[sqlalchemy]'."
                 ) from exc
+            from csv import reader as delimited_read
 
-            engine_sa = create_engine(connection_uri)
+            # the table name may also include the db schema; ensure that we identify
+            # both components and pass them through unquoted (sqlalachemy will quote)
+            table_ident = next(delimited_read([table_name], delimiter="."))
+            if len(table_ident) > 2:
+                raise ValueError(f"table_name appears to be invalid: {table_name!r}")
+            elif len(table_ident) > 1:
+                db_schema = table_ident[0]
+                table_name = table_ident[1]
+            else:
+                table_name = table_ident[0]
+                db_schema = None
 
-            # this conversion to pandas as zero-copy
-            # so we can utilize their sql utils for free
+            # ensure conversion to pandas uses the pyarrow extension array option
+            # so that we can make use of the sql/db export without copying data
+            engine_sa = create_engine(connection)
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
-                name=table_name, con=engine_sa, if_exists=if_exists, index=False
+                name=table_name,
+                schema=db_schema,
+                con=engine_sa,
+                if_exists=if_exists,
+                index=False,
             )
-
         else:
             raise ValueError(f"'engine' {engine} is not supported.")
 
@@ -3265,9 +3354,9 @@ class DataFrame:
         ... )  # doctest: +SKIP
 
         """
-        from polars.io.delta import check_if_delta_available, resolve_delta_lake_uri
+        from polars.io.delta import _check_if_delta_available, _resolve_delta_lake_uri
 
-        check_if_delta_available()
+        _check_if_delta_available()
 
         from deltalake.writer import (
             try_get_deltatable,
@@ -3278,7 +3367,7 @@ class DataFrame:
             delta_write_options = {}
 
         if isinstance(target, (str, Path)):
-            target = resolve_delta_lake_uri(str(target), strict=False)
+            target = _resolve_delta_lake_uri(str(target), strict=False)
 
         unsupported_cols = {}
         unsupported_types = [Time, Categorical, Null]
@@ -3368,7 +3457,7 @@ class DataFrame:
         *,
         include_header: bool = False,
         header_name: str = "column",
-        column_names: Iterable[str] | None = None,
+        column_names: str | Iterable[str] | None = None,
     ) -> Self:
         """
         Transpose a DataFrame over the diagonal.
@@ -3381,8 +3470,8 @@ class DataFrame:
             If `include_header` is set, this determines the name of the column that will
             be inserted.
         column_names
-            Optional iterable that yields column names. Will be used to
-            replace the columns in the DataFrame.
+            Optional iterable yielding strings or a string naming an existing column.
+            These will name the value (non-header) columns in the transposed data.
 
         Notes
         -----
@@ -3454,20 +3543,34 @@ class DataFrame:
         │ 1           ┆ 2           ┆ 3           │
         └─────────────┴─────────────┴─────────────┘
 
-        """
-        df = self._from_pydf(self._df.transpose(include_header, header_name))
-        if column_names is not None:
-            names = []
-            n = df.width
-            if include_header:
-                names.append(header_name)
-                n -= 1
+        Use an existing column as the new column names
 
-            column_names = iter(column_names)
-            for _ in range(n):
-                names.append(next(column_names))
-            df.columns = names
-        return df
+        >>> df = pl.DataFrame(dict(id=["a", "b", "c"], col1=[1, 3, 2], col2=[3, 4, 6]))
+        >>> df.transpose(column_names="id")
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 3   ┆ 2   │
+        │ 3   ┆ 4   ┆ 6   │
+        └─────┴─────┴─────┘
+        >>> df.transpose(include_header=True, header_name="new_id", column_names="id")
+        shape: (2, 4)
+        ┌────────┬─────┬─────┬─────┐
+        │ new_id ┆ a   ┆ b   ┆ c   │
+        │ ---    ┆ --- ┆ --- ┆ --- │
+        │ str    ┆ i64 ┆ i64 ┆ i64 │
+        ╞════════╪═════╪═════╪═════╡
+        │ col1   ┆ 1   ┆ 3   ┆ 2   │
+        │ col2   ┆ 3   ┆ 4   ┆ 6   │
+        └────────┴─────┴─────┴─────┘
+        """
+        keep_names_as = header_name if include_header else None
+        if isinstance(column_names, Generator):
+            column_names = [next(column_names) for _ in range(self.height)]
+        return self._from_pydf(self._df.transpose(keep_names_as, column_names))
 
     def reverse(self) -> DataFrame:
         """
@@ -4001,6 +4104,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> DataFrame:
         """
         Return the `k` largest elements.
@@ -4019,6 +4123,10 @@ class DataFrame:
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+            Note that if `true` streaming is not possible and performance might be
+            worse since this requires a stable search.
 
         See Also
         --------
@@ -4066,11 +4174,17 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .top_k(k, by=by, descending=descending, nulls_last=nulls_last)
+            .top_k(
+                k,
+                by=by,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+            )
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
-                common_subplan_elimination=False,
+                comm_subplan_elim=False,
                 slice_pushdown=True,
             )
         )
@@ -4082,6 +4196,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
+        maintain_order: bool = False,
     ) -> DataFrame:
         """
         Return the `k` smallest elements.
@@ -4100,6 +4215,10 @@ class DataFrame:
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+            Note that if `true` streaming is not possible and performance might be
+            worse since this requires a stable search.
 
         See Also
         --------
@@ -4147,11 +4266,17 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .bottom_k(k, by=by, descending=descending, nulls_last=nulls_last)
+            .bottom_k(
+                k,
+                by=by,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+            )
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
-                common_subplan_elimination=False,
+                comm_subplan_elim=False,
                 slice_pushdown=True,
             )
         )
@@ -4443,7 +4568,7 @@ class DataFrame:
 
         Drop a row only if all values are null:
 
-        >>> df.filter(~pl.all(pl.all().is_null()))
+        >>> df.filter(~pl.all_horizontal(pl.all().is_null()))
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
@@ -4597,6 +4722,15 @@ class DataFrame:
             This is slower than a default groupby.
             Settings this to ``True`` blocks the possibility
             to run on the streaming engine.
+
+            .. note::
+                Within each group, the order of rows is always preserved, regardless
+                of this argument.
+
+        Returns
+        -------
+        GroupBy
+            Object which can be used to perform aggregations.
 
         Examples
         --------
@@ -5143,7 +5277,7 @@ class DataFrame:
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "idx": pl.arange(0, 6, eager=True),
+        ...         "idx": pl.int_range(0, 6, eager=True),
         ...         "A": ["A", "A", "B", "B", "B", "C"],
         ...     }
         ... )
@@ -5498,7 +5632,7 @@ class DataFrame:
 
         Returns
         -------
-            Joined DataFrame
+        DataFrame
 
         See Also
         --------
@@ -5610,6 +5744,10 @@ class DataFrame:
         """
         Apply a custom/user-defined function (UDF) over the rows of the DataFrame.
 
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
+
         The UDF will receive each row as a tuple of values: ``udf(row)``.
 
         Implementing logic using a Python function is almost always _significantly_
@@ -5663,16 +5801,16 @@ class DataFrame:
         │ 6        ┆ 24       │
         └──────────┴──────────┘
 
-        It is better to implement this with an expression:
+        However, it is much better to implement this with a native expression:
 
         >>> df.select(
         ...     pl.col("foo") * 2,
         ...     pl.col("bar") * 3,
         ... )  # doctest: +IGNORE_RESULT
 
-        Return a Series by mapping each row to a scalar:
+        Return a DataFrame with a single column by mapping each row to a scalar:
 
-        >>> df.apply(lambda t: (t[0] * 2 + t[1]))
+        >>> df.apply(lambda t: (t[0] * 2 + t[1]))  # doctest: +SKIP
         shape: (3, 1)
         ┌───────┐
         │ apply │
@@ -5684,11 +5822,15 @@ class DataFrame:
         │ 14    │
         └───────┘
 
-        In this case it is better to use the following expression:
+        In this case it is better to use the following native expression:
 
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
 
         """
+        # TODO:
+        # from polars.utils.udfs import warn_on_inefficient_apply
+        # warn_on_inefficient_apply(function, columns=self.columns, apply_target="frame)
+
         out, is_df = self._df.apply(function, return_dtype, inference_size)
         if is_df:
             return self._from_pydf(out)
@@ -5739,16 +5881,21 @@ class DataFrame:
         else:
             return self._from_pydf(self._df.hstack([s._s for s in columns]))
 
-    def vstack(self, df: DataFrame, *, in_place: bool = False) -> Self:
+    @deprecate_renamed_parameter("df", "other", version="0.18.8")
+    def vstack(self, other: DataFrame, *, in_place: bool = False) -> Self:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
 
         Parameters
         ----------
-        df
+        other
             DataFrame to stack.
         in_place
-            Modify in place
+            Modify in place.
+
+        See Also
+        --------
+        extend
 
         Examples
         --------
@@ -5781,34 +5928,51 @@ class DataFrame:
 
         """
         if in_place:
-            self._df.vstack_mut(df._df)
-            return self
-        else:
-            return self._from_pydf(self._df.vstack(df._df))
+            try:
+                self._df.vstack_mut(other._df)
+                return self
+            except RuntimeError as exc:
+                if str(exc) == "Already mutably borrowed":
+                    self._df.vstack_mut(other._df.clone())
+                    return self
+                else:
+                    raise exc
 
-    def extend(self, other: Self) -> Self:
+        return self._from_pydf(self._df.vstack(other._df))
+
+    def extend(self, other: DataFrame) -> Self:
         """
         Extend the memory backed by this `DataFrame` with the values from `other`.
 
-        Different from `vstack` which adds the chunks from `other` to the chunks of this
-        `DataFrame` `extend` appends the data from `other` to the underlying memory
-        locations and thus may cause a reallocation.
+        Different from ``vstack`` which adds the chunks from ``other`` to the chunks of
+        this ``DataFrame``, ``extend`` appends the data from `other` to the underlying
+        memory locations and thus may cause a reallocation.
 
         If this does not cause a reallocation, the resulting data structure will not
         have any extra chunks and thus will yield faster queries.
 
-        Prefer `extend` over `vstack` when you want to do a query after a single append.
-        For instance during online operations where you add `n` rows and rerun a query.
+        Prefer ``extend`` over ``vstack`` when you want to do a query after a single
+        append. For instance, during online operations where you add `n` rows and rerun
+        a query.
 
-        Prefer `vstack` over `extend` when you want to append many times before doing a
-        query. For instance when you read in multiple files and when to store them in a
-        single `DataFrame`. In the latter case, finish the sequence of `vstack`
-        operations with a `rechunk`.
+        Prefer ``vstack`` over ``extend`` when you want to append many times before
+        doing a query. For instance, when you read in multiple files and want to store
+        them in a single ``DataFrame``. In the latter case, finish the sequence of
+        ``vstack`` operations with a ``rechunk``.
 
         Parameters
         ----------
         other
             DataFrame to vertically add.
+
+        Warnings
+        --------
+        This method modifies the dataframe in-place. The dataframe is returned for
+        convenience only.
+
+        See Also
+        --------
+        vstack
 
         Examples
         --------
@@ -5830,7 +5994,13 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        self._df.extend(other._df)
+        try:
+            self._df.extend(other._df)
+        except RuntimeError as exc:
+            if str(exc) == "Already mutably borrowed":
+                self._df.extend(other._df.clone())
+            else:
+                raise exc
         return self
 
     def drop(self, columns: str | Collection[str], *more_columns: str) -> DataFrame:
@@ -5909,7 +6079,8 @@ class DataFrame:
 
         Returns
         -------
-        The dropped column.
+        Series
+            The dropped column.
 
         Examples
         --------
@@ -6137,6 +6308,7 @@ class DataFrame:
 
         Returns
         -------
+        DataFrame
             DataFrame with None values replaced by the filling strategy.
 
         See Also
@@ -6216,11 +6388,12 @@ class DataFrame:
         Parameters
         ----------
         value
-            Value to fill NaN with.
+            Value with which to replace NaN values.
 
         Returns
         -------
-            DataFrame with NaN replaced with fill_value
+        DataFrame
+            DataFrame with NaN values replaced by the given value.
 
         Warnings
         --------
@@ -6414,12 +6587,11 @@ class DataFrame:
             columns = [columns]
 
         if aggregate_function is no_default:
-            warnings.warn(
+            issue_deprecation_warning(
                 "In a future version of polars, the default `aggregate_function` "
                 "will change from `'first'` to `None`. Please pass `'first'` to keep the "
                 "current behaviour, or `None` to accept the new one.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.16.16",
             )
             aggregate_function = "first"
 
@@ -6562,7 +6734,7 @@ class DataFrame:
         >>> df = pl.DataFrame(
         ...     {
         ...         "col1": list(ascii_uppercase[0:9]),
-        ...         "col2": pl.arange(0, 9, eager=True),
+        ...         "col2": pl.int_range(0, 9, eager=True),
         ...     }
         ... )
         >>> df
@@ -6634,7 +6806,7 @@ class DataFrame:
         if how == "horizontal":
             df = (
                 df.with_columns(
-                    (F.arange(0, n_cols * n_rows, eager=True) % n_cols).alias(
+                    (F.int_range(0, n_cols * n_rows, eager=True) % n_cols).alias(
                         "__sort_order"
                     ),
                 )
@@ -6659,6 +6831,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = ...,
+        include_key: bool = ...,
         as_dict: Literal[False] = ...,
     ) -> list[Self]:
         ...
@@ -6669,6 +6842,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = ...,
+        include_key: bool = ...,
         as_dict: Literal[True],
     ) -> dict[Any, Self]:
         ...
@@ -6678,6 +6852,7 @@ class DataFrame:
         by: str | Iterable[str],
         *more_by: str,
         maintain_order: bool = True,
+        include_key: bool = True,
         as_dict: bool = False,
     ) -> list[Self] | dict[Any, Self]:
         """
@@ -6692,6 +6867,8 @@ class DataFrame:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default partition by operation.
+        include_key
+            Include the columns used to partition the DataFrame in the output.
         as_dict
             Return a dictionary instead of a list. The dictionary keys are the distinct
             group values that identify that group.
@@ -6812,7 +6989,8 @@ class DataFrame:
             by.extend(more_by)
 
         partitions = [
-            self._from_pydf(_df) for _df in self._df.partition_by(by, maintain_order)
+            self._from_pydf(_df)
+            for _df in self._df.partition_by(by, maintain_order, include_key)
         ]
 
         if as_dict:
@@ -7155,7 +7333,8 @@ class DataFrame:
 
         Returns
         -------
-        A new DataFrame with the columns added.
+        DataFrame
+            A new DataFrame with the columns added.
 
         Notes
         -----
@@ -7817,7 +7996,8 @@ class DataFrame:
 
         Returns
         -------
-        DataFrame with unique rows.
+        DataFrame
+            DataFrame with unique rows.
 
         Warnings
         --------
@@ -7976,7 +8156,7 @@ class DataFrame:
         """
         return self._from_pydf(self._df.null_count())
 
-    @deprecated_alias(frac="fraction")
+    @deprecate_renamed_parameter("frac", "fraction", version="0.17.0")
     def sample(
         self,
         n: int | None = None,
@@ -8179,7 +8359,7 @@ class DataFrame:
 
         Returns
         -------
-        Tuple (default) or dictionary of row values.
+        tuple (default) or dictionary of row values
 
         Notes
         -----
@@ -8289,9 +8469,10 @@ class DataFrame:
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that python
-        natively only supports up to ``us``-precision; if this matters you should export
-        to a different format, as this method returns only python-native values.
+        If you have ``ns``-precision temporal values you should be aware that Python
+        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        truncated to microseconds on conversion to Python. If this matters to your
+        use-case you should export to a different format (such as Arrow or NumPy).
 
         Warnings
         --------
@@ -8302,7 +8483,7 @@ class DataFrame:
 
         Returns
         -------
-        A list of tuples (default) or dictionaries of row values.
+        list of tuples (default) or dictionaries of row values
 
         Examples
         --------
@@ -8369,9 +8550,10 @@ class DataFrame:
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that python
-        natively only supports up to ``us``-precision; if this matters you should export
-        to a different format, as this method returns only python-native values.
+        If you have ``ns``-precision temporal values you should be aware that Python
+        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        truncated to microseconds on conversion to Python. If this matters to your
+        use-case you should export to a different format (such as Arrow or NumPy).
 
         Examples
         --------
@@ -8529,9 +8711,10 @@ class DataFrame:
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that python
-        natively only supports up to ``us``-precision; if this matters in your use-case
-        you should export to a different format.
+        If you have ``ns``-precision temporal values you should be aware that Python
+        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        truncated to microseconds on conversion to Python. If this matters to your
+        use-case you should export to a different format (such as Arrow or NumPy).
 
         Warnings
         --------
@@ -8541,7 +8724,7 @@ class DataFrame:
 
         Returns
         -------
-        An iterator of tuples (default) or dictionaries (if named) of python row values.
+        iterator of tuples (default) or dictionaries (if named) of python row values
 
         Examples
         --------

@@ -2,6 +2,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.selectors import selector_column_names
 from polars.testing import assert_frame_equal
 
 
@@ -163,6 +164,23 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
         ).columns
         == df.select(~cs.datetime(["ms", "ns"], time_zone="*")).columns
     )
+
+
+def test_selector_duration(df: pl.DataFrame) -> None:
+    assert df.select(cs.duration("ms")).columns == []
+    assert df.select(cs.duration(["ms", "ns"])).columns == []
+    assert selector_column_names(df, cs.duration()) == ("Lmn",)
+
+    df = pl.DataFrame(
+        schema={
+            "d1": pl.Duration("ns"),
+            "d2": pl.Duration("us"),
+            "d3": pl.Duration("ms"),
+        },
+    )
+    assert selector_column_names(df, cs.duration()) == ("d1", "d2", "d3")
+    assert selector_column_names(df, cs.duration("us")) == ("d2",)
+    assert selector_column_names(df, cs.duration(["ms", "ns"])) == ("d1", "d3")
 
 
 def test_selector_ends_with(df: pl.DataFrame) -> None:
@@ -399,8 +417,8 @@ def test_selector_expr_dispatch() -> None:
 
     # check that "as_expr" behaves, both explicitly and implicitly
     for nan_or_inf in (
-        cs.float().is_nan().as_expr() | cs.float().is_infinite().as_expr(),  # type: ignore[attr-defined]
-        cs.float().is_nan().as_expr() | cs.float().is_infinite(),  # type: ignore[attr-defined]
+        cs.float().is_nan().as_expr() | cs.float().is_infinite().as_expr(),
+        cs.float().is_nan().as_expr() | cs.float().is_infinite(),
         cs.float().is_nan() | cs.float().is_infinite(),
     ):
         assert_frame_equal(
@@ -409,3 +427,21 @@ def test_selector_expr_dispatch() -> None:
                 pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).keep_name()
             ).fill_null(0),
         )
+
+
+def test_regex_expansion_groupby_9947() -> None:
+    df = pl.DataFrame({"g": [3], "abc": [1], "abcd": [3]})
+    assert df.groupby("g").agg(pl.col("^ab.*$")).columns == ["g", "abc", "abcd"]
+
+
+def test_regex_expansion_exclude_10002() -> None:
+    df = pl.DataFrame({"col_1": [1, 2, 3], "col_2": [2, 4, 3]})
+    expected = {"col_1": [10, 20, 30], "col_2": [0.2, 0.4, 0.3]}
+
+    assert (
+        df.select(
+            pl.col("^col_.*$").exclude("col_2").mul(10),
+            pl.col("^col_.*$").exclude("col_1") / 10,
+        ).to_dict(as_series=False)
+        == expected
+    )

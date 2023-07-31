@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -137,3 +139,26 @@ def test_class_namespaces_are_registered() -> None:
                         assert (
                             ns in namespaces
                         ), f"{ns!r} should be registered in {pcls.__name__}._accessors"
+
+
+def test_namespace_cannot_override_builtin() -> None:
+    with pytest.raises(AttributeError):
+
+        @pl.api.register_dataframe_namespace("dt")
+        class CustomDt:
+            def __init__(self, df: pl.DataFrame):
+                self._df = df
+
+
+def test_namespace_warning_on_override() -> None:
+    @pl.api.register_dataframe_namespace("math")
+    class CustomMath:
+        def __init__(self, df: pl.DataFrame):
+            self._df = df
+
+    with pytest.raises(UserWarning):
+
+        @pl.api.register_dataframe_namespace("math")
+        class CustomMath2:
+            def __init__(self, df: pl.DataFrame):
+                self._df = df

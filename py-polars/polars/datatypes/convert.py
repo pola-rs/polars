@@ -73,7 +73,7 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-def cache(function: Callable[..., T]) -> T:
+def cache(function: Callable[..., T]) -> T:  # noqa: D103
     # need this to satisfy mypy issue with "@property/@cache combination"
     # See: https://github.com/python/mypy/issues/5858
     return functools.lru_cache()(function)  # type: ignore[return-value]
@@ -98,7 +98,10 @@ PY_STR_TO_DTYPE: SchemaDict = {
 
 
 @functools.lru_cache(16)
-def map_py_type_to_dtype(python_dtype: PythonDataType | type[object]) -> PolarsDataType:
+def _map_py_type_to_dtype(
+    python_dtype: PythonDataType | type[object],
+) -> PolarsDataType:
+    """Convert Python data type to Polars data type."""
     if python_dtype is float:
         return Float64
     if python_dtype is int:
@@ -134,14 +137,14 @@ def map_py_type_to_dtype(python_dtype: PythonDataType | type[object]) -> PolarsD
     if hasattr(python_dtype, "__origin__") and hasattr(python_dtype, "__args__"):
         base_type = python_dtype.__origin__
         if base_type is not None:
-            dtype = map_py_type_to_dtype(base_type)
+            dtype = _map_py_type_to_dtype(base_type)
             nested = python_dtype.__args__
             if len(nested) == 1:
                 nested = nested[0]
             return (
                 dtype
                 if nested is None
-                else dtype(map_py_type_to_dtype(nested))  # type: ignore[operator]
+                else dtype(_map_py_type_to_dtype(nested))  # type: ignore[operator]
             )
 
     raise TypeError("Invalid type")
@@ -424,7 +427,7 @@ def py_type_to_dtype(
         if is_polars_dtype(data_type):
             return data_type
     try:
-        return map_py_type_to_dtype(data_type)
+        return _map_py_type_to_dtype(data_type)
     except (KeyError, TypeError):  # pragma: no cover
         if not raise_unmatched:
             return None

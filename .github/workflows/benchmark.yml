@@ -3,7 +3,7 @@ name: Benchmark
 on:
   pull_request:
     paths:
-      - polars/**
+      - crates/**
       - Cargo.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
@@ -11,7 +11,7 @@ on:
     branches:
       - main
     paths:
-      - polars/**
+      - crates/**
       - Cargo.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml

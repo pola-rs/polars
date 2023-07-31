@@ -6,7 +6,7 @@ mod export;
 mod numpy_ufunc;
 mod set_at_idx;
 
-use polars_algo::{cut, hist, qcut};
+use polars_algo::hist;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -651,67 +651,18 @@ impl PySeries {
         })
     }
 
-    fn is_sorted(&self, descending: bool) -> bool {
+    fn is_sorted(&self, descending: bool) -> PyResult<bool> {
         let options = SortOptions {
             descending,
             nulls_last: descending,
             multithreaded: true,
+            maintain_order: false,
         };
-        self.series.is_sorted(options)
+        Ok(self.series.is_sorted(options).map_err(PyPolarsErr::from)?)
     }
 
     fn clear(&self) -> Self {
         self.series.clear().into()
-    }
-
-    #[pyo3(signature = (bins, labels, break_point_label, category_label, maintain_order))]
-    fn cut(
-        &self,
-        bins: Self,
-        labels: Option<Vec<&str>>,
-        break_point_label: Option<&str>,
-        category_label: Option<&str>,
-        maintain_order: bool,
-    ) -> PyResult<PyDataFrame> {
-        let out = cut(
-            &self.series,
-            bins.series,
-            labels,
-            break_point_label,
-            category_label,
-            maintain_order,
-        )
-        .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
-    #[pyo3(signature = (quantiles, labels, break_point_label, category_label, maintain_order))]
-    fn qcut(
-        &self,
-        quantiles: Self,
-        labels: Option<Vec<&str>>,
-        break_point_label: Option<&str>,
-        category_label: Option<&str>,
-        maintain_order: bool,
-    ) -> PyResult<PyDataFrame> {
-        if quantiles.series.null_count() > 0 {
-            return Err(PyValueError::new_err(
-                "did not expect null values in list of quantiles",
-            ));
-        }
-        let quantiles = quantiles.series.cast(&DataType::Float64).unwrap();
-        let quantiles = quantiles.f64().unwrap().rechunk();
-
-        let out = qcut(
-            &self.series,
-            quantiles.cont_slice().unwrap(),
-            labels,
-            break_point_label,
-            category_label,
-            maintain_order,
-        )
-        .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
     }
 
     fn hist(&self, bins: Option<Self>, bin_count: Option<usize>) -> PyResult<PyDataFrame> {

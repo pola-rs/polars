@@ -459,18 +459,22 @@ def test_list_set_operations() -> None:
         {"a": [[1, 2, 3], [1, 1, 1], [4]], "b": [[4, 2, 1], [2, 1, 12], [4]]}
     )
 
-    assert df.select(pl.col("a").list.union("b"))["a"].to_list() == [
+    assert df.select(pl.col("a").list.set_union("b"))["a"].to_list() == [
         [1, 2, 3, 4],
         [1, 2, 12],
         [4],
     ]
-    assert df.select(pl.col("a").list.intersection("b"))["a"].to_list() == [
+    assert df.select(pl.col("a").list.set_intersection("b"))["a"].to_list() == [
         [1, 2],
         [1],
         [4],
     ]
-    assert df.select(pl.col("a").list.difference("b"))["a"].to_list() == [[3], [], []]
-    assert df.select(pl.col("b").list.difference("a"))["b"].to_list() == [
+    assert df.select(pl.col("a").list.set_difference("b"))["a"].to_list() == [
+        [3],
+        [],
+        [],
+    ]
+    assert df.select(pl.col("b").list.set_difference("a"))["b"].to_list() == [
         [4],
         [2, 12],
         [],
@@ -479,7 +483,7 @@ def test_list_set_operations() -> None:
     # check logical types
     dtype = pl.List(pl.Date)
     assert (
-        df.select(pl.col("b").cast(dtype).list.difference(pl.col("a").cast(dtype)))[
+        df.select(pl.col("b").cast(dtype).list.set_difference(pl.col("a").cast(dtype)))[
             "b"
         ].dtype
         == dtype
@@ -492,7 +496,7 @@ def test_list_set_operations() -> None:
         }
     )
 
-    assert df.select(pl.col("a").list.union("b"))["a"].to_list() == [
+    assert df.select(pl.col("a").list.set_union("b"))["a"].to_list() == [
         ["a", "b", "c", "s"],
         ["b", "e", "z", "a", "f"],
     ]
@@ -503,8 +507,19 @@ def test_list_set_operations() -> None:
             "b": [[2, 3, 4], [3, 3, 1], [3, 3]],
         }
     )
-    r1 = df.with_columns(pl.col("a").list.intersection("b"))["a"].to_list()
-    r2 = df.with_columns(pl.col("b").list.intersection("a"))["b"].to_list()
+    r1 = df.with_columns(pl.col("a").list.set_intersection("b"))["a"].to_list()
+    r2 = df.with_columns(pl.col("b").list.set_intersection("a"))["b"].to_list()
     exp = [[2, 3], [3, 1], [3]]
     assert r1 == exp
     assert r2 == exp
+
+
+def test_list_take_oob_10079() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
+            "b": [["2"], ["3"], [None], ["3", "Hi"]],
+        }
+    )
+    with pytest.raises(pl.ComputeError, match="take indices are out of bounds"):
+        df.select(pl.col("a").take(999))

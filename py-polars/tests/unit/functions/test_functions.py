@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_concat_align() -> None:
@@ -103,32 +103,6 @@ def test_concat_vertical() -> None:
     assert out.rows() == [("a", 1), ("b", 2), ("c", 3), ("d", 4), ("e", 5)]
 
 
-def test_all_any_horizontally() -> None:
-    df = pl.DataFrame(
-        [
-            [False, False, True],
-            [False, False, True],
-            [True, False, False],
-            [False, None, True],
-            [None, None, False],
-        ],
-        schema=["var1", "var2", "var3"],
-    )
-    expected = pl.DataFrame(
-        {
-            "any": [True, True, False, True, None],
-            "all": [False, False, False, None, False],
-        }
-    )
-    result = df.select(
-        [
-            pl.any([pl.col("var2"), pl.col("var3")]),
-            pl.all([pl.col("var2"), pl.col("var3")]),
-        ]
-    )
-    assert_frame_equal(result, expected)
-
-
 def test_null_handling_correlation() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, None, 4], "b": [1, 2, 3, 10, 4]})
 
@@ -189,7 +163,7 @@ def test_align_frames() -> None:
     pl_dot = (
         (pf1[["a", "b"]] * pf2[["a", "b"]])
         .fill_null(0)
-        .select(pl.sum(pl.col("*")).alias("dot"))
+        .select(pl.sum_horizontal("*").alias("dot"))
         .insert_at_idx(0, pf1["date"])
     )
     # confirm we match the same operation in pandas
@@ -373,100 +347,6 @@ def test_fill_null_unknown_output_type() -> None:
     }
 
 
-def test_min_alias_for_series_min() -> None:
-    s = pl.Series([1, 2, 3])
-    assert pl.min(s) == s.min()
-
-
-@pytest.mark.parametrize("input", ["a", "^a|b$"])
-def test_min_alias_for_col_min(input: str) -> None:
-    df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    expr = pl.col(input).min()
-    expr_alias = pl.min(input)
-    assert_frame_equal(df.select(expr), df.select(expr_alias))
-
-
-@pytest.mark.parametrize(
-    ("input", "expected_data"),
-    [
-        (pl.col("^a|b$"), [1, 2]),
-        (pl.col("a", "b"), [1, 2]),
-        (pl.col("a"), [1, 4]),
-        (pl.lit(5, dtype=pl.Int64), [5]),
-        (5.0, [5.0]),
-    ],
-)
-def test_min_column_wise_single_input(input: Any, expected_data: list[Any]) -> None:
-    df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    result = df.select(pl.min(input))
-    expected = pl.DataFrame({"min": expected_data})
-    assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize(
-    ("inputs", "expected_data"),
-    [
-        ((["a", "b"]), [1, 2]),
-        (("a", "b"), [1, 2]),
-        (("a", 3), [1, 3]),
-    ],
-)
-def test_min_column_wise_multi_input(
-    inputs: tuple[Any, ...], expected_data: list[Any]
-) -> None:
-    df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    result = df.select(pl.min(*inputs))
-    expected = pl.DataFrame({"min": expected_data})
-    assert_frame_equal(result, expected)
-
-
-def test_max_alias_for_series_max() -> None:
-    s = pl.Series([1, 2, 3])
-    assert pl.max(s) == s.max()
-
-
-@pytest.mark.parametrize("input", ["a", "^a|b$"])
-def test_max_alias_for_col_max(input: str) -> None:
-    df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    expr = pl.col(input).max()
-    expr_alias = pl.max(input)
-    assert_frame_equal(df.select(expr), df.select(expr_alias))
-
-
-@pytest.mark.parametrize(
-    ("input", "expected_data"),
-    [
-        (pl.col("^a|b$"), [3, 4]),
-        (pl.col("a", "b"), [3, 4]),
-        (pl.col("a"), [1, 4]),
-        (pl.lit(5, dtype=pl.Int64), [5]),
-        (5.0, [5.0]),
-    ],
-)
-def test_max_column_wise_single_input(input: Any, expected_data: list[Any]) -> None:
-    df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    result = df.select(pl.max(input))
-    expected = pl.DataFrame({"max": expected_data})
-    assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize(
-    ("inputs", "expected_data"),
-    [
-        ((["a", "b"]), [3, 4]),
-        (("a", "b"), [3, 4]),
-        (("a", 3), [3, 4]),
-    ],
-)
-def test_max_column_wise_multi_input(
-    inputs: tuple[Any, ...], expected_data: list[Any]
-) -> None:
-    df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    result = df.select(pl.max(*inputs))
-    expected = pl.DataFrame({"max": expected_data})
-    assert_frame_equal(result, expected)
-
-
 def test_abs_logical_type() -> None:
     s = pl.Series([timedelta(hours=1), timedelta(hours=-1)])
     assert s.abs().to_list() == [timedelta(hours=1), timedelta(hours=1)]
@@ -489,3 +369,93 @@ def test_approx_unique() -> None:
         df1.select(pl.col("b").approx_unique()),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
+
+
+def test_lazy_functions() -> None:
+    df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+    out = df.select(pl.count("a"))
+    assert list(out["a"]) == [3]
+    with pytest.deprecated_call():
+        assert pl.count(df["a"]) == 3
+    out = df.select(
+        [
+            pl.var("b").alias("1"),
+            pl.std("b").alias("2"),
+            pl.max("b").alias("3"),
+            pl.min("b").alias("4"),
+            pl.sum("b").alias("5"),
+            pl.mean("b").alias("6"),
+            pl.median("b").alias("7"),
+            pl.n_unique("b").alias("8"),
+            pl.first("b").alias("9"),
+            pl.last("b").alias("10"),
+        ]
+    )
+    expected = 1.0
+    assert np.isclose(out.to_series(0), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.var(df["b"]), expected)  # type: ignore[arg-type]
+    expected = 1.0
+    assert np.isclose(out.to_series(1), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.std(df["b"]), expected)  # type: ignore[arg-type]
+    expected = 3
+    assert np.isclose(out.to_series(2), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.max(df["b"]), expected)  # type: ignore[arg-type]
+    expected = 1
+    assert np.isclose(out.to_series(3), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.min(df["b"]), expected)  # type: ignore[arg-type]
+    expected = 6
+    assert np.isclose(out.to_series(4), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.sum(df["b"]), expected)
+    expected = 2
+    assert np.isclose(out.to_series(5), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.mean(df["b"]), expected)
+    expected = 2
+    assert np.isclose(out.to_series(6), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.median(df["b"]), expected)
+    expected = 3
+    assert np.isclose(out.to_series(7), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.n_unique(df["b"]), expected)
+    expected = 1
+    assert np.isclose(out.to_series(8), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.first(df["b"]), expected)
+    expected = 3
+    assert np.isclose(out.to_series(9), expected)
+    with pytest.deprecated_call():
+        assert np.isclose(pl.last(df["b"]), expected)
+
+    # regex selection
+    out = df.select(
+        [
+            pl.struct(pl.max("^a|b$")).alias("x"),
+            pl.struct(pl.min("^.*[bc]$")).alias("y"),
+            pl.struct(pl.sum("^[^b]$")).alias("z"),
+        ]
+    )
+    assert out.rows() == [
+        ({"a": "foo", "b": 3}, {"b": 1, "c": 1.0}, {"a": None, "c": 6.0})
+    ]
+
+
+def test_head_tail(fruits_cars: pl.DataFrame) -> None:
+    res_expr = fruits_cars.select([pl.head("A", 2)])
+    with pytest.deprecated_call():
+        res_series = pl.head(fruits_cars["A"], 2)
+    expected = pl.Series("A", [1, 2])
+    assert_series_equal(res_expr.to_series(0), expected)
+    assert_series_equal(res_series, expected)
+
+    res_expr = fruits_cars.select([pl.tail("A", 2)])
+    with pytest.deprecated_call():
+        res_series = pl.tail(fruits_cars["A"], 2)
+    expected = pl.Series("A", [4, 5])
+    assert_series_equal(res_expr.to_series(0), expected)
+    assert_series_equal(res_series, expected)

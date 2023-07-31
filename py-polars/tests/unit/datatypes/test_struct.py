@@ -5,7 +5,6 @@ from datetime import datetime, time
 
 import pandas as pd
 import pyarrow as pa
-import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -517,55 +516,6 @@ def test_struct_order() -> None:
     ) == [{"a": 1, "b": 10}, {"a": 2, "b": None}]
 
 
-def test_struct_schema_on_append_extend_3452() -> None:
-    housing1_data = [
-        {
-            "city": "Chicago",
-            "address": "100 Main St",
-            "price": 250000,
-            "nbr_bedrooms": 3,
-        },
-        {
-            "city": "New York",
-            "address": "100 First Ave",
-            "price": 450000,
-            "nbr_bedrooms": 2,
-        },
-    ]
-
-    housing2_data = [
-        {
-            "address": "303 Mockingbird Lane",
-            "city": "Los Angeles",
-            "nbr_bedrooms": 2,
-            "price": 450000,
-        },
-        {
-            "address": "404 Moldave Dr",
-            "city": "Miami Beach",
-            "nbr_bedrooms": 1,
-            "price": 250000,
-        },
-    ]
-    housing1, housing2 = pl.Series(housing1_data), pl.Series(housing2_data)
-    with pytest.raises(
-        pl.SchemaError,
-        match=(
-            'cannot append field with name "address" '
-            'to struct with field name "city"'
-        ),
-    ):
-        housing1.append(housing2, append_chunks=True)
-    with pytest.raises(
-        pl.SchemaError,
-        match=(
-            'cannot extend field with name "address" '
-            'to struct with field name "city"'
-        ),
-    ):
-        housing1.append(housing2, append_chunks=False)
-
-
 def test_struct_arr_eval() -> None:
     df = pl.DataFrame(
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
@@ -907,3 +857,9 @@ def test_struct_null_count_strict_cast() -> None:
     s = pl.Series([{"a": None}]).cast(pl.Struct({"a": pl.Categorical}))
     assert s.dtype == pl.Struct([pl.Field("a", pl.Categorical)])
     assert s.to_list() == [{"a": None}]
+
+
+def test_struct_get_field_by_index() -> None:
+    df = pl.DataFrame({"val": [{"a": 1, "b": 2}]})
+    expected = {"b": [2]}
+    assert df.select(pl.all().struct[1]).to_dict(as_series=False) == expected

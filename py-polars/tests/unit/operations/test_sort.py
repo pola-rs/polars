@@ -513,7 +513,7 @@ def get_str_ints_df(n: int) -> pl.DataFrame:
     strs = pl.Series("strs", random.choices(string.ascii_lowercase, k=n))
     strs = pl.select(
         pl.when(strs == "a")
-        .then("")
+        .then(pl.lit(""))
         .when(strs == "b")
         .then(None)
         .otherwise(strs)
@@ -534,7 +534,7 @@ def test_sort_row_fmt() -> None:
     df_pd = df.to_pandas()
 
     for descending in [True, False]:
-        pl.testing.assert_frame_equal(
+        assert_frame_equal(
             df.sort(["strs", "vals"], nulls_last=True, descending=descending),
             pl.from_pandas(
                 df_pd.sort_values(["strs", "vals"], ascending=not descending)
@@ -705,3 +705,19 @@ def test_top_k_9385() -> None:
     assert pl.LazyFrame({"b": [True, False]}).sort(["b"]).slice(0, 1).collect()[
         "b"
     ].to_list() == [False]
+
+
+def test_sorted_flag_partition_by() -> None:
+    assert (
+        pl.DataFrame({"one": [1, 2, 3], "two": ["a", "a", "b"]})
+        .set_sorted("one")
+        .partition_by("two", maintain_order=True)[0]["one"]
+        .flags["SORTED_ASC"]
+    )
+
+
+def test_sorted_flag_singletons() -> None:
+    assert pl.DataFrame({"x": [1]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": ["a"]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": [True]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": [None]})["x"].flags["SORTED_ASC"]

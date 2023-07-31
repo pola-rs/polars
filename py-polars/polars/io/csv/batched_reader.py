@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 
 
 class BatchedCsvReader:
+    """Read a CSV file in batches."""
+
     def __init__(
         self,
         source: str | Path,
@@ -126,7 +128,7 @@ class BatchedCsvReader:
 
         Returns
         -------
-        Sequence of DataFrames
+        list of DataFrames
 
         """
         batches = self._reader.next_batches(n)

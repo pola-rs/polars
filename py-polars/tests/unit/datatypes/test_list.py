@@ -463,3 +463,16 @@ def test_struct_with_nulls_as_list() -> None:
             ]
         ]
     }
+
+
+def test_list_amortized_iter_clear_settings_10126() -> None:
+    out = (
+        pl.DataFrame({"a": [[1], [1], [2]], "b": [[1, 2], [1, 3], [4]]})
+        .explode("a")
+        .groupby("a")
+        .agg(pl.col("b").flatten())
+        .with_columns(pl.col("b").list.unique())
+        .sort("a")
+    )
+
+    assert out.to_dict(False) == {"a": [1, 2], "b": [[1, 2, 3], [4]]}

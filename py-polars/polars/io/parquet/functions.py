@@ -146,7 +146,8 @@ def read_parquet_schema(
 
     Returns
     -------
-    Dictionary mapping column names to datatypes
+    dict
+        Dictionary mapping column names to datatypes
 
     """
     if isinstance(source, (str, Path)):

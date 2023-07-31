@@ -59,6 +59,7 @@ def _get_dependency_info() -> dict[str, str]:
     # see the list of dependencies in pyproject.toml
     opt_deps = [
         "adbc_driver_sqlite",
+        "cloudpickle",
         "connectorx",
         "deltalake",
         "fsspec",
@@ -87,6 +88,6 @@ def _get_dependency_version(dep_name: str) -> str:
     if hasattr(module, "__version__"):
         module_version = module.__version__
     else:
-        module_version = importlib.metadata.version(dep_name)
+        module_version = importlib.metadata.version(dep_name)  # pragma: no cover
 
     return module_version

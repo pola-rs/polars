@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
-    from polars.functions.whenthen import WhenThen, WhenThenThen
     from polars.selectors import _selector_proxy_
 
     if sys.version_info >= (3, 10):
@@ -61,15 +60,12 @@ SchemaDefinition: TypeAlias = Union[
 ]
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
-# Types that qualify as expressions (eg: for use in 'select', 'with_columns'...)
-PolarsExprType: TypeAlias = Union["Expr", "WhenThen", "WhenThenThen"]
-
 # literal types that are allowed in expressions (auto-converted to pl.lit)
 PythonLiteral: TypeAlias = Union[
     str, int, float, bool, date, time, datetime, timedelta, bytes, Decimal, List[Any]
 ]
 
-IntoExpr: TypeAlias = Union[PolarsExprType, PythonLiteral, "Series", None]
+IntoExpr: TypeAlias = Union["Expr", PythonLiteral, "Series", None]
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
 # selector type

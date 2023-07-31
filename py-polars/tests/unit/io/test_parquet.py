@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import io
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
-import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -18,8 +19,6 @@ from polars.testing import (
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars.type_aliases import ParquetCompression
 
 
@@ -32,6 +31,43 @@ COMPRESSIONS = [
     "brotli",
     "zstd",
 ]
+
+
+def test_write_parquet_using_pyarrow_9753(tmpdir: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    df.write_parquet(
+        tmpdir / "test.parquet",
+        compression="zstd",
+        statistics=True,
+        use_pyarrow=True,
+        pyarrow_options={"coerce_timestamps": "us"},
+    )
+
+
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+def test_write_parquet_using_pyarrow_write_to_dataset_with_partitioning(
+    tmp_path: Path,
+    compression: ParquetCompression,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"a": [1, 2, 3], "partition_col": ["one", "two", "two"]})
+    path_to_write = tmp_path / "test.parquet"
+    df.write_parquet(
+        file=path_to_write,
+        statistics=True,
+        use_pyarrow=True,
+        row_group_size=128,
+        pyarrow_options={
+            "partition_cols": ["partition_col"],
+            "compression": compression,
+        },
+    )
+
+    # cast is necessary as pyarrow writes partitions as categorical type
+    read_df = pl.read_parquet(path_to_write, use_pyarrow=True).with_columns(
+        pl.col("partition_col").cast(pl.Utf8)
+    )
+    assert_frame_equal(df, read_df)
 
 
 @pytest.fixture()
@@ -354,6 +390,8 @@ def test_parquet_nested_dictionaries_6217() -> None:
         df = pl.from_arrow(table)
 
         f = io.BytesIO()
+        import pyarrow.parquet as pq
+
         pq.write_table(table, f, compression="snappy")
         f.seek(0)
         read = pl.read_parquet(f)
@@ -495,3 +533,13 @@ def test_parquet_string_cache() -> None:
     # so polars should automatically set string cache
     f.seek(0)
     assert_series_equal(pl.read_parquet(f)["a"].cast(str), df["a"].cast(str))
+
+
+def test_tz_aware_parquet_9586() -> None:
+    result = pl.read_parquet(
+        Path("tests") / "unit" / "io" / "files" / "tz_aware.parquet"
+    )
+    expected = pl.DataFrame(
+        {"UTC_DATETIME_ID": [datetime(2023, 6, 26, 14, 15, 0, tzinfo=timezone.utc)]}
+    ).select(pl.col("*").cast(pl.Datetime("ns", "UTC")))
+    assert_frame_equal(result, expected)
