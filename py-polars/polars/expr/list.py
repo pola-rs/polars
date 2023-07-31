@@ -943,7 +943,7 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("a").list.difference("b").alias("difference"))
+        >>> df.with_columns(pl.col("a").list.set_difference("b").alias("difference"))
         shape: (4, 3)
         ┌───────────┬──────────────┬────────────┐
         │ a         ┆ b            ┆ difference │
@@ -981,7 +981,9 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("a").list.intersection("b").alias("intersection"))
+        >>> df.with_columns(
+        ...     pl.col("a").list.set_intersection("b").alias("intersection")
+        ... )
         shape: (4, 3)
         ┌───────────┬──────────────┬──────────────┐
         │ a         ┆ b            ┆ intersection │
@@ -1016,7 +1018,9 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("b").list.symmetric_difference("a").alias("sdiff"))
+        >>> df.with_columns(
+        ...     pl.col("b").list.set_symmetric_difference("a").alias("sdiff")
+        ... )
         shape: (4, 3)
         ┌───────────┬──────────────┬───────────┐
         │ a         ┆ b            ┆ sdiff     │
