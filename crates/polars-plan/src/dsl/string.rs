@@ -61,6 +61,7 @@ impl StringNameSpace {
             .map_private(StringFunction::Extract { pat, group_index }.into())
     }
 
+    #[cfg(feature = "dtype-struct")]
     // Extract all captures groups from a regex pattern as a struct
     pub fn extract_groups(self, pat: &str) -> Expr {
         let pat = pat.to_string();
