@@ -2,7 +2,6 @@ use std::mem::MaybeUninit;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
-use arrow::compute::arithmetics::rem;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
 use polars_utils::slice::*;
