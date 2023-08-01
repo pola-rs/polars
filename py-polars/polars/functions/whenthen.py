@@ -28,9 +28,10 @@ def when(condition: IntoExpr) -> pl.When:
 
     .. warning::
         Polars evaluates all branches of a conditional statement, and only subsequently
-        discards the results from non-matching branches. It's important to be aware that
-        relying on the condition to prevent type-related errors within specific branches
-        (e.g., attempting to cast NaN float values to Int) may not be effective.
+        discards the results from non-matching branches. This makes relying on the
+        condition to prevent type-related errors / invalid operations
+        within specific branches (e.g., attempting to cast NaN float values to Int,
+        or parsing dates from malformed strings) ineffective.
 
     Parameters
     ----------
