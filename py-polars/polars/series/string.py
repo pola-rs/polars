@@ -780,6 +780,26 @@ class StringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
 
+        Notes
+        -----
+        All group names are **strings**.
+
+        If your pattern contains unnamed groups, their numerical position is converted
+        to a string.
+
+        For example, we can access the first group via the string `"1"`
+
+        >>> (
+        ...     pl.Series(["foo bar baz"])
+        ...     .str.extract_groups(r"(\w+) (.+) (\w+)")
+        ...     .struct["1"]
+        ... )
+        shape: (1,)
+        Series: '1' [str]
+        [
+            "foo"
+        ]
+
         Returns
         -------
         Series

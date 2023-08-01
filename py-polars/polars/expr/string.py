@@ -1269,13 +1269,27 @@ class ExprStringNameSpace:
 
         Notes
         -----
-        To modify regular expression behaviour (such as "verbose" mode and/or
-        case-sensitive matching) with flags, use the inline ``(?iLmsuxU)`` syntax.
-        For example:
+        All group names are **strings**.
 
-        See the regex crate's section on `grouping and flags
-        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
-        additional information about the use of inline expression modifiers.
+        If your pattern contains unnamed groups, their numerical position is converted
+        to a string.
+
+        For example, here we access groups 2 and 3 via the names `"2"` and `"3"`.
+
+        >>> df = pl.DataFrame({"col": ["foo bar baz"]})
+        >>> (
+        ...     df.with_columns(
+        ...         pl.col("col").str.extract_groups(r"(\S+) (\S+) (.+)")
+        ...     ).select(pl.col("col").struct["2"], pl.col("col").struct["3"])
+        ... )
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ 2   ┆ 3   │
+        │ --- ┆ --- │
+        │ str ┆ str │
+        ╞═════╪═════╡
+        │ bar ┆ baz │
+        └─────┴─────┘
 
         Returns
         -------
@@ -1308,6 +1322,24 @@ class ExprStringNameSpace:
         │ weghorst  ┆ polars │
         │ null      ┆ null   │
         └───────────┴────────┘
+
+        Unnamed groups have their numerical position converted to a string:
+        >>> pattern = r"candidate=(\w+)&ref=(\w+)"
+        >>> (
+        ...     df.with_columns(
+        ...         captures=pl.col("url").str.extract_groups(pattern)
+        ...     ).with_columns(name=pl.col("captures").struct["1"].str.to_uppercase())
+        ... )
+        shape: (3, 3)
+        ┌───────────────────────────────────┬───────────────────────┬──────────┐
+        │ url                               ┆ captures              ┆ name     │
+        │ ---                               ┆ ---                   ┆ ---      │
+        │ str                               ┆ struct[2]             ┆ str      │
+        ╞═══════════════════════════════════╪═══════════════════════╪══════════╡
+        │ http://vote.com/ballon_dor?candi… ┆ {"messi","python"}    ┆ MESSI    │
+        │ http://vote.com/ballon_dor?candi… ┆ {"weghorst","polars"} ┆ WEGHORST │
+        │ http://vote.com/ballon_dor?error… ┆ {null,null}           ┆ null     │
+        └───────────────────────────────────┴───────────────────────┴──────────┘
 
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
