@@ -412,9 +412,9 @@ impl LogicalPlan {
                     id,
                     fmt: match payload {
                         SinkType::Memory => "SINK (MEMORY)",
-                        SinkType::File{..} => "SINK (FILE)",
+                        SinkType::File { .. } => "SINK (FILE)",
                         #[cfg(feature = "cloud")]
-                        SinkType::Cloud{..} => "SINK (CLOUD)",
+                        SinkType::Cloud { .. } => "SINK (CLOUD)",
                     },
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;

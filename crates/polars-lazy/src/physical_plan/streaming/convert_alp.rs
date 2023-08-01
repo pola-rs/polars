@@ -37,7 +37,7 @@ fn process_non_streamable_node(
 fn insert_file_sink(mut root: Node, lp_arena: &mut Arena<ALogicalPlan>) -> Node {
     // The pipelines need a final sink, we insert that here.
     // this allows us to split at joins/unions and share a sink
-    if !matches!(lp_arena.get(root), ALogicalPlan::Sink{ .. }) {
+    if !matches!(lp_arena.get(root), ALogicalPlan::Sink { .. }) {
         root = lp_arena.add(ALogicalPlan::Sink {
             input: root,
             payload: SinkType::Memory,

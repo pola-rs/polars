@@ -194,7 +194,10 @@ pub(super) fn construct(
         // this was inserted only during conversion and does not exist
         // in the original tree, so we take the input, as that's where
         // we connect into the original tree.
-        Sink { input, payload: SinkType::Memory} => *input,
+        Sink {
+            input,
+            payload: SinkType::Memory,
+        } => *input,
         // Other sinks were not inserted during conversion,
         // so they are returned as-is
         Sink { .. } => final_sink,

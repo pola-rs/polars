@@ -255,9 +255,9 @@ pub enum LogicalPlan {
         contexts: Vec<LogicalPlan>,
         schema: SchemaRef,
     },
-    Sink{
+    Sink {
         input: Box<LogicalPlan>,
-        payload: SinkType
+        payload: SinkType,
     },
 }
 
@@ -289,4 +289,3 @@ impl LogicalPlan {
         Ok((node, lp_arena, expr_arena))
     }
 }
-

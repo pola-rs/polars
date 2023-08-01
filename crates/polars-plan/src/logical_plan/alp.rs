@@ -8,7 +8,7 @@ use polars_utils::arena::{Arena, Node};
 use super::projection_expr::*;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::FileInfo;
-use crate::logical_plan::{FileScan};
+use crate::logical_plan::FileScan;
 use crate::prelude::*;
 use crate::utils::PushNode;
 
@@ -116,7 +116,7 @@ pub enum ALogicalPlan {
     Sink {
         input: Node,
         payload: SinkType,
-    }
+    },
 }
 
 impl Default for ALogicalPlan {
@@ -165,13 +165,11 @@ impl ALogicalPlan {
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
             ExtContext { .. } => "ext_context",
-            Sink { payload, .. } => {
-                match payload {
-                    SinkType::Memory => "sink (memory)",
-                    SinkType::File{..} => "sink (file)",
-                    #[cfg(feature = "cloud")]
-                    SinkType::Cloud{..} => "sink (cloud)"
-                }
+            Sink { payload, .. } => match payload {
+                SinkType::Memory => "sink (memory)",
+                SinkType::File { .. } => "sink (file)",
+                #[cfg(feature = "cloud")]
+                SinkType::Cloud { .. } => "sink (cloud)",
             },
         }
     }
@@ -206,9 +204,7 @@ impl ALogicalPlan {
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
-            Distinct { input, .. } | Sink { input, .. } => {
-                return arena.get(*input).schema(arena)
-            }
+            Distinct { input, .. } | Sink { input, .. } => return arena.get(*input).schema(arena),
             Slice { input, .. } => return arena.get(*input).schema(arena),
             MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);

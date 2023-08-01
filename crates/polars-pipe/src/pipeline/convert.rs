@@ -13,8 +13,7 @@ use crate::executors::sinks::groupby::GenericGroupby2;
 use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
-use crate::operators::{Operator, Sink, Source};
-use crate::operators::Sink as SinkTrait;
+use crate::operators::{Operator, Sink, Sink as SinkTrait, Source};
 use crate::pipeline::PipeLine;
 
 fn exprs_to_physical<F>(
@@ -131,8 +130,12 @@ where
     let out = match lp_arena.get(node) {
         Sink { input, payload } => {
             match payload {
-                SinkType::Memory => Box::new(OrderedSink::new()) as Box<dyn crate::pipeline::convert::Sink>,
-                SinkType::File{path, file_type, ..} => {
+                SinkType::Memory => {
+                    Box::new(OrderedSink::new()) as Box<dyn crate::pipeline::convert::Sink>
+                }
+                SinkType::File {
+                    path, file_type, ..
+                } => {
                     let path = path.as_ref().as_path();
                     let input_schema = lp_arena.get(*input).schema(lp_arena);
                     match &file_type {
@@ -143,14 +146,18 @@ where
                         }
                         #[cfg(feature = "ipc")]
                         FileType::Ipc(options) => {
-                            Box::new(IpcSink::new(path, *options, input_schema.as_ref())?) as Box<dyn crate::pipeline::convert::Sink>
+                            Box::new(IpcSink::new(path, *options, input_schema.as_ref())?)
+                                as Box<dyn crate::pipeline::convert::Sink>
                         }
-                        _ => unreachable!()
-
+                        _ => unreachable!(),
                     }
-                },
+                }
                 #[cfg(feature = "cloud")]
-                SinkType::Cloud{uri, file_type, cloud_options} => {
+                SinkType::Cloud {
+                    uri,
+                    file_type,
+                    cloud_options,
+                } => {
                     let uri = uri.as_ref().as_str();
                     let input_schema = lp_arena.get(*input).schema(lp_arena);
                     let cloud_options = &cloud_options;
@@ -163,17 +170,17 @@ where
                                 cloud_options.as_ref(),
                                 parquet_options,
                                 input_schema.as_ref(),
-                            )?) as Box<dyn crate::pipeline::convert::Sink>
+                            )?)
+                                as Box<dyn crate::pipeline::convert::Sink>
                         }
                         #[cfg(feature = "ipc")]
                         FileType::Ipc(ipc_options) => {
                             // TODO: support Ipc as well
                             todo!("For now, only parquet cloud files are supported");
                         }
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
                 }
-
             }
         }
         Join {
