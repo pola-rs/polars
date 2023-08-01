@@ -131,7 +131,7 @@ where
         Sink { input, payload } => {
             match payload {
                 SinkType::Memory => {
-                    Box::new(OrderedSink::new()) as Box<dyn crate::pipeline::convert::Sink>
+                    Box::new(OrderedSink::new()) as Box<dyn SinkTrait>
                 }
                 SinkType::File {
                     path, file_type, ..
@@ -147,7 +147,7 @@ where
                         #[cfg(feature = "ipc")]
                         FileType::Ipc(options) => {
                             Box::new(IpcSink::new(path, *options, input_schema.as_ref())?)
-                                as Box<dyn crate::pipeline::convert::Sink>
+                                as Box<dyn SinkTrait>
                         }
                         _ => unreachable!(),
                     }
@@ -164,14 +164,13 @@ where
                     match &file_type {
                         #[cfg(feature = "parquet")]
                         FileType::Parquet(parquet_options) => {
-                            let parquet_options = parquet_options;
                             Box::new(ParquetCloudSink::new(
                                 uri,
                                 cloud_options.as_ref(),
-                                parquet_options,
+                                *parquet_options,
                                 input_schema.as_ref(),
                             )?)
-                                as Box<dyn crate::pipeline::convert::Sink>
+                                as Box<dyn SinkTrait>
                         }
                         #[cfg(feature = "ipc")]
                         FileType::Ipc(ipc_options) => {
