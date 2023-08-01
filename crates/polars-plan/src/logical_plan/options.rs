@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::{CsvEncoding, NullValues};
@@ -292,7 +291,7 @@ pub enum SinkType {
     Memory,
     File { path: Arc<PathBuf>, file_type: FileType },
     #[cfg(feature = "cloud")]
-    Cloud { uri: Arc<String>, file_type: FileType, cloud_options: Option<CloudOptions> },
+    Cloud { uri: Arc<String>, file_type: FileType, cloud_options: Option<polars_core::cloud::CloudOptions> },
 }
 
 
@@ -311,13 +310,4 @@ pub enum FileType {
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
     // Memory,
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
-#[cfg(feature = "cloud")]
-pub struct CloudSinkOptions {
-    pub uri: Arc<String>,
-    pub file_type: FileType,
-    pub cloud_options: Option<CloudOptions>,
 }

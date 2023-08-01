@@ -615,9 +615,9 @@ impl LazyFrame {
     #[cfg(feature = "parquet")]
     pub fn sink_parquet(mut self, path: PathBuf, options: ParquetWriteOptions) -> PolarsResult<()> {
         self.opt_state.streaming = true;
-        self.logical_plan = LogicalPlan::FileSink {
+        self.logical_plan = LogicalPlan::Sink {
             input: Box::new(self.logical_plan),
-            payload: FileSinkOptions {
+            payload: SinkType::File {
                 path: Arc::new(path),
                 file_type: FileType::Parquet(options),
             },
@@ -644,12 +644,12 @@ impl LazyFrame {
         parquet_options: ParquetWriteOptions,
     ) -> PolarsResult<()> {
         self.opt_state.streaming = true;
-        self.logical_plan = LogicalPlan::CloudSink {
+        self.logical_plan = LogicalPlan::Sink {
             input: Box::new(self.logical_plan),
-            payload: CloudSinkOptions {
+            payload: SinkType::Cloud {
                 uri: Arc::new(uri),
                 cloud_options,
-                parquet_options,
+                file_type: FileType::Parquet(parquet_options),
             },
         };
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
@@ -667,9 +667,9 @@ impl LazyFrame {
     #[cfg(feature = "ipc")]
     pub fn sink_ipc(mut self, path: PathBuf, options: IpcWriterOptions) -> PolarsResult<()> {
         self.opt_state.streaming = true;
-        self.logical_plan = LogicalPlan::FileSink {
+        self.logical_plan = LogicalPlan::Sink {
             input: Box::new(self.logical_plan),
-            payload: FileSinkOptions {
+            payload: SinkType::File {
                 path: Arc::new(path),
                 file_type: FileType::Ipc(options),
             },

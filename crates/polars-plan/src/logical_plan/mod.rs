@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-#[cfg(feature = "cloud")]
+#[cfg(any(feature = "cloud", feature = "parquet"))]
 use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 
