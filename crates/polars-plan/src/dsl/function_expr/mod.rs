@@ -799,6 +799,13 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     None
                 )
             }
+            #[cfg(feature = "timezones")]
+            DatetimeFunction {
+                time_unit,
+                time_zone,
+            } => {
+                map_as_slice!(temporal::datetime, &time_unit, time_zone.as_deref())
+            }
         }
     }
 }
