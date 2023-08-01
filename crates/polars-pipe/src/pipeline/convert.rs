@@ -130,9 +130,7 @@ where
     let out = match lp_arena.get(node) {
         Sink { input, payload } => {
             match payload {
-                SinkType::Memory => {
-                    Box::new(OrderedSink::new()) as Box<dyn SinkTrait>
-                }
+                SinkType::Memory => Box::new(OrderedSink::new()) as Box<dyn SinkTrait>,
                 SinkType::File {
                     path, file_type, ..
                 } => {
@@ -163,15 +161,13 @@ where
                     let cloud_options = &cloud_options;
                     match &file_type {
                         #[cfg(feature = "parquet")]
-                        FileType::Parquet(parquet_options) => {
-                            Box::new(ParquetCloudSink::new(
-                                uri,
-                                cloud_options.as_ref(),
-                                *parquet_options,
-                                input_schema.as_ref(),
-                            )?)
-                                as Box<dyn SinkTrait>
-                        }
+                        FileType::Parquet(parquet_options) => Box::new(ParquetCloudSink::new(
+                            uri,
+                            cloud_options.as_ref(),
+                            *parquet_options,
+                            input_schema.as_ref(),
+                        )?)
+                            as Box<dyn SinkTrait>,
                         #[cfg(feature = "ipc")]
                         FileType::Ipc(ipc_options) => {
                             // TODO: support Ipc as well
