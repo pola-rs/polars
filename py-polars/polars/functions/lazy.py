@@ -27,6 +27,7 @@ from polars.utils.convert import (
     _timedelta_to_pl_timedelta,
 )
 from polars.utils.deprecation import (
+    deprecate_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -488,6 +489,9 @@ def avg(column: Series) -> float:
     ...
 
 
+@deprecate_function(
+    "Please use `mean` instead, for which `avg` is an alias.", version="0.18.12"
+)
 def avg(column: str | Series) -> Expr | float:
     """
     Alias for mean.
