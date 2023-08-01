@@ -199,3 +199,17 @@ def test_ndjson_ignore_errors() -> None:
             [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
         ],
     }
+
+
+def test_write_json_duration() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [91762939, 91762890, 6020836], dtype=pl.Duration(time_unit="ms")
+            )
+        }
+    )
+    assert (
+        df.write_json(row_oriented=True)
+        == '[{"a":"P1DT5362.939S"},{"a":"P1DT5362.890S"},{"a":"PT6020.836S"}]'
+    )

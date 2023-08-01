@@ -359,6 +359,16 @@ def test_sorted_flag_after_joins() -> None:
     joined = dfb.join(dfa, on="b", how="anti")
     assert not joined["a"].flags["SORTED_ASC"]
 
+    # streaming left join
+    df1 = pl.DataFrame({"x": [1, 2, 3, 4], "y": [2, 4, 6, 6]}).set_sorted("x")
+    df2 = pl.DataFrame({"x": [4, 2, 3, 1], "z": [1, 4, 9, 1]})
+    assert (
+        df1.lazy()
+        .join(df2.lazy(), on="x", how="left")
+        .collect(streaming=True)["x"]
+        .flags["SORTED_ASC"]
+    )
+
 
 def test_jit_sort_joins() -> None:
     n = 200

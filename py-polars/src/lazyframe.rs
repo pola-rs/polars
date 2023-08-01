@@ -334,7 +334,8 @@ impl PyLazyFrame {
         projection_pushdown: bool,
         simplify_expr: bool,
         slice_pushdown: bool,
-        cse: bool,
+        comm_subplan_elim: bool,
+        comm_subexpr_elim: bool,
         streaming: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
@@ -348,7 +349,8 @@ impl PyLazyFrame {
 
         #[cfg(feature = "cse")]
         {
-            ldf = ldf.with_common_subplan_elimination(cse);
+            ldf = ldf.with_comm_subplan_elim(comm_subplan_elim);
+            ldf = ldf.with_comm_subexpr_elim(comm_subexpr_elim);
         }
 
         ldf.into()

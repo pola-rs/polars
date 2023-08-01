@@ -5,6 +5,7 @@ import math
 import operator
 import os
 import random
+import warnings
 from datetime import timedelta
 from functools import partial, reduce
 from typing import (
@@ -35,6 +36,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
+from polars.exceptions import PolarsInefficientApplyWarning, PolarsPanicError
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -48,7 +50,11 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias, warn_closed_future_change
+from polars.utils.deprecation import (
+    deprecate_function,
+    deprecate_renamed_parameter,
+    warn_closed_future_change,
+)
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
 
@@ -311,13 +317,19 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
-    def any(self) -> Self:
+    def any(self, drop_nulls: bool = True) -> Self:
         """
         Check if any boolean value in a Boolean column is `True`.
 
+        Parameters
+        ----------
+        drop_nulls
+            If False, return None if there are nulls but no Trues.
+
         Returns
         -------
-        Boolean literal
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -331,20 +343,46 @@ class Expr:
         ╞══════╪═══════╡
         │ true ┆ false │
         └──────┴───────┘
+        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
+        >>> df.select(pl.col("x").any(True), pl.col("y").any(True))
+        shape: (1, 2)
+        ┌───────┬──────┐
+        │ x     ┆ y    │
+        │ ---   ┆ ---  │
+        │ bool  ┆ bool │
+        ╞═══════╪══════╡
+        │ false ┆ true │
+        └───────┴──────┘
+        >>> df.select(pl.col("x").any(False), pl.col("y").any(False))
+        shape: (1, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ bool ┆ bool │
+        ╞══════╪══════╡
+        │ null ┆ true │
+        └──────┴──────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.any())
+        return self._from_pyexpr(self._pyexpr.any(drop_nulls))
 
-    def all(self) -> Self:
+    def all(self, drop_nulls: bool = True) -> Self:
         """
         Check if all boolean values in a Boolean column are `True`.
 
         This method is an expression - not to be confused with
         :func:`polars.all` which is a function to select all columns.
 
+        Parameters
+        ----------
+        drop_nulls
+            If False, return None if there are any nulls.
+
+
         Returns
         -------
-        Boolean literal
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -360,9 +398,28 @@ class Expr:
         ╞══════╪═══════╪═══════╡
         │ true ┆ false ┆ false │
         └──────┴───────┴───────┘
+        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
+        >>> df.select(pl.col("x").all(True), pl.col("y").all(True))
+        shape: (1, 2)
+        ┌───────┬───────┐
+        │ x     ┆ y     │
+        │ ---   ┆ ---   │
+        │ bool  ┆ bool  │
+        ╞═══════╪═══════╡
+        │ false ┆ false │
+        └───────┴───────┘
+        >>> df.select(pl.col("x").all(False), pl.col("y").all(False))
+        shape: (1, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ bool ┆ bool │
+        ╞══════╪══════╡
+        │ null ┆ null │
+        └──────┴──────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.all())
+        return self._from_pyexpr(self._pyexpr.all(drop_nulls))
 
     def arg_true(self) -> Self:
         """
@@ -415,7 +472,29 @@ class Expr:
         └──────────┘
 
         """
-        return self**0.5
+        return self._from_pyexpr(self._pyexpr.sqrt())
+
+    def cbrt(self) -> Self:
+        """
+        Compute the cube root of the elements.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
+        >>> df.select(pl.col("values").cbrt())
+        shape: (3, 1)
+        ┌──────────┐
+        │ values   │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.0      │
+        │ 1.259921 │
+        │ 1.587401 │
+        └──────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.cbrt())
 
     def log10(self) -> Self:
         """
@@ -463,12 +542,12 @@ class Expr:
 
     def alias(self, name: str) -> Self:
         """
-        Rename the output of an expression.
+        Rename the expression.
 
         Parameters
         ----------
         name
-            New name.
+            The new name.
 
         See Also
         --------
@@ -478,40 +557,227 @@ class Expr:
 
         Examples
         --------
+        Rename an expression to avoid overwriting an existing column.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3],
-        ...         "b": ["a", "b", None],
+        ...         "b": ["x", "y", "z"],
         ...     }
         ... )
-        >>> df
-        shape: (3, 2)
-        ┌─────┬──────┐
-        │ a   ┆ b    │
-        │ --- ┆ ---  │
-        │ i64 ┆ str  │
-        ╞═════╪══════╡
-        │ 1   ┆ a    │
-        │ 2   ┆ b    │
-        │ 3   ┆ null │
-        └─────┴──────┘
-        >>> df.select(
-        ...     pl.col("a").alias("bar"),
-        ...     pl.col("b").alias("foo"),
+        >>> df.with_columns(
+        ...     pl.col("a") + 10,
+        ...     pl.col("b").str.to_uppercase().alias("c"),
         ... )
-        shape: (3, 2)
-        ┌─────┬──────┐
-        │ bar ┆ foo  │
-        │ --- ┆ ---  │
-        │ i64 ┆ str  │
-        ╞═════╪══════╡
-        │ 1   ┆ a    │
-        │ 2   ┆ b    │
-        │ 3   ┆ null │
-        └─────┴──────┘
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 11  ┆ x   ┆ X   │
+        │ 12  ┆ y   ┆ Y   │
+        │ 13  ┆ z   ┆ Z   │
+        └─────┴─────┴─────┘
+
+        Overwrite the default name of literal columns to prevent errors due to duplicate
+        column names.
+
+        >>> df.with_columns(
+        ...     pl.lit(True).alias("c"),
+        ...     pl.lit(4.0).alias("d"),
+        ... )
+        shape: (3, 4)
+        ┌─────┬─────┬──────┬─────┐
+        │ a   ┆ b   ┆ c    ┆ d   │
+        │ --- ┆ --- ┆ ---  ┆ --- │
+        │ i64 ┆ str ┆ bool ┆ f64 │
+        ╞═════╪═════╪══════╪═════╡
+        │ 1   ┆ x   ┆ true ┆ 4.0 │
+        │ 2   ┆ y   ┆ true ┆ 4.0 │
+        │ 3   ┆ z   ┆ true ┆ 4.0 │
+        └─────┴─────┴──────┴─────┘
 
         """
         return self._from_pyexpr(self._pyexpr.alias(name))
+
+    def map_alias(self, function: Callable[[str], str]) -> Self:
+        """
+        Rename the output of an expression by mapping a function over the root name.
+
+        Parameters
+        ----------
+        function
+            Function that maps a root name to a new name.
+
+        See Also
+        --------
+        alias
+        prefix
+        suffix
+
+        Examples
+        --------
+        Remove a common suffix and convert to lower case.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A_reverse": [3, 2, 1],
+        ...         "B_reverse": ["z", "y", "x"],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.all().reverse().map_alias(lambda c: c.rstrip("_reverse").lower())
+        ... )
+        shape: (3, 4)
+        ┌───────────┬───────────┬─────┬─────┐
+        │ A_reverse ┆ B_reverse ┆ a   ┆ b   │
+        │ ---       ┆ ---       ┆ --- ┆ --- │
+        │ i64       ┆ str       ┆ i64 ┆ str │
+        ╞═══════════╪═══════════╪═════╪═════╡
+        │ 3         ┆ z         ┆ 1   ┆ x   │
+        │ 2         ┆ y         ┆ 2   ┆ y   │
+        │ 1         ┆ x         ┆ 3   ┆ z   │
+        └───────────┴───────────┴─────┴─────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.map_alias(function))
+
+    def prefix(self, prefix: str) -> Self:
+        """
+        Add a prefix to the root column name of the expression.
+
+        Parameters
+        ----------
+        prefix
+            Prefix to add to the root column name.
+
+        Notes
+        -----
+        This will undo any previous renaming operations on the expression.
+
+        Due to implementation constraints, this method can only be called as the last
+        expression in a chain.
+
+        See Also
+        --------
+        suffix
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["x", "y", "z"],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.all().reverse().prefix("reverse_"))
+        shape: (3, 4)
+        ┌─────┬─────┬───────────┬───────────┐
+        │ a   ┆ b   ┆ reverse_a ┆ reverse_b │
+        │ --- ┆ --- ┆ ---       ┆ ---       │
+        │ i64 ┆ str ┆ i64       ┆ str       │
+        ╞═════╪═════╪═══════════╪═══════════╡
+        │ 1   ┆ x   ┆ 3         ┆ z         │
+        │ 2   ┆ y   ┆ 2         ┆ y         │
+        │ 3   ┆ z   ┆ 1         ┆ x         │
+        └─────┴─────┴───────────┴───────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.prefix(prefix))
+
+    def suffix(self, suffix: str) -> Self:
+        """
+        Add a suffix to the root column name of the expression.
+
+        Parameters
+        ----------
+        suffix
+            Suffix to add to the root column name.
+
+        Notes
+        -----
+        This will undo any previous renaming operations on the expression.
+
+        Due to implementation constraints, this method can only be called as the last
+        expression in a chain.
+
+        See Also
+        --------
+        prefix
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["x", "y", "z"],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.all().reverse().suffix("_reverse"))
+        shape: (3, 4)
+        ┌─────┬─────┬───────────┬───────────┐
+        │ a   ┆ b   ┆ a_reverse ┆ b_reverse │
+        │ --- ┆ --- ┆ ---       ┆ ---       │
+        │ i64 ┆ str ┆ i64       ┆ str       │
+        ╞═════╪═════╪═══════════╪═══════════╡
+        │ 1   ┆ x   ┆ 3         ┆ z         │
+        │ 2   ┆ y   ┆ 2         ┆ y         │
+        │ 3   ┆ z   ┆ 1         ┆ x         │
+        └─────┴─────┴───────────┴───────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.suffix(suffix))
+
+    def keep_name(self) -> Self:
+        """
+        Keep the original root name of the expression.
+
+        Notes
+        -----
+        Due to implementation constraints, this method can only be called as the last
+        expression in a chain.
+
+        See Also
+        --------
+        alias
+
+        Examples
+        --------
+        Undo an alias operation.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2],
+        ...         "b": [3, 4],
+        ...     }
+        ... )
+        >>> df.with_columns((pl.col("a") * 9).alias("c").keep_name())
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 9   ┆ 3   │
+        │ 18  ┆ 4   │
+        └─────┴─────┘
+
+        Prevent errors due to duplicate column names.
+
+        >>> df.select((pl.lit(10) / pl.all()).keep_name())
+        shape: (2, 2)
+        ┌──────┬──────────┐
+        │ a    ┆ b        │
+        │ ---  ┆ ---      │
+        │ f64  ┆ f64      │
+        ╞══════╪══════════╡
+        │ 10.0 ┆ 3.333333 │
+        │ 5.0  ┆ 2.5      │
+        └──────┴──────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.keep_name())
 
     def exclude(
         self,
@@ -634,50 +900,6 @@ class Expr:
                 f"Invalid input for `exclude`. Expected `str` or `DataType`, got {type(columns)!r}"
             )
 
-    def keep_name(self) -> Self:
-        """
-        Keep the original root name of the expression.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2],
-        ...         "b": [3, 4],
-        ...     }
-        ... )
-
-        Keep original column name to undo an alias operation.
-
-        >>> df.with_columns([(pl.col("a") * 9).alias("c").keep_name()])
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 9   ┆ 3   │
-        │ 18  ┆ 4   │
-        └─────┴─────┘
-
-        Prevent
-        "DuplicateError: Column with name: 'literal' has more than one occurrences"
-        errors.
-
-        >>> df.select((pl.lit(10) / pl.all()).keep_name())
-        shape: (2, 2)
-        ┌──────┬──────────┐
-        │ a    ┆ b        │
-        │ ---  ┆ ---      │
-        │ f64  ┆ f64      │
-        ╞══════╪══════════╡
-        │ 10.0 ┆ 3.333333 │
-        │ 5.0  ┆ 2.5      │
-        └──────┴──────────┘
-
-        """
-        return self._from_pyexpr(self._pyexpr.keep_name())
-
     def pipe(
         self,
         function: Callable[Concatenate[Expr, P], T],
@@ -728,166 +950,6 @@ class Expr:
 
         '''
         return function(self, *args, **kwargs)
-
-    def prefix(self, prefix: str) -> Self:
-        """
-        Add a prefix to the root column name of the expression.
-
-        Parameters
-        ----------
-        prefix
-            Prefix to add to root column name.
-
-        See Also
-        --------
-        alias
-        map_alias
-        suffix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1, 2, 3, 4, 5],
-        ...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
-        ...         "B": [5, 4, 3, 2, 1],
-        ...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        ...     }
-        ... )
-        >>> df
-        shape: (5, 4)
-        ┌─────┬────────┬─────┬────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   │
-        │ --- ┆ ---    ┆ --- ┆ ---    │
-        │ i64 ┆ str    ┆ i64 ┆ str    │
-        ╞═════╪════════╪═════╪════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle │
-        │ 2   ┆ banana ┆ 4   ┆ audi   │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle │
-        │ 5   ┆ banana ┆ 1   ┆ beetle │
-        └─────┴────────┴─────┴────────┘
-        >>> df.select(
-        ...     pl.all(),
-        ...     pl.all().reverse().prefix("reverse_"),
-        ... )
-        shape: (5, 8)
-        ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   ┆ reverse_A ┆ reverse_fruits ┆ reverse_B ┆ reverse_cars │
-        │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---       ┆ ---            ┆ ---       ┆ ---          │
-        │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64       ┆ str            ┆ i64       ┆ str          │
-        ╞═════╪════════╪═════╪════════╪═══════════╪════════════════╪═══════════╪══════════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 5         ┆ banana         ┆ 1         ┆ beetle       │
-        │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 4         ┆ apple          ┆ 2         ┆ beetle       │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ 3         ┆ apple          ┆ 3         ┆ beetle       │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2         ┆ banana         ┆ 4         ┆ audi         │
-        │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
-        └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
-
-        """  # noqa: W505
-        return self._from_pyexpr(self._pyexpr.prefix(prefix))
-
-    def suffix(self, suffix: str) -> Self:
-        """
-        Add a suffix to the root column name of the expression.
-
-        Parameters
-        ----------
-        suffix
-            Suffix to add to root column name.
-
-        See Also
-        --------
-        alias
-        map_alias
-        prefix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1, 2, 3, 4, 5],
-        ...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
-        ...         "B": [5, 4, 3, 2, 1],
-        ...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        ...     }
-        ... )
-        >>> df
-        shape: (5, 4)
-        ┌─────┬────────┬─────┬────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   │
-        │ --- ┆ ---    ┆ --- ┆ ---    │
-        │ i64 ┆ str    ┆ i64 ┆ str    │
-        ╞═════╪════════╪═════╪════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle │
-        │ 2   ┆ banana ┆ 4   ┆ audi   │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle │
-        │ 5   ┆ banana ┆ 1   ┆ beetle │
-        └─────┴────────┴─────┴────────┘
-        >>> df.select(
-        ...     pl.all(),
-        ...     pl.all().reverse().suffix("_reverse"),
-        ... )
-        shape: (5, 8)
-        ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   ┆ A_reverse ┆ fruits_reverse ┆ B_reverse ┆ cars_reverse │
-        │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---       ┆ ---            ┆ ---       ┆ ---          │
-        │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64       ┆ str            ┆ i64       ┆ str          │
-        ╞═════╪════════╪═════╪════════╪═══════════╪════════════════╪═══════════╪══════════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 5         ┆ banana         ┆ 1         ┆ beetle       │
-        │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 4         ┆ apple          ┆ 2         ┆ beetle       │
-        │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ 3         ┆ apple          ┆ 3         ┆ beetle       │
-        │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2         ┆ banana         ┆ 4         ┆ audi         │
-        │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
-        └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
-
-        """  # noqa: W505
-        return self._from_pyexpr(self._pyexpr.suffix(suffix))
-
-    def map_alias(self, function: Callable[[str], str]) -> Self:
-        """
-        Rename the output of an expression by mapping a function over the root name.
-
-        Parameters
-        ----------
-        function
-            Function that maps root name to new name.
-
-        See Also
-        --------
-        alias
-        prefix
-        suffix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1, 2],
-        ...         "B": [3, 4],
-        ...     }
-        ... )
-
-        >>> df.select(pl.all().reverse().suffix("_reverse")).with_columns(
-        ...     pl.all().map_alias(
-        ...         # Remove "_reverse" suffix and convert to lower case.
-        ...         lambda col_name: col_name.rsplit("_reverse", 1)[0].lower()
-        ...     )
-        ... )
-        shape: (2, 4)
-        ┌───────────┬───────────┬─────┬─────┐
-        │ A_reverse ┆ B_reverse ┆ a   ┆ b   │
-        │ ---       ┆ ---       ┆ --- ┆ --- │
-        │ i64       ┆ i64       ┆ i64 ┆ i64 │
-        ╞═══════════╪═══════════╪═════╪═════╡
-        │ 2         ┆ 4         ┆ 2   ┆ 4   │
-        │ 1         ┆ 3         ┆ 1   ┆ 3   │
-        └───────────┴───────────┴─────┴─────┘
-
-
-        """
-        return self._from_pyexpr(self._pyexpr.map_alias(function))
 
     def is_not(self) -> Self:
         """
@@ -991,8 +1053,8 @@ class Expr:
 
         Returns
         -------
-        out
-            Series of type Boolean
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -1022,8 +1084,8 @@ class Expr:
 
         Returns
         -------
-        out
-            Series of type Boolean
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -1963,7 +2025,7 @@ class Expr:
         Returns
         -------
         Expr
-            Series of dtype UInt32.
+            Expression of data type :class:`UInt32`.
 
         Examples
         --------
@@ -2225,7 +2287,8 @@ class Expr:
 
         Returns
         -------
-        Values taken by index
+        Expr
+            Expression of the same data type.
 
         Examples
         --------
@@ -3118,7 +3181,8 @@ class Expr:
 
         Returns
         -------
-        Boolean Series
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -3249,7 +3313,7 @@ class Expr:
         breaks
             A list of unique cut points.
         labels
-            Labels to assign to bins. If given, the length must be len(probs) + 1.
+            Labels to assign to bins. If given, the length must be len(breaks) + 1.
         left_closed
             Whether intervals should be [) instead of the default of (]
         include_breaks
@@ -3299,9 +3363,10 @@ class Expr:
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
+    @deprecate_renamed_parameter("probs", "q", version="0.18.8")
     def qcut(
         self,
-        probs: list[float],
+        q: list[float] | int,
         labels: list[str] | None = None,
         left_closed: bool = False,
         allow_duplicates: bool = False,
@@ -3312,9 +3377,9 @@ class Expr:
 
         Parameters
         ----------
-        probs
-            Probabilities for which to find the corresponding quantiles
-            For p in probs, we assume 0 <= p <= 1
+        q
+            Either a list of quantile probabilities between 0 and 1 or a positive
+            integer determining the number of evenly spaced probabilities to use.
         labels
             Labels to assign to bins. If given, the length must be len(probs) + 1.
             If computing over groups this must be set for now.
@@ -3334,6 +3399,23 @@ class Expr:
         >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
         >>> df = pl.DataFrame(dict(g=g, x=range(10)))
         >>> df.with_columns(q=pl.col("x").qcut([0.5]))
+        shape: (10, 3)
+        ┌─────┬─────┬─────────────┐
+        │ g   ┆ x   ┆ q           │
+        │ --- ┆ --- ┆ ---         │
+        │ str ┆ i64 ┆ cat         │
+        ╞═════╪═════╪═════════════╡
+        │ a   ┆ 0   ┆ (-inf, 4.5] │
+        │ a   ┆ 1   ┆ (-inf, 4.5] │
+        │ a   ┆ 2   ┆ (-inf, 4.5] │
+        │ a   ┆ 3   ┆ (-inf, 4.5] │
+        │ …   ┆ …   ┆ …           │
+        │ b   ┆ 6   ┆ (4.5, inf]  │
+        │ b   ┆ 7   ┆ (4.5, inf]  │
+        │ b   ┆ 8   ┆ (4.5, inf]  │
+        │ b   ┆ 9   ┆ (4.5, inf]  │
+        └─────┴─────┴─────────────┘
+        >>> df.with_columns(q=pl.col("x").qcut(2))
         shape: (10, 3)
         ┌─────┬─────┬─────────────┐
         │ g   ┆ x   ┆ q           │
@@ -3402,10 +3484,9 @@ class Expr:
         │ b   ┆ 9   ┆ {inf,"(4.5, inf]"}    │
         └─────┴─────┴───────────────────────┘
         """
+        expr_f = self._pyexpr.qcut_uniform if isinstance(q, int) else self._pyexpr.qcut
         return self._from_pyexpr(
-            self._pyexpr.qcut(
-                probs, labels, left_closed, allow_duplicates, include_breaks
-            )
+            expr_f(q, labels, left_closed, allow_duplicates, include_breaks)
         )
 
     def rle(self) -> Self:
@@ -3414,7 +3495,8 @@ class Expr:
 
         Returns
         -------
-            A Struct Series containing "lengths" and "values" Fields
+        Expr
+            Expression of data type :class:`Struct` with Fields "lengths" and "values".
 
         Examples
         --------
@@ -3677,7 +3759,7 @@ class Expr:
 
         In a selection context, the function is applied by row.
 
-        >>> df.with_columns(
+        >>> df.with_columns(  # doctest: +SKIP
         ...     pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
         ... )
         shape: (4, 3)
@@ -3722,20 +3804,39 @@ class Expr:
 
         """
         # input x: Series of type list containing the group values
+        from polars.utils.udfs import warn_on_inefficient_apply
+
+        try:
+            root_names = self.meta.root_names()
+        except PolarsPanicError:
+            # no root names for pl.col('*')
+            pass
+        else:
+            if root_names:
+                warn_on_inefficient_apply(
+                    function, columns=root_names, apply_target="expr"
+                )
+
         if pass_name:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
                 def inner(s: Series) -> Series:  # pragma: no cover
                     return function(s.alias(x.name))
 
-                return x.apply(inner, return_dtype=return_dtype, skip_nulls=skip_nulls)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", PolarsInefficientApplyWarning)
+                    return x.apply(
+                        inner, return_dtype=return_dtype, skip_nulls=skip_nulls
+                    )
 
         else:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
-                return x.apply(
-                    function, return_dtype=return_dtype, skip_nulls=skip_nulls
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", PolarsInefficientApplyWarning)
+                    return x.apply(
+                        function, return_dtype=return_dtype, skip_nulls=skip_nulls
+                    )
 
         if strategy == "thread_local":
             return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
@@ -3807,13 +3908,14 @@ class Expr:
 
     def explode(self) -> Self:
         """
-        Explode a list Series.
+        Explode a list expression.
 
         This means that every item is expanded to a new row.
 
         Returns
         -------
-        Exploded Series of same dtype
+        Expr
+            Expression with the data type of the list elements.
 
         See Also
         --------
@@ -3978,12 +4080,12 @@ class Expr:
 
     def and_(self, *others: Any) -> Self:
         """
-        Method equivalent of logical "and" operator ``expr & other & ...``.
+        Method equivalent of bitwise "and" operator ``expr & other & ...``.
 
         Parameters
         ----------
         *others
-            One or more logical boolean expressions to evaluate/combine.
+            One or more integer or boolean expressions to evaluate/combine.
 
         Examples
         --------
@@ -4022,12 +4124,12 @@ class Expr:
 
     def or_(self, *others: Any) -> Self:
         """
-        Method equivalent of logical "or" operator ``expr | other | ...``.
+        Method equivalent of bitwise "or" operator ``expr | other | ...``.
 
         Parameters
         ----------
         *others
-            One or more logical boolean expressions to evaluate/combine.
+            One or more integer or boolean expressions to evaluate/combine.
 
         Examples
         --------
@@ -4606,7 +4708,7 @@ class Expr:
 
     def xor(self, other: Any) -> Self:
         """
-        Method equivalent of logical exclusive-or operator ``expr ^ other``.
+        Method equivalent of bitwise exclusive-or operator ``expr ^ other``.
 
         Parameters
         ----------
@@ -4670,7 +4772,8 @@ class Expr:
 
         Returns
         -------
-        Expr that evaluates to a Boolean Series.
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -4693,7 +4796,7 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
                 other = list(other)
-            other = F.lit(None) if len(other) == 0 else F.lit(pl.Series(other))
+            other = F.lit(pl.Series(other))
             other = other._pyexpr
         else:
             other = parse_as_expression(other)
@@ -4714,7 +4817,9 @@ class Expr:
 
         Returns
         -------
-        Series of type List
+        Expr
+            Expression of data type :class:`List`, where the inner data type is equal
+            to the original data type.
 
         Examples
         --------
@@ -4762,7 +4867,8 @@ class Expr:
 
         Returns
         -------
-        Expr that evaluates to a Boolean Series.
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -4962,18 +5068,17 @@ class Expr:
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Self:
         """
-        Fill nulls with linear interpolation over missing values.
-
-        Can also be used to regrid data to a new grid - see examples below.
+        Fill null values using interpolation.
 
         Parameters
         ----------
-        method : {'linear', 'linear'}
-            Interpolation method
+        method : {'linear', 'nearest'}
+            Interpolation method.
 
         Examples
         --------
-        >>> # Fill nulls with linear interpolation
+        Fill null values using linear interpolation.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, None, 3],
@@ -4991,6 +5096,23 @@ class Expr:
         │ 2   ┆ NaN │
         │ 3   ┆ 3.0 │
         └─────┴─────┘
+
+        Fill null values using nearest interpolation.
+
+        >>> df.select(pl.all().interpolate("nearest"))
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1.0 │
+        │ 3   ┆ NaN │
+        │ 3   ┆ 3.0 │
+        └─────┴─────┘
+
+        Regrid data to a new grid.
+
         >>> df_original_grid = pl.DataFrame(
         ...     {
         ...         "grid_points": [1, 3, 10],
@@ -7348,7 +7470,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7372,7 +7495,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7396,7 +7520,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7420,7 +7545,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7444,7 +7570,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7468,7 +7595,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7492,7 +7620,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7516,7 +7645,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7540,7 +7670,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7564,7 +7695,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7588,7 +7720,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7612,7 +7745,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7636,7 +7770,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7668,7 +7803,8 @@ class Expr:
 
         Returns
         -------
-        Series of dtype Float64
+        Expr
+            Expression of data type :class:`Float64`.
 
         Examples
         --------
@@ -7706,9 +7842,10 @@ class Expr:
         Returns
         -------
         Expr
-            If a single dimension is given, results in a flat Series of shape (len,).
-            If a multiple dimensions are given, results in a Series of Lists with shape
-            (rows, cols).
+            If a single dimension is given, results in an expression of the original
+            data type.
+            If a multiple dimensions are given, results in an expression of data type
+            :class:`List` with shape (rows, cols).
 
         Examples
         --------
@@ -7767,7 +7904,7 @@ class Expr:
             seed = random.randint(0, 10000)
         return self._from_pyexpr(self._pyexpr.shuffle(seed, fixed_seed))
 
-    @deprecated_alias(frac="fraction")
+    @deprecate_renamed_parameter("frac", "fraction", version="0.17.0")
     def sample(
         self,
         n: int | None = None,
@@ -8157,7 +8294,8 @@ class Expr:
 
         Returns
         -------
-        Dtype Struct
+        Expr
+            Expression of data type :class:`Struct`.
 
         Examples
         --------
@@ -8427,15 +8565,23 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
+    @deprecate_function(
+        "This method now does nothing. It has been superseded by the"
+        " `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically"
+        " caches expressions that are equal.",
+        version="0.18.9",
+    )
     def cache(self) -> Self:
         """
         Cache this expression so that it only is executed once per context.
 
-        This can actually hurt performance and can have a lot of contention.
-        It is advised not to use it until actually benchmarked on your problem.
+        .. deprecated:: 0.18.9
+            This method now does nothing. It has been superseded by the
+            `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically
+            caches expressions that are equal.
 
         """
-        return self._from_pyexpr(self._pyexpr.cache())
+        return self
 
     def map_dict(
         self,
@@ -8456,6 +8602,7 @@ class Expr:
             Dictionary containing the before/after values to map.
         default
             Value to use when the remapping dict does not contain the lookup value.
+            Accepts expression input. Non-expression inputs are parsed as literals.
             Use ``pl.first()``, to keep the original value.
         return_dtype
             Set return dtype to override automatic return dtype determination.
@@ -8781,6 +8928,9 @@ class Expr:
                     is_keys=False,
                 )
 
+            default_parsed = self._from_pyexpr(
+                parse_as_expression(default, str_as_lit=True)
+            )
             return (
                 (
                     df.lazy()
@@ -8800,7 +8950,7 @@ class Expr:
                     .select(
                         F.when(F.col(is_remapped_column).is_not_null())
                         .then(F.col(remap_value_column))
-                        .otherwise(default)
+                        .otherwise(default_parsed)
                         .alias(column)
                     )
                 )

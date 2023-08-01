@@ -6,31 +6,33 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
+from polars.utils.deprecation import deprecate_renamed_parameter
 
 if TYPE_CHECKING:
     from polars import DataFrame
     from polars.type_aliases import DbReadEngine
 
 
+@deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
 def read_database(
     query: list[str] | str,
-    connection_uri: str,
+    connection: str,
     *,
     partition_on: str | None = None,
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
     protocol: str | None = None,
-    engine: DbReadEngine = "connectorx",
+    engine: DbReadEngine | None = None,
 ) -> DataFrame:
     """
-    Read a SQL query into a DataFrame.
+    Read the results of a SQL query into a DataFrame.
 
     Parameters
     ----------
     query
         Raw SQL query (or queries).
-    connection_uri
-        A connectorx or ADBC connection URI that starts with the backend's
+    connection
+        A connectorx or ADBC connection URI string that starts with the backend's
         driver name, for example:
 
         * "postgresql://user:pass@server:port/database"
@@ -45,7 +47,7 @@ def read_database(
         Backend-specific transfer protocol directive (connectorx); see connectorx
         documentation for more details.
     engine : {'connectorx', 'adbc'}
-        Selects the engine used for reading the database:
+        Selects the engine used for reading the database (defaulting to connectorx):
 
         * ``'connectorx'``
           Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
@@ -109,10 +111,17 @@ def read_database(
     ... )  # doctest: +SKIP
 
     """  # noqa: W505
+    if not isinstance(connection, str):
+        raise TypeError(
+            f"Expect connection to be a URI string; found {type(connection)}"
+        )
+    elif engine is None:
+        engine = "connectorx"
+
     if engine == "connectorx":
         return _read_sql_connectorx(
             query,
-            connection_uri,
+            connection,
             partition_on=partition_on,
             partition_range=partition_range,
             partition_num=partition_num,
@@ -121,7 +130,7 @@ def read_database(
     elif engine == "adbc":
         if not isinstance(query, str):
             raise ValueError("Only a single SQL query string is accepted for adbc.")
-        return _read_sql_adbc(query, connection_uri)
+        return _read_sql_adbc(query, connection)
     else:
         raise ValueError(f"Engine {engine!r} not implemented; use connectorx or adbc.")
 
@@ -154,20 +163,19 @@ def _read_sql_connectorx(
 
 
 def _read_sql_adbc(query: str, connection_uri: str) -> DataFrame:
-    with _open_adbc_connection(connection_uri) as conn:
-        cursor = conn.cursor()
+    with _open_adbc_connection(connection_uri) as conn, conn.cursor() as cursor:
         cursor.execute(query)
         tbl = cursor.fetch_arrow_table()
-        cursor.close()
     return from_arrow(tbl)  # type: ignore[return-value]
 
 
 def _open_adbc_connection(connection_uri: str) -> Any:
     driver_name = connection_uri.split(":", 1)[0].lower()
 
-    # note: existing URI driver prefixes currently map 1:1 with
-    # the adbc module suffix; update this map if that changes.
-    module_suffix_map: dict[str, str] = {}
+    # map uri prefix to module when not 1:1
+    module_suffix_map: dict[str, str] = {
+        "postgres": "postgresql",
+    }
     try:
         module_suffix = module_suffix_map.get(driver_name, driver_name)
         module_name = f"adbc_driver_{module_suffix}.dbapi"

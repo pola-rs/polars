@@ -13,9 +13,6 @@ Miscellaneous
     LazyFrame.map
     LazyFrame.pipe
     LazyFrame.profile
-    LazyFrame.sink_ipc
-    LazyFrame.sink_parquet
-
 
 Read/write logical plan
 -----------------------

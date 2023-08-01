@@ -24,7 +24,7 @@ def helper_dataset_test(
 
 
 @pytest.mark.write_disk()
-def test_dataset(df: pl.DataFrame, tmp_path: Path) -> None:
+def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
     file_path = tmp_path / "small.ipc"
     df.write_ipc(file_path)
 
@@ -113,12 +113,14 @@ def test_dataset(df: pl.DataFrame, tmp_path: Path) -> None:
         .select(["bools", "floats", "date"])
         .collect(),
     )
-    helper_dataset_test(
-        file_path,
-        lambda lf: lf.filter(pl.col("cat").is_in([]))
-        .select(["bools", "floats", "date"])
-        .collect(),
-    )
+    # todo! remove string cache
+    with pl.StringCache():
+        helper_dataset_test(
+            file_path,
+            lambda lf: lf.filter(pl.col("cat").is_in([]))
+            .select(["bools", "floats", "date"])
+            .collect(),
+        )
     # direct filter
     helper_dataset_test(
         file_path,

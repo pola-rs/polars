@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Callable, Iterable
 
 from polars import functions as F
 from polars.utils._parse_expr_input import parse_as_list_of_expressions
 from polars.utils._wrap import wrap_ldf
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
@@ -142,11 +141,10 @@ class LazyGroupBy:
             )
 
         if "aggs" in named_aggs:
-            warnings.warn(
+            issue_deprecation_warning(
                 "passing expressions to `agg` using the keyword argument `aggs` is"
                 " deprecated. Use positional syntax instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.18.1",
             )
             first_input = named_aggs.pop("aggs")
             pyexprs = parse_as_list_of_expressions(first_input, *aggs, **named_aggs)

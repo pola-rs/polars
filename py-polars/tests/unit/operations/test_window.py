@@ -403,3 +403,20 @@ def test_window_filtered_aggregation() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_window_and_cse_10152() -> None:
+    q = pl.LazyFrame(
+        {
+            "a": [0.0],
+            "b": [0.0],
+        }
+    )
+
+    q = q.with_columns(
+        a=pl.col("a").diff().over("a") / pl.col("a"),
+        b=pl.col("b").diff().over("a") / pl.col("a"),
+        c=pl.col("a").diff().over("a"),
+    )
+
+    assert q.collect().columns == ["a", "b", "c"]

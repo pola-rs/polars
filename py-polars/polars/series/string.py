@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING
 
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -170,7 +171,8 @@ class StringNameSpace:
 
         """
 
-    @deprecated_alias(datatype="dtype", fmt="format")
+    @deprecate_renamed_parameter("datatype", "dtype", version="0.17.3")
+    @deprecate_renamed_parameter("fmt", "format", version="0.17.3")
     def strptime(
         self,
         dtype: PolarsTemporalType,
@@ -262,14 +264,13 @@ class StringNameSpace:
         ]
         """
         if utc is not None:
-            warnings.warn(
+            issue_deprecation_warning(
                 "The `utc` argument is now a no-op and has no effect. "
                 "You can safely remove it. "
                 "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
                 "and offset-aware strings are converted to "
                 '``pl.Datetime(time_unit, "UTC")``.',
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.17.15",
             )
         s = wrap_s(self._s)
         return (
@@ -331,7 +332,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series[u32]
+        Series
+            Series of data type :class:`UInt32`.
 
         Examples
         --------
@@ -354,7 +356,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series[u32]
+        Series
+            Series of data type :class:`UInt32`.
 
         Notes
         -----
@@ -387,7 +390,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series of dtype Utf8
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -436,7 +440,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -543,7 +548,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Utf8 array with values encoded using provided encoding
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -612,8 +618,9 @@ class StringNameSpace:
 
         Returns
         -------
-        Utf8 array. Contain null if original value is null or the json_path return
-        nothing.
+        Series
+            Series of data type :class:`Utf8`. Contains null values if the original
+            value is null or the json_path returns nothing.
 
         Examples
         --------
@@ -647,6 +654,12 @@ class StringNameSpace:
             Group 0 mean the whole pattern, first group begin at index 1
             Default to the first capture group
 
+        Returns
+        -------
+        Series
+            Series of data type :class:`Utf8`. Contains null values if the original
+            value is null or regex captures nothing.
+
         Notes
         -----
         To modify regular expression behaviour (such as multi-line matching)
@@ -670,10 +683,6 @@ class StringNameSpace:
         See the regex crate's section on `grouping and flags
         <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
         additional information about the use of inline expression modifiers.
-
-        Returns
-        -------
-        Utf8 array. Contain null if original value is null or regex capture nothing.
 
         Examples
         --------
@@ -749,7 +758,8 @@ class StringNameSpace:
 
         Returns
         -------
-        List[Utf8]
+        Series
+            Series of data type ``List(Utf8)``.
 
         Examples
         --------
@@ -776,7 +786,9 @@ class StringNameSpace:
 
         Returns
         -------
-        UInt32 array. Contain null if original value is null or regex capture nothing.
+        Series
+            Series of data type :class:`UInt32`. Contains null values if the original
+            value is null or if the regex captures nothing.
 
         Examples
         --------
@@ -805,7 +817,8 @@ class StringNameSpace:
 
         Returns
         -------
-        List of Utf8 type
+        Series
+            Series of data type ``List(Utf8)``.
 
         """
 
@@ -864,7 +877,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Struct of Utf8 type
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         """
 
@@ -921,7 +935,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Struct of Utf8 type
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         """
         s = wrap_s(self._s)
@@ -1268,7 +1283,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of dtype Utf8.
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         Examples
         --------
@@ -1303,7 +1318,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Exploded column with string datatype.
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -1340,7 +1356,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series of parsed integers in i32 format
+        Series
+            Series of data type :class:`Int32`.
 
         Examples
         --------

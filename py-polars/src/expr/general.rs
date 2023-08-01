@@ -207,6 +207,27 @@ impl PyExpr {
             .qcut(probs, labels, left_closed, allow_duplicates, include_breaks)
             .into()
     }
+    #[pyo3(signature = (n_bins, labels, left_closed, allow_duplicates, include_breaks))]
+    #[cfg(feature = "cutqcut")]
+    fn qcut_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .qcut_uniform(
+                n_bins,
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
+            )
+            .into()
+    }
 
     #[cfg(feature = "rle")]
     fn rle(&self) -> Self {
@@ -472,6 +493,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "trigonometry")]
+    fn arctan2(&self, y: Self) -> Self {
+        self.clone().inner.arctan2(y.inner).into()
+    }
+
+    #[cfg(feature = "trigonometry")]
     fn sinh(&self) -> Self {
         self.clone().inner.sinh().into()
     }
@@ -554,6 +580,14 @@ impl PyExpr {
 
     fn pow(&self, exponent: Self) -> Self {
         self.clone().inner.pow(exponent.inner).into()
+    }
+
+    fn sqrt(&self) -> Self {
+        self.clone().inner.sqrt().into()
+    }
+
+    fn cbrt(&self) -> Self {
+        self.clone().inner.cbrt().into()
     }
 
     fn cumsum(&self, reverse: bool) -> Self {
@@ -1112,12 +1146,12 @@ impl PyExpr {
             .with_fmt("extend")
             .into()
     }
-    fn any(&self) -> Self {
-        self.inner.clone().any().into()
+    fn any(&self, drop_nulls: bool) -> Self {
+        self.inner.clone().any(drop_nulls).into()
     }
 
-    fn all(&self) -> Self {
-        self.inner.clone().all().into()
+    fn all(&self, drop_nulls: bool) -> Self {
+        self.inner.clone().all(drop_nulls).into()
     }
 
     fn log(&self, base: f64) -> Self {
@@ -1145,9 +1179,5 @@ impl PyExpr {
             IsSorted::Ascending
         };
         self.inner.clone().set_sorted_flag(is_sorted).into()
-    }
-
-    fn cache(&self) -> Self {
-        self.inner.clone().cache().into()
     }
 }

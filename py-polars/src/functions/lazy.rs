@@ -1,7 +1,6 @@
 use polars::lazy::dsl;
 use polars::lazy::dsl::Expr;
 use polars::prelude::*;
-use polars_core::datatypes::TimeZone;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
@@ -9,9 +8,7 @@ use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 use crate::apply::lazy::binary_lambda;
 use crate::conversion::{get_lf, Wrap};
 use crate::expr::ToExprs;
-use crate::prelude::{
-    vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, ObjectValue,
-};
+use crate::prelude::{vec_extract_wrapped, DataType, DatetimeArgs, DurationArgs, ObjectValue};
 use crate::{apply, PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
 
 macro_rules! set_unwrapped_or_0 {
@@ -164,6 +161,16 @@ pub fn cov(a: PyExpr, b: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
+    y.inner.arctan2(x.inner).into()
+}
+
+#[pyfunction]
+pub fn arctan2d(y: PyExpr, x: PyExpr) -> PyExpr {
+    y.inner.arctan2(x.inner).degrees().into()
+}
+
+#[pyfunction]
 pub fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
     let exprs = exprs.to_exprs();
 
@@ -177,29 +184,6 @@ pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
     dsl::cumreduce_exprs(func, exprs).into()
-}
-
-#[pyfunction]
-pub fn date_range_lazy(
-    start: PyExpr,
-    end: PyExpr,
-    every: &str,
-    closed: Wrap<ClosedWindow>,
-    time_unit: Option<Wrap<TimeUnit>>,
-    time_zone: Option<TimeZone>,
-) -> PyExpr {
-    let start = start.inner;
-    let end = end.inner;
-    let every = Duration::parse(every);
-    dsl::functions::date_range(
-        start,
-        end,
-        every,
-        closed.0,
-        time_unit.map(|x| x.0),
-        time_zone,
-    )
-    .into()
 }
 
 #[pyfunction]
@@ -424,19 +408,6 @@ pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, ddof: u8, propagate_nans: bool) 
     {
         panic!("activate 'propagate_nans'")
     }
-}
-
-#[pyfunction]
-pub fn time_range_lazy(
-    start: PyExpr,
-    end: PyExpr,
-    every: &str,
-    closed: Wrap<ClosedWindow>,
-) -> PyExpr {
-    let start = start.inner;
-    let end = end.inner;
-    let every = Duration::parse(every);
-    dsl::functions::time_range(start, end, every, closed.0).into()
 }
 
 #[pyfunction]

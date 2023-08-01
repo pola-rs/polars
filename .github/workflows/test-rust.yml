@@ -3,7 +3,7 @@ name: Test Rust
 on:
   pull_request:
     paths:
-      - polars/**
+      - crates/**
       - examples/**
       - Cargo.toml
       - .github/workflows/test-rust.yml
@@ -11,7 +11,7 @@ on:
     branches:
       - main
     paths:
-      - polars/**
+      - crates/**
       - examples/**
       - Cargo.toml
       - .github/workflows/test-rust.yml
@@ -27,7 +27,7 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
 

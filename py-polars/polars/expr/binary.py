@@ -28,7 +28,8 @@ class ExprBinaryNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Expr
+            Expression of data type :class:`Boolean`.
 
         See Also
         --------
@@ -74,7 +75,8 @@ class ExprBinaryNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Expr
+            Expression of data type :class:`Boolean`.
 
         See Also
         --------
@@ -120,7 +122,8 @@ class ExprBinaryNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Expr
+            Expression of data type :class:`Boolean`.
 
         See Also
         --------
@@ -188,7 +191,9 @@ class ExprBinaryNameSpace:
 
         Returns
         -------
-        Binary array with values encoded using provided encoding
+        Expr
+            Expression of data type :class:`Utf8` with values encoded using provided
+            encoding.
 
         Examples
         --------
@@ -211,6 +216,7 @@ class ExprBinaryNameSpace:
         │ yellow ┆ [binary data] ┆ ffff00           │
         │ blue   ┆ [binary data] ┆ 0000ff           │
         └────────┴───────────────┴──────────────────┘
+
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.bin_hex_encode())

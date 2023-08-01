@@ -10,4 +10,4 @@ write_output = ["polars/ipc", "polars/parquet"]
 default = ["write_output"]
 
 [dependencies]
-polars = { path = "../../polars", features = ["lazy", "csv", "ipc"] }
+polars = { path = "../../crates/polars", features = ["lazy", "csv", "ipc"] }

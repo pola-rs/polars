@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Iterator
+from pathlib import Path
+from typing import Iterator
 
 import pytest
 
@@ -9,9 +10,6 @@ import polars as pl
 from polars.config import _get_float_fmt
 from polars.exceptions import StringCacheMismatchError
 from polars.testing import assert_frame_equal
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
@@ -531,7 +529,7 @@ def test_config_load_save(tmp_path: Path) -> None:
 
         # ...load back from config...
         if file is not None:
-            assert os.path.isfile(cfg)
+            assert Path(cfg).is_file()
         pl.Config.load(cfg)
 
         # ...and confirm the saved options were set.

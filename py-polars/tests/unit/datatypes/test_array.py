@@ -37,6 +37,19 @@ def test_array_construction() -> None:
     assert s.dtype == dtype
     assert s.to_list() == payload
 
+    # create using schema
+    df = pl.DataFrame(
+        schema={
+            "a": pl.Array(width=3, inner=pl.Float32),
+            "b": pl.Array(width=5, inner=pl.Datetime("ms")),
+        }
+    )
+    assert df.dtypes == [
+        pl.Array(width=3, inner=pl.Float32),
+        pl.Array(width=5, inner=pl.Datetime("ms")),
+    ]
+    assert df.rows() == []
+
 
 def test_array_in_groupby() -> None:
     df = pl.DataFrame(

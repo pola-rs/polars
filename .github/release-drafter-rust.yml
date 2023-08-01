@@ -6,3 +6,10 @@ tag-prefix: rs-
 
 include-labels:
   - rust
+
+version-resolver:
+  minor:
+    labels:
+      - breaking
+      - breaking rust
+  default: patch

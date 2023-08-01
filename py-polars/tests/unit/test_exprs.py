@@ -976,23 +976,6 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}
 
 
-def test_cache_expr(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    df = pl.DataFrame(
-        {
-            "x": [3, 3, 3, 5, 8],
-        }
-    )
-    x = (pl.col("x") * 10).cache()
-
-    assert (df.groupby(1).agg([x * x * x])).to_dict(False) == {
-        "literal": [1],
-        "x": [[27000, 27000, 27000, 125000, 512000]],
-    }
-    _, err = capfd.readouterr()
-    assert """cache hit: [(col("x")) * (10)].cache()""" in err
-
-
 @pytest.mark.parametrize(
     ("const", "dtype"),
     [
