@@ -26,18 +26,17 @@ def when(condition: IntoExpr) -> pl.When:
     appended at the end. If not appended, and none of the conditions are `True`, `None`
     will be returned.
 
-    .. warning::
-        Polars evaluates all branches of a conditional statement, and only subsequently
-        discards the results from non-matching branches. This makes relying on the
-        condition to prevent type-related errors / invalid operations
-        within specific branches (e.g., attempting to cast NaN float values to Int,
-        or parsing dates from malformed strings) ineffective.
-
     Parameters
     ----------
     condition
         The condition for applying the subsequent statement.
         Accepts a boolean expression. String input is parsed as a column name.
+
+    Warnings
+    --------
+    Polars computes all expressions passed to `when-then-otherwise` in parallel and
+    filters afterwards. This means each expression must be valid on its own, regardless
+    of the conditions in the `when-then-otherwise` chain.
 
     Examples
     --------
