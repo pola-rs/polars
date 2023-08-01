@@ -13,7 +13,7 @@ use crate::executors::sinks::groupby::GenericGroupby2;
 use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
-use crate::operators::{Operator, Sink, Sink as SinkTrait, Source};
+use crate::operators::{Operator, Sink as SinkTrait, Source};
 use crate::pipeline::PipeLine;
 
 fn exprs_to_physical<F>(
@@ -147,6 +147,7 @@ where
                             Box::new(IpcSink::new(path, *options, input_schema.as_ref())?)
                                 as Box<dyn SinkTrait>
                         }
+                        #[allow(unreachable_patterns)]
                         _ => unreachable!(),
                     }
                 }
@@ -169,10 +170,11 @@ where
                         )?)
                             as Box<dyn SinkTrait>,
                         #[cfg(feature = "ipc")]
-                        FileType::Ipc(ipc_options) => {
+                        FileType::Ipc(_ipc_options) => {
                             // TODO: support Ipc as well
                             todo!("For now, only parquet cloud files are supported");
                         }
+                        #[allow(unreachable_patterns)]
                         _ => unreachable!(),
                     }
                 }
