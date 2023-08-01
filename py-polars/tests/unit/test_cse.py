@@ -214,6 +214,7 @@ def test_cse_expr_selection_streaming(monkeypatch: Any, capfd: Any) -> None:
     assert "df -> hstack[cse] -> ordered_sink" in err
 
 
+@pytest.mark.skip(reason="activate once fixed")
 def test_cse_expr_groupby() -> None:
     q = pl.LazyFrame(
         {
@@ -269,3 +270,24 @@ def test_windows_cse_excluded() -> None:
         "c_diff": [None, 2, -2, 1, 1, 1, -4],
         "c_diff_by_a": [None, 2, -2, None, 1, 1, None],
     }
+
+
+def test_cse_groupby_10215() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "a": [1, 2, 3],
+                "b": [1, 1, 1],
+            }
+        )
+        .lazy()
+        .groupby(
+            "a",
+        )
+        .agg(
+            (pl.col("a").sum() * pl.col("a").sum()).alias("x"),
+            (pl.col("b").sum() * pl.col("b").sum()).alias("y"),
+        )
+        .collect()
+        .sort("a")
+    ).to_dict(False) == {"a": [1, 2, 3], "x": [1, 4, 9], "y": [1, 1, 1]}

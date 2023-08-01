@@ -526,44 +526,45 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                     node.replace(lp);
                 }
             }
-            ALogicalPlan::Aggregate {
-                input,
-                keys,
-                aggs,
-                options,
-                maintain_order,
-                apply,
-                schema,
-            } => {
-                if let Some(aggs) =
-                    self.find_cse(aggs, &mut expr_arena, &mut id_array_offsets, true)?
-                {
-                    let keys = keys.clone();
-                    let options = options.clone();
-                    let schema = schema.clone();
-                    let apply = apply.clone();
-                    let maintain_order = *maintain_order;
-                    let input = *input;
-
-                    let input = node.with_arena_mut(|lp_arena| {
-                        let lp = ALogicalPlanBuilder::new(input, &mut expr_arena, lp_arena)
-                            .with_columns(aggs.cse_exprs().to_vec())
-                            .build();
-                        lp_arena.add(lp)
-                    });
-
-                    let lp = ALogicalPlan::Aggregate {
-                        input,
-                        keys,
-                        aggs: aggs.default_exprs().to_vec(),
-                        options,
-                        schema,
-                        maintain_order,
-                        apply,
-                    };
-                    node.replace(lp);
-                }
-            }
+            // TODO! activate once fixed
+            // ALogicalPlan::Aggregate {
+            //     input,
+            //     keys,
+            //     aggs,
+            //     options,
+            //     maintain_order,
+            //     apply,
+            //     schema,
+            // } => {
+            //     if let Some(aggs) =
+            //         self.find_cse(aggs, &mut expr_arena, &mut id_array_offsets, true)?
+            //     {
+            //         let keys = keys.clone();
+            //         let options = options.clone();
+            //         let schema = schema.clone();
+            //         let apply = apply.clone();
+            //         let maintain_order = *maintain_order;
+            //         let input = *input;
+            //
+            //         let input = node.with_arena_mut(|lp_arena| {
+            //             let lp = ALogicalPlanBuilder::new(input, &mut expr_arena, lp_arena)
+            //                 .with_columns(aggs.cse_exprs().to_vec())
+            //                 .build();
+            //             lp_arena.add(lp)
+            //         });
+            //
+            //         let lp = ALogicalPlan::Aggregate {
+            //             input,
+            //             keys,
+            //             aggs: aggs.default_exprs().to_vec(),
+            //             options,
+            //             schema,
+            //             maintain_order,
+            //             apply,
+            //         };
+            //         node.replace(lp);
+            //     }
+            // }
             _ => {}
         };
         std::mem::swap(self.expr_arena, &mut expr_arena);
