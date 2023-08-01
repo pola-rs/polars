@@ -407,15 +407,14 @@ impl LogicalPlan {
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             }
             Sink { input, payload, .. } => {
-                use crate::logical_plan::Sink::*;
                 let current_node = DotNode {
                     branch,
                     id,
                     fmt: match payload {
-                        Memory => "SINK (memory)",
-                        File(..) => "SINK (file)",
+                        SinkType::Memory => "SINK (MEMORY)",
+                        SinkType::File{..} => "SINK (FILE)",
                         #[cfg(feature = "cloud")]
-                        Cloud(..) => "SINK (cloud)",
+                        SinkType::Cloud{..} => "SINK (CLOUD)",
                     },
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;

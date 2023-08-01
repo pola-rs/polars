@@ -229,13 +229,11 @@ impl LogicalPlan {
                 input._format(f, sub_indent)
             }
             Sink { input, payload, .. } => {
-                use crate::logical_plan::Sink::*;
-
                 let name = match payload {
-                    Memory => "SINK (memory)",
-                    File(..) => "SINK (file)",
+                    SinkType::Memory => "SINK (memory)",
+                    SinkType::File{..} => "SINK (file)",
                     #[cfg(feature = "cloud")]
-                    Cloud(..) => "SINK (cloud)",
+                    SinkType::Cloud{..} => "SINK (cloud)",
                 };
                 write!(f, "{:indent$}{}", "", name)?;
                 input._format(f, sub_indent)

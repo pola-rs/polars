@@ -288,6 +288,16 @@ pub struct AnonymousScanOptions {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
+pub enum SinkType {
+    Memory,
+    File { path: Arc<PathBuf>, file_type: FileType },
+    #[cfg(feature = "cloud")]
+    Cloud { uri: Arc<String>, file_type: FileType, cloud_options: Option<CloudOptions> },
+}
+
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug)]
 pub struct FileSinkOptions {
     pub path: Arc<PathBuf>,
     pub file_type: FileType,

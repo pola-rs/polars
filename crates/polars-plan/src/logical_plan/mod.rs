@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-#[cfg(feature = "parquet")]
+#[cfg(feature = "cloud")]
 use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 
@@ -257,7 +257,7 @@ pub enum LogicalPlan {
     },
     Sink{
         input: Box<LogicalPlan>,
-        payload: Sink
+        payload: SinkType
     },
 }
 
@@ -290,11 +290,3 @@ impl LogicalPlan {
     }
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
-pub enum Sink {
-    Memory,
-    File(FileSinkOptions),
-    #[cfg(feature = "cloud")]
-    Cloud(CloudSinkOptions),
-}
