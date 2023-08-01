@@ -300,7 +300,7 @@ pub enum FileType {
     Parquet(ParquetWriteOptions),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
-    Memory,
+    // Memory,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -308,7 +308,6 @@ pub enum FileType {
 #[cfg(feature = "cloud")]
 pub struct CloudSinkOptions {
     pub uri: Arc<String>,
+    pub file_type: FileType,
     pub cloud_options: Option<CloudOptions>,
-    #[cfg(feature = "parquet")]
-    pub parquet_options: ParquetWriteOptions,
 }

@@ -255,14 +255,9 @@ pub enum LogicalPlan {
         contexts: Vec<LogicalPlan>,
         schema: SchemaRef,
     },
-    FileSink {
+    Sink{
         input: Box<LogicalPlan>,
-        payload: FileSinkOptions,
-    },
-    #[cfg(feature = "cloud")]
-    CloudSink {
-        input: Box<LogicalPlan>,
-        payload: CloudSinkOptions,
+        payload: Sink
     },
 }
 
@@ -293,4 +288,13 @@ impl LogicalPlan {
 
         Ok((node, lp_arena, expr_arena))
     }
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug)]
+pub enum Sink {
+    Memory,
+    File(FileSinkOptions),
+    #[cfg(feature = "cloud")]
+    Cloud(CloudSinkOptions),
 }

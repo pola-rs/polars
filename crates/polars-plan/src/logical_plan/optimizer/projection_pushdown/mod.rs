@@ -701,18 +701,7 @@ impl ProjectionPushDown {
                 )
             }
             // These nodes only have inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ FileSink { .. } => process_generic(
-                self,
-                lp,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            ),
-
-            #[cfg(feature = "cloud")]
-            lp @ CloudSink { .. } => process_generic(
+            lp @ Slice { .. } | lp @ Sink { .. } => process_generic(
                 self,
                 lp,
                 acc_projections,

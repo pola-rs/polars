@@ -373,14 +373,9 @@ pub fn to_alp(
                 schema,
             }
         }
-        LogicalPlan::FileSink { input, payload } => {
+        LogicalPlan::Sink { input, payload } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::FileSink { input, payload }
-        }
-        #[cfg(feature = "cloud")]
-        LogicalPlan::CloudSink { input, payload } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::CloudSink { input, payload }
+            ALogicalPlan::Sink { input, payload }
         }
     };
     Ok(lp_arena.add(v))
@@ -813,14 +808,9 @@ impl ALogicalPlan {
                     schema,
                 }
             }
-            ALogicalPlan::FileSink { input, payload } => {
+            ALogicalPlan::Sink { input, payload } => {
                 let input = Box::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::FileSink { input, payload }
-            }
-            #[cfg(feature = "cloud")]
-            ALogicalPlan::CloudSink { input, payload } => {
-                let input = Box::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::CloudSink { input, payload }
+                LogicalPlan::Sink { input, payload }
             }
         }
     }

@@ -8,7 +8,7 @@ use polars_utils::arena::{Arena, Node};
 use super::projection_expr::*;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::FileInfo;
-use crate::logical_plan::FileScan;
+use crate::logical_plan::{FileScan, Sink::*};
 use crate::prelude::*;
 use crate::utils::PushNode;
 
@@ -113,15 +113,10 @@ pub enum ALogicalPlan {
         contexts: Vec<Node>,
         schema: SchemaRef,
     },
-    FileSink {
+    Sink {
         input: Node,
-        payload: FileSinkOptions,
-    },
-    #[cfg(feature = "cloud")]
-    CloudSink {
-        input: Node,
-        payload: CloudSinkOptions,
-    },
+        payload: Sink,
+    }
 }
 
 impl Default for ALogicalPlan {
@@ -170,9 +165,14 @@ impl ALogicalPlan {
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
             ExtContext { .. } => "ext_context",
-            FileSink { .. } => "file_sink",
-            #[cfg(feature = "cloud")]
-            CloudSink { .. } => "cloud_sink",
+            Sink { payload, .. } => {
+                match payload {
+                    Memory => "sink (memory)",
+                    File(..) => "sink (file)",
+                    #[cfg(feature = "cloud")]
+                    Cloud(..) => "sink (cloud)"
+                }
+            },
         }
     }
 
@@ -206,7 +206,7 @@ impl ALogicalPlan {
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
-            Distinct { input, .. } | FileSink { input, .. } => {
+            Distinct { input, .. } | Sink { input, .. } => {
                 return arena.get(*input).schema(arena)
             }
             #[cfg(feature = "cloud")]
@@ -386,12 +386,7 @@ impl ALogicalPlan {
                 contexts: inputs,
                 schema: schema.clone(),
             },
-            FileSink { payload, .. } => FileSink {
-                input: inputs.pop().unwrap(),
-                payload: payload.clone(),
-            },
-            #[cfg(feature = "cloud")]
-            CloudSink { payload, .. } => CloudSink {
+            Sink { payload, .. } => Sink {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
@@ -435,10 +430,7 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
-            ExtContext { .. } | FileSink { .. } => {}
-
-            #[cfg(feature = "cloud")]
-            CloudSink { .. } => {}
+            ExtContext { .. } | Sink { .. } => {}
         }
     }
 
@@ -483,9 +475,7 @@ impl ALogicalPlan {
             HStack { input, .. } => *input,
             Distinct { input, .. } => *input,
             MapFunction { input, .. } => *input,
-            FileSink { input, .. } => *input,
-            #[cfg(feature = "cloud")]
-            CloudSink { input, .. } => *input,
+            Sink { input, .. } => *input,
             ExtContext {
                 input, contexts, ..
             } => {
