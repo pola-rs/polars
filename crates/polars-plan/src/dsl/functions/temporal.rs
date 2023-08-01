@@ -36,6 +36,24 @@ pub struct DatetimeArgs {
     pub minute: Expr,
     pub second: Expr,
     pub microsecond: Expr,
+    pub time_unit: TimeUnit,
+    pub time_zone: Option<TimeZone>,
+}
+
+impl Default for DatetimeArgs {
+    fn default() -> Self {
+        Self {
+            year: lit(1970),
+            month: lit(1),
+            day: lit(1),
+            hour: lit(0),
+            minute: lit(0),
+            second: lit(0),
+            microsecond: lit(0),
+            time_unit: TimeUnit::Microseconds,
+            time_zone: None,
+        }
+    }
 }
 
 impl DatetimeArgs {
@@ -47,10 +65,7 @@ impl DatetimeArgs {
             year,
             month,
             day,
-            hour: lit(0),
-            minute: lit(0),
-            second: lit(0),
-            microsecond: lit(0),
+            ..Default::default()
         }
     }
 
@@ -78,6 +93,13 @@ impl DatetimeArgs {
     impl_unit_setter!(with_minute(minute));
     impl_unit_setter!(with_second(second));
     impl_unit_setter!(with_microsecond(microsecond));
+
+    pub fn with_time_unit(self, time_unit: TimeUnit) -> Self {
+        Self { time_unit, ..self }
+    }
+    pub fn with_time_zone(self, time_zone: Option<TimeZone>) -> Self {
+        Self { time_zone, ..self }
+    }
 }
 
 /// Construct a column of `Datetime` from the provided [`DatetimeArgs`].
@@ -157,9 +179,9 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
             })
             .collect_trusted();
 
-        Ok(Some(
-            ca.into_datetime(TimeUnit::Microseconds, None).into_series(),
-        ))
+        let mut s = ca.into_datetime(TimeUnit::Microseconds, None).into_series();
+        s.rename("datetime");
+        Ok(Some(s))
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {
@@ -168,12 +190,12 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Microseconds, None)),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
+            allow_rename: true,
             input_wildcard_expansion: true,
             fmt_str: "datetime",
             ..Default::default()
         },
     }
-    .alias("datetime")
 }
 
 /// Arguments used by `duration` in order to produce an `Expr` of `Duration`
