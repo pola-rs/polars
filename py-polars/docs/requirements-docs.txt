@@ -14,7 +14,7 @@ pydata-sphinx-theme==0.13.3
 sphinx==6.2.1
 sphinx-autosummary-accessors==2023.4.0
 sphinx-copybutton==0.5.1
-sphinx-design==0.4.1
+sphinx-design==0.5.0
 sphinx-favicon==1.0.1
 sphinxcontrib-applehelp==1.0.4
 sphinxcontrib-devhelp==1.0.2
