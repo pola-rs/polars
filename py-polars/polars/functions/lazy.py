@@ -496,6 +496,9 @@ def avg(column: str | Series) -> Expr | float:
     """
     Alias for mean.
 
+    .. deprecated:: 0.18.12
+        Use ``mean`` instead.
+
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
