@@ -555,19 +555,9 @@ impl LazyFrame {
             None
         };
 
-        // file sink should be replaced
+        // sink should be replaced
         let no_file_sink = if check_sink {
-            #[cfg(not(feature = "cloud"))]
-            {
-                !matches!(lp_arena.get(lp_top), ALogicalPlan::FileSink { .. })
-            }
-            #[cfg(feature = "cloud")]
-            {
-                !matches!(
-                    lp_arena.get(lp_top),
-                    ALogicalPlan::FileSink { .. } | ALogicalPlan::CloudSink { .. }
-                )
-            }
+            !matches!(lp_arena.get(lp_top), ALogicalPlan::Sink { .. })
         } else {
             true
         };
