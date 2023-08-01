@@ -122,21 +122,7 @@ pub(super) fn construct(
         // the file sink is always to the top of the tree
         // not every branch has a final sink. For instance rhs join branches
         if let Some(node) = branch.get_final_sink() {
-            let matches = {
-                #[cfg(not(feature = "cloud"))]
-                {
-                    matches!(lp_arena.get(node), ALogicalPlan::FileSink { .. })
-                }
-                #[cfg(feature = "cloud")]
-                {
-                    matches!(
-                        lp_arena.get(node),
-                        ALogicalPlan::FileSink { .. } | ALogicalPlan::CloudSink { .. }
-                    )
-                }
-            };
-
-            if matches {
+            if matches!(lp_arena.get(node), ALogicalPlan::Sink { .. }) {
                 final_sink = Some(node)
             }
         }
@@ -205,22 +191,13 @@ pub(super) fn construct(
         return Ok(None);
     };
     let insertion_location = match lp_arena.get(final_sink) {
-        FileSink {
-            input,
-            payload: FileSinkOptions { file_type, .. },
-        } => {
-            // this was inserted only during conversion and does not exist
-            // in the original tree, so we take the input, as that's where
-            // we connect into the original tree.
-            if matches!(file_type, FileType::Memory) {
-                *input
-            } else {
-                // default case if the tree ended with a file_sink
-                final_sink
-            }
-        }
-        #[cfg(feature = "cloud")]
-        CloudSink { .. } => final_sink,
+        // this was inserted only during conversion and does not exist
+        // in the original tree, so we take the input, as that's where
+        // we connect into the original tree.
+        Sink { input, payload: SinkType::Memory} => *input,
+        // Other sinks were not inserted during conversion,
+        // so they are returned as-is
+        Sink { .. } => final_sink,
         _ => unreachable!(),
     };
     // keep the original around for formatting purposes

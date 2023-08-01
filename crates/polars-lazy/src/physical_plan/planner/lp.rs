@@ -151,14 +151,13 @@ pub fn create_physical_plan(
         #[cfg(feature = "python")]
         PythonScan { options, .. } => Ok(Box::new(executors::PythonScanExec { options })),
         Sink { payload, .. } => {
-            use polars_plan::logical_plan::Sink::*;
             match payload {
-                Memory => panic!("Memory Sink not supported in the standard engine."),
-                File(..) => panic!(
+                SinkType::Memory => panic!("Memory Sink not supported in the standard engine."),
+                SinkType::File{..} => panic!(
                     "sink_parquet not yet supported in standard engine. Use 'collect().write_parquet()'"
                 ),
                 #[cfg(feature = "cloud")]
-                Cloud(..) => panic!("Cloud Sink not supported in standard engine.")
+                SinkType::Cloud{..} => panic!("Cloud Sink not supported in standard engine.")
             }
         }
         Union { inputs, options } => {
