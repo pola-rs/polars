@@ -37,10 +37,20 @@ fn process_non_streamable_node(
 fn insert_file_sink(mut root: Node, lp_arena: &mut Arena<ALogicalPlan>) -> Node {
     // The pipelines need a final sink, we insert that here.
     // this allows us to split at joins/unions and share a sink
-    if !matches!(
-        lp_arena.get(root),
-        ALogicalPlan::FileSink { .. } | ALogicalPlan::CloudSink { .. }
-    ) {
+    let matches = {
+        #[cfg(not(feature = "cloud"))]
+        {
+            !matches!(lp_arena.get(root), ALogicalPlan::FileSink { .. })
+        }
+        #[cfg(feature = "cloud")]
+        {
+            !matches!(
+                lp_arena.get(root),
+                ALogicalPlan::FileSink { .. } | ALogicalPlan::CloudSink { .. }
+            )
+        }
+    };
+    if matches {
         root = lp_arena.add(ALogicalPlan::FileSink {
             input: root,
             payload: FileSinkOptions {
@@ -162,6 +172,7 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push((*input, state, current_idx))
             }
+            #[cfg(feature = "cloud")]
             CloudSink { input, .. } => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Sink(root));
