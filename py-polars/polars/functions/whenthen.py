@@ -25,6 +25,12 @@ def when(expr: IntoExpr) -> When:
     appended at the end. If not appended, and none of the conditions are `True`, `None`
     will be returned.
 
+    .. warning::
+        Polars evaluates all branches of a conditional statement, and only subsequently
+        discards the results from non-matching branches. It's important to be aware that relying
+        on the condition to prevent type-related errors within specific branches
+        (e.g., attempting to cast NaN float values to Int) may not be effective.
+
     Examples
     --------
     Below we add a column with the value 1, where column "foo" > 2 and the value -1
