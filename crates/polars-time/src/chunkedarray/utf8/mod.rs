@@ -30,12 +30,12 @@ where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
     let result = patterns::DATETIME_Y_M_D
-        .into_iter()
+        .iter()
         .find(|fmt| convert(val, fmt).is_ok())
         .copied();
     result.or_else(|| {
         patterns::DATETIME_D_M_Y
-            .into_iter()
+            .iter()
             .find(|fmt| convert(val, fmt).is_ok())
             .copied()
     })
@@ -47,12 +47,12 @@ where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
     let result = patterns::DATE_Y_M_D
-        .into_iter()
+        .iter()
         .find(|fmt| convert(val, fmt).is_ok())
         .copied();
     result.or_else(|| {
         patterns::DATE_D_M_Y
-            .into_iter()
+            .iter()
             .find(|fmt| convert(val, fmt).is_ok())
             .copied()
     })
