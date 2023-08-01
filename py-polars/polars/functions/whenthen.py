@@ -32,6 +32,12 @@ def when(condition: IntoExpr) -> pl.When:
         The condition for applying the subsequent statement.
         Accepts a boolean expression. String input is parsed as a column name.
 
+    Warnings
+    --------
+    Polars computes all expressions passed to `when-then-otherwise` in parallel and
+    filters afterwards. This means each expression must be valid on its own, regardless
+    of the conditions in the `when-then-otherwise` chain.
+
     Examples
     --------
     Below we add a column with the value 1, where column "foo" > 2 and the value -1
