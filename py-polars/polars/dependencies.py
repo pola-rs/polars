@@ -173,7 +173,7 @@ else:
 
     # heavy/optional third party libs
     dataframe_api_compat, _DATAFRAME_API_COMPAT_AVAILABLE = _lazy_import(
-        "dataframe-api-compat"
+        "dataframe_api_compat"
     )
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")

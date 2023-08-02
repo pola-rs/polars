@@ -8,20 +8,20 @@ import pytest
 
 import polars as pl
 
-pytest.importorskip("dataframe-api-compat")
+pytest.importorskip("dataframe_api_compat")
 
 
 def test_dataframe() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    df = df.__dataframe_consortium_standard__()
+    df_pl = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    df = df_pl.__dataframe_consortium_standard__()
     result = df.get_column_names()
     expected = ["a", "b"]
     assert result == expected
 
 
 def test_lazyframe() -> None:
-    df = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    df = df.__dataframe_consortium_standard__()
+    df_pl = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    df = df_pl.__dataframe_consortium_standard__()
     result = df.get_column_names()
     expected = ["a", "b"]
     assert result == expected
@@ -29,7 +29,7 @@ def test_lazyframe() -> None:
 
 def test_series() -> None:
     ser = pl.Series([1, 2, 3])
-    ser = ser.__column_consortium_standard__()
-    result = ser.get_value(1)
+    col = ser.__column_consortium_standard__()
+    result = col.get_value(1)
     expected = 2
     assert result == expected
