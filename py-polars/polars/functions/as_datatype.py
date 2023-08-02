@@ -34,6 +34,7 @@ def datetime_(
     *,
     time_unit: TimeUnit = "us",
     time_zone: str | None = None,
+    use_earliest: bool | None = None,
 ) -> Expr:
     """
     Create a Polars literal expression of type Datetime.
@@ -56,8 +57,15 @@ def datetime_(
         Column or literal, ranging from 0-999999.
     time_unit : {'us', 'ms', 'ns'}
         Time unit of the resulting expression.
-    time_zone,
+    time_zone
         Time zone of the resulting expression.
+    use_earliest
+        Determine how to deal with ambiguous datetimes:
+
+        - ``None`` (default): raise
+        - ``True``: use the earliest datetime
+        - ``False``: use the latest datetime
+
 
     Returns
     -------
@@ -89,6 +97,7 @@ def datetime_(
             microsecond,
             time_unit,
             time_zone,
+            use_earliest,
         )
     )
 

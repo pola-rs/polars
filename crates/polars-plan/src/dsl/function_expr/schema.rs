@@ -99,6 +99,7 @@ impl FunctionExpr {
                     DatetimeFunction {
                         time_unit,
                         time_zone,
+                        use_earliest: _,
                     } => {
                         return Ok(Field::new(
                             "datetime",

@@ -10,6 +10,7 @@ pub(super) fn datetime(
     s: &[Series],
     time_unit: &TimeUnit,
     time_zone: Option<&str>,
+    use_earliest: Option<bool>,
 ) -> PolarsResult<Series> {
     use polars_core::export::chrono::NaiveDate;
     use polars_core::utils::CustomIterTools;
@@ -95,10 +96,16 @@ pub(super) fn datetime(
         #[cfg(feature = "timezones")]
         Some(_) => {
             let mut ca = ca.into_datetime(*time_unit, None);
-            ca = replace_time_zone(&ca, time_zone, None)?;
+            ca = replace_time_zone(&ca, time_zone, use_earliest)?;
             ca
         }
-        _ => ca.into_datetime(*time_unit, None),
+        _ => {
+            polars_ensure!(
+                time_zone.is_none() && use_earliest.is_none(),
+                ComputeError: "cannot make use of the `time_zone` and `use_earliest` arguments without the 'timezones' feature enabled."
+            );
+            ca.into_datetime(*time_unit, None)
+        }
     };
 
     let mut s = ca.into_series();

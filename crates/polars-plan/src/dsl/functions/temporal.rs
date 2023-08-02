@@ -38,6 +38,7 @@ pub struct DatetimeArgs {
     pub microsecond: Expr,
     pub time_unit: TimeUnit,
     pub time_zone: Option<TimeZone>,
+    pub use_earliest: Option<bool>,
 }
 
 impl Default for DatetimeArgs {
@@ -52,6 +53,7 @@ impl Default for DatetimeArgs {
             microsecond: lit(0),
             time_unit: TimeUnit::Microseconds,
             time_zone: None,
+            use_earliest: None,
         }
     }
 }
@@ -101,6 +103,13 @@ impl DatetimeArgs {
     pub fn with_time_zone(self, time_zone: Option<TimeZone>) -> Self {
         Self { time_zone, ..self }
     }
+    #[cfg(feature = "timezones")]
+    pub fn with_use_earliest(self, use_earliest: Option<bool>) -> Self {
+        Self {
+            use_earliest,
+            ..self
+        }
+    }
 }
 
 /// Construct a column of `Datetime` from the provided [`DatetimeArgs`].
@@ -115,6 +124,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     let microsecond = args.microsecond;
     let time_unit = args.time_unit;
     let time_zone = args.time_zone;
+    let use_earliest = args.use_earliest;
 
     let input = vec![year, month, day, hour, minute, second, microsecond];
 
@@ -123,6 +133,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
             time_unit,
             time_zone,
+            use_earliest,
         }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,

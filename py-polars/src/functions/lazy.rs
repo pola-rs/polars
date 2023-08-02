@@ -188,7 +188,7 @@ pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
-#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None))]
+#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None, use_earliest=None))]
 pub fn datetime(
     year: PyExpr,
     month: PyExpr,
@@ -199,6 +199,7 @@ pub fn datetime(
     microsecond: Option<PyExpr>,
     time_unit: Wrap<TimeUnit>,
     time_zone: Option<TimeZone>,
+    use_earliest: Option<bool>,
 ) -> PyExpr {
     let year = year.inner;
     let month = month.inner;
@@ -216,6 +217,7 @@ pub fn datetime(
         microsecond,
         time_unit,
         time_zone,
+        use_earliest,
     };
     dsl::datetime(args).into()
 }

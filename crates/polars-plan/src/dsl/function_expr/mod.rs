@@ -802,8 +802,14 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             DatetimeFunction {
                 time_unit,
                 time_zone,
+                use_earliest,
             } => {
-                map_as_slice!(temporal::datetime, &time_unit, time_zone.as_deref())
+                map_as_slice!(
+                    temporal::datetime,
+                    &time_unit,
+                    time_zone.as_deref(),
+                    use_earliest
+                )
             }
         }
     }
