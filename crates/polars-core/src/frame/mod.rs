@@ -2507,7 +2507,7 @@ impl DataFrame {
     /// * Min fill (replace None with the minimum of the whole array)
     /// * Max fill (replace None with the maximum of the whole array)
     ///
-    /// See the method on [Series](crate::series::SeriesTrait::fill_null) for more info on the `fill_null` operation.
+    /// See the method on [Series](crate::series::Series::fill_null) for more info on the `fill_null` operation.
     pub fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
         let col = self.try_apply_columns_par(&|s| s.fill_null(strategy))?;
 
