@@ -136,6 +136,20 @@ def test_to_date_non_exact_strptime() -> None:
 
 
 @pytest.mark.parametrize(
+    ("value", "attr"),
+    [
+        ("a", "to_date"),
+        ("ab", "to_date"),
+        ("a", "to_datetime"),
+        ("ab", "to_datetime"),
+    ],
+)
+def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
+    with pytest.raises(pl.ComputeError, match="strict conversion to .* failed"):
+        getattr(pl.Series(["2019-01-01", value]).str, attr)(exact=False)
+
+
+@pytest.mark.parametrize(
     ("offset", "time_zone", "tzinfo", "format"),
     [
         ("+01:00", "UTC", timezone(timedelta(hours=1)), "%Y-%m-%dT%H:%M%z"),
