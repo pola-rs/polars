@@ -25,7 +25,7 @@ where
                     .map(|array| array.as_ref().into_iter())
                     .flatten()
                     .enumerate()
-                    .for_each(|(idx , key)| {
+                    .for_each(|(idx, key)| {
                         if this_partition(key.as_u64(), partition_no, n_partitions) {
                             let entry = hash_tbl.entry(*key);
 

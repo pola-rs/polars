@@ -98,6 +98,16 @@ where
     // we pre hash the probing values
     let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(random_state));
 
+    if validate.needs_checks() {
+        validate.validate_probe(
+            &probe_hashes
+                .iter()
+                .map(|arr| arr.iter().map(|(h, _)| *h).collect::<Vec<_>>())
+                .collect(),
+            false,
+        )?;
+    }
+
     let n_tables = hash_tbls.len() as u64;
 
     // probe the hash table.

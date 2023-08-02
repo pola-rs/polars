@@ -113,6 +113,7 @@ where
 {
     // first we hash one relation
     let hash_tbls = if validate.needs_checks() {
+        validate.validate_probe(&probe, false)?;
         let expected_size = build.iter().map(|v| v.as_ref().len()).sum();
         let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();

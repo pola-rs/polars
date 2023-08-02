@@ -131,23 +131,51 @@ impl JoinValidation {
         Ok(())
     }
 
-    pub(super) fn validate_probe(
+    pub(super) fn validate_probe<IntoSlice, T>(
         &self,
-        s_left: &Series,
-        s_right: &Series,
-        build_shortest_table: bool,
-    ) -> PolarsResult<()> {
-        // the shortest relation is built
-        let swap = build_shortest_table && s_left.len() > s_right.len();
-
+        probe: &Vec<IntoSlice>,
+        // In a left join, probe is always in lhs.
+        // In a inner or outer join, it is the longest relationship of both sides.
+        is_rhs: bool,
+    ) -> PolarsResult<()>
+    where
+        IntoSlice: AsRef<[T]> + Send + Sync,
+        T: Send + Hash + Eq + Sync + Copy + AsU64,
+    {
         use JoinValidation::*;
-        // all rhs `Many`s are valid
-        // rhs `One`s need to be checked
-        let valid = match self.swap(swap) {
-            ManyToMany | OneToMany => true,
-            ManyToOne | OneToOne => {
-                let s = if swap { s_left } else { s_right };
-                s.n_unique()? == s.len()
+        // Only check the `prone` side.
+        // The other side use `validate_build` to check
+        let valid = match self.swap(is_rhs) {
+            ManyToMany | ManyToOne => true,
+            OneToMany | OneToOne => {
+                // check any key in prone is duplicated
+                let n_partitions = _set_partition_size();
+                POOL.install(|| {
+                    (0..n_partitions)
+                        .into_par_iter()
+                        .find_any(|partition_no| {
+                            let partition_no = *partition_no as u64;
+                            let n_partitions = n_partitions as u64;
+
+                            let mut hash_set: PlHashSet<T> =
+                                PlHashSet::with_capacity(HASHMAP_INIT_SIZE);
+
+                            probe
+                                .iter()
+                                .map(|array| array.as_ref().into_iter())
+                                .flatten()
+                                .find(|key| {
+                                    if this_partition(key.as_u64(), partition_no, n_partitions) {
+                                        let existed = !hash_set.insert(**key);
+                                        existed
+                                    } else {
+                                        false
+                                    }
+                                })
+                                .is_some()
+                        })
+                        .is_some()
+                })
             }
         };
         polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
@@ -158,13 +186,13 @@ impl JoinValidation {
         &self,
         build_size: usize,
         expected_size: usize,
-        check_rhs: bool,
+        is_rhs: bool,
     ) -> PolarsResult<()> {
         use JoinValidation::*;
 
-        // all lhs `Many`s are valid
-        // lhs `One`s need to be checked
-        let valid = match self.swap(check_rhs) {
+        // Only check the `build` side.
+        // The other side use `validate_prone` to check
+        let valid = match self.swap(is_rhs) {
             ManyToMany | ManyToOne => true,
             OneToMany | OneToOne => build_size == expected_size,
         };

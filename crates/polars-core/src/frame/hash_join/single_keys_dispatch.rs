@@ -13,7 +13,6 @@ impl Series {
         validate: JoinValidation,
     ) -> PolarsResult<LeftJoinIds> {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, false)?;
 
         use DataType::*;
         match lhs.dtype() {
@@ -84,7 +83,6 @@ impl Series {
         validate: JoinValidation,
     ) -> PolarsResult<(InnerJoinIds, bool)> {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, true)?;
 
         use DataType::*;
         match lhs.dtype() {
@@ -121,7 +119,6 @@ impl Series {
         validate: JoinValidation,
     ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, true)?;
 
         use DataType::*;
         match lhs.dtype() {
