@@ -151,6 +151,7 @@ if TYPE_CHECKING:
     import pickle
     import subprocess
 
+    import dataframe_api_compat
     import deltalake
     import fsspec
     import hypothesis
