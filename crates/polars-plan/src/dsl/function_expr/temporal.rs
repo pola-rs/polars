@@ -6,7 +6,6 @@ use polars_time::prelude::*;
 
 use super::*;
 
-#[cfg(feature = "timezones")]
 pub(super) fn datetime(
     s: &[Series],
     time_unit: &TimeUnit,
@@ -92,8 +91,15 @@ pub(super) fn datetime(
         })
         .collect_trusted();
 
-    let mut ca = ca.into_datetime(*time_unit, None);
-    ca = replace_time_zone(&ca, time_zone, None)?;
+    let ca = match time_zone {
+        #[cfg(feature = "timezones")]
+        Some(_) => {
+            let mut ca = ca.into_datetime(*time_unit, None);
+            ca = replace_time_zone(&ca, time_zone, None)?;
+            ca
+        }
+        _ => ca.into_datetime(*time_unit, None),
+    };
 
     let mut s = ca.into_series();
     s.rename("datetime");

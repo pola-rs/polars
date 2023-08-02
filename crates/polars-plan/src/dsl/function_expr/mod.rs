@@ -799,7 +799,6 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     None
                 )
             }
-            #[cfg(feature = "timezones")]
             DatetimeFunction {
                 time_unit,
                 time_zone,

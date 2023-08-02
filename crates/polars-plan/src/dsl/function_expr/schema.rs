@@ -96,7 +96,6 @@ impl FunctionExpr {
                             DataType::List(Box::new(DataType::Time)),
                         ));
                     }
-                    #[cfg(feature = "timezones")]
                     DatetimeFunction {
                         time_unit,
                         time_zone,

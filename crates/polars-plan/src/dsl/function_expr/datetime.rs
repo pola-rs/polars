@@ -64,7 +64,6 @@ pub enum TemporalFunction {
         closed: ClosedWindow,
     },
     Combine(TimeUnit),
-    #[cfg(feature = "timezones")]
     DatetimeFunction {
         time_unit: TimeUnit,
         time_zone: Option<TimeZone>,
@@ -110,7 +109,6 @@ impl Display for TemporalFunction {
             DateRanges { .. } => return write!(f, "date_ranges"),
             TimeRange { .. } => return write!(f, "time_range"),
             TimeRanges { .. } => return write!(f, "time_ranges"),
-            #[cfg(feature = "timezones")]
             DatetimeFunction { .. } => return write!(f, "datetime"),
             Combine(_) => "combine",
         };

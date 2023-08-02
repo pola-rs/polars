@@ -97,13 +97,14 @@ impl DatetimeArgs {
     pub fn with_time_unit(self, time_unit: TimeUnit) -> Self {
         Self { time_unit, ..self }
     }
+    #[cfg(feature = "timezones")]
     pub fn with_time_zone(self, time_zone: Option<TimeZone>) -> Self {
         Self { time_zone, ..self }
     }
 }
 
 /// Construct a column of `Datetime` from the provided [`DatetimeArgs`].
-#[cfg(all(feature = "timezones", feature = "temporal"))]
+#[cfg(feature = "temporal")]
 pub fn datetime(args: DatetimeArgs) -> Expr {
     let year = args.year;
     let month = args.month;
