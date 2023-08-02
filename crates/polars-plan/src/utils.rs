@@ -1,5 +1,5 @@
 use std::fmt::Formatter;
-use std::iter::{FlatMap, Map};
+use std::iter::FlatMap;
 use std::sync::Arc;
 use std::vec::IntoIter;
 
@@ -202,10 +202,12 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
 }
 
 #[allow(clippy::type_complexity)]
-pub fn expr_to_leaf_column_names_iter(expr: &Expr) -> Map<IntoIter<Expr>, fn(Expr) -> Arc<str>> {
+pub fn expr_to_leaf_column_names_iter(
+    expr: &Expr,
+) -> FlatMap<IntoIter<Expr>, Option<Arc<str>>, fn(Expr) -> Option<Arc<str>>> {
     expr_to_root_column_exprs(expr)
         .into_iter()
-        .map(|e| expr_to_leaf_column_name(&e).unwrap())
+        .flat_map(|e| expr_to_leaf_column_name(&e).ok())
 }
 
 /// This should gradually replace expr_to_root_column as this will get all names in the tree.
