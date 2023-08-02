@@ -48,7 +48,13 @@ impl Executor for StackExec {
             let by = self
                 .exprs
                 .iter()
-                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
+                .map(|s| {
+                    profile_name(
+                        s.as_ref(),
+                        self.input_schema.as_ref(),
+                        !self.cse_exprs.is_empty(),
+                    )
+                })
                 .collect::<PolarsResult<Vec<_>>>()?;
             let name = comma_delimited("with_column".to_string(), &by);
             Cow::Owned(name)
