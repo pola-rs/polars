@@ -647,11 +647,11 @@ where
         + arrow::compute::aggregate::SimdOrd<T::Native>,
 {
     pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
-        let ca = self.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
-        let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsProxy::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
                     // this can fail due to a bug in lazy code.
                     // here users can create filters in aggregations
@@ -662,10 +662,10 @@ where
                     let out = if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        self.get(first as usize).map(|sum| sum.to_f64().unwrap())
+                        arr.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else if no_nulls {
                         take_agg_no_null_primitive_iter_unchecked(
-                            self.downcast_iter().next().unwrap(),
+                            arr,
                             idx2usize(idx),
                             |a, b| a + b,
                             T::Native::zero(),
@@ -674,7 +674,7 @@ where
                         .map(|sum| sum / idx.len() as f64)
                     } else {
                         take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _, _>(
-                            self.downcast_iter().next().unwrap(),
+                            arr,
                             idx2usize(idx),
                             |a, b| a + b,
                             T::Native::zero(),
