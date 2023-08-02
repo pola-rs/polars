@@ -14,12 +14,15 @@ if TYPE_CHECKING:
 
 
 def helper_dataset_test(
-    file_path: Path, query: Callable[[pl.LazyFrame], pl.DataFrame]
+    file_path: Path,
+    query: Callable[[pl.LazyFrame], pl.DataFrame],
+    batch_size: int | None = None,
 ) -> None:
     dset = ds.dataset(file_path, format="ipc")
-
     expected = query(pl.scan_ipc(file_path))
-    out = query(pl.scan_pyarrow_dataset(dset))
+    out = query(
+        pl.scan_pyarrow_dataset(dset, batch_size=batch_size),
+    )
     assert_frame_equal(out, expected)
 
 
@@ -121,6 +124,12 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
             .select(["bools", "floats", "date"])
             .collect(),
         )
+        helper_dataset_test(
+            file_path,
+            lambda lf: lf.collect(),
+            batch_size=2,
+        )
+
     # direct filter
     helper_dataset_test(
         file_path,
