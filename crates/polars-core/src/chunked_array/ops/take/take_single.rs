@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 use arrow::array::*;
 use polars_arrow::is_valid::IsValid;
 
@@ -67,6 +65,11 @@ where
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         impl_take_random_get_unchecked!(self, index, PrimitiveArray<T::Native>)
     }
+    fn last(&self) -> Option<Self::Item> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get(chunks.len() - 1).unwrap();
+        arr.get(arr.len().saturating_sub(1))
+    }
 }
 
 impl<'a, T> TakeRandom for &'a ChunkedArray<T>
@@ -84,6 +87,11 @@ where
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         (*self).get_unchecked(index)
     }
+    fn last(&self) -> Option<Self::Item> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get(chunks.len() - 1).unwrap();
+        arr.get(arr.len().saturating_sub(1))
+    }
 }
 
 impl TakeRandom for BooleanChunked {
@@ -99,6 +107,11 @@ impl TakeRandom for BooleanChunked {
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         impl_take_random_get_unchecked!(self, index, BooleanArray)
     }
+    fn last(&self) -> Option<Self::Item> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get(chunks.len() - 1).unwrap();
+        arr.get(arr.len().saturating_sub(1))
+    }
 }
 
 impl<'a> TakeRandom for &'a BooleanChunked {
@@ -113,6 +126,11 @@ impl<'a> TakeRandom for &'a BooleanChunked {
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         (*self).get_unchecked(index)
     }
+    fn last(&self) -> Option<Self::Item> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get(chunks.len() - 1).unwrap();
+        arr.get(arr.len().saturating_sub(1))
+    }
 }
 
 impl<'a> TakeRandom for &'a Utf8Chunked {
@@ -124,6 +142,11 @@ impl<'a> TakeRandom for &'a Utf8Chunked {
         // Out of bounds is checked and downcast is of correct type
         unsafe { impl_take_random_get!(self, index, LargeStringArray) }
     }
+    fn last(&self) -> Option<Self::Item> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get(chunks.len() - 1).unwrap();
+        arr.get(arr.len().saturating_sub(1))
+    }
 }
 
 impl<'a> TakeRandom for &'a BinaryChunked {
@@ -134,6 +157,11 @@ impl<'a> TakeRandom for &'a BinaryChunked {
         // Safety:
         // Out of bounds is checked and downcast is of correct type
         unsafe { impl_take_random_get!(self, index, LargeBinaryArray) }
+    }
+    fn last(&self) -> Option<Self::Item> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get(chunks.len() - 1).unwrap();
+        arr.get(arr.len().saturating_sub(1))
     }
 }
 
@@ -153,6 +181,12 @@ impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
     unsafe fn get_unchecked(self, index: usize) -> Option<Self::Item> {
         impl_take_random_get_unchecked!(self, index, LargeStringArray)
     }
+
+    fn last(&self) -> Option<Self::Item> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get(chunks.len() - 1).unwrap();
+        arr.get(arr.len().saturating_sub(1))
+    }
 }
 
 #[cfg(feature = "object")]
@@ -170,6 +204,12 @@ impl<'a, T: PolarsObject> TakeRandom for &'a ObjectChunked<T> {
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         impl_take_random_get_unchecked!(self, index, ObjectArray<T>)
     }
+
+    fn last(&self) -> Option<Self::Item> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get(chunks.len() - 1).unwrap();
+        arr.get(arr.len().saturating_sub(1))
+    }
 }
 
 impl TakeRandom for ListChunked {
@@ -180,18 +220,36 @@ impl TakeRandom for ListChunked {
         // Safety:
         // Out of bounds is checked and downcast is of correct type
         let opt_arr = unsafe { impl_take_random_get!(self, index, LargeListArray) };
-        opt_arr.map(|arr| {
-            let s = Series::try_from((self.name(), arr));
-            s.unwrap()
+        opt_arr.map(|arr| unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
         })
     }
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         let opt_arr = impl_take_random_get_unchecked!(self, index, LargeListArray);
-        opt_arr.map(|arr| {
-            let s = Series::try_from((self.name(), arr));
-            s.unwrap()
+        opt_arr.map(|arr| unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
+        })
+    }
+
+    fn last(&self) -> Option<Self::Item> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get(chunks.len() - 1).unwrap();
+        arr.get(arr.len().saturating_sub(1)).map(|arr| unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
         })
     }
 }
@@ -205,18 +263,36 @@ impl TakeRandom for ArrayChunked {
         // Safety:
         // Out of bounds is checked and downcast is of correct type
         let opt_arr = unsafe { impl_take_random_get!(self, index, FixedSizeListArray) };
-        opt_arr.map(|arr| {
-            let s = Series::try_from((self.name(), arr));
-            s.unwrap()
+        opt_arr.map(|arr| unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
         })
     }
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         let opt_arr = impl_take_random_get_unchecked!(self, index, FixedSizeListArray);
-        opt_arr.map(|arr| {
-            let s = Series::try_from((self.name(), arr));
-            s.unwrap()
+        opt_arr.map(|arr| unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
+        })
+    }
+
+    fn last(&self) -> Option<Self::Item> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get(chunks.len() - 1).unwrap();
+        arr.get(arr.len().saturating_sub(1)).map(|arr| unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
         })
     }
 }

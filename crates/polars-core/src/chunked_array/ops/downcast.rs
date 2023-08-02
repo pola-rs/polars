@@ -36,6 +36,13 @@ impl<'a, T> Chunks<'a, T> {
     pub fn len(&self) -> usize {
         self.chunks.len()
     }
+
+    pub fn last(&self) -> Option<&'a T> {
+        self.chunks.last().map(|arr| {
+            let arr = &**arr;
+            unsafe { &*(arr as *const dyn Array as *const T) }
+        })
+    }
 }
 
 #[doc(hidden)]

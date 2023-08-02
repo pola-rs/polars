@@ -166,6 +166,11 @@ pub trait TakeRandom {
     {
         self.get(index)
     }
+
+    /// This is much faster if we have many chunks as we don't have to compute the index
+    /// # Panics
+    /// Panics if `index >= self.len()`
+    fn last(&self) -> Option<Self::Item>;
 }
 // Utility trait because associated type needs a lifetime
 pub trait TakeRandomUtf8 {
@@ -188,6 +193,11 @@ pub trait TakeRandomUtf8 {
     {
         self.get(index)
     }
+
+    /// This is much faster if we have many chunks
+    /// # Panics
+    /// Panics if `index >= self.len()`
+    fn last(&self) -> Option<Self::Item>;
 }
 
 /// Fast access by index.

@@ -29,39 +29,16 @@ fn datetime_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
-    [
-        // 21/12/31 12:54:98
-        "%y/%m/%d %H:%M:%S",
-        // 2021-12-31 24:58:01
-        "%Y-%m-%d %H:%M:%S",
-        // 21/12/31 24:58:01
-        "%y/%m/%d %H:%M:%S",
-        //210319 23:58:50
-        "%y%m%d %H:%M:%S",
-        // 2021/12/31 12:54:98
-        "%Y/%m/%d %H:%M:%S",
-        // 2021-12-31 24:58:01
-        "%Y-%m-%d %H:%M:%S",
-        // 2021/12/31 24:58:01
-        "%Y/%m/%d %H:%M:%S",
-        // 20210319 23:58:50
-        "%Y%m%d %H:%M:%S",
-        // note: '%F' cannot be parsed by polars native parser
-        // 2019-04-18T02:45:55
-        "%Y-%m-%dT%H:%M:%S",
-        // 2019-04-18T02:45:55[...]
-        // milliseconds
-        "%Y-%m-%d %H:%M:%S.%3f",
-        "%Y-%m-%dT%H:%M:%S.%3f",
-        // microseconds
-        "%Y-%m-%d %H:%M:%S.%6f",
-        "%Y-%m-%dT%H:%M:%S.%6f",
-        // nanoseconds
-        "%Y-%m-%d %H:%M:%S.%9f",
-        "%Y-%m-%dT%H:%M:%S.%9f",
-    ]
-    .into_iter()
-    .find(|&fmt| convert(val, fmt).is_ok())
+    let result = patterns::DATETIME_Y_M_D
+        .iter()
+        .find(|fmt| convert(val, fmt).is_ok())
+        .copied();
+    result.or_else(|| {
+        patterns::DATETIME_D_M_Y
+            .iter()
+            .find(|fmt| convert(val, fmt).is_ok())
+            .copied()
+    })
 }
 
 fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
@@ -69,14 +46,16 @@ fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
-    [
-        // 2021-12-31
-        "%Y-%m-%d", // 31-12-2021
-        "%d-%m-%Y", // 2021319 (2021-03-19)
-        "%Y%m%d",
-    ]
-    .into_iter()
-    .find(|&fmt| convert(val, fmt).is_ok())
+    let result = patterns::DATE_Y_M_D
+        .iter()
+        .find(|fmt| convert(val, fmt).is_ok())
+        .copied();
+    result.or_else(|| {
+        patterns::DATE_D_M_Y
+            .iter()
+            .find(|fmt| convert(val, fmt).is_ok())
+            .copied()
+    })
 }
 
 struct ParseErrorByteCopy(ParseErrorKind);
@@ -113,10 +92,13 @@ fn get_first_val(ca: &Utf8Chunked) -> PolarsResult<&str> {
 #[cfg(feature = "dtype-datetime")]
 fn sniff_fmt_datetime(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
     let val = get_first_val(ca_utf8)?;
-    if let Some(pattern) = datetime_pattern(val, NaiveDateTime::parse_from_str) {
-        return Ok(pattern);
+    match datetime_pattern(val, NaiveDateTime::parse_from_str) {
+        Some(pattern) => Ok(pattern),
+        None => match datetime_pattern(val, NaiveDate::parse_from_str) {
+            Some(pattern) => Ok(pattern),
+            None => polars_bail!(parse_fmt_idk = "datetime"),
+        },
     }
-    polars_bail!(parse_fmt_idk = "date");
 }
 
 #[cfg(feature = "dtype-date")]
@@ -216,7 +198,7 @@ pub trait Utf8Methods: AsUtf8 {
                 Some(mut s) => {
                     let fmt_len = fmt.len();
 
-                    for i in 1..(s.len() - fmt_len) {
+                    for i in 1..(s.len().saturating_sub(fmt_len)) {
                         if s.is_empty() {
                             return None;
                         }
@@ -273,7 +255,7 @@ pub trait Utf8Methods: AsUtf8 {
                 Some(mut s) => {
                     let fmt_len = fmt.len();
 
-                    for i in 1..(s.len() - fmt_len) {
+                    for i in 1..(s.len().saturating_sub(fmt_len)) {
                         if s.is_empty() {
                             return None;
                         }
