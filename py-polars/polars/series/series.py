@@ -1740,10 +1740,10 @@ class Series:
             return res.struct.rename_fields([break_point_label, category_label])
         return res
 
-    @deprecate_renamed_parameter("quantiles", "q", version="0.18.8")
+    @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
-        q: list[float] | int,
+        quantiles: list[float] | int,
         *,
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
@@ -1758,7 +1758,7 @@ class Series:
 
         Parameters
         ----------
-        q
+        quantiles
             Either a list of quantile probabilities between 0 and 1 or a positive
             integer determining the number of evenly spaced probabilities to use.
         labels
@@ -1857,7 +1857,7 @@ class Series:
                 self.to_frame()
                 .with_columns(
                     F.col(n)
-                    .qcut(q, labels, left_closed, allow_duplicates, True)
+                    .qcut(quantiles, labels, left_closed, allow_duplicates, True)
                     .alias(n + "_bin")
                 )
                 .unnest(n + "_bin")
@@ -1866,7 +1866,9 @@ class Series:
         res = (
             self.to_frame()
             .select(
-                F.col(n).qcut(q, labels, left_closed, allow_duplicates, include_breaks)
+                F.col(n).qcut(
+                    quantiles, labels, left_closed, allow_duplicates, include_breaks
+                )
             )
             .to_series()
         )
