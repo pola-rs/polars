@@ -614,3 +614,481 @@ fn test_4_threads_bit_offset() -> PolarsResult<()> {
     assert_eq!(out.shape(), (1, 2));
     Ok(())
 }
+
+#[cfg(test)]
+mod join_validation_tests {
+    use super::*;
+
+    fn create_dfs() -> (DataFrame, DataFrame) {
+        let unique = df!(
+            "id" => &[1, 2, 3, 4],
+            "name" => &["hello", "world", "rust", "polars"]
+        )
+        .unwrap();
+        let duplicate = df!(
+            "id" => &[1, 2, 3, 1],
+            "cnt" => &[2, 4, 6, 1]
+        )
+        .unwrap();
+        (unique, duplicate)
+    }
+
+    #[test]
+    fn test_inner_join_validation_one_to_many_success() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+            let _one_to_many_success = unique
+                .join(
+                    &duplicate,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Inner,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToMany,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_inner_join_validation_one_to_many_fail() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _one_to_many_fail = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Inner,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToMany,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_inner_join_validation_one_to_one_fail_1() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _one_to_one_fail_1 = unique
+                .join(
+                    &duplicate,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Inner,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_inner_join_validation_one_to_one_fail_2() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _one_to_one_fail_2 = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Inner,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_inner_join_validation_many_to_one_fail() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _many_to_one_fail = unique
+                .join(
+                    &duplicate,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Inner,
+                        validation: polars_core::frame::hash_join::JoinValidation::ManyToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_inner_join_validation_many_to_one_success() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _many_to_one_success = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Inner,
+                        validation: polars_core::frame::hash_join::JoinValidation::ManyToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_inner_join_validation_many_to_many_success() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _many_to_many_success = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Inner,
+                        validation: polars_core::frame::hash_join::JoinValidation::ManyToMany,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_left_join_validation_one_to_many_success() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+            let _one_to_many_success = unique
+                .join(
+                    &duplicate,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Left,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToMany,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_left_join_validation_one_to_many_fail() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _one_to_many_fail = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Left,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToMany,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_left_join_validation_one_to_one_fail_1() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _one_to_one_fail_1 = unique
+                .join(
+                    &duplicate,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Left,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_left_join_validation_one_to_one_fail_2() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _one_to_one_fail_2 = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Left,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_left_join_validation_many_to_one_fail() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _many_to_one_fail = unique
+                .join(
+                    &duplicate,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Left,
+                        validation: polars_core::frame::hash_join::JoinValidation::ManyToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_left_join_validation_many_to_one_success() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _many_to_one_success = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Left,
+                        validation: polars_core::frame::hash_join::JoinValidation::ManyToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_left_join_validation_many_to_many_success() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _many_to_many_success = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Left,
+                        validation: polars_core::frame::hash_join::JoinValidation::ManyToMany,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_outer_join_validation_one_to_many_success() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+            let _one_to_many_success = unique
+                .join(
+                    &duplicate,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Outer,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToMany,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_outer_join_validation_one_to_many_fail() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _one_to_many_fail = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Outer,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToMany,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_outer_join_validation_one_to_one_fail_1() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _one_to_one_fail_1 = unique
+                .join(
+                    &duplicate,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Outer,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_outer_join_validation_one_to_one_fail_2() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _one_to_one_fail_2 = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Outer,
+                        validation: polars_core::frame::hash_join::JoinValidation::OneToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_outer_join_validation_many_to_one_fail() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _many_to_one_fail = unique
+                .join(
+                    &duplicate,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Outer,
+                        validation: polars_core::frame::hash_join::JoinValidation::ManyToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_outer_join_validation_many_to_one_success() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _many_to_one_success = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Outer,
+                        validation: polars_core::frame::hash_join::JoinValidation::ManyToOne,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_outer_join_validation_many_to_many_success() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _many_to_many_success = duplicate
+                .join(
+                    &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Outer,
+                        validation: polars_core::frame::hash_join::JoinValidation::ManyToMany,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap();
+        }
+    }
+}
