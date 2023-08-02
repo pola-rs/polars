@@ -3065,7 +3065,7 @@ class DataFrame:
         statistics: bool = False,
         row_group_size: int | None = None,
         use_pyarrow: bool = False,
-        pyarrow_options: dict[str, object] | None = None,
+        pyarrow_options: dict[str, Any] | None = None,
     ) -> None:
         """
         Write to Apache Parquet file.

@@ -11,7 +11,10 @@ if TYPE_CHECKING:
 
 
 def scan_pyarrow_dataset(
-    source: pa.dataset.Dataset, *, allow_pyarrow_filter: bool = True
+    source: pa.dataset.Dataset,
+    *,
+    allow_pyarrow_filter: bool = True,
+    batch_size: int | None = None,
 ) -> LazyFrame:
     """
     Scan a pyarrow dataset.
@@ -26,6 +29,8 @@ def scan_pyarrow_dataset(
         Allow predicates to be pushed down to pyarrow. This can lead to different
         results if comparisons are done with null values as pyarrow handles this
         different than polars does.
+    batch_size
+        The maximum row count for scanned pyarrow record batches.
 
     Warnings
     --------
@@ -52,7 +57,11 @@ def scan_pyarrow_dataset(
     └───────┴────────┴────────────┘
 
     """
-    return _scan_pyarrow_dataset(source, allow_pyarrow_filter=allow_pyarrow_filter)
+    return _scan_pyarrow_dataset(
+        source,
+        allow_pyarrow_filter=allow_pyarrow_filter,
+        batch_size=batch_size,
+    )
 
 
 @deprecate_renamed_function(new_name="scan_pyarrow_dataset", version="0.16.10")
