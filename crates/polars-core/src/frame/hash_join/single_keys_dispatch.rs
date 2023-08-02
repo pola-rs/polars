@@ -388,11 +388,11 @@ impl BinaryChunked {
     fn prepare(
         &self,
         other: &BinaryChunked,
-        swapped: bool,
+        should_swap: bool,
     ) -> (Vec<Self>, Vec<Self>, bool, RandomState) {
         let n_threads = POOL.current_num_threads();
 
-        let (a, b, swap) = if swapped {
+        let (a, b, swapped) = if should_swap {
             det_hash_prone_order!(self, other)
         } else {
             (self, other, false)
@@ -402,7 +402,7 @@ impl BinaryChunked {
         let splitted_a = split_ca(a, n_threads).unwrap();
         let splitted_b = split_ca(b, n_threads).unwrap();
 
-        (splitted_a, splitted_b, swap, hb)
+        (splitted_a, splitted_b, swapped, hb)
     }
 
     // returns the join tuples and whether or not the lhs tuples are sorted
