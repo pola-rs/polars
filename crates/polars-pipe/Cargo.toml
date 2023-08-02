@@ -24,6 +24,9 @@ polars-utils = { version = "0.31.1", path = "../polars-utils", features = ["sysi
 rayon.workspace = true
 smartstring = { version = "1" }
 
+[build-dependencies]
+version_check = { workspace = true }
+
 [features]
 compile = ["crossbeam-channel", "crossbeam-queue"]
 csv = ["polars-plan/csv", "polars-io/csv"]

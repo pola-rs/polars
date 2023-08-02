@@ -11,6 +11,11 @@ fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> bool {
                 | FunctionExpr::FillNull { .. },
             ..
         } => join_produces_null(how),
+        #[cfg(feature = "is_in")]
+        Function {
+            function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+            ..
+        } => join_produces_null(how),
         // joins can produce duplicates
         #[cfg(feature = "is_unique")]
         Function {

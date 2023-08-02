@@ -4,7 +4,7 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING
 
-from polars.utils.deprecation import deprecated_name
+from polars.utils.deprecation import deprecate_renamed_function
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import get_index_type as _get_index_type
@@ -27,7 +27,7 @@ def get_index_type() -> DataTypeClass:
     return _get_index_type()
 
 
-@deprecated_name(new_name="get_index_type", version="16.12")
+@deprecate_renamed_function(new_name="get_index_type", version="16.12")
 def get_idx_type() -> DataTypeClass:
     """Get the datatype used for Polars indexing."""
     return get_index_type()

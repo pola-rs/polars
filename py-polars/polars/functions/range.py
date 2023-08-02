@@ -11,7 +11,10 @@ from polars.utils._wrap import wrap_expr
 from polars.utils.convert import (
     _timedelta_to_pl_duration,
 )
-from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -66,7 +69,8 @@ def arange(
     ...
 
 
-@deprecated_alias(low="start", high="end")
+@deprecate_renamed_parameter("low", "start", version="0.18.0")
+@deprecate_renamed_parameter("high", "end", version="0.18.0")
 def arange(
     start: int | IntoExpr,
     end: int | IntoExpr,
@@ -370,7 +374,8 @@ def date_range(
     ...
 
 
-@deprecated_alias(low="start", high="end")
+@deprecate_renamed_parameter("low", "start", version="0.18.0")
+@deprecate_renamed_parameter("high", "end", version="0.18.0")
 def date_range(
     start: date | datetime | IntoExpr,
     end: date | datetime | IntoExpr,

@@ -6,14 +6,14 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
-from polars.utils.deprecation import deprecated_alias
+from polars.utils.deprecation import deprecate_renamed_parameter
 
 if TYPE_CHECKING:
     from polars import DataFrame
     from polars.type_aliases import DbReadEngine
 
 
-@deprecated_alias(connection_uri="connection")
+@deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
 def read_database(
     query: list[str] | str,
     connection: str,

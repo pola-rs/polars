@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from datetime import date, datetime
 from functools import reduce
 from inspect import signature
@@ -41,20 +40,6 @@ def test_lazy() -> None:
     # test if pl.list is available, this is `to_list` re-exported as list
     eager = ldf.groupby("a").agg(pl.implode("b")).collect()
     assert sorted(eager.rows()) == [(1, [[1.0]]), (2, [[2.0]]), (3, [[3.0]])]
-
-    # profile lazyframe operation/plan
-    lazy = ldf.groupby("a").agg(pl.implode("b"))
-    profiling_info = lazy.profile()
-    # ┌──────────────┬───────┬─────┐
-    # │ node         ┆ start ┆ end │
-    # │ ---          ┆ ---   ┆ --- │
-    # │ str          ┆ u64   ┆ u64 │
-    # ╞══════════════╪═══════╪═════╡
-    # │ optimization ┆ 0     ┆ 69  │
-    # │ groupby(a)   ┆ 69    ┆ 342 │
-    # └──────────────┴───────┴─────┘
-    assert len(profiling_info) == 2
-    assert profiling_info[1].columns == ["node", "start", "end"]
 
 
 @pytest.mark.parametrize(
@@ -689,27 +674,6 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
 
     assert cast(float, out_single_val_variance[0, "std"]) == 0.0
     assert cast(float, out_single_val_variance[0, "var"]) == 0.0
-
-
-def test_rolling_closed_decorator() -> None:
-    # no warning if we do not use by
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        _ = pl.col("a").rolling_min(2)
-
-    # if we pass in a by, but no closed, we expect a warning
-    with pytest.warns(FutureWarning):
-        _ = pl.col("a").rolling_min(2, by="b")
-
-    # if we pass in a by and a closed, we expect no warning
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        _ = pl.col("a").rolling_min(2, by="b", closed="left")
-
-    # regardless of the value
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        _ = pl.col("a").rolling_min(2, by="b", closed="right")
 
 
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:

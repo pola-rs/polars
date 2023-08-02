@@ -26,7 +26,9 @@ pub(super) fn update_sorted_flag_before_append<'a, T>(
                 // this is safe as we go from &mut borrow to &
                 // because the trait is only implemented for &ChunkedArray<T>
                 let borrow = std::mem::transmute::<&ChunkedArray<T>, &'a ChunkedArray<T>>(ca);
-                borrow.get_unchecked(ca.len() - 1)
+                // ensure we don't access with `len() - 1` this will have O(n^2) complexity
+                // if we append many chunks that are sorted
+                borrow.last()
             }
         };
         let start = unsafe { other.get_unchecked(0) };

@@ -22,7 +22,7 @@ impl Series {
     /// * Max fill (replace None with the maximum of the whole array)
     ///
     /// *NOTE: If you want to fill the Nones with a value use the
-    /// [`fill_null` operation on `ChunkedArray<T>`](../chunked_array/ops/trait.ChunkFillNull.html)*.
+    /// [`fill_null` operation on `ChunkedArray<T>`](crate::chunked_array::ops::ChunkFillNullValue)*.
     ///
     /// # Example
     ///

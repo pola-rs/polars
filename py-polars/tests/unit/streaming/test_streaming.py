@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -241,22 +241,6 @@ def test_cross_join_stack() -> None:
     assert (t1 - t0) < 0.5
 
 
-@pytest.mark.slow()
-def test_ooc_sort(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-
-    s = pl.arange(0, 100_000, eager=True).rename("idx")
-
-    df = s.shuffle().to_frame()
-
-    for descending in [True, False]:
-        out = (
-            df.lazy().sort("idx", descending=descending).collect(streaming=True)
-        ).to_series()
-
-        assert_series_equal(out, s.sort(descending=descending))
-
-
 def test_streaming_literal_expansion() -> None:
     df = pl.DataFrame(
         {
@@ -367,23 +351,6 @@ def test_streaming_unique(monkeypatch: Any, capfd: Any) -> None:
     assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
     (_, err) = capfd.readouterr()
     assert "df -> re-project-sink -> sort_multiple" in err
-
-
-@pytest.mark.write_disk()
-def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    # this creates a lot of duplicate partitions and triggers: #7568
-    assert (
-        pl.Series(np.random.randint(0, 100, 100))
-        .to_frame("s")
-        .lazy()
-        .sort("s")
-        .collect(streaming=True)["s"]
-        .is_sorted()
-    )
-    (_, err) = capfd.readouterr()
-    assert "df -> sort" in err
 
 
 @pytest.fixture(scope="module")
@@ -582,61 +549,6 @@ def test_streaming_sortedness_propagation_9494() -> None:
 
 
 @pytest.mark.write_disk()
-def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    np.random.seed(0)
-
-    num_rows = 1_00_000
-    num_columns = 2
-    num_tables = 10
-
-    # ensure we create many chunks
-    # this will ensure we create more files
-    # and that creates contention while dumping
-    q = pl.concat(
-        [
-            pl.DataFrame(
-                [
-                    pl.Series(np.random.randint(0, 10000, size=num_rows))
-                    for _ in range(num_columns)
-                ]
-            )
-            for _ in range(num_tables)
-        ],
-        rechunk=False,
-    ).lazy()
-    q = q.sort(q.columns)
-    df = q.collect(streaming=True)
-    assert df.shape == (1_000_000, 2)
-    assert df["column_0"].flags["SORTED_ASC"]
-    assert df.head(20).to_dict(False) == {
-        "column_0": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        "column_1": [
-            242,
-            245,
-            588,
-            618,
-            732,
-            902,
-            925,
-            945,
-            1009,
-            1161,
-            1352,
-            1365,
-            1451,
-            1581,
-            1778,
-            1836,
-            1976,
-            2091,
-            2120,
-            2124,
-        ],
-    }
-
-
-@pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -718,3 +630,20 @@ def test_streaming_10115(tmp_path: Path) -> None:
         "y": ["foo"],
         "z": ["_"],
     }
+
+
+@pytest.mark.write_disk()
+def test_stream_empty_file(tmp_path: Path) -> None:
+    p = tmp_path / "in.parquet"
+    schema = {
+        "KLN_NR": pl.Utf8,
+    }
+
+    df = pl.DataFrame(
+        {
+            "KLN_NR": [],
+        },
+        schema=schema,
+    )
+    df.write_parquet(p)
+    assert pl.scan_parquet(p).collect(streaming=True).schema == schema

@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::utils::get_bit_unchecked;
 use arrow::bitmap::Bitmap;
@@ -103,6 +101,14 @@ where
             Self::Multi(m) => m.get_unchecked(index),
         }
     }
+
+    fn last(&self) -> Option<Self::Item> {
+        match self {
+            Self::SingleNoNull(s) => s.last(),
+            Self::Single(s) => s.last(),
+            Self::Multi(m) => m.last(),
+        }
+    }
 }
 
 pub enum TakeRandBranch2<S, M> {
@@ -128,6 +134,12 @@ where
         match self {
             Self::Single(s) => s.get_unchecked(index),
             Self::Multi(m) => m.get_unchecked(index),
+        }
+    }
+    fn last(&self) -> Option<Self::Item> {
+        match self {
+            Self::Single(s) => s.last(),
+            Self::Multi(m) => m.last(),
         }
     }
 }
@@ -187,6 +199,11 @@ impl<'a> TakeRandom for Utf8TakeRandom<'a> {
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         take_random_get_unchecked!(self, index)
     }
+    fn last(&self) -> Option<Self::Item> {
+        self.chunks
+            .last()
+            .and_then(|arr| arr.get(arr.len().saturating_sub(1)))
+    }
 }
 
 pub struct Utf8TakeRandomSingleChunk<'a> {
@@ -208,6 +225,9 @@ impl<'a> TakeRandom for Utf8TakeRandomSingleChunk<'a> {
         } else {
             None
         }
+    }
+    fn last(&self) -> Option<Self::Item> {
+        self.get(self.arr.len().saturating_sub(1))
     }
 }
 
@@ -251,6 +271,11 @@ impl<'a> TakeRandom for BinaryTakeRandom<'a> {
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         take_random_get_unchecked!(self, index)
     }
+    fn last(&self) -> Option<Self::Item> {
+        self.chunks
+            .last()
+            .and_then(|arr| arr.get(arr.len().saturating_sub(1)))
+    }
 }
 
 pub struct BinaryTakeRandomSingleChunk<'a> {
@@ -272,6 +297,9 @@ impl<'a> TakeRandom for BinaryTakeRandomSingleChunk<'a> {
         } else {
             None
         }
+    }
+    fn last(&self) -> Option<Self::Item> {
+        self.get(self.arr.len().saturating_sub(1))
     }
 }
 
@@ -334,8 +362,11 @@ impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
             };
             TakeRandBranch2::Single(t)
         } else {
+            let name = self.name();
+            let inner_type = self.inner_dtype().to_physical();
             let t = ListTakeRandom {
-                ca: self,
+                name,
+                inner_type,
                 chunks: chunks.collect(),
                 chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
             };
@@ -367,6 +398,11 @@ where
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         take_random_get_unchecked!(self, index)
     }
+    fn last(&self) -> Option<Self::Item> {
+        self.chunks
+            .last()
+            .and_then(|arr| arr.get(arr.len().saturating_sub(1)))
+    }
 }
 
 pub struct NumTakeRandomCont<'a, T> {
@@ -387,6 +423,9 @@ where
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         Some(*self.slice.get_unchecked(index))
+    }
+    fn last(&self) -> Option<Self::Item> {
+        self.slice.last().copied()
     }
 }
 
@@ -445,6 +484,9 @@ where
             None
         }
     }
+    fn last(&self) -> Option<Self::Item> {
+        self.get(self.vals.len().saturating_sub(1))
+    }
 }
 
 pub struct BoolTakeRandom<'a> {
@@ -463,6 +505,12 @@ impl<'a> TakeRandom for BoolTakeRandom<'a> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         take_random_get_unchecked!(self, index)
+    }
+
+    fn last(&self) -> Option<Self::Item> {
+        self.chunks
+            .last()
+            .and_then(|arr| arr.get(arr.len().saturating_sub(1)))
     }
 }
 
@@ -486,10 +534,14 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
             None
         }
     }
+    fn last(&self) -> Option<Self::Item> {
+        self.arr.get(self.arr.len().saturating_sub(1))
+    }
 }
 
 pub struct ListTakeRandom<'a> {
-    ca: &'a ListChunked,
+    inner_type: DataType,
+    name: &'a str,
     chunks: Vec<&'a ListArray<i64>>,
     chunk_lens: Vec<IdxSize>,
 }
@@ -500,18 +552,28 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get!(self, index);
-        v.map(|v| {
-            let s = Series::try_from((self.ca.name(), v));
-            s.unwrap()
+        v.map(|arr| unsafe {
+            Series::from_chunks_and_dtype_unchecked(self.name, vec![arr], &self.inner_type)
         })
     }
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get_unchecked!(self, index);
-        v.map(|v| {
-            let s = Series::try_from((self.ca.name(), v));
-            s.unwrap()
+        v.map(|arr| unsafe {
+            Series::from_chunks_and_dtype_unchecked(self.name, vec![arr], &self.inner_type)
+        })
+    }
+    fn last(&self) -> Option<Self::Item> {
+        self.chunks.last().and_then(|arr| {
+            let arr = arr.get(arr.len().saturating_sub(1));
+            arr.map(|arr| unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    self.name,
+                    vec![arr.to_boxed()],
+                    &self.inner_type,
+                )
+            })
         })
     }
 }
@@ -543,6 +605,9 @@ impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
             None
         }
     }
+    fn last(&self) -> Option<Self::Item> {
+        self.get(self.arr.len().saturating_sub(1))
+    }
 }
 
 #[cfg(feature = "object")]
@@ -563,6 +628,11 @@ impl<'a, T: PolarsObject> TakeRandom for ObjectTakeRandom<'a, T> {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         take_random_get_unchecked!(self, index)
+    }
+    fn last(&self) -> Option<Self::Item> {
+        self.chunks
+            .last()
+            .and_then(|arr| arr.get(arr.len().saturating_sub(1)))
     }
 }
 
@@ -587,6 +657,9 @@ impl<'a, T: PolarsObject> TakeRandom for ObjectTakeRandomSingleChunk<'a, T> {
         } else {
             None
         }
+    }
+    fn last(&self) -> Option<Self::Item> {
+        self.arr.get(self.arr.len().saturating_sub(1))
     }
 }
 

@@ -5,7 +5,10 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.deprecation import deprecated_alias, redirect
+from polars.utils.deprecation import (
+    deprecate_renamed_methods,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -16,14 +19,19 @@ if TYPE_CHECKING:
 
 
 @expr_dispatch
-@redirect(
+@deprecate_renamed_methods(
     {
         "difference": "set_difference",
         "symmetric_difference": "set_symmetric_difference",
         "intersection": "set_intersection",
         "union": "set_union",
     },
-    version="0.18.10",
+    versions={
+        "difference": "0.18.10",
+        "symmetric_difference": "0.18.10",
+        "intersection": "0.18.10",
+        "union": "0.18.10",
+    },
 )
 class ListNameSpace:
     """Namespace for list related methods."""
@@ -456,7 +464,7 @@ class ListNameSpace:
 
         """
 
-    @deprecated_alias(name_generator="fields")
+    @deprecate_renamed_parameter("name_generator", "fields", version="0.17.12")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",

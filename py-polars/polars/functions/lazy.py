@@ -26,7 +26,11 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
+from polars.utils.deprecation import (
+    deprecate_function,
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -485,14 +489,20 @@ def avg(column: Series) -> float:
     ...
 
 
+@deprecate_function(
+    "Please use `mean` instead, for which `avg` is an alias.", version="0.18.12"
+)
 def avg(column: str | Series) -> Expr | float:
     """
     Alias for mean.
 
+    .. deprecated:: 0.18.12
+        Use ``mean`` instead.
+
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.avg("a"))
+    >>> df.select(pl.avg("a"))  # doctest: +SKIP
     shape: (1, 1)
     ┌─────┐
     │ a   │
@@ -1806,7 +1816,9 @@ def arg_sort_by(
     return wrap_expr(plr.arg_sort_by(exprs, descending))
 
 
-@deprecated_alias(common_subplan_elimination="comm_subplan_elim")
+@deprecate_renamed_parameter(
+    "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+)
 def collect_all(
     lazy_frames: Sequence[LazyFrame],
     *,

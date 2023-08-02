@@ -5,7 +5,10 @@ from typing import TYPE_CHECKING
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -168,7 +171,8 @@ class StringNameSpace:
 
         """
 
-    @deprecated_alias(datatype="dtype", fmt="format")
+    @deprecate_renamed_parameter("datatype", "dtype", version="0.17.3")
+    @deprecate_renamed_parameter("fmt", "format", version="0.17.3")
     def strptime(
         self,
         dtype: PolarsTemporalType,

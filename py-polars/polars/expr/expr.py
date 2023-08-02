@@ -36,7 +36,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.exceptions import PolarsInefficientApplyWarning, PolarsPanicError
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -51,8 +51,8 @@ from polars.utils._parse_expr_input import (
 )
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
-    deprecated,
-    deprecated_alias,
+    deprecate_function,
+    deprecate_renamed_parameter,
     warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
@@ -3363,10 +3363,11 @@ class Expr:
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
-    @deprecated_alias(probs="q")
+    @deprecate_renamed_parameter("probs", "quantiles", version="0.18.8")
+    @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
-        q: list[float] | int,
+        quantiles: list[float] | int,
         labels: list[str] | None = None,
         left_closed: bool = False,
         allow_duplicates: bool = False,
@@ -3377,7 +3378,7 @@ class Expr:
 
         Parameters
         ----------
-        q
+        quantiles
             Either a list of quantile probabilities between 0 and 1 or a positive
             integer determining the number of evenly spaced probabilities to use.
         labels
@@ -3392,7 +3393,6 @@ class Expr:
         include_breaks
             Include the the right endpoint of the bin each observation falls in.
             If True, the resulting column will be a Struct.
-
 
         Examples
         --------
@@ -3484,9 +3484,13 @@ class Expr:
         │ b   ┆ 9   ┆ {inf,"(4.5, inf]"}    │
         └─────┴─────┴───────────────────────┘
         """
-        expr_f = self._pyexpr.qcut_uniform if isinstance(q, int) else self._pyexpr.qcut
+        expr_f = (
+            self._pyexpr.qcut_uniform
+            if isinstance(quantiles, int)
+            else self._pyexpr.qcut
+        )
         return self._from_pyexpr(
-            expr_f(q, labels, left_closed, allow_duplicates, include_breaks)
+            expr_f(quantiles, labels, left_closed, allow_duplicates, include_breaks)
         )
 
     def rle(self) -> Self:
@@ -3806,16 +3810,9 @@ class Expr:
         # input x: Series of type list containing the group values
         from polars.utils.udfs import warn_on_inefficient_apply
 
-        try:
-            root_names = self.meta.root_names()
-        except PolarsPanicError:
-            # no root names for pl.col('*')
-            pass
-        else:
-            if root_names:
-                warn_on_inefficient_apply(
-                    function, columns=root_names, apply_target="expr"
-                )
+        root_names = self.meta.root_names()
+        if len(root_names) > 0:
+            warn_on_inefficient_apply(function, columns=root_names, apply_target="expr")
 
         if pass_name:
 
@@ -4796,7 +4793,7 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
                 other = list(other)
-            other = F.lit(None) if len(other) == 0 else F.lit(pl.Series(other))
+            other = F.lit(pl.Series(other))
             other = other._pyexpr
         else:
             other = parse_as_expression(other)
@@ -7904,7 +7901,7 @@ class Expr:
             seed = random.randint(0, 10000)
         return self._from_pyexpr(self._pyexpr.shuffle(seed, fixed_seed))
 
-    @deprecated_alias(frac="fraction")
+    @deprecate_renamed_parameter("frac", "fraction", version="0.17.0")
     def sample(
         self,
         n: int | None = None,
@@ -8565,7 +8562,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
-    @deprecated(
+    @deprecate_function(
         "This method now does nothing. It has been superseded by the"
         " `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically"
         " caches expressions that are equal.",

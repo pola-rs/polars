@@ -11,6 +11,7 @@ import polars as pl
 from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
+from polars.utils.various import in_terminal_that_supports_colour
 from tests.test_udfs import MY_CONSTANT, MY_DICT, MY_LIST, NOOP_TEST_CASES, TEST_CASES
 
 EVAL_ENVIRONMENT = {
@@ -189,13 +190,18 @@ def test_parse_apply_series(
 
 
 def test_expr_exact_warning_message() -> None:
+    red, green, end_escape = (
+        ("\x1b[31m", "\x1b[32m", "\x1b[0m")
+        if in_terminal_that_supports_colour()
+        else ("", "", "")
+    )
     msg = re.escape(
         "\n"
         "Expr.apply is significantly slower than the native expressions API.\n"
         "Only use if you absolutely CANNOT implement your logic otherwise.\n"
         "In this case, you can replace your `apply` with the following:\n"
-        '  - pl.col("a").apply(lambda x: ...)\n'
-        '  + pl.col("a") + 1\n'
+        f'  {red}- pl.col("a").apply(lambda x: ...){end_escape}\n'
+        f'  {green}+ pl.col("a") + 1{end_escape}\n'
     )
     # Check the EXACT warning message. If modifying the message in the future,
     # please make sure to keep the `^` and `$`,
@@ -203,4 +209,5 @@ def test_expr_exact_warning_message() -> None:
     with pytest.warns(PolarsInefficientApplyWarning, match=rf"^{msg}$") as warnings:
         df = pl.DataFrame({"a": [1, 2, 3]})
         df.select(pl.col("a").apply(lambda x: x + 1))
+
     assert len(warnings) == 1

@@ -330,7 +330,7 @@ ahash = "0.8"
 rand = "0.8"
 
 [build-dependencies]
-version_check = "0.9.4"
+version_check = { workspace = true }
 
 [package.metadata.docs.rs]
 # all-features = true

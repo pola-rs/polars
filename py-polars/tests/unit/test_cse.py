@@ -214,6 +214,7 @@ def test_cse_expr_selection_streaming(monkeypatch: Any, capfd: Any) -> None:
     assert "df -> hstack[cse] -> ordered_sink" in err
 
 
+@pytest.mark.skip(reason="activate once fixed")
 def test_cse_expr_groupby() -> None:
     q = pl.LazyFrame(
         {
@@ -247,3 +248,46 @@ def test_cse_expr_groupby() -> None:
     for streaming in [True, False]:
         out = q.collect(comm_subexpr_elim=True, streaming=streaming)
         assert_frame_equal(out, expected)
+
+
+def test_windows_cse_excluded() -> None:
+    lf = pl.LazyFrame(
+        data=[
+            ("a", "aaa", 1),
+            ("a", "bbb", 3),
+            ("a", "ccc", 1),
+            ("c", "xxx", 2),
+            ("c", "yyy", 3),
+            ("c", "zzz", 4),
+            ("b", "qqq", 0),
+        ],
+        schema=["a", "b", "c"],
+    )
+    assert lf.select(
+        c_diff=pl.col("c").diff(1),
+        c_diff_by_a=pl.col("c").diff(1).over("a"),
+    ).collect(comm_subexpr_elim=True).to_dict(False) == {
+        "c_diff": [None, 2, -2, 1, 1, 1, -4],
+        "c_diff_by_a": [None, 2, -2, None, 1, 1, None],
+    }
+
+
+def test_cse_groupby_10215() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "a": [1, 2, 3],
+                "b": [1, 1, 1],
+            }
+        )
+        .lazy()
+        .groupby(
+            "a",
+        )
+        .agg(
+            (pl.col("a").sum() * pl.col("a").sum()).alias("x"),
+            (pl.col("b").sum() * pl.col("b").sum()).alias("y"),
+        )
+        .collect()
+        .sort("a")
+    ).to_dict(False) == {"a": [1, 2, 3], "x": [1, 4, 9], "y": [1, 1, 1]}

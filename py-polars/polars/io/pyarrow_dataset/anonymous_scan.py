@@ -11,7 +11,9 @@ if TYPE_CHECKING:
 
 
 def _scan_pyarrow_dataset(
-    ds: pa.dataset.Dataset, allow_pyarrow_filter: bool = True
+    ds: pa.dataset.Dataset,
+    allow_pyarrow_filter: bool = True,
+    batch_size: int | None = None,
 ) -> LazyFrame:
     """
     Pickle the partially applied function `_scan_pyarrow_dataset_impl`.
@@ -27,9 +29,11 @@ def _scan_pyarrow_dataset(
         Allow predicates to be pushed down to pyarrow. This can lead to different
         results if comparisons are done with null values as pyarrow handles this
         different than polars does.
+    batch_size
+        The maximum row count for scanned pyarrow record batches.
 
     """
-    func = partial(_scan_pyarrow_dataset_impl, ds)
+    func = partial(_scan_pyarrow_dataset_impl, ds, batch_size=batch_size)
     return pl.LazyFrame._scan_python_function(ds.schema, func, allow_pyarrow_filter)
 
 
@@ -38,6 +42,7 @@ def _scan_pyarrow_dataset_impl(
     with_columns: list[str] | None,
     predicate: str | None,
     n_rows: int | None,
+    batch_size: int | None,
 ) -> DataFrame:
     """
     Take the projected columns and materialize an arrow table.
@@ -52,6 +57,8 @@ def _scan_pyarrow_dataset_impl(
         pyarrow expression that can be evaluated with eval
     n_rows:
         Materialize only n rows from the arrow dataset
+    batch_size
+        The maximum row count for scanned pyarrow record batches.
 
     Returns
     -------
@@ -71,7 +78,12 @@ def _scan_pyarrow_dataset_impl(
         )
 
         _filter = eval(predicate)
-    if n_rows:
-        return from_arrow(ds.head(n_rows, columns=with_columns, filter=_filter))  # type: ignore[return-value]
 
-    return from_arrow(ds.to_table(columns=with_columns, filter=_filter))  # type: ignore[return-value]
+    common_params = {"columns": with_columns, "filter": _filter}
+    if batch_size is not None:
+        common_params["batch_size"] = batch_size
+
+    if n_rows:
+        return from_arrow(ds.head(n_rows, **common_params))  # type: ignore[return-value]
+
+    return from_arrow(ds.to_table(**common_params))  # type: ignore[return-value]

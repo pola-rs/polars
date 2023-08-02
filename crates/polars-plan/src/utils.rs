@@ -1,6 +1,7 @@
 use std::fmt::Formatter;
 use std::iter::FlatMap;
 use std::sync::Arc;
+use std::vec::IntoIter;
 
 use polars_core::prelude::*;
 use smartstring::alias::String as SmartString;
@@ -138,9 +139,9 @@ where
     current_expr.into_iter().any(matches)
 }
 
-/// Check if root expression is a literal
+/// Check if leaf expression is a literal
 #[cfg(feature = "is_in")]
-pub(crate) fn has_root_literal_expr(e: &Expr) -> bool {
+pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
     match e {
         Expr::Literal(_) => true,
         _ => {
@@ -200,12 +201,18 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
     );
 }
 
-/// This should gradually replace expr_to_root_column as this will get all names in the tree.
-pub fn expr_to_leaf_column_names(expr: &Expr) -> Vec<Arc<str>> {
+#[allow(clippy::type_complexity)]
+pub fn expr_to_leaf_column_names_iter(
+    expr: &Expr,
+) -> FlatMap<IntoIter<Expr>, Option<Arc<str>>, fn(Expr) -> Option<Arc<str>>> {
     expr_to_root_column_exprs(expr)
         .into_iter()
-        .map(|e| expr_to_leaf_column_name(&e).unwrap())
-        .collect()
+        .flat_map(|e| expr_to_leaf_column_name(&e).ok())
+}
+
+/// This should gradually replace expr_to_root_column as this will get all names in the tree.
+pub fn expr_to_leaf_column_names(expr: &Expr) -> Vec<Arc<str>> {
+    expr_to_leaf_column_names_iter(expr).collect()
 }
 
 /// unpack alias(col) to name of the root column name

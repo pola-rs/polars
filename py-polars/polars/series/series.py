@@ -88,7 +88,10 @@ from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
 )
-from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
@@ -1621,7 +1624,7 @@ class Series:
         """
         return wrap_df(self._s.to_dummies(separator))
 
-    @deprecated_alias(bins="breaks")
+    @deprecate_renamed_parameter("bins", "breaks", version="0.18.8")
     def cut(
         self,
         breaks: list[float],
@@ -1737,10 +1740,10 @@ class Series:
             return res.struct.rename_fields([break_point_label, category_label])
         return res
 
-    @deprecated_alias(quantiles="q")
+    @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
-        q: list[float] | int,
+        quantiles: list[float] | int,
         *,
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
@@ -1755,7 +1758,7 @@ class Series:
 
         Parameters
         ----------
-        q
+        quantiles
             Either a list of quantile probabilities between 0 and 1 or a positive
             integer determining the number of evenly spaced probabilities to use.
         labels
@@ -1854,7 +1857,7 @@ class Series:
                 self.to_frame()
                 .with_columns(
                     F.col(n)
-                    .qcut(q, labels, left_closed, allow_duplicates, True)
+                    .qcut(quantiles, labels, left_closed, allow_duplicates, True)
                     .alias(n + "_bin")
                 )
                 .unnest(n + "_bin")
@@ -1863,7 +1866,9 @@ class Series:
         res = (
             self.to_frame()
             .select(
-                F.col(n).qcut(q, labels, left_closed, allow_duplicates, include_breaks)
+                F.col(n).qcut(
+                    quantiles, labels, left_closed, allow_duplicates, include_breaks
+                )
             )
             .to_series()
         )
@@ -5244,7 +5249,7 @@ class Series:
 
         """
 
-    @deprecated_alias(frac="fraction")
+    @deprecate_renamed_parameter("frac", "fraction", version="0.17.0")
     def sample(
         self,
         n: int | None = None,

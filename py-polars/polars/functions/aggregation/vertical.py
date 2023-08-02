@@ -4,7 +4,10 @@ from typing import TYPE_CHECKING, Any, Iterable, overload
 
 import polars._reexport as pl
 import polars.functions as F
-from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -23,7 +26,7 @@ def all(
     ...
 
 
-@deprecated_alias(columns="exprs")
+@deprecate_renamed_parameter("columns", "exprs", version="0.18.7")
 def all(
     exprs: IntoExpr | Iterable[IntoExpr] | None = None, *more_exprs: IntoExpr
 ) -> Expr | bool | None:
@@ -111,7 +114,7 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(columns="exprs")
+@deprecate_renamed_parameter("columns", "exprs", version="0.18.7")
 def any(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | bool | None:
@@ -370,7 +373,7 @@ def sum(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(column="exprs")
+@deprecate_renamed_parameter("column", "exprs", version="0.18.7")
 def sum(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | int | float:
@@ -466,7 +469,7 @@ def cumsum(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(column="exprs")
+@deprecate_renamed_parameter("column", "exprs", version="0.18.7")
 def cumsum(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | Series:

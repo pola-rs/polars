@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import inspect
-import warnings
+from typing import Any
 
 import pytest
 
 from polars.utils.deprecation import (
+    deprecate_function,
     deprecate_nonkeyword_arguments,
-    deprecated,
-    deprecated_name,
+    deprecate_renamed_function,
+    deprecate_renamed_methods,
+    deprecate_renamed_parameter,
     issue_deprecation_warning,
-    redirect,
+    warn_closed_future_change,
 )
 
 
@@ -19,8 +21,8 @@ def test_issue_deprecation_warning() -> None:
         issue_deprecation_warning("deprecated", version="0.1.2")
 
 
-def test_deprecated_decorator() -> None:
-    @deprecated("This is deprecated.", version="3.2.1")
+def test_deprecate_function() -> None:
+    @deprecate_function("This is deprecated.", version="1.0.0")
     def hello() -> None:
         ...
 
@@ -28,8 +30,8 @@ def test_deprecated_decorator() -> None:
         hello()
 
 
-def test_deprecated_name_decorator() -> None:
-    @deprecated_name("new_hello", version="3.2.1")
+def test_deprecate_renamed_function() -> None:
+    @deprecate_renamed_function("new_hello", version="1.0.0")
     def hello() -> None:
         ...
 
@@ -37,25 +39,41 @@ def test_deprecated_name_decorator() -> None:
         hello()
 
 
-def test_redirect() -> None:
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+def test_deprecate_renamed_parameter(recwarn: Any) -> None:
+    @deprecate_renamed_parameter("foo", "oof", version="1.0.0")
+    @deprecate_renamed_parameter("bar", "rab", version="2.0.0")
+    def hello(oof: str, rab: str, ham: str) -> None:
+        ...
 
-        # one-to-one redirection
-        @redirect({"foo": "bar"}, version="0.1.2")
-        class DemoClass1:
-            def bar(self, upper: bool = False) -> str:
-                return "BAZ" if upper else "baz"
+    hello(foo="x", bar="y", ham="z")  # type: ignore[call-arg]
 
-        assert DemoClass1().foo() == "baz"  # type: ignore[attr-defined]
+    assert len(recwarn) == 2
+    assert "oof" in str(recwarn[0].message)
+    assert "rab" in str(recwarn[1].message)
 
-        # redirection with **kwargs
-        @redirect({"foo": ("bar", {"upper": True})}, version="0.2.1")
-        class DemoClass2:
-            def bar(self, upper: bool = False) -> str:
-                return "BAZ" if upper else "baz"
 
-        assert DemoClass2().foo() == "BAZ"  # type: ignore[attr-defined]
+def test_deprecate_renamed_methods() -> None:
+    # one-to-one redirection
+    @deprecate_renamed_methods({"foo": "bar"}, versions={"foo": "1.0.0"})
+    class DemoClass1:
+        def bar(self, upper: bool = False) -> str:
+            return "BAZ" if upper else "baz"
+
+    with pytest.deprecated_call():
+        result = DemoClass1().foo()  # type: ignore[attr-defined]
+    assert result == "baz"
+
+    # redirection with **kwargs
+    @deprecate_renamed_methods(
+        {"foo": ("bar", {"upper": True})}, versions={"foo": "1.0.0"}
+    )
+    class DemoClass2:
+        def bar(self, upper: bool = False) -> str:
+            return "BAZ" if upper else "baz"
+
+    with pytest.deprecated_call():
+        result = DemoClass2().foo()  # type: ignore[attr-defined]
+    assert result == "BAZ"
 
 
 class Foo:  # noqa: D101
@@ -79,3 +97,30 @@ def test_deprecate_nonkeyword_arguments_method_warning() -> None:
     )
     with pytest.deprecated_call(match=msg):
         Foo().bar("qux", "quox")
+
+
+def test_warn_closed_future_change() -> None:
+    @warn_closed_future_change()
+    def rolling_test(by: str | None = None, closed: str = "left") -> None:
+        ...
+
+    # If we pass `by` but not `closed``, we expect a warning
+    with pytest.deprecated_call():
+        rolling_test(by="b")
+
+
+def test_warn_closed_future_change_no_warning(recwarn: Any) -> None:
+    @warn_closed_future_change()
+    def rolling_test(by: str | None = None, closed: str = "left") -> None:
+        ...
+
+    # No warning if we do not pass `by`
+    rolling_test()
+
+    # If we pass `by`` and `closed`, we expect no warning...
+    rolling_test(by="b", closed="left")
+
+    # ... regardless of the value
+    rolling_test(by="b", closed="right")
+
+    assert len(recwarn) == 0

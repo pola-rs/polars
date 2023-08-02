@@ -79,7 +79,7 @@ impl FromStr for CloudType {
         Ok(match parsed.scheme() {
             "s3" => Self::Aws,
             "az" | "adl" | "abfs" => Self::Azure,
-            "gs" | "gcp" => Self::Gcp,
+            "gs" | "gcp" | "gcs" => Self::Gcp,
             "file" => Self::File,
             _ => polars_bail!(ComputeError: "unknown url scheme"),
         })

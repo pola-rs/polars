@@ -462,6 +462,20 @@ impl BatchedParquetReader {
                 }
                 _ => unimplemented!(),
             };
+            // case where there is no data in the file
+            // the streaming engine needs at least a single chunk
+            if self.rows_read == 0 && dfs.is_empty() {
+                let columns = self
+                    .schema
+                    .fields
+                    .iter()
+                    .map(|field| {
+                        let dtype: DataType = (&field.data_type).into();
+                        Series::new_empty(&field.name, &dtype)
+                    })
+                    .collect::<Vec<_>>();
+                return Ok(Some(vec![DataFrame::new_no_checks(columns)]));
+            }
 
             // TODO! this is slower than it needs to be
             // we also need to parallelize over row groups here.

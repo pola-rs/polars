@@ -863,3 +863,39 @@ def test_struct_get_field_by_index() -> None:
     df = pl.DataFrame({"val": [{"a": 1, "b": 2}]})
     expected = {"b": [2]}
     assert df.select(pl.all().struct[1]).to_dict(as_series=False) == expected
+
+
+def test_struct_null_count_10130() -> None:
+    a_0 = pl.DataFrame({"x": [None, 0, 0, 1, 1], "y": [0, 0, 1, 0, 1]}).to_struct("xy")
+    a_1 = pl.DataFrame({"x": [2, 0, 0, 1, 1], "y": [0, 0, 1, 0, 1]}).to_struct("xy")
+    a_2 = pl.DataFrame({"x": [2, 0, 0, 1, 1], "y": [0, 0, None, 0, 1]}).to_struct("xy")
+    assert a_0.null_count() == 0
+    assert a_1.null_count() == 0
+    assert a_2.null_count() == 0
+
+    b_0 = pl.DataFrame(
+        {"x": [1, None, 0, 0, 1, 1, None], "y": [None, 0, None, 0, 1, 0, 1]}
+    ).to_struct("xy")
+    b_1 = pl.DataFrame(
+        {"x": [None, None, 0, 0, 1, 1, None], "y": [None, 0, None, 0, 1, 0, 1]}
+    ).to_struct("xy")
+    assert b_0.null_count() == 0
+    assert b_1.null_count() == 1
+
+    c_0 = pl.DataFrame({"x": [None, None]}).to_struct("x")
+    c_1 = pl.DataFrame({"y": [1, 2], "x": [None, None]}).to_struct("xy")
+    c_2 = pl.DataFrame({"x": [None, None], "y": [1, 2]}).to_struct("xy")
+    assert c_0.null_count() == 2
+    assert c_1.null_count() == 0
+    assert c_2.null_count() == 0
+
+    # There was an issue where it could ignore parts of a multi-chunk Series
+    s = pl.Series([{"a": 1, "b": 2}])
+    r = pl.Series(
+        [{"a": None, "b": None}], dtype=pl.Struct({"a": pl.Int64, "b": pl.Int64})
+    )
+    s.append(r)
+    assert s.null_count() == 1
+
+    s = pl.Series([{"a": None}])
+    assert s.null_count() == 1
