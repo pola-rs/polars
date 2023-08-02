@@ -3363,10 +3363,11 @@ class Expr:
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
-    @deprecate_renamed_parameter("probs", "q", version="0.18.8")
+    @deprecate_renamed_parameter("probs", "quantiles", version="0.18.8")
+    @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
-        q: list[float] | int,
+        quantiles: list[float] | int,
         labels: list[str] | None = None,
         left_closed: bool = False,
         allow_duplicates: bool = False,
@@ -3377,7 +3378,7 @@ class Expr:
 
         Parameters
         ----------
-        q
+        quantiles
             Either a list of quantile probabilities between 0 and 1 or a positive
             integer determining the number of evenly spaced probabilities to use.
         labels
@@ -3392,7 +3393,6 @@ class Expr:
         include_breaks
             Include the the right endpoint of the bin each observation falls in.
             If True, the resulting column will be a Struct.
-
 
         Examples
         --------
@@ -3484,9 +3484,13 @@ class Expr:
         │ b   ┆ 9   ┆ {inf,"(4.5, inf]"}    │
         └─────┴─────┴───────────────────────┘
         """
-        expr_f = self._pyexpr.qcut_uniform if isinstance(q, int) else self._pyexpr.qcut
+        expr_f = (
+            self._pyexpr.qcut_uniform
+            if isinstance(quantiles, int)
+            else self._pyexpr.qcut
+        )
         return self._from_pyexpr(
-            expr_f(q, labels, left_closed, allow_duplicates, include_breaks)
+            expr_f(quantiles, labels, left_closed, allow_duplicates, include_breaks)
         )
 
     def rle(self) -> Self:
