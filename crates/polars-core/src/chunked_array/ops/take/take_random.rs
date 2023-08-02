@@ -363,7 +363,7 @@ impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
             TakeRandBranch2::Single(t)
         } else {
             let name = self.name();
-            let inner_type = self.inner_dtype();
+            let inner_type = self.inner_dtype().to_physical();
             let t = ListTakeRandom {
                 name,
                 inner_type,
