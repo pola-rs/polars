@@ -26,16 +26,17 @@ where
                     .flatten()
                     .enumerate()
                     .for_each(|(idx, key)| {
+                        let idx = idx as IdxSize;
                         if this_partition(key.as_u64(), partition_no, n_partitions) {
                             let entry = hash_tbl.entry(*key);
 
                             match entry {
                                 Entry::Vacant(entry) => {
-                                    entry.insert(vec![idx as u32]);
+                                    entry.insert(vec![idx as IdxSize]);
                                 }
                                 Entry::Occupied(mut entry) => {
                                     let v = entry.get_mut();
-                                    v.push(idx as u32);
+                                    v.push(idx as IdxSize);
                                 }
                             }
                         }
