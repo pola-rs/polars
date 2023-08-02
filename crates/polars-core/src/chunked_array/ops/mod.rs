@@ -4,7 +4,7 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 
 pub use self::take::*;
 #[cfg(feature = "object")]
-use crate::chunked_array::object::ObjectType;
+use crate::datatypes::ObjectType;
 use crate::prelude::*;
 
 #[cfg(feature = "abs")]
@@ -284,7 +284,7 @@ pub trait ChunkSet<'a, A, B> {
 
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
 pub trait ChunkCast {
-    /// Cast a `[ChunkedArray]` to `[DataType]`
+    /// Cast a [`ChunkedArray`] to [`DataType`]
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series>;
 
     /// Does not check if the cast is a valid one and may over/underflow
@@ -417,8 +417,7 @@ pub trait ChunkVar<T> {
     }
 }
 
-/// Compare [Series](series/series/enum.Series.html)
-/// and [ChunkedArray](series/chunked_array/struct.ChunkedArray.html)'s and get a `boolean` mask that
+/// Compare [`Series`] and [`ChunkedArray`]'s and get a `boolean` mask that
 /// can be used to filter rows.
 ///
 /// # Example

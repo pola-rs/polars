@@ -40,7 +40,7 @@ use crate::POOL;
 /// Most of the available functions are defined in the [SeriesTrait trait](crate::series::SeriesTrait).
 ///
 /// The `Series` struct consists
-/// of typed [ChunkedArray](../chunked_array/struct.ChunkedArray.html)'s. To quickly cast
+/// of typed [ChunkedArray](crate::chunked_array::ChunkedArray)'s. To quickly cast
 /// a `Series` to a `ChunkedArray` you can call the method with the name of the type:
 ///
 /// ```
@@ -92,10 +92,10 @@ use crate::POOL;
 ///     .all(|(a, b)| a == *b))
 /// ```
 ///
-/// See all the comparison operators in the [CmpOps trait](../chunked_array/comparison/trait.CmpOps.html)
+/// See all the comparison operators in the [CmpOps trait](crate::chunked_array::ops::ChunkCompare)
 ///
 /// ## Iterators
-/// The Series variants contain differently typed [ChunkedArray's](../chunked_array/struct.ChunkedArray.html).
+/// The Series variants contain differently typed [ChunkedArray's](crate::chunked_array::ChunkedArray).
 /// These structs can be turned into iterators, making it possible to use any function/ closure you want
 /// on a Series.
 ///
