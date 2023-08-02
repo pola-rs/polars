@@ -327,7 +327,8 @@ where
         other: &ChunkedArray<T>,
         validate: JoinValidation,
     ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
-        let (a, b, swap) = det_hash_prone_order!(self, other);
+        let (a, b, swapped) = det_hash_prone_order!(self, other);
+
 
         let n_partitions = _set_partition_size();
         let splitted_a = split_ca(a, n_partitions).unwrap();
@@ -343,7 +344,7 @@ where
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
                     .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap, validate)
+                hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
             }
             _ => {
                 let iters_a = splitted_a
@@ -354,7 +355,7 @@ where
                     .iter()
                     .map(|ca| ca.into_iter())
                     .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap, validate)
+                hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
             }
         }
     }
