@@ -55,11 +55,11 @@ from polars.datatypes import (
     supported_numpy_char_code,
 )
 from polars.dependencies import (
-    _DATAFRAME_API_COMPAT_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
+    dataframe_api_compat,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -1127,15 +1127,10 @@ class Series:
         This is developed and maintained outside of polars.
         Please report any issues to https://github.com/data-apis/dataframe-api-compat.
         """
-        if _DATAFRAME_API_COMPAT_AVAILABLE:
-            from dataframe_api_compat import polars_standard  # type: ignore[import]
-        else:
-            raise ModuleNotFoundError(
-                "`dataframe-api-compat` package is required for using the "
-                "Consortium DataFrame Standard API."
-            ) from None
-        return polars_standard.convert_to_standard_compliant_column(
-            self, api_version=api_version
+        return (
+            dataframe_api_compat.polars_standard.convert_to_standard_compliant_column(
+                self, api_version=api_version
+            )
         )
 
     def _repr_html_(self) -> str:
