@@ -143,10 +143,10 @@ impl JoinValidation {
         T: Send + Hash + Eq + Sync + Copy + AsU64,
     {
         use JoinValidation::*;
-        // Only check the `prone` side.
-        // The other side use `validate_build` to check
-        let valid = match self.swap(is_rhs) {
-            ManyToMany | ManyToOne => true,
+        let fail = match self.swap(is_rhs) {
+            // Only check the `prone` side.
+            // The other side use `validate_build` to check
+            ManyToMany | ManyToOne => false,
             OneToMany | OneToOne => {
                 // check any key in prone is duplicated
                 let n_partitions = _set_partition_size();
@@ -178,7 +178,7 @@ impl JoinValidation {
                 })
             }
         };
-        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
+        polars_ensure!(!fail, ComputeError: "the join keys did not fulfil {} validation", self);
         Ok(())
     }
 
