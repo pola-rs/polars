@@ -84,7 +84,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(all(feature = "json", feature = "serde_json"))]
-    fn write_json(&self, py_f: PyObject) -> PyResult<()> {
+    fn serialize(&self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
         serde_json::to_writer(file, &self.ldf.logical_plan)
             .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
@@ -93,7 +93,7 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    fn read_json(py_f: PyObject) -> PyResult<Self> {
+    fn deserialize(py_f: PyObject) -> PyResult<Self> {
         // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
         // so don't bother with files.
         let mut json = String::new();
@@ -105,7 +105,7 @@ impl PyLazyFrame {
         // we skipped the serializing/deserializing of the static in lifetime in `DataType`
         // so we actually don't have a lifetime at all when serializing.
 
-        // &str still has a lifetime. Bit its ok, because we drop it immediately
+        // &str still has a lifetime. But it's ok, because we drop it immediately
         // in this scope
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 

@@ -55,6 +55,8 @@ from polars.utils._parse_expr_input import (
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
+    deprecate_function,
+    deprecate_renamed_function,
     deprecate_renamed_methods,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
@@ -112,8 +114,14 @@ if TYPE_CHECKING:
 
 
 @deprecate_renamed_methods(
-    mapping={"approx_unique": "approx_n_unique"},
-    versions={"approx_unique": "0.18.12"},
+    mapping={
+        "approx_unique": "approx_n_unique",
+        "write_json": "serialize",
+    },
+    versions={
+        "approx_unique": "0.18.12",
+        "write_json": "0.18.12",
+    },
 )
 class LazyFrame:
     """
@@ -523,9 +531,17 @@ class LazyFrame:
         return self
 
     @classmethod
+    @deprecate_function(
+        "Convert the JSON string to `StringIO` and then use `LazyFrame.deserialize`.",
+        version="0.18.12",
+    )
     def from_json(cls, json: str) -> Self:
         """
         Read a logical plan from a JSON string to construct a LazyFrame.
+
+        .. deprecated:: 0.18.12
+            This method is deprecated. Convert the JSON string to ``StringIO``
+            and then use ``LazyFrame.deserialize``.
 
         Parameters
         ----------
@@ -534,34 +550,69 @@ class LazyFrame:
 
         See Also
         --------
-        read_json
+        deserialize
 
         """
-        bytes = StringIO(json).getvalue().encode()
-        file = BytesIO(bytes)
-        return cls._from_pyldf(PyLazyFrame.read_json(file))
+        return cls.deserialize(StringIO(json))
 
     @classmethod
-    def read_json(cls, file: str | Path | IOBase) -> Self:
+    @deprecate_renamed_function("deserialize", version="0.18.12")
+    @deprecate_renamed_parameter("file", "source", version="0.18.12")
+    def read_json(cls, source: str | Path | IOBase) -> Self:
+        """
+        Read a logical plan from a JSON file to construct a LazyFrame.
+
+        .. deprecated:: 0.18.12
+            This class method has been renamed to ``deserialize``.
+
+        Parameters
+        ----------
+        source
+            Path to a file or a file-like object.
+
+        See Also
+        --------
+        deserialize
+
+        """
+        return cls.deserialize(source)
+
+    @classmethod
+    def deserialize(cls, source: str | Path | IOBase) -> Self:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
 
         Parameters
         ----------
-        file
+        source
             Path to a file or a file-like object.
 
         See Also
         --------
-        LazyFrame.from_json, LazyFrame.write_json
+        LazyFrame.serialize
+
+        Examples
+        --------
+        >>> import io
+        >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
+        >>> json = lf.serialize()
+        >>> pl.LazyFrame.deserialize(io.StringIO(json)).collect()
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 6   │
+        └─────┘
 
         """
-        if isinstance(file, StringIO):
-            file = BytesIO(file.getvalue().encode())
-        elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+        if isinstance(source, StringIO):
+            source = BytesIO(source.getvalue().encode())
+        elif isinstance(source, (str, Path)):
+            source = normalise_filepath(source)
 
-        return cls._from_pyldf(PyLazyFrame.read_json(file))
+        return cls._from_pyldf(PyLazyFrame.deserialize(source))
 
     @property
     def columns(self) -> list[str]:
@@ -742,16 +793,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 """
 
     @overload
-    def write_json(self, file: None = ...) -> str:
+    def serialize(self, file: None = ...) -> str:
         ...
 
     @overload
-    def write_json(self, file: IOBase | str | Path) -> None:
+    def serialize(self, file: IOBase | str | Path) -> None:
         ...
 
-    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
+    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
         """
-        Write the logical plan of this LazyFrame to a file or string in JSON format.
+        Serialize the logical plan of this LazyFrame to a file or string in JSON format.
 
         Parameters
         ----------
@@ -761,18 +812,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         See Also
         --------
-        LazyFrame.read_json
+        LazyFrame.deserialize
 
         Examples
         --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...     }
-        ... )
-        >>> lf.write_json()
-        '{"DataFrameScan":{"df":{"columns":[{"name":"foo","datatype":"Int64","values":[1,2,3]},{"name":"bar","datatype":"Int64","values":[6,7,8]}]},"schema":{"inner":{"foo":"Int64","bar":"Int64"}},"output_schema":null,"projection":null,"selection":null}}'
+        Serialize the logical plan into a JSON string.
+
+        >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
+        >>> json = lf.serialize()
+        >>> json
+        '{"LocalProjection":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}}}}'
+
+        The logical plan can later be deserialized back into a LazyFrame.
+
+        >>> import io
+        >>> pl.LazyFrame.deserialize(io.StringIO(json)).collect()
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 6   │
+        └─────┘
 
         """
         if isinstance(file, (str, Path)):
@@ -780,7 +842,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
-                self._ldf.write_json(buf)
+                self._ldf.serialize(buf)
                 json_bytes = buf.getvalue()
 
             json_str = json_bytes.decode("utf8")
@@ -789,7 +851,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             else:
                 return json_str
         else:
-            self._ldf.write_json(file)
+            self._ldf.serialize(file)
         return None
 
     def pipe(
