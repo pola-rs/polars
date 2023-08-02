@@ -197,11 +197,8 @@ pub trait Utf8Methods: AsUtf8 {
                 None => None,
                 Some(mut s) => {
                     let fmt_len = fmt.len();
-                    if fmt_len > s.len() {
-                        return None;
-                    }
 
-                    for i in 1..(s.len() - fmt_len) {
+                    for i in 1..(s.len().saturating_sub(fmt_len)) {
                         if s.is_empty() {
                             return None;
                         }
@@ -257,11 +254,8 @@ pub trait Utf8Methods: AsUtf8 {
                 None => None,
                 Some(mut s) => {
                     let fmt_len = fmt.len();
-                    if fmt_len > s.len() {
-                        return None;
-                    }
 
-                    for i in 1..(s.len() - fmt_len) {
+                    for i in 1..(s.len().saturating_sub(fmt_len)) {
                         if s.is_empty() {
                             return None;
                         }
