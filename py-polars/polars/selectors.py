@@ -4,7 +4,6 @@ import re
 from datetime import timezone
 from typing import TYPE_CHECKING, Any, Collection, TypeVar
 
-from polars import Expr
 from polars import functions as F
 from polars.datatypes import (
     FLOAT_DTYPES,
@@ -17,6 +16,7 @@ from polars.datatypes import (
     Utf8,
     is_polars_dtype,
 )
+from polars.expr import Expr
 
 if TYPE_CHECKING:
     import sys
@@ -29,6 +29,49 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
+
+
+def _expand_selectors(
+    frame: DataFrame | LazyFrame, items: Any, *more_items: Any
+) -> list[Any]:
+    """
+    Expand any selectors to column names in the given input.
+
+    Non-selector values are left as-is.
+
+    Examples
+    --------
+    >>> from polars.selectors import _expand_selectors
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "colw": ["a", "b"],
+    ...         "colx": ["x", "y"],
+    ...         "coly": [123, 456],
+    ...         "colz": [2.0, 5.5],
+    ...     }
+    ... )
+    >>> _expand_selectors(df, ["colx", cs.numeric()])
+    ['colx', 'coly', 'colz']
+    >>> _expand_selectors(df, cs.string(), cs.float())
+    ['colw', 'colx', 'colz']
+
+    """
+    expanded: list[Any] = []
+    for item in (
+        *(
+            items
+            if isinstance(items, Collection) and not isinstance(items, str)
+            else [items]
+        ),
+        *more_items,
+    ):
+        if is_selector(item):
+            selector_cols = selector_column_names(frame, item)
+            expanded.extend(selector_cols)
+        else:
+            expanded.append(item)
+    return expanded
 
 
 def is_selector(obj: Any) -> bool:
@@ -121,7 +164,7 @@ class _selector_proxy_(Expr):
             set_ops = {"and": "&", "or": "|", "sub": "-"}
             if selector_name in set_ops:
                 op = set_ops[selector_name]
-                return f" {op} ".join(repr(p) for p in params.values())
+                return "(%s)" % f" {op} ".join(repr(p) for p in params.values())
             else:
                 str_params = ",".join(
                     (repr(v)[1:-1] if k.startswith("*") else f"{k}={v!r}")
