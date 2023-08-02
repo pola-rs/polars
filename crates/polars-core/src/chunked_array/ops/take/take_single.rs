@@ -221,7 +221,11 @@ impl TakeRandom for ListChunked {
         // Out of bounds is checked and downcast is of correct type
         let opt_arr = unsafe { impl_take_random_get!(self, index, LargeListArray) };
         opt_arr.map(|arr| unsafe {
-            Series::from_chunks_and_dtype_unchecked(self.name(), vec![arr], &self.inner_dtype().to_physical())
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
         })
     }
 
@@ -229,7 +233,11 @@ impl TakeRandom for ListChunked {
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         let opt_arr = impl_take_random_get_unchecked!(self, index, LargeListArray);
         opt_arr.map(|arr| unsafe {
-            Series::from_chunks_and_dtype_unchecked(self.name(), vec![arr], &self.inner_dtype().to_physical())
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
         })
     }
 
@@ -237,7 +245,11 @@ impl TakeRandom for ListChunked {
         let chunks = self.downcast_chunks();
         let arr = chunks.get(chunks.len() - 1).unwrap();
         arr.get(arr.len().saturating_sub(1)).map(|arr| unsafe {
-            Series::from_chunks_and_dtype_unchecked(self.name(), vec![arr], &self.inner_dtype().to_physical())
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
         })
     }
 }
@@ -252,7 +264,11 @@ impl TakeRandom for ArrayChunked {
         // Out of bounds is checked and downcast is of correct type
         let opt_arr = unsafe { impl_take_random_get!(self, index, FixedSizeListArray) };
         opt_arr.map(|arr| unsafe {
-            Series::from_chunks_and_dtype_unchecked(self.name(), vec![arr], &self.inner_dtype().to_physical())
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
         })
     }
 
@@ -260,7 +276,11 @@ impl TakeRandom for ArrayChunked {
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         let opt_arr = impl_take_random_get_unchecked!(self, index, FixedSizeListArray);
         opt_arr.map(|arr| unsafe {
-            Series::from_chunks_and_dtype_unchecked(self.name(), vec![arr], &self.inner_dtype().to_physical())
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
         })
     }
 
@@ -268,7 +288,11 @@ impl TakeRandom for ArrayChunked {
         let chunks = self.downcast_chunks();
         let arr = chunks.get(chunks.len() - 1).unwrap();
         arr.get(arr.len().saturating_sub(1)).map(|arr| unsafe {
-            Series::from_chunks_and_dtype_unchecked(self.name(), vec![arr], &self.inner_dtype().to_physical())
+            Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![arr],
+                &self.inner_dtype().to_physical(),
+            )
         })
     }
 }
