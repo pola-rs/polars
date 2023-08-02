@@ -6,7 +6,7 @@ use std::hash::Hash;
 use arrow::bitmap::MutableBitmap;
 
 #[cfg(feature = "object")]
-use crate::chunked_array::object::ObjectType;
+use crate::datatypes::ObjectType;
 use crate::datatypes::PlHashSet;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::frame::groupby::GroupsProxy;

@@ -150,7 +150,7 @@
 //! Unlock full potential with lazy computation. This allows query optimizations and provides Polars
 //! the full query context so that the fastest algorithm can be chosen.
 //!
-//! **[Read more in the lazy module.](polars_lazy)**
+//! **[Read more in the lazy module.](crate::lazy)**
 //!
 //! ## Compile times
 //! A DataFrame library typically consists of
@@ -374,6 +374,7 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![allow(ambiguous_glob_reexports)]
 pub mod docs;
+#[doc(hidden)]
 pub mod export;
 pub mod prelude;
 #[cfg(feature = "sql")]

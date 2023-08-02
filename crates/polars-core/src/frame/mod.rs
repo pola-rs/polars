@@ -2492,7 +2492,7 @@ impl DataFrame {
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with `Nones`.
     ///
-    /// See the method on [Series](../series/trait.SeriesTrait.html#method.shift) for more info on the `shift` operation.
+    /// See the method on [Series](crate::series::SeriesTrait::shift) for more info on the `shift` operation.
     #[must_use]
     pub fn shift(&self, periods: i64) -> Self {
         let col = self.apply_columns_par(&|s| s.shift(periods));
@@ -2507,7 +2507,7 @@ impl DataFrame {
     /// * Min fill (replace None with the minimum of the whole array)
     /// * Max fill (replace None with the maximum of the whole array)
     ///
-    /// See the method on [Series](../series/trait.SeriesTrait.html#method.fill_null) for more info on the `fill_null` operation.
+    /// See the method on [Series](crate::series::Series::fill_null) for more info on the `fill_null` operation.
     pub fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
         let col = self.try_apply_columns_par(&|s| s.fill_null(strategy))?;
 

@@ -4,7 +4,7 @@ use std::hash::Hash;
 
 use arrow::bitmap::Bitmap;
 
-pub use crate::prelude::*;
+use crate::prelude::*;
 
 pub mod builder;
 #[cfg(feature = "object")]

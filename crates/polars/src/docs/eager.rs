@@ -22,7 +22,7 @@
 //!     - [pivot](#pivot)
 //! * [Melt](#melt)
 //! * [Explode](#explode)
-//! * [IO](#IO)
+//! * [IO](#io)
 //!     - [Read CSV](#read-csv)
 //!     - [Write CSV](#write-csv)
 //!     - [Read IPC](#read-ipc)
@@ -30,8 +30,8 @@
 //!     - [Read Parquet](#read-parquet)
 //!     - [Write Parquet](#write-parquet)
 //! * [Various](#various)
-//!     - [Replace NaN](#replace-nan)
-//!     * [Extracting data](#extracting-data)
+//!     - [Replace NaN with Missing](#replace-nan-with-missing)
+//!     - [Extracting data](#extracting-data)
 //!
 //! ## Creation of Data structures
 //!
