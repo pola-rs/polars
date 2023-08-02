@@ -622,6 +622,26 @@ class LazyFrame:
         """
         return self._ldf.schema()
 
+    def __dataframe_consortium_standard__(
+        self, /, *, api_version: str | None = None
+    ) -> Any:
+        """
+        Provide entry point to the Consortium DataFrame Standard API.
+
+        This is developed and maintained outside of polars.
+        Please report any issues to https://github.com/data-apis/dataframe-api-compat.
+        """
+        try:
+            from dataframe_api_compat import polars_standard  # type: ignore[import]
+        except ModuleNotFoundError:
+            raise ImportError(
+                "`dataframe-api-compat` package is required for using the "
+                "Consortium DataFrame Standard API."
+            ) from None
+        return polars_standard.convert_to_standard_compliant_dataframe(
+            self, api_version=api_version
+        )
+
     @property
     def width(self) -> int:
         """

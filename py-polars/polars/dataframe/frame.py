@@ -1235,6 +1235,26 @@ class DataFrame:
             )
         return self.to_arrow().__dataframe__(nan_as_null, allow_copy)
 
+    def __dataframe_consortium_standard__(
+        self, /, *, api_version: str | None = None
+    ) -> Any:
+        """
+        Provide entry point to the Consortium DataFrame Standard API.
+
+        This is developed and maintained outside of polars.
+        Please report any issues to https://github.com/data-apis/dataframe-api-compat.
+        """
+        try:
+            from dataframe_api_compat import polars_standard  # type: ignore[import]
+        except ModuleNotFoundError:
+            raise ImportError(
+                "`dataframe-api-compat` package is required for using the "
+                "Consortium DataFrame Standard API."
+            ) from None
+        return polars_standard.convert_to_standard_compliant_dataframe(
+            self, api_version=api_version
+        )
+
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
         if isinstance(other, DataFrame):
