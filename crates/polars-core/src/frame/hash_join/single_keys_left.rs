@@ -116,7 +116,7 @@ where
         let expected_size = build.iter().map(|v| v.as_ref().len()).sum();
         let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        validate.validate_build(build_size, expected_size, false)?;
+        validate.validate_build(build_size, expected_size, true)?;
         hash_tbls
     } else {
         build_tables(build)
