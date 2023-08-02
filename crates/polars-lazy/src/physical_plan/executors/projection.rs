@@ -4,7 +4,7 @@ use super::*;
 /// and a multiple PhysicalExpressions (create the output Series)
 pub struct ProjectionExec {
     pub(crate) input: Box<dyn Executor>,
-    pub(crate) cse_expr: Vec<Arc<dyn PhysicalExpr>>,
+    pub(crate) cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) expr: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) has_windows: bool,
     pub(crate) input_schema: SchemaRef,
@@ -21,7 +21,7 @@ impl ProjectionExec {
         #[allow(clippy::let_and_return)]
         let selected_cols = evaluate_physical_expressions(
             &mut df,
-            &self.cse_expr,
+            &self.cse_exprs,
             &self.expr,
             state,
             self.has_windows,
@@ -48,10 +48,10 @@ impl Executor for ProjectionExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                if self.cse_expr.is_empty() {
+                if self.cse_exprs.is_empty() {
                     println!("run ProjectionExec");
                 } else {
-                    println!("run ProjectionExec with {} CSE", self.cse_expr.len())
+                    println!("run ProjectionExec with {} CSE", self.cse_exprs.len())
                 };
             }
         }
@@ -61,7 +61,13 @@ impl Executor for ProjectionExec {
             let by = self
                 .expr
                 .iter()
-                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
+                .map(|s| {
+                    profile_name(
+                        s.as_ref(),
+                        self.input_schema.as_ref(),
+                        !self.cse_exprs.is_empty(),
+                    )
+                })
                 .collect::<PolarsResult<Vec<_>>>()?;
             let name = comma_delimited("projection".to_string(), &by);
             Cow::Owned(name)

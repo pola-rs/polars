@@ -253,7 +253,7 @@ pub fn create_physical_plan(
             )?;
             Ok(Box::new(executors::ProjectionExec {
                 input,
-                cse_expr,
+                cse_exprs: cse_expr,
                 expr: phys_expr,
                 has_windows: state.has_windows,
                 input_schema,
@@ -280,7 +280,7 @@ pub fn create_physical_plan(
             )?;
             Ok(Box::new(executors::ProjectionExec {
                 input,
-                cse_expr: vec![],
+                cse_exprs: vec![],
                 expr: phys_expr,
                 has_windows: state.has_windows,
                 input_schema,

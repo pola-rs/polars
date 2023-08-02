@@ -1,6 +1,7 @@
 use std::fmt::Formatter;
-use std::iter::FlatMap;
+use std::iter::{FlatMap, Map};
 use std::sync::Arc;
+use std::vec::IntoIter;
 
 use polars_core::prelude::*;
 use smartstring::alias::String as SmartString;
@@ -200,12 +201,16 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
     );
 }
 
-/// This should gradually replace expr_to_root_column as this will get all names in the tree.
-pub fn expr_to_leaf_column_names(expr: &Expr) -> Vec<Arc<str>> {
+#[allow(clippy::type_complexity)]
+pub fn expr_to_leaf_column_names_iter(expr: &Expr) -> Map<IntoIter<Expr>, fn(Expr) -> Arc<str>> {
     expr_to_root_column_exprs(expr)
         .into_iter()
         .map(|e| expr_to_leaf_column_name(&e).unwrap())
-        .collect()
+}
+
+/// This should gradually replace expr_to_root_column as this will get all names in the tree.
+pub fn expr_to_leaf_column_names(expr: &Expr) -> Vec<Arc<str>> {
+    expr_to_leaf_column_names_iter(expr).collect()
 }
 
 /// unpack alias(col) to name of the root column name
