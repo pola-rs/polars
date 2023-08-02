@@ -28,6 +28,9 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 smartstring.workspace = true
 
+[build-dependencies]
+version_check = { workspace = true }
+
 [features]
 simd = ["argminmax/nightly_simd"]
 nightly = ["polars-utils/nightly"]

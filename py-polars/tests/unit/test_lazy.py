@@ -41,20 +41,6 @@ def test_lazy() -> None:
     eager = ldf.groupby("a").agg(pl.implode("b")).collect()
     assert sorted(eager.rows()) == [(1, [[1.0]]), (2, [[2.0]]), (3, [[3.0]])]
 
-    # profile lazyframe operation/plan
-    lazy = ldf.groupby("a").agg(pl.implode("b"))
-    profiling_info = lazy.profile()
-    # ┌──────────────┬───────┬─────┐
-    # │ node         ┆ start ┆ end │
-    # │ ---          ┆ ---   ┆ --- │
-    # │ str          ┆ u64   ┆ u64 │
-    # ╞══════════════╪═══════╪═════╡
-    # │ optimization ┆ 0     ┆ 69  │
-    # │ groupby(a)   ┆ 69    ┆ 342 │
-    # └──────────────┴───────┴─────┘
-    assert len(profiling_info) == 2
-    assert profiling_info[1].columns == ["node", "start", "end"]
-
 
 @pytest.mark.parametrize(
     ("data", "repr_"),

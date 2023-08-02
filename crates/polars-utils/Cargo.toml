@@ -18,6 +18,9 @@ rayon.workspace = true
 smartstring.workspace = true
 sysinfo = { version = "0.29", default-features = false, optional = true }
 
+[build-dependencies]
+version_check = { workspace = true }
+
 [features]
 bigidx = []
 nightly = []

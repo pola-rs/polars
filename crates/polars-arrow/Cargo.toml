@@ -21,6 +21,9 @@ polars-error = { version = "0.31.1", path = "../polars-error" }
 serde = { version = "1", features = ["derive"], optional = true }
 thiserror.workspace = true
 
+[build-dependencies]
+version_check = { workspace = true }
+
 [features]
 dtype-decimal = ["atoi", "ethnum"]
 dtype-array = []

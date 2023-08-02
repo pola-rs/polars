@@ -1462,6 +1462,7 @@ dependencies = [
  "polars-error",
  "serde",
  "thiserror",
+ "version_check",
 ]
 
 [[package]]
@@ -1493,6 +1494,7 @@ dependencies = [
  "serde_json",
  "smartstring",
  "thiserror",
+ "version_check",
  "wasm-timer",
  "xxhash-rust",
 ]
@@ -1577,6 +1579,7 @@ dependencies = [
  "pyo3",
  "rayon",
  "smartstring",
+ "version_check",
 ]
 
 [[package]]
@@ -1600,6 +1603,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smartstring",
+ "version_check",
 ]
 
 [[package]]
@@ -1620,6 +1624,7 @@ dependencies = [
  "polars-utils",
  "rayon",
  "smartstring",
+ "version_check",
 ]
 
 [[package]]
@@ -1644,6 +1649,7 @@ dependencies = [
  "serde",
  "smartstring",
  "strum_macros 0.25.1",
+ "version_check",
 ]
 
 [[package]]
@@ -1699,6 +1705,7 @@ dependencies = [
  "rayon",
  "smartstring",
  "sysinfo",
+ "version_check",
 ]
 
 [[package]]

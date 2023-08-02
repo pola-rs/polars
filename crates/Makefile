@@ -57,7 +57,7 @@ test:  ## Run tests
 
 .PHONY: integration-tests
 integration-tests:  ## Run integration tests
-	cargo test --all-features --test it
+	cargo test --all-features --test it -p polars
 
 .PHONY: test-doc
 test-doc:  ## Run doc examples
