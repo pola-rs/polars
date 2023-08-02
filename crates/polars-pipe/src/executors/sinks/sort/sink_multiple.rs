@@ -72,7 +72,7 @@ fn finalize_dataframe(
         // those need to be inserted at the `sort_idx` position
         // in the `DataFrame`.
         if can_decode {
-            let sort_dtypes = sort_dtypes.expect("should be set");
+            let sort_dtypes = sort_dtypes.expect("should be set if 'can_decode'");
             let sort_dtypes = sort_by_idx(sort_dtypes, sort_idx);
 
             let encoded = encoded.binary().unwrap();
@@ -262,10 +262,11 @@ impl Sink for SortSinkMultiple {
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let out = self.sort_sink.finalize(context)?;
 
-        let sort_dtypes = self
-            .sort_dtypes
-            .take()
-            .map(|arr| arr.iter().map(|dt| dt.to_arrow()).collect::<Vec<_>>());
+        let sort_dtypes = self.sort_dtypes.take().map(|arr| {
+            arr.iter()
+                .map(|dt| dt.to_physical().to_arrow())
+                .collect::<Vec<_>>()
+        });
 
         // we must adapt the finalized sink result so that the sort encoded column is dropped
         match out {
