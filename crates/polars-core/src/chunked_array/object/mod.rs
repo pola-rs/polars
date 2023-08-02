@@ -69,6 +69,14 @@ where
         &self.values[self.offset + index]
     }
 
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if self.is_valid(index) {
+            Some(unsafe { self.value_unchecked(index) })
+        } else {
+            None
+        }
+    }
+
     /// Get a value at a certain index location
     ///
     /// # Safety
