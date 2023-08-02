@@ -630,3 +630,20 @@ def test_streaming_10115(tmp_path: Path) -> None:
         "y": ["foo"],
         "z": ["_"],
     }
+
+
+@pytest.mark.write_disk()
+def test_stream_empty_file(tmp_path: Path) -> None:
+    p = tmp_path / "in.parquet"
+    schema = {
+        "KLN_NR": pl.Utf8,
+    }
+
+    df = pl.DataFrame(
+        {
+            "KLN_NR": [],
+        },
+        schema=schema,
+    )
+    df.write_parquet(p)
+    assert pl.scan_parquet(p).collect(streaming=True).schema == schema
