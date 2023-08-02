@@ -329,7 +329,6 @@ where
     ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
         let (a, b, swapped) = det_hash_prone_order!(self, other);
 
-
         let n_partitions = _set_partition_size();
         let splitted_a = split_ca(a, n_partitions).unwrap();
         let splitted_b = split_ca(b, n_partitions).unwrap();
