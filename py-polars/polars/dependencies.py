@@ -8,6 +8,7 @@ from importlib.util import find_spec
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 
+_DATAFRAME_API_COMPAT_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
@@ -171,6 +172,9 @@ else:
     subprocess, _ = _lazy_import("subprocess")
 
     # heavy/optional third party libs
+    dataframe_api_compat, _DATAFRAME_API_COMPAT_AVAILABLE = _lazy_import(
+        "dataframe-api-compat"
+    )
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
@@ -219,6 +223,7 @@ __all__ = [
     "pickle",
     "subprocess",
     # lazy-load third party libs
+    "dataframe_api_compat",
     "deltalake",
     "fsspec",
     "numpy",

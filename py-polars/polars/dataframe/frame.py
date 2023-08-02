@@ -49,6 +49,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import (
+    _DATAFRAME_API_COMPAT_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
@@ -1244,10 +1245,10 @@ class DataFrame:
         This is developed and maintained outside of polars.
         Please report any issues to https://github.com/data-apis/dataframe-api-compat.
         """
-        try:
+        if _DATAFRAME_API_COMPAT_AVAILABLE:
             from dataframe_api_compat import polars_standard  # type: ignore[import]
-        except ModuleNotFoundError:
-            raise ImportError(
+        else:
+            raise ModuleNotFoundError(
                 "`dataframe-api-compat` package is required for using the "
                 "Consortium DataFrame Standard API."
             ) from None
