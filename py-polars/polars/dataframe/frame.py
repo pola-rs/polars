@@ -1237,7 +1237,7 @@ class DataFrame:
         return self.to_arrow().__dataframe__(nan_as_null, allow_copy)
 
     def __dataframe_consortium_standard__(
-        self, /, *, api_version: str | None = None
+        self, *, api_version: str | None = None
     ) -> Any:
         """
         Provide entry point to the Consortium DataFrame Standard API.

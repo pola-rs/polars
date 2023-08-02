@@ -623,7 +623,7 @@ class LazyFrame:
         return self._ldf.schema()
 
     def __dataframe_consortium_standard__(
-        self, /, *, api_version: str | None = None
+        self, *, api_version: str | None = None
     ) -> Any:
         """
         Provide entry point to the Consortium DataFrame Standard API.
