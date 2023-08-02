@@ -23,7 +23,11 @@ def test_streaming_sort_multiple_columns_logical_types() -> None:
     ) == {
         "foo": [1, 2, 3],
         "bar": ["c", "b", "a"],
-        "baz": [datetime(2023, 5, 1, 14, 45)],
+        "baz": [
+            datetime(2023, 5, 1, 14, 45),
+            datetime(2023, 5, 1, 13, 45),
+            datetime(2023, 5, 1, 15, 45),
+        ],
     }
 
 
