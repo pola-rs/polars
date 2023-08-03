@@ -361,7 +361,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
         let n_fields = reg.captures_len();
 
-        let out = match n_fields { 
+        let out = match n_fields {
             1 => StructChunked::new(ca.name(), &[ca.cast(&DataType::Null)?.into_series()]),
             _ => {
                 let idxs = (1..n_fields).map(|idx| idx.to_string()).collect::<Vec<_>>();
