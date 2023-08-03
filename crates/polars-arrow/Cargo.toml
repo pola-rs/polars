@@ -1,9 +1,11 @@
 [package]
 name = "polars-arrow"
-version.workspace = true
-authors = ["ritchie46 <ritchie46@gmail.com>"]
-edition = "2021"
-license = "MIT"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
 description = "Arrow interfaces for Polars DataFrame library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

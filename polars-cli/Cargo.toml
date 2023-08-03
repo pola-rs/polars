@@ -1,9 +1,9 @@
 [package]
 name = "polars-cli"
 version = "0.3.0"
-edition = "2021"
-license = "MIT"
-repository = "https://github.com/pola-rs/polars"
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
 description = "CLI interface for running SQL queries via Polars"
 
 [[bin]]

@@ -1,11 +1,12 @@
 [package]
 name = "polars-ops"
-version.workspace = true
-authors = ["ritchie46 <ritchie46@gmail.com>"]
-edition = "2021"
-license = "MIT"
-repository = "https://github.com/pola-rs/polars"
-description = "More operations on polars data structures"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "More operations on Polars data structures"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

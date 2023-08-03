@@ -1,13 +1,14 @@
 [package]
 name = "polars"
-version.workspace = true
-authors = ["ritchie46 <ritchie46@gmail.com>"]
-edition = "2021"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
 keywords = ["dataframe", "query-engine", "arrow"]
-license = "MIT"
-readme = "../README.md"
-repository = "https://github.com/pola-rs/polars"
-description = "DataFrame Library based on Apache Arrow"
+license = { workspace = true }
+readme = "../../README.md"
+repository = { workspace = true }
+description = "DataFrame library based on Apache Arrow"
 
 [features]
 sql = ["polars-sql"]
