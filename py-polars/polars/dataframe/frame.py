@@ -1235,7 +1235,7 @@ class DataFrame:
                 "pyarrow>=11.0.0 is required for converting a Polars dataframe to a"
                 " dataframe interchange object."
             )
-        if not allow_copy and Categorical in unpack_dtypes(self.dtypes):
+        if not allow_copy and Categorical in unpack_dtypes(*self.dtypes):
             raise TypeError(
                 "Polars does not fully support zero-copy conversion to Arrow for"
                 " categorical columns. Set `allow_copy=True` or cast categorical"

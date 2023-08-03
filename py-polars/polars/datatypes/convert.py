@@ -163,7 +163,7 @@ def is_polars_dtype(dtype: Any, include_unknown: bool = False) -> bool:
 
 
 def unpack_dtypes(
-    *dtypes: PolarsDataType | Collection[PolarsDataType] | None,
+    *dtypes: PolarsDataType | None,
     include_compound: bool = False,
 ) -> set[PolarsDataType]:
     """
