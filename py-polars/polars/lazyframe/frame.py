@@ -661,10 +661,7 @@ class LazyFrame:
         )
 
     def _comparison_error(self, other: Any) -> NoReturn:
-        raise TypeError(
-            "Cannot compare ambiguous LazyFrame structures; call .collect() "
-            "to materialize to DataFrame before comparison."
-        )
+        raise TypeError("Cannot compare LazyFrames; call .collect() to materialize.")
 
     __eq__ = _comparison_error
     __ne__ = _comparison_error
