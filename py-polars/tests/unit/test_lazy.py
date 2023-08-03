@@ -5,7 +5,7 @@ from functools import reduce
 from inspect import signature
 from operator import add
 from string import ascii_letters
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, cast
 
 import numpy as np
 import pytest
@@ -1461,57 +1461,23 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     assert result_eager.frame_equal(result_lazy)
 
 
-def test_lazy_comparison_operators() -> None:
-    df1 = pl.DataFrame(
-        {
-            "a": [1, 2, 3],
-            "b": ["a", "b", "c"],
-        }
-    ).lazy()
-    df2 = pl.DataFrame(
-        {
-            "a": [1, 2, 3],
-            "b": ["a", "b", "d"],
-        }
-    ).lazy()
-
-    assert (df1 == df2).collect().rows() == [(True, True), (True, True), (True, False)]
-    assert (df1 < df2).collect().rows() == [
-        (False, False),
-        (False, False),
-        (False, True),
-    ]
-    assert (df1 <= df2).collect().rows() == [(True, True), (True, True), (True, True)]
-    assert (df1 > df2).collect().rows() == [
-        (False, False),
-        (False, False),
-        (False, False),
-    ]
-    assert (df1 >= df2).collect().rows() == [(True, True), (True, True), (True, False)]
-    assert (df1 != df2).collect().rows() == [
-        (False, False),
-        (False, False),
-        (False, True),
-    ]
-
-    # test with different columns
-    df1 = df1.with_columns(pl.lit(0).alias("c"))
-    with pytest.raises(ValueError, match="DataFrame columns do not match"):
-        (df1 == df2).collect()
-
-    # test with different # of rows
-    df1 = pl.DataFrame(
-        {
-            "a": [1, 2, 3],
-        }
-    ).lazy()
-    df2 = pl.DataFrame(
-        {
-            "a": [1, 2, 3, 4],
-        }
-    ).lazy()
+@pytest.mark.parametrize(
+    "compare",
+    [
+        pl.LazyFrame.__eq__,
+        pl.LazyFrame.__ne__,
+        pl.LazyFrame.__gt__,
+        pl.LazyFrame.__lt__,
+        pl.LazyFrame.__ge__,
+        pl.LazyFrame.__le__,
+    ],
+)
+def test_lazy_comparison_operators(
+    compare: Callable[[pl.LazyFrame, pl.LazyFrame], NoReturn]
+) -> None:
+    # we cannot compare lazy frames, so all should raise a TypeError
     with pytest.raises(
-        pl.exceptions.ComputeError,
-        match="cannot evaluate two series of different lengths",
+        TypeError,
+        match="Cannot compare ambiguous LazyFrame structures",
     ):
-        (df1 == df2).collect()
+        compare(pl.LazyFrame(), pl.LazyFrame())
