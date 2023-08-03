@@ -91,6 +91,11 @@ def read_parquet(
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
 
+    See Also
+    --------
+    scan_parquet
+    scan_pyarrow_dataset
+
     Returns
     -------
     DataFrame
@@ -213,6 +218,11 @@ def scan_parquet(
     use_statistics
         Use statistics in the parquet to determine if pages
         can be skipped from reading.
+
+    See Also
+    --------
+    read_parquet
+    scan_pyarrow_dataset
 
     """
     if isinstance(source, (str, Path)):
