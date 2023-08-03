@@ -29,7 +29,8 @@ EVAL_ENVIRONMENT = {
 )
 def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
     # functions we don't (yet?) offer suggestions for
-    assert not BytecodeParser(func, apply_target="expr").can_rewrite()
+    parser = BytecodeParser(func, apply_target="expr")
+    assert not parser.can_attempt_rewrite() or not parser.to_expression("x")
 
 
 @pytest.mark.parametrize(
@@ -74,7 +75,7 @@ def test_parse_apply_raw_functions() -> None:
 
         # note: we can't parse/rewrite raw numpy functions...
         parser = BytecodeParser(func, apply_target="expr")
-        assert not parser.can_rewrite()
+        assert not parser.can_attempt_rewrite()
 
         # ...but we ARE still able to warn
         with pytest.warns(
