@@ -579,43 +579,134 @@ def test_outer_join_list_() -> None:
 
 
 def test_join_validation() -> None:
-    a = pl.DataFrame({"a": [1, 1, 1, 2]})
-
-    b = pl.DataFrame({"a": [2]})
-
-    assert a.join(b, on="a", validate="m:m")["a"].to_list() == [2]
-    assert a.join(b, on="a", validate="m:1")["a"].to_list() == [2]
-    # swap the tables
-    assert b.join(a, on="a", validate="1:m")["a"].to_list() == [2]
-
-    with pytest.raises(pl.ComputeError):
-        a.join(b, on="a", validate="1:m")
-    with pytest.raises(pl.ComputeError):
-        a.join(b, on="a", validate="1:1")
-    with pytest.raises(pl.ComputeError):
-        b.join(a, on="a", validate="m:1")
-    with pytest.raises(pl.ComputeError):
-        b.join(a, on="a", validate="1:1")
-
-    df = pl.DataFrame(
-        {
-            "foo": [1, 2],
-            "ham": ["a", "a"],
-        }
+    # test data
+    unique = pl.DataFrame(
+        {"id": [1, 2, 3, 4], "name": ["hello", "world", "rust", "polars"]}
     )
+    duplicate = pl.DataFrame({"id": [1, 2, 3, 1], "cnt": [2, 4, 6, 1]})
 
-    other_df = pl.DataFrame(
-        {
-            "apple": ["x", "y", "z"],
-            "ham": ["a", "b", "z"],
-        }
+    # Inner join
+
+    # one_to_many
+    _one_to_many_success_inner = unique.join(
+        duplicate, on="id", how="inner", validate="1:m"
     )
 
     with pytest.raises(pl.ComputeError):
-        df.join(other_df, on="ham", validate="1:m")
+        _one_to_many_fail_inner = duplicate.join(
+            unique, on="id", how="inner", validate="1:m"
+        )
 
-    assert df.join(other_df, on="ham", validate="m:1")["foo"].to_list() == [1, 2]
-    assert other_df.join(df, on="ham", validate="1:m")["foo"].to_list() == [1, 2]
+    # one to one
+    with pytest.raises(pl.ComputeError):
+        _one_to_one_fail_1_inner = unique.join(
+            duplicate, on="id", how="inner", validate="1:1"
+        )
 
     with pytest.raises(pl.ComputeError):
-        other_df.join(df, on="ham", validate="m:1")
+        _one_to_one_fail_2_inner = duplicate.join(
+            unique, on="id", how="inner", validate="1:1"
+        )
+
+    # many to one
+    with pytest.raises(pl.ComputeError):
+        _many_to_one_fail_inner = unique.join(
+            duplicate, on="id", how="inner", validate="m:1"
+        )
+
+    _many_to_one_success_inner = duplicate.join(
+        unique, on="id", how="inner", validate="m:1"
+    )
+
+    # many to many
+    _many_to_many_success_1_inner = duplicate.join(
+        unique, on="id", how="inner", validate="m:m"
+    )
+
+    _many_to_many_success_2_inner = unique.join(
+        duplicate, on="id", how="inner", validate="m:m"
+    )
+
+    # Left join
+
+    # one_to_many
+    _one_to_many_success_left = unique.join(
+        duplicate, on="id", how="left", validate="1:m"
+    )
+
+    with pytest.raises(pl.ComputeError):
+        _one_to_many_fail_left = duplicate.join(
+            unique, on="id", how="left", validate="1:m"
+        )
+
+    # one to one
+    with pytest.raises(pl.ComputeError):
+        _one_to_one_fail_1_left = unique.join(
+            duplicate, on="id", how="left", validate="1:1"
+        )
+
+    with pytest.raises(pl.ComputeError):
+        _one_to_one_fail_2_left = duplicate.join(
+            unique, on="id", how="left", validate="1:1"
+        )
+
+    # many to one
+    with pytest.raises(pl.ComputeError):
+        _many_to_one_fail_left = unique.join(
+            duplicate, on="id", how="left", validate="m:1"
+        )
+
+    _many_to_one_success_left = duplicate.join(
+        unique, on="id", how="left", validate="m:1"
+    )
+
+    # many to many
+    _many_to_many_success_1_left = duplicate.join(
+        unique, on="id", how="left", validate="m:m"
+    )
+
+    _many_to_many_success_2_left = unique.join(
+        duplicate, on="id", how="left", validate="m:m"
+    )
+
+    # Outer join
+
+    # one_to_many
+    _one_to_many_success_outer = unique.join(
+        duplicate, on="id", how="outer", validate="1:m"
+    )
+
+    with pytest.raises(pl.ComputeError):
+        _one_to_many_fail_outer = duplicate.join(
+            unique, on="id", how="outer", validate="1:m"
+        )
+
+    # one to one
+    with pytest.raises(pl.ComputeError):
+        _one_to_one_fail_1_outer = unique.join(
+            duplicate, on="id", how="outer", validate="1:1"
+        )
+
+    with pytest.raises(pl.ComputeError):
+        _one_to_one_fail_2_outer = duplicate.join(
+            unique, on="id", how="outer", validate="1:1"
+        )
+
+    # many to one
+    with pytest.raises(pl.ComputeError):
+        _many_to_one_fail_outer = unique.join(
+            duplicate, on="id", how="outer", validate="m:1"
+        )
+
+    _many_to_one_success_outer = duplicate.join(
+        unique, on="id", how="outer", validate="m:1"
+    )
+
+    # many to many
+    _many_to_many_success_1_outer = duplicate.join(
+        unique, on="id", how="outer", validate="m:m"
+    )
+
+    _many_to_many_success_2_outer = unique.join(
+        duplicate, on="id", how="outer", validate="m:m"
+    )
