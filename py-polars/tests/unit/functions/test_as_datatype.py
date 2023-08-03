@@ -1,9 +1,19 @@
+from __future__ import annotations
+
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
+    from polars.type_aliases import TimeUnit
+else:
+    from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 
 def test_date_datetime() -> None:
@@ -22,6 +32,44 @@ def test_date_datetime() -> None:
     )
     assert_series_equal(out["date"], df["day"].rename("date"))
     assert_series_equal(out["h2"], df["hour"].rename("h2"))
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_datetime_time_unit(time_unit: TimeUnit) -> None:
+    result = pl.datetime(2022, 1, 2, time_unit=time_unit)
+
+    assert pl.select(result.dt.year()).item() == 2022
+    assert pl.select(result.dt.month()).item() == 1
+    assert pl.select(result.dt.day()).item() == 2
+
+
+@pytest.mark.parametrize("time_zone", [None, "Europe/Amsterdam", "UTC"])
+def test_datetime_time_zone(time_zone: str | None) -> None:
+    result = pl.datetime(2022, 1, 2, 10, time_zone=time_zone)
+
+    assert pl.select(result.dt.year()).item() == 2022
+    assert pl.select(result.dt.month()).item() == 1
+    assert pl.select(result.dt.day()).item() == 2
+    assert pl.select(result.dt.hour()).item() == 10
+
+
+def test_datetime_ambiguous_time_zone() -> None:
+    expr = pl.datetime(2018, 10, 28, 2, 30, time_zone="Europe/Brussels")
+
+    with pytest.raises(pl.ArrowError):
+        pl.select(expr)
+
+
+def test_datetime_ambiguous_time_zone_use_earliest() -> None:
+    expr = pl.datetime(
+        2018, 10, 28, 2, 30, time_zone="Europe/Brussels", use_earliest=True
+    )
+
+    result = pl.select(expr).item()
+
+    expected = datetime(2018, 10, 28, 2, 30, tzinfo=ZoneInfo("Europe/Brussels"))
+    assert result == expected
+    assert result.fold == 0
 
 
 def test_time() -> None:

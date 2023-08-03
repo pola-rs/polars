@@ -47,9 +47,10 @@ class ExprDateTimeNameSpace:
             Offset the window
         use_earliest
             Determine how to deal with ambiguous datetimes:
-            - None (default): raise;
-            - True: use the earliest datetime;
-            - False: use the latest datetime.
+
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Notes
         -----
@@ -1507,9 +1508,10 @@ class ExprDateTimeNameSpace:
             Time zone for the `Datetime` expression. Pass `None` to unset time zone.
         use_earliest
             Determine how to deal with ambiguous datetimes:
-            - None (default): raise;
-            - True: use the earliest datetime;
-            - False: use the latest datetime.
+
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Examples
         --------

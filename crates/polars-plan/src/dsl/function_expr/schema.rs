@@ -96,6 +96,16 @@ impl FunctionExpr {
                             DataType::List(Box::new(DataType::Time)),
                         ));
                     }
+                    DatetimeFunction {
+                        time_unit,
+                        time_zone,
+                        use_earliest: _,
+                    } => {
+                        return Ok(Field::new(
+                            "datetime",
+                            DataType::Datetime(*time_unit, time_zone.clone()),
+                        ));
+                    }
                     Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
                         DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),
                         DataType::Date => DataType::Datetime(*tu, None),

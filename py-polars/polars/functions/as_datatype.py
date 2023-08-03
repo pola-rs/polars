@@ -20,17 +20,21 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, SchemaDict
+    from polars.type_aliases import IntoExpr, SchemaDict, TimeUnit
 
 
 def datetime_(
-    year: Expr | str | int,
-    month: Expr | str | int,
-    day: Expr | str | int,
-    hour: Expr | str | int | None = None,
-    minute: Expr | str | int | None = None,
-    second: Expr | str | int | None = None,
-    microsecond: Expr | str | int | None = None,
+    year: int | IntoExpr,
+    month: int | IntoExpr,
+    day: int | IntoExpr,
+    hour: int | IntoExpr | None = None,
+    minute: int | IntoExpr | None = None,
+    second: int | IntoExpr | None = None,
+    microsecond: int | IntoExpr | None = None,
+    *,
+    time_unit: TimeUnit = "us",
+    time_zone: str | None = None,
+    use_earliest: bool | None = None,
 ) -> Expr:
     """
     Create a Polars literal expression of type Datetime.
@@ -38,19 +42,30 @@ def datetime_(
     Parameters
     ----------
     year
-        column or literal.
+        Column or literal.
     month
-        column or literal, ranging from 1-12.
+        Column or literal, ranging from 1-12.
     day
-        column or literal, ranging from 1-31.
+        Column or literal, ranging from 1-31.
     hour
-        column or literal, ranging from 0-23.
+        Column or literal, ranging from 0-23.
     minute
-        column or literal, ranging from 0-59.
+        Column or literal, ranging from 0-59.
     second
-        column or literal, ranging from 0-59.
+        Column or literal, ranging from 0-59.
     microsecond
-        column or literal, ranging from 0-999999.
+        Column or literal, ranging from 0-999999.
+    time_unit : {'us', 'ms', 'ns'}
+        Time unit of the resulting expression.
+    time_zone
+        Time zone of the resulting expression.
+    use_earliest
+        Determine how to deal with ambiguous datetimes:
+
+        - ``None`` (default): raise
+        - ``True``: use the earliest datetime
+        - ``False``: use the latest datetime
+
 
     Returns
     -------
@@ -80,6 +95,9 @@ def datetime_(
             minute,
             second,
             microsecond,
+            time_unit,
+            time_zone,
+            use_earliest,
         )
     )
 
