@@ -592,6 +592,72 @@ impl Series {
         }
     }
 
+    /// Get the bitwise xor of the Series as a new Series of length 1.
+    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
+    ///
+    /// If the [`DataType`] is one of `{Float32, Float64}` the `Series` is
+    /// first cast to `{UInt32, UInt64}` respectively to perform bitwise operation.
+    pub fn xor_as_series(&self) -> Series {
+        use DataType::*;
+        if self.is_empty()
+            && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
+        {
+            return Series::new(self.name(), [0])
+                .cast(self.dtype())
+                .unwrap()
+                .xor_as_series();
+        }
+        match self.dtype() {
+            Float32 => self.cast(&UInt32).unwrap().xor_as_series(),
+            Float64 => self.cast(&UInt64).unwrap().xor_as_series(),
+            _ => self._xor_as_series(),
+        }
+    }
+
+    /// Get the bitwise or of the Series as a new Series of length 1.
+    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
+    ///
+    /// If the [`DataType`] is one of `{Float32, Float64}` the `Series` is
+    /// first cast to `{UInt32, UInt64}` respectively to perform bitwise operation.
+    pub fn and_as_series(&self) -> Series {
+        use DataType::*;
+        if self.is_empty()
+            && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
+        {
+            return Series::new(self.name(), [0])
+                .cast(self.dtype())
+                .unwrap()
+                .and_as_series();
+        }
+        match self.dtype() {
+            Float32 => self.cast(&UInt32).unwrap().and_as_series(),
+            Float64 => self.cast(&UInt64).unwrap().and_as_series(),
+            _ => self._and_as_series(),
+        }
+    }
+
+    /// Get the bitwise or of the Series as a new Series of length 1.
+    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
+    ///
+    /// If the [`DataType`] is one of `{Float32, Float64}` the `Series` is
+    /// first cast to `{UInt32, UInt64}` respectively to perform bitwise operation.
+    pub fn or_as_series(&self) -> Series {
+        use DataType::*;
+        if self.is_empty()
+            && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
+        {
+            return Series::new(self.name(), [0])
+                .cast(self.dtype())
+                .unwrap()
+                .or_as_series();
+        }
+        match self.dtype() {
+            Float32 => self.cast(&UInt32).unwrap().or_as_series(),
+            Float64 => self.cast(&UInt64).unwrap().or_as_series(),
+            _ => self._or_as_series(),
+        }
+    }
+
     /// Get an array with the cumulative max computed at every element
     pub fn cummax(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]

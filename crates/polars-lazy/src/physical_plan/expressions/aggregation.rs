@@ -102,6 +102,24 @@ impl PhysicalExpr for AggregationExpr {
                     let agg_s = s.agg_sum(&groups);
                     rename_series(agg_s, &keep_name)
                 }
+                GroupByMethod::Xor => {
+                    check_null_prop!();
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_xor(&groups);
+                    rename_series(agg_s, &keep_name)
+                }
+                GroupByMethod::Or => {
+                    check_null_prop!();
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_or(&groups);
+                    rename_series(agg_s, &keep_name)
+                }
+                GroupByMethod::And => {
+                    check_null_prop!();
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_and(&groups);
+                    rename_series(agg_s, &keep_name)
+                }
                 GroupByMethod::Count => {
                     // a few fast paths that prevent materializing new groups
                     match ac.update_groups {

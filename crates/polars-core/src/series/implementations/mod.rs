@@ -168,6 +168,33 @@ macro_rules! impl_dyn_series {
                 }
             }
 
+            unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+                use DataType::*;
+                match self.dtype() {
+                    Float32 => self.cast(&UInt32).unwrap().agg_xor(groups),
+                    Float64 => self.cast(&UInt64).unwrap().agg_xor(groups),
+                    _ => self.0.agg_xor(groups),
+                }
+            }
+
+            unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+                use DataType::*;
+                match self.dtype() {
+                    Float32 => self.cast(&UInt32).unwrap().agg_and(groups),
+                    Float64 => self.cast(&UInt64).unwrap().agg_and(groups),
+                    _ => self.0.agg_and(groups),
+                }
+            }
+
+            unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+                use DataType::*;
+                match self.dtype() {
+                    Float32 => self.cast(&UInt32).unwrap().agg_or(groups),
+                    Float64 => self.cast(&UInt64).unwrap().agg_or(groups),
+                    _ => self.0.agg_or(groups),
+                }
+            }
+
             unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
                 self.0.agg_std(groups, ddof)
             }
@@ -434,6 +461,19 @@ macro_rules! impl_dyn_series {
             fn _sum_as_series(&self) -> Series {
                 ChunkAggSeries::sum_as_series(&self.0)
             }
+
+            fn _xor_as_series(&self) -> Series {
+                ChunkAggSeries::xor_as_series(&self.0)
+            }
+
+            fn _or_as_series(&self) -> Series {
+                ChunkAggSeries::or_as_series(&self.0)
+            }
+
+            fn _and_as_series(&self) -> Series {
+                ChunkAggSeries::and_as_series(&self.0)
+            }
+
             fn max_as_series(&self) -> Series {
                 ChunkAggSeries::max_as_series(&self.0)
             }

@@ -3,6 +3,8 @@ mod boolean;
 mod dispatch;
 mod utf8;
 
+use std::ops::{BitAnd, BitOr, BitXor, Not};
+
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::simd::Simd;
@@ -628,6 +630,140 @@ where
                         }
                     })
                 }
+            }
+        }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsNumericType + Sync,
+    T::Native: NativeType
+        + Num
+        + NumCast
+        + Zero
+        + Simd
+        + BitXor<Output = T::Native>
+        + BitAnd<Output = T::Native>
+        + BitOr<Output = T::Native>
+        + Not<Output = T::Native>
+        + Bounded
+        + std::iter::Sum<T::Native>,
+    // <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
+    //     + arrow::compute::aggregate::Sum<T::Native>
+    //     + arrow::compute::aggregate::SimdOrd<T::Native>,
+    ChunkedArray<T>: IntoSeries,
+{
+    pub(crate) unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+        println!("agg xor");
+        match groups {
+            GroupsProxy::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                _agg_helper_idx_no_null::<T, _>(groups, |(first, idx)| {
+                    debug_assert!(idx.len() <= self.len());
+                    if idx.is_empty() {
+                        T::Native::zero()
+                    } else if idx.len() == 1 {
+                        arr.get(first as usize).unwrap_or(T::Native::zero())
+                    } else if no_nulls {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            arr,
+                            idx2usize(idx),
+                            |a, b| a ^ b,
+                            T::Native::zero(),
+                        )
+                    } else {
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            arr,
+                            idx2usize(idx),
+                            |a, b| a ^ b,
+                            T::Native::zero(),
+                            idx.len() as IdxSize,
+                        )
+                        .unwrap_or(T::Native::zero())
+                    }
+                })
+            }
+            GroupsProxy::Slice { groups, .. } => {
+                unimplemented!("Used slice op with xor");
+            }
+        }
+    }
+
+    pub(crate) unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+        println!("agg and");
+        match groups {
+            GroupsProxy::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                _agg_helper_idx_no_null::<T, _>(groups, |(first, idx)| {
+                    debug_assert!(idx.len() <= self.len());
+                    if idx.is_empty() {
+                        !T::Native::zero()
+                    } else if idx.len() == 1 {
+                        arr.get(first as usize).unwrap_or(!T::Native::zero())
+                    } else if no_nulls {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            arr,
+                            idx2usize(idx),
+                            |a, b| a & b,
+                            !T::Native::zero(),
+                        )
+                    } else {
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            arr,
+                            idx2usize(idx),
+                            |a, b| a & b,
+                            !T::Native::zero(),
+                            idx.len() as IdxSize,
+                        )
+                        .unwrap_or(!T::Native::zero())
+                    }
+                })
+            }
+            GroupsProxy::Slice { groups, .. } => {
+                unimplemented!("Used slice op with xor");
+            }
+        }
+    }
+
+    pub(crate) unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+        println!("agg or");
+        match groups {
+            GroupsProxy::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                _agg_helper_idx_no_null::<T, _>(groups, |(first, idx)| {
+                    debug_assert!(idx.len() <= self.len());
+                    if idx.is_empty() {
+                        T::Native::zero()
+                    } else if idx.len() == 1 {
+                        arr.get(first as usize).unwrap_or(T::Native::zero())
+                    } else if no_nulls {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            arr,
+                            idx2usize(idx),
+                            |a, b| a | b,
+                            T::Native::zero(),
+                        )
+                    } else {
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            arr,
+                            idx2usize(idx),
+                            |a, b| a | b,
+                            T::Native::zero(),
+                            idx.len() as IdxSize,
+                        )
+                        .unwrap_or(T::Native::zero())
+                    }
+                })
+            }
+            GroupsProxy::Slice { groups, .. } => {
+                unimplemented!("Used slice op with xor");
             }
         }
     }

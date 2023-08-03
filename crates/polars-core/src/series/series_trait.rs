@@ -138,6 +138,15 @@ pub(crate) mod private {
         unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
+        unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
+        }
+        unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
+        }
+        unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
+        }
         unsafe fn agg_std(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
@@ -445,6 +454,15 @@ pub trait SeriesTrait:
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
     fn _sum_as_series(&self) -> Series {
+        Series::full_null(self.name(), 1, self.dtype())
+    }
+    fn _xor_as_series(&self) -> Series {
+        Series::full_null(self.name(), 1, self.dtype())
+    }
+    fn _and_as_series(&self) -> Series {
+        Series::full_null(self.name(), 1, self.dtype())
+    }
+    fn _or_as_series(&self) -> Series {
         Series::full_null(self.name(), 1, self.dtype())
     }
     /// Get the max of the Series as a new Series of length 1.

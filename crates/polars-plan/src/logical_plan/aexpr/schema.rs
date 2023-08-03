@@ -107,6 +107,45 @@ impl AExpr {
                         }
                         Ok(field)
                     }
+                    Xor(expr) => {
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
+                        let dt = match field.data_type() {
+                            Float32 => Some(UInt32),
+                            Float64 => Some(UInt64),
+                            _ => None,
+                        };
+                        if let Some(dt) = dt {
+                            field.coerce(dt);
+                        }
+                        Ok(field)
+                    }
+                    Or(expr) => {
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
+                        let dt = match field.data_type() {
+                            Float32 => Some(UInt32),
+                            Float64 => Some(UInt64),
+                            _ => None,
+                        };
+                        if let Some(dt) = dt {
+                            field.coerce(dt);
+                        }
+                        Ok(field)
+                    }
+                    And(expr) => {
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
+                        let dt = match field.data_type() {
+                            Float32 => Some(UInt32),
+                            Float64 => Some(UInt64),
+                            _ => None,
+                        };
+                        if let Some(dt) = dt {
+                            field.coerce(dt);
+                        }
+                        Ok(field)
+                    }
                     Median(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;

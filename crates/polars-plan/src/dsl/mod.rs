@@ -237,6 +237,20 @@ impl Expr {
         AggExpr::Sum(Box::new(self)).into()
     }
 
+    /// Reduce groups to the bitwise xor of all the values.
+    pub fn bit_xor(self) -> Self {
+        AggExpr::Xor(Box::new(self)).into()
+    }
+    /// Reduce groups to the bitwise and of all the values.
+    pub fn bit_and(self) -> Self {
+        AggExpr::And(Box::new(self)).into()
+    }
+
+    /// Reduce groups to the bitwise or of all the values.
+    pub fn bit_or(self) -> Self {
+        AggExpr::Or(Box::new(self)).into()
+    }
+
     /// Get the number of unique values in the groups.
     pub fn n_unique(self) -> Self {
         AggExpr::NUnique(Box::new(self)).into()

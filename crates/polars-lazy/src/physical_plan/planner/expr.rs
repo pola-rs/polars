@@ -346,6 +346,27 @@ pub(crate) fn create_physical_expr(
                                 parallel_op_series(|s| Ok(s.sum_as_series()), s, None, state)
                             }) as Arc<dyn SeriesUdf>)
                         }
+                        AAggExpr::Xor(_) => {
+                            let state = *state;
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                                let s = std::mem::take(&mut s[0]);
+                                parallel_op_series(|s| Ok(s.xor_as_series()), s, None, state)
+                            }) as Arc<dyn SeriesUdf>)
+                        }
+                        AAggExpr::Or(_) => {
+                            let state = *state;
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                                let s = std::mem::take(&mut s[0]);
+                                parallel_op_series(|s| Ok(s.or_as_series()), s, None, state)
+                            }) as Arc<dyn SeriesUdf>)
+                        }
+                        AAggExpr::And(_) => {
+                            let state = *state;
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                                let s = std::mem::take(&mut s[0]);
+                                parallel_op_series(|s| Ok(s.and_as_series()), s, None, state)
+                            }) as Arc<dyn SeriesUdf>)
+                        }
                         AAggExpr::Count(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             let count = s.len();

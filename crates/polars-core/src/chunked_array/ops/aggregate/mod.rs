@@ -25,6 +25,18 @@ pub trait ChunkAggSeries {
     fn sum_as_series(&self) -> Series {
         unimplemented!()
     }
+    /// Get the bitwise xor agg of the ChunkedArray as a new Series of length 1.
+    fn xor_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the bitwise or agg of the ChunkedArray as a new Series of length 1.
+    fn or_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the bitwise and agg of the ChunkedArray as a new Series of length 1.
+    fn and_as_series(&self) -> Series {
+        unimplemented!()
+    }
     /// Get the max of the ChunkedArray as a new Series of length 1.
     fn max_as_series(&self) -> Series {
         unimplemented!()
