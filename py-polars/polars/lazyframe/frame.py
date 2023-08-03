@@ -80,6 +80,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
+        ComparisonOperator,
         CsvEncoding,
         FillNullStrategy,
         FrameInitTypes,
@@ -635,6 +636,68 @@ class LazyFrame:
             self, api_version=api_version
         )
 
+    def _comp(self, other: Any, op: ComparisonOperator) -> LazyFrame:
+        """Compare a DataFrame with another object."""
+        if isinstance(other, LazyFrame):
+            return self._compare_to_other_df(other, op)
+        else:
+            return self._compare_to_non_df(other, op)
+
+    def _compare_to_other_df(
+        self,
+        other: LazyFrame,
+        op: ComparisonOperator,
+    ) -> LazyFrame:
+        """Compare a DataFrame with another DataFrame."""
+        if self.columns != other.columns:
+            raise ValueError("DataFrame columns do not match")
+        # if self.shape != other.shape:
+        #     raise ValueError("DataFrame dimensions do not match")
+
+        suffix = "__POLARS_CMP_OTHER"
+        other_renamed = other.select(F.all().suffix(suffix))
+
+        # we must join on row count, since we cannot concatenate two lazy frames
+        combined = self.with_context(other_renamed)
+
+        if op == "eq":
+            expr = [F.col(n) == F.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "neq":
+            expr = [F.col(n) != F.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "gt":
+            expr = [F.col(n) > F.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "lt":
+            expr = [F.col(n) < F.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "gt_eq":
+            expr = [F.col(n) >= F.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "lt_eq":
+            expr = [F.col(n) <= F.col(f"{n}{suffix}") for n in self.columns]
+        else:
+            raise ValueError(f"got unexpected comparison operator: {op}")
+
+        return combined.select(expr)
+
+    def _compare_to_non_df(
+        self,
+        other: Any,
+        op: ComparisonOperator,
+    ) -> LazyFrame:
+        """Compare a DataFrame with a non-DataFrame object."""
+        if op == "eq":
+            return self.select(F.all() == other)
+        elif op == "neq":
+            return self.select(F.all() != other)
+        elif op == "gt":
+            return self.select(F.all() > other)
+        elif op == "lt":
+            return self.select(F.all() < other)
+        elif op == "gt_eq":
+            return self.select(F.all() >= other)
+        elif op == "lt_eq":
+            return self.select(F.all() <= other)
+        else:
+            raise ValueError(f"got unexpected comparison operator: {op}")
+
     @property
     def width(self) -> int:
         """
@@ -659,6 +722,24 @@ class LazyFrame:
             "The truth value of a LazyFrame is ambiguous; consequently it "
             "cannot be used in boolean context with and/or/not operators. "
         )
+
+    def __eq__(self, other: Any) -> LazyFrame:  # type: ignore[override]
+        return self._comp(other, "eq")
+
+    def __ne__(self, other: Any) -> LazyFrame:  # type: ignore[override]
+        return self._comp(other, "neq")
+
+    def __gt__(self, other: Any) -> LazyFrame:
+        return self._comp(other, "gt")
+
+    def __lt__(self, other: Any) -> LazyFrame:
+        return self._comp(other, "lt")
+
+    def __ge__(self, other: Any) -> LazyFrame:
+        return self._comp(other, "gt_eq")
+
+    def __le__(self, other: Any) -> LazyFrame:
+        return self._comp(other, "lt_eq")
 
     def __contains__(self, key: str) -> bool:
         return key in self.columns

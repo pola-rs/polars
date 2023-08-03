@@ -1459,3 +1459,59 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     dtype_eager = result_eager["x"].dtype
     result_lazy = df.lazy().select(func.over("y")).select(pl.col(dtype_eager)).collect()
     assert result_eager.frame_equal(result_lazy)
+
+
+def test_lazy_comparison_operators() -> None:
+    df1 = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["a", "b", "c"],
+        }
+    ).lazy()
+    df2 = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["a", "b", "d"],
+        }
+    ).lazy()
+
+    assert (df1 == df2).collect().rows() == [(True, True), (True, True), (True, False)]
+    assert (df1 < df2).collect().rows() == [
+        (False, False),
+        (False, False),
+        (False, True),
+    ]
+    assert (df1 <= df2).collect().rows() == [(True, True), (True, True), (True, True)]
+    assert (df1 > df2).collect().rows() == [
+        (False, False),
+        (False, False),
+        (False, False),
+    ]
+    assert (df1 >= df2).collect().rows() == [(True, True), (True, True), (True, False)]
+    assert (df1 != df2).collect().rows() == [
+        (False, False),
+        (False, False),
+        (False, True),
+    ]
+
+    # test with different columns
+    df1 = df1.with_columns(pl.lit(0).alias("c"))
+    with pytest.raises(ValueError, match="DataFrame columns do not match"):
+        (df1 == df2).collect()
+
+    # test with different # of rows
+    df1 = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+        }
+    ).lazy()
+    df2 = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4],
+        }
+    ).lazy()
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="cannot evaluate two series of different lengths",
+    ):
+        (df1 == df2).collect()
