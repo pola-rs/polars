@@ -1274,22 +1274,22 @@ class ExprStringNameSpace:
         If your pattern contains unnamed groups, their numerical position is converted
         to a string.
 
-        For example, here we access groups 2 and 3 via the names `"2"` and `"3"`.
+        For example, here we access groups 2 and 3 via the names `"2"` and `"3"`::
 
-        >>> df = pl.DataFrame({"col": ["foo bar baz"]})
-        >>> (
-        ...     df.with_columns(
-        ...         pl.col("col").str.extract_groups(r"(\S+) (\S+) (.+)")
-        ...     ).select(pl.col("col").struct["2"], pl.col("col").struct["3"])
-        ... )
-        shape: (1, 2)
-        ┌─────┬─────┐
-        │ 2   ┆ 3   │
-        │ --- ┆ --- │
-        │ str ┆ str │
-        ╞═════╪═════╡
-        │ bar ┆ baz │
-        └─────┴─────┘
+            >>> df = pl.DataFrame({"col": ["foo bar baz"]})
+            >>> (
+            ...     df.with_columns(
+            ...         pl.col("col").str.extract_groups(r"(\S+) (\S+) (.+)")
+            ...     ).select(pl.col("col").struct["2"], pl.col("col").struct["3"])
+            ... )
+            shape: (1, 2)
+            ┌─────┬─────┐
+            │ 2   ┆ 3   │
+            │ --- ┆ --- │
+            │ str ┆ str │
+            ╞═════╪═════╡
+            │ bar ┆ baz │
+            └─────┴─────┘
 
         Returns
         -------
@@ -1324,6 +1324,7 @@ class ExprStringNameSpace:
         └───────────┴────────┘
 
         Unnamed groups have their numerical position converted to a string:
+
         >>> pattern = r"candidate=(\w+)&ref=(\w+)"
         >>> (
         ...     df.with_columns(

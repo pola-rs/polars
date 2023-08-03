@@ -787,18 +787,18 @@ class StringNameSpace:
         If your pattern contains unnamed groups, their numerical position is converted
         to a string.
 
-        For example, we can access the first group via the string `"1"`
+        For example, we can access the first group via the string `"1"`::
 
-        >>> (
-        ...     pl.Series(["foo bar baz"])
-        ...     .str.extract_groups(r"(\w+) (.+) (\w+)")
-        ...     .struct["1"]
-        ... )
-        shape: (1,)
-        Series: '1' [str]
-        [
-            "foo"
-        ]
+            >>> (
+            ...     pl.Series(["foo bar baz"])
+            ...     .str.extract_groups(r"(\w+) (.+) (\w+)")
+            ...     .struct["1"]
+            ... )
+            shape: (1,)
+            Series: '1' [str]
+            [
+                "foo"
+            ]
 
         Returns
         -------
