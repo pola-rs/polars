@@ -100,11 +100,12 @@ where
 
     if validate.needs_checks() {
         validate.validate_probe(
-            &probe_hashes
-                .iter()
-                .map(|arr| arr.iter().map(|(h, _)| *h).collect::<Vec<_>>())
-                .collect::<Vec<_>>(),
-            swapped,
+            || {
+                probe_hashes
+                    .iter()
+                    .flat_map(|it| it.iter().map(|item| item.0))
+            },
+            false,
         )?;
     }
 

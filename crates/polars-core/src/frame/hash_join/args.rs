@@ -131,16 +131,17 @@ impl JoinValidation {
         Ok(())
     }
 
-    pub(super) fn validate_probe<IntoSlice, T>(
+    pub(super) fn validate_probe<'a, F, I, T>(
         &self,
-        probe: &[IntoSlice],
+        probe: F,
         // In a left join, probe is always in lhs.
         // In a inner or outer join, it is the longest relationship of both sides.
         is_rhs: bool,
     ) -> PolarsResult<()>
     where
-        IntoSlice: AsRef<[T]> + Send + Sync,
-        T: Send + Hash + Eq + Sync + Copy + AsU64,
+        F: Fn() -> I + Send + Sync,
+        I: 'a + Iterator<Item = T> + Send + Sync,
+        T: Send + Hash + Eq + Sync + Copy + AsU64 + 'a,
     {
         use JoinValidation::*;
         let fail = match self.swap(is_rhs) {
@@ -159,17 +160,13 @@ impl JoinValidation {
 
                             let mut hash_set: PlHashSet<T> =
                                 PlHashSet::with_capacity(HASHMAP_INIT_SIZE);
-
-                            probe
-                                .iter()
-                                .flat_map(|array| array.as_ref().iter())
-                                .any(|key| {
-                                    if this_partition(key.as_u64(), partition_no, n_partitions) {
-                                        !hash_set.insert(*key)
-                                    } else {
-                                        false
-                                    }
-                                })
+                            probe().into_iter().any(|key| {
+                                if this_partition(key.as_u64(), partition_no, n_partitions) {
+                                    !hash_set.insert(key)
+                                } else {
+                                    false
+                                }
+                            })
                         })
                         .is_some()
                 })
