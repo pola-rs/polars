@@ -661,7 +661,7 @@ class LazyFrame:
         )
 
     def _comparison_error(self, other: Any) -> NoReturn:
-        raise TypeError("Cannot compare LazyFrames; call .collect() to materialize.")
+        raise TypeError("Cannot compare LazyFrames.")
 
     __eq__ = _comparison_error
     __ne__ = _comparison_error
