@@ -1478,6 +1478,6 @@ def test_lazy_comparison_operators(
     # we cannot compare lazy frames, so all should raise a TypeError
     with pytest.raises(
         TypeError,
-        match="Cannot compare ambiguous LazyFrame structures",
+        match="Cannot compare LazyFrames.",
     ):
         compare(pl.LazyFrame(), pl.LazyFrame())
