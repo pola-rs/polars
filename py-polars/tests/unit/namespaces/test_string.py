@@ -569,6 +569,29 @@ def test_extract_groups() -> None:
         == expected
     )
 
+    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(False) == {
+        "iso_code": [{"iso_code": None}, {"iso_code": None}]
+    }
+
+    assert df.select(
+        pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")
+    ).to_dict(False) == {
+        "iso_code": [{"1": "ISO", "2": "80000"}, {"1": "ISO/IEC/IEEE", "2": "29148"}]
+    }
+
+    assert df.select(
+        pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(?<year>\d+)\z")
+    ).to_dict(False) == {
+        "iso_code": [
+            {"1": "ISO", "year": "2009"},
+            {"1": "ISO/IEC/IEEE", "year": "2018"},
+        ]
+    }
+
+    assert pl.select(
+        pl.lit(r"foobar").str.extract_groups(r"(?<foo>.{3})|(?<bar>...)")
+    ).to_dict(False) == {"literal": [{"foo": "foo", "bar": None}]}
+
 
 def test_zfill() -> None:
     df = pl.DataFrame(
