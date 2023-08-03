@@ -51,9 +51,9 @@ where
     let hash_tbls = if validate.needs_checks() {
         validate.validate_probe(
             || {
-                let nested: &[IntoSlice] = &probe.as_ref();
+                let nested: &[IntoSlice] = probe.as_ref();
                 nested
-                    .into_iter()
+                    .iter()
                     .flat_map(|into_slice| into_slice.as_ref().iter())
             },
             swapped,

@@ -160,7 +160,7 @@ impl JoinValidation {
 
                             let mut hash_set: PlHashSet<T> =
                                 PlHashSet::with_capacity(HASHMAP_INIT_SIZE);
-                            probe().into_iter().any(|key| {
+                            probe().any(|key| {
                                 if this_partition(key.as_u64(), partition_no, n_partitions) {
                                     !hash_set.insert(key)
                                 } else {
