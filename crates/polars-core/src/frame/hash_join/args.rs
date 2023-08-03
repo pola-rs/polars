@@ -133,7 +133,7 @@ impl JoinValidation {
 
     pub(super) fn validate_probe<IntoSlice, T>(
         &self,
-        probe: &Vec<IntoSlice>,
+        probe: &[IntoSlice],
         // In a left join, probe is always in lhs.
         // In a inner or outer join, it is the longest relationship of both sides.
         is_rhs: bool,
@@ -162,17 +162,14 @@ impl JoinValidation {
 
                             probe
                                 .iter()
-                                .map(|array| array.as_ref().into_iter())
-                                .flatten()
-                                .find(|key| {
+                                .flat_map(|array| array.as_ref().iter())
+                                .any(|key| {
                                     if this_partition(key.as_u64(), partition_no, n_partitions) {
-                                        let existed = !hash_set.insert(**key);
-                                        existed
+                                        !hash_set.insert(*key)
                                     } else {
                                         false
                                     }
                                 })
-                                .is_some()
                         })
                         .is_some()
                 })

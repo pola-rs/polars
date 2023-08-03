@@ -103,7 +103,7 @@ where
             &probe_hashes
                 .iter()
                 .map(|arr| arr.iter().map(|(h, _)| *h).collect::<Vec<_>>())
-                .collect(),
+                .collect::<Vec<_>>(),
             swapped,
         )?;
     }

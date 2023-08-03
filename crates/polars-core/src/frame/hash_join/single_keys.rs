@@ -22,8 +22,7 @@ where
                 let n_partitions = n_partitions as u64;
 
                 keys.iter()
-                    .map(|array| array.as_ref().into_iter())
-                    .flatten()
+                    .flat_map(|array| array.as_ref().iter())
                     .enumerate()
                     .for_each(|(idx, key)| {
                         let idx = idx as IdxSize;
