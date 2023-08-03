@@ -13,3 +13,6 @@ polars = { path = "../../crates/polars" }
 polars-arrow = { path = "../../crates/polars-arrow" }
 
 pyo3 = { version = "0.19", features = ["extension-module"] }
+
+[build-dependencies]
+pyo3-build-config = "0.19"
