@@ -322,7 +322,7 @@ def _check_if_delta_available() -> None:
 def _reconstruct_field_type(
     field: pa.Field,
     field_head: pa.Field,
-    reconstructed_field: list | None = None,
+    reconstructed_field: list[pa.DataType] | None = None,
 ) -> pa.Field:
     """
     Recursive function that traverses through pyArrow fields.
@@ -341,42 +341,41 @@ def _reconstruct_field_type(
     pa.Field
         Reconstructed field
     """
+    integer_mapping = {
+        pa.uint8(): pa.int8(),
+        pa.uint16(): pa.int16(),
+        pa.uint32(): pa.int32(),
+        pa.uint64(): pa.int64(),
+    }
+
     if isinstance(field.type, pa.TimestampType):
         if reconstructed_field is None:
             return pa.field(
                 name=field.name,
-                type=pa.timestamp(
-                    "us"
-                    #   , tz=field.type.tz
-                ),
+                type=pa.timestamp("us"),  # TODO: Check TZ issue with delta-rs team
             )
         else:
-            reconstructed_field.append(
-                pa.timestamp(
-                    "us",
-                    # tz=field.type.tz
-                )
-            )
+            reconstructed_field.append(pa.timestamp("us"))
             return pa.field(
                 name=field_head.name,
                 type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
             )
-    elif "uint" in str(field.type) and not any(
-        isinstance(field.type, dtype) for dtype in [pa.StructType, pa.LargeListType]
+    elif isinstance(field.type, pa.DataType) and not isinstance(
+        field.type, (pa.LargeListType, pa.StructType)
     ):
-        if reconstructed_field is None:
-            return pa.field(
-                name=field.name, type=getattr(pa, str(field.type).strip("u"))()
-            )
+        for uint_type, int_type in integer_mapping.items():
+            if field.type.equals(uint_type):
+                if reconstructed_field is None:
+                    return pa.field(name=field.name, type=int_type)
+                else:
+                    reconstructed_field.append(int_type)
+                    return pa.field(
+                        name=field_head.name,
+                        type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+                    )
         else:
-            reconstructed_field.append(getattr(pa, str(field.type).strip("u"))())
-            return pa.field(
-                name=field_head.name,
-                type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
-            )
-    elif isinstance(field.type, pa.LargeListType) and (
-        "timestamp" in str(field.type) or "uint" in str(field.type)
-    ):  # some checks to just skip traversing non timestamps and US timestamps
+            return field
+    elif isinstance(field.type, pa.LargeListType):
         if reconstructed_field is None:
             reconstructed_field = [pa.large_list]
             return _reconstruct_field_type(
@@ -387,7 +386,7 @@ def _reconstruct_field_type(
             return _reconstruct_field_type(
                 field.type.value_field, field_head, reconstructed_field
             )
-    elif isinstance(field.type, pa.StructType) and ("timestamp" in str(field.type)):
+    elif isinstance(field.type, pa.StructType):
         if reconstructed_field is None:
             return pa.field(
                 name=field_head.name,
