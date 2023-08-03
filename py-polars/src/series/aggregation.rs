@@ -24,64 +24,50 @@ impl PySeries {
         .into_py(py))
     }
 
-    fn mean(&self, py: Python) ->  PyResult<PyObject> {
+    fn mean(&self, py: Python) -> PyResult<PyObject> {
         match self.series.dtype() {
             DataType::Boolean => {
                 let s = self.series.cast(&DataType::UInt8).unwrap();
                 Ok(s.mean().into_py(py))
-            },
-            DataType::Duration(_) => {
-                Ok(Wrap(
-                    self.series.
-                        mean_as_series()
-                        .get(0)
-                        .map_err(PyPolarsErr::from)?
-                    )
-                    .into_py(py)
-                )
-            },
-            DataType::Datetime(_, _) => {
-                Ok(Wrap(
-                    self.series
-                        .mean_as_series()
-                        .get(0)
-                        .map_err(PyPolarsErr::from)?
-                    )
-                    .into_py(py)
-                )
-            },
+            }
+            DataType::Duration(_) => Ok(Wrap(
+                self.series
+                    .mean_as_series()
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
+            DataType::Datetime(_, _) => Ok(Wrap(
+                self.series
+                    .mean_as_series()
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
             _ => Ok(self.series.mean().into_py(py)),
         }
     }
 
-    fn median(&self, py: Python) ->  PyResult<PyObject> {
+    fn median(&self, py: Python) -> PyResult<PyObject> {
         match self.series.dtype() {
             DataType::Boolean => {
                 let s = self.series.cast(&DataType::UInt8).unwrap();
                 Ok(s.median().into_py(py))
-            },
-            DataType::Duration(_) => {
-                Ok(Wrap(
-                    self.series.
-                        median_as_series()
-                        .get(0)
-                        .map_err(PyPolarsErr::from)?
-                    )
-                    .into_py(py)
-                )
-            },
-            DataType::Datetime(_, _) => {
-                let x = Ok(Wrap(
-                    self.series.
-                        median_as_series()
-                        .get(0)
-                        .map_err(PyPolarsErr::from)?
-                    )
-                    .into_py(py)
-                );
-
-                x
-            },
+            }
+            DataType::Duration(_) => Ok(Wrap(
+                self.series
+                    .median_as_series()
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
+            DataType::Datetime(_, _) => Ok(Wrap(
+                self.series
+                    .median_as_series()
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
             _ => Ok(self.series.median().into_py(py)),
         }
     }

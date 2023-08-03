@@ -2584,12 +2584,19 @@ def test_datetime_cum_agg_schema() -> None:
             datetime(2023, 1, 4, 0, 0),
         ],
     }
-    
-    
+
+
 def test_datetime_mean_and_median() -> None:
-    s = pl.Series("s", [datetime(2023, 1, 3, 4, 5, 56), datetime(2023, 1, 5, 2, 1, 41), datetime(2023, 1, 5, 2, 1, 41)])
+    s = pl.Series(
+        "s",
+        [
+            datetime(2023, 1, 3, 4, 5, 56),
+            datetime(2023, 1, 5, 2, 1, 41),
+            datetime(2023, 1, 5, 2, 1, 41),
+        ],
+    )
     assert s.mean() == datetime(2023, 1, 4, 10, 43, 6)
-    assert s.median() == datetime(2023, 1, 5, 2, 1, 41)    
+    assert s.median() == datetime(2023, 1, 5, 2, 1, 41)
 
 
 def test_rolling_groupby_empty_groups_by_take_6330() -> None:

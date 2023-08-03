@@ -2242,7 +2242,7 @@ def test_duration_arithmetic() -> None:
         df2 = pl.select((d + s).alias("d_offset"))
         assert df1["d_offset"].to_list() == expected_values
         assert_series_equal(df1["d_offset"], df2["d_offset"])
-        
+
 
 def test_duration_mean_and_median() -> None:
     s = pl.Series("s", [timedelta(0), timedelta(1), timedelta(1)])

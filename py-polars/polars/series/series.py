@@ -1424,7 +1424,7 @@ class Series:
         """
         return self._s.sum()
 
-    def mean(self) -> int | float | None:
+    def mean(self) -> int | float | datetime | timedelta | None:
         """
         Reduce this Series to the mean value.
 
@@ -1562,7 +1562,7 @@ class Series:
             return None
         return self.to_frame().select(F.col(self.name).var(ddof)).to_series()[0]
 
-    def median(self) -> float | None:
+    def median(self) -> float | datetime | timedelta | None:
         """
         Get the median of this Series.
 
