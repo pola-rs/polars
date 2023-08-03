@@ -765,7 +765,7 @@ mod join_validation_tests {
     }
 
     #[test]
-    fn test_inner_join_validation_many_to_many_success() {
+    fn test_inner_join_validation_many_to_many_success_1() {
         let (unique, duplicate) = create_dfs();
         for i in 1..8 {
             std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
@@ -773,6 +773,28 @@ mod join_validation_tests {
             let _many_to_many_success = duplicate
                 .join(
                     &unique,
+                    ["id"],
+                    ["id"],
+                    JoinArgs {
+                        how: JoinType::Inner,
+                        validation: polars_core::frame::hash_join::JoinValidation::ManyToMany,
+                        suffix: None,
+                        slice: None,
+                    },
+                )
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_inner_join_validation_many_to_many_success_2() {
+        let (unique, duplicate) = create_dfs();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+
+            let _many_to_many_success = unique
+                .join(
+                    &duplicate,
                     ["id"],
                     ["id"],
                     JoinArgs {
