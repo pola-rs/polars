@@ -1,17 +1,24 @@
 [package]
 name = "polars-plan"
-version.workspace = true
-edition = "2021"
-license = "MIT"
-repository = "https://github.com/pola-rs/polars"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
 description = "Lazy query engine for the Polars DataFrame library"
 
 [lib]
 doctest = false
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+polars-arrow = { version = "0.31.1", path = "../polars-arrow" }
+polars-core = { version = "0.31.1", path = "../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.31.1", path = "../polars-io", features = ["lazy", "csv"], default-features = false }
+polars-ops = { version = "0.31.1", path = "../polars-ops", default-features = false }
+polars-time = { version = "0.31.1", path = "../polars-time", optional = true }
+polars-utils = { version = "0.31.1", path = "../polars-utils" }
+
 ahash.workspace = true
 arrow.workspace = true
 chrono = { version = "0.4", optional = true }
@@ -19,12 +26,6 @@ chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2", optional = true }
 futures = { version = "0.3.25", optional = true }
 once_cell.workspace = true
-polars-arrow = { version = "0.31.1", path = "../polars-arrow" }
-polars-core = { version = "0.31.1", path = "../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.31.1", path = "../polars-io", features = ["lazy", "csv"], default-features = false }
-polars-ops = { version = "0.31.1", path = "../polars-ops", default-features = false }
-polars-time = { version = "0.31.1", path = "../polars-time", optional = true }
-polars-utils = { version = "0.31.1", path = "../polars-utils" }
 pyo3 = { version = "0.19", optional = true }
 rayon.workspace = true
 regex = { version = "1.6", optional = true }

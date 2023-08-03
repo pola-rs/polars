@@ -3,7 +3,6 @@ name = "python_rust_compiled_function"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 name = "my_polars_functions"
 crate-type = ["cdylib"]

@@ -12,6 +12,11 @@ exclude = [
 
 [workspace.package]
 version = "0.31.1"
+authors = ["Ritchie Vink <ritchie46@gmail.com>"]
+edition = "2021"
+homepage = "https://www.pola.rs/"
+repository = "https://github.com/pola-rs/polars"
+license = "MIT"
 
 [workspace.dependencies]
 rayon = "1.6"
