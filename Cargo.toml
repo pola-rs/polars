@@ -23,21 +23,21 @@ repository = "https://github.com/pola-rs/polars"
 license = "MIT"
 
 [workspace.dependencies]
-rayon = "1.6"
-thiserror = "^1"
-num-traits = "0.2"
 ahash = "0.8"
-xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
+bitflags = "1.3"
+either = "1.8"
 hashbrown = { version = "0.14.0", features = ["rayon", "ahash"] }
 indexmap = { version = "2", features = ["std"] }
-bitflags = "1.3"
-once_cell = "1"
 memchr = "2"
-smartstring = { version = "1" }
 multiversion = "0.7"
-either = "1.8"
+num-traits = "0.2"
+once_cell = "1"
+rayon = "1.6"
+smartstring = { version = "1" }
 strum_macros = "0.25"
+thiserror = "^1"
 version_check = "0.9.4"
+xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 
 [workspace.dependencies.arrow]
 package = "arrow2"
@@ -59,6 +59,7 @@ features = [
   "compute_filter",
   "compute_if_then_else",
 ]
+
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
