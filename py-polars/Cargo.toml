@@ -181,6 +181,17 @@ features = [
 name = "polars"
 crate-type = ["cdylib"]
 
+[profile.opt-dev]
+inherits = "dev"
+opt-level = 1
+
+[profile.debug-release]
+inherits = "release"
+debug = true
+incremental = true
+codegen-units = 16
+lto = "thin"
+
 [profile.release]
 codegen-units = 1
 lto = "fat"

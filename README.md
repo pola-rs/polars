@@ -235,15 +235,14 @@ This can be done by going through the following steps in sequence:
 
 1. Install the latest [Rust compiler](https://www.rust-lang.org/tools/install)
 2. Install [maturin](https://maturin.rs/): `pip install maturin`
-3. Choose any of:
-   - Fastest binary, very long compile times:
-     ```sh
-     $ cd py-polars && maturin develop --release -- -C target-cpu=native
-     ```
-   - Fast binary, Shorter compile times:
-     ```sh
-     $ cd py-polars && maturin develop --release -- -C codegen-units=16 -C lto=thin -C target-cpu=native
-     ```
+3. `cd py-polars` and choose one of the following:
+   - `make build-release`, fastest binary, very long compile times
+   - `make build-opt`, fast binary with debug symbols, long compile times
+   - `make build-debug-opt`, medium-speed binary with debug assertions and symbols, medium compile times
+   - `make build`, slow binary with debug assertions and symbols, fast compile times
+
+   Append `-native` (e.g. `make build-release-native`) to enable further optimizations specific to
+   your CPU. This produces a non-portable binary/wheel however.
 
 Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you
