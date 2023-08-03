@@ -361,50 +361,56 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
         let n_fields = reg.captures_len();
 
-        let idxs = (1..n_fields).map(|idx| idx.to_string()).collect::<Vec<_>>();
+        let out = match n_fields { 
+            1 => StructChunked::new(ca.name(), &[ca.cast(&DataType::Null)?.into_series()]),
+            _ => {
+                let idxs = (1..n_fields).map(|idx| idx.to_string()).collect::<Vec<_>>();
 
-        let mut builders = idxs
-            .iter()
-            .zip(reg.capture_names().skip(1)) // skip 0th group
-            .map(|(idx, name)| {
-                let name = match name {
-                    Some(name) => name,
-                    _ => idx,
-                };
-                Utf8ChunkedBuilder::new(name, ca.len(), ca.get_values_size())
-            })
-            .collect::<Vec<_>>();
+                let mut builders = idxs
+                    .iter()
+                    .zip(reg.capture_names().skip(1)) // skip 0th group
+                    .map(|(idx, name)| {
+                        let name = match name {
+                            Some(name) => name,
+                            _ => idx,
+                        };
+                        Utf8ChunkedBuilder::new(name, ca.len(), ca.get_values_size())
+                    })
+                    .collect::<Vec<_>>();
 
-        for opt_s in ca.into_iter() {
-            match opt_s {
-                None => builders
-                    .iter_mut()
-                    .for_each(|builder| builder.append_null()),
-                Some(s) => {
-                    let caps = reg.captures(s);
-                    match caps {
-                        Some(caps) => {
-                            caps.iter()
-                                .skip(1) // skip 0th group
-                                .zip(builders.iter_mut())
-                                .for_each(|(m, builder)| match m {
-                                    Some(m) => builder.append_value(m.as_str()),
-                                    None => builder.append_null(),
-                                })
-                        }
+                for opt_s in ca.into_iter() {
+                    match opt_s {
                         None => builders
                             .iter_mut()
                             .for_each(|builder| builder.append_null()),
+                        Some(s) => {
+                            let caps = reg.captures(s);
+                            match caps {
+                                Some(caps) => {
+                                    caps.iter()
+                                        .skip(1) // skip 0th group
+                                        .zip(builders.iter_mut())
+                                        .for_each(|(m, builder)| match m {
+                                            Some(m) => builder.append_value(m.as_str()),
+                                            None => builder.append_null(),
+                                        })
+                                }
+                                None => builders
+                                    .iter_mut()
+                                    .for_each(|builder| builder.append_null()),
+                            }
+                        }
                     }
                 }
+                let fields = builders
+                    .iter()
+                    .map(|builder| builder.clone().finish().into_series())
+                    .collect::<Vec<_>>();
+                StructChunked::new(ca.name(), &fields)
             }
-        }
-        let fields = builders
-            .iter()
-            .map(|builder| builder.clone().finish().into_series())
-            .collect::<Vec<_>>();
+        }?;
 
-        Ok(StructChunked::new(ca.name(), &fields).unwrap())
+        Ok(out)
     }
 
     /// Count all successive non-overlapping regex matches.
