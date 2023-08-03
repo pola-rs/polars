@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 
 MY_CONSTANT = 3
-MY_DICT = {1: "1", 2: "2", 3: "3"}
+MY_DICT = {0: "a", 1: "b", 2: "c", 3: "d", 4: "e"}
 MY_LIST = [1, 2, 3]
 
 # column_name, function, expected_suggestion
@@ -122,6 +122,11 @@ TEST_CASES = [
     # map_dict
     # ---------------------------------------------
     ("a", lambda x: MY_DICT[x], 'pl.col("a").map_dict(MY_DICT)'),
+    (
+        "a",
+        lambda x: MY_DICT[x - 1] + MY_DICT[1 + x],
+        '(pl.col("a") - 1).map_dict(MY_DICT) + (1 + pl.col("a")).map_dict(MY_DICT)',
+    ),
 ]
 
 NOOP_TEST_CASES = [
@@ -150,6 +155,7 @@ def test_bytecode_parser_expression(
         # imported for some other reason, then the test
         # won't be skipped.
         return
+
     bytecode_parser = udfs.BytecodeParser(func, apply_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected
@@ -169,4 +175,6 @@ def test_bytecode_parser_expression_noop(func: Callable[[Any], Any]) -> None:
         # imported for some other reason, then the test
         # won't be skipped.
         return
-    assert not udfs.BytecodeParser(func, apply_target="expr").can_rewrite()
+
+    parser = udfs.BytecodeParser(func, apply_target="expr")
+    assert not parser.can_attempt_rewrite() or not parser.to_expression("x")
