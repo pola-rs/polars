@@ -1462,22 +1462,22 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
 
 
 @pytest.mark.parametrize(
-    "compare",
+    "comparators",
     [
-        pl.LazyFrame.__eq__,
-        pl.LazyFrame.__ne__,
-        pl.LazyFrame.__gt__,
-        pl.LazyFrame.__lt__,
-        pl.LazyFrame.__ge__,
-        pl.LazyFrame.__le__,
+        ("==", pl.LazyFrame.__eq__),
+        ("!=", pl.LazyFrame.__ne__),
+        (">", pl.LazyFrame.__gt__),
+        ("<", pl.LazyFrame.__lt__),
+        (">=", pl.LazyFrame.__ge__),
+        ("<=", pl.LazyFrame.__le__),
     ],
 )
 def test_lazy_comparison_operators(
-    compare: Callable[[pl.LazyFrame, pl.LazyFrame], NoReturn]
+    comparators: Callable[[pl.LazyFrame, pl.LazyFrame], NoReturn]
 ) -> None:
     # we cannot compare lazy frames, so all should raise a TypeError
     with pytest.raises(
         TypeError,
-        match="Cannot compare LazyFrames.",
+        match=f'"{comparators[0]}" comparison not supported for LazyFrame objects',
     ):
-        compare(pl.LazyFrame(), pl.LazyFrame())
+        comparators[1](pl.LazyFrame(), pl.LazyFrame())

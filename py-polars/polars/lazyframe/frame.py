@@ -660,15 +660,26 @@ class LazyFrame:
             "cannot be used in boolean context with and/or/not operators. "
         )
 
-    def _comparison_error(self, other: Any) -> NoReturn:
-        raise TypeError("Cannot compare LazyFrames.")
+    def _comparison_error(self, operator: str) -> NoReturn:
+        raise TypeError(f'"{operator}" comparison not supported for LazyFrame objects.')
 
-    __eq__ = _comparison_error
-    __ne__ = _comparison_error
-    __gt__ = _comparison_error
-    __lt__ = _comparison_error
-    __ge__ = _comparison_error
-    __le__ = _comparison_error
+    def __eq__(self, other: Any) -> NoReturn:
+        self._comparison_error("==")
+
+    def __ne__(self, other: Any) -> NoReturn:
+        self._comparison_error("!=")
+
+    def __gt__(self, other: Any) -> NoReturn:
+        self._comparison_error(">")
+
+    def __lt__(self, other: Any) -> NoReturn:
+        self._comparison_error("<")
+
+    def __ge__(self, other: Any) -> NoReturn:
+        self._comparison_error(">=")
+
+    def __le__(self, other: Any) -> NoReturn:
+        self._comparison_error("<=")
 
     def __contains__(self, key: str) -> bool:
         return key in self.columns
