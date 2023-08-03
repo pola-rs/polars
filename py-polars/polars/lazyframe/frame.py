@@ -42,7 +42,7 @@ from polars.datatypes import (
     Utf8,
     py_type_to_dtype,
 )
-from polars.dependencies import subprocess
+from polars.dependencies import dataframe_api_compat, subprocess
 from polars.io._utils import _is_local_file
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
@@ -621,6 +621,19 @@ class LazyFrame:
 
         """
         return self._ldf.schema()
+
+    def __dataframe_consortium_standard__(
+        self, *, api_version: str | None = None
+    ) -> Any:
+        """
+        Provide entry point to the Consortium DataFrame Standard API.
+
+        This is developed and maintained outside of polars.
+        Please report any issues to https://github.com/data-apis/dataframe-api-compat.
+        """
+        return dataframe_api_compat.polars_standard.convert_to_standard_compliant_dataframe(
+            self, api_version=api_version
+        )
 
     @property
     def width(self) -> int:

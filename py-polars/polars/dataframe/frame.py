@@ -53,6 +53,7 @@ from polars.dependencies import (
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
+    dataframe_api_compat,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -1234,6 +1235,19 @@ class DataFrame:
                 " string first."
             )
         return self.to_arrow().__dataframe__(nan_as_null, allow_copy)
+
+    def __dataframe_consortium_standard__(
+        self, *, api_version: str | None = None
+    ) -> Any:
+        """
+        Provide entry point to the Consortium DataFrame Standard API.
+
+        This is developed and maintained outside of polars.
+        Please report any issues to https://github.com/data-apis/dataframe-api-compat.
+        """
+        return dataframe_api_compat.polars_standard.convert_to_standard_compliant_dataframe(
+            self, api_version=api_version
+        )
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
