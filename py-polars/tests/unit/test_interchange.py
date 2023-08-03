@@ -59,11 +59,19 @@ def test_interchange_nested_categorical() -> None:
         df.__dataframe__(allow_copy=False)
 
 
-def test_from_dataframe() -> None:
+def test_from_dataframe_polars() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
     dfi = df.__dataframe__()
     result = pl.from_dataframe(dfi)
     assert_frame_equal(result, df)
+
+
+def test_from_dataframe_categorical_zero_copy() -> None:
+    df = pl.DataFrame({"a": ["foo", "bar"]}, schema={"a": pl.Categorical})
+    df_pa = df.to_arrow()
+
+    with pytest.raises(TypeError):
+        pl.from_dataframe(df_pa, allow_copy=False)
 
 
 def test_from_dataframe_pandas() -> None:

@@ -163,7 +163,7 @@ def is_polars_dtype(dtype: Any, include_unknown: bool = False) -> bool:
 
 
 def unpack_dtypes(
-    *dtypes: PolarsDataType | None,
+    *dtypes: PolarsDataType | Collection[PolarsDataType] | None,
     include_compound: bool = False,
 ) -> set[PolarsDataType]:
     """
@@ -171,10 +171,9 @@ def unpack_dtypes(
 
     Parameters
     ----------
-    *dtypes : PolarsDataType | Collection[PolarsDataType] | None
-        one or more polars dtypes.
-
-    include_compound : bool, default True
+    *dtypes
+        One or more Polars dtypes.
+    include_compound
         * if True, any parent/compound dtypes (List, Struct) are included in the result.
         * if False, only the child/scalar dtypes are returned from these types.
 

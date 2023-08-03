@@ -1223,9 +1223,9 @@ class DataFrame:
         Polars currently relies on pyarrow's implementation of the dataframe interchange
         protocol. Therefore, pyarrow>=11.0.0 is required for this method to work.
 
-        Because Polars does not offer zero-copy conversion to Arrow for categorical
-        columns, ``allow_copy=False`` will not work if the dataframe contains
-        categorical data.
+        Because Polars does not fully support zero-copy conversion to Arrow for
+        categorical columns, ``allow_copy=False`` will not work if the dataframe
+        contains categorical data.
 
         """
         if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
@@ -1237,9 +1237,9 @@ class DataFrame:
             )
         if not allow_copy and Categorical in unpack_dtypes(self.dtypes):
             raise TypeError(
-                "Polars does not support zero-copy conversion to Arrow for categorical"
-                " columns. Set `allow_copy=True` or cast categorical columns to"
-                " string first."
+                "Polars does not fully support zero-copy conversion to Arrow for"
+                " categorical columns. Set `allow_copy=True` or cast categorical"
+                " columns to string first."
             )
         return self.to_arrow().__dataframe__(nan_as_null, allow_copy)
 
