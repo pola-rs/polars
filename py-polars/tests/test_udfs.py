@@ -12,7 +12,9 @@ Usage:
 
 Running it without `PYTHONPATH` set will result in the test being skipped.
 """
+import datetime as dt
 import json
+from datetime import datetime
 from typing import Any, Callable
 
 import numpy
@@ -22,6 +24,7 @@ import pytest
 MY_CONSTANT = 3
 MY_DICT = {1: "1", 2: "2", 3: "3"}
 MY_LIST = [1, 2, 3]
+
 
 # column_name, function, expected_suggestion
 TEST_CASES = [
@@ -122,6 +125,19 @@ TEST_CASES = [
     # map_dict
     # ---------------------------------------------
     ("a", lambda x: MY_DICT[x], 'pl.col("a").map_dict(MY_DICT)'),
+    # ---------------------------------------------
+    # standard library datetime parsing
+    # ---------------------------------------------
+    (
+        "d",
+        lambda x: datetime.strptime(x, "%Y-%m-%d"),
+        "pl.col(\"d\").str.to_datetime(format='%Y-%m-%d')",
+    ),
+    (
+        "d",
+        lambda x: dt.datetime.strptime(x, "%Y-%m-%d"),
+        "pl.col(\"d\").str.to_datetime(format='%Y-%m-%d')",
+    ),
 ]
 
 NOOP_TEST_CASES = [

@@ -1,6 +1,7 @@
 """Utilities related to user defined functions (such as those passed to `apply`)."""
 from __future__ import annotations
 
+import datetime
 import dis
 import inspect
 import re
@@ -575,6 +576,7 @@ class RewrittenInstructions:
                     self._rewrite_functions,
                     self._rewrite_methods,
                     self._rewrite_builtins,
+                    self._rewrite_stdlib_datetime,
                     self._rewrite_lookups,
                 )
             ):
@@ -682,6 +684,65 @@ class RewrittenInstructions:
                 opname="POLARS_EXPRESSION", argval=expr_name, argrepr=expr_name
             )
             updated_instructions.append(synthetic_call)
+
+        return len(matching_instructions)
+
+    def _rewrite_stdlib_datetime(
+        self, idx: int, updated_instructions: list[Instruction]
+    ) -> int:
+        """Replace stdlib strptime calls with synthetic POLARS_EXPRESSION op."""
+        if matching_instructions := self._matches(
+            idx,
+            opnames=[
+                {"LOAD_GLOBAL"},
+                {"LOAD_ATTR"},
+                {"LOAD_METHOD"},
+                {"LOAD_FAST"},
+                {"LOAD_CONST"},
+                OpNames.CALL,
+            ],
+            argvals=[
+                {"datetime", "dt"},
+                {"datetime"},
+                {"strptime"},
+            ],
+        ):
+            fmt = matching_instructions[4].argval
+            inst1, _, inst2, inst3 = matching_instructions[:4]
+            vars = _get_all_caller_variables()
+            if vars.get(inst1.argval) is not datetime:
+                return 0
+        elif matching_instructions := self._matches(
+            idx,
+            opnames=[
+                {"LOAD_GLOBAL"},
+                OpNames.LOAD_ATTR,
+                {"LOAD_FAST"},
+                {"LOAD_CONST"},
+                OpNames.CALL,
+            ],
+            argvals=[
+                {"datetime"},
+                {"strptime"},
+            ],
+        ):
+            fmt = matching_instructions[3].argval
+            inst1, inst2, inst3 = matching_instructions[:3]
+            vars = _get_all_caller_variables()
+            if vars.get("datetime") is not datetime.datetime:
+                return 0
+
+        if matching_instructions:
+            expr_name = f"str.to_datetime(format='{fmt}')"
+            synthetic_call = inst1._replace(
+                opname="POLARS_EXPRESSION",
+                argval=expr_name,
+                argrepr=expr_name,
+                offset=inst3.offset,
+            )
+            # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
+            operand = inst3._replace(offset=inst1.offset)
+            updated_instructions.extend((operand, synthetic_call))
 
         return len(matching_instructions)
 
