@@ -934,7 +934,7 @@ impl Series {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
             }
-            dt @ DataType::Duration(_) => {
+            dt @ (DataType::Duration(_) | DataType::Datetime(_, _)) => {
                 Series::new(self.name(), &[self.mean().map(|v| v as i64)])
                     .cast(dt)
                     .unwrap()
