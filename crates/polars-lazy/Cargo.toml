@@ -8,8 +8,6 @@ license = { workspace = true }
 repository = { workspace = true }
 description = "Lazy query engine for the Polars DataFrame library"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dev-dependencies]
 serde_json = "1"
 

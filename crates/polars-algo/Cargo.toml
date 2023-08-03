@@ -8,8 +8,6 @@ license = { workspace = true }
 repository = { workspace = true }
 description = "Algorithms built upon Polars primitives"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 polars-core = { version = "0.31.1", path = "../polars-core", features = ["dtype-categorical", "asof_join"], default-features = false }
 polars-lazy = { version = "0.31.1", path = "../polars-lazy", features = ["asof_join", "concat_str", "strings"] }

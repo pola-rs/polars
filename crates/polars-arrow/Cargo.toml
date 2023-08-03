@@ -8,8 +8,6 @@ license = { workspace = true }
 repository = { workspace = true }
 description = "Arrow interfaces for Polars DataFrame library"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 arrow.workspace = true
 atoi = { version = "2.0.0", optional = true }
