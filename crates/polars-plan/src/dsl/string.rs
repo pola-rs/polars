@@ -61,6 +61,14 @@ impl StringNameSpace {
             .map_private(StringFunction::Extract { pat, group_index }.into())
     }
 
+    #[cfg(feature = "extract_groups")]
+    // Extract all captures groups from a regex pattern as a struct
+    pub fn extract_groups(self, pat: &str) -> Expr {
+        let pat = pat.to_string();
+        self.0
+            .map_private(StringFunction::ExtractGroups { pat }.into())
+    }
+
     /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
     /// A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
     /// rather than before.

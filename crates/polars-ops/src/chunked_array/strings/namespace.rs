@@ -353,6 +353,13 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(builder.finish())
     }
 
+    #[cfg(feature = "extract_groups")]
+    /// Extract all capture groups from pattern and return as a struct
+    fn extract_groups(&self, pat: &str) -> PolarsResult<Series> {
+        let ca = self.as_utf8();
+        super::extract::extract_groups(ca, pat)
+    }
+
     /// Count all successive non-overlapping regex matches.
     fn count_match(&self, pat: &str) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_utf8();

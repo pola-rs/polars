@@ -130,6 +130,7 @@ list_sets = ["polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all"]
 cutqcut = ["polars-ops/cutqcut"]
 rle = ["polars-ops/rle"]
+extract_groups = ["regex", "dtype-struct", "polars-ops/extract_groups"]
 
 bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
 

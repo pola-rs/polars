@@ -184,6 +184,7 @@ list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars-lazy/list_any_all"]
 cutqcut = ["polars-lazy/cutqcut"]
 rle = ["polars-lazy/rle"]
+extract_groups = ["polars-lazy/extract_groups"]
 
 test = [
   "lazy",
@@ -327,6 +328,7 @@ docs-selection = [
   "propagate_nans",
   "coalesce",
   "dynamic_groupby",
+  "extract_groups",
 ]
 
 bench = [

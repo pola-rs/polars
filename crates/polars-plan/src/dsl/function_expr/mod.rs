@@ -645,6 +645,10 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ExtractAll => {
                 map_as_slice!(strings::extract_all)
             }
+            #[cfg(feature = "extract_groups")]
+            ExtractGroups { pat } => {
+                map!(strings::extract_groups, &pat)
+            }
             NChars => map!(strings::n_chars),
             Length => map!(strings::lengths),
             #[cfg(feature = "string_justify")]

@@ -34,6 +34,10 @@ pub enum StringFunction {
         group_index: usize,
     },
     ExtractAll,
+    #[cfg(feature = "extract_groups")]
+    ExtractGroups {
+        pat: String,
+    },
     #[cfg(feature = "string_from_radix")]
     FromRadix(u32, bool),
     NChars,
@@ -90,6 +94,8 @@ impl StringFunction {
             Explode => mapper.with_same_dtype(),
             Extract { .. } => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
+            #[cfg(feature = "extract_groups")]
+            ExtractGroups { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "string_from_radix")]
             FromRadix { .. } => mapper.with_dtype(DataType::Int32),
             #[cfg(feature = "extract_jsonpath")]
@@ -127,6 +133,8 @@ impl Display for StringFunction {
             StringFunction::ConcatVertical(_) => "concat_vertical",
             StringFunction::Explode => "explode",
             StringFunction::ExtractAll => "extract_all",
+            #[cfg(feature = "extract_groups")]
+            StringFunction::ExtractGroups { .. } => "extract_groups",
             #[cfg(feature = "string_from_radix")]
             StringFunction::FromRadix { .. } => "from_radix",
             #[cfg(feature = "extract_jsonpath")]
@@ -290,6 +298,15 @@ pub(super) fn extract(s: &Series, pat: &str, group_index: usize) -> PolarsResult
 
     let ca = s.utf8()?;
     ca.extract(&pat, group_index).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "extract_groups")]
+/// Extract all capture groups from a regex pattern as a struct
+pub(super) fn extract_groups(s: &Series, pat: &str) -> PolarsResult<Series> {
+    let pat = pat.to_string();
+
+    let ca = s.utf8()?;
+    ca.extract_groups(&pat)
 }
 
 #[cfg(feature = "string_justify")]
