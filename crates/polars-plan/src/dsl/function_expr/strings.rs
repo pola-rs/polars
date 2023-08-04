@@ -95,7 +95,27 @@ impl StringFunction {
             Extract { .. } => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
             #[cfg(feature = "extract_groups")]
-            ExtractGroups { .. } => mapper.with_same_dtype(),
+            ExtractGroups { pat } => {
+                let reg = Regex::new(pat)?;
+                let names = reg
+                    .capture_names()
+                    .enumerate()
+                    .skip(1)
+                    .map(|(idx, opt_name)| {
+                        opt_name
+                            .map(|name| name.to_string())
+                            .unwrap_or_else(|| format!("{idx}"))
+                    })
+                    .collect::<Vec<_>>();
+
+                let data_type = DataType::Struct(
+                    names
+                        .iter()
+                        .map(|name| Field::new(name.as_str(), DataType::Utf8))
+                        .collect(),
+                );
+                mapper.with_dtype(data_type)
+            }
             #[cfg(feature = "string_from_radix")]
             FromRadix { .. } => mapper.with_dtype(DataType::Int32),
             #[cfg(feature = "extract_jsonpath")]

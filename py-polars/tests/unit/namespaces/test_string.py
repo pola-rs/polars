@@ -793,3 +793,21 @@ def test_string_replace_with_nulls_10124() -> None:
         "n_1": ["O", "O", "O", None, "O", "O", "O", "O"],
         "n_3": ["O", "O", "O", None, "O", "O", "O", "O"],
     }
+
+
+def test_string_extract_groups_lazy_schema_10305() -> None:
+    df = pl.LazyFrame(
+        data={
+            "url": [
+                "http://vote.com/ballon_dor?candidate=messi&ref=python",
+                "http://vote.com/ballon_dor?candidate=weghorst&ref=polars",
+                "http://vote.com/ballon_dor?error=404&ref=rust",
+            ]
+        }
+    )
+    pattern = r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)"
+    df = df.select(captures=pl.col("url").str.extract_groups(pattern)).unnest(
+        "captures"
+    )
+
+    assert df.schema == {"candidate": pl.Utf8, "ref": pl.Utf8}
