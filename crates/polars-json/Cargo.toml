@@ -15,7 +15,7 @@ polars-utils = { version = "0.31.1", path = "../polars-utils" }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
-fallible-streaming-iterator = "0.1"
+fallible-streaming-iterator = { version = "0.1" }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 num-traits = { workspace = true }

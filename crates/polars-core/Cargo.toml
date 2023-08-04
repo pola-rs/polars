@@ -41,7 +41,7 @@ url = { workspace = true, optional = true }
 xxhash-rust = { workspace = true }
 
 [dev-dependencies]
-bincode = "1"
+bincode = { version = "1" }
 serde_json = { workspace = true }
 
 [build-dependencies]
