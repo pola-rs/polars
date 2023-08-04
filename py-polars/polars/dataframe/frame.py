@@ -3437,7 +3437,7 @@ class DataFrame:
 
             if table is not None:
                 table_schema = table.schema()
-                
+
                 if data_schema == table_schema.to_pyarrow(as_large_types=True):
                     data_schema = table_schema.to_pyarrow()
             else:
@@ -3445,7 +3445,7 @@ class DataFrame:
         else:
             if table is not None:
                 table_schema = table.schema()
-                
+
                 if data_schema == table_schema.to_pyarrow(as_large_types=True):
                     data_schema = table_schema.to_pyarrow()
 
