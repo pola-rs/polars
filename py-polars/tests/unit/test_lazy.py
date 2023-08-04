@@ -5,7 +5,7 @@ from functools import reduce
 from inspect import signature
 from operator import add
 from string import ascii_letters
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, cast
 
 import numpy as np
 import pytest
@@ -1459,3 +1459,25 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     dtype_eager = result_eager["x"].dtype
     result_lazy = df.lazy().select(func.over("y")).select(pl.col(dtype_eager)).collect()
     assert result_eager.frame_equal(result_lazy)
+
+
+@pytest.mark.parametrize(
+    "comparators",
+    [
+        ("==", pl.LazyFrame.__eq__),
+        ("!=", pl.LazyFrame.__ne__),
+        (">", pl.LazyFrame.__gt__),
+        ("<", pl.LazyFrame.__lt__),
+        (">=", pl.LazyFrame.__ge__),
+        ("<=", pl.LazyFrame.__le__),
+    ],
+)
+def test_lazy_comparison_operators(
+    comparators: tuple[str, Callable[[pl.LazyFrame, Any], NoReturn]]
+) -> None:
+    # we cannot compare lazy frames, so all should raise a TypeError
+    with pytest.raises(
+        TypeError,
+        match=f'"{comparators[0]}" comparison not supported for LazyFrame objects',
+    ):
+        comparators[1](pl.LazyFrame(), pl.LazyFrame())
