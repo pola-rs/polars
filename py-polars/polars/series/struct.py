@@ -53,6 +53,17 @@ class StructNameSpace:
 
         """
 
+    def prefix(self, prefix: str) -> Series:
+        """
+        Add a prefix to the fields of the struct.
+
+        Parameters
+        ----------
+        prefix
+            Prefix to add to the struct's fields
+
+        """
+
     def rename_fields(self, names: Sequence[str]) -> Series:
         """
         Rename the fields of the struct.
@@ -61,6 +72,17 @@ class StructNameSpace:
         ----------
         names
             New names in the order of the struct's fields
+
+        """
+
+    def suffix(self, suffix: str) -> Series:
+        """
+        Add a suffix to the fields of the struct.
+
+        Parameters
+        ----------
+        suffix
+            Suffix to add to the struct's fields
 
         """
 

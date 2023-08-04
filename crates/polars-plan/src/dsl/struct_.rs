@@ -1,3 +1,5 @@
+use polars_utils::format_smartstring;
+
 use super::*;
 use crate::dsl::function_expr::StructFunction;
 
@@ -26,6 +28,31 @@ impl StructNameSpace {
                 options.allow_rename = true;
                 options
             })
+    }
+
+    /// Add a prefix to the fields of the [`StructChunked`].
+    pub fn prefix(self, prefix: String) -> Expr {
+        let prefix = Arc::new(prefix);
+        self.0
+            .map(
+                move |s| {
+                    let ca = s.struct_()?;
+                    let fields = ca
+                        .fields()
+                        .iter()
+                        .map(|s| {
+                            let mut s = s.clone();
+                            let name = s.name();
+                            let prefix = prefix.clone();
+                            s.rename(&format_smartstring!("{prefix}{name}"));
+                            s
+                        })
+                        .collect::<Vec<_>>();
+                    StructChunked::new(ca.name(), &fields).map(|ca| Some(ca.into_series()))
+                },
+                GetOutput::map_dtype(move |dt| dt.clone()),
+            )
+            .with_fmt("struct.prefix")
     }
 
     /// Rename the fields of the [`StructChunked`].
@@ -69,5 +96,30 @@ impl StructNameSpace {
                 }),
             )
             .with_fmt("struct.rename_fields")
+    }
+
+    /// Add a suffix  the fields of the [`StructChunked`].
+    pub fn suffix(self, suffix: String) -> Expr {
+        let suffix = Arc::new(suffix);
+        self.0
+            .map(
+                move |s| {
+                    let ca = s.struct_()?;
+                    let fields = ca
+                        .fields()
+                        .iter()
+                        .map(|s| {
+                            let mut s = s.clone();
+                            let name = s.name();
+                            let suffix = suffix.clone();
+                            s.rename(&format_smartstring!("{name}{suffix}"));
+                            s
+                        })
+                        .collect::<Vec<_>>();
+                    StructChunked::new(ca.name(), &fields).map(|ca| Some(ca.into_series()))
+                },
+                GetOutput::map_dtype(move |dt| dt.clone()),
+            )
+            .with_fmt("struct.suffix")
     }
 }

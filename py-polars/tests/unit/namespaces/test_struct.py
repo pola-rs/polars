@@ -28,3 +28,23 @@ def test_rename_fields() -> None:
         "a",
         "b",
     ]
+
+
+def test_struct_prefix_suffix() -> None:
+    df = pl.DataFrame(
+        {"int": [1, 2], "str": ["a", "b"], "bool": [True, None], "list": [[1, 2], [3]]}
+    )
+    s = df.to_struct("my_struct")
+
+    assert s.struct.prefix("pref_").struct.fields == [
+        "pref_int",
+        "pref_str",
+        "pref_bool",
+        "pref_list",
+    ]
+    assert s.struct.suffix("_suff").struct.fields == [
+        "int_suff",
+        "str_suff",
+        "bool_suff",
+        "list_suff",
+    ]
