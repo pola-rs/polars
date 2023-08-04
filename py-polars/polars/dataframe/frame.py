@@ -47,6 +47,7 @@ from polars.datatypes import (
     Time,
     Utf8,
     py_type_to_dtype,
+    unpack_dtypes,
 )
 from polars.dependencies import (
     _PYARROW_AVAILABLE,
@@ -1217,8 +1218,15 @@ class DataFrame:
         Details on the dataframe interchange protocol:
         https://data-apis.org/dataframe-protocol/latest/index.html
 
-        `nan_as_null` currently has no effect; once support for nullable extension
+        ``nan_as_null`` currently has no effect; once support for nullable extension
         dtypes is added, this value should be propagated to columns.
+
+        Polars currently relies on pyarrow's implementation of the dataframe interchange
+        protocol. Therefore, pyarrow>=11.0.0 is required for this method to work.
+
+        Because Polars can not currently guarantee zero-copy conversion to Arrow for
+        categorical columns, ``allow_copy=False`` will not work if the dataframe
+        contains categorical data.
 
         """
         if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
@@ -1228,11 +1236,11 @@ class DataFrame:
                 "pyarrow>=11.0.0 is required for converting a Polars dataframe to a"
                 " dataframe interchange object."
             )
-        if not allow_copy and Categorical in self.schema.values():
-            raise NotImplementedError(
-                "Polars does not offer zero-copy conversion to Arrow for categorical"
-                " columns. Set `allow_copy=True` or cast categorical columns to"
-                " string first."
+        if not allow_copy and Categorical in unpack_dtypes(*self.dtypes):
+            raise TypeError(
+                "Polars can not currently guarantee zero-copy conversion to Arrow for"
+                " categorical columns. Set `allow_copy=True` or cast categorical"
+                " columns to string first."
             )
         return self.to_arrow().__dataframe__(nan_as_null, allow_copy)
 
