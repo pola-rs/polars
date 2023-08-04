@@ -1,26 +1,14 @@
 [package]
 name = "polars-cli"
 version = "0.3.0"
-edition = "2021"
-license = "MIT"
-repository = "https://github.com/pola-rs/polars"
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
 description = "CLI interface for running SQL queries via Polars"
 
 [[bin]]
 name = "polars"
 path = "src/main.rs"
-
-[profile.release]
-strip = true
-lto = true
-panic = "abort"
-
-[features]
-highlight = ["nu-ansi-term"]
-default = ["highlight", "parquet", "json", "ipc"]
-parquet = ["polars/parquet"]
-json = ["polars/json"]
-ipc = ["polars/ipc"]
 
 [dependencies]
 polars = { version = "0.31.1", path = "../crates/polars", features = ["lazy", "sql", "dtype-full", "serde-lazy"] }
@@ -37,3 +25,15 @@ tmp_env = "0.1.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5.0", features = ["disable_initial_exec_tls"] }
+
+[features]
+highlight = ["nu-ansi-term"]
+default = ["highlight", "parquet", "json", "ipc"]
+parquet = ["polars/parquet"]
+json = ["polars/json"]
+ipc = ["polars/ipc"]
+
+[profile.release]
+strip = true
+lto = true
+panic = "abort"

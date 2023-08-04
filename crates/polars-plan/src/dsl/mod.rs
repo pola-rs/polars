@@ -1003,8 +1003,8 @@ impl Expr {
 
     /// Get the approximate count of unique values.
     #[cfg(feature = "approx_unique")]
-    pub fn approx_unique(self) -> Self {
-        self.apply_private(FunctionExpr::ApproxUnique)
+    pub fn approx_n_unique(self) -> Self {
+        self.apply_private(FunctionExpr::ApproxNUnique)
             .with_function_options(|mut options| {
                 options.auto_explode = true;
                 options

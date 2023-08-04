@@ -590,9 +590,9 @@ def n_unique(column: str | Series) -> Expr | int:
     return col(column).n_unique()
 
 
-def approx_unique(column: str | Expr) -> Expr:
+def approx_n_unique(column: str | Expr) -> Expr:
     """
-    Approx count unique values.
+    Approximate count of unique values.
 
     This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
@@ -604,7 +604,7 @@ def approx_unique(column: str | Expr) -> Expr:
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 1], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.approx_unique("a"))
+    >>> df.select(pl.approx_n_unique("a"))
     shape: (1, 1)
     ┌─────┐
     │ a   │
@@ -616,8 +616,8 @@ def approx_unique(column: str | Expr) -> Expr:
 
     """
     if isinstance(column, pl.Expr):
-        return column.approx_unique()
-    return col(column).approx_unique()
+        return column.approx_n_unique()
+    return col(column).approx_n_unique()
 
 
 @overload

@@ -1,13 +1,35 @@
 [package]
 name = "polars"
-version.workspace = true
-authors = ["ritchie46 <ritchie46@gmail.com>"]
-edition = "2021"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
 keywords = ["dataframe", "query-engine", "arrow"]
-license = "MIT"
-readme = "../README.md"
-repository = "https://github.com/pola-rs/polars"
-description = "DataFrame Library based on Apache Arrow"
+license = { workspace = true }
+readme = "../../README.md"
+repository = { workspace = true }
+description = "DataFrame library based on Apache Arrow"
+
+[dependencies]
+polars-algo = { version = "0.31.1", path = "../polars-algo", optional = true }
+polars-core = { version = "0.31.1", path = "../polars-core", features = ["docs"], default-features = false }
+polars-io = { version = "0.31.1", path = "../polars-io", features = [], default-features = false, optional = true }
+polars-lazy = { version = "0.31.1", path = "../polars-lazy", features = [], default-features = false, optional = true }
+polars-ops = { version = "0.31.1", path = "../polars-ops" }
+polars-sql = { version = "0.31.1", path = "../polars-sql", default-features = false, optional = true }
+polars-time = { version = "0.31.1", path = "../polars-time", default-features = false, optional = true }
+
+[dev-dependencies]
+ahash = "0.8"
+rand = "0.8"
+
+[build-dependencies]
+version_check = { workspace = true }
+
+# enable js feature for getrandom to work in wasm
+[target.'cfg(target_family = "wasm")'.dependencies.getrandom]
+version = "0.2"
+features = ["js"]
 
 [features]
 sql = ["polars-sql"]
@@ -310,27 +332,6 @@ docs-selection = [
 bench = [
   "lazy",
 ]
-
-[dependencies]
-polars-algo = { version = "0.31.1", path = "../polars-algo", optional = true }
-polars-core = { version = "0.31.1", path = "../polars-core", features = ["docs"], default-features = false }
-polars-io = { version = "0.31.1", path = "../polars-io", features = [], default-features = false, optional = true }
-polars-lazy = { version = "0.31.1", path = "../polars-lazy", features = [], default-features = false, optional = true }
-polars-ops = { version = "0.31.1", path = "../polars-ops" }
-polars-sql = { version = "0.31.1", path = "../polars-sql", default-features = false, optional = true }
-polars-time = { version = "0.31.1", path = "../polars-time", default-features = false, optional = true }
-
-# enable js feature for getrandom to work in wasm
-[target.'cfg(target_family = "wasm")'.dependencies.getrandom]
-version = "0.2"
-features = ["js"]
-
-[dev-dependencies]
-ahash = "0.8"
-rand = "0.8"
-
-[build-dependencies]
-version_check = { workspace = true }
 
 [package.metadata.docs.rs]
 # all-features = true

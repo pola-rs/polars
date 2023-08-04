@@ -30,6 +30,7 @@ pub fn compare_fn_nan_min<T>(a: &T, b: &T) -> Ordering
 where
     T: PartialOrd + IsFloat,
 {
+    // this branch should be opimized away for integers
     if T::is_float() {
         match (a.is_nan(), b.is_nan()) {
             // safety: we checked nans
@@ -51,6 +52,7 @@ pub fn compare_fn_nan_max<T>(a: &T, b: &T) -> Ordering
 where
     T: PartialOrd + IsFloat,
 {
+    // this branch should be opimized away for integers
     if T::is_float() {
         match (a.is_nan(), b.is_nan()) {
             // safety: we checked nans

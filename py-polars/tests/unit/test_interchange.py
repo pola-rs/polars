@@ -45,15 +45,33 @@ def test_interchange_categorical() -> None:
     assert dfi.get_column_by_name("a").dtype[0] == 23  # 23 signifies categorical dtype
 
     # If copy not allowed, throws an error
-    with pytest.raises(NotImplementedError, match="categorical"):
+    with pytest.raises(TypeError, match="categorical"):
         df.__dataframe__(allow_copy=False)
 
 
-def test_from_dataframe() -> None:
+def test_interchange_nested_categorical() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2], "b": ["a", "b"], "c": [["q"], ["x"]]},
+        schema_overrides={"c": pl.List(pl.Categorical)},
+    )
+
+    with pytest.raises(TypeError, match="categorical"):
+        df.__dataframe__(allow_copy=False)
+
+
+def test_from_dataframe_polars() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
     dfi = df.__dataframe__()
     result = pl.from_dataframe(dfi)
     assert_frame_equal(result, df)
+
+
+def test_from_dataframe_categorical_zero_copy() -> None:
+    df = pl.DataFrame({"a": ["foo", "bar"]}, schema={"a": pl.Categorical})
+    df_pa = df.to_arrow()
+
+    with pytest.raises(TypeError):
+        pl.from_dataframe(df_pa, allow_copy=False)
 
 
 def test_from_dataframe_pandas() -> None:

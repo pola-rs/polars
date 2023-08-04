@@ -5,6 +5,7 @@
 --prefer-binary
 
 # Dependencies
+dataframe-api-compat >= 0.1.6
 deltalake >= 0.10.0
 numpy
 pandas

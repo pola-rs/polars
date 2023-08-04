@@ -42,7 +42,7 @@ from polars.datatypes import (
     Utf8,
     py_type_to_dtype,
 )
-from polars.dependencies import subprocess
+from polars.dependencies import dataframe_api_compat, subprocess
 from polars.io._utils import _is_local_file
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
@@ -55,6 +55,7 @@ from polars.utils._parse_expr_input import (
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
+    deprecate_renamed_methods,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -110,6 +111,10 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
+@deprecate_renamed_methods(
+    mapping={"approx_unique": "approx_n_unique"},
+    versions={"approx_unique": "0.18.12"},
+)
 class LazyFrame:
     """
     Representation of a Lazy computation graph/query against a DataFrame.
@@ -622,6 +627,19 @@ class LazyFrame:
         """
         return self._ldf.schema()
 
+    def __dataframe_consortium_standard__(
+        self, *, api_version: str | None = None
+    ) -> Any:
+        """
+        Provide entry point to the Consortium DataFrame Standard API.
+
+        This is developed and maintained outside of polars.
+        Please report any issues to https://github.com/data-apis/dataframe-api-compat.
+        """
+        return dataframe_api_compat.polars_standard.convert_to_standard_compliant_dataframe(
+            self, api_version=api_version
+        )
+
     @property
     def width(self) -> int:
         """
@@ -646,6 +664,27 @@ class LazyFrame:
             "The truth value of a LazyFrame is ambiguous; consequently it "
             "cannot be used in boolean context with and/or/not operators. "
         )
+
+    def _comparison_error(self, operator: str) -> NoReturn:
+        raise TypeError(f'"{operator}" comparison not supported for LazyFrame objects.')
+
+    def __eq__(self, other: Any) -> NoReturn:
+        self._comparison_error("==")
+
+    def __ne__(self, other: Any) -> NoReturn:
+        self._comparison_error("!=")
+
+    def __gt__(self, other: Any) -> NoReturn:
+        self._comparison_error(">")
+
+    def __lt__(self, other: Any) -> NoReturn:
+        self._comparison_error("<")
+
+    def __ge__(self, other: Any) -> NoReturn:
+        self._comparison_error(">=")
+
+    def __le__(self, other: Any) -> NoReturn:
+        self._comparison_error("<=")
 
     def __contains__(self, key: str) -> bool:
         return key in self.columns
@@ -3764,9 +3803,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.slice(0, 1)
 
-    def approx_unique(self) -> Self:
+    def approx_n_unique(self) -> Self:
         """
-        Approx count unique values.
+        Approximate count of unique values.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
@@ -3778,7 +3817,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [1, 2, 1, 1],
         ...     }
         ... )
-        >>> lf.approx_unique().collect()
+        >>> lf.approx_n_unique().collect()
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3789,7 +3828,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        return self.select(F.all().approx_unique())
+        return self.select(F.all().approx_n_unique())
 
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """

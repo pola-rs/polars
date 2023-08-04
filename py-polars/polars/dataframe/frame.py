@@ -47,12 +47,14 @@ from polars.datatypes import (
     Time,
     Utf8,
     py_type_to_dtype,
+    unpack_dtypes,
 )
 from polars.dependencies import (
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
+    dataframe_api_compat,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -87,6 +89,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
+    deprecate_renamed_methods,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -179,6 +182,10 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
+@deprecate_renamed_methods(
+    mapping={"approx_unique": "approx_n_unique"},
+    versions={"approx_unique": "0.18.12"},
+)
 class DataFrame:
     """
     Two-dimensional data structure representing data as a table with rows and columns.
@@ -1216,8 +1223,15 @@ class DataFrame:
         Details on the dataframe interchange protocol:
         https://data-apis.org/dataframe-protocol/latest/index.html
 
-        `nan_as_null` currently has no effect; once support for nullable extension
+        ``nan_as_null`` currently has no effect; once support for nullable extension
         dtypes is added, this value should be propagated to columns.
+
+        Polars currently relies on pyarrow's implementation of the dataframe interchange
+        protocol. Therefore, pyarrow>=11.0.0 is required for this method to work.
+
+        Because Polars can not currently guarantee zero-copy conversion to Arrow for
+        categorical columns, ``allow_copy=False`` will not work if the dataframe
+        contains categorical data.
 
         """
         if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
@@ -1227,13 +1241,26 @@ class DataFrame:
                 "pyarrow>=11.0.0 is required for converting a Polars dataframe to a"
                 " dataframe interchange object."
             )
-        if not allow_copy and Categorical in self.schema.values():
-            raise NotImplementedError(
-                "Polars does not offer zero-copy conversion to Arrow for categorical"
-                " columns. Set `allow_copy=True` or cast categorical columns to"
-                " string first."
+        if not allow_copy and Categorical in unpack_dtypes(*self.dtypes):
+            raise TypeError(
+                "Polars can not currently guarantee zero-copy conversion to Arrow for"
+                " categorical columns. Set `allow_copy=True` or cast categorical"
+                " columns to string first."
             )
         return self.to_arrow().__dataframe__(nan_as_null, allow_copy)
+
+    def __dataframe_consortium_standard__(
+        self, *, api_version: str | None = None
+    ) -> Any:
+        """
+        Provide entry point to the Consortium DataFrame Standard API.
+
+        This is developed and maintained outside of polars.
+        Please report any issues to https://github.com/data-apis/dataframe-api-compat.
+        """
+        return dataframe_api_compat.polars_standard.convert_to_standard_compliant_dataframe(
+            self, api_version=api_version
+        )
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""

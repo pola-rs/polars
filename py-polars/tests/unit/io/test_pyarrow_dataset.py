@@ -137,3 +137,23 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
         .select(["bools", "floats", "date"])
         .collect(),
     )
+
+
+def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
+    df0 = pl.DataFrame({"a": [1, 2, 3]})
+
+    df1 = pl.DataFrame({"a": [1, 2]})
+
+    file_path_0 = tmp_path / "0.parquet"
+    file_path_1 = tmp_path / "1.parquet"
+
+    df0.write_parquet(file_path_0)
+    df1.write_parquet(file_path_1)
+
+    ds0 = ds.dataset(file_path_0, format="parquet")
+    ds1 = ds.dataset(file_path_1, format="parquet")
+
+    lf0 = pl.scan_pyarrow_dataset(ds0)
+    lf1 = pl.scan_pyarrow_dataset(ds1)
+
+    assert lf0.join(lf1, on="a", how="inner").collect().to_dict(False) == {"a": [1, 2]}
