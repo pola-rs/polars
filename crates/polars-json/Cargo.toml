@@ -19,4 +19,4 @@ fallible-streaming-iterator = "0.1"
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 num-traits = { workspace = true }
-simd-json = { version = "0.10", features = ["allow-non-simd", "known-key"] }
+simd-json = { workspace = true }

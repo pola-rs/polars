@@ -20,8 +20,8 @@ polars-sql = { version = "0.31.1", path = "../polars-sql", default-features = fa
 polars-time = { version = "0.31.1", path = "../polars-time", default-features = false, optional = true }
 
 [dev-dependencies]
-ahash = "0.8"
-rand = "0.8"
+ahash = { workspace = true }
+rand = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }
