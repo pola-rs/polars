@@ -407,7 +407,8 @@ def _reconstruct_field_type(
                 return pa.field(
                     name=field_head.name,
                     type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
-            )
+                )
+
 
 def _create_delta_compatible_schema(schema: pa.schema) -> pa.Schema:
     """
