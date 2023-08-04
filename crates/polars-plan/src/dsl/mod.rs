@@ -1461,7 +1461,7 @@ impl Expr {
         labels: Option<Vec<String>>,
         left_closed: bool,
         include_breaks: bool,
-        precision: usize,
+        precision: Option<usize>,
         scientific: bool,
     ) -> Expr {
         self.apply_private(FunctionExpr::Cut {
@@ -1483,7 +1483,7 @@ impl Expr {
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
-        precision: usize,
+        precision: Option<usize>,
         scientific: bool,
     ) -> Expr {
         self.apply_private(FunctionExpr::QCut {
@@ -1506,7 +1506,7 @@ impl Expr {
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
-        precision: usize,
+        precision: Option<usize>,
         scientific: bool,
     ) -> Expr {
         let probs = (1..n_bins).map(|b| b as f64 / n_bins as f64).collect();

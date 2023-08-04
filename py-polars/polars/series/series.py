@@ -1649,7 +1649,7 @@ class Series:
         series: bool = True,
         left_closed: bool = False,
         include_breaks: bool = False,
-        precision: int = 3,
+        precision: int | None = None,
         scientific: bool = False,
     ) -> DataFrame | Series:
         """
@@ -1783,7 +1783,7 @@ class Series:
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
-        precision: int = 3,
+        precision: int | None = None,
         scientific: bool = False,
     ) -> DataFrame | Series:
         """

@@ -211,7 +211,7 @@ pub enum FunctionExpr {
         labels: Option<Vec<String>>,
         left_closed: bool,
         include_breaks: bool,
-        precision: usize,
+        precision: Option<usize>,
         scientific: bool,
     },
     #[cfg(feature = "cutqcut")]
@@ -221,7 +221,7 @@ pub enum FunctionExpr {
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
-        precision: usize,
+        precision: Option<usize>,
         scientific: bool,
     },
     #[cfg(feature = "rle")]

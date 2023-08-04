@@ -186,7 +186,7 @@ impl PyExpr {
         labels: Option<Vec<String>>,
         left_closed: bool,
         include_breaks: bool,
-        precision: usize,
+        precision: Option<usize>,
         scientific: bool,
     ) -> Self {
         self.inner
@@ -211,7 +211,7 @@ impl PyExpr {
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
-        precision: usize,
+        precision: Option<usize>,
         scientific: bool,
     ) -> Self {
         self.inner
@@ -237,7 +237,7 @@ impl PyExpr {
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
-        precision: usize,
+        precision: Option<usize>,
         scientific: bool,
     ) -> Self {
         self.inner

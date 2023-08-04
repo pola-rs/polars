@@ -92,25 +92,26 @@ fn find_label_precision(sorted_breaks: &[f64], precision: usize, scientific: boo
 fn make_labels(
     sorted_breaks: &[f64],
     left_closed: bool,
-    precision: usize,
+    precision: Option<usize>,
     scientific: bool,
 ) -> Vec<String> {
-    let precision = find_label_precision(sorted_breaks, precision, scientific);
+    let precision = precision.map(|p| find_label_precision(sorted_breaks, p, scientific));
+
     // This seems to be the most straightforward way to get rid of trailing zeros.
     let (re, replacement) = match scientific {
         true => (Regex::new(r"(\.?0+)e").unwrap(), "e"),
         false => (Regex::new(r"(\.?0+)$").unwrap(), ""),
     };
-    // Rust doesn't like returning these closures as part of the tuple above.
-    let format_fn = match scientific {
-        true => |v, p| format!("{0:.1$e}", v, p),
-        false => |v, p| format!("{0:.1$}", v, p),
-    };
 
     let mut out = Vec::with_capacity(sorted_breaks.len() + 2);
     let mut last_break_str = format!("{}", f64::NEG_INFINITY);
     for v in sorted_breaks.iter().chain(once(&f64::INFINITY)) {
-        let raw_break_str = format_fn(v, precision);
+        let raw_break_str = match (precision, scientific) {
+            (Some(p), true) => format!("{0:.1$e}", v, p),
+            (Some(p), false) => format!("{0:.1$}", v, p),
+            (None, true) => format!("{0:e}", v),
+            (None, false) => format!("{0}", v),
+        };
         let break_str = re.replace(&raw_break_str, replacement).to_string();
         if left_closed {
             out.push(format!("[{}, {})", last_break_str, break_str));
@@ -128,7 +129,7 @@ pub fn cut(
     labels: Option<Vec<String>>,
     left_closed: bool,
     include_breaks: bool,
-    precision: usize,
+    precision: Option<usize>,
     scientific: bool,
 ) -> PolarsResult<Series> {
     polars_ensure!(breaks.iter().all(|x| x.is_finite()), ComputeError: "Don't include NaN, Inf, or -Inf in breaks");
@@ -157,7 +158,7 @@ pub fn qcut(
     left_closed: bool,
     allow_duplicates: bool,
     include_breaks: bool,
-    precision: usize,
+    precision: Option<usize>,
     scientific: bool,
 ) -> PolarsResult<Series> {
     let s = s.cast(&DataType::Float64)?;

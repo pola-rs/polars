@@ -3304,7 +3304,7 @@ class Expr:
         labels: list[str] | None = None,
         left_closed: bool = False,
         include_breaks: bool = False,
-        precision: int = 3,
+        precision: int | None = None,
         scientific: bool = False,
     ) -> Self:
         """
@@ -3385,7 +3385,7 @@ class Expr:
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
-        precision: int = 3,
+        precision: int | None = None,
         scientific: bool = False,
     ) -> Self:
         """
