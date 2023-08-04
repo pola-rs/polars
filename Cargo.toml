@@ -58,3 +58,9 @@ features = [
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
+
+[profile.release.package.polars-cli]
+strip = true
+# Below settings cannot be specified due to Cargo workspace restrictions, see: https://github.com/rust-lang/cargo/issues/9330
+# lto = true
+# panic = "abort"
