@@ -20,26 +20,32 @@ where
                     PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
                 let n_partitions = n_partitions as u64;
+                let mut offset = 0;
+                for keys in &keys {
+                    let keys = keys.as_ref();
+                    let len = keys.len() as IdxSize;
 
-                keys.iter()
-                    .flat_map(|array| array.as_ref().iter())
-                    .enumerate()
-                    .for_each(|(idx, key)| {
-                        let idx = idx as IdxSize;
-                        if this_partition(key.as_u64(), partition_no, n_partitions) {
-                            let entry = hash_tbl.entry(*key);
+                    let mut cnt = 0;
+                    keys.iter().for_each(|k| {
+                        let idx = cnt + offset;
+                        cnt += 1;
+
+                        if this_partition(k.as_u64(), partition_no, n_partitions) {
+                            let entry = hash_tbl.entry(*k);
 
                             match entry {
                                 Entry::Vacant(entry) => {
-                                    entry.insert(vec![idx as IdxSize]);
+                                    entry.insert(vec![idx]);
                                 }
                                 Entry::Occupied(mut entry) => {
                                     let v = entry.get_mut();
-                                    v.push(idx as IdxSize);
+                                    v.push(idx);
                                 }
                             }
                         }
                     });
+                    offset += len;
+                }
                 hash_tbl
             })
             .collect()
