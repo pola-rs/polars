@@ -579,9 +579,9 @@ def test_outer_join_list_() -> None:
 
 
 def test_join_validation() -> None:
-
-
-    def test_each_join_validation(unique: pl.DataFrame, duplicate: pl.DataFrame, how: JoinStrategy) -> None:
+    def test_each_join_validation(
+        unique: pl.DataFrame, duplicate: pl.DataFrame, how: JoinStrategy
+    ) -> None:
         # one_to_many
         _one_to_many_success_inner = unique.join(
             duplicate, on="id", how=how, validate="1:m"
