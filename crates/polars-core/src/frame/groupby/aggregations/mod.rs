@@ -3,6 +3,8 @@ mod boolean;
 mod dispatch;
 mod utf8;
 
+use std::cmp::Ordering;
+
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::simd::Simd;
@@ -15,7 +17,9 @@ use polars_arrow::kernels::rolling::no_nulls::{
     MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
 use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
-use polars_arrow::kernels::rolling::{DynArgs, RollingQuantileParams, RollingVarParams};
+use polars_arrow::kernels::rolling::{
+    compare_fn_nan_max, compare_fn_nan_min, DynArgs, RollingQuantileParams, RollingVarParams,
+};
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::TrustedLenPush;
@@ -211,23 +215,74 @@ where
     ca.into_inner().into_series()
 }
 
-#[inline(always)]
-fn take_min<T: PartialOrd>(a: T, b: T) -> T {
-    if a < b {
-        a
-    } else {
-        b
-    }
+pub trait TakeExtremum {
+    fn take_min(self, other: Self) -> Self;
+
+    fn take_max(self, other: Self) -> Self;
 }
 
-#[inline(always)]
-fn take_max<T: PartialOrd>(a: T, b: T) -> T {
-    if a > b {
-        a
-    } else {
-        b
-    }
+macro_rules! impl_take_extremum {
+    ($tp:ty) => {
+        impl TakeExtremum for $tp {
+            #[inline(always)]
+            fn take_min(self, other: Self) -> Self {
+                if self < other {
+                    self
+                } else {
+                    other
+                }
+            }
+
+            #[inline(always)]
+            fn take_max(self, other: Self) -> Self {
+                if self > other {
+                    self
+                } else {
+                    other
+                }
+            }
+        }
+    };
+
+    (float: $tp:ty) => {
+        impl TakeExtremum for $tp {
+            #[inline(always)]
+            fn take_min(self, other: Self) -> Self {
+                if matches!(compare_fn_nan_max(&self, &other), Ordering::Less) {
+                    self
+                } else {
+                    other
+                }
+            }
+
+            #[inline(always)]
+            fn take_max(self, other: Self) -> Self {
+                if matches!(compare_fn_nan_min(&self, &other), Ordering::Greater) {
+                    self
+                } else {
+                    other
+                }
+            }
+        }
+    };
 }
+
+#[cfg(feature = "dtype-u8")]
+impl_take_extremum!(u8);
+#[cfg(feature = "dtype-u16")]
+impl_take_extremum!(u16);
+impl_take_extremum!(u32);
+impl_take_extremum!(u64);
+#[cfg(feature = "dtype-i8")]
+impl_take_extremum!(i8);
+#[cfg(feature = "dtype-i16")]
+impl_take_extremum!(i16);
+impl_take_extremum!(i32);
+impl_take_extremum!(i64);
+#[cfg(feature = "dtype-decimal")]
+impl_take_extremum!(i128);
+impl_take_extremum!(float: f32);
+impl_take_extremum!(float: f64);
 
 /// Intermediate helper trait so we can have a single generic implementation
 /// This trait will ensure the specific dispatch works without complicating
@@ -394,8 +449,15 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native:
-        NativeType + PartialOrd + Num + NumCast + Zero + Simd + Bounded + std::iter::Sum<T::Native>,
+    T::Native: NativeType
+        + PartialOrd
+        + Num
+        + NumCast
+        + Zero
+        + Simd
+        + Bounded
+        + std::iter::Sum<T::Native>
+        + TakeExtremum,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
         + arrow::compute::aggregate::SimdOrd<T::Native>,
@@ -427,14 +489,14 @@ where
                         Some(take_agg_no_null_primitive_iter_unchecked(
                             arr,
                             idx2usize(idx),
-                            take_min,
+                            |a, b| a.take_min(b),
                             T::Native::max_value(),
                         ))
                     } else {
                         take_agg_primitive_iter_unchecked::<T::Native, _, _>(
                             arr,
                             idx2usize(idx),
-                            take_min,
+                            |a, b| a.take_min(b),
                             T::Native::max_value(),
                             idx.len() as IdxSize,
                         )
@@ -509,7 +571,7 @@ where
                             take_agg_no_null_primitive_iter_unchecked(
                                 arr,
                                 idx2usize(idx),
-                                take_max,
+                                |a, b| a.take_max(b),
                                 T::Native::min_value(),
                             )
                         })
@@ -517,7 +579,7 @@ where
                         take_agg_primitive_iter_unchecked::<T::Native, _, _>(
                             arr,
                             idx2usize(idx),
-                            take_max,
+                            |a, b| a.take_max(b),
                             T::Native::min_value(),
                             idx.len() as IdxSize,
                         )
