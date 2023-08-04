@@ -417,15 +417,22 @@ fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
         }
     };
 
-    if options.strict {
-        polars_ensure!(
-            out.null_count() == ca.null_count(),
+    if options.strict && ca.null_count() != out.null_count() {
+        let failure_mask = !ca.is_null() & out.is_null();
+        let all_failures = ca.filter(&failure_mask)?;
+        let n_failures = all_failures.len();
+        let first_failures = all_failures.unique()?.slice(0, 10).sort(false);
+        let n_failures_unique = all_failures.n_unique()?;
+        polars_bail!(
             ComputeError:
-            "strict conversion to dates failed.\n\
+            "strict date parsing failed for {} value(s) ({} unique): {}\n\
             \n\
             You might want to try:\n\
             - setting `strict=False`\n\
-            - explicitly specifying a `format`"
+            - explicitly specifying a `format`",
+            n_failures,
+            n_failures_unique,
+            first_failures.into_series().fmt_list(),
         );
     }
     Ok(out.into_series())
@@ -468,15 +475,22 @@ fn to_datetime(
             .into_series()
     };
 
-    if options.strict {
-        polars_ensure!(
-            out.null_count() == ca.null_count(),
+    if options.strict && ca.null_count() != out.null_count() {
+        let failure_mask = !ca.is_null() & out.is_null();
+        let all_failures = ca.filter(&failure_mask)?;
+        let n_failures = all_failures.len();
+        let first_failures = all_failures.unique()?.slice(0, 10).sort(false);
+        let n_failures_unique = all_failures.n_unique()?;
+        polars_bail!(
             ComputeError:
-            "strict conversion to datetimes failed.\n\
+            "strict datetime parsing failed for {} value(s) ({} unique): {}\n\
             \n\
             You might want to try:\n\
             - setting `strict=False`\n\
-            - explicitly specifying a `format`"
+            - explicitly specifying a `format`",
+            n_failures,
+            n_failures_unique,
+            first_failures.into_series().fmt_list(),
         );
     }
     Ok(out.into_series())
@@ -493,15 +507,22 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
         .as_time(options.format.as_deref(), options.cache)?
         .into_series();
 
-    if options.strict {
-        polars_ensure!(
-            out.null_count() == ca.null_count(),
+    if options.strict && ca.null_count() != out.null_count() {
+        let failure_mask = !ca.is_null() & out.is_null();
+        let all_failures = ca.filter(&failure_mask)?;
+        let n_failures = all_failures.len();
+        let first_failures = all_failures.unique()?.slice(0, 10).sort(false);
+        let n_failures_unique = all_failures.n_unique()?;
+        polars_bail!(
             ComputeError:
-            "strict conversion to times failed.\n\
+            "strict time parsing failed for {} value(s) ({} unique): {}\n\
             \n\
             You might want to try:\n\
             - setting `strict=False`\n\
-            - explicitly specifying a `format`"
+            - explicitly specifying a `format`",
+            n_failures,
+            n_failures_unique,
+            first_failures.into_series().fmt_list(),
         );
     }
     Ok(out.into_series())
