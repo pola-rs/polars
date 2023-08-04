@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-import pyarrow as pa
+from polars.dependencies import pyarrow as pa
 
 from polars.convert import from_arrow
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
