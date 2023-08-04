@@ -131,48 +131,28 @@ impl JoinValidation {
         Ok(())
     }
 
-    pub(super) fn validate_probe<'a, F, I, T>(
+    pub(super) fn validate_probe(
         &self,
-        probe: F,
-        // In a left join, probe is always in lhs.
-        // In a inner or outer join, it is the longest relationship of both sides.
-        is_rhs: bool,
-    ) -> PolarsResult<()>
-    where
-        F: Fn() -> I + Send + Sync,
-        I: 'a + Iterator<Item = T> + Send + Sync,
-        T: Send + Hash + Eq + Sync + Copy + AsU64 + 'a,
-    {
-        use JoinValidation::*;
-        let fail = match self.swap(is_rhs) {
-            // Only check the `prone` side.
-            // The other side use `validate_build` to check
-            ManyToMany | ManyToOne => false,
-            OneToMany | OneToOne => {
-                // check any key in prone is duplicated
-                let n_partitions = _set_partition_size();
-                POOL.install(|| {
-                    (0..n_partitions)
-                        .into_par_iter()
-                        .find_any(|partition_no| {
-                            let partition_no = *partition_no as u64;
-                            let n_partitions = n_partitions as u64;
+        s_left: &Series,
+        s_right: &Series,
+        build_shortest_table: bool,
+    ) -> PolarsResult<()> {
+        // Only check the `build` side.
+        // The other side use `validate_build` to check
 
-                            let mut hash_set: PlHashSet<T> =
-                                PlHashSet::with_capacity(HASHMAP_INIT_SIZE);
-                            probe().any(|key| {
-                                if this_partition(key.as_u64(), partition_no, n_partitions) {
-                                    !hash_set.insert(key)
-                                } else {
-                                    false
-                                }
-                            })
-                        })
-                        .is_some()
-                })
-            }
+        // In default, probe is the left series.
+        // the shortest relation is built, and will be put in the right
+        // If left is shorter, swap.
+        // If left == right, apply swap which is the same logic as `det_hash_prone_order`
+        let should_swap = build_shortest_table && s_left.len() >= s_right.len();
+        let probe = if should_swap { s_right } else { s_left };
+
+        use JoinValidation::*;
+        let valid = match self.swap(should_swap) {
+            ManyToMany | ManyToOne => true,
+            OneToMany | OneToOne => probe.n_unique()? == probe.len(),
         };
-        polars_ensure!(!fail, ComputeError: "the join keys did not fulfil {} validation", self);
+        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
         Ok(())
     }
 
@@ -180,15 +160,16 @@ impl JoinValidation {
         &self,
         build_size: usize,
         expected_size: usize,
-        is_rhs: bool,
+        swapped: bool,
     ) -> PolarsResult<()> {
         use JoinValidation::*;
 
-        // Only check the `build` side.
-        // The other side use `validate_prone` to check
-        let valid = match self.swap(is_rhs) {
-            ManyToMany | ManyToOne => true,
-            OneToMany | OneToOne => build_size == expected_size,
+        // In default, build is in rhs.
+        let valid = match self.swap(swapped) {
+            // Only check the `build` side.
+            // The other side use `validate_prone` to check
+            ManyToMany | OneToMany => true,
+            ManyToOne | OneToOne => build_size == expected_size,
         };
         polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
         Ok(())

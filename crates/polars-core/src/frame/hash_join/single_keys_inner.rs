@@ -49,19 +49,10 @@ where
 
     // first we hash one relation
     let hash_tbls = if validate.needs_checks() {
-        validate.validate_probe(
-            || {
-                let nested: &[IntoSlice] = probe.as_ref();
-                nested
-                    .iter()
-                    .flat_map(|into_slice| into_slice.as_ref().iter())
-            },
-            swapped,
-        )?;
         let expected_size = build.iter().map(|v| v.as_ref().len()).sum();
         let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        validate.validate_build(build_size, expected_size, !swapped)?;
+        validate.validate_build(build_size, expected_size, swapped)?;
         hash_tbls
     } else {
         build_tables(build)

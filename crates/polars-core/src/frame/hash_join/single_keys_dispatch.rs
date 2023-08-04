@@ -13,6 +13,7 @@ impl Series {
         validate: JoinValidation,
     ) -> PolarsResult<LeftJoinIds> {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
+        validate.validate_probe(&lhs, &rhs, false)?;
 
         use DataType::*;
         match lhs.dtype() {
@@ -83,6 +84,7 @@ impl Series {
         validate: JoinValidation,
     ) -> PolarsResult<(InnerJoinIds, bool)> {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
+        validate.validate_probe(&lhs, &rhs, true)?;
 
         use DataType::*;
         match lhs.dtype() {
@@ -119,6 +121,7 @@ impl Series {
         validate: JoinValidation,
     ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
+        validate.validate_probe(&lhs, &rhs, true)?;
 
         use DataType::*;
         match lhs.dtype() {
@@ -191,7 +194,7 @@ where
     Option<T::Native>: AsU64,
 {
     let n_threads = POOL.current_num_threads();
-    let (a, b, swap) = det_hash_prone_order!(left, right);
+    let (a, b, swapped) = det_hash_prone_order!(left, right);
     let splitted_a = split_ca(a, n_threads).unwrap();
     let splitted_b = split_ca(b, n_threads).unwrap();
     match (
@@ -204,24 +207,24 @@ where
             let keys_a = splitted_to_slice(&splitted_a);
             let keys_b = splitted_to_slice(&splitted_b);
             Ok((
-                hash_join_tuples_inner(keys_a, keys_b, swap, validate)?,
-                !swap,
+                hash_join_tuples_inner(keys_a, keys_b, swapped, validate)?,
+                !swapped,
             ))
         }
         (true, true, _, _) => {
             let keys_a = splitted_by_chunks(&splitted_a);
             let keys_b = splitted_by_chunks(&splitted_b);
             Ok((
-                hash_join_tuples_inner(keys_a, keys_b, swap, validate)?,
-                !swap,
+                hash_join_tuples_inner(keys_a, keys_b, swapped, validate)?,
+                !swapped,
             ))
         }
         _ => {
             let keys_a = splitted_to_opt_vec(&splitted_a);
             let keys_b = splitted_to_opt_vec(&splitted_b);
             Ok((
-                hash_join_tuples_inner(keys_a, keys_b, swap, validate)?,
-                !swap,
+                hash_join_tuples_inner(keys_a, keys_b, swapped, validate)?,
+                !swapped,
             ))
         }
     }
@@ -408,12 +411,12 @@ impl BinaryChunked {
         other: &BinaryChunked,
         validate: JoinValidation,
     ) -> PolarsResult<(InnerJoinIds, bool)> {
-        let (splitted_a, splitted_b, swap, hb) = self.prepare(other, true);
+        let (splitted_a, splitted_b, swapped, hb) = self.prepare(other, true);
         let str_hashes_a = prepare_bytes(&splitted_a, &hb);
         let str_hashes_b = prepare_bytes(&splitted_b, &hb);
         Ok((
-            hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap, validate)?,
-            !swap,
+            hash_join_tuples_inner(str_hashes_a, str_hashes_b, swapped, validate)?,
+            !swapped,
         ))
     }
 
@@ -454,7 +457,7 @@ impl BinaryChunked {
         other: &BinaryChunked,
         validate: JoinValidation,
     ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
-        let (a, b, swap) = det_hash_prone_order!(self, other);
+        let (a, b, swapped) = det_hash_prone_order!(self, other);
 
         let n_partitions = _set_partition_size();
         let splitted_a = split_ca(a, n_partitions).unwrap();
@@ -470,7 +473,7 @@ impl BinaryChunked {
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
                     .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap, validate)
+                hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
             }
             _ => {
                 let iters_a = splitted_a
@@ -481,7 +484,7 @@ impl BinaryChunked {
                     .iter()
                     .map(|ca| ca.into_iter())
                     .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap, validate)
+                hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
             }
         }
     }

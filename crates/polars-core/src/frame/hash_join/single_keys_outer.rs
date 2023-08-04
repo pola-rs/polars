@@ -88,7 +88,7 @@ where
         let expected_size = build.iter().map(|i| i.size_hint().0).sum();
         let hash_tbls = prepare_hashed_relation_threaded(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        validate.validate_build(build_size, expected_size, !swapped)?;
+        validate.validate_build(build_size, expected_size, swapped)?;
         hash_tbls
     } else {
         prepare_hashed_relation_threaded(build)
@@ -97,17 +97,6 @@ where
 
     // we pre hash the probing values
     let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(random_state));
-
-    if validate.needs_checks() {
-        validate.validate_probe(
-            || {
-                probe_hashes
-                    .iter()
-                    .flat_map(|it| it.iter().map(|item| item.0))
-            },
-            swapped,
-        )?;
-    }
 
     let n_tables = hash_tbls.len() as u64;
 
