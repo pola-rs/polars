@@ -137,18 +137,20 @@ impl JoinValidation {
         s_right: &Series,
         build_shortest_table: bool,
     ) -> PolarsResult<()> {
-        // Only check the `build` side.
-        // The other side use `validate_build` to check
-
         // In default, probe is the left series.
-        // the shortest relation is built, and will be put in the right
-        // If left is shorter, swap.
-        // If left == right, swap. (the same logic as `det_hash_prone_order`)
+        //
+        // In inner join and outer join, the shortest relation will be used to create a hash table.
+        // In left join, always use the right side to create.
+        //
+        // If `build_shortest_table` left is shorter, swap. Then rhs will be the probe.
+        // If left == right, swap too. (apply the same logic as `det_hash_prone_order`)
         let should_swap = build_shortest_table && s_left.len() <= s_right.len();
         let probe = if should_swap { s_right } else { s_left };
 
         use JoinValidation::*;
         let valid = match self.swap(should_swap) {
+            // Only check the `build` side.
+            // The other side use `validate_build` to check
             ManyToMany | ManyToOne => true,
             OneToMany | OneToOne => probe.n_unique()? == probe.len(),
         };

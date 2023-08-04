@@ -388,11 +388,13 @@ impl BinaryChunked {
     fn prepare(
         &self,
         other: &BinaryChunked,
-        should_swap: bool,
+        // In inner join and outer join, the shortest relation will be used to create a hash table.
+        // In left join, always use the right side to create.
+        build_shortest_table: bool,
     ) -> (Vec<Self>, Vec<Self>, bool, RandomState) {
         let n_threads = POOL.current_num_threads();
 
-        let (a, b, swapped) = if should_swap {
+        let (a, b, swapped) = if build_shortest_table {
             det_hash_prone_order!(self, other)
         } else {
             (self, other, false)
