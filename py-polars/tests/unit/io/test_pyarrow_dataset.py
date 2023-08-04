@@ -153,7 +153,7 @@ def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
     ds0 = ds.dataset(file_path_0, format="parquet")
     ds1 = ds.dataset(file_path_1, format="parquet")
 
-    df0 = pl.scan_pyarrow_dataset(ds0)
-    df1 = pl.scan_pyarrow_dataset(ds1)
+    lf0 = pl.scan_pyarrow_dataset(ds0)
+    lf1 = pl.scan_pyarrow_dataset(ds1)
 
-    assert df0.join(df1, on="a", how="inner").collect().to_dict(False) == {"a": [1, 2]}
+    assert lf0.join(lf1, on="a", how="inner").collect().to_dict(False) == {"a": [1, 2]}
