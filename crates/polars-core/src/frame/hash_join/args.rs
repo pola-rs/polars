@@ -142,7 +142,7 @@ impl JoinValidation {
         // In inner join and outer join, the shortest relation will be used to create a hash table.
         // In left join, always use the right side to create.
         //
-        // If `build_shortest_table` left is shorter, swap. Then rhs will be the probe.
+        // If `build_shortest_table` and left is shorter, swap. Then rhs will be the probe.
         // If left == right, swap too. (apply the same logic as `det_hash_prone_order`)
         let should_swap = build_shortest_table && s_left.len() <= s_right.len();
         let probe = if should_swap { s_right } else { s_left };
