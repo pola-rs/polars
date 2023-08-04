@@ -143,8 +143,8 @@ impl JoinValidation {
         // In default, probe is the left series.
         // the shortest relation is built, and will be put in the right
         // If left is shorter, swap.
-        // If left == right, apply swap which is the same logic as `det_hash_prone_order`
-        let should_swap = build_shortest_table && s_left.len() >= s_right.len();
+        // If left == right, swap. (the same logic as `det_hash_prone_order`)
+        let should_swap = build_shortest_table && s_left.len() <= s_right.len();
         let probe = if should_swap { s_right } else { s_left };
 
         use JoinValidation::*;
