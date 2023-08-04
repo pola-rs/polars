@@ -633,7 +633,12 @@ fn dispatch_join<T: PolarsNumericType>(
     tolerance: Option<AnyValue<'static>>,
 ) -> PolarsResult<Vec<Option<IdxSize>>> {
     let out = if left_by.width() == 1 {
-        match left_by_s.dtype() {
+        let left_dtype = left_by_s.dtype();
+        let right_dtype = right_by_s.dtype();
+        polars_ensure!(left_dtype == right_dtype,
+            ComputeError: "mismatching dtypes in 'by' parameter of asof-join: `{}` and `{}`", left_dtype, right_dtype
+        );
+        match left_dtype {
             DataType::Utf8 => asof_join_by_binary(
                 &left_by_s.utf8().unwrap().as_binary(),
                 &right_by_s.utf8().unwrap().as_binary(),
@@ -669,7 +674,7 @@ fn dispatch_join<T: PolarsNumericType>(
     } else {
         for (lhs, rhs) in left_by.get_columns().iter().zip(right_by.get_columns()) {
             polars_ensure!(lhs.dtype() == rhs.dtype(),
-                ComputeError: "mismatching dtypes in 'on' parameter of asof-join: `{}` and `{}`", lhs.dtype(), rhs.dtype()
+                ComputeError: "mismatching dtypes in 'by' parameter of asof-join: `{}` and `{}`", lhs.dtype(), rhs.dtype()
             );
             #[cfg(feature = "dtype-categorical")]
             _check_categorical_src(lhs.dtype(), rhs.dtype())?;
