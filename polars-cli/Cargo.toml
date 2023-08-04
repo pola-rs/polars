@@ -32,8 +32,3 @@ default = ["highlight", "parquet", "json", "ipc"]
 parquet = ["polars/parquet"]
 json = ["polars/json"]
 ipc = ["polars/ipc"]
-
-[profile.release]
-strip = true
-lto = true
-panic = "abort"
