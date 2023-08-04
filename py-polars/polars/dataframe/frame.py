@@ -3426,16 +3426,28 @@ class DataFrame:
             )
 
         data = self.to_arrow()
-        data_schema = _create_delta_compatible_schema(data.schema)
+        data_schema = data.schema
+        delta_schema = _create_delta_compatible_schema(data_schema)
 
         # Workaround to prevent manual casting of large types
         table = try_get_deltatable(target, storage_options)  # type: ignore[arg-type]
 
-        if table is not None:
-            table_schema = table.schema()
+        if data_schema != delta_schema:
+            data_schema = delta_schema
 
-            if data_schema == table_schema.to_pyarrow(as_large_types=True):
-                data_schema = table_schema.to_pyarrow()
+            if table is not None:
+                table_schema = table.schema()
+                
+                if data_schema == table_schema.to_pyarrow(as_large_types=True):
+                    data_schema = table_schema.to_pyarrow()
+            else:
+                data = data.cast(data_schema)
+        else:
+            if table is not None:
+                table_schema = table.schema()
+                
+                if data_schema == table_schema.to_pyarrow(as_large_types=True):
+                    data_schema = table_schema.to_pyarrow()
 
         write_deltalake(
             table_or_uri=target,
