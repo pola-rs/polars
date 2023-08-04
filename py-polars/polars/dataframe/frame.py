@@ -3388,8 +3388,8 @@ class DataFrame:
         """
         from polars.io.delta import (
             _check_if_delta_available,
-            _create_delta_compatible_schema,
             _resolve_delta_lake_uri,
+            _create_delta_compatible_schema,
         )
 
         _check_if_delta_available()
@@ -3426,8 +3426,7 @@ class DataFrame:
             )
 
         data = self.to_arrow()
-        data_schema = data.schema
-        data_schema = _create_delta_compatible_schema(data_schema)
+        data_schema = _create_delta_compatible_schema(data.schema)
 
         # Workaround to prevent manual casting of large types
         table = try_get_deltatable(target, storage_options)  # type: ignore[arg-type]

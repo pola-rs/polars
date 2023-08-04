@@ -408,18 +408,6 @@ def _reconstruct_field_type(
                     name=field_head.name,
                     type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
             )
-                
-    else:
-        if reconstructed_field is None:
-            return field
-        else:
-            reconstructed_field.append(field.type)
-            return pa.field(
-                name=field_head.name,
-                type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
-            )
-
-
 
 def _create_delta_compatible_schema(schema: pa.schema) -> pa.Schema:
     """
