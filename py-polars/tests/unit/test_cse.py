@@ -291,3 +291,43 @@ def test_cse_groupby_10215() -> None:
         .collect()
         .sort("a")
     ).to_dict(False) == {"a": [1, 2, 3], "x": [1, 4, 9], "y": [1, 1, 1]}
+
+
+def test_cse_mixed_window_functions() -> None:
+    # checks if the window caches are cleared
+    # there are windows in the cse's and the default expressions
+    assert pl.DataFrame(
+        {
+            "a": [1],
+            "b": [1],
+            "c": [1],
+        }
+    ).lazy().select(
+        pl.col("a"),
+        pl.col("b"),
+        pl.col("c"),
+        pl.col("b").rank().alias("rank"),
+        pl.col("b").rank().alias("d_rank"),
+        pl.col("b").first().over([pl.col("a")]).alias("b_first"),
+        pl.col("b").last().over([pl.col("a")]).alias("b_last"),
+        pl.col("b").shift().alias("b_lag_1"),
+        pl.col("b").shift().alias("b_lead_1"),
+        pl.col("c").cumsum().alias("c_cumsum"),
+        pl.col("c").cumsum().over([pl.col("a")]).alias("c_cumsum_by_a"),
+        pl.col("c").diff().alias("c_diff"),
+        pl.col("c").diff().over([pl.col("a")]).alias("c_diff_by_a"),
+    ).collect().to_dict(False) == {
+        "a": [1],
+        "b": [1],
+        "c": [1],
+        "rank": [1.0],
+        "d_rank": [1.0],
+        "b_first": [1],
+        "b_last": [1],
+        "b_lag_1": [None],
+        "b_lead_1": [None],
+        "c_cumsum": [1],
+        "c_cumsum_by_a": [1],
+        "c_diff": [None],
+        "c_diff_by_a": [None],
+    }

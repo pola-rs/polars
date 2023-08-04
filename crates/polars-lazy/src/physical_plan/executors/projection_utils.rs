@@ -134,13 +134,17 @@ pub(super) fn evaluate_physical_expressions(
 
     let selected_columns = if !cse_exprs.is_empty() {
         let tmp_cols = runner(df, cse_exprs, state)?;
+        if has_windows {
+            state.clear_window_expr_cache();
+        }
+
         let width = df.width();
 
         // put the cse expressions at the end
         unsafe {
             df.hstack_mut_unchecked(&tmp_cols);
         }
-        let mut result = run_exprs_par(df, exprs, state)?;
+        let mut result = runner(df, exprs, state)?;
         // restore original df
         unsafe {
             df.get_columns_mut().truncate(width);
@@ -157,7 +161,9 @@ pub(super) fn evaluate_physical_expressions(
         runner(df, exprs, state)?
     };
 
-    state.clear_window_expr_cache();
+    if has_windows {
+        state.clear_window_expr_cache();
+    }
 
     Ok(selected_columns)
 }
