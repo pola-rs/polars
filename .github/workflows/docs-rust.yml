@@ -47,6 +47,7 @@ jobs:
         with:
           folder: target/doc
           clean-exclude: py-polars/**
+          single-commit: true
 
       # Make sure documentation artifacts are not cached
       - name: Clean up documentation artifacts

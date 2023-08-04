@@ -48,6 +48,7 @@ jobs:
         with:
           folder: py-polars/docs/build/html
           target-folder: py-polars/dev
+          single-commit: true
 
       - name: Deploy Python docs for latest release version
         if: ${{ github.ref_type == 'tag' }}
@@ -56,3 +57,4 @@ jobs:
           folder: py-polars/docs/build/html
           # Keeping the html subfolder here for backwards compatibility
           target-folder: py-polars/html
+          single-commit: true
