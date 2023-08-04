@@ -360,21 +360,6 @@ def _reconstruct_field_type(
                 name=field_head.name,
                 type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
             )
-    elif isinstance(field.type, pa.DataType) and not isinstance(
-        field.type, (pa.LargeListType, pa.StructType)
-    ):
-        for uint_type, int_type in integer_mapping.items():
-            if field.type.equals(uint_type):
-                if reconstructed_field is None:
-                    return pa.field(name=field.name, type=int_type)
-                else:
-                    reconstructed_field.append(int_type)
-                    return pa.field(
-                        name=field_head.name,
-                        type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
-                    )
-        else:
-            return field
     elif isinstance(field.type, pa.LargeListType):
         if reconstructed_field is None:
             reconstructed_field = [pa.large_list]
@@ -400,8 +385,40 @@ def _reconstruct_field_type(
                 name=field_head.name,
                 type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
             )
+
+    elif isinstance(field.type, pa.DataType) and not isinstance(
+        field.type, (pa.LargeListType, pa.StructType)
+    ):
+        for uint_type, int_type in integer_mapping.items():
+            if field.type.equals(uint_type):
+                if reconstructed_field is None:
+                    return pa.field(name=field.name, type=int_type)
+                else:
+                    reconstructed_field.append(int_type)
+                    return pa.field(
+                        name=field_head.name,
+                        type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+                    )
+        else:
+            if reconstructed_field is None:
+                return field
+            else:
+                reconstructed_field.append(field.type)
+                return pa.field(
+                    name=field_head.name,
+                    type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+            )
+                
     else:
-        return field
+        if reconstructed_field is None:
+            return field
+        else:
+            reconstructed_field.append(field.type)
+            return pa.field(
+                name=field_head.name,
+                type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+            )
+
 
 
 def _create_delta_compatible_schema(schema: pa.schema) -> pa.Schema:
