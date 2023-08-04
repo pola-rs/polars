@@ -44,7 +44,8 @@ impl PartialEq for PythonFunction {
             eq.call1(py, (other.0.clone(),))
                 .unwrap()
                 .extract::<bool>(py)
-                .unwrap()
+                // equality can be not implemented, so default to false
+                .unwrap_or(false)
         })
     }
 }
