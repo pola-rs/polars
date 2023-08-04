@@ -83,15 +83,15 @@ bench-cmp:  ## Run benchmark and compare
 
 .PHONY: doctest
 doctest:  ## Check that documentation builds
-	cargo doc --all-features -p polars-arrow
-	cargo doc --all-features -p polars-utils
-	cargo doc --features=docs-selection -p polars-core
-	cargo doc -p polars-time
-	cargo doc -p polars-ops
-	cargo doc --all-features -p polars-io
-	cargo doc --all-features -p polars-lazy
-	cargo doc --features=docs-selection -p polars
-	cargo doc --all-features -p polars-sql
+	cargo doc --no-deps --all-features -p polars-arrow
+	cargo doc --no-deps --all-features -p polars-utils
+	cargo doc --no-deps --features=docs-selection -p polars-core
+	cargo doc --no-deps -p polars-time
+	cargo doc --no-deps -p polars-ops
+	cargo doc --no-deps --all-features -p polars-io
+	cargo doc --no-deps --all-features -p polars-lazy
+	cargo doc --no-deps --features=docs-selection -p polars
+	cargo doc --no-deps --all-features -p polars-sql
 
 .PHONY: publish
 publish:  ## Publish Polars crates
