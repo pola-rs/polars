@@ -89,6 +89,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
+    deprecate_renamed_methods,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -181,6 +182,10 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
+@deprecate_renamed_methods(
+    mapping={"approx_unique": "approx_n_unique"},
+    versions={"approx_unique": "0.18.12"},
+)
 class DataFrame:
     """
     Two-dimensional data structure representing data as a table with rows and columns.

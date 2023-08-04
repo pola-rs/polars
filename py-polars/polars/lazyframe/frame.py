@@ -55,6 +55,7 @@ from polars.utils._parse_expr_input import (
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
+    deprecate_renamed_methods,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -110,6 +111,10 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
+@deprecate_renamed_methods(
+    mapping={"approx_unique": "approx_n_unique"},
+    versions={"approx_unique": "0.18.12"},
+)
 class LazyFrame:
     """
     Representation of a Lazy computation graph/query against a DataFrame.
@@ -3798,9 +3803,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.slice(0, 1)
 
-    def approx_unique(self) -> Self:
+    def approx_n_unique(self) -> Self:
         """
-        Approx count unique values.
+        Approximate count of unique values.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
@@ -3812,7 +3817,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [1, 2, 1, 1],
         ...     }
         ... )
-        >>> lf.approx_unique().collect()
+        >>> lf.approx_n_unique().collect()
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3823,7 +3828,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        return self.select(F.all().approx_unique())
+        return self.select(F.all().approx_n_unique())
 
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """

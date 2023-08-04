@@ -6,7 +6,7 @@ use polars_core::with_match_physical_integer_polars_type;
 #[cfg(feature = "approx_unique")]
 use crate::series::HyperLogLog;
 
-fn approx_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> PolarsResult<Series>
+fn approx_n_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsDataType,
     &'a ChunkedArray<T>: IntoIterator,
@@ -23,22 +23,22 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
     let s = s.to_physical_repr();
     use DataType::*;
     match s.dtype() {
-        Boolean => s.bool().and_then(approx_unique_ca),
-        Binary => s.binary().and_then(approx_unique_ca),
+        Boolean => s.bool().and_then(approx_n_unique_ca),
+        Binary => s.binary().and_then(approx_n_unique_ca),
         Utf8 => {
             let s = s.cast(&Binary).unwrap();
             let ca = s.binary().unwrap();
-            approx_unique_ca(ca)
+            approx_n_unique_ca(ca)
         }
-        Float32 => approx_unique_ca(&s.bit_repr_small()),
-        Float64 => approx_unique_ca(&s.bit_repr_large()),
+        Float32 => approx_n_unique_ca(&s.bit_repr_small()),
+        Float64 => approx_n_unique_ca(&s.bit_repr_large()),
         dt if dt.is_numeric() => {
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                approx_unique_ca(ca)
+                approx_n_unique_ca(ca)
             })
         }
-        dt => polars_bail!(opq = approx_unique, dt),
+        dt => polars_bail!(opq = approx_n_unique, dt),
     }
 }
 
@@ -57,7 +57,7 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
 ///
 ///  let s = Series::new("s", [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3]);
 ///
-///   let approx_count = approx_unique(&s).unwrap();
+///   let approx_count = approx_n_unique(&s).unwrap();
 ///   dbg!(approx_count);
 /// # }
 /// ```
@@ -69,6 +69,6 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
 ///     3
 /// ]
 /// ```
-pub fn approx_unique(s: &Series) -> PolarsResult<Series> {
+pub fn approx_n_unique(s: &Series) -> PolarsResult<Series> {
     dispatcher(s)
 }

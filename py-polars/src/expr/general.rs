@@ -372,21 +372,25 @@ impl PyExpr {
     fn filter(&self, predicate: Self) -> Self {
         self.clone().inner.filter(predicate.inner).into()
     }
+
     fn reverse(&self) -> Self {
         self.clone().inner.reverse().into()
     }
+
     fn std(&self, ddof: u8) -> Self {
         self.clone().inner.std(ddof).into()
     }
+
     fn var(&self, ddof: u8) -> Self {
         self.clone().inner.var(ddof).into()
     }
+
     fn is_unique(&self) -> Self {
         self.clone().inner.is_unique().into()
     }
 
-    fn approx_unique(&self) -> Self {
-        self.clone().inner.approx_unique().into()
+    fn approx_n_unique(&self) -> Self {
+        self.clone().inner.approx_n_unique().into()
     }
 
     fn is_first(&self) -> Self {

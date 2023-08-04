@@ -2879,16 +2879,16 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.n_unique())
 
-    def approx_unique(self) -> Self:
+    def approx_n_unique(self) -> Self:
         """
-        Approx count unique values.
+        Approximate count of unique values.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").approx_unique())
+        >>> df.select(pl.col("a").approx_n_unique())
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2899,7 +2899,7 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.approx_unique())
+        return self._from_pyexpr(self._pyexpr.approx_n_unique())
 
     def null_count(self) -> Self:
         """
