@@ -752,7 +752,7 @@ def from_dataframe(df: Any, *, allow_copy: bool = True) -> DataFrame:
     Polars currently relies on pyarrow's implementation of the dataframe interchange
     protocol. Therefore, pyarrow>=11.0.0 is required for this function to work.
 
-    Because Polars does not fully support zero-copy conversion from Arrow for
+    Because Polars can not currently guarantee zero-copy conversion from Arrow for
     categorical columns, ``allow_copy=False`` will not work if the dataframe contains
     categorical data.
 
@@ -787,8 +787,8 @@ def _df_to_pyarrow_table_zero_copy(df: Any) -> pa.Table:
     dfi = df.__dataframe__(allow_copy=False)
     if _dfi_contains_categorical_data(dfi):
         raise TypeError(
-            "Polars does not fully support zero-copy conversion from Arrow for categorical"
-            " columns. Set `allow_copy=True` or cast categorical columns to"
+            "Polars can not currently guarantee zero-copy conversion from Arrow for "
+            " categorical columns. Set `allow_copy=True` or cast categorical columns to"
             " string first."
         )
 
