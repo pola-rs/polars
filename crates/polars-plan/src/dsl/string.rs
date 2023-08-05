@@ -63,10 +63,35 @@ impl StringNameSpace {
 
     #[cfg(feature = "extract_groups")]
     // Extract all captures groups from a regex pattern as a struct
-    pub fn extract_groups(self, pat: &str) -> Expr {
-        let pat = pat.to_string();
-        self.0
-            .map_private(StringFunction::ExtractGroups { pat }.into())
+    pub fn extract_groups(self, pat: &str) -> PolarsResult<Expr> {
+        // regex will be compiled twice, because it doesn't support serde
+        // and we need to compile it here to determine the output datatype
+        let reg = regex::Regex::new(pat)?;
+        let names = reg
+            .capture_names()
+            .enumerate()
+            .skip(1)
+            .map(|(idx, opt_name)| {
+                opt_name
+                    .map(|name| name.to_string())
+                    .unwrap_or_else(|| format!("{idx}"))
+            })
+            .collect::<Vec<_>>();
+
+        let dtype = DataType::Struct(
+            names
+                .iter()
+                .map(|name| Field::new(name.as_str(), DataType::Utf8))
+                .collect(),
+        );
+
+        Ok(self.0.map_private(
+            StringFunction::ExtractGroups {
+                dtype,
+                pat: pat.to_string(),
+            }
+            .into(),
+        ))
     }
 
     /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.

@@ -36,6 +36,7 @@ pub enum StringFunction {
     ExtractAll,
     #[cfg(feature = "extract_groups")]
     ExtractGroups {
+        dtype: DataType,
         pat: String,
     },
     #[cfg(feature = "string_from_radix")]
@@ -95,7 +96,7 @@ impl StringFunction {
             Extract { .. } => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
             #[cfg(feature = "extract_groups")]
-            ExtractGroups { .. } => mapper.with_same_dtype(),
+            ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "string_from_radix")]
             FromRadix { .. } => mapper.with_dtype(DataType::Int32),
             #[cfg(feature = "extract_jsonpath")]
@@ -302,11 +303,9 @@ pub(super) fn extract(s: &Series, pat: &str, group_index: usize) -> PolarsResult
 
 #[cfg(feature = "extract_groups")]
 /// Extract all capture groups from a regex pattern as a struct
-pub(super) fn extract_groups(s: &Series, pat: &str) -> PolarsResult<Series> {
-    let pat = pat.to_string();
-
+pub(super) fn extract_groups(s: &Series, pat: &str, dtype: &DataType) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    ca.extract_groups(&pat)
+    ca.extract_groups(pat, dtype)
 }
 
 #[cfg(feature = "string_justify")]

@@ -7,7 +7,7 @@ use super::*;
 fn extract_groups_array(
     arr: &Utf8Array<i64>,
     reg: &Regex,
-    names: &[String],
+    names: &[&str],
     data_type: ArrowDataType,
 ) -> PolarsResult<ArrayRef> {
     let mut builders = (0..names.len())
@@ -42,7 +42,11 @@ fn extract_groups_array(
     Ok(StructArray::new(data_type.clone(), values, None).boxed())
 }
 
-pub(super) fn extract_groups(ca: &Utf8Chunked, pat: &str) -> PolarsResult<Series> {
+pub(super) fn extract_groups(
+    ca: &Utf8Chunked,
+    pat: &str,
+    dtype: &DataType,
+) -> PolarsResult<Series> {
     let reg = Regex::new(pat)?;
     let n_fields = reg.captures_len();
 
@@ -51,22 +55,15 @@ pub(super) fn extract_groups(ca: &Utf8Chunked, pat: &str) -> PolarsResult<Series
             .map(|ca| ca.into_series());
     }
 
-    let names = reg
-        .capture_names()
-        .enumerate()
-        .skip(1)
-        .map(|(idx, opt_name)| {
-            opt_name
-                .map(|name| name.to_string())
-                .unwrap_or_else(|| format!("{idx}"))
-        })
+    let data_type = dtype.to_arrow();
+    // impl error if it isn't a struct
+    let DataType::Struct(fields) = dtype else {
+        unreachable!()
+    };
+    let names = fields
+        .iter()
+        .map(|fld| fld.name.as_str())
         .collect::<Vec<_>>();
-    let data_type = ArrowDataType::Struct(
-        names
-            .iter()
-            .map(|name| ArrowField::new(name.as_str(), ArrowDataType::LargeUtf8, true))
-            .collect(),
-    );
 
     let chunks = ca
         .downcast_iter()
