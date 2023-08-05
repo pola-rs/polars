@@ -347,22 +347,35 @@ def _reconstruct_field_type(
         pa.uint64(): pa.int64(),
         pa.large_string(): pa.string(),
         pa.large_binary(): pa.binary(),
+        pa.timestamp(unit="ns"): pa.timestamp(
+            unit="us"
+        ),  # Always cast to no timezone, since Delta-rs does not support UTC yet, once fixed upstream, add tz=field.type.tz
+        pa.timestamp(unit="ms"): pa.timestamp(unit="us"),
     }
 
-    if isinstance(field.type, pa.TimestampType):
-        if reconstructed_field is None:
-            return pa.field(
-                name=field.name,
-                type=pa.timestamp(
-                    unit="us"
-                ),  # Always cast to no timezone, since Delta-rs does not support UTC yet, once fixed upstream, add tz=field.type.tz
-            )
+    if isinstance(field.type, pa.DataType) and not isinstance(
+        field.type, (pa.LargeListType, pa.StructType)
+    ):
+        for polars_type, primitive_type in type_mapping.items():
+            if field.type.equals(polars_type):
+                if reconstructed_field is None:
+                    return pa.field(name=field.name, type=primitive_type)
+                else:
+                    reconstructed_field.append(primitive_type)
+                    return pa.field(
+                        name=field_head.name,
+                        type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+                    )
         else:
-            reconstructed_field.append(pa.timestamp(unit="us"))
-            return pa.field(
-                name=field_head.name,
-                type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
-            )
+            if reconstructed_field is None:
+                return field
+            else:
+                reconstructed_field.append(field.type)
+                return pa.field(
+                    name=field_head.name,
+                    type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+                )
+
     elif isinstance(field.type, pa.LargeListType):
         if reconstructed_field is None:
             reconstructed_field = [pa.list_]
@@ -388,29 +401,6 @@ def _reconstruct_field_type(
                 name=field_head.name,
                 type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
             )
-
-    elif isinstance(field.type, pa.DataType) and not isinstance(
-        field.type, (pa.LargeListType, pa.StructType)
-    ):
-        for polars_type, primitive_type in type_mapping.items():
-            if field.type.equals(polars_type):
-                if reconstructed_field is None:
-                    return pa.field(name=field.name, type=primitive_type)
-                else:
-                    reconstructed_field.append(primitive_type)
-                    return pa.field(
-                        name=field_head.name,
-                        type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
-                    )
-        else:
-            if reconstructed_field is None:
-                return field
-            else:
-                reconstructed_field.append(field.type)
-                return pa.field(
-                    name=field_head.name,
-                    type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
-                )
 
 
 def _create_delta_compatible_schema(schema: pa.schema) -> pa.Schema:
