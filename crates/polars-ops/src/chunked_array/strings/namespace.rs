@@ -355,9 +355,9 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     #[cfg(feature = "extract_groups")]
     /// Extract all capture groups from pattern and return as a struct
-    fn extract_groups(&self, pat: &str) -> PolarsResult<Series> {
+    fn extract_groups(&self, pat: &str, dtype: &DataType) -> PolarsResult<Series> {
         let ca = self.as_utf8();
-        super::extract::extract_groups(ca, pat)
+        super::extract::extract_groups(ca, pat, dtype)
     }
 
     /// Count all successive non-overlapping regex matches.
