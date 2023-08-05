@@ -353,10 +353,12 @@ def _reconstruct_field_type(
         if reconstructed_field is None:
             return pa.field(
                 name=field.name,
-                type=pa.timestamp("us"),  # TODO: Check TZ issue with delta-rs team
+                type=pa.timestamp(
+                    unit="us", tz="UTC"
+                ),  # Always cast to UTC, since Delta-rs does not support other timezones yet
             )
         else:
-            reconstructed_field.append(pa.timestamp("us"))
+            reconstructed_field.append(pa.timestamp(unit="us", tz="UTC"))
             return pa.field(
                 name=field_head.name,
                 type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
