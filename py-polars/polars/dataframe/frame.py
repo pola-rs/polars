@@ -3316,7 +3316,9 @@ class DataFrame:
 
         Note: Some polars data types like `Null`, `Categorical` and `Time` are
         not supported by the delta protocol specification. Other unsupported datatypes
-        are casted to their respective `primitive types <https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types>`__. See list below.
+        are casted to their respective `primitive types
+        <https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types>`__.
+        See list below:
         - `uint` -> `int`
         - `timestamp(ns)` -> `timestamp(us)`
         - `timestamp(ms)` -> `timestamp(us)`
@@ -3401,7 +3403,6 @@ class DataFrame:
         _check_if_delta_available()
 
         from deltalake.writer import (
-            try_get_deltatable,
             write_deltalake,
         )
 
@@ -3434,9 +3435,9 @@ class DataFrame:
         data = self.to_arrow()
         data_schema = data.schema
         delta_schema = _create_delta_compatible_schema(data_schema)
-        
+
         #! This will raise ArrowInvalidError if user has to big uints to cast in int
-        data = data.cast(delta_schema) 
+        data = data.cast(delta_schema)
 
         write_deltalake(
             table_or_uri=target,

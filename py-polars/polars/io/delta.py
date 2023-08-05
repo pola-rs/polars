@@ -346,7 +346,7 @@ def _reconstruct_field_type(
         pa.uint32(): pa.int32(),
         pa.uint64(): pa.int64(),
         pa.large_string(): pa.string(),
-        pa.large_binary(): pa.binary()
+        pa.large_binary(): pa.binary(),
     }
 
     if isinstance(field.type, pa.TimestampType):
