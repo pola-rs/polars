@@ -730,7 +730,13 @@ class RewrittenInstructions:
                     if not self._caller_variables:
                         self._caller_variables.update(_get_all_caller_variables())
                     vars = self._caller_variables
-                    if vars.get(inst1.argval) != datetime.datetime:
+                    if (
+                        not function_kind["attribute_name"]
+                        and vars.get(inst1.argval) != datetime.datetime
+                    ) or (
+                        function_kind["attribute_name"]
+                        and vars.get(matching_instructions[0].argval) != datetime
+                    ):
                         return 0
                 else:
                     expr_name = inst2.argval
