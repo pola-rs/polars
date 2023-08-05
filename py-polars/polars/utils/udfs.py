@@ -102,6 +102,58 @@ _PYTHON_METHODS_MAP = {
     "upper": "str.to_uppercase",
 }
 
+FUNCTION_KINDS = [
+    # lambda x: module.func(CONSTANT)
+    {
+        'argument_1_opname': [{'LOAD_CONST'}],
+        'argument_2_opname': [],
+        'module_opname': [OpNames.LOAD_ATTR],
+        'attribute_opname': [],
+        'module_name': _NUMPY_MODULE_ALIASES,
+        'attribute_name': [],
+        'function_name': _NUMPY_FUNCTIONS
+    },
+    # lambda x: module.func(x)
+    {
+        'argument_1_opname': [{'LOAD_FAST'}],
+        'argument_2_opname': [],
+        'module_opname': [OpNames.LOAD_ATTR],
+        'attribute_opname': [],
+        'module_name': _NUMPY_MODULE_ALIASES,
+        'attribute_name': [],
+        'function_name': _NUMPY_FUNCTIONS
+    },
+    {
+        'argument_1_opname': [{'LOAD_FAST'}],
+        'argument_2_opname': [],
+        'module_opname': [OpNames.LOAD_ATTR],
+        'attribute_opname': [],
+        'module_name': {'json'},
+        'attribute_name': [],
+        'function_name': {'loads'}
+    },
+    # lambda x: module.func(x, CONSTANT)
+    {
+        'argument_1_opname': [{'LOAD_FAST'}],
+        'argument_2_opname': [{'LOAD_CONST'}],
+        'module_opname': [OpNames.LOAD_ATTR],
+        'attribute_opname': [],
+        'module_name': {'datetime'},
+        'attribute_name': [],
+        'function_name': {'strptime'}
+    },
+    # lambda x: module.attribute.func(x, CONSTANT)
+    {
+        'argument_1_opname': [{'LOAD_FAST'}],
+        'argument_2_opname': [{'LOAD_CONST'}],
+        'module_opname': ['LOAD_ATTR'],
+        'attribute_opname': ['LOAD_METHOD'],
+        'module_name': {'datetime', 'dt'},
+        'attribute_name': [{'datetime'}],
+        'function_name': {'strptime'}
+    },
+]
+
 
 def _get_all_caller_variables() -> dict[str, Any]:
     """Get all local and global variables from caller's frame."""
@@ -636,84 +688,31 @@ class RewrittenInstructions:
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
         """Replace function calls with a synthetic POLARS_EXPRESSION op."""
-        # should...reorder a bit
-        data = [
-            # lambda x: module.func(CONSTANT)
-            {
-                'argument_1_opname': [{'LOAD_CONST'}],
-                'argument_2_opname': [],
-                'module_opname': [OpNames.LOAD_ATTR],
-                'attribute_opname': [],
-                'module_name': _NUMPY_MODULE_ALIASES,
-                'attribute_name': [],
-                'function_name': _NUMPY_FUNCTIONS
-            },
-            # lambda x: module.func(x)
-            {
-                'argument_1_opname': [{'LOAD_FAST'}],
-                'argument_2_opname': [],
-                'module_opname': [OpNames.LOAD_ATTR],
-                'attribute_opname': [],
-                'module_name': _NUMPY_MODULE_ALIASES,
-                'attribute_name': [],
-                'function_name': _NUMPY_FUNCTIONS
-            },
-            {
-                'argument_1_opname': [{'LOAD_FAST'}],
-                'argument_2_opname': [],
-                'module_opname': [OpNames.LOAD_ATTR],
-                'attribute_opname': [],
-                'module_name': {'json'},
-                'attribute_name': [],
-                'function_name': {'loads'}
-            },
-            # lambda x: module.func(x, CONSTANT)
-            {
-                'argument_1_opname': [{'LOAD_FAST'}],
-                'argument_2_opname': [{'LOAD_CONST'}],
-                'module_opname': [OpNames.LOAD_ATTR],
-                'attribute_opname': [],
-                'module_name': {'datetime'},
-                'attribute_name': [],
-                'function_name': {'strptime'}
-            },
-            # lambda x: module.attribute.func(x, CONSTANT)
-            {
-                'argument_1_opname': [{'LOAD_FAST'}],
-                'argument_2_opname': [{'LOAD_CONST'}],
-                'module_opname': ['LOAD_ATTR'],
-                'attribute_opname': ['LOAD_METHOD'],
-                'module_name': {'datetime', 'dt'},
-                'attribute_name': [{'datetime'}],
-                'function_name': {'strptime'}
-            },
-        ]
-
-        for data_item in data:
+        for function_kind in FUNCTION_KINDS:
             opnames = [
                 {"LOAD_GLOBAL", "LOAD_DEREF"},
-                *data_item['module_opname'],
-                *data_item['attribute_opname'],
-                *data_item['argument_1_opname'],
-                *data_item['argument_2_opname'],
+                *function_kind['module_opname'],
+                *function_kind['attribute_opname'],
+                *function_kind['argument_1_opname'],
+                *function_kind['argument_2_opname'],
                 OpNames.CALL,
             ]
             if matching_instructions := self._matches(
                 idx,
                 opnames=opnames,
                 argvals=[
-                    data_item['module_name'],
-                    *data_item['attribute_name'],
-                    data_item['function_name'],
+                    function_kind['module_name'],
+                    *function_kind['attribute_name'],
+                    function_kind['function_name'],
                 ],
             ):
                 inst1, inst2, *_, inst3 = matching_instructions[
-                    len(data_item['attribute_name']) : 3 + len(data_item['attribute_name'])
+                    len(function_kind['attribute_name']) : 3 + len(function_kind['attribute_name'])
                 ]
                 if inst1.argval == "json":
                     expr_name = "str.json_extract"
                 elif inst1.argval == "datetime":
-                    fmt = matching_instructions[len(data_item['attribute_name']) + 3].argval
+                    fmt = matching_instructions[len(function_kind['attribute_name']) + 3].argval
                     expr_name = f'str.to_datetime(format="{fmt}")'
                 else:
                     expr_name = inst2.argval
