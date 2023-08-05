@@ -716,26 +716,20 @@ class RewrittenInstructions:
                     *function_kind["function_name"],
                 ],
             ):
+                attribute_count = len(function_kind["attribute_name"])
                 inst1, inst2, *_, inst3 = matching_instructions[
-                    len(function_kind["attribute_name"]) : 3
-                    + len(function_kind["attribute_name"])
+                    attribute_count : 3 + attribute_count
                 ]
                 if inst1.argval == "json":
                     expr_name = "str.json_extract"
                 elif inst1.argval == "datetime":
-                    fmt = matching_instructions[
-                        len(function_kind["attribute_name"]) + 3
-                    ].argval
+                    fmt = matching_instructions[attribute_count + 3].argval
                     expr_name = f'str.to_datetime(format="{fmt}")'
-                    if not self._caller_variables:
-                        self._caller_variables.update(_get_all_caller_variables())
-                    vars = self._caller_variables
-                    if (
-                        not function_kind["attribute_name"]
-                        and vars.get(inst1.argval) != datetime.datetime
-                    ) or (
-                        function_kind["attribute_name"]
-                        and vars.get(matching_instructions[0].argval) != datetime
+                    if not self._is_stdlib_datetime(
+                        inst1.argval,
+                        matching_instructions[0].argval,
+                        fmt,
+                        attribute_count,
                     ):
                         return 0
                 else:
@@ -780,6 +774,16 @@ class RewrittenInstructions:
                 opname="BINARY_OP",
             )
         return inst
+
+    def _is_stdlib_datetime(
+        self, function_name: str, module_name: str, fmt: str, attribute_count: int
+    ) -> bool:
+        if not self._caller_variables:
+            self._caller_variables.update(_get_all_caller_variables())
+        vars = self._caller_variables
+        return (
+            attribute_count == 0 and vars.get(function_name) is datetime.datetime
+        ) or (attribute_count == 1 and vars.get(module_name) is datetime)
 
 
 def _is_raw_function(function: Callable[[Any], Any]) -> tuple[str, str]:
