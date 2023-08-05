@@ -2,6 +2,7 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
+use crate::error::PyPolarsErr;
 use crate::PyExpr;
 
 #[pymethods]
@@ -239,6 +240,17 @@ impl PyExpr {
 
     fn str_extract_all(&self, pat: Self) -> Self {
         self.inner.clone().str().extract_all(pat.inner).into()
+    }
+
+    #[cfg(feature = "extract_groups")]
+    fn str_extract_groups(&self, pat: &str) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .str()
+            .extract_groups(pat)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 
     fn str_count_match(&self, pat: &str) -> Self {
