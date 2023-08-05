@@ -638,15 +638,16 @@ class RewrittenInstructions:
     ) -> int:
         """Replace function calls with a synthetic POLARS_EXPRESSION op."""
         # should...reorder a bit
-        for argument_1, argument_2, module, attribute, module_parent_opnames in (
+        for argument_1, argument_2, module, attribute, module_name, attribute_name, function_name in (
             # lambda x: module.func(CONSTANT)
-            ([{'LOAD_CONST'}], [], [OpNames.LOAD_ATTR], [], []),
+            ([{'LOAD_CONST'}], [], [OpNames.LOAD_ATTR], [], _NUMPY_MODULE_ALIASES, [], _NUMPY_FUNCTIONS),
             # lambda x: module.func(x)
-            ([{'LOAD_FAST'}], [], [OpNames.LOAD_ATTR], [], []),
+            ([{'LOAD_FAST'}], [], [OpNames.LOAD_ATTR], [], _NUMPY_MODULE_ALIASES, [], _NUMPY_FUNCTIONS),
+            ([{'LOAD_FAST'}], [], [OpNames.LOAD_ATTR], [], {'json'}, [], {'loads'}),
             # lambda x: module.func(x, CONSTANT)
-            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], [OpNames.LOAD_ATTR], [], []),
+            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], [OpNames.LOAD_ATTR], [], {'datetime'}, [], {'strptime'}),
             # lambda x: module.attribute.func(x, CONSTANT)
-            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], ['LOAD_ATTR'], ['LOAD_METHOD'], [{'datetime'}]),
+            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], ['LOAD_ATTR'], ['LOAD_METHOD'], {'datetime', 'dt'}, [{'datetime'}], {'strptime'}),
         ):
             opnames=[
                 {"LOAD_GLOBAL", "LOAD_DEREF"},
@@ -660,16 +661,16 @@ class RewrittenInstructions:
                 idx,
                 opnames=opnames,
                 argvals=[
-                    _NUMPY_MODULE_ALIASES | {"json", "datetime", "dt"},
-                    *module_parent_opnames,
-                    _NUMPY_FUNCTIONS | {"loads", "strptime"},
+                    module_name,
+                    *attribute_name,
+                    function_name,
                 ],
             ):
-                inst1, inst2, *_, inst3 = matching_instructions[len(module_parent_opnames):3+len(module_parent_opnames)]
+                inst1, inst2, *_, inst3 = matching_instructions[len(attribute_name):3+len(attribute_name)]
                 if inst1.argval == 'json':
                     expr_name = 'str.json_extract'
                 elif inst1.argval == 'datetime':
-                    fmt = matching_instructions[len(module_parent_opnames)+3].argval
+                    fmt = matching_instructions[len(attribute_name)+3].argval
                     expr_name = f'str.to_datetime(format="{fmt}")'
                 else:
                     expr_name = inst2.argval
