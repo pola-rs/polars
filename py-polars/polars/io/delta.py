@@ -340,11 +340,13 @@ def _reconstruct_field_type(
     pa.Field
         Reconstructed field
     """
-    integer_mapping = {
+    type_mapping = {
         pa.uint8(): pa.int8(),
         pa.uint16(): pa.int16(),
         pa.uint32(): pa.int32(),
         pa.uint64(): pa.int64(),
+        pa.large_string(): pa.string(),
+        pa.large_binary(): pa.binary()
     }
 
     if isinstance(field.type, pa.TimestampType):
@@ -361,12 +363,12 @@ def _reconstruct_field_type(
             )
     elif isinstance(field.type, pa.LargeListType):
         if reconstructed_field is None:
-            reconstructed_field = [pa.large_list]
+            reconstructed_field = [pa.list_]
             return _reconstruct_field_type(
                 field.type.value_field, field_head, reconstructed_field
             )
         else:
-            reconstructed_field.append(pa.large_list)
+            reconstructed_field.append(pa.list_)
             return _reconstruct_field_type(
                 field.type.value_field, field_head, reconstructed_field
             )
@@ -388,12 +390,12 @@ def _reconstruct_field_type(
     elif isinstance(field.type, pa.DataType) and not isinstance(
         field.type, (pa.LargeListType, pa.StructType)
     ):
-        for uint_type, int_type in integer_mapping.items():
-            if field.type.equals(uint_type):
+        for polars_type, primitive_type in type_mapping.items():
+            if field.type.equals(polars_type):
                 if reconstructed_field is None:
-                    return pa.field(name=field.name, type=int_type)
+                    return pa.field(name=field.name, type=primitive_type)
                 else:
-                    reconstructed_field.append(int_type)
+                    reconstructed_field.append(primitive_type)
                     return pa.field(
                         name=field_head.name,
                         type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),

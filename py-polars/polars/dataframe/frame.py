@@ -3434,28 +3434,15 @@ class DataFrame:
         data = self.to_arrow()
         data_schema = data.schema
         delta_schema = _create_delta_compatible_schema(data_schema)
-
-        # Workaround to prevent manual casting of large types
-        table = try_get_deltatable(target, storage_options)  # type: ignore[arg-type]
-
-        if data_schema != delta_schema:
-            data_schema = delta_schema
-
-            if table is not None:
-                if data_schema == table.schema().to_pyarrow(as_large_types=True):
-                    data_schema = table.schema().to_pyarrow()
-            else:
-                data = data.cast(data_schema)
-        else:
-            if table is not None:
-                if data_schema == table.schema().to_pyarrow(as_large_types=True):
-                    data_schema = table.schema().to_pyarrow()
+        
+        #! This will raise ArrowInvalidError if user has to big uints to cast in int
+        data = data.cast(delta_schema) 
 
         write_deltalake(
             table_or_uri=target,
             data=data,
             mode=mode,
-            schema=data_schema,
+            schema=delta_schema,
             overwrite_schema=overwrite_schema,
             storage_options=storage_options,
             **delta_write_options,
