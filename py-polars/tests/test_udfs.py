@@ -176,6 +176,8 @@ def test_bytecode_parser_expression_in_ipython(
 
     script = (
         "import udfs; "
+        "import numpy as np; "
+        "import json; "
         f"MY_DICT = {MY_DICT};"
         f'bytecode_parser = udfs.BytecodeParser({func}, apply_target="expr");'
         f'print(bytecode_parser.to_expression("{col}"));'
