@@ -638,19 +638,20 @@ class RewrittenInstructions:
     ) -> int:
         """Replace function calls with a synthetic POLARS_EXPRESSION op."""
         # should...reorder a bit
-        for argument_1, argument_2, module_opnames, module_parent_opnames in (
+        for argument_1, argument_2, module, attribute, module_parent_opnames in (
             # lambda x: module.func(CONSTANT)
-            ([{'LOAD_CONST'}], [], [OpNames.LOAD_ATTR], []),
+            ([{'LOAD_CONST'}], [], [OpNames.LOAD_ATTR], [], []),
             # lambda x: module.func(x)
-            ([{'LOAD_FAST'}], [], [OpNames.LOAD_ATTR], []),
+            ([{'LOAD_FAST'}], [], [OpNames.LOAD_ATTR], [], []),
             # lambda x: module.func(x, CONSTANT)
-            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], [OpNames.LOAD_ATTR], []),
+            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], [OpNames.LOAD_ATTR], [], []),
             # lambda x: module.attribute.func(x, CONSTANT)
-            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], ['LOAD_ATTR', 'LOAD_METHOD'], [{'datetime'}]),
+            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], ['LOAD_ATTR'], ['LOAD_METHOD'], [{'datetime'}]),
         ):
             opnames=[
                 {"LOAD_GLOBAL", "LOAD_DEREF"},
-                *module_opnames,
+                *module,
+                *attribute,
                 *argument_1,
                 *argument_2,
                 OpNames.CALL,
