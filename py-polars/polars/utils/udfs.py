@@ -1,6 +1,7 @@
 """Utilities related to user defined functions (such as those passed to `apply`)."""
 from __future__ import annotations
 
+import datetime
 import dis
 import inspect
 import re
@@ -12,7 +13,16 @@ from dis import get_instructions
 from inspect import signature
 from itertools import count, zip_longest
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
+from typing import (
+    TYPE_CHECKING,
+    AbstractSet,
+    Any,
+    Callable,
+    Iterator,
+    Literal,
+    NamedTuple,
+    Union,
+)
 
 if TYPE_CHECKING:
     from dis import Instruction
@@ -101,16 +111,16 @@ _PYTHON_METHODS_MAP = {
     "upper": "str.to_uppercase",
 }
 
-FUNCTION_KINDS = [
+FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
     # lambda x: module.func(CONSTANT)
     {
         "argument_1_opname": [{"LOAD_CONST"}],
         "argument_2_opname": [],
         "module_opname": [OpNames.LOAD_ATTR],
         "attribute_opname": [],
-        "module_name": _NUMPY_MODULE_ALIASES,
+        "module_name": [_NUMPY_MODULE_ALIASES],
         "attribute_name": [],
-        "function_name": _NUMPY_FUNCTIONS,
+        "function_name": [_NUMPY_FUNCTIONS],
     },
     # lambda x: module.func(x)
     {
@@ -118,18 +128,18 @@ FUNCTION_KINDS = [
         "argument_2_opname": [],
         "module_opname": [OpNames.LOAD_ATTR],
         "attribute_opname": [],
-        "module_name": _NUMPY_MODULE_ALIASES,
+        "module_name": [_NUMPY_MODULE_ALIASES],
         "attribute_name": [],
-        "function_name": _NUMPY_FUNCTIONS,
+        "function_name": [_NUMPY_FUNCTIONS],
     },
     {
         "argument_1_opname": [{"LOAD_FAST"}],
         "argument_2_opname": [],
         "module_opname": [OpNames.LOAD_ATTR],
         "attribute_opname": [],
-        "module_name": {"json"},
+        "module_name": [{"json"}],
         "attribute_name": [],
-        "function_name": {"loads"},
+        "function_name": [{"loads"}],
     },
     # lambda x: module.func(x, CONSTANT)
     {
@@ -137,19 +147,19 @@ FUNCTION_KINDS = [
         "argument_2_opname": [{"LOAD_CONST"}],
         "module_opname": [OpNames.LOAD_ATTR],
         "attribute_opname": [],
-        "module_name": {"datetime"},
+        "module_name": [{"datetime"}],
         "attribute_name": [],
-        "function_name": {"strptime"},
+        "function_name": [{"strptime"}],
     },
     # lambda x: module.attribute.func(x, CONSTANT)
     {
         "argument_1_opname": [{"LOAD_FAST"}],
         "argument_2_opname": [{"LOAD_CONST"}],
-        "module_opname": ["LOAD_ATTR"],
-        "attribute_opname": ["LOAD_METHOD"],
-        "module_name": {"datetime", "dt"},
+        "module_opname": [{"LOAD_ATTR"}],
+        "attribute_opname": [{"LOAD_METHOD"}],
+        "module_name": [{"datetime", "dt"}],
         "attribute_name": [{"datetime"}],
-        "function_name": {"strptime"},
+        "function_name": [{"strptime"}],
     },
 ]
 
@@ -582,6 +592,7 @@ class RewrittenInstructions:
     _ignored_ops = frozenset(
         ["COPY_FREE_VARS", "PRECALL", "PUSH_NULL", "RESUME", "RETURN_VALUE"]
     )
+    _caller_variables: dict[str, Any] = {}
 
     def __init__(self, instructions: Iterator[Instruction]):
         self._original_instructions = list(instructions)
@@ -604,8 +615,8 @@ class RewrittenInstructions:
         self,
         idx: int,
         *,
-        opnames: list[set[str]],
-        argvals: list[set[Any] | frozenset[Any] | dict[Any, Any]] | None,
+        opnames: list[AbstractSet[str]],
+        argvals: list[AbstractSet[Any] | dict[Any, Any]] | None,
     ) -> list[Instruction]:
         """
         Check if a sequence of Instructions matches the specified ops/argvals.
@@ -688,7 +699,7 @@ class RewrittenInstructions:
     ) -> int:
         """Replace function calls with a synthetic POLARS_EXPRESSION op."""
         for function_kind in FUNCTION_KINDS:
-            opnames = [
+            opnames: list[AbstractSet[str]] = [
                 {"LOAD_GLOBAL", "LOAD_DEREF"},
                 *function_kind["module_opname"],
                 *function_kind["attribute_opname"],
@@ -700,9 +711,9 @@ class RewrittenInstructions:
                 idx,
                 opnames=opnames,
                 argvals=[
-                    function_kind["module_name"],
+                    *function_kind["module_name"],
                     *function_kind["attribute_name"],
-                    function_kind["function_name"],
+                    *function_kind["function_name"],
                 ],
             ):
                 inst1, inst2, *_, inst3 = matching_instructions[
@@ -716,6 +727,11 @@ class RewrittenInstructions:
                         len(function_kind["attribute_name"]) + 3
                     ].argval
                     expr_name = f'str.to_datetime(format="{fmt}")'
+                    if not self._caller_variables:
+                        self._caller_variables.update(_get_all_caller_variables())
+                    vars = self._caller_variables
+                    if vars.get(inst1.argval) != datetime.datetime:
+                        return 0
                 else:
                     expr_name = inst2.argval
                 synthetic_call = inst1._replace(
