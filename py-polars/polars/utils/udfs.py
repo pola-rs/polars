@@ -527,7 +527,9 @@ class RewrittenInstructions:
     from the identification of expression translation opportunities.
     """
 
-    _ignored_ops = frozenset(["COPY_FREE_VARS", "PRECALL", "RESUME", "RETURN_VALUE"])
+    _ignored_ops = frozenset(
+        ["COPY_FREE_VARS", "PRECALL", "PUSH_NULL", "RESUME", "RETURN_VALUE"]
+    )
 
     def __init__(self, instructions: Iterator[Instruction]):
         self._original_instructions = list(instructions)
@@ -636,7 +638,7 @@ class RewrittenInstructions:
         if matching_instructions := self._matches(
             idx,
             opnames=[
-                {"LOAD_GLOBAL"},
+                {"LOAD_GLOBAL", "LOAD_DEREF"},
                 OpNames.LOAD_ATTR,
                 {"LOAD_FAST", "LOAD_CONST"},
                 OpNames.CALL,

@@ -178,3 +178,17 @@ def test_bytecode_parser_expression_noop(func: Callable[[Any], Any]) -> None:
 
     parser = udfs.BytecodeParser(func, apply_target="expr")
     assert not parser.can_attempt_rewrite() or not parser.to_expression("x")
+
+
+def test_local_imports() -> None:
+    try:
+        import udfs
+    except ModuleNotFoundError as exc:
+        assert "No module named 'udfs'" in str(exc)  # noqa: PT017
+        return
+    import json
+
+    bytecode_parser = udfs.BytecodeParser(lambda x: json.loads(x), apply_target="expr")
+    result = bytecode_parser.to_expression("x")
+    expected = 'pl.col("x").str.json_extract()'
+    assert result == expected
