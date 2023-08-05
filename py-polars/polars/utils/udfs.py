@@ -638,24 +638,26 @@ class RewrittenInstructions:
     ) -> int:
         """Replace function calls with a synthetic POLARS_EXPRESSION op."""
         # should...reorder a bit
-        for function_opnames, module_opnames, module_parent_opnames in (
+        for argument_1, argument_2, module_opnames, module_parent_opnames in (
             # lambda x: module.func(CONSTANT)
-            ([{'LOAD_CONST'}], [OpNames.LOAD_ATTR], []),
+            ([{'LOAD_CONST'}], [], [OpNames.LOAD_ATTR], []),
             # lambda x: module.func(x)
-            ([{'LOAD_FAST'}], [OpNames.LOAD_ATTR], []),
+            ([{'LOAD_FAST'}], [], [OpNames.LOAD_ATTR], []),
             # lambda x: module.func(x, CONSTANT)
-            ([{'LOAD_FAST'}, {'LOAD_CONST'}], [OpNames.LOAD_ATTR], []),
+            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], [OpNames.LOAD_ATTR], []),
             # lambda x: module.attribute.func(x, CONSTANT)
-            ([{'LOAD_FAST'}, {'LOAD_CONST'}], ['LOAD_ATTR', 'LOAD_METHOD'], [{'datetime'}]),
+            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], ['LOAD_ATTR', 'LOAD_METHOD'], [{'datetime'}]),
         ):
+            opnames=[
+                {"LOAD_GLOBAL", "LOAD_DEREF"},
+                *module_opnames,
+                *argument_1,
+                *argument_2,
+                OpNames.CALL,
+            ]
             if matching_instructions := self._matches(
                 idx,
-                opnames=[
-                    {"LOAD_GLOBAL", "LOAD_DEREF"},
-                    *module_opnames,
-                    *function_opnames,
-                    OpNames.CALL,
-                ],
+                opnames=opnames,
                 argvals=[
                     _NUMPY_MODULE_ALIASES | {"json", "datetime", "dt"},
                     *module_parent_opnames,
