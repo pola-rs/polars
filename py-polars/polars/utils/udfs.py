@@ -35,7 +35,7 @@ StackEntry: TypeAlias = Union[str, StackValue]
 
 _MIN_PY311 = sys.version_info >= (3, 11)
 try:
-    get_ipython()  # type: ignore[name-defined]
+    get_ipython  # type: ignore[name-defined]
 except NameError:
     _IN_IPYTHON = False
 else:
