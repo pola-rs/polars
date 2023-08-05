@@ -6,6 +6,10 @@ members = [
   "contribution/*",
   "examples/*",
 ]
+default-members = [
+  "crates/*",
+  "polars-cli",
+]
 exclude = [
   "examples/datasets",
 ]
