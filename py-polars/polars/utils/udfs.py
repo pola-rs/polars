@@ -636,33 +636,52 @@ class RewrittenInstructions:
     def _rewrite_functions(
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
-        """Replace numpy/json function calls with a synthetic POLARS_EXPRESSION op."""
-        if matching_instructions := self._matches(
-            idx,
-            opnames=[
-                {"LOAD_GLOBAL", "LOAD_DEREF"},
-                OpNames.LOAD_ATTR,
-                {"LOAD_FAST", "LOAD_CONST"},
-                OpNames.CALL,
-            ],
-            argvals=[
-                _NUMPY_MODULE_ALIASES | {"json"},
-                _NUMPY_FUNCTIONS | {"loads"},
-            ],
+        """Replace function calls with a synthetic POLARS_EXPRESSION op."""
+        # should...reorder a bit
+        for function_opnames, module_opnames, module_parent_opnames in (
+            # lambda x: module.func(CONSTANT)
+            ([{'LOAD_CONST'}], [OpNames.LOAD_ATTR], []),
+            # lambda x: module.func(x)
+            ([{'LOAD_FAST'}], [OpNames.LOAD_ATTR], []),
+            # lambda x: module.func(x, CONSTANT)
+            ([{'LOAD_FAST'}, {'LOAD_CONST'}], [OpNames.LOAD_ATTR], []),
+            # lambda x: module.attribute.func(x, CONSTANT)
+            ([{'LOAD_FAST'}, {'LOAD_CONST'}], ['LOAD_ATTR', 'LOAD_METHOD'], [{'datetime'}]),
         ):
-            inst1, inst2, inst3 = matching_instructions[:3]
-            expr_name = "str.json_extract" if inst1.argval == "json" else inst2.argval
-            synthetic_call = inst1._replace(
-                opname="POLARS_EXPRESSION",
-                argval=expr_name,
-                argrepr=expr_name,
-                offset=inst3.offset,
-            )
-            # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
-            operand = inst3._replace(offset=inst1.offset)
-            updated_instructions.extend((operand, synthetic_call))
+            if matching_instructions := self._matches(
+                idx,
+                opnames=[
+                    {"LOAD_GLOBAL", "LOAD_DEREF"},
+                    *module_opnames,
+                    *function_opnames,
+                    OpNames.CALL,
+                ],
+                argvals=[
+                    _NUMPY_MODULE_ALIASES | {"json", "datetime", "dt"},
+                    *module_parent_opnames,
+                    _NUMPY_FUNCTIONS | {"loads", "strptime"},
+                ],
+            ):
+                inst1, inst2, *_, inst3 = matching_instructions[len(module_parent_opnames):3+len(module_parent_opnames)]
+                if inst1.argval == 'json':
+                    expr_name = 'str.json_extract'
+                elif inst1.argval == 'datetime':
+                    fmt = matching_instructions[len(module_parent_opnames)+3].argval
+                    expr_name = f'str.to_datetime(format="{fmt}")'
+                else:
+                    expr_name = inst2.argval
+                synthetic_call = inst1._replace(
+                    opname="POLARS_EXPRESSION",
+                    argval=expr_name,
+                    argrepr=expr_name,
+                    offset=inst3.offset,
+                )
+                # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
+                operand = inst3._replace(offset=inst1.offset)
+                updated_instructions.extend((operand, synthetic_call))
+                return len(matching_instructions)
 
-        return len(matching_instructions)
+        return 0
 
     def _rewrite_methods(
         self, idx: int, updated_instructions: list[Instruction]
@@ -686,6 +705,7 @@ class RewrittenInstructions:
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
         """Replace stdlib strptime calls with synthetic POLARS_EXPRESSION op."""
+        return 0
         if matching_instructions := self._matches(
             idx,
             opnames=[
@@ -706,25 +726,6 @@ class RewrittenInstructions:
             inst1, _, inst2, inst3 = matching_instructions[:4]
             vars = _get_all_caller_variables()
             if vars.get(inst1.argval) is not datetime:
-                return 0
-        elif matching_instructions := self._matches(
-            idx,
-            opnames=[
-                {"LOAD_GLOBAL", "LOAD_DEREF"},
-                OpNames.LOAD_ATTR,
-                {"LOAD_FAST"},
-                {"LOAD_CONST"},
-                OpNames.CALL,
-            ],
-            argvals=[
-                {"datetime"},
-                {"strptime"},
-            ],
-        ):
-            fmt = matching_instructions[3].argval
-            inst1, inst2, inst3 = matching_instructions[:3]
-            vars = _get_all_caller_variables()
-            if vars.get("datetime") is not datetime.datetime:
                 return 0
 
         if matching_instructions:

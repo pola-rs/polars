@@ -136,12 +136,12 @@ TEST_CASES = [
     (
         "d",
         lambda x: datetime.strptime(x, "%Y-%m-%d"),
-        "pl.col(\"d\").str.to_datetime(format='%Y-%m-%d')",
+        'pl.col(\"d\").str.to_datetime(format="%Y-%m-%d")',
     ),
     (
         "d",
         lambda x: dt.datetime.strptime(x, "%Y-%m-%d"),
-        "pl.col(\"d\").str.to_datetime(format='%Y-%m-%d')",
+        'pl.col(\"d\").str.to_datetime(format="%Y-%m-%d")',
     ),
 ]
 
@@ -214,5 +214,5 @@ def test_local_imports() -> None:
         lambda x: dt.datetime.strptime(x, "%Y-%m-%d"), apply_target="expr"
     )
     result = bytecode_parser.to_expression("x")
-    expected = "pl.col(\"x\").str.to_datetime(format='%Y-%m-%d')"
+    expected = 'pl.col(\"x\").str.to_datetime(format="%Y-%m-%d")'
     assert result == expected
