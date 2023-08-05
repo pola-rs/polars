@@ -3315,7 +3315,13 @@ class DataFrame:
         Write DataFrame as delta table.
 
         Note: Some polars data types like `Null`, `Categorical` and `Time` are
-        not supported by the delta protocol specification.
+        not supported by the delta protocol specification. Other unsupported datatypes
+        are casted to their respective `primitive types <https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types>`__. See list below.
+        - `uint` -> `int`
+        - `timestamp(ns)` -> `timestamp(us)`
+        - `timestamp(ms)` -> `timestamp(us)`
+        - `largestring` -> `string`
+        - `largelist` -> `list`
 
         Parameters
         ----------
@@ -3436,18 +3442,14 @@ class DataFrame:
             data_schema = delta_schema
 
             if table is not None:
-                table_schema = table.schema()
-
-                if data_schema == table_schema.to_pyarrow(as_large_types=True):
-                    data_schema = table_schema.to_pyarrow()
+                if data_schema == table.schema().to_pyarrow(as_large_types=True):
+                    data_schema = table.schema().to_pyarrow()
             else:
                 data = data.cast(data_schema)
         else:
             if table is not None:
-                table_schema = table.schema()
-
-                if data_schema == table_schema.to_pyarrow(as_large_types=True):
-                    data_schema = table_schema.to_pyarrow()
+                if data_schema == table.schema().to_pyarrow(as_large_types=True):
+                    data_schema = table.schema().to_pyarrow()
 
         write_deltalake(
             table_or_uri=target,
