@@ -353,47 +353,32 @@ def _reconstruct_field_type(
         pa.timestamp(unit="ms"): pa.timestamp(unit="us"),
     }
 
-    if isinstance(field.type, pa.DataType) and not isinstance(
-        field.type, (pa.LargeListType, pa.StructType)
-    ):
-        for polars_type, primitive_type in type_mapping.items():
-            if field.type.equals(polars_type):
-                if reconstructed_field is None:
-                    return pa.field(name=field.name, type=primitive_type)
-                else:
-                    reconstructed_field.append(primitive_type)
-                    return pa.field(
-                        name=field_head.name,
-                        type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
-                    )
-        else:
-            if reconstructed_field is None:
-                return field
-            else:
-                reconstructed_field.append(field.type)
-                return pa.field(
-                    name=field_head.name,
-                    type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
-                )
-
-    elif isinstance(field.type, pa.LargeListType):
-        if reconstructed_field is None:
+    if reconstructed_field is None:
+        if isinstance(field.type, pa.LargeListType):
             reconstructed_field = [pa.list_]
             return _reconstruct_field_type(
                 field.type.value_field, field_head, reconstructed_field
             )
-        else:
-            reconstructed_field.append(pa.list_)
-            return _reconstruct_field_type(
-                field.type.value_field, field_head, reconstructed_field
-            )
-    elif isinstance(field.type, pa.StructType):
-        if reconstructed_field is None:
+        elif isinstance(field.type, pa.StructType):
             return pa.field(
                 name=field_head.name,
                 type=pa.struct([*map(_reconstruct_field_type, field.type, field.type)]),
             )
-        else:
+        elif isinstance(field.type, pa.DataType) and not isinstance(
+            field.type, (pa.LargeListType, pa.StructType)
+        ):
+            for polars_type, primitive_type in type_mapping.items():
+                if field.type.equals(polars_type):
+                    return pa.field(name=field.name, type=primitive_type)
+            else:
+                return field
+    else:
+        if isinstance(field.type, pa.LargeListType):
+            reconstructed_field.append(pa.list_)
+            return _reconstruct_field_type(
+                field.type.value_field, field_head, reconstructed_field
+            )
+        elif isinstance(field.type, pa.StructType):
             reconstructed_field.append(
                 pa.struct([*map(_reconstruct_field_type, field.type, field.type)])
             )
@@ -401,6 +386,22 @@ def _reconstruct_field_type(
                 name=field_head.name,
                 type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
             )
+        elif isinstance(field.type, pa.DataType) and not isinstance(
+            field.type, (pa.LargeListType, pa.StructType)
+        ):
+            for polars_type, primitive_type in type_mapping.items():
+                if field.type.equals(polars_type):
+                    reconstructed_field.append(primitive_type)
+                    return pa.field(
+                        name=field_head.name,
+                        type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+                    )
+            else:
+                reconstructed_field.append(field.type)
+                return pa.field(
+                    name=field_head.name,
+                    type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+                )
 
 
 def _create_delta_compatible_schema(schema: pa.schema) -> pa.Schema:
