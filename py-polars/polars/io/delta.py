@@ -355,9 +355,8 @@ def _reconstruct_field_type(
 
     if reconstructed_field is None:
         if isinstance(field.type, pa.LargeListType):
-            reconstructed_field = [pa.list_]
             return _reconstruct_field_type(
-                field.type.value_field, field_head, reconstructed_field
+                field.type.value_field, field_head, [pa.list_]
             )
         elif isinstance(field.type, pa.StructType):
             return pa.field(
