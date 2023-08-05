@@ -202,9 +202,17 @@ def test_local_imports() -> None:
     except ModuleNotFoundError as exc:
         assert "No module named 'udfs'" in str(exc)  # noqa: PT017
         return
+    import datetime as dt
     import json
 
     bytecode_parser = udfs.BytecodeParser(lambda x: json.loads(x), apply_target="expr")
     result = bytecode_parser.to_expression("x")
     expected = 'pl.col("x").str.json_extract()'
+    assert result == expected
+
+    bytecode_parser = udfs.BytecodeParser(
+        lambda x: dt.datetime.strptime(x, "%Y-%m-%d"), apply_target="expr"
+    )
+    result = bytecode_parser.to_expression("x")
+    expected = "pl.col(\"x\").str.to_datetime(format='%Y-%m-%d')"
     assert result == expected
