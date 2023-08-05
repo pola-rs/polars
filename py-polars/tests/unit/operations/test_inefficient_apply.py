@@ -5,6 +5,7 @@ import re
 from typing import Any, Callable
 
 import numpy
+import numpy as np  # noqa: F401
 import pytest
 
 import polars as pl
@@ -27,9 +28,9 @@ EVAL_ENVIRONMENT = {
     "func",
     NOOP_TEST_CASES,
 )
-def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
+def test_parse_invalid_function(func: str) -> None:
     # functions we don't (yet?) offer suggestions for
-    parser = BytecodeParser(func, apply_target="expr")
+    parser = BytecodeParser(eval(func), apply_target="expr")
     assert not parser.can_attempt_rewrite() or not parser.to_expression("x")
 
 
@@ -37,14 +38,12 @@ def test_parse_invalid_function(func: Callable[[Any], Any]) -> None:
     ("col", "func", "expr_repr"),
     TEST_CASES,
 )
-def test_parse_apply_functions(
-    col: str, func: Callable[[Any], Any], expr_repr: str
-) -> None:
+def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     with pytest.warns(
         PolarsInefficientApplyWarning,
         match=r"(?s)Expr\.apply.*In this case, you can replace",
     ):
-        parser = BytecodeParser(func, apply_target="expr")
+        parser = BytecodeParser(eval(func), apply_target="expr")
         suggested_expression = parser.to_expression(col)
         assert suggested_expression == expr_repr
 
@@ -61,7 +60,7 @@ def test_parse_apply_functions(
         )
         expected_frame = df.select(
             x=pl.col(col),
-            y=pl.col(col).apply(func),
+            y=pl.col(col).apply(eval(func)),
         )
         assert_frame_equal(result_frame, expected_frame)
 
