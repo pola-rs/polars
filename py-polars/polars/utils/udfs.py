@@ -600,7 +600,6 @@ class RewrittenInstructions:
                     self._rewrite_functions,
                     self._rewrite_methods,
                     self._rewrite_builtins,
-                    self._rewrite_stdlib_datetime,
                 )
             ):
                 updated_instructions.append(inst)
@@ -638,39 +637,83 @@ class RewrittenInstructions:
     ) -> int:
         """Replace function calls with a synthetic POLARS_EXPRESSION op."""
         # should...reorder a bit
-        for argument_1, argument_2, module, attribute, module_name, attribute_name, function_name in (
+        data = [
             # lambda x: module.func(CONSTANT)
-            ([{'LOAD_CONST'}], [], [OpNames.LOAD_ATTR], [], _NUMPY_MODULE_ALIASES, [], _NUMPY_FUNCTIONS),
+            {
+                'argument_1_opname': [{'LOAD_CONST'}],
+                'argument_2_opname': [],
+                'module_opname': [OpNames.LOAD_ATTR],
+                'attribute_opname': [],
+                'module_name': _NUMPY_MODULE_ALIASES,
+                'attribute_name': [],
+                'function_name': _NUMPY_FUNCTIONS
+            },
             # lambda x: module.func(x)
-            ([{'LOAD_FAST'}], [], [OpNames.LOAD_ATTR], [], _NUMPY_MODULE_ALIASES, [], _NUMPY_FUNCTIONS),
-            ([{'LOAD_FAST'}], [], [OpNames.LOAD_ATTR], [], {'json'}, [], {'loads'}),
+            {
+                'argument_1_opname': [{'LOAD_FAST'}],
+                'argument_2_opname': [],
+                'module_opname': [OpNames.LOAD_ATTR],
+                'attribute_opname': [],
+                'module_name': _NUMPY_MODULE_ALIASES,
+                'attribute_name': [],
+                'function_name': _NUMPY_FUNCTIONS
+            },
+            {
+                'argument_1_opname': [{'LOAD_FAST'}],
+                'argument_2_opname': [],
+                'module_opname': [OpNames.LOAD_ATTR],
+                'attribute_opname': [],
+                'module_name': {'json'},
+                'attribute_name': [],
+                'function_name': {'loads'}
+            },
             # lambda x: module.func(x, CONSTANT)
-            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], [OpNames.LOAD_ATTR], [], {'datetime'}, [], {'strptime'}),
+            {
+                'argument_1_opname': [{'LOAD_FAST'}],
+                'argument_2_opname': [{'LOAD_CONST'}],
+                'module_opname': [OpNames.LOAD_ATTR],
+                'attribute_opname': [],
+                'module_name': {'datetime'},
+                'attribute_name': [],
+                'function_name': {'strptime'}
+            },
             # lambda x: module.attribute.func(x, CONSTANT)
-            ([{'LOAD_FAST'}], [{'LOAD_CONST'}], ['LOAD_ATTR'], ['LOAD_METHOD'], {'datetime', 'dt'}, [{'datetime'}], {'strptime'}),
-        ):
-            opnames=[
+            {
+                'argument_1_opname': [{'LOAD_FAST'}],
+                'argument_2_opname': [{'LOAD_CONST'}],
+                'module_opname': ['LOAD_ATTR'],
+                'attribute_opname': ['LOAD_METHOD'],
+                'module_name': {'datetime', 'dt'},
+                'attribute_name': [{'datetime'}],
+                'function_name': {'strptime'}
+            },
+        ]
+
+        for data_item in data:
+            opnames = [
                 {"LOAD_GLOBAL", "LOAD_DEREF"},
-                *module,
-                *attribute,
-                *argument_1,
-                *argument_2,
+                *data_item['module_opname'],
+                *data_item['attribute_opname'],
+                *data_item['argument_1_opname'],
+                *data_item['argument_2_opname'],
                 OpNames.CALL,
             ]
             if matching_instructions := self._matches(
                 idx,
                 opnames=opnames,
                 argvals=[
-                    module_name,
-                    *attribute_name,
-                    function_name,
+                    data_item['module_name'],
+                    *data_item['attribute_name'],
+                    data_item['function_name'],
                 ],
             ):
-                inst1, inst2, *_, inst3 = matching_instructions[len(attribute_name):3+len(attribute_name)]
-                if inst1.argval == 'json':
-                    expr_name = 'str.json_extract'
-                elif inst1.argval == 'datetime':
-                    fmt = matching_instructions[len(attribute_name)+3].argval
+                inst1, inst2, *_, inst3 = matching_instructions[
+                    len(data_item['attribute_name']) : 3 + len(data_item['attribute_name'])
+                ]
+                if inst1.argval == "json":
+                    expr_name = "str.json_extract"
+                elif inst1.argval == "datetime":
+                    fmt = matching_instructions[len(data_item['attribute_name']) + 3].argval
                     expr_name = f'str.to_datetime(format="{fmt}")'
                 else:
                     expr_name = inst2.argval
@@ -702,47 +745,6 @@ class RewrittenInstructions:
                 opname="POLARS_EXPRESSION", argval=expr_name, argrepr=expr_name
             )
             updated_instructions.append(synthetic_call)
-
-        return len(matching_instructions)
-
-    def _rewrite_stdlib_datetime(
-        self, idx: int, updated_instructions: list[Instruction]
-    ) -> int:
-        """Replace stdlib strptime calls with synthetic POLARS_EXPRESSION op."""
-        return 0
-        if matching_instructions := self._matches(
-            idx,
-            opnames=[
-                {"LOAD_GLOBAL", "LOAD_DEREF"},
-                {"LOAD_ATTR"},
-                {"LOAD_METHOD"},
-                {"LOAD_FAST"},
-                {"LOAD_CONST"},
-                OpNames.CALL,
-            ],
-            argvals=[
-                {"datetime", "dt"},
-                {"datetime"},
-                {"strptime"},
-            ],
-        ):
-            fmt = matching_instructions[4].argval
-            inst1, _, inst2, inst3 = matching_instructions[:4]
-            vars = _get_all_caller_variables()
-            if vars.get(inst1.argval) is not datetime:
-                return 0
-
-        if matching_instructions:
-            expr_name = f"str.to_datetime(format='{fmt}')"
-            synthetic_call = inst1._replace(
-                opname="POLARS_EXPRESSION",
-                argval=expr_name,
-                argrepr=expr_name,
-                offset=inst3.offset,
-            )
-            # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
-            operand = inst3._replace(offset=inst1.offset)
-            updated_instructions.extend((operand, synthetic_call))
 
         return len(matching_instructions)
 
