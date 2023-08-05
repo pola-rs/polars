@@ -421,6 +421,26 @@ pub(super) fn strptime(
     }
 }
 
+fn handle_temporal_parsing_error(ca: &Utf8Chunked, out: &Series) -> PolarsResult<()> {
+    let failure_mask = !ca.is_null() & out.is_null();
+    let all_failures = ca.filter(&failure_mask)?;
+    let first_failures = all_failures.unique()?.slice(0, 10).sort(false);
+    let n_failures = all_failures.len();
+    let n_failures_unique = all_failures.n_unique()?;
+    polars_bail!(
+        ComputeError:
+        "strict {} parsing failed for {} value(s) ({} unique): {}\n\
+        \n\
+        You might want to try:\n\
+        - setting `strict=False`\n\
+        - explicitly specifying a `format`",
+        out.dtype(),
+        n_failures,
+        n_failures_unique,
+        first_failures.into_series().fmt_list(),
+    )
+}
+
 #[cfg(feature = "dtype-date")]
 fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
     let ca = s.utf8()?;
@@ -434,16 +454,8 @@ fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
         }
     };
 
-    if options.strict {
-        polars_ensure!(
-            out.null_count() == ca.null_count(),
-            ComputeError:
-            "strict conversion to dates failed.\n\
-            \n\
-            You might want to try:\n\
-            - setting `strict=False`\n\
-            - explicitly specifying a `format`"
-        );
+    if options.strict && ca.null_count() != out.null_count() {
+        handle_temporal_parsing_error(ca, &out)?;
     }
     Ok(out.into_series())
 }
@@ -485,16 +497,8 @@ fn to_datetime(
             .into_series()
     };
 
-    if options.strict {
-        polars_ensure!(
-            out.null_count() == ca.null_count(),
-            ComputeError:
-            "strict conversion to datetimes failed.\n\
-            \n\
-            You might want to try:\n\
-            - setting `strict=False`\n\
-            - explicitly specifying a `format`"
-        );
+    if options.strict && ca.null_count() != out.null_count() {
+        handle_temporal_parsing_error(ca, &out)?;
     }
     Ok(out.into_series())
 }
@@ -510,16 +514,8 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
         .as_time(options.format.as_deref(), options.cache)?
         .into_series();
 
-    if options.strict {
-        polars_ensure!(
-            out.null_count() == ca.null_count(),
-            ComputeError:
-            "strict conversion to times failed.\n\
-            \n\
-            You might want to try:\n\
-            - setting `strict=False`\n\
-            - explicitly specifying a `format`"
-        );
+    if options.strict && ca.null_count() != out.null_count() {
+        handle_temporal_parsing_error(ca, &out)?;
     }
     Ok(out.into_series())
 }
