@@ -687,7 +687,7 @@ class RewrittenInstructions:
         if matching_instructions := self._matches(
             idx,
             opnames=[
-                {"LOAD_GLOBAL"},
+                {"LOAD_GLOBAL", "LOAD_DEREF"},
                 {"LOAD_ATTR"},
                 {"LOAD_METHOD"},
                 {"LOAD_FAST"},
@@ -708,7 +708,7 @@ class RewrittenInstructions:
         elif matching_instructions := self._matches(
             idx,
             opnames=[
-                {"LOAD_GLOBAL"},
+                {"LOAD_GLOBAL", "LOAD_DEREF"},
                 OpNames.LOAD_ATTR,
                 {"LOAD_FAST"},
                 {"LOAD_CONST"},

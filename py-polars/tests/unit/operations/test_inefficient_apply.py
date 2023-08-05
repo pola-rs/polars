@@ -217,3 +217,9 @@ def test_expr_exact_warning_message() -> None:
         df.select(pl.col("a").apply(lambda x: x + 1))
 
     assert len(warnings) == 1
+
+
+def test_local_imports() -> None:
+    import json
+    bytecode_parser = BytecodeParser(lambda x: json.loads(x), apply_target="expr")
+    result = bytecode_parser.to_expression('x')
