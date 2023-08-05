@@ -318,6 +318,10 @@ def _check_if_delta_available() -> None:
         )
 
 
+def _create_nested_type(type_list: list[pa.DataType]) -> pa.DataType:
+    return reduce(lambda x, y: y(x), reversed(type_list))
+
+
 def _reconstruct_field_type(
     field: pa.Field,
     field_head: pa.Field,
@@ -383,7 +387,7 @@ def _reconstruct_field_type(
             )
             return pa.field(
                 name=field_head.name,
-                type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+                type=_create_nested_type(reconstructed_field),
             )
         elif isinstance(field.type, pa.DataType) and not isinstance(
             field.type, (pa.LargeListType, pa.StructType)
@@ -393,13 +397,13 @@ def _reconstruct_field_type(
                     reconstructed_field.append(primitive_type)
                     return pa.field(
                         name=field_head.name,
-                        type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+                        type=_create_nested_type(reconstructed_field),
                     )
             else:
                 reconstructed_field.append(field.type)
                 return pa.field(
                     name=field_head.name,
-                    type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
+                    type=_create_nested_type(reconstructed_field),
                 )
 
 
