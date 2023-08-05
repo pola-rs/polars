@@ -10,6 +10,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
+    Collection,
     Iterable,
     NoReturn,
     Sequence,
@@ -81,8 +82,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
-        ColumnNameOrSelectorCollection,
-        ColumnNameOrSelectorSequence,
+        ColumnNameOrSelector,
         CsvEncoding,
         FillNullStrategy,
         FrameInitTypes,
@@ -3344,7 +3344,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def drop(
         self,
-        columns: ColumnNameOrSelectorCollection,
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: str | SelectorType,
     ) -> Self:
         """
@@ -4390,7 +4390,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def unique(
         self,
-        subset: ColumnNameOrSelectorCollection | None = None,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
         *,
         keep: UniqueKeepStrategy = "any",
         maintain_order: bool = False,
@@ -4475,7 +4475,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def drop_nulls(
         self,
-        subset: ColumnNameOrSelectorCollection | None = None,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
     ) -> Self:
         """
         Drop all rows that contain null values.
@@ -4573,8 +4573,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def melt(
         self,
-        id_vars: ColumnNameOrSelectorSequence | None = None,
-        value_vars: ColumnNameOrSelectorSequence | None = None,
+        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
         *,

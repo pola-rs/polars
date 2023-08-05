@@ -15,6 +15,7 @@ from typing import (
     BinaryIO,
     Callable,
     ClassVar,
+    Collection,
     Generator,
     Iterable,
     Iterator,
@@ -126,8 +127,7 @@ if TYPE_CHECKING:
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
-        ColumnNameOrSelectorCollection,
-        ColumnNameOrSelectorSequence,
+        ColumnNameOrSelector,
         ColumnTotalsDefinition,
         ComparisonOperator,
         ConditionalFormatDict,
@@ -4540,7 +4540,7 @@ class DataFrame:
 
     def drop_nulls(
         self,
-        subset: ColumnNameOrSelectorCollection | None = None,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
     ) -> DataFrame:
         """
         Drop all rows that contain null values.
@@ -6054,7 +6054,7 @@ class DataFrame:
 
     def drop(
         self,
-        columns: ColumnNameOrSelectorCollection,
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: str | SelectorType,
     ) -> DataFrame:
         """
@@ -6559,9 +6559,9 @@ class DataFrame:
 
     def pivot(
         self,
-        values: ColumnNameOrSelectorSequence | None,
-        index: ColumnNameOrSelectorSequence | None,
-        columns: ColumnNameOrSelectorSequence | None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         aggregate_function: PivotAgg | Expr | None | NoDefault = no_default,
         *,
         maintain_order: bool = True,
@@ -6791,7 +6791,7 @@ class DataFrame:
         self,
         step: int,
         how: UnstackDirection = "vertical",
-        columns: ColumnNameOrSelectorSequence | None = None,
+        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         fill_values: list[Any] | None = None,
     ) -> DataFrame:
         """
@@ -6933,7 +6933,7 @@ class DataFrame:
     @overload
     def partition_by(
         self,
-        by: ColumnNameOrSelectorSequence,
+        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         *more_by: str,
         maintain_order: bool = ...,
         include_key: bool = ...,
@@ -6944,7 +6944,7 @@ class DataFrame:
     @overload
     def partition_by(
         self,
-        by: ColumnNameOrSelectorSequence,
+        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         *more_by: str,
         maintain_order: bool = ...,
         include_key: bool = ...,
@@ -6954,7 +6954,7 @@ class DataFrame:
 
     def partition_by(
         self,
-        by: ColumnNameOrSelectorSequence,
+        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         *more_by: str | SelectorType,
         maintain_order: bool = True,
         include_key: bool = True,
@@ -8022,7 +8022,7 @@ class DataFrame:
 
     def to_dummies(
         self,
-        columns: ColumnNameOrSelectorSequence | None = None,
+        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         *,
         separator: str = "_",
         drop_first: bool = False,
@@ -8101,7 +8101,7 @@ class DataFrame:
 
     def unique(
         self,
-        subset: ColumnNameOrSelectorCollection | None = None,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
         *,
         keep: UniqueKeepStrategy = "any",
         maintain_order: bool = False,
@@ -9118,7 +9118,7 @@ class DataFrame:
 
     def unnest(
         self,
-        columns: ColumnNameOrSelectorCollection,
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: str | SelectorType,
     ) -> Self:
         """
