@@ -34,6 +34,12 @@ ApplyTarget: TypeAlias = Literal["expr", "frame", "series"]
 StackEntry: TypeAlias = Union[str, StackValue]
 
 _MIN_PY311 = sys.version_info >= (3, 11)
+try:
+    get_ipython()  # type: ignore[name-defined]
+except NameError:
+    _IN_IPYTHON = False
+else:
+    _IN_IPYTHON = True
 
 
 class OpNames:
@@ -66,7 +72,7 @@ class OpNames:
         }
     )
     LOAD_VALUES = frozenset(("LOAD_CONST", "LOAD_DEREF", "LOAD_FAST", "LOAD_GLOBAL"))
-    LOAD_ATTR = {"LOAD_ATTR", "LOAD_METHOD"} if _MIN_PY311 else {"LOAD_METHOD"}
+    LOAD_ATTR = {"LOAD_ATTR"} if (_MIN_PY311 and not _IN_IPYTHON) else {"LOAD_METHOD"}
     LOAD = LOAD_VALUES | {"LOAD_METHOD", "LOAD_ATTR"}
     SYNTHETIC = {
         "POLARS_EXPRESSION": 1,
