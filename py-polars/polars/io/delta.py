@@ -354,11 +354,11 @@ def _reconstruct_field_type(
             return pa.field(
                 name=field.name,
                 type=pa.timestamp(
-                    unit="us", tz="UTC"
-                ),  # Always cast to UTC, since Delta-rs does not support other timezones yet
+                    unit="us"
+                ),  # Always cast to no timezone, since Delta-rs does not support UTC yet, once fixed upstream, add tz=field.type.tz
             )
         else:
-            reconstructed_field.append(pa.timestamp(unit="us", tz="UTC"))
+            reconstructed_field.append(pa.timestamp(unit="us"))
             return pa.field(
                 name=field_head.name,
                 type=reduce(lambda x, y: y(x), reversed(reconstructed_field)),
