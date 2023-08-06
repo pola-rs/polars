@@ -4,6 +4,7 @@ Find cases where docstring bullet points will not render correctly in the docume
 Do this:
 ```
 Here is a list of things:
+
 - thing 1
 - thing 2
 ```
