@@ -8,10 +8,11 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct BinaryExpr {
-    pub(crate) left: Arc<dyn PhysicalExpr>,
-    pub(crate) op: Operator,
-    pub(crate) right: Arc<dyn PhysicalExpr>,
+    left: Arc<dyn PhysicalExpr>,
+    op: Operator,
+    right: Arc<dyn PhysicalExpr>,
     expr: Expr,
+    has_literal: bool,
 }
 
 impl BinaryExpr {
@@ -20,12 +21,14 @@ impl BinaryExpr {
         op: Operator,
         right: Arc<dyn PhysicalExpr>,
         expr: Expr,
+        has_literal: bool,
     ) -> Self {
         Self {
             left,
             op,
             right,
             expr,
+            has_literal,
         }
     }
 }
@@ -172,7 +175,9 @@ impl PhysicalExpr for BinaryExpr {
                 self.left.evaluate(df, &state),
                 self.right.evaluate(df, &state),
             )
-        } else if in_streaming {
+        }
+        // literals are free, don't pay par cost
+        else if in_streaming || self.has_literal {
             (
                 self.left.evaluate(df, state),
                 self.right.evaluate(df, state),
