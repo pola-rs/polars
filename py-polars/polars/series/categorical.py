@@ -88,10 +88,10 @@ class CatNameSpace:
         Examples
         --------
         >>> s = pl.Series(["b", "a", "b"]).cast(pl.Categorical)
-        >>> s.uses_lexical_sort()
+        >>> s.cat.uses_lexical_sort()
         False
-        >>> s = s.set_ordering("lexical")
-        >>> s.uses_lexical_sort()
+        >>> s = s.cat.set_ordering("lexical")
+        >>> s.cat.uses_lexical_sort()
         True
 
         """
