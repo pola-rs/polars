@@ -3456,9 +3456,8 @@ class DataFrame:
         if schema is None:
             schema = _create_delta_compatible_schema(data.schema)
             #! This will raise ArrowInvalidError if user has to big uints to cast in int
-    
-        data = data.cast(schema)
 
+        data = data.cast(schema)
 
         write_deltalake(
             table_or_uri=target,
