@@ -14,8 +14,6 @@ Here is a list of things:
 - thing 1
 - thing 2
 ```.
-
-Source: https://gist.github.com/MarcoGorelli/6d95b32436e43fa37288b1dd3030425d
 """
 import ast
 import subprocess
