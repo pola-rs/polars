@@ -3307,6 +3307,7 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = "error",
+        schema: pa.schema = None,
         overwrite_schema: bool = False,
         storage_options: dict[str, str] | None = None,
         delta_write_options: dict[str, Any] | None = None,
@@ -3319,11 +3320,16 @@ class DataFrame:
         are casted to their respective `primitive types
         <https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types>`__.
         See list below:
+
         - `uint` -> `int`
         - `timestamp(ns)` -> `timestamp(us)`
         - `timestamp(ms)` -> `timestamp(us)`
         - `largestring` -> `string`
         - `largelist` -> `list`
+
+        Polars only has dtypes that are nullable, if one wants to write data in a delta
+        table with non-nullable columns, a custom pyarrow schema has to be passed to the
+        delta_write_options, see last example below.
 
         Parameters
         ----------
@@ -3336,6 +3342,8 @@ class DataFrame:
             * If 'append', will add new data.
             * If 'overwrite', will replace table with new data.
             * If 'ignore', will not write anything if table already exists.
+        schema
+            Optional PyArrow schema to use while writing the data
         overwrite_schema
             If True, allows updating the schema of the table.
         storage_options
@@ -3393,6 +3401,18 @@ class DataFrame:
         ...     },
         ... )  # doctest: +SKIP
 
+
+        Write DataFrame as a Delta Lake table with non-nullable columns
+
+        >>> import pyarrow as pa
+        >>> existing_table_path = "/path/to/delta-table/"
+        >>> df.write_delta(
+        ...     existing_table_path,
+        ...     delta_write_options={
+        ...         "schema": pa.schema([pa.field("col", pa.int64(), nullable=False)])
+        ...     },
+        ... )  # doctest: +SKIP
+
         """
         from polars.io.delta import (
             _check_if_delta_available,
@@ -3433,17 +3453,18 @@ class DataFrame:
             )
 
         data = self.to_arrow()
-        data_schema = data.schema
-        delta_schema = _create_delta_compatible_schema(data_schema)
+        if schema is None:
+            schema = _create_delta_compatible_schema(data.schema)
+            #! This will raise ArrowInvalidError if user has to big uints to cast in int
+    
+        data = data.cast(schema)
 
-        #! This will raise ArrowInvalidError if user has to big uints to cast in int
-        data = data.cast(delta_schema)
 
         write_deltalake(
             table_or_uri=target,
             data=data,
+            schema=schema,
             mode=mode,
-            schema=delta_schema,
             overwrite_schema=overwrite_schema,
             storage_options=storage_options,
             **delta_write_options,
