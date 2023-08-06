@@ -74,3 +74,25 @@ class CatNameSpace:
         ]
 
         """
+
+    def uses_lexical_sort(self) -> bool:
+        """
+        Return whether or not the series uses lexical ordering.
+
+        This can be set using :func:`set_ordering`.
+
+        See Also
+        --------
+        set_ordering
+
+        Examples
+        --------
+        >>> s = pl.Series(["b", "a", "b"]).cast(pl.Categorical)
+        >>> s.uses_lexical_sort()
+        False
+        >>> s = s.set_ordering("lexical")
+        >>> s.uses_lexical_sort()
+        True
+
+        """
+        return self._s.cat_uses_lexical_sort()
