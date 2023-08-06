@@ -66,7 +66,7 @@ class OpNames:
         }
     )
     LOAD_VALUES = frozenset(("LOAD_CONST", "LOAD_DEREF", "LOAD_FAST", "LOAD_GLOBAL"))
-    LOAD_ATTR = {"LOAD_ATTR"} if _MIN_PY311 else {"LOAD_METHOD"}
+    LOAD_ATTR = {"LOAD_METHOD", "LOAD_ATTR"} if _MIN_PY311 else {"LOAD_METHOD"}
     LOAD = LOAD_VALUES | {"LOAD_METHOD", "LOAD_ATTR"}
     SYNTHETIC = {
         "POLARS_EXPRESSION": 1,
