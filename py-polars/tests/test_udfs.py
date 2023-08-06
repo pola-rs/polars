@@ -12,9 +12,6 @@ Usage:
 
 Running it without `PYTHONPATH` set will result in the test being skipped.
 """
-import datetime as dt
-import json
-from datetime import datetime
 import subprocess
 from typing import Any, Callable
 
@@ -193,6 +190,8 @@ def test_bytecode_parser_expression_in_ipython(
 
     script = (
         "import udfs; "
+        "import datetime as dt; "
+        "from datetime import datetime; "
         "import numpy as np; "
         "import json; "
         f"MY_DICT = {MY_DICT};"
