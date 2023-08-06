@@ -12,7 +12,9 @@ Usage:
 
 Running it without `PYTHONPATH` set will result in the test being skipped.
 """
+import datetime as dt  # noqa: F401
 import subprocess
+from datetime import datetime  # noqa: F401
 from typing import Any, Callable
 
 import pytest
@@ -254,7 +256,7 @@ def test_local_imports() -> None:
     except ModuleNotFoundError as exc:
         assert "No module named 'udfs'" in str(exc)  # noqa: PT017
         return
-    import datetime as dt
+    import datetime as dt  # noqa: F811
     import json
 
     bytecode_parser = udfs.BytecodeParser(lambda x: json.loads(x), apply_target="expr")
