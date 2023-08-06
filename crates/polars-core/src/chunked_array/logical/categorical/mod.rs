@@ -16,9 +16,10 @@ use crate::prelude::*;
 bitflags! {
     #[derive(Default)]
     struct BitSettings: u8 {
-    const ORIGINAL = 0x01;
-    const LEXICAL_SORT = 0x02;
-}}
+        const ORIGINAL = 0x01;
+        const LEXICAL_SORT = 0x02;
+    }
+}
 
 #[derive(Clone)]
 pub struct CategoricalChunked {
@@ -83,7 +84,9 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn use_lexical_sort(&self) -> bool {
+    /// Return whether the [`CategoricalChunked`] uses the lexical order of
+    /// the string values when sorting.
+    pub(crate) fn uses_lexical_sort(&self) -> bool {
         self.bit_settings.contains(BitSettings::LEXICAL_SORT)
     }
 
