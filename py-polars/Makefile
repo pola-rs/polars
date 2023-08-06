@@ -62,6 +62,7 @@ fmt: .venv  ## Run autoformatting and linting
 	$(VENV_BIN)/blackdoc .
 	$(VENV_BIN)/typos ..
 	$(VENV_BIN)/python scripts/check_stacklevels.py
+	$(VENV_BIN)/python scripts/find_bad_docstring_bullet_points.py
 	cargo fmt --all
 	-dprint fmt
 	-$(VENV_BIN)/mypy

@@ -16,9 +16,9 @@ EXCLUDE = frozenset(["polars/utils/polars_version.py"])
 
 
 class StackLevelChecker(NodeVisitor):  # noqa: D101
-    def __init__(self, file) -> None:
+    def __init__(self, file: str) -> None:
         self.file = file
-        self.violations = set()
+        self.violations: set[str] = set()
 
     def visit_Call(self, node: ast.Call) -> None:  # noqa: D102
         for keyword in node.keywords:

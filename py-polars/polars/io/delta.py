@@ -227,6 +227,7 @@ def scan_delta(
     <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
 
     Following type of table paths are supported,
+
     * az://<container>/<path>
     * adl://<container>/<path>
     * abfs[s]://<container>/<path>
