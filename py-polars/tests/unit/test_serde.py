@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import pickle
 from datetime import datetime, timedelta
 
@@ -15,12 +16,27 @@ def test_pickling_simple_expression() -> None:
     assert str(pickle.loads(buf)) == str(e)
 
 
-def test_serde_lazy_frame_lp() -> None:
+def test_lazyframe_serde() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
-    json = lf.write_json()
 
-    result = pl.LazyFrame.from_json(json).collect().to_series()
-    assert_series_equal(result, pl.Series("a", [1, 2, 3]))
+    json = lf.serialize()
+    result = pl.LazyFrame.deserialize(io.StringIO(json))
+
+    assert_series_equal(result.collect().to_series(), pl.Series("a", [1, 2, 3]))
+
+
+def test_lazyframe_deprecated_serde() -> None:
+    lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
+
+    with pytest.deprecated_call():
+        json = lf.write_json()  # type: ignore[attr-defined]
+    with pytest.deprecated_call():
+        result_from = pl.LazyFrame.from_json(json)
+    with pytest.deprecated_call():
+        result_read = pl.LazyFrame.read_json(io.StringIO(json))
+
+    assert_series_equal(result_from.collect().to_series(), pl.Series("a", [1, 2, 3]))
+    assert_series_equal(result_read.collect().to_series(), pl.Series("a", [1, 2, 3]))
 
 
 def test_serde_time_unit() -> None:
