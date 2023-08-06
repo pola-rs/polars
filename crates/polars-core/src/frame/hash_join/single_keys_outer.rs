@@ -63,7 +63,7 @@ fn probe_outer<T, F, G, H>(
 pub(super) fn hash_join_tuples_outer<T, I, J>(
     probe: Vec<I>,
     build: Vec<J>,
-    swap: bool,
+    swapped: bool,
     validate: JoinValidation,
 ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>>
 where
@@ -88,7 +88,7 @@ where
         let expected_size = build.iter().map(|i| i.size_hint().0).sum();
         let hash_tbls = prepare_hashed_relation_threaded(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        validate.validate_build(build_size, expected_size, !swap)?;
+        validate.validate_build(build_size, expected_size, swapped)?;
         hash_tbls
     } else {
         prepare_hashed_relation_threaded(build)
@@ -105,7 +105,7 @@ where
     // Therefore we remove the matches and the remaining will be joined from the right
 
     // branch is because we want to only do the swap check once
-    if swap {
+    if swapped {
         probe_outer(
             &probe_hashes,
             &mut hash_tbls,

@@ -1451,6 +1451,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
+            comm_subplan_elim = False
+            comm_subexpr_elim = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,

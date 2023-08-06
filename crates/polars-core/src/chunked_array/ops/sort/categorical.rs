@@ -30,65 +30,38 @@ impl CategoricalChunked {
         );
 
         if self.use_lexical_sort() {
-            match &**self.get_rev_map() {
-                RevMapping::Local(arr) => {
-                    // we don't use arrow2 sort here because its not activated
-                    // that saves compilation
-                    let ca = unsafe { Utf8Chunked::from_chunks("", vec![Box::from(arr.clone())]) };
-                    let sorted = ca.sort(options.descending);
-                    let arr = sorted.downcast_iter().next().unwrap().clone();
-                    let rev_map = RevMapping::Local(arr);
-                    // safety:
-                    // we only reordered the indexes so we are still in bounds
-                    unsafe {
-                        CategoricalChunked::from_cats_and_rev_map_unchecked(
-                            self.logical().clone(),
-                            Arc::new(rev_map),
-                        )
-                    }
-                }
-                RevMapping::Global(_, _, _) => {
-                    // a global rev map must always point to the same string values
-                    // so we cannot sort the categories.
+            let mut vals = self
+                .logical()
+                .into_no_null_iter()
+                .zip(self.iter_str())
+                .collect_trusted::<Vec<_>>();
 
-                    let mut vals = self
-                        .logical()
-                        .into_no_null_iter()
-                        .zip(self.iter_str())
-                        .collect_trusted::<Vec<_>>();
+            arg_sort_branch(
+                vals.as_mut_slice(),
+                options.descending,
+                |(_, a), (_, b)| order_ascending_null(a, b),
+                |(_, a), (_, b)| order_descending_null(a, b),
+                options.multithreaded,
+            );
+            let cats: NoNull<UInt32Chunked> =
+                vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+            let mut cats = cats.into_inner();
+            cats.rename(self.name());
 
-                    arg_sort_branch(
-                        vals.as_mut_slice(),
-                        options.descending,
-                        |(_, a), (_, b)| order_ascending_null(a, b),
-                        |(_, a), (_, b)| order_descending_null(a, b),
-                        options.multithreaded,
-                    );
-                    let cats: NoNull<UInt32Chunked> =
-                        vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-                    let mut cats = cats.into_inner();
-                    cats.rename(self.name());
-
-                    // safety:
-                    // we only reordered the indexes so we are still in bounds
-                    unsafe {
-                        CategoricalChunked::from_cats_and_rev_map_unchecked(
-                            cats,
-                            self.get_rev_map().clone(),
-                        )
-                    }
-                }
-            }
-        } else {
-            let cats = self.logical().sort_with(options);
             // safety:
             // we only reordered the indexes so we are still in bounds
-            unsafe {
+            return unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,
                     self.get_rev_map().clone(),
                 )
-            }
+            };
+        }
+        let cats = self.logical().sort_with(options);
+        // safety:
+        // we only reordered the indexes so we are still in bounds
+        unsafe {
+            CategoricalChunked::from_cats_and_rev_map_unchecked(cats, self.get_rev_map().clone())
         }
     }
 
