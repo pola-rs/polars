@@ -357,7 +357,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn project(self, exprs: Vec<Expr>) -> Self {
+    pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let (exprs, schema) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
 
@@ -373,6 +373,7 @@ impl LogicalPlanBuilder {
                 expr: exprs,
                 input: Box::new(self.0),
                 schema: Arc::new(schema),
+                options,
             }
             .into()
         }
@@ -410,10 +411,15 @@ impl LogicalPlanBuilder {
                 _ => None,
             })
             .collect();
-        self.with_columns(exprs)
+        self.with_columns(
+            exprs,
+            ProjectionOptions {
+                run_parallel: false,
+            },
+        )
     }
 
-    pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
+    pub fn with_columns(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
         // current schema
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let mut new_schema = (**schema).clone();
@@ -441,6 +447,7 @@ impl LogicalPlanBuilder {
             input: Box::new(self.0),
             exprs,
             schema: Arc::new(new_schema),
+            options,
         }
         .into()
     }

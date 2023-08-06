@@ -52,7 +52,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         self.add_alp(lp)
     }
 
-    pub fn project(self, exprs: Vec<Node>) -> Self {
+    pub fn project(self, exprs: Vec<Node>, options: ProjectionOptions) -> Self {
         let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
         let schema = aexprs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
 
@@ -62,6 +62,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
                 expr: exprs.into(),
                 input: self.root,
                 schema: Arc::new(schema),
+                options,
             };
             let node = self.lp_arena.add(lp);
             ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
@@ -82,7 +83,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         self.lp_arena.get(self.root).schema(self.lp_arena)
     }
 
-    pub(crate) fn with_columns(self, exprs: Vec<Node>) -> Self {
+    pub(crate) fn with_columns(self, exprs: Vec<Node>, options: ProjectionOptions) -> Self {
         let schema = self.schema();
         let mut new_schema = (**schema).clone();
 
@@ -100,6 +101,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             input: self.root,
             exprs: ProjectionExprs::new(exprs),
             schema: Arc::new(new_schema),
+            options,
         };
         self.add_alp(lp)
     }

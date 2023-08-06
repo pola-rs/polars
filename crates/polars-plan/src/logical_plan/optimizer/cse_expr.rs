@@ -498,6 +498,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                 input,
                 expr,
                 schema,
+                options,
             } => {
                 if let Some(expr) =
                     self.find_cse(expr, &mut expr_arena, &mut id_array_offsets, false)?
@@ -506,6 +507,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         input: *input,
                         expr,
                         schema: schema.clone(),
+                        options: *options,
                     };
                     node.replace(lp);
                 }
@@ -514,6 +516,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                 input,
                 exprs,
                 schema,
+                options,
             } => {
                 if let Some(exprs) =
                     self.find_cse(exprs, &mut expr_arena, &mut id_array_offsets, false)?
@@ -522,6 +525,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         input: *input,
                         exprs,
                         schema: schema.clone(),
+                        options: *options,
                     };
                     node.replace(lp);
                 }
@@ -620,11 +624,10 @@ mod test {
         let e = col("a").sum();
 
         let lp = LogicalPlanBuilder::from_existing_df(df)
-            .project(vec![
-                e.clone() * col("b"),
-                e.clone() * col("b") + e,
-                col("b"),
-            ])
+            .project(
+                vec![e.clone() * col("b"), e.clone() * col("b") + e, col("b")],
+                Default::default(),
+            )
             .build();
 
         let (node, mut lp_arena, mut expr_arena) = lp.to_alp().unwrap();

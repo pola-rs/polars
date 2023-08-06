@@ -5,6 +5,7 @@ pub(super) fn process_hstack(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
     mut exprs: Vec<Node>,
+    options: ProjectionOptions,
     mut acc_projections: Vec<Node>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
@@ -82,7 +83,7 @@ pub(super) fn process_hstack(
         expr_arena,
     )?;
     let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
-        .with_columns(exprs)
+        .with_columns(exprs, options)
         .build();
     Ok(lp)
 }

@@ -234,6 +234,7 @@ pub fn to_alp(
             expr,
             input,
             schema,
+            options,
         } => {
             let expr = expr.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
             let i = to_alp(*input, expr_arena, lp_arena)?;
@@ -241,6 +242,7 @@ pub fn to_alp(
                 expr,
                 input: i,
                 schema,
+                options,
             }
         }
         LogicalPlan::LocalProjection {
@@ -335,6 +337,7 @@ pub fn to_alp(
             input,
             exprs,
             schema,
+            options,
         } => {
             let exp = exprs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
             let input = to_alp(*input, expr_arena, lp_arena)?;
@@ -342,6 +345,7 @@ pub fn to_alp(
                 input,
                 exprs: exp,
                 schema,
+                options,
             }
         }
         LogicalPlan::Distinct { input, options } => {
@@ -689,6 +693,7 @@ impl ALogicalPlan {
                 expr,
                 input,
                 schema,
+                options,
             } => {
                 let i = convert_to_lp(input, lp_arena);
 
@@ -696,6 +701,7 @@ impl ALogicalPlan {
                     expr: nodes_to_exprs(&expr, expr_arena),
                     input: Box::new(i),
                     schema,
+                    options,
                 }
             }
             ALogicalPlan::LocalProjection {
@@ -772,6 +778,7 @@ impl ALogicalPlan {
                 input,
                 exprs,
                 schema,
+                options,
             } => {
                 let i = convert_to_lp(input, lp_arena);
 
@@ -779,6 +786,7 @@ impl ALogicalPlan {
                     input: Box::new(i),
                     exprs: nodes_to_exprs(&exprs, expr_arena),
                     schema,
+                    options,
                 }
             }
             ALogicalPlan::Distinct { input, options } => {

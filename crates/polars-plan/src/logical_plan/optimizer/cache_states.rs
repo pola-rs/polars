@@ -164,7 +164,7 @@ pub(super) fn set_cache_states(
 
                         let new_child = lp_arena.add(child_lp);
                         let lp = ALogicalPlanBuilder::new(new_child, expr_arena, lp_arena)
-                            .project(projection.clone())
+                            .project(projection.clone(), Default::default())
                             .build();
 
                         let lp = pd.optimize(lp, lp_arena, expr_arena).unwrap();

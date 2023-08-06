@@ -172,7 +172,7 @@ impl FileCacher {
                     .collect();
 
                 lp = ALogicalPlanBuilder::new(node, expr_arena, lp_arena)
-                    .project(projections)
+                    .project(projections, Default::default())
                     .build();
             }
         }
