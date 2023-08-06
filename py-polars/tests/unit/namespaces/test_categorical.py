@@ -29,6 +29,15 @@ def test_categorical_lexical_sort() -> None:
     )
     assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.Utf8)), expected)
 
+    s = pl.Series(["a", "c", "a", "b", "a"], dtype=pl.Categorical)
+    assert s.cat.set_ordering("lexical").sort().cast(pl.Utf8).to_list() == [
+        "a",
+        "a",
+        "a",
+        "b",
+        "c",
+    ]
+
 
 def test_categorical_lexical_ordering_after_concat() -> None:
     with pl.StringCache():
