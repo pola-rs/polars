@@ -33,6 +33,11 @@ thiserror = "^1.0"
 
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]
+# needed for macro
+dtype-i8 = []
+dtype-i16 = []
+dtype-u8 = []
+dtype-u16 = []
 avro = ["polars/avro"]
 parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
@@ -73,6 +78,10 @@ rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
 
 all = [
+  "dtype-i8",
+  "dtype-i16",
+  "dtype-u8",
+  "dtype-u16",
   "json",
   "parquet",
   "ipc",
