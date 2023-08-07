@@ -3,6 +3,7 @@ use polars_core::export::regex::Regex;
 
 use super::*;
 
+#[cfg(feature = "extract_groups")]
 fn extract_groups_array(
     arr: &Utf8Array<i64>,
     reg: &Regex,
@@ -39,6 +40,7 @@ fn extract_groups_array(
     Ok(StructArray::new(data_type.clone(), values, arr.validity().cloned()).boxed())
 }
 
+#[cfg(feature = "extract_groups")]
 pub(super) fn extract_groups(
     ca: &Utf8Chunked,
     pat: &str,

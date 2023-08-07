@@ -1,6 +1,5 @@
 #[cfg(feature = "strings")]
 mod case;
-#[cfg(feature = "extract_groups")]
 mod extract;
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
