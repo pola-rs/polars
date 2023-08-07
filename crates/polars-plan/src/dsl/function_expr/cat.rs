@@ -47,7 +47,7 @@ impl From<CategoricalFunction> for FunctionExpr {
 
 fn set_ordering(s: &Series, lexical: bool) -> PolarsResult<Series> {
     let mut ca = s.categorical()?.clone();
-    ca.set_lexical_sorted(lexical);
+    ca.set_lexical_ordering(lexical);
     Ok(ca.into_series())
 }
 

@@ -75,7 +75,7 @@ class CatNameSpace:
 
         """
 
-    def uses_lexical_sort(self) -> bool:
+    def uses_lexical_ordering(self) -> bool:
         """
         Return whether or not the series uses lexical ordering.
 
@@ -93,11 +93,11 @@ class CatNameSpace:
         Examples
         --------
         >>> s = pl.Series(["b", "a", "b"]).cast(pl.Categorical)
-        >>> s.cat.uses_lexical_sort()
+        >>> s.cat.uses_lexical_ordering()
         False
         >>> s = s.cat.set_ordering("lexical")
-        >>> s.cat.uses_lexical_sort()
+        >>> s.cat.uses_lexical_ordering()
         True
 
         """
-        return self._s.cat_uses_lexical_sort()
+        return self._s.cat_uses_lexical_ordering()
