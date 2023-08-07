@@ -1386,6 +1386,7 @@ class StringNameSpace:
         --------
         >>> s = pl.Series("s", ["pear", None, "papaya", "dragonfruit"])
         >>> s.str.head(3)
+        shape: (4,)
         Series: 's' [str]
         [
             "pea"
@@ -1414,6 +1415,7 @@ class StringNameSpace:
         --------
         >>> s = pl.Series("s", ["pear", None, "papaya", "dragonfruit"])
         >>> s.str.tail(3)
+        shape: (4,)
         Series: 's' [str]
         [
             "ear"
