@@ -420,7 +420,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let ca = self.as_utf8();
         let chunks = ca
             .downcast_iter()
-            .map(|c| substring(c, 0, &Some(n.try_into().unwrap())))
+            .map(|c| substring(c, 0, &Some(n)))
             .collect::<arrow::error::Result<_>>()?;
 
         unsafe { Ok(Utf8Chunked::from_chunks(ca.name(), chunks)) }
@@ -428,10 +428,11 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Return the last n characters
     fn str_tail(&self, n: u64) -> PolarsResult<Utf8Chunked> {
+        let n = i64::try_from(n).unwrap();
         let ca = self.as_utf8();
         let chunks = ca
             .downcast_iter()
-            .map(|c| substring(c, -(<u64 as TryInto<i64>>::try_into(n).unwrap()), &None))
+            .map(|c| substring(c, -n, &None))
             .collect::<arrow::error::Result<_>>()?;
 
         unsafe { Ok(Utf8Chunked::from_chunks(ca.name(), chunks)) }
