@@ -29,7 +29,7 @@ impl CategoricalChunked {
             "null last not yet supported for categorical dtype"
         );
 
-        if self.use_lexical_sort() {
+        if self.uses_lexical_ordering() {
             let mut vals = self
                 .logical()
                 .into_no_null_iter()
@@ -78,7 +78,7 @@ impl CategoricalChunked {
 
     /// Retrieve the indexes needed to sort this array.
     pub fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        if self.use_lexical_sort() {
+        if self.uses_lexical_ordering() {
             let iters = [self.iter_str()];
             arg_sort::arg_sort(
                 self.name(),
@@ -95,7 +95,7 @@ impl CategoricalChunked {
     /// Retrieve the indexes need to sort this and the other arrays.
 
     pub(crate) fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
-        if self.use_lexical_sort() {
+        if self.uses_lexical_ordering() {
             args_validate(self.logical(), &options.other, &options.descending)?;
             let mut count: IdxSize = 0;
 
@@ -139,7 +139,7 @@ mod test {
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
             let mut ca_lexical = ca.clone();
-            ca_lexical.set_lexical_sorted(true);
+            ca_lexical.set_lexical_ordering(true);
 
             let out = ca_lexical.sort(false);
             assert_order(&out, &["a", "b", "c", "d"]);
@@ -167,7 +167,7 @@ mod test {
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
             let mut ca_lexical: CategoricalChunked = ca.clone();
-            ca_lexical.set_lexical_sorted(true);
+            ca_lexical.set_lexical_ordering(true);
 
             let series = ca_lexical.into_series();
 

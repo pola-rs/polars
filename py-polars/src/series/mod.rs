@@ -94,6 +94,11 @@ impl PySeries {
         }
     }
 
+    pub fn cat_uses_lexical_ordering(&self) -> PyResult<bool> {
+        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
+        Ok(ca.uses_lexical_ordering())
+    }
+
     fn estimated_size(&self) -> usize {
         self.series.estimated_size()
     }
