@@ -117,8 +117,8 @@ fn get_buffer_from_nested(s: &Series, index: usize) -> PyResult<Option<PySeries>
                     .into(),
             ))
         }
-        1 => get_offsets(s).map(Some),
-        2 => Ok(get_bitmap(s)),
+        1 => Ok(get_bitmap(s)),
+        2 => get_offsets(s).map(Some),
         _ => raise_err!("expected an index <= 2", ComputeError),
     }
 }
