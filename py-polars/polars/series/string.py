@@ -1368,6 +1368,62 @@ class StringNameSpace:
 
         """
 
+    def head(self, n: int) -> Series:
+        """
+        Return the first n characters of each string in a Utf8 Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+
+        Examples
+        --------
+        >>> s = pl.Series("s", ["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.head(3)
+        Series: 's' [str]
+        [
+            "pea"
+            null
+            "pap"
+            "dra"
+        ]
+        """
+        return self.slice(offset=0, length=n)
+
+    def tail(self, n: int) -> Series:
+        """
+        Return the last n characters of each string in a Utf8 Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+
+        Examples
+        --------
+        >>> s = pl.Series("s", ["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.tail(3)
+        Series: 's' [str]
+        [
+            "ear"
+            null
+            "aya"
+            "uit"
+        ]
+        """
+        return self.slice(offset=-n)
+
     def explode(self) -> Series:
         """
         Returns a column with a separate row for every string character.

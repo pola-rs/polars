@@ -14,6 +14,20 @@ def test_str_slice() -> None:
     assert df.select([pl.col("a").str.slice(2, 4)])["a"].to_list() == ["obar", "rfoo"]
 
 
+def test_str_head() -> None:
+    df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
+    df = df.with_columns(pl.col("s").str.head(3).alias("s_head"))
+    assert df["s_head"].to_list() == ["pea", None, "pap", "dra"]
+    assert df["s"].str.head(3).to_list() == ["pea", None, "pap", "dra"]
+
+
+def test_str_tail() -> None:
+    df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
+    df = df.with_columns(pl.col("s").str.tail(3).alias("s_tail"))
+    assert df["s_tail"].to_list() == ["ear", None, "aya", "uit"]
+    assert df["s"].str.tail(3).to_list() == ["ear", None, "aya", "uit"]
+
+
 def test_str_concat() -> None:
     s = pl.Series(["1", None, "2"])
     result = s.str.concat()
