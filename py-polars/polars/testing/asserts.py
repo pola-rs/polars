@@ -19,6 +19,7 @@ from polars.datatypes import (
 from polars.exceptions import ComputeError, InvalidAssert
 from polars.lazyframe import LazyFrame
 from polars.series import Series
+from polars.utils.deprecation import deprecate_function
 
 
 def assert_frame_equal(
@@ -546,6 +547,10 @@ def is_categorical_dtype(data_type: Any) -> bool:
     )
 
 
+@deprecate_function(
+    "Use `assert_frame_equal` instead and pass `categorical_as_str=True`.",
+    version="0.18.13",
+)
 def assert_frame_equal_local_categoricals(df_a: DataFrame, df_b: DataFrame) -> None:
     """Assert frame equal for frames containing categoricals."""
     for (a_name, a_value), (b_name, b_value) in zip(
