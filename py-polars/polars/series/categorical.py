@@ -81,6 +81,11 @@ class CatNameSpace:
 
         This can be set using :func:`set_ordering`.
 
+        Warnings
+        --------
+        This API is experimental and may change without it being considered a breaking
+        change.
+
         See Also
         --------
         set_ordering
