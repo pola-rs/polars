@@ -721,3 +721,14 @@ def test_sorted_flag_singletons() -> None:
     assert pl.DataFrame({"x": ["a"]})["x"].flags["SORTED_ASC"]
     assert pl.DataFrame({"x": [True]})["x"].flags["SORTED_ASC"]
     assert pl.DataFrame({"x": [None]})["x"].flags["SORTED_ASC"]
+
+
+def test_sorted_update_flags_10327() -> None:
+    assert pl.concat(
+        [
+            pl.Series("a", [1], dtype=pl.Int64).to_frame(),
+            pl.Series("a", [], dtype=pl.Int64).to_frame(),
+            pl.Series("a", [2], dtype=pl.Int64).to_frame(),
+            pl.Series("a", [], dtype=pl.Int64).to_frame(),
+        ]
+    )["a"].to_list() == [1, 2]
