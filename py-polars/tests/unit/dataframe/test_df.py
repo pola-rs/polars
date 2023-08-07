@@ -3677,3 +3677,13 @@ def test_flags() -> None:
         "a": {"SORTED_ASC": True, "SORTED_DESC": False},
         "b": {"SORTED_ASC": False, "SORTED_DESC": False},
     }
+
+
+def test_interchange() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
+    dfi = df.__dataframe__()
+
+    # Testing some random properties to make sure conversion happened correctly
+    assert dfi.num_rows() == 2
+    assert dfi.get_column(0).dtype[1] == 64
+    assert dfi.get_column_by_name("c").get_buffers()["data"][0].bufsize == 6
