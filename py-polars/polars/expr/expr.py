@@ -2799,6 +2799,51 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sum())
 
+    def bit_xor(self) -> Self:
+        """
+        Get bitwise xor of all values.
+
+        Notes
+        -----
+        Dtypes in {Float32, Float64} are cast to {UInt32, UInt64} respectively before reducing.
+
+
+        Examples
+        --------
+        TODO Examples
+        """
+        return self._from_pyexpr(self._pyexpr.bit_xor())
+
+    def bit_or(self) -> Self:
+        """
+        Get bitwise or of all values.
+
+        Notes
+        -----
+        Dtypes in {Float32, Float64} are cast to {UInt32, UInt64} respectively before reducing.
+
+
+        Examples
+        --------
+        TODO Examples
+        """
+        return self._from_pyexpr(self._pyexpr.bit_or())
+
+    def bit_and(self) -> Self:
+        """
+        Get bitwise and of all values.
+
+        Notes
+        -----
+        Dtypes in {Float32, Float64} are cast to {UInt32, UInt64} respectively before reducing.
+
+
+        Examples
+        --------
+        TODO Examples
+        """
+        return self._from_pyexpr(self._pyexpr.bit_and())
+
     def mean(self) -> Self:
         """
         Get mean value.

@@ -150,6 +150,15 @@ impl PyExpr {
     fn sum(&self) -> Self {
         self.clone().inner.sum().into()
     }
+    fn bit_xor(&self) -> Self {
+        self.clone().inner.bit_xor().into()
+    }
+    fn bit_or(&self) -> Self {
+        self.clone().inner.bit_or().into()
+    }
+    fn bit_and(&self) -> Self {
+        self.clone().inner.bit_and().into()
+    }
     fn n_unique(&self) -> Self {
         self.clone().inner.n_unique().into()
     }
