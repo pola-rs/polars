@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -21,14 +21,15 @@ COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
 def test_from_to_buffer(df: pl.DataFrame, compression: IpcCompression) -> None:
     # use an ad-hoc buffer (file=None)
     buf1 = df.write_ipc(None, compression=compression)
-    assert_frame_equal_local_categoricals(df, pl.read_ipc(buf1, use_pyarrow=False))
+    read_df = pl.read_ipc(buf1, use_pyarrow=False)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
     # explicitly supply an existing buffer
     buf2 = io.BytesIO()
     df.write_ipc(buf2, compression=compression)
     buf2.seek(0)
     read_df = pl.read_ipc(buf2, use_pyarrow=False)
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)
@@ -47,7 +48,7 @@ def test_from_to_file(
     df.write_ipc(file_path, compression=compression)
     df_read = pl.read_ipc(file_path, use_pyarrow=False)
 
-    assert_frame_equal_local_categoricals(df, df_read)
+    assert_frame_equal(df, df_read, categorical_as_str=True)
 
 
 @pytest.mark.write_disk()
@@ -171,7 +172,7 @@ def test_glob_ipc(df: pl.DataFrame, tmp_path: Path) -> None:
     result_read = pl.read_ipc(file_path_glob, use_pyarrow=False)
 
     for result in [result_scan, result_read]:
-        assert_frame_equal_local_categoricals(result, df)
+        assert_frame_equal(result, df, categorical_as_str=True)
 
 
 def test_from_float16() -> None:

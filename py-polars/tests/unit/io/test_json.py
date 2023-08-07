@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -18,7 +18,7 @@ def test_to_from_buffer(df: pl.DataFrame, buf: io.IOBase) -> None:
     df.write_json(buf)
     buf.seek(0)
     read_df = pl.read_json(buf)
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 @pytest.mark.write_disk()
@@ -29,7 +29,7 @@ def test_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
     df.write_json(file_path)
     out = pl.read_json(file_path)
 
-    assert_frame_equal_local_categoricals(df, out)
+    assert_frame_equal(df, out, categorical_as_str=True)
 
 
 def test_write_json_to_string() -> None:

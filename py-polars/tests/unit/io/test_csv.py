@@ -13,11 +13,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, NoDataError
-from polars.testing import (
-    assert_frame_equal,
-    assert_frame_equal_local_categoricals,
-    assert_series_equal,
-)
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
@@ -54,9 +50,9 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
     )
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
     with pytest.raises(AssertionError):
-        assert_frame_equal_local_categoricals(df.select(["time", "cat"]), read_df)
+        assert_frame_equal(df.select("time", "cat"), read_df, categorical_as_str=True)
 
 
 @pytest.mark.write_disk()
@@ -72,7 +68,7 @@ def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
     )
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 def test_normalise_filepath(io_files_path: Path) -> None:
