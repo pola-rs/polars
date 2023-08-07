@@ -5,10 +5,6 @@ use super::*;
 
 #[pymethods]
 impl PySeries {
-    fn offset_buffers(&self) -> PyResult<Self> {
-        get_offsets(&self.series)
-    }
-
     fn get_ptr(&self) -> PyResult<usize> {
         let s = self.series.to_physical_repr();
         let arrays = s.chunks();
@@ -51,7 +47,7 @@ impl PySeries {
         }
     }
 
-    fn get_buffer(&self, index: usize) -> PyResult<Self> {
+    fn get_buffer(&self, index: usize) -> PyResult<Option<Self>> {
         match self.series.dtype().to_physical() {
             dt if dt.is_numeric() => get_buffer_from_primitive(&self.series, index),
             DataType::Boolean => get_buffer_from_primitive(&self.series, index),
@@ -66,11 +62,13 @@ impl PySeries {
                             .downcast_iter()
                             .map(|arr| arr.values().clone())
                             .collect::<Vec<_>>();
-                        Ok(Series::try_from((self.series.name(), buffers))
-                            .map_err(PyPolarsErr::from)?
-                            .into())
+                        Ok(Some(
+                            Series::try_from((self.series.name(), buffers))
+                                .map_err(PyPolarsErr::from)?
+                                .into(),
+                        ))
                     }
-                    1 => Ok(self.series.is_not_null().into_series().into()),
+                    1 => Ok(get_bitmap(&self.series)),
                     _ => raise_err!("expected an index <= 1", ComputeError),
                 }
             }
@@ -79,7 +77,15 @@ impl PySeries {
     }
 }
 
-fn get_buffer_from_nested(s: &Series, index: usize) -> PyResult<PySeries> {
+fn get_bitmap(s: &Series) -> Option<PySeries> {
+    if s.null_count() > 0 {
+        Some(s.is_not_null().into_series().into())
+    } else {
+        None
+    }
+}
+
+fn get_buffer_from_nested(s: &Series, index: usize) -> PyResult<Option<PySeries>> {
     match index {
         0 => {
             let buffers: Box<dyn Iterator<Item = ArrayRef>> = match s.dtype() {
@@ -105,12 +111,14 @@ fn get_buffer_from_nested(s: &Series, index: usize) -> PyResult<PySeries> {
                 }
             };
             let buffers = buffers.collect::<Vec<_>>();
-            Ok(Series::try_from((s.name(), buffers))
-                .map_err(PyPolarsErr::from)?
-                .into())
+            Ok(Some(
+                Series::try_from((s.name(), buffers))
+                    .map_err(PyPolarsErr::from)?
+                    .into(),
+            ))
         }
-        1 => get_offsets(s),
-        2 => Ok(s.is_not_null().into_series().into()),
+        1 => get_offsets(s).map(Some),
+        2 => Ok(get_bitmap(s)),
         _ => raise_err!("expected an index <= 2", ComputeError),
     }
 }
@@ -135,7 +143,7 @@ fn get_offsets(s: &Series) -> PyResult<PySeries> {
         .into())
 }
 
-fn get_buffer_from_primitive(s: &Series, index: usize) -> PyResult<PySeries> {
+fn get_buffer_from_primitive(s: &Series, index: usize) -> PyResult<Option<PySeries>> {
     match index {
         0 => {
             let chunks = s
@@ -143,11 +151,13 @@ fn get_buffer_from_primitive(s: &Series, index: usize) -> PyResult<PySeries> {
                 .iter()
                 .map(|arr| arr.with_validity(None))
                 .collect::<Vec<_>>();
-            Ok(Series::try_from((s.name(), chunks))
-                .map_err(PyPolarsErr::from)?
-                .into())
+            Ok(Some(
+                Series::try_from((s.name(), chunks))
+                    .map_err(PyPolarsErr::from)?
+                    .into(),
+            ))
         }
-        1 => Ok(s.is_not_null().into_series().into()),
+        1 => Ok(get_bitmap(s)),
         _ => raise_err!("expected an index <= 1", ComputeError),
     }
 }
