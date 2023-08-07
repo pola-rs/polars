@@ -225,7 +225,7 @@ fn replace_regex(
     }
     if regex.is_none() {
         #[cfg(feature = "dtype-struct")]
-        if !replace_struct_wildcard(&expr, result, schema) {
+        if !replace_struct_wildcard(expr, result, schema) {
             let expr = rewrite_special_aliases(expr.clone())?;
             result.push(expr);
         }
