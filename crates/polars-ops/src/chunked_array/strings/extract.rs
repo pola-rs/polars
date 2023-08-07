@@ -1,6 +1,5 @@
 #[cfg(feature = "extract_groups")]
 use arrow::array::StructArray;
-
 use arrow::array::{Array, MutableArray, MutableUtf8Array, Utf8Array};
 use polars_core::export::regex::Regex;
 
