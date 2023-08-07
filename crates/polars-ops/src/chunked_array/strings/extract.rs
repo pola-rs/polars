@@ -17,7 +17,7 @@ fn extract_groups_array(
     let mut locs = reg.capture_locations();
     for opt_v in arr {
         if let Some(s) = opt_v {
-            if let Some(_) = reg.captures_read(&mut locs, s) {
+            if reg.captures_read(&mut locs, s).is_some() {
                 for (i, builder) in builders.iter_mut().enumerate() {
                     builder.push(locs.get(i + 1).map(|(start, stop)| &s[start..stop]));
                 }
@@ -80,7 +80,7 @@ fn extract_group_array(
     let mut locs = reg.capture_locations();
     for opt_v in arr {
         if let Some(s) = opt_v {
-            if let Some(_) = reg.captures_read(&mut locs, s) {
+            if reg.captures_read(&mut locs, s).is_some() {
                 builder.push(locs.get(group_index).map(|(start, stop)| &s[start..stop]));
                 continue;
             }
