@@ -152,7 +152,6 @@ if TYPE_CHECKING:
         RowTotalsDefinition,
         SchemaDefinition,
         SchemaDict,
-        SelectorType,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,
@@ -6055,7 +6054,7 @@ class DataFrame:
     def drop(
         self,
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
-        *more_columns: str | SelectorType,
+        *more_columns: ColumnNameOrSelector,
     ) -> DataFrame:
         """
         Remove columns from the dataframe.
@@ -6955,7 +6954,7 @@ class DataFrame:
     def partition_by(
         self,
         by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
-        *more_by: str | SelectorType,
+        *more_by: ColumnNameOrSelector,
         maintain_order: bool = True,
         include_key: bool = True,
         as_dict: bool = False,
@@ -8651,7 +8650,7 @@ class DataFrame:
 
     def rows_by_key(
         self,
-        key: str | Sequence[str] | SelectorType,
+        key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         *,
         named: bool = False,
         include_key: bool = False,
@@ -8750,26 +8749,26 @@ class DataFrame:
         from polars.selectors import is_selector, selector_column_names
 
         if is_selector(key):
-            key = selector_column_names(frame=self, selector=key)  # type: ignore[type-var]
+            key_tuple = selector_column_names(frame=self, selector=key)  # type: ignore[type-var]
         elif not isinstance(key, str):
-            key = tuple(key)  # type: ignore[arg-type]
+            key_tuple = tuple(key)  # type: ignore[arg-type]
         else:
-            key = (key,)
+            key_tuple = (key,)
 
         # establish index or name-based getters for the key and data values
-        data_cols = [k for k in self.schema if k not in key]
+        data_cols = [k for k in self.schema if k not in key_tuple]
         if named:
             get_data = itemgetter(*data_cols)
-            get_key = itemgetter(*key)
+            get_key = itemgetter(*key_tuple)
         else:
             data_idxs, index_idxs = [], []
             for idx, c in enumerate(self.columns):
-                if c in key:
+                if c in key_tuple:
                     index_idxs.append(idx)
                 else:
                     data_idxs.append(idx)
             if not index_idxs:
-                raise ValueError(f"No columns found for key: {key!r}")
+                raise ValueError(f"No columns found for key: {key_tuple!r}")
             get_data = itemgetter(*data_idxs)  # type: ignore[assignment]
             get_key = itemgetter(*index_idxs)  # type: ignore[assignment]
 
@@ -8787,7 +8786,7 @@ class DataFrame:
                 for d in self.iter_rows(named=True):
                     k = get_key(d)
                     if not include_key:
-                        for ix in key:
+                        for ix in key_tuple:
                             del d[ix]
                     if unique:
                         rows[k] = d
@@ -9119,7 +9118,7 @@ class DataFrame:
     def unnest(
         self,
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
-        *more_columns: str | SelectorType,
+        *more_columns: ColumnNameOrSelector,
     ) -> Self:
         """
         Decompose struct columns into separate columns for each of their fields.

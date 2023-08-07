@@ -95,7 +95,6 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         SchemaDefinition,
         SchemaDict,
-        SelectorType,
         StartBy,
         UniqueKeepStrategy,
     )
@@ -3345,7 +3344,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def drop(
         self,
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
-        *more_columns: str | SelectorType,
+        *more_columns: ColumnNameOrSelector,
     ) -> Self:
         """
         Remove columns from the dataframe.
