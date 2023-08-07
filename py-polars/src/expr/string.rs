@@ -73,6 +73,14 @@ impl PyExpr {
         self.inner.clone().str().str_slice(start, length).into()
     }
 
+    fn str_head(&self, n: u64) -> Self {
+        self.inner.clone().str().str_head(n).into()
+    }
+
+    fn str_tail(&self, n: u64) -> Self {
+        self.inner.clone().str().str_tail(n).into()
+    }
+
     fn str_explode(&self) -> Self {
         self.inner.clone().str().explode().into()
     }

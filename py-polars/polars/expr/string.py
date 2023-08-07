@@ -1681,13 +1681,18 @@ class ExprStringNameSpace:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice. If set to ``None`` (default), the slice is taken to the
-            end of the string.
+            Length in characters of the slice. If set to ``None`` (default), the slice
+            is taken to the end of the string.
 
         Returns
         -------
         Expr
             Expression of data type :class:`Utf8`.
+
+        Notes
+        -----
+        A "character" is a valid (non-surrogate) UTF-8 codepoint, which is a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
 
         Examples
         --------
@@ -1741,6 +1746,11 @@ class ExprStringNameSpace:
         Expr
             Expression of data type :class:`Utf8`.
 
+        Notes
+        -----
+        A "character" is a valid (non-surrogate) UTF-8 codepoint, which is a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
+
         Examples
         --------
         >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
@@ -1757,7 +1767,7 @@ class ExprStringNameSpace:
         │ dragonfruit ┆ dra     │
         └─────────────┴─────────┘
         """
-        return self.slice(offset=0, length=n)
+        return wrap_expr(self._pyexpr.str_head(n))
 
     def tail(self, n: int) -> Expr:
         """
@@ -1772,6 +1782,11 @@ class ExprStringNameSpace:
         -------
         Expr
             Expression of data type :class:`Utf8`.
+
+        Notes
+        -----
+        A "character" is a valid (non-surrogate) UTF-8 codepoint, which is a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
 
         Examples
         --------
@@ -1789,7 +1804,7 @@ class ExprStringNameSpace:
         │ dragonfruit ┆ uit     │
         └─────────────┴─────────┘
         """
-        return self.slice(offset=-n)
+        return wrap_expr(self._pyexpr.str_tail(n))
 
     def explode(self) -> Expr:
         """

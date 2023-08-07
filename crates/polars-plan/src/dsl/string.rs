@@ -516,6 +516,18 @@ impl StringNameSpace {
             )))
     }
 
+    /// Return the first n characters in the string
+    pub fn str_head(self, n: u64) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Head(n)))
+    }
+
+    /// Return the last n characters in the string
+    pub fn str_tail(self, n: u64) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Tail(n)))
+    }
+
     pub fn explode(self) -> Expr {
         self.0
             .apply_private(FunctionExpr::StringExpr(StringFunction::Explode))

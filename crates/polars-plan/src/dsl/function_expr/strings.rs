@@ -69,6 +69,8 @@ pub enum StringFunction {
     },
     RStrip(Option<String>),
     Slice(i64, Option<u64>),
+    Head(u64),
+    Tail(u64),
     StartsWith,
     Strip(Option<String>),
     #[cfg(feature = "temporal")]
@@ -111,9 +113,14 @@ impl StringFunction {
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
-            Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) | Slice(_, _) => {
-                mapper.with_same_dtype()
-            }
+            Uppercase
+            | Lowercase
+            | Strip(_)
+            | LStrip(_)
+            | RStrip(_)
+            | Slice(_, _)
+            | Head(_)
+            | Tail(_) => mapper.with_same_dtype(),
             #[cfg(feature = "string_justify")]
             Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
         }
@@ -152,6 +159,8 @@ impl Display for StringFunction {
             #[cfg(feature = "regex")]
             StringFunction::Replace { .. } => "replace",
             StringFunction::Slice(_, _) => "str_slice",
+            StringFunction::Head(_) => "str_head",
+            StringFunction::Tail(_) => "str_tail",
             StringFunction::StartsWith { .. } => "starts_with",
             StringFunction::Strip(_) => "strip",
             #[cfg(feature = "temporal")]
@@ -722,6 +731,16 @@ pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<S
 pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     ca.str_slice(start, length).map(|ca| ca.into_series())
+}
+
+pub(super) fn str_head(s: &Series, n: u64) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.str_head(n).map(|ca| ca.into_series())
+}
+
+pub(super) fn str_tail(s: &Series, n: u64) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.str_tail(n).map(|ca| ca.into_series())
 }
 
 pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
