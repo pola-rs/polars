@@ -4,6 +4,8 @@ use polars_core::utils::get_supertype;
 
 use super::*;
 use crate::prelude::function_expr::FunctionExpr;
+#[cfg(feature = "dtype-struct")]
+use crate::prelude::function_expr::StructFunction::FieldByName;
 
 /// This replace the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
@@ -99,6 +101,57 @@ fn replace_nth(expr: &mut Expr, schema: &Schema) {
     })
 }
 
+#[cfg(feature = "dtype-struct")]
+pub fn rename_struct_field(mut expr: Expr, new_name: &str) -> Expr {
+    expr.mutate().apply(|e| {
+        if let Expr::Function {
+            input,
+            function: FunctionExpr::StructExpr(FieldByName(_)),
+            options,
+        } = e
+        {
+            *e = Expr::Function {
+                input: std::mem::take(input),
+                function: FunctionExpr::StructExpr(FieldByName(new_name.into())),
+                options: *options,
+            }
+        }
+        // always keep iterating all inputs
+        true
+    });
+    expr
+}
+
+#[cfg(feature = "dtype-struct")]
+fn replace_struct_wildcard(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) -> bool {
+    let mut has_struct_wildcard = false;
+    expr.into_iter().for_each(|e| {
+        if let Expr::Function {
+            input,
+            function: FunctionExpr::StructExpr(FieldByName(name)),
+            ..
+        } = e
+        {
+            if &**name == "*" {
+                let col = &input[0];
+                let col_name = expr_to_leaf_column_name(&col).unwrap();
+                // we don't yet know if we have a valid column name
+                if let Some(struct_schema) = schema.get(&col_name) {
+                    if let DataType::Struct(fields) = struct_schema {
+                        has_struct_wildcard = true;
+                        for fld in fields.iter() {
+                            let new_expr = rename_struct_field(expr.clone(), fld.name());
+                            let new_expr = rewrite_special_aliases(new_expr).unwrap();
+                            result.push(new_expr)
+                        }
+                    }
+                }
+            }
+        }
+    });
+    has_struct_wildcard
+}
+
 #[cfg(feature = "regex")]
 /// This function takes an expression containing a regex in `col("..")` and expands the columns
 /// that are selected by that regex in `result`.
@@ -123,8 +176,16 @@ fn expand_regex(
                 _ => true,
             });
 
-            let new_expr = rewrite_special_aliases(new_expr)?;
-            result.push(new_expr);
+            #[cfg(feature = "dtype-struct")]
+            if !replace_struct_wildcard(&new_expr, result, schema) {
+                let new_expr = rewrite_special_aliases(new_expr)?;
+                result.push(new_expr);
+            }
+            #[cfg(not(feature = "dtype-struct"))]
+            {
+                let new_expr = rewrite_special_aliases(new_expr)?;
+                result.push(new_expr);
+            }
         }
     }
     Ok(())
@@ -163,8 +224,16 @@ fn replace_regex(
         }
     }
     if regex.is_none() {
-        let expr = rewrite_special_aliases(expr.clone())?;
-        result.push(expr)
+        #[cfg(feature = "dtype-struct")]
+        if !replace_struct_wildcard(&expr, result, schema) {
+            let expr = rewrite_special_aliases(expr.clone())?;
+            result.push(expr);
+        }
+        #[cfg(not(feature = "dtype-struct"))]
+        {
+            let expr = rewrite_special_aliases(expr.clone())?;
+            result.push(expr);
+        }
     }
     Ok(())
 }
@@ -510,13 +579,17 @@ fn replace_and_add_to_results(
         #[allow(clippy::collapsible_else_if)]
         #[cfg(feature = "regex")]
         {
-            // keep track of column excluded from the dtypes
             let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
             replace_regex(&expr, result, schema, &exclude)?;
         }
         #[cfg(not(feature = "regex"))]
         {
             let expr = rewrite_special_aliases(expr)?;
+            #[cfg(feature = "dtype-struct")]
+            if !replace_struct_wildcard(&expr, result, schema) {
+                result.push(expr);
+            }
+            #[cfg(not(feature = "dtype-struct"))]
             result.push(expr)
         }
     }

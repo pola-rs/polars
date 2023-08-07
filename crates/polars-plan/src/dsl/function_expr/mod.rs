@@ -85,7 +85,7 @@ pub(super) use self::range::RangeFunction;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
-pub(super) use self::struct_::StructFunction;
+pub(crate) use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
 pub(super) use self::trigonometry::TrigonometricFunction;
 use super::*;

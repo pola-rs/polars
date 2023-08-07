@@ -13,8 +13,8 @@ impl Display for StructFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use self::*;
         match self {
-            StructFunction::FieldByIndex(_) => write!(f, "struct.field_by_name"),
-            StructFunction::FieldByName(_) => write!(f, "struct.field_by_index"),
+            StructFunction::FieldByIndex(idx) => write!(f, "struct.field_by_index({idx})"),
+            StructFunction::FieldByName(name) => write!(f, "struct.field_by_name(\"{name}\")"),
         }
     }
 }

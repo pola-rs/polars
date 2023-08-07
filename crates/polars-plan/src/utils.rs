@@ -11,6 +11,8 @@ use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
+#[cfg(feature = "dtype-struct")]
+use crate::utils::StructFunction::FieldByName;
 
 /// Utility to write comma delimited strings
 pub fn comma_delimited(mut s: String, items: &[SmartString]) -> String {
@@ -192,6 +194,14 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
             Expr::Take { expr, .. } => return get_single_leaf(expr),
             Expr::SortBy { expr, .. } => return get_single_leaf(expr),
             Expr::Window { function, .. } => return get_single_leaf(function),
+            #[cfg(feature = "dtype-struct")]
+            // If we have an inner `.struct` field name, we use that as our root
+            // name which allows `.prefix()` / `.suffix()` / `.map_alias()` to
+            // operate on the field name instead of the column name
+            Expr::Function {
+                function: FunctionExpr::StructExpr(FieldByName(name)),
+                ..
+            } => return Ok(name.clone()),
             Expr::Column(name) => return Ok(name.clone()),
             _ => {}
         }
