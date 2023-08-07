@@ -420,23 +420,45 @@ pub(super) fn strptime(
     }
 }
 
-fn handle_temporal_parsing_error(ca: &Utf8Chunked, out: &Series) -> PolarsResult<()> {
+fn handle_temporal_parsing_error(
+    ca: &Utf8Chunked,
+    out: &Series,
+    format: Option<&str>,
+    has_non_exact_option: bool,
+) -> PolarsResult<()> {
     let failure_mask = !ca.is_null() & out.is_null();
     let all_failures = ca.filter(&failure_mask)?;
     let first_failures = all_failures.unique()?.slice(0, 10).sort(false);
     let n_failures = all_failures.len();
     let n_failures_unique = all_failures.n_unique()?;
+    let exact_addendum = if has_non_exact_option {
+        "- setting `exact=False` (note: this is much slower!)\n"
+    } else {
+        ""
+    };
+    let format_addendum;
+    if let Some(format) = format {
+        format_addendum = format!(
+            "- checking whether the format provided ('{}') is correct",
+            format
+        );
+    } else {
+        format_addendum = String::from("- explicitly specifying `format`");
+    }
     polars_bail!(
         ComputeError:
         "strict {} parsing failed for {} value(s) ({} unique): {}\n\
         \n\
         You might want to try:\n\
         - setting `strict=False`\n\
-        - explicitly specifying a `format`",
+        {}\
+        {}",
         out.dtype(),
         n_failures,
         n_failures_unique,
         first_failures.into_series().fmt_list(),
+        exact_addendum,
+        format_addendum,
     )
 }
 
@@ -454,7 +476,7 @@ fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
     };
 
     if options.strict && ca.null_count() != out.null_count() {
-        handle_temporal_parsing_error(ca, &out)?;
+        handle_temporal_parsing_error(ca, &out, options.format.as_deref(), true)?;
     }
     Ok(out.into_series())
 }
@@ -497,7 +519,7 @@ fn to_datetime(
     };
 
     if options.strict && ca.null_count() != out.null_count() {
-        handle_temporal_parsing_error(ca, &out)?;
+        handle_temporal_parsing_error(ca, &out, options.format.as_deref(), true)?;
     }
     Ok(out.into_series())
 }
@@ -514,7 +536,7 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
         .into_series();
 
     if options.strict && ca.null_count() != out.null_count() {
-        handle_temporal_parsing_error(ca, &out)?;
+        handle_temporal_parsing_error(ca, &out, options.format.as_deref(), false)?;
     }
     Ok(out.into_series())
 }
