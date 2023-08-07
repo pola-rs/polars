@@ -48,6 +48,7 @@ Manipulation/selection
     DataFrame.rows_by_key
     DataFrame.sample
     DataFrame.select
+    DataFrame.select_seq
     DataFrame.set_sorted
     DataFrame.shift
     DataFrame.shift_and_fill
@@ -67,4 +68,5 @@ Manipulation/selection
     DataFrame.upsample
     DataFrame.vstack
     DataFrame.with_columns
+    DataFrame.with_columns_seq
     DataFrame.with_row_count

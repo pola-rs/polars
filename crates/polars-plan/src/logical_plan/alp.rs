@@ -58,6 +58,7 @@ pub enum ALogicalPlan {
         input: Node,
         expr: ProjectionExprs,
         schema: SchemaRef,
+        options: ProjectionOptions,
     },
     LocalProjection {
         expr: Vec<Node>,
@@ -95,6 +96,7 @@ pub enum ALogicalPlan {
         input: Node,
         exprs: ProjectionExprs,
         schema: SchemaRef,
+        options: ProjectionOptions,
     },
     Distinct {
         input: Node,
@@ -252,10 +254,13 @@ impl ALogicalPlan {
                 expr: exprs,
                 schema: schema.clone(),
             },
-            Projection { schema, .. } => Projection {
+            Projection {
+                schema, options, ..
+            } => Projection {
                 input: inputs[0],
                 expr: ProjectionExprs::new(exprs),
                 schema: schema.clone(),
+                options: *options,
             },
             Aggregate {
                 keys,
@@ -302,10 +307,13 @@ impl ALogicalPlan {
                 input: inputs[0],
                 options: options.clone(),
             },
-            HStack { schema, .. } => HStack {
+            HStack {
+                schema, options, ..
+            } => HStack {
                 input: inputs[0],
                 exprs: ProjectionExprs::new(exprs),
                 schema: schema.clone(),
+                options: *options,
             },
             Scan {
                 path,

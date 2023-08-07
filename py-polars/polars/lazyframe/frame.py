@@ -71,7 +71,6 @@ from polars.utils.various import (
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame
 
-
 if TYPE_CHECKING:
     import sys
     from io import IOBase
@@ -80,6 +79,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from polars import DataFrame, Expr
+    from polars.polars import PyExpr
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
@@ -111,6 +111,29 @@ if TYPE_CHECKING:
 
     T = TypeVar("T")
     P = ParamSpec("P")
+
+
+def _prepare_select(
+    *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
+) -> list[PyExpr]:
+    structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
+    if "exprs" in named_exprs:
+        issue_deprecation_warning(
+            "passing expressions to `select` using the keyword argument `exprs` is"
+            " deprecated. Use positional syntax instead.",
+            version="0.18.1",
+        )
+        first_input = named_exprs.pop("exprs")
+        pyexprs = parse_as_list_of_expressions(
+            first_input, *exprs, **named_exprs, __structify=structify
+        )
+    else:
+        pyexprs = parse_as_list_of_expressions(
+            *exprs, **named_exprs, __structify=structify
+        )
+
+    return pyexprs
 
 
 @deprecate_renamed_methods(
@@ -2200,24 +2223,35 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └───────────┘
 
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        if "exprs" in named_exprs:
-            issue_deprecation_warning(
-                "passing expressions to `select` using the keyword argument `exprs` is"
-                " deprecated. Use positional syntax instead.",
-                version="0.18.1",
-            )
-            first_input = named_exprs.pop("exprs")
-            pyexprs = parse_as_list_of_expressions(
-                first_input, *exprs, **named_exprs, __structify=structify
-            )
-        else:
-            pyexprs = parse_as_list_of_expressions(
-                *exprs, **named_exprs, __structify=structify
-            )
-
+        pyexprs = _prepare_select(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.select(pyexprs))
+
+    def select_seq(
+        self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
+    ) -> Self:
+        """
+        Select columns from this LazyFrame.
+
+        This will run all expression sequentially instead of in parallel.
+        Use this when the work per expression is cheap.
+
+        Parameters
+        ----------
+        *exprs
+            Column(s) to select, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names,
+            other non-expression inputs are parsed as literals.
+        **named_exprs
+            Additional columns to select, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
+
+        See Also
+        --------
+        select
+
+        """
+        pyexprs = _prepare_select(*exprs, **named_exprs)
+        return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
     def groupby(
         self,
@@ -3326,24 +3360,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┴─────────────┘
 
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        if "exprs" in named_exprs:
-            issue_deprecation_warning(
-                "passing expressions to `with_columns` using the keyword argument"
-                " `exprs` is deprecated. Use positional syntax instead.",
-                version="0.18.1",
-            )
-            first_input = named_exprs.pop("exprs")
-            pyexprs = parse_as_list_of_expressions(
-                first_input, *exprs, **named_exprs, __structify=structify
-            )
-        else:
-            pyexprs = parse_as_list_of_expressions(
-                *exprs, **named_exprs, __structify=structify
-            )
-
+        pyexprs = _prepare_select(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
+
+    def with_columns_seq(
+        self,
+        *exprs: IntoExpr | Iterable[IntoExpr],
+        **named_exprs: IntoExpr,
+    ) -> Self:
+        """
+        Add columns to this DataFrame.
+
+        Added columns will replace existing columns with the same name.
+
+        This will run all expression sequentially instead of in parallel.
+        Use this when the work per expression is cheap.
+
+        Parameters
+        ----------
+        *exprs
+            Column(s) to add, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
+        **named_exprs
+            Additional columns to add, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
+
+        Returns
+        -------
+        LazyFrame
+            A new LazyFrame with the columns added.
+
+        See Also
+        --------
+        with_columns
+
+        """
+        pyexprs = _prepare_select(*exprs, **named_exprs)
+        return self._from_pyldf(self._ldf.with_columns_seq(pyexprs))
 
     def with_context(self, other: Self | list[Self]) -> Self:
         """

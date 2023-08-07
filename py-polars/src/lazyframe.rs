@@ -516,6 +516,12 @@ impl PyLazyFrame {
         ldf.select(exprs).into()
     }
 
+    fn select_seq(&mut self, exprs: Vec<PyExpr>) -> Self {
+        let ldf = self.ldf.clone();
+        let exprs = exprs.to_exprs();
+        ldf.select_seq(exprs).into()
+    }
+
     fn groupby(&mut self, by: Vec<PyExpr>, maintain_order: bool) -> PyLazyGroupBy {
         let ldf = self.ldf.clone();
         let by = by.to_exprs();
@@ -687,6 +693,11 @@ impl PyLazyFrame {
     fn with_columns(&mut self, exprs: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_columns(exprs.to_exprs()).into()
+    }
+
+    fn with_columns_seq(&mut self, exprs: Vec<PyExpr>) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.with_columns_seq(exprs.to_exprs()).into()
     }
 
     fn rename(&mut self, existing: Vec<String>, new: Vec<String>) -> Self {

@@ -301,3 +301,15 @@ pub enum FileType {
     Ipc(IpcWriterOptions),
     Memory,
 }
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Debug)]
+pub struct ProjectionOptions {
+    pub run_parallel: bool,
+}
+
+impl Default for ProjectionOptions {
+    fn default() -> Self {
+        Self { run_parallel: true }
+    }
+}
