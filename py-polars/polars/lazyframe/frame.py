@@ -2170,7 +2170,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Select columns from this LazyFrame.
 
-        This will run all expression sequential instead of in parallel.
+        This will run all expression sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
         Parameters
@@ -3311,7 +3311,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Added columns will replace existing columns with the same name.
 
-        This will run all expression sequential instead of in parallel.
+        This will run all expression sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
         Parameters
