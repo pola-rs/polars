@@ -200,7 +200,7 @@ on startup."#.trim_start())
     };
     (parse_fmt_idk = $dtype:expr) => {
         polars_err!(
-            ComputeError: "could not find an appropriate format to parse {}s, please define a fmt",
+            ComputeError: "could not find an appropriate format to parse {}s, please define a format",
             $dtype,
         )
     };
