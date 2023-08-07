@@ -655,7 +655,6 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     pub(crate) unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
-        println!("agg xor");
         match groups {
             GroupsProxy::Idx(groups) => {
                 let ca = self.rechunk();
@@ -693,7 +692,6 @@ where
     }
 
     pub(crate) unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
-        println!("agg and");
         match groups {
             GroupsProxy::Idx(groups) => {
                 let ca = self.rechunk();
@@ -731,7 +729,6 @@ where
     }
 
     pub(crate) unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
-        println!("agg or");
         match groups {
             GroupsProxy::Idx(groups) => {
                 let ca = self.rechunk();
