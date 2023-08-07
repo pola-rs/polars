@@ -47,9 +47,6 @@ serde_json = "1"
 [build-dependencies]
 version_check = { workspace = true }
 
-[target.'cfg(target_family = "wasm")'.dependencies]
-wasm-timer = "0.2.5"
-
 [features]
 simd = ["arrow/simd", "polars-arrow/simd"]
 nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "polars-arrow/nightly"]

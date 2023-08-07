@@ -13,7 +13,7 @@ use crate::{using_string_cache, StringCache, POOL};
 pub enum RevMappingBuilder {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
-    GlobalFinished(PlHashMap<u32, u32>, Utf8Array<i64>, u128),
+    GlobalFinished(PlHashMap<u32, u32>, Utf8Array<i64>, u32),
     /// Utf8Array: caches the string values
     Local(MutableUtf8Array<i64>),
 }
@@ -50,7 +50,7 @@ impl RevMappingBuilder {
 pub enum RevMapping {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
-    Global(PlHashMap<u32, u32>, Utf8Array<i64>, u128),
+    Global(PlHashMap<u32, u32>, Utf8Array<i64>, u32),
     /// Utf8Array: caches the string values
     Local(Utf8Array<i64>),
 }
