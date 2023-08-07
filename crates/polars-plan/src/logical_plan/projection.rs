@@ -134,16 +134,14 @@ fn replace_struct_wildcard(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema)
         {
             if &**name == "*" {
                 let col = &input[0];
-                let col_name = expr_to_leaf_column_name(&col).unwrap();
+                let col_name = expr_to_leaf_column_name(col).unwrap();
                 // we don't yet know if we have a valid column name
-                if let Some(struct_schema) = schema.get(&col_name) {
-                    if let DataType::Struct(fields) = struct_schema {
-                        has_struct_wildcard = true;
-                        for fld in fields.iter() {
-                            let new_expr = rename_struct_field(expr.clone(), fld.name());
-                            let new_expr = rewrite_special_aliases(new_expr).unwrap();
-                            result.push(new_expr)
-                        }
+                if let Some(DataType::Struct(fields)) = schema.get(&col_name) {
+                    has_struct_wildcard = true;
+                    for fld in fields.iter() {
+                        let new_expr = rename_struct_field(expr.clone(), fld.name());
+                        let new_expr = rewrite_special_aliases(new_expr).unwrap();
+                        result.push(new_expr)
                     }
                 }
             }
