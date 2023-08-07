@@ -781,13 +781,14 @@ class Expr:
 
     def exclude(
         self,
-        columns: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+        columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
         *more_columns: str | PolarsDataType,
     ) -> Self:
         """
         Exclude columns from a multi-column expression.
 
-        Only works after a wildcard or regex column selection.
+        Only works after a wildcard or regex column selection, and you cannot provide
+        both string column names *and* dtypes (you may prefer to use selectors instead).
 
         Parameters
         ----------
@@ -862,43 +863,34 @@ class Expr:
         └──────┘
 
         """
-        if more_columns:
-            if isinstance(columns, str):
-                columns_str = [columns]
-                columns_str.extend(more_columns)  # type: ignore[arg-type]
-                return self._from_pyexpr(self._pyexpr.exclude(columns_str))
-            elif is_polars_dtype(columns):
-                dtypes = [columns]
-                dtypes.extend(more_columns)
-                return self._from_pyexpr(self._pyexpr.exclude_dtype(dtypes))
-            else:
-                raise TypeError(
-                    f"Invalid input for `exclude`. Expected `str` or `DataType`, got {type(columns)!r}"
-                )
-
-        if isinstance(columns, str):
-            return self._from_pyexpr(self._pyexpr.exclude([columns]))
-        elif is_polars_dtype(columns):
-            return self._from_pyexpr(self._pyexpr.exclude_dtype([columns]))
-        elif isinstance(columns, Iterable):
-            columns_list = list(columns)
-            if not columns_list:
-                return self
-
-            item = columns_list[0]
+        exclude_cols: list[str] = []
+        exclude_dtypes: list[PolarsDataType] = []
+        for item in (
+            *(
+                columns
+                if isinstance(columns, Collection) and not isinstance(columns, str)
+                else [columns]
+            ),
+            *more_columns,
+        ):
             if isinstance(item, str):
-                return self._from_pyexpr(self._pyexpr.exclude(columns_list))
+                exclude_cols.append(item)
             elif is_polars_dtype(item):
-                return self._from_pyexpr(self._pyexpr.exclude_dtype(columns_list))
+                exclude_dtypes.append(item)
             else:
                 raise TypeError(
-                    "Invalid input for `exclude`. Expected iterable of type `str` or `DataType`,"
-                    f" got iterable of type {type(item)!r}"
+                    "Invalid input for `exclude`. Expected one or more `str`, "
+                    f"`DataType`, or selector; found {type(item)!r} instead"
                 )
-        else:
+
+        if exclude_cols and exclude_dtypes:
             raise TypeError(
-                f"Invalid input for `exclude`. Expected `str` or `DataType`, got {type(columns)!r}"
+                "Cannot exclude by both column name and dtype; use a selector instead"
             )
+        elif exclude_dtypes:
+            return self._from_pyexpr(self._pyexpr.exclude_dtype(exclude_dtypes))
+        else:
+            return self._from_pyexpr(self._pyexpr.exclude(exclude_cols))
 
     def pipe(
         self,

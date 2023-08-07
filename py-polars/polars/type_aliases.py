@@ -68,8 +68,9 @@ PythonLiteral: TypeAlias = Union[
 IntoExpr: TypeAlias = Union["Expr", PythonLiteral, "Series", None]
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
-# selector type
+# selector type, and related collection/sequence
 SelectorType: TypeAlias = "_selector_proxy_"
+ColumnNameOrSelector: TypeAlias = Union[str, SelectorType]
 
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name

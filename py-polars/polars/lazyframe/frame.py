@@ -47,6 +47,7 @@ from polars.io._utils import _is_local_file
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.groupby import LazyGroupBy
+from polars.selectors import _expand_selectors
 from polars.slice import LazyPolarsSlice
 from polars.utils._parse_expr_input import (
     parse_as_expression,
@@ -83,6 +84,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
+        ColumnNameOrSelector,
         CsvEncoding,
         FillNullStrategy,
         FrameInitTypes,
@@ -3457,7 +3459,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
-    def drop(self, columns: str | Collection[str], *more_columns: str) -> Self:
+    def drop(
+        self,
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+        *more_columns: ColumnNameOrSelector,
+    ) -> Self:
         """
         Remove columns from the dataframe.
 
@@ -3491,23 +3497,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 8.0 │
         └─────┴─────┘
 
-        Drop multiple columns by passing a list of column names.
+        Drop multiple columns by passing a selector.
 
-        >>> lf.drop(["bar", "ham"]).collect()
-        shape: (3, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 1   │
-        │ 2   │
-        │ 3   │
-        └─────┘
-
-        Or use positional arguments to drop multiple columns in the same way.
-
-        >>> lf.drop("foo", "bar").collect()
+        >>> import polars.selectors as cs
+        >>> lf.drop(cs.numeric()).collect()
         shape: (3, 1)
         ┌─────┐
         │ ham │
@@ -3519,10 +3512,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   │
         └─────┘
 
+        Use positional arguments to drop multiple columns.
+
+        >>> lf.drop("foo", "ham").collect()
+        shape: (3, 1)
+        ┌─────┐
+        │ bar │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 6.0 │
+        │ 7.0 │
+        │ 8.0 │
+        └─────┘
+
         """
-        if isinstance(columns, str):
-            columns = [columns]
-        return self._from_pyldf(self._ldf.drop([*columns, *more_columns]))
+        drop_cols = _expand_selectors(self, columns, *more_columns)
+        return self._from_pyldf(self._ldf.drop(drop_cols))
 
     def rename(self, mapping: dict[str, str]) -> Self:
         """
@@ -4454,7 +4460,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def explode(
         self,
-        columns: str | Sequence[str] | Expr | Sequence[Expr],
+        columns: str | Expr | Sequence[str | Expr],
         *more_columns: str | Expr,
     ) -> Self:
         """
@@ -4463,8 +4469,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         columns
-            Name of the column(s) to explode. Columns must be of datatype List or Utf8.
-            Accepts ``col`` expressions as input as well.
+            Column names, expressions, or a selector defining them. The underlying
+            columns being exploded must be of List or Utf8 datatype.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
 
@@ -4494,12 +4500,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────┴─────────┘
 
         """
-        columns = parse_as_list_of_expressions(columns, *more_columns)
+        columns = parse_as_list_of_expressions(
+            *_expand_selectors(self, columns, *more_columns)
+        )
         return self._from_pyldf(self._ldf.explode(columns))
 
     def unique(
         self,
-        subset: str | Sequence[str] | None = None,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
         *,
         keep: UniqueKeepStrategy = "any",
         maintain_order: bool = False,
@@ -4510,8 +4518,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         subset
-            Column name(s) to consider when identifying duplicates.
-            If set to ``None`` (default), use all columns.
+            Column name(s) or selector(s), to consider when identifying
+            duplicate rows. If set to ``None`` (default), use all columns.
         keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
 
@@ -4578,11 +4586,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        if isinstance(subset, str):
-            subset = [subset]
+        if subset is not None:
+            subset = _expand_selectors(self, subset)
         return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
 
-    def drop_nulls(self, subset: str | Collection[str] | None = None) -> Self:
+    def drop_nulls(
+        self,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+    ) -> Self:
         """
         Drop all rows that contain null values.
 
@@ -4600,24 +4611,43 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6, None, 8],
-        ...         "ham": ["a", "b", "c"],
+        ...         "ham": ["a", "b", None],
         ...     }
         ... )
+
+        The default behavior of this method is to drop rows where any single
+        value of the row is null.
+
         >>> lf.drop_nulls().collect()
-        shape: (2, 3)
+        shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
         │ 1   ┆ 6   ┆ a   │
-        │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
+
+        This behaviour can be constrained to consider only a subset of columns, as
+        defined by name or with a selector. For example, dropping rows if there is
+        a null in any of the integer columns:
+
+        >>> import polars.selectors as cs
+        >>> lf.drop_nulls(subset=cs.integer()).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬──────┐
+        │ foo ┆ bar ┆ ham  │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ i64 ┆ str  │
+        ╞═════╪═════╪══════╡
+        │ 1   ┆ 6   ┆ a    │
+        │ 3   ┆ 8   ┆ null │
+        └─────┴─────┴──────┘
 
         This method drops a row if any single value of the row is null.
 
-        Below are some example snippets that show how you could drop null values based
-        on other conditions:
+        Below are some example snippets that show how you could drop null
+        values based on other conditions:
 
         >>> lf = pl.LazyFrame(
         ...     {
@@ -4655,15 +4685,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         if subset is not None:
-            if isinstance(subset, str):
-                subset = [subset]
-            subset = list(subset)
+            subset = _expand_selectors(self, subset)
         return self._from_pyldf(self._ldf.drop_nulls(subset))
 
     def melt(
         self,
-        id_vars: str | list[str] | None = None,
-        value_vars: str | list[str] | None = None,
+        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
         *,
@@ -4675,17 +4703,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Optionally leaves identifiers set.
 
         This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars), while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis, leaving just
+        columns are identifier variables (id_vars) while all other columns, considered
+        measured variables (value_vars), are "unpivoted" to the row axis leaving just
         two non-identifier columns, 'variable' and 'value'.
 
         Parameters
         ----------
         id_vars
-            Columns to use as identifier variables.
+            Column(s) or selector(s) to use as identifier variables.
         value_vars
-            Values to use as identifier variables.
-            If `value_vars` is empty all columns that are not in `id_vars` will be used.
+            Column(s) or selector(s) to use as values variables; if `value_vars`
+            is empty all columns that are not in `id_vars` will be used.
         variable_name
             Name to give to the `variable` column. Defaults to "variable"
         value_name
@@ -4704,7 +4732,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [2, 4, 6],
         ...     }
         ... )
-        >>> lf.melt(id_vars="a", value_vars=["b", "c"]).collect()
+        >>> import polars.selectors as cs
+        >>> lf.melt(id_vars="a", value_vars=cs.numeric()).collect()
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
         │ a   ┆ variable ┆ value │
@@ -4720,14 +4749,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────────┴───────┘
 
         """
-        if isinstance(value_vars, str):
-            value_vars = [value_vars]
-        if isinstance(id_vars, str):
-            id_vars = [id_vars]
-        if value_vars is None:
-            value_vars = []
-        if id_vars is None:
-            id_vars = []
+        value_vars = [] if value_vars is None else _expand_selectors(self, value_vars)
+        id_vars = [] if id_vars is None else _expand_selectors(self, id_vars)
+
         return self._from_pyldf(
             self._ldf.melt(id_vars, value_vars, value_name, variable_name, streamable)
         )

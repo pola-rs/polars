@@ -1,5 +1,48 @@
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal
+
+
+def test_melt() -> None:
+    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
+    for _idv, _vv in (("A", ("B", "C")), (cs.string(), cs.integer())):
+        melted = df.melt(id_vars="A", value_vars=["B", "C"])
+        assert all(melted["value"] == [1, 3, 5, 2, 4, 6])
+
+    melted = df.melt(id_vars="A", value_vars="B")
+    assert all(melted["value"] == [1, 3, 5])
+    n = 3
+
+    for melted in [df.melt(), df.lazy().melt().collect()]:
+        assert melted["variable"].to_list() == ["A"] * n + ["B"] * n + ["C"] * n
+        assert melted["value"].to_list() == [
+            "a",
+            "b",
+            "c",
+            "1",
+            "3",
+            "5",
+            "2",
+            "4",
+            "6",
+        ]
+
+    for melted in [
+        df.melt(value_name="foo", variable_name="bar"),
+        df.lazy().melt(value_name="foo", variable_name="bar").collect(),
+    ]:
+        assert melted["bar"].to_list() == ["A"] * n + ["B"] * n + ["C"] * n
+        assert melted["foo"].to_list() == [
+            "a",
+            "b",
+            "c",
+            "1",
+            "3",
+            "5",
+            "2",
+            "4",
+            "6",
+        ]
 
 
 def test_melt_projection_pd_7747() -> None:

@@ -4,6 +4,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -19,6 +20,7 @@ def test_explode_multiple() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]], "b": [[5, 6], [7, 8]]})
 
     expected = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+    assert_frame_equal(df.explode(cs.all()), expected)
     assert_frame_equal(df.explode(["a", "b"]), expected)
     assert_frame_equal(df.explode("a", "b"), expected)
 
@@ -305,11 +307,11 @@ def test_explode_inner_null() -> None:
 
 
 def test_explode_array() -> None:
-    out = pl.DataFrame(
+    df = pl.LazyFrame(
         {"a": [[1, 2], [2, 3]], "b": [1, 2]},
         schema_overrides={"a": pl.Array(2, inner=pl.Int64)},
-    ).explode("a")
-
+    )
     expected = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1, 1, 2, 2]})
-
-    assert_frame_equal(out, expected)
+    for ex in ("a", ~cs.integer()):
+        out = df.explode(ex).collect()  # type: ignore[arg-type]
+        assert_frame_equal(out, expected)

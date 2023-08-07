@@ -37,7 +37,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    from typing import Literal
+    from typing import Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars.type_aliases import (
@@ -1648,7 +1648,7 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
 
 
 def exclude(
-    columns: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+    columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
     *more_columns: str | PolarsDataType,
 ) -> Expr:
     """

@@ -166,6 +166,11 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
     )
 
 
+def test_selector_drop(df: pl.DataFrame) -> None:
+    dfd = df.drop(cs.numeric(), cs.temporal())
+    assert dfd.columns == ["eee", "fgg", "qqR"]
+
+
 def test_selector_duration(df: pl.DataFrame) -> None:
     assert df.select(cs.duration("ms")).columns == []
     assert df.select(cs.duration(["ms", "ns"])).columns == []
@@ -326,11 +331,12 @@ def test_selector_expansion() -> None:
 
 
 def test_selector_repr() -> None:
-    assert repr(cs.all() - cs.first()) == "cs.all() - cs.first()"
+    assert repr(cs.all() - cs.first()) == "(cs.all() - cs.first())"
     assert repr(~cs.starts_with("a", "b")) == "~cs.starts_with('a', 'b')"
-    assert repr(cs.float() | cs.by_name("x")) == "cs.float() | cs.by_name('x')"
+    assert repr(cs.float() | cs.by_name("x")) == "(cs.float() | cs.by_name('x'))"
     assert (
-        repr(cs.integer() & cs.matches("z")) == "cs.integer() & cs.matches(pattern='z')"
+        repr(cs.integer() & cs.matches("z"))
+        == "(cs.integer() & cs.matches(pattern='z'))"
     )
 
 

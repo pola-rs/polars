@@ -72,6 +72,7 @@ from polars.io.excel._write_utils import (
     _xl_unique_table_name,
     _XLFormatCache,
 )
+from polars.selectors import _expand_selectors
 from polars.slice import PolarsSlice
 from polars.utils import no_default
 from polars.utils._construction import (
@@ -126,6 +127,7 @@ if TYPE_CHECKING:
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
+        ColumnNameOrSelector,
         ColumnTotalsDefinition,
         ComparisonOperator,
         ConditionalFormatDict,
@@ -150,7 +152,6 @@ if TYPE_CHECKING:
         RowTotalsDefinition,
         SchemaDefinition,
         SchemaDict,
-        SelectorType,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,
@@ -4536,7 +4537,10 @@ class DataFrame:
         """
         return self.head(n)
 
-    def drop_nulls(self, subset: str | Collection[str] | None = None) -> DataFrame:
+    def drop_nulls(
+        self,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+    ) -> DataFrame:
         """
         Drop all rows that contain null values.
 
@@ -4554,24 +4558,41 @@ class DataFrame:
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6, None, 8],
-        ...         "ham": ["a", "b", "c"],
+        ...         "ham": ["a", "b", None],
         ...     }
         ... )
+
+        The default behavior of this method is to drop rows where any single
+        value of the row is null.
+
         >>> df.drop_nulls()
-        shape: (2, 3)
+        shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
         │ 1   ┆ 6   ┆ a   │
-        │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
-        This method drops rows where any single value of the row is null.
+        This behaviour can be constrained to consider only a subset of columns, as
+        defined by name or with a selector. For example, dropping rows if there is
+        a null in any of the integer columns:
 
-        Below are some example snippets that show how you could drop null values based
-        on other conditions
+        >>> import polars.selectors as cs
+        >>> df.drop_nulls(subset=cs.integer())
+        shape: (2, 3)
+        ┌─────┬─────┬──────┐
+        │ foo ┆ bar ┆ ham  │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ i64 ┆ str  │
+        ╞═════╪═════╪══════╡
+        │ 1   ┆ 6   ┆ a    │
+        │ 3   ┆ 8   ┆ null │
+        └─────┴─────┴──────┘
+
+        Below are some additional examples that show how to drop null
+        values based on other conditions.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -6030,14 +6051,19 @@ class DataFrame:
                 raise exc
         return self
 
-    def drop(self, columns: str | Collection[str], *more_columns: str) -> DataFrame:
+    def drop(
+        self,
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+        *more_columns: ColumnNameOrSelector,
+    ) -> DataFrame:
         """
         Remove columns from the dataframe.
 
         Parameters
         ----------
         columns
-            Name of the column(s) that should be removed from the dataframe.
+            Names of the columns that should be removed from the dataframe, or
+            a selector that determines the columns to drop.
         *more_columns
             Additional columns to drop, specified as positional arguments.
 
@@ -6078,9 +6104,10 @@ class DataFrame:
         │ 3   │
         └─────┘
 
-        Or use positional arguments to drop multiple columns in the same way.
+        Drop multiple columns by passing a selector.
 
-        >>> df.drop("foo", "bar")
+        >>> import polars.selectors as cs
+        >>> df.drop(cs.numeric())
         shape: (3, 1)
         ┌─────┐
         │ ham │
@@ -6090,6 +6117,20 @@ class DataFrame:
         │ a   │
         │ b   │
         │ c   │
+        └─────┘
+
+        Use positional arguments to drop multiple columns.
+
+        >>> df.drop("foo", "ham")
+        shape: (3, 1)
+        ┌─────┐
+        │ bar │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 6.0 │
+        │ 7.0 │
+        │ 8.0 │
         └─────┘
 
         """
@@ -6457,7 +6498,7 @@ class DataFrame:
 
     def explode(
         self,
-        columns: str | Sequence[str] | Expr | Sequence[Expr],
+        columns: str | Expr | Sequence[str | Expr],
         *more_columns: str | Expr,
     ) -> DataFrame:
         """
@@ -6466,8 +6507,8 @@ class DataFrame:
         Parameters
         ----------
         columns
-            Name of the column(s) to explode. Columns must be of datatype List or Utf8.
-            Accepts ``col`` expressions as input as well.
+            Column names, expressions, or a selector defining them. The underlying
+            columns being exploded must be of List or Utf8 datatype.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
 
@@ -6517,9 +6558,9 @@ class DataFrame:
 
     def pivot(
         self,
-        values: Sequence[str] | str,
-        index: Sequence[str] | str,
-        columns: Sequence[str] | str,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         aggregate_function: PivotAgg | Expr | None | NoDefault = no_default,
         *,
         maintain_order: bool = True,
@@ -6562,23 +6603,45 @@ class DataFrame:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": ["one", "one", "one", "two", "two", "two"],
-        ...         "bar": ["A", "B", "C", "A", "B", "C"],
+        ...         "foo": ["one", "one", "two", "two", "one", "two"],
+        ...         "bar": ["y", "y", "y", "x", "x", "x"],
         ...         "baz": [1, 2, 3, 4, 5, 6],
         ...     }
         ... )
+        >>> df.pivot(values="baz", index="foo", columns="bar", aggregate_function="sum")
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ y   ┆ x   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ one ┆ 3   ┆ 5   │
+        │ two ┆ 3   ┆ 10  │
+        └─────┴─────┴─────┘
+
+        Pivot using selectors to determine the index/values/columns:
+
+        >>> import polars.selectors as cs
         >>> df.pivot(
-        ...     values="baz", index="foo", columns="bar", aggregate_function="first"
+        ...     values=cs.numeric(),
+        ...     index=cs.string(),
+        ...     columns=cs.string(),
+        ...     aggregate_function="sum",
+        ...     sort_columns=True,
+        ... ).sort(
+        ...     by=cs.string(),
         ... )
-        shape: (2, 4)
-        ┌─────┬─────┬─────┬─────┐
-        │ foo ┆ A   ┆ B   ┆ C   │
-        │ --- ┆ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╪═════╡
-        │ one ┆ 1   ┆ 2   ┆ 3   │
-        │ two ┆ 4   ┆ 5   ┆ 6   │
-        └─────┴─────┴─────┴─────┘
+        shape: (4, 6)
+        ┌─────┬─────┬──────┬──────┬──────┬──────┐
+        │ foo ┆ bar ┆ one  ┆ two  ┆ x    ┆ y    │
+        │ --- ┆ --- ┆ ---  ┆ ---  ┆ ---  ┆ ---  │
+        │ str ┆ str ┆ i64  ┆ i64  ┆ i64  ┆ i64  │
+        ╞═════╪═════╪══════╪══════╪══════╪══════╡
+        │ one ┆ x   ┆ 5    ┆ null ┆ 5    ┆ null │
+        │ one ┆ y   ┆ 3    ┆ null ┆ null ┆ 3    │
+        │ two ┆ x   ┆ null ┆ 10   ┆ 10   ┆ null │
+        │ two ┆ y   ┆ null ┆ 3    ┆ null ┆ 3    │
+        └─────┴─────┴──────┴──────┴──────┴──────┘
 
         Run an expression as aggregation function
 
@@ -6606,12 +6669,9 @@ class DataFrame:
         └──────┴──────────┴──────────┘
 
         """  # noqa: W505
-        if isinstance(values, str):
-            values = [values]
-        if isinstance(index, str):
-            index = [index]
-        if isinstance(columns, str):
-            columns = [columns]
+        values = _expand_selectors(self, values)
+        index = _expand_selectors(self, index)
+        columns = _expand_selectors(self, columns)
 
         if aggregate_function is no_default:
             issue_deprecation_warning(
@@ -6730,7 +6790,7 @@ class DataFrame:
         self,
         step: int,
         how: UnstackDirection = "vertical",
-        columns: str | Sequence[str] | None = None,
+        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         fill_values: list[Any] | None = None,
     ) -> DataFrame:
         """
@@ -6750,7 +6810,7 @@ class DataFrame:
         how : { 'vertical', 'horizontal' }
             Direction of the unstack.
         columns
-            Name of the column(s) to include in the operation.
+            Column name(s) or selector(s) to include in the operation.
             If set to ``None`` (default), use all columns.
         fill_values
             Fill values that don't fit the new size with this value.
@@ -6760,49 +6820,66 @@ class DataFrame:
         >>> from string import ascii_uppercase
         >>> df = pl.DataFrame(
         ...     {
-        ...         "col1": list(ascii_uppercase[0:9]),
-        ...         "col2": pl.int_range(0, 9, eager=True),
+        ...         "x": list(ascii_uppercase[0:8]),
+        ...         "y": pl.int_range(1, 9, eager=True),
         ...     }
+        ... ).with_columns(
+        ...     z=pl.int_ranges(pl.col("y"), pl.col("y") + 2, dtype=pl.UInt8),
         ... )
         >>> df
-        shape: (9, 2)
-        ┌──────┬──────┐
-        │ col1 ┆ col2 │
-        │ ---  ┆ ---  │
-        │ str  ┆ i64  │
-        ╞══════╪══════╡
-        │ A    ┆ 0    │
-        │ B    ┆ 1    │
-        │ C    ┆ 2    │
-        │ D    ┆ 3    │
-        │ E    ┆ 4    │
-        │ F    ┆ 5    │
-        │ G    ┆ 6    │
-        │ H    ┆ 7    │
-        │ I    ┆ 8    │
-        └──────┴──────┘
-        >>> df.unstack(step=3, how="vertical")
-        shape: (3, 6)
-        ┌────────┬────────┬────────┬────────┬────────┬────────┐
-        │ col1_0 ┆ col1_1 ┆ col1_2 ┆ col2_0 ┆ col2_1 ┆ col2_2 │
-        │ ---    ┆ ---    ┆ ---    ┆ ---    ┆ ---    ┆ ---    │
-        │ str    ┆ str    ┆ str    ┆ i64    ┆ i64    ┆ i64    │
-        ╞════════╪════════╪════════╪════════╪════════╪════════╡
-        │ A      ┆ D      ┆ G      ┆ 0      ┆ 3      ┆ 6      │
-        │ B      ┆ E      ┆ H      ┆ 1      ┆ 4      ┆ 7      │
-        │ C      ┆ F      ┆ I      ┆ 2      ┆ 5      ┆ 8      │
-        └────────┴────────┴────────┴────────┴────────┴────────┘
-        >>> df.unstack(step=3, how="horizontal")
-        shape: (3, 6)
-        ┌────────┬────────┬────────┬────────┬────────┬────────┐
-        │ col1_0 ┆ col1_1 ┆ col1_2 ┆ col2_0 ┆ col2_1 ┆ col2_2 │
-        │ ---    ┆ ---    ┆ ---    ┆ ---    ┆ ---    ┆ ---    │
-        │ str    ┆ str    ┆ str    ┆ i64    ┆ i64    ┆ i64    │
-        ╞════════╪════════╪════════╪════════╪════════╪════════╡
-        │ A      ┆ B      ┆ C      ┆ 0      ┆ 1      ┆ 2      │
-        │ D      ┆ E      ┆ F      ┆ 3      ┆ 4      ┆ 5      │
-        │ G      ┆ H      ┆ I      ┆ 6      ┆ 7      ┆ 8      │
-        └────────┴────────┴────────┴────────┴────────┴────────┘
+        shape: (8, 3)
+        ┌─────┬─────┬──────────┐
+        │ x   ┆ y   ┆ z        │
+        │ --- ┆ --- ┆ ---      │
+        │ str ┆ i64 ┆ list[u8] │
+        ╞═════╪═════╪══════════╡
+        │ A   ┆ 1   ┆ [1, 2]   │
+        │ B   ┆ 2   ┆ [2, 3]   │
+        │ C   ┆ 3   ┆ [3, 4]   │
+        │ D   ┆ 4   ┆ [4, 5]   │
+        │ E   ┆ 5   ┆ [5, 6]   │
+        │ F   ┆ 6   ┆ [6, 7]   │
+        │ G   ┆ 7   ┆ [7, 8]   │
+        │ H   ┆ 8   ┆ [8, 9]   │
+        └─────┴─────┴──────────┘
+        >>> df.unstack(step=4, how="vertical")
+        shape: (4, 6)
+        ┌─────┬─────┬─────┬─────┬──────────┬──────────┐
+        │ x_0 ┆ x_1 ┆ y_0 ┆ y_1 ┆ z_0      ┆ z_1      │
+        │ --- ┆ --- ┆ --- ┆ --- ┆ ---      ┆ ---      │
+        │ str ┆ str ┆ i64 ┆ i64 ┆ list[u8] ┆ list[u8] │
+        ╞═════╪═════╪═════╪═════╪══════════╪══════════╡
+        │ A   ┆ E   ┆ 1   ┆ 5   ┆ [1, 2]   ┆ [5, 6]   │
+        │ B   ┆ F   ┆ 2   ┆ 6   ┆ [2, 3]   ┆ [6, 7]   │
+        │ C   ┆ G   ┆ 3   ┆ 7   ┆ [3, 4]   ┆ [7, 8]   │
+        │ D   ┆ H   ┆ 4   ┆ 8   ┆ [4, 5]   ┆ [8, 9]   │
+        └─────┴─────┴─────┴─────┴──────────┴──────────┘
+        >>> df.unstack(step=2, how="horizontal")
+        shape: (4, 6)
+        ┌─────┬─────┬─────┬─────┬──────────┬──────────┐
+        │ x_0 ┆ x_1 ┆ y_0 ┆ y_1 ┆ z_0      ┆ z_1      │
+        │ --- ┆ --- ┆ --- ┆ --- ┆ ---      ┆ ---      │
+        │ str ┆ str ┆ i64 ┆ i64 ┆ list[u8] ┆ list[u8] │
+        ╞═════╪═════╪═════╪═════╪══════════╪══════════╡
+        │ A   ┆ B   ┆ 1   ┆ 2   ┆ [1, 2]   ┆ [2, 3]   │
+        │ C   ┆ D   ┆ 3   ┆ 4   ┆ [3, 4]   ┆ [4, 5]   │
+        │ E   ┆ F   ┆ 5   ┆ 6   ┆ [5, 6]   ┆ [6, 7]   │
+        │ G   ┆ H   ┆ 7   ┆ 8   ┆ [7, 8]   ┆ [8, 9]   │
+        └─────┴─────┴─────┴─────┴──────────┴──────────┘
+        >>> import polars.selectors as cs
+        >>> df.unstack(step=5, columns=cs.numeric(), fill_values=0)
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ y_0 ┆ y_1 │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 6   │
+        │ 2   ┆ 7   │
+        │ 3   ┆ 8   │
+        │ 4   ┆ 0   │
+        │ 5   ┆ 0   │
+        └─────┴─────┘
 
         """
         import math
@@ -6855,7 +6932,7 @@ class DataFrame:
     @overload
     def partition_by(
         self,
-        by: str | Iterable[str],
+        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         *more_by: str,
         maintain_order: bool = ...,
         include_key: bool = ...,
@@ -6866,7 +6943,7 @@ class DataFrame:
     @overload
     def partition_by(
         self,
-        by: str | Iterable[str],
+        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         *more_by: str,
         maintain_order: bool = ...,
         include_key: bool = ...,
@@ -6876,8 +6953,8 @@ class DataFrame:
 
     def partition_by(
         self,
-        by: str | Iterable[str],
-        *more_by: str,
+        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        *more_by: ColumnNameOrSelector,
         maintain_order: bool = True,
         include_key: bool = True,
         as_dict: bool = False,
@@ -6888,7 +6965,7 @@ class DataFrame:
         Parameters
         ----------
         by
-            Name of the column(s) to group by.
+            Column name(s) or selector(s) to group by.
         *more_by
             Additional names of columns to group by, specified as positional arguments.
         maintain_order
@@ -6979,7 +7056,8 @@ class DataFrame:
 
         Return the partitions as a dictionary by specifying ``as_dict=True``.
 
-        >>> df.partition_by("a", as_dict=True)  # doctest: +IGNORE_RESULT
+        >>> import polars.selectors as cs
+        >>> df.partition_by(cs.string(), as_dict=True)  # doctest: +IGNORE_RESULT
         {'a': shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -7008,13 +7086,7 @@ class DataFrame:
         └─────┴─────┴─────┘}
 
         """
-        if isinstance(by, str):
-            by = [by]
-        elif not isinstance(by, list):
-            by = list(by)
-        if more_by:
-            by.extend(more_by)
-
+        by = _expand_selectors(self, by, *more_by)
         partitions = [
             self._from_pydf(_df)
             for _df in self._df.partition_by(by, maintain_order, include_key)
@@ -8016,7 +8088,7 @@ class DataFrame:
 
     def to_dummies(
         self,
-        columns: str | Sequence[str] | None = None,
+        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         *,
         separator: str = "_",
         drop_first: bool = False,
@@ -8027,8 +8099,8 @@ class DataFrame:
         Parameters
         ----------
         columns
-            Name of the column(s) that should be converted to dummy variables.
-            If set to ``None`` (default), convert all columns.
+            Column name(s) or selector(s) that should be converted to dummy
+            variables. If set to ``None`` (default), convert all columns.
         separator
             Separator/delimiter used when generating column names.
         drop_first
@@ -8054,14 +8126,48 @@ class DataFrame:
         │ 0     ┆ 1     ┆ 0     ┆ 1     ┆ 0     ┆ 1     │
         └───────┴───────┴───────┴───────┴───────┴───────┘
 
+        >>> df.to_dummies(drop_first=True)
+        shape: (2, 3)
+        ┌───────┬───────┬───────┐
+        │ foo_2 ┆ bar_4 ┆ ham_b │
+        │ ---   ┆ ---   ┆ ---   │
+        │ u8    ┆ u8    ┆ u8    │
+        ╞═══════╪═══════╪═══════╡
+        │ 0     ┆ 0     ┆ 0     │
+        │ 1     ┆ 1     ┆ 1     │
+        └───────┴───────┴───────┘
+
+        >>> import polars.selectors as cs
+        >>> df.to_dummies(cs.integer(), separator=":")
+        shape: (2, 5)
+        ┌───────┬───────┬───────┬───────┬─────┐
+        │ foo:1 ┆ foo:2 ┆ bar:3 ┆ bar:4 ┆ ham │
+        │ ---   ┆ ---   ┆ ---   ┆ ---   ┆ --- │
+        │ u8    ┆ u8    ┆ u8    ┆ u8    ┆ str │
+        ╞═══════╪═══════╪═══════╪═══════╪═════╡
+        │ 1     ┆ 0     ┆ 1     ┆ 0     ┆ a   │
+        │ 0     ┆ 1     ┆ 0     ┆ 1     ┆ b   │
+        └───────┴───────┴───────┴───────┴─────┘
+
+        >>> df.to_dummies(cs.integer(), drop_first=True, separator=":")
+        shape: (2, 3)
+        ┌───────┬───────┬─────┐
+        │ foo:2 ┆ bar:4 ┆ ham │
+        │ ---   ┆ ---   ┆ --- │
+        │ u8    ┆ u8    ┆ str │
+        ╞═══════╪═══════╪═════╡
+        │ 0     ┆ 0     ┆ a   │
+        │ 1     ┆ 1     ┆ b   │
+        └───────┴───────┴─────┘
+
         """
-        if isinstance(columns, str):
-            columns = [columns]
+        if columns is not None:
+            columns = _expand_selectors(self, columns)
         return self._from_pydf(self._df.to_dummies(columns, separator, drop_first))
 
     def unique(
         self,
-        subset: str | Sequence[str] | None = None,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
         *,
         keep: UniqueKeepStrategy = "any",
         maintain_order: bool = False,
@@ -8072,8 +8178,8 @@ class DataFrame:
         Parameters
         ----------
         subset
-            Column name(s) to consider when identifying duplicates.
-            If set to ``None`` (default), use all columns.
+            Column name(s) or selector(s), to consider when identifying
+            duplicate rows. If set to ``None`` (default), use all columns.
         keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
 
@@ -8611,7 +8717,7 @@ class DataFrame:
 
     def rows_by_key(
         self,
-        key: str | Sequence[str] | SelectorType,
+        key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         *,
         named: bool = False,
         include_key: bool = False,
@@ -8710,26 +8816,26 @@ class DataFrame:
         from polars.selectors import is_selector, selector_column_names
 
         if is_selector(key):
-            key = selector_column_names(frame=self, selector=key)  # type: ignore[type-var]
+            key_tuple = selector_column_names(frame=self, selector=key)  # type: ignore[type-var]
         elif not isinstance(key, str):
-            key = tuple(key)  # type: ignore[arg-type]
+            key_tuple = tuple(key)  # type: ignore[arg-type]
         else:
-            key = (key,)
+            key_tuple = (key,)
 
         # establish index or name-based getters for the key and data values
-        data_cols = [k for k in self.schema if k not in key]
+        data_cols = [k for k in self.schema if k not in key_tuple]
         if named:
             get_data = itemgetter(*data_cols)
-            get_key = itemgetter(*key)
+            get_key = itemgetter(*key_tuple)
         else:
             data_idxs, index_idxs = [], []
             for idx, c in enumerate(self.columns):
-                if c in key:
+                if c in key_tuple:
                     index_idxs.append(idx)
                 else:
                     data_idxs.append(idx)
             if not index_idxs:
-                raise ValueError(f"No columns found for key: {key!r}")
+                raise ValueError(f"No columns found for key: {key_tuple!r}")
             get_data = itemgetter(*data_idxs)  # type: ignore[assignment]
             get_key = itemgetter(*index_idxs)  # type: ignore[assignment]
 
@@ -8747,7 +8853,7 @@ class DataFrame:
                 for d in self.iter_rows(named=True):
                     k = get_key(d)
                     if not include_key:
-                        for ix in key:
+                        for ix in key_tuple:
                             del d[ix]
                     if unique:
                         rows[k] = d
@@ -9076,7 +9182,11 @@ class DataFrame:
         """
         return wrap_s(self._df.to_struct(name))
 
-    def unnest(self, columns: str | Sequence[str], *more_columns: str) -> Self:
+    def unnest(
+        self,
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+        *more_columns: ColumnNameOrSelector,
+    ) -> Self:
         """
         Decompose struct columns into separate columns for each of their fields.
 
@@ -9124,11 +9234,7 @@ class DataFrame:
         └────────┴─────┴─────┴──────┴───────────┴───────┘
 
         """
-        if isinstance(columns, str):
-            columns = [columns]
-        if more_columns:
-            columns = list(columns)
-            columns.extend(more_columns)
+        columns = _expand_selectors(self, columns, *more_columns)
         return self._from_pydf(self._df.unnest(columns))
 
     def corr(self, **kwargs: Any) -> DataFrame:

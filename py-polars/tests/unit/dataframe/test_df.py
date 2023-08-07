@@ -15,6 +15,7 @@ import pytest
 from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
+import polars.selectors as cs
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import (
     assert_frame_equal,
@@ -727,46 +728,6 @@ def test_read_missing_file(read_function: Callable[[Any], pl.DataFrame]) -> None
         read_function("fake_file")
 
 
-def test_melt() -> None:
-    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
-    melted = df.melt(id_vars="A", value_vars=["B", "C"])
-    assert all(melted["value"] == [1, 3, 5, 2, 4, 6])
-
-    melted = df.melt(id_vars="A", value_vars="B")
-    assert all(melted["value"] == [1, 3, 5])
-    n = 3
-    for melted in [df.melt(), df.lazy().melt().collect()]:
-        assert melted["variable"].to_list() == ["A"] * n + ["B"] * n + ["C"] * n
-        assert melted["value"].to_list() == [
-            "a",
-            "b",
-            "c",
-            "1",
-            "3",
-            "5",
-            "2",
-            "4",
-            "6",
-        ]
-
-    for melted in [
-        df.melt(value_name="foo", variable_name="bar"),
-        df.lazy().melt(value_name="foo", variable_name="bar").collect(),
-    ]:
-        assert melted["bar"].to_list() == ["A"] * n + ["B"] * n + ["C"] * n
-        assert melted["foo"].to_list() == [
-            "a",
-            "b",
-            "c",
-            "1",
-            "3",
-            "5",
-            "2",
-            "4",
-            "6",
-        ]
-
-
 def test_shift() -> None:
     df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
     a = df.shift(1)
@@ -844,7 +805,10 @@ def test_to_dummies() -> None:
     assert_frame_equal(res, expected)
 
     df = pl.DataFrame(
-        {"i": [1, 2, 3], "category": ["dog", "cat", "cat"]},
+        {
+            "i": [1, 2, 3],
+            "category": ["dog", "cat", "cat"],
+        },
         schema={"i": pl.Int32, "category": pl.Categorical},
     )
     expected = pl.DataFrame(
@@ -855,8 +819,9 @@ def test_to_dummies() -> None:
         },
         schema={"i": pl.Int32, "category|cat": pl.UInt8, "category|dog": pl.UInt8},
     )
-    result = df.to_dummies(columns=["category"], separator="|")
-    assert_frame_equal(result, expected)
+    for _cols in ("category", cs.string()):
+        result = df.to_dummies(columns=["category"], separator="|")
+        assert_frame_equal(result, expected)
 
     # test sorted fast path
     assert pl.DataFrame({"x": pl.arange(0, 3, eager=True)}).to_dummies("x").to_dict(
@@ -2797,25 +2762,17 @@ def test_partition_by() -> None:
         {"foo": ["C"], "N": [2], "bar": ["l"]},
     ]
     assert [
-        a.to_dict(False) for a in df.partition_by(["foo", "bar"], maintain_order=True)
+        a.to_dict(False) for a in df.partition_by("foo", "bar", maintain_order=True)
     ] == expected
     assert [
-        a.to_dict(False) for a in df.partition_by("foo", "bar", maintain_order=True)
+        a.to_dict(False) for a in df.partition_by(cs.string(), maintain_order=True)
     ] == expected
 
     expected = [
-        {
-            "N": [1],
-        },
-        {
-            "N": [2],
-        },
-        {
-            "N": [2, 4],
-        },
-        {
-            "N": [2],
-        },
+        {"N": [1]},
+        {"N": [2]},
+        {"N": [2, 4]},
+        {"N": [2]},
     ]
     assert [
         a.to_dict(False)
@@ -2833,7 +2790,7 @@ def test_partition_by() -> None:
     ]
 
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
-    assert df.partition_by(["a", "b"], as_dict=True)["one", 1].to_dict(False) == {
+    assert df.partition_by(cs.all(), as_dict=True)["one", 1].to_dict(False) == {
         "a": ["one"],
         "b": [1],
     }
@@ -3007,11 +2964,14 @@ def test_selection_regex_and_multicol() -> None:
 
 
 def test_unique_on_sorted() -> None:
-    assert (
-        pl.DataFrame({"a": [1, 1, 3], "b": [1, 2, 3]})
-        .with_columns([pl.col("a").set_sorted()])
-        .unique(subset="a", keep="last")
-    ).to_dict(False) == {"a": [1, 3], "b": [2, 3]}
+    df = pl.DataFrame(data={"a": [1, 1, 3], "b": [1, 2, 3]})
+    for subset in ("a", cs.starts_with("x", "a")):
+        assert df.with_columns([pl.col("a").set_sorted()]).unique(
+            subset=subset, keep="last"  # type: ignore[arg-type]
+        ).to_dict(False) == {
+            "a": [1, 3],
+            "b": [2, 3],
+        }
 
 
 def test_len_compute(df: pl.DataFrame) -> None:
@@ -3627,6 +3587,55 @@ def test_ufunc_multiple_expressions() -> None:
     expected = np.arctan2(df.get_column("v"), df.get_column("u"))
     result = df.select(np.arctan2(pl.col("v"), pl.col("u")))[:, 0]  # type: ignore[call-overload]
     assert_series_equal(expected, result)  # type: ignore[arg-type]
+
+
+def test_unstack() -> None:
+    from string import ascii_uppercase
+
+    df = pl.DataFrame(
+        {
+            "col1": list(ascii_uppercase[0:9]),
+            "col2": pl.int_range(0, 9, eager=True),
+            "col3": pl.int_range(-9, 0, eager=True),
+        }
+    )
+    assert df.unstack(step=3, how="vertical").to_dict(False) == {
+        "col1_0": ["A", "B", "C"],
+        "col1_1": ["D", "E", "F"],
+        "col1_2": ["G", "H", "I"],
+        "col2_0": [0, 1, 2],
+        "col2_1": [3, 4, 5],
+        "col2_2": [6, 7, 8],
+        "col3_0": [-9, -8, -7],
+        "col3_1": [-6, -5, -4],
+        "col3_2": [-3, -2, -1],
+    }
+
+    assert df.unstack(step=3, how="horizontal").to_dict(False) == {
+        "col1_0": ["A", "D", "G"],
+        "col1_1": ["B", "E", "H"],
+        "col1_2": ["C", "F", "I"],
+        "col2_0": [0, 3, 6],
+        "col2_1": [1, 4, 7],
+        "col2_2": [2, 5, 8],
+        "col3_0": [-9, -6, -3],
+        "col3_1": [-8, -5, -2],
+        "col3_2": [-7, -4, -1],
+    }
+
+    for column_subset in (("col2", "col3"), cs.integer()):
+        assert df.unstack(
+            step=3,
+            how="horizontal",
+            columns=column_subset,  # type: ignore[arg-type]
+        ).to_dict(False) == {
+            "col2_0": [0, 3, 6],
+            "col2_1": [1, 4, 7],
+            "col2_2": [2, 5, 8],
+            "col3_0": [-9, -6, -3],
+            "col3_1": [-8, -5, -2],
+            "col3_2": [-7, -4, -1],
+        }
 
 
 def test_window_deadlock() -> None:
