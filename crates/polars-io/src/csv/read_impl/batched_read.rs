@@ -248,6 +248,7 @@ impl<'a> CoreReader<'a> {
             encoding: self.encoding,
             delimiter: self.delimiter,
             schema: self.schema,
+            trim_whitespaces: self.trim_whitespaces,
             rows_read: 0,
             _cat_lock,
         })
@@ -276,6 +277,7 @@ pub struct BatchedCsvReaderRead<'a> {
     delimiter: u8,
     schema: SchemaRef,
     rows_read: IdxSize,
+    trim_whitespaces: bool,
     #[cfg(feature = "dtype-categorical")]
     _cat_lock: Option<polars_core::IUseStringCache>,
     #[cfg(not(feature = "dtype-categorical"))]
@@ -344,6 +346,7 @@ impl<'a> BatchedCsvReaderRead<'a> {
                         self.chunk_size,
                         stop_at_n_bytes,
                         self.starting_point_offset,
+                        self.trim_whitespaces,
                     )?;
 
                     cast_columns(&mut df, &self.to_cast, false)?;

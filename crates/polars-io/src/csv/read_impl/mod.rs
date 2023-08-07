@@ -103,6 +103,7 @@ pub(crate) struct CoreReader<'a> {
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
     row_count: Option<RowCount>,
+    trim_whitespaces: bool,
 }
 
 impl<'a> fmt::Debug for CoreReader<'a> {
@@ -193,6 +194,7 @@ impl<'a> CoreReader<'a> {
         skip_rows_after_header: usize,
         row_count: Option<RowCount>,
         try_parse_dates: bool,
+        trim_whitespaces: bool,
     ) -> PolarsResult<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
@@ -289,6 +291,7 @@ impl<'a> CoreReader<'a> {
             predicate,
             to_cast,
             row_count,
+            trim_whitespaces,
         })
     }
 
@@ -603,6 +606,7 @@ impl<'a> CoreReader<'a> {
                                 chunk_size,
                                 self.schema.len(),
                                 &self.schema,
+                                self.trim_whitespaces,
                             )?;
 
                             let mut local_df = DataFrame::new_no_checks(
@@ -672,6 +676,7 @@ impl<'a> CoreReader<'a> {
                             usize::MAX,
                             stop_at_nbytes,
                             starting_point_offset,
+                            self.trim_whitespaces,
                         )?;
 
                         // update the running str bytes statistics
@@ -719,6 +724,7 @@ impl<'a> CoreReader<'a> {
                                 remaining_rows - 1,
                                 self.schema.len(),
                                 self.schema.as_ref(),
+                                self.trim_whitespaces,
                             )?;
 
                             DataFrame::new_no_checks(
@@ -800,6 +806,7 @@ fn read_chunk(
     chunk_size: usize,
     stop_at_nbytes: usize,
     starting_point_offset: Option<usize>,
+    trim_whitespaces: bool,
 ) -> PolarsResult<DataFrame> {
     let mut read = bytes_offset_thread;
     let mut buffers = init_buffers(
@@ -836,6 +843,7 @@ fn read_chunk(
             chunk_size,
             schema.len(),
             schema,
+            trim_whitespaces,
         )?;
     }
 

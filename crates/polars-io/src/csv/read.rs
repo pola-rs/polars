@@ -132,6 +132,7 @@ where
     skip_rows_after_header: usize,
     try_parse_dates: bool,
     row_count: Option<RowCount>,
+    trim_whitespaces: bool,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -317,6 +318,11 @@ where
         self.predicate = predicate;
         self
     }
+
+    pub fn with_trim_whitespaces(mut self, trim: bool) -> Self {
+        self.trim_whitespaces = trim;
+        self
+    }
 }
 
 impl<'a> CsvReader<'a, File> {
@@ -366,6 +372,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.skip_rows_after_header,
             std::mem::take(&mut self.row_count),
             self.try_parse_dates,
+            self.trim_whitespaces,
         )
     }
 
@@ -547,6 +554,7 @@ where
             skip_rows_after_header: 0,
             try_parse_dates: false,
             row_count: None,
+            trim_whitespaces: false,
         }
     }
 

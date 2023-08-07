@@ -331,6 +331,7 @@ class LazyFrame:
         row_count_offset: int = 0,
         try_parse_dates: bool = False,
         eol_char: str = "\n",
+        trim_whitespaces: bool = False,
     ) -> Self:
         """
         Lazily read from a CSV file or multiple files via glob patterns.
@@ -372,6 +373,7 @@ class LazyFrame:
             _prepare_row_count_args(row_count_name, row_count_offset),
             try_parse_dates,
             eol_char=eol_char,
+            trim_whitespaces=trim_whitespaces,
         )
         return self
 

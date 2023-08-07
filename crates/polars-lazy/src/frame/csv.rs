@@ -32,6 +32,7 @@ pub struct LazyCsvReader<'a> {
     encoding: CsvEncoding,
     row_count: Option<RowCount>,
     try_parse_dates: bool,
+    trim_whitespaces: bool,
 }
 
 #[cfg(feature = "csv")]
@@ -59,6 +60,7 @@ impl<'a> LazyCsvReader<'a> {
             encoding: CsvEncoding::Utf8,
             row_count: None,
             try_parse_dates: false,
+            trim_whitespaces: false,
         }
     }
 
@@ -242,6 +244,11 @@ impl<'a> LazyCsvReader<'a> {
         }
 
         Ok(self.with_schema(Arc::new(schema)))
+    }
+
+    pub fn with_trim_whitespaces(mut self, trim: bool) -> Self {
+        self.trim_whitespaces = trim;
+        self
     }
 }
 

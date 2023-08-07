@@ -680,6 +680,7 @@ class DataFrame:
         row_count_offset: int = 0,
         sample_size: int = 1024,
         eol_char: str = "\n",
+        trim_whitespaces: bool = False,
     ) -> DataFrame:
         """
         Read a CSV file into a DataFrame.
@@ -789,6 +790,7 @@ class DataFrame:
             _prepare_row_count_args(row_count_name, row_count_offset),
             sample_size=sample_size,
             eol_char=eol_char,
+            trim_whitespaces=trim_whitespaces,
         )
         return self
 

@@ -54,6 +54,7 @@ def read_csv(
     row_count_offset: int = 0,
     sample_size: int = 1024,
     eol_char: str = "\n",
+    trim_whitespaces: bool = False,
 ) -> DataFrame:
     """
     Read a CSV file into a DataFrame.
@@ -170,6 +171,8 @@ def read_csv(
         allocation needed.
     eol_char
         Single byte end of line character.
+    trim_whitespaces
+        Trim leading and trailing whitespaces.
 
     Returns
     -------
@@ -376,6 +379,7 @@ def read_csv(
             row_count_offset=row_count_offset,
             sample_size=sample_size,
             eol_char=eol_char,
+            trim_whitespaces=trim_whitespaces,
         )
 
     if new_columns:
@@ -702,6 +706,7 @@ def scan_csv(
     try_parse_dates: bool = False,
     eol_char: str = "\n",
     new_columns: Sequence[str] | None = None,
+    trim_whitespaces: bool = False,
 ) -> LazyFrame:
     """
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -783,6 +788,8 @@ def scan_csv(
         Provide an explicit list of string column names to use (for example, when
         scanning a headerless CSV file). Note that unlike ``read_csv`` it is considered
         an error to provide fewer column names than there are columns in the file.
+    trim_whitespaces
+        Trim leading and trailing whitespaces.
 
     Returns
     -------
@@ -895,4 +902,5 @@ def scan_csv(
         row_count_offset=row_count_offset,
         try_parse_dates=try_parse_dates,
         eol_char=eol_char,
+        trim_whitespaces=trim_whitespaces,
     )

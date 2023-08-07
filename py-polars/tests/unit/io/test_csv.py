@@ -1377,3 +1377,16 @@ def test_csv_9929() -> None:
     f.seek(0)
     with pytest.raises(pl.NoDataError):
         pl.read_csv(f, skip_rows=10**6)
+
+
+def test_read_csv_trim_whitespaces() -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b,c
+        a , b , c
+        """
+    )
+
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, trim_whitespaces=True)
+    assert df.rows() == [("a", "b", "c")]
