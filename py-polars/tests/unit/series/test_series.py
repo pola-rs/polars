@@ -10,6 +10,7 @@ import pyarrow as pa
 import pytest
 from numpy.testing import assert_array_equal
 
+import polars
 import polars as pl
 from polars.datatypes import (
     Date,
@@ -2448,6 +2449,11 @@ def test_ptr() -> None:
 
     ptr2 = s2.rechunk()._get_ptr()
     assert ptr != ptr2
+
+    for dtype in list(polars.datatypes.FLOAT_DTYPES) + list(
+        polars.datatypes.INTEGER_DTYPES
+    ):
+        assert pl.Series([1, 2, 3], dtype=dtype)._s.get_ptr() > 0
 
 
 def test_null_comparisons() -> None:
