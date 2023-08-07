@@ -371,7 +371,7 @@ pub(crate) fn write<W: Write>(
 
         for buf in result_buf.drain(..) {
             let mut buf = buf?;
-            let _ = writer.write(&buf)?;
+            let _ = writer.write_all(&buf)?;
             buf.clear();
             write_buffer_pool.set(buf);
         }

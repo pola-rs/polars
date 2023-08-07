@@ -80,7 +80,7 @@ ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy/ipc"]
 avro = ["polars-io", "polars-io/avro"]
 
 # support for arrows csv file parsing
-csv = ["polars-io", "polars-io/csv", "polars-lazy/csv", "polars-sql/csv"]
+csv = ["polars-io", "polars-io/csv", "polars-io/csv-encoding", "polars-lazy/csv", "polars-sql/csv"]
 
 # slower builds
 performant = [

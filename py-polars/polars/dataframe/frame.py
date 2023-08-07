@@ -2373,6 +2373,7 @@ class DataFrame:
         time_format: str | None = ...,
         float_precision: int | None = ...,
         null_value: str | None = ...,
+        encoding: str | None = ...,
     ) -> str:
         ...
 
@@ -2390,6 +2391,7 @@ class DataFrame:
         time_format: str | None = ...,
         float_precision: int | None = ...,
         null_value: str | None = ...,
+        encoding: str | None = ...,
     ) -> None:
         ...
 
@@ -2406,6 +2408,7 @@ class DataFrame:
         time_format: str | None = None,
         float_precision: int | None = None,
         null_value: str | None = None,
+        encoding: str | None = None,
     ) -> str | None:
         """
         Write to comma-separated values (CSV) file.
@@ -2442,6 +2445,9 @@ class DataFrame:
             ``Float64`` datatypes.
         null_value
             A string representing null values (defaulting to the empty string).
+        encoding
+            A string representing the encoding to use in the CSV file. Defaults to
+            'utf-8'.
 
         Examples
         --------
@@ -2478,8 +2484,9 @@ class DataFrame:
                 time_format,
                 float_precision,
                 null_value,
+                encoding,
             )
-            return str(buffer.getvalue(), encoding="utf-8")
+            return str(buffer.getvalue(), encoding=encoding or "utf-8")
 
         if isinstance(file, (str, Path)):
             file = normalise_filepath(file)
@@ -2497,6 +2504,7 @@ class DataFrame:
             time_format,
             float_precision,
             null_value,
+            encoding,
         )
         return None
 

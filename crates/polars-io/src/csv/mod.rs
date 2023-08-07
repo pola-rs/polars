@@ -46,6 +46,8 @@ pub mod read_impl;
 
 mod read;
 pub(super) mod splitfields;
+#[cfg(feature = "csv-encoding")]
+mod transcoding;
 pub mod utils;
 mod write;
 pub(super) mod write_impl;

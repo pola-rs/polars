@@ -553,6 +553,7 @@ impl PyDataFrame {
         time_format: Option<String>,
         float_precision: Option<usize>,
         null_value: Option<String>,
+        encoding: Option<String>,
     ) -> PyResult<()> {
         let null = null_value.unwrap_or_default();
 
@@ -570,6 +571,8 @@ impl PyDataFrame {
                     .with_time_format(time_format)
                     .with_float_precision(float_precision)
                     .with_null_value(null)
+                    .with_encoding(encoding)
+                    .map_err(PyPolarsErr::from)?
                     .finish(&mut self.df)
                     .map_err(PyPolarsErr::from)
             })?;
@@ -585,6 +588,8 @@ impl PyDataFrame {
                 .with_time_format(time_format)
                 .with_float_precision(float_precision)
                 .with_null_value(null)
+                .with_encoding(encoding)
+                .map_err(PyPolarsErr::from)?
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }

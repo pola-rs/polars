@@ -1377,3 +1377,18 @@ def test_csv_9929() -> None:
     f.seek(0)
     with pytest.raises(pl.NoDataError):
         pl.read_csv(f, skip_rows=10**6)
+
+
+def test_write_csv_encoding():
+    df = pl.DataFrame({"a": ["test", "\u201etest\u201d"]})
+
+    utf8_out = io.BytesIO()
+    df.write_csv(utf8_out)
+    utf8_buf = utf8_out.getvalue()
+
+    cp1252_out = io.BytesIO()
+    df.write_csv(cp1252_out, encoding="cp1252")
+    cp1252_buf = cp1252_out.getvalue()
+
+    assert utf8_buf != cp1252_buf
+    assert utf8_buf.decode() == cp1252_buf.decode("cp1252")
