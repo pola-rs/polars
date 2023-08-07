@@ -1,5 +1,5 @@
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use ahash::RandomState;
@@ -15,7 +15,7 @@ use crate::prelude::InitHashMaps;
 /// to determine how many threads use the string cache
 /// if the refcount is zero, we may clear the string cache.
 pub(crate) static USE_STRING_CACHE: AtomicU32 = AtomicU32::new(0);
-static STRING_CACHE_UUID_CTR: AtomicU64 = AtomicU64::new(0);
+static STRING_CACHE_UUID_CTR: AtomicU32 = AtomicU32::new(0);
 
 /// RAII for the string cache
 /// If an operation creates categoricals and uses them in a join
@@ -110,7 +110,7 @@ impl Hash for Key {
 
 pub(crate) struct SCacheInner {
     map: PlIdHashMap<Key, ()>,
-    pub(crate) uuid: u64,
+    pub(crate) uuid: u32,
     payloads: Vec<StrHashGlobal>,
 }
 
