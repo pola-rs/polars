@@ -405,7 +405,14 @@ impl PyExpr {
         self.clone()
             .inner
             .map(
-                move |s: Series| Ok(Some(s.take_every(n))),
+                move |s: Series| {
+                    if n == 0 {
+                        return Err(PolarsError::InvalidOperation(
+                            "take_every(n): n can't be zero".into(),
+                        ));
+                    }
+                    Ok(Some(s.take_every(n)))
+                },
                 GetOutput::same_type(),
             )
             .with_fmt("take_every")
