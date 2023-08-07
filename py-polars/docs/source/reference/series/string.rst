@@ -19,6 +19,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.extract
     Series.str.extract_all
     Series.str.extract_groups
+    Series.str.head
     Series.str.json_extract
     Series.str.json_path_match
     Series.str.lengths
@@ -36,6 +37,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.starts_with
     Series.str.strip
     Series.str.strptime
+    Series.str.tail
     Series.str.to_date
     Series.str.to_datetime
     Series.str.to_decimal

@@ -19,6 +19,7 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.extract
     Expr.str.extract_all
     Expr.str.extract_groups
+    Expr.str.head
     Expr.str.json_extract
     Expr.str.json_path_match
     Expr.str.lengths
@@ -36,6 +37,7 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.starts_with
     Expr.str.strip
     Expr.str.strptime
+    Expr.str.tail
     Expr.str.to_date
     Expr.str.to_datetime
     Expr.str.to_decimal
