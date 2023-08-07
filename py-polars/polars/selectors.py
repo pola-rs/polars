@@ -110,23 +110,6 @@ def selector_column_names(
     selector
         An arbitrary polars selector (or compound selector).
 
-    Examples
-    --------
-    >>> from polars.selectors import selector_column_names
-    >>> import polars.selectors as cs
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "colx": ["x", "y"],
-    ...         "coly": [123, 456],
-    ...         "colz": [2.0, 5.5],
-    ...     }
-    ... )
-    >>> selector_column_names(df, cs.numeric())
-    ('coly', 'colz')
-    >>> selector_column_names(df, cs.first() | cs.last())
-    ('colx', 'colz')
-    >>> selector_column_names(df, ~(cs.first() | cs.last()))
-    ('coly',)
     """
     return expand_selector(target=frame, selector=selector)
 
