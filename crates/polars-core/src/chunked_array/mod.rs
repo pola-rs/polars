@@ -150,7 +150,7 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// - A `ChunkedArray` should always have at least a single `ArrayRef`.
 /// - The [`PolarsDataType`] `T` should always map to the correct [`ArrowDataType`] in the `ArrayRef`
 ///   chunks.
-/// - Nested datatypes such as `List` and `Array` store the primitive physical types instead of the
+/// - Nested datatypes such as `List` and `Array` store the physical types instead of the
 ///   logical type given by the datatype.
 pub struct ChunkedArray<T: PolarsDataType> {
     pub(crate) field: Arc<Field>,
