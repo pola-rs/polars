@@ -48,22 +48,19 @@ impl CategoricalChunked {
         self.logical.name()
     }
 
-    /// Get a reference to the logical array (the categories).
+    // TODO: Rename this
+    /// Get a reference to the physical array (the categories).
     pub fn logical(&self) -> &UInt32Chunked {
         &self.logical
     }
 
-    /// Get a reference to the logical array (the categories).
+    /// Get a mutable reference to the physical array (the categories).
     pub(crate) fn logical_mut(&mut self) -> &mut UInt32Chunked {
         &mut self.logical
     }
 
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
-    pub(crate) fn from_chunks_original(
-        name: &str,
-        chunks: Vec<ArrayRef>,
-        rev_map: RevMapping,
-    ) -> Self {
+    pub fn from_chunks_original(name: &str, chunks: Vec<ArrayRef>, rev_map: RevMapping) -> Self {
         let ca = unsafe { UInt32Chunked::from_chunks(name, chunks) };
         let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(ca);
         logical.2 = Some(DataType::Categorical(Some(Arc::new(rev_map))));
@@ -93,7 +90,7 @@ impl CategoricalChunked {
     /// Create a [`CategoricalChunked`] from an array of `idx` and an existing [`RevMapping`]:  `rev_map`.
     ///
     /// # Safety
-    /// Invariant in `v < rev_map.len() for v in idx` must be hold.
+    /// Invariant in `v < rev_map.len() for v in idx` must hold.
     pub unsafe fn from_cats_and_rev_map_unchecked(
         idx: UInt32Chunked,
         rev_map: Arc<RevMapping>,
