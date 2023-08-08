@@ -136,7 +136,7 @@ fn partitionable_gb(
     } else {
         partitionable = false;
     }
-    dbg!(partitionable)
+    partitionable
 }
 
 pub fn create_physical_plan(
