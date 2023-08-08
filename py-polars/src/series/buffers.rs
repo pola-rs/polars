@@ -69,7 +69,8 @@ impl PySeries {
                         ))
                     }
                     1 => Ok(get_bitmap(&self.series)),
-                    _ => raise_err!("expected an index <= 1", ComputeError),
+                    2 => Ok(None),
+                    _ => raise_err!("expected an index <= 2", ComputeError),
                 }
             }
             _ => todo!(),
@@ -158,7 +159,8 @@ fn get_buffer_from_primitive(s: &Series, index: usize) -> PyResult<Option<PySeri
             ))
         }
         1 => Ok(get_bitmap(s)),
-        _ => raise_err!("expected an index <= 1", ComputeError),
+        2 => Ok(None),
+        _ => raise_err!("expected an index <= 2", ComputeError),
     }
 }
 
