@@ -33,6 +33,7 @@ impl StructNameSpace {
     /// Add a prefix to the fields of the [`StructChunked`].
     pub fn prefix(self, prefix: String) -> Expr {
         let prefix = Arc::new(prefix);
+        let prefix2 = prefix.clone();
         self.0
             .map(
                 move |s| {
@@ -50,7 +51,23 @@ impl StructNameSpace {
                         .collect::<Vec<_>>();
                     StructChunked::new(ca.name(), &fields).map(|ca| Some(ca.into_series()))
                 },
-                GetOutput::map_dtype(move |dt| dt.clone()),
+                GetOutput::map_dtype(move |dt| match dt {
+                    DataType::Struct(fields) => {
+                        let fields = fields
+                            .iter()
+                            .map(|fld| {
+                                let name = fld.name();
+                                let name = &format_smartstring!("{prefix2}{name}");
+                                Field::new(name, fld.data_type().clone())
+                            })
+                            .collect();
+                        DataType::Struct(fields)
+                    }
+                    // The types will be incorrect, but its better than nothing
+                    // we can get an incorrect type with python lambdas, because we only know return type when running
+                    // the query
+                    _ => dt.clone()
+                }),
             )
             .with_fmt("struct.prefix")
     }
@@ -101,6 +118,7 @@ impl StructNameSpace {
     /// Add a suffix  the fields of the [`StructChunked`].
     pub fn suffix(self, suffix: String) -> Expr {
         let suffix = Arc::new(suffix);
+        let suffix2 = suffix.clone();
         self.0
             .map(
                 move |s| {
@@ -118,7 +136,23 @@ impl StructNameSpace {
                         .collect::<Vec<_>>();
                     StructChunked::new(ca.name(), &fields).map(|ca| Some(ca.into_series()))
                 },
-                GetOutput::map_dtype(move |dt| dt.clone()),
+                GetOutput::map_dtype(move |dt| match dt {
+                    DataType::Struct(fields) => {
+                        let fields = fields
+                            .iter()
+                            .map(|fld| {
+                                let name = fld.name();
+                                let name = &format_smartstring!("{name}{suffix2}");
+                                Field::new(name, fld.data_type().clone())
+                            })
+                            .collect();
+                        DataType::Struct(fields)
+                    }
+                    // The types will be incorrect, but its better than nothing
+                    // we can get an incorrect type with python lambdas, because we only know return type when running
+                    // the query
+                    _ => dt.clone()
+                }),
             )
             .with_fmt("struct.suffix")
     }
