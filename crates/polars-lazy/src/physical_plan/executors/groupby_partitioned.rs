@@ -357,8 +357,7 @@ impl PartitionGroupByExec {
 
             out
         };
-        let (mut columns, agg_columns): (Vec<_>, _) =
-            POOL.install(|| rayon::join(get_columns, get_agg));
+        let (mut columns, agg_columns): (Vec<_>, _) = POOL.join(get_columns, get_agg);
 
         columns.extend(agg_columns?);
         state.clear_schema_cache();
