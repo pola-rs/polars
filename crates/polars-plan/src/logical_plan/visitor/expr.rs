@@ -1,3 +1,4 @@
+use polars_core::prelude::{Field, Schema};
 use super::*;
 use crate::prelude::*;
 
@@ -103,6 +104,13 @@ impl AexprNode {
 
     pub fn to_expr(&self) -> Expr {
         self.with_arena(|arena| node_to_expr(self.node, arena))
+    }
+
+    pub fn to_field(&self, schema: &Schema) -> PolarsResult<Field> {
+        self.with_arena(|arena| {
+            let ae = arena.get(self.node);
+            ae.to_field(schema, Context::Default, arena)
+        })
     }
 
     // traverses all nodes and does a full equality check

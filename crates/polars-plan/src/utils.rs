@@ -422,10 +422,12 @@ pub fn rename_cse_tmp_series(s: &mut Series) {
     if s.name().starts_with(CSE_REPLACED) {
         let field = s.field().into_owned();
         let name = &field.name;
-        let pat = r#"col("#;
-        let offset = name.rfind(pat).unwrap() + pat.len();
-        // -1 is `)` of `col(foo)`
-        let name = &name[offset..name.len() - 1];
+        let pat = "_POLARS_START";
+        let offset = name.find(pat).unwrap() + pat.len();
+        let pat = "_POLARS_END";
+        let offset2 = name.find(pat).unwrap();
+        let name = &name[offset..offset2];
+        dbg!(name);
         s.rename(name);
     }
 }
