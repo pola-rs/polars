@@ -87,3 +87,16 @@ def test_categorical_get_categories() -> None:
     assert pl.Series(
         "cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical
     ).cat.get_categories().to_list() == ["foo", "bar", "ham"]
+
+
+def test_categorical_to_local() -> None:
+    with pl.StringCache():
+        s1 = pl.Series("a", ["foo"], dtype=pl.Categorical)
+        s2 = pl.Series("b", ["bar"], dtype=pl.Categorical)
+
+    assert s1.to_physical().item() == 0
+    assert s2.to_physical().item() == 1
+
+    out = s2.cat.to_local()
+    assert out.to_physical().item() == 0
+    assert out.item() == "bar"
