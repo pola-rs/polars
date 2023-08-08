@@ -69,8 +69,8 @@ pub enum StringFunction {
     },
     RStrip(Option<String>),
     Slice(i64, Option<u64>),
-    Head(u64),
-    Tail(u64),
+    Head(i64),
+    Tail(i64),
     StartsWith,
     Strip(Option<String>),
     #[cfg(feature = "temporal")]
@@ -733,12 +733,12 @@ pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsRe
     ca.str_slice(start, length).map(|ca| ca.into_series())
 }
 
-pub(super) fn str_head(s: &Series, n: u64) -> PolarsResult<Series> {
+pub(super) fn str_head(s: &Series, n: i64) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     ca.str_head(n).map(|ca| ca.into_series())
 }
 
-pub(super) fn str_tail(s: &Series, n: u64) -> PolarsResult<Series> {
+pub(super) fn str_tail(s: &Series, n: i64) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     ca.str_tail(n).map(|ca| ca.into_series())
 }
