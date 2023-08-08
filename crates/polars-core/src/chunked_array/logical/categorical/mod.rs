@@ -97,7 +97,6 @@ impl CategoricalChunked {
             })
             .map(|settings| {
                 self.bit_settings = settings;
-                ()
             })
     }
 

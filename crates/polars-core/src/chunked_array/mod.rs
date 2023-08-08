@@ -203,7 +203,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             })
             .map(|settings| {
                 self.bit_settings = settings;
-                ()
             })
     }
 
