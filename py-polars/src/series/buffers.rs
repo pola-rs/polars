@@ -70,7 +70,7 @@ impl PySeries {
                     }
                     1 => Ok(get_bitmap(&self.series)),
                     2 => Ok(None),
-                    _ => raise_err!("expected an index <= 2", ComputeError),
+                    _ => Err(PyValueError::new_err("expected an index <= 2")),
                 }
             }
             _ => todo!(),
@@ -120,7 +120,7 @@ fn get_buffer_from_nested(s: &Series, index: usize) -> PyResult<Option<PySeries>
         }
         1 => Ok(get_bitmap(s)),
         2 => get_offsets(s).map(Some),
-        _ => raise_err!("expected an index <= 2", ComputeError),
+        _ => Err(PyValueError::new_err("expected an index <= 2")),
     }
 }
 
@@ -160,7 +160,7 @@ fn get_buffer_from_primitive(s: &Series, index: usize) -> PyResult<Option<PySeri
         }
         1 => Ok(get_bitmap(s)),
         2 => Ok(None),
-        _ => raise_err!("expected an index <= 2", ComputeError),
+        _ => Err(PyValueError::new_err("expected an index <= 2")),
     }
 }
 
