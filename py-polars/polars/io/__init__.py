@@ -5,6 +5,7 @@ from polars.io.csv import read_csv, read_csv_batched, scan_csv
 from polars.io.database import read_database
 from polars.io.delta import read_delta, scan_delta
 from polars.io.excel import read_excel
+from polars.io.iceberg import scan_iceberg
 from polars.io.ipc import read_ipc, read_ipc_schema, scan_ipc
 from polars.io.json import read_json
 from polars.io.ndjson import read_ndjson, scan_ndjson
@@ -27,6 +28,7 @@ __all__ = [
     "scan_csv",
     "scan_delta",
     "scan_ds",
+    "scan_iceberg",
     "scan_ipc",
     "scan_ndjson",
     "scan_parquet",

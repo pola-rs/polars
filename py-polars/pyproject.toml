@@ -48,6 +48,7 @@ deltalake = ["deltalake >= 0.10.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
 pydantic = ["pydantic"]
+pyiceberg = ["pyiceberg >= 0.4.0"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
 adbc = ["adbc_driver_sqlite"]
@@ -81,6 +82,7 @@ module = [
   "polars.polars",
   "pyarrow.*",
   "pydantic",
+  "pyiceberg.*",
   "sqlalchemy",
   "xlsx2csv",
   "xlsxwriter.*",

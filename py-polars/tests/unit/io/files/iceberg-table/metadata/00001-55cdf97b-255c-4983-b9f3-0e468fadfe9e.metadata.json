@@ -1,0 +1,266 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "adeb1f9c-de6a-4605-8b48-029408ad3004",
+  "location" : "file:///tmp/iceberg/t1",
+  "last-updated-ms" : 1691498730402,
+  "last-column-id" : 19,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "VendorID",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "tpep_pickup_datetime",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 3,
+      "name" : "tpep_dropoff_datetime",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 4,
+      "name" : "passenger_count",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 5,
+      "name" : "trip_distance",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 6,
+      "name" : "RatecodeID",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 7,
+      "name" : "store_and_fwd_flag",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 8,
+      "name" : "PULocationID",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 9,
+      "name" : "DOLocationID",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "payment_type",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 11,
+      "name" : "fare_amount",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 12,
+      "name" : "extra",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 13,
+      "name" : "mta_tax",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 14,
+      "name" : "tip_amount",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 15,
+      "name" : "tolls_amount",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 16,
+      "name" : "improvement_surcharge",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 17,
+      "name" : "total_amount",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 18,
+      "name" : "congestion_surcharge",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 19,
+      "name" : "airport_fee",
+      "required" : false,
+      "type" : "double"
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "VendorID",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "tpep_pickup_datetime",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 3,
+      "name" : "tpep_dropoff_datetime",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 4,
+      "name" : "passenger_count",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 5,
+      "name" : "trip_distance",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 6,
+      "name" : "RatecodeID",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 7,
+      "name" : "store_and_fwd_flag",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 8,
+      "name" : "PULocationID",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 9,
+      "name" : "DOLocationID",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "payment_type",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 11,
+      "name" : "fare_amount",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 12,
+      "name" : "extra",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 13,
+      "name" : "mta_tax",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 14,
+      "name" : "tip_amount",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 15,
+      "name" : "tolls_amount",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 16,
+      "name" : "improvement_surcharge",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 17,
+      "name" : "total_amount",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 18,
+      "name" : "congestion_surcharge",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 19,
+      "name" : "airport_fee",
+      "required" : false,
+      "type" : "double"
+    } ]
+  } ],
+  "partition-spec" : [ {
+    "name" : "tpep_pickup_datetime_day",
+    "transform" : "day",
+    "source-id" : 2,
+    "field-id" : 1000
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "tpep_pickup_datetime_day",
+      "transform" : "day",
+      "source-id" : 2,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root"
+  },
+  "current-snapshot-id" : 2532316387469898569,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 2532316387469898569,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "snapshot-id" : 2532316387469898569,
+    "timestamp-ms" : 1691498730402,
+    "summary" : {
+      "operation" : "overwrite",
+      "spark.app.id" : "local-1691498272142",
+      "added-data-files" : "2",
+      "added-records" : "233822",
+      "added-files-size" : "3646886",
+      "changed-partition-count" : "2",
+      "total-records" : "233822",
+      "total-files-size" : "3646886",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "file:///tmp/iceberg/t1/metadata/snap-2532316387469898569-1-17f0c3f1-0072-4fb2-a3d7-eee89e606c9a.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1691498730402,
+    "snapshot-id" : 2532316387469898569
+  } ],
+  "metadata-log" : []
+}

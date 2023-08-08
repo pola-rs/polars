@@ -145,6 +145,24 @@ pub(super) fn predicate_to_pa(
             let input = predicate_to_pa(*input, expr_arena, args)?;
             Some(format!("~({input}).is_null()"))
         }
+        AExpr::Function {
+            function: FunctionExpr::Boolean(BooleanFunction::IsNan),
+            input,
+            ..
+        } => {
+            let input = input.first().unwrap();
+            let input = predicate_to_pa(*input, expr_arena, args)?;
+            Some(format!("({input}).is_nan()"))
+        }
+        AExpr::Function {
+            function: FunctionExpr::Boolean(BooleanFunction::IsNotNan),
+            input,
+            ..
+        } => {
+            let input = input.first().unwrap();
+            let input = predicate_to_pa(*input, expr_arena, args)?;
+            Some(format!("~({input}).is_nan()"))
+        }
         #[cfg(feature = "is_in")]
         AExpr::Function {
             function: FunctionExpr::Boolean(BooleanFunction::IsIn),
