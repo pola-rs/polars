@@ -2443,17 +2443,17 @@ def test_ptr() -> None:
     # not much to test on the ptr value itself.
     s = pl.Series([1, None, 3])
 
-    ptr = s._get_ptr()
+    ptr = s._get_ptr()[2]
     assert isinstance(ptr, int)
     s2 = s.append(pl.Series([1, 2]))
 
-    ptr2 = s2.rechunk()._get_ptr()
+    ptr2 = s2.rechunk()._get_ptr()[2]
     assert ptr != ptr2
 
     for dtype in list(polars.datatypes.FLOAT_DTYPES) + list(
         polars.datatypes.INTEGER_DTYPES
     ):
-        assert pl.Series([1, 2, 3], dtype=dtype)._s.get_ptr() > 0
+        assert pl.Series([1, 2, 3], dtype=dtype)._s.get_ptr()[2] > 0
 
 
 def test_null_comparisons() -> None:
