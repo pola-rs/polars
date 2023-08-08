@@ -418,18 +418,31 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// Return the first n characters
     fn str_head(&self, n: i64) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
-        
+
         // if n is negative, we return all but the last abs(n) characters
         let chunks = if n < 0 {
-            let n = n.abs() as u64;
-            ca
-            .downcast_iter()
-            .map(|c| substring(c, 0, &Some(c.len() as u64 - n)))
-            .collect::<arrow::error::Result<_>>()?
+            let abs_n = n.abs() as u64;
+            ca.downcast_iter()
+                .map(|c| {
+                    // a negative n requires that we collect a different substring length
+                    // for each item.
+                    polars_arrow::export::arrow::array::Utf8Array::from_iter_values(c.iter().map(
+                        |s| {
+                            match s {
+                                Some(s) => {
+                                    // saturating_sub prevents length < 0
+                                    let s_len = (s.len() as u64).saturating_sub(abs_n);
+                                    Some(&s[0..s_len])
+                                }
+                                None => s,
+                            }
+                        },
+                    ))
+                })
+                .collect::<arrow::error::Result<_>>()?
         } else {
             let n = n as u64;
-            ca
-                .downcast_iter()
+            ca.downcast_iter()
                 .map(|c| substring(c, 0, &Some(n as u64)))
                 .collect::<arrow::error::Result<_>>()?
         };
