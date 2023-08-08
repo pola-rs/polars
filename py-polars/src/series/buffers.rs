@@ -5,7 +5,8 @@ use super::*;
 
 #[pymethods]
 impl PySeries {
-    fn get_ptr(&self) -> PyResult<usize> {
+    /// Returns `(offset, len, ptr)`
+    fn get_ptr(&self) -> PyResult<(usize, usize, usize)> {
         let s = self.series.to_physical_repr();
         let arrays = s.chunks();
         if arrays.len() != 1 {
@@ -18,27 +19,22 @@ impl PySeries {
                 let arr = ca.downcast_iter().next().unwrap();
                 // this one is quite useless as you need to know the offset
                 // into the first byte.
-                let (slice, start, _len) = arr.values().as_slice();
-                if start == 0 {
-                    Ok(slice.as_ptr() as usize)
-                } else {
-                    let msg = "Cannot take pointer boolean buffer as it is not perfectly aligned.";
-                    raise_err!(msg, ComputeError);
-                }
+                let (slice, start, len) = arr.values().as_slice();
+                Ok((start, len, slice.as_ptr() as usize))
             }
             dt if dt.is_numeric() => Ok(with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                get_ptr(ca)
+                (0, ca.len(), get_ptr(ca))
             })),
             DataType::Utf8 => {
                 let ca = s.utf8().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
-                Ok(arr.values().as_ptr() as usize)
+                Ok((0, arr.len(), arr.values().as_ptr() as usize))
             }
             DataType::Binary => {
                 let ca = s.binary().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
-                Ok(arr.values().as_ptr() as usize)
+                Ok((0, arr.len(), arr.values().as_ptr() as usize))
             }
             _ => {
                 let msg = "Cannot take pointer of nested type, try to first select a buffer";
