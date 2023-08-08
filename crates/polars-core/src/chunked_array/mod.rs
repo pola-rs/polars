@@ -194,14 +194,17 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Set flags for the Chunked Array
-    ///
-    /// # Safety
-    /// The caller must ensure the flags are correct for the underlying chunks
-    pub(crate) unsafe fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
-        let settings = Settings::from_bits(flags)
-            .ok_or(polars_err!(ComputeError : "corrupt flags {} for {}",flags,self.dtype()))?;
-        self.bit_settings = settings;
-        Ok(())
+    pub(crate) fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+        Settings::from_bits(flags)
+            .ok_or_else(|| {
+                PolarsError::ComputeError(
+                    format!("corrupt flags {} for {}", flags, self.dtype()).into(),
+                )
+            })
+            .map(|settings| {
+                self.bit_settings = settings;
+                ()
+            })
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {

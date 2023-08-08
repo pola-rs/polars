@@ -50,7 +50,7 @@ impl PrivateSeries for NullChunked {
     }
 
     #[allow(unused)]
-    unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+    fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         Ok(())
     }
 

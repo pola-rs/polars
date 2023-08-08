@@ -28,7 +28,7 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     fn _get_flags(&self) -> u8 {
         self.0.get_flags()
     }
-    unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+    fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         self.0.set_flags(flags)
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {

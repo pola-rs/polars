@@ -60,7 +60,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    unsafe fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+    fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         self.0.deref_mut().set_flags(flags)
     }
     fn _get_flags(&self) -> u8 {
