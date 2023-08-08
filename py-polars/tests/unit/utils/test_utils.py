@@ -14,7 +14,7 @@ from polars.utils.convert import (
     _timedelta_to_pl_timedelta,
 )
 from polars.utils.meta import get_idx_type
-from polars.utils.various import _in_notebook, parse_version, parse_percentiles
+from polars.utils.various import _in_notebook, parse_percentiles, parse_version
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
@@ -133,22 +133,18 @@ def test_in_notebook() -> None:
         (0.2, [0.2, 0.5]),
         (0.5, [0.5]),
         ((0.25, 0.75), [0.25, 0.5, 0.75]),
-
         # Undocumented effect - percentiles get sorted.
         # Can be changed, this serves as documentation of current behaviour.
-        ((0.6, 0.3), [0.3, 0.5, 0.6])
-    ]
+        ((0.6, 0.3), [0.3, 0.5, 0.6]),
+    ],
 )
-def test_parse_percentiles(percentiles: Sequence[float] | float | None, expected: Sequence[float]):
+def test_parse_percentiles(
+    percentiles: Sequence[float] | float | None, expected: Sequence[float]
+) -> None:
     assert parse_percentiles(percentiles) == expected
 
 
-@pytest.mark.parametrize(
-        ("percentiles"),
-        [
-            (1.1),
-            ([-0.1])
-        ])
-def test_parse_percentiles_errors(percentiles: Sequence[float] | float | None):
+@pytest.mark.parametrize(("percentiles"), [(1.1), ([-0.1])])
+def test_parse_percentiles_errors(percentiles: Sequence[float] | float | None) -> None:
     with pytest.raises(ValueError):
         parse_percentiles(percentiles)

@@ -3926,7 +3926,6 @@ class DataFrame:
         └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
 
         """
-
         # determine metrics and optional/additional percentiles
         metrics = ["count", "null_count", "mean", "std", "min"]
         percentile_exprs = []

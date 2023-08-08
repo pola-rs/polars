@@ -1138,7 +1138,7 @@ def test_describe() -> None:
                 None,
                 1.0,
             ],
-            "d": ["3", "1", None, None, "b", None, None, None,  "c"],
+            "d": ["3", "1", None, None, "b", None, None, None, "c"],
             "e": ["3", "1", None, None, None, None, None, None, None],
             "f": ["3", "0", None, None, "2020-01-01", None, None, None, "2022-01-01"],
         }
