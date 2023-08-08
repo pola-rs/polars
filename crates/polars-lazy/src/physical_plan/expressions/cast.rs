@@ -105,9 +105,10 @@ impl PartitionedAggregation for CastExpr {
     fn finalize(
         &self,
         partitioned: Series,
-        _groups: &GroupsProxy,
-        _state: &ExecutionState,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
     ) -> PolarsResult<Series> {
-        Ok(partitioned)
+        let agg = self.input.as_partitioned_aggregator().unwrap();
+        agg.finalize(partitioned, groups, state)
     }
 }
