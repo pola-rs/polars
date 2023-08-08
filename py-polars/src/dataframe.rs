@@ -546,6 +546,7 @@ impl PyDataFrame {
         py_f: PyObject,
         has_header: bool,
         separator: u8,
+        line_terminator: String,
         quote: u8,
         batch_size: usize,
         datetime_format: Option<String>,
@@ -563,6 +564,7 @@ impl PyDataFrame {
                 CsvWriter::new(f)
                     .has_header(has_header)
                     .with_delimiter(separator)
+                    .with_line_terminator(line_terminator)
                     .with_quoting_char(quote)
                     .with_batch_size(batch_size)
                     .with_datetime_format(datetime_format)
@@ -578,6 +580,7 @@ impl PyDataFrame {
             CsvWriter::new(&mut buf)
                 .has_header(has_header)
                 .with_delimiter(separator)
+                .with_line_terminator(line_terminator)
                 .with_quoting_char(quote)
                 .with_batch_size(batch_size)
                 .with_datetime_format(datetime_format)

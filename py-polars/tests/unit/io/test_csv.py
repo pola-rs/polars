@@ -695,6 +695,14 @@ def test_write_csv_delimiter() -> None:
     assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
 
 
+def test_write_csv_line_terminator() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_csv(f, line_terminator="\r\n")
+    f.seek(0)
+    assert f.read() == b"a,b\r\n1,1\r\n2,2\r\n3,3\r\n"
+
+
 def test_escaped_null_values() -> None:
     csv = textwrap.dedent(
         """\
