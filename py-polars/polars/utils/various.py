@@ -459,7 +459,8 @@ def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[f
     """
     Transforms raw percentiles into our preferred format, adding the 50th percentile.
     
-    Raises a ValueError if the percentile sequence is invalid (e.g. outside the range [0, 1])
+    Raises a ValueError if the percentile sequence is invalid 
+    (e.g. outside the range [0, 1])
     """
 
     if isinstance(percentiles, float):
