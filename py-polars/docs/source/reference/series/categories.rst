@@ -11,4 +11,5 @@ The following methods are available under the `Series.cat` attribute.
 
     Series.cat.get_categories
     Series.cat.set_ordering
+    Series.cat.to_local
     Series.cat.uses_lexical_ordering

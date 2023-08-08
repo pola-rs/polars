@@ -75,6 +75,14 @@ class CatNameSpace:
 
         """
 
+    def to_local(self) -> Series:
+        """
+        Convert a categorical column to its local representation.
+
+        See StringCache for more info.
+
+        """
+
     def uses_lexical_ordering(self) -> bool:
         """
         Return whether or not the series uses lexical ordering.

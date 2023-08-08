@@ -6,6 +6,7 @@ use crate::map;
 pub enum CategoricalFunction {
     SetOrdering { lexical: bool },
     GetCategories,
+    ToLocal,
 }
 
 impl CategoricalFunction {
@@ -14,6 +15,7 @@ impl CategoricalFunction {
         match self {
             SetOrdering { .. } => mapper.with_same_dtype(),
             GetCategories => mapper.with_dtype(DataType::Utf8),
+            ToLocal { .. } => mapper.with_same_dtype(), // TODO
         }
     }
 }
@@ -24,6 +26,7 @@ impl Display for CategoricalFunction {
         let s = match self {
             SetOrdering { .. } => "set_ordering",
             GetCategories => "get_categories",
+            ToLocal => "to_local",
         };
         write!(f, "{s}")
     }
@@ -35,6 +38,7 @@ impl From<CategoricalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         match func {
             SetOrdering { lexical } => map!(set_ordering, lexical),
             GetCategories => map!(get_categories),
+            ToLocal => map!(to_local),
         }
     }
 }
@@ -52,6 +56,16 @@ fn set_ordering(s: &Series, lexical: bool) -> PolarsResult<Series> {
 }
 
 fn get_categories(s: &Series) -> PolarsResult<Series> {
+    // categorical check
+    let ca = s.categorical()?;
+    let DataType::Categorical(Some(rev_map)) = ca.dtype() else {
+        unreachable!()
+    };
+    let arr = rev_map.get_categories().clone().boxed();
+    Series::try_from((ca.name(), arr))
+}
+
+fn to_local(s: &Series) -> PolarsResult<Series> {
     // categorical check
     let ca = s.categorical()?;
     let DataType::Categorical(Some(rev_map)) = ca.dtype() else {

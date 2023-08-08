@@ -79,3 +79,12 @@ class ExprCatNameSpace:
 
         """
         return wrap_expr(self._pyexpr.cat_get_categories())
+
+    def to_local(self) -> Expr:
+        """
+        Convert a categorical column to its local representation.
+
+        See StringCache for more info.
+
+        """
+        return wrap_expr(self._pyexpr.cat_to_local())

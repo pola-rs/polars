@@ -11,3 +11,4 @@ The following methods are available under the `expr.cat` attribute.
 
     Expr.cat.get_categories
     Expr.cat.set_ordering
+    Expr.cat.to_local

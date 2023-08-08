@@ -25,4 +25,8 @@ impl CategoricalNameSpace {
         self.0
             .map_private(CategoricalFunction::GetCategories.into())
     }
+
+    pub fn to_local(self) -> Expr {
+        self.0.map_private(CategoricalFunction::ToLocal.into())
+    }
 }
