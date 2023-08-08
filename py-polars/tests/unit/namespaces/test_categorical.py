@@ -100,3 +100,12 @@ def test_categorical_to_local() -> None:
     out = s2.cat.to_local()
     assert out.to_physical().item() == 0
     assert out.item() == "bar"
+
+
+def test_categorical_to_local_already_local() -> None:
+    s = pl.Series("c", ["ham"], dtype=pl.Categorical)
+
+    out = s.cat.to_local()
+
+    assert out.to_physical().to_list() == [0]
+    assert out.to_list() == ["ham"]
