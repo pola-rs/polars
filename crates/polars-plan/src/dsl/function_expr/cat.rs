@@ -15,7 +15,7 @@ impl CategoricalFunction {
         match self {
             SetOrdering { .. } => mapper.with_same_dtype(),
             GetCategories => mapper.with_dtype(DataType::Utf8),
-            ToLocal { .. } => mapper.with_same_dtype(), // TODO
+            ToLocal => mapper.with_same_dtype(), // TODO: Update revmap?
         }
     }
 }
@@ -68,16 +68,18 @@ fn to_local(s: Series) -> PolarsResult<Series> {
     let rev_map = ca.get_rev_map();
 
     let (physical_map, categories) = match rev_map.get_physical_map_and_categories() {
-        Ok(v) => v,
+        Some(v) => v,
         // The categorical is already local
-        Err(_) => return Ok(s),
+        None => return Ok(s),
     };
+    let local_ca = ca.logical().apply(|v| *physical_map.get(&v).unwrap());
+    let local_rev_map = RevMapping::Local(categories.clone());
 
-    let new_ca = ca.logical().apply(|v| *physical_map.get(&v).unwrap());
-    let new_rev_map = RevMapping::Local(categories.clone());
-
-    let out =
-        unsafe { CategoricalChunked::from_cats_and_rev_map_unchecked(new_ca, new_rev_map.into()) };
+    let mut out = unsafe {
+        CategoricalChunked::from_cats_and_rev_map_unchecked(local_ca, local_rev_map.into())
+    };
+    // TODO: Set ORIGINAL flag here?
+    out.set_lexical_ordering(ca.uses_lexical_ordering());
 
     Ok(out.into_series())
 }

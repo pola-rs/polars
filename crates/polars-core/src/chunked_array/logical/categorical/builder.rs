@@ -103,12 +103,10 @@ impl RevMapping {
     /// Get the global-to-local map in this RevMapping
     pub fn get_physical_map_and_categories(
         &self,
-    ) -> PolarsResult<(&PlHashMap<u32, u32>, &Utf8Array<i64>)> {
+    ) -> Option<(&PlHashMap<u32, u32>, &Utf8Array<i64>)> {
         match self {
-            Self::Global(m, c, _) => Ok((m, c)),
-            Self::Local(_) => {
-                polars_bail!(ComputeError: "cannot get physical map from local categorical")
-            }
+            Self::Global(m, c, _) => Some((m, c)),
+            Self::Local(_) => None,
         }
     }
 
