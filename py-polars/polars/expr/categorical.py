@@ -84,7 +84,33 @@ class ExprCatNameSpace:
         """
         Convert a categorical column to its local representation.
 
-        See StringCache for more info.
+        This may change the underlying physical representation of the column.
+
+        See the documentation of :func:`StringCache` for more information on the
+        difference between local and global categoricals.
+
+        Examples
+        --------
+        Compare the global and local representations of a categorical.
+
+        >>> with pl.StringCache():
+        ...     _ = pl.Series("x", ["a", "b", "a"], dtype=pl.Categorical)
+        ...     s = pl.Series("y", ["c", "b", "d"], dtype=pl.Categorical)
+        ...
+        >>> s.to_frame().select(
+        ...     pl.col("y").to_physical().alias("global"),
+        ...     pl.col("y").cat.to_local().to_physical().alias("local"),
+        ... )
+        shape: (3, 2)
+        ┌────────┬───────┐
+        │ global ┆ local │
+        │ ---    ┆ ---   │
+        │ u32    ┆ u32   │
+        ╞════════╪═══════╡
+        │ 2      ┆ 0     │
+        │ 1      ┆ 1     │
+        │ 3      ┆ 2     │
+        └────────┴───────┘
 
         """
         return wrap_expr(self._pyexpr.cat_to_local())

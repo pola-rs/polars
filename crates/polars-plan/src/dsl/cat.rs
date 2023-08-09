@@ -26,6 +26,7 @@ impl CategoricalNameSpace {
             .map_private(CategoricalFunction::GetCategories.into())
     }
 
+    /// Convert a categorical column to its local representation.
     pub fn to_local(self) -> Expr {
         self.0.map_private(CategoricalFunction::ToLocal.into())
     }

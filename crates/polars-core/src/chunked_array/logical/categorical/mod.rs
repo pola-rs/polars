@@ -59,7 +59,7 @@ impl CategoricalChunked {
         &mut self.logical
     }
 
-    /// Convert a global categorical to a local categorical.
+    /// Convert a categorical column to its local representation.
     pub fn to_local(&self) -> Self {
         let rev_map = self.get_rev_map();
         let (physical_map, categories) = match rev_map.get_physical_map_and_categories() {

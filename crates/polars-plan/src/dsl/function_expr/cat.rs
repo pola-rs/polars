@@ -63,6 +63,7 @@ fn get_categories(s: &Series) -> PolarsResult<Series> {
     Series::try_from((ca.name(), arr))
 }
 
+/// Convert a categorical column to its local representation.
 fn to_local(s: Series) -> PolarsResult<Series> {
     let ca = s.categorical()?;
     let out = ca.to_local();
