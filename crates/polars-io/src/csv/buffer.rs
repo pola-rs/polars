@@ -392,7 +392,7 @@ impl ParsedBuffer for BooleanChunkedBuilder {
 
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 pub(crate) struct DatetimeField<T: PolarsNumericType> {
-    compiled: Option<DatetimeInfer<T::Native>>,
+    compiled: Option<DatetimeInfer<T>>,
     builder: PrimitiveChunkedBuilder<T>,
 }
 
@@ -416,7 +416,7 @@ fn slow_datetime_parser<T>(
 ) -> PolarsResult<()>
 where
     T: PolarsNumericType,
-    DatetimeInfer<T::Native>: TryFromWithUnit<Pattern>,
+    DatetimeInfer<T>: TryFromWithUnit<Pattern>,
 {
     let val = if bytes.is_ascii() {
         // Safety:
@@ -442,7 +442,7 @@ where
             }
         },
     };
-    match DatetimeInfer::<T::Native>::try_from_with_unit(pattern, time_unit) {
+    match DatetimeInfer::try_from_with_unit(pattern, time_unit) {
         Ok(mut infer) => {
             let parsed = infer.parse(val);
             buf.compiled = Some(infer);
@@ -460,7 +460,7 @@ where
 impl<T> ParsedBuffer for DatetimeField<T>
 where
     T: PolarsNumericType,
-    DatetimeInfer<T::Native>: TryFromWithUnit<Pattern> + StrpTimeParser<T::Native>,
+    DatetimeInfer<T>: TryFromWithUnit<Pattern> + StrpTimeParser<T::Native>,
 {
     #[inline]
     fn parse_bytes(
