@@ -2368,6 +2368,7 @@ class DataFrame:
         *,
         has_header: bool = ...,
         separator: str = ...,
+        line_terminator: str = ...,
         quote: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
@@ -2385,6 +2386,7 @@ class DataFrame:
         *,
         has_header: bool = ...,
         separator: str = ...,
+        line_terminator: str = ...,
         quote: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
@@ -2401,6 +2403,7 @@ class DataFrame:
         *,
         has_header: bool = True,
         separator: str = ",",
+        line_terminator: str = "\n",
         quote: str = '"',
         batch_size: int = 1024,
         datetime_format: str | None = None,
@@ -2421,6 +2424,8 @@ class DataFrame:
             Whether to include header in the CSV output.
         separator
             Separate CSV fields with this symbol.
+        line_terminator
+            String used to end each row.
         quote
             Byte to use as quoting character.
         batch_size
@@ -2467,23 +2472,11 @@ class DataFrame:
         elif null_value == "":
             null_value = None
 
+        should_return_buffer = False
         if file is None:
-            buffer = BytesIO()
-            self._df.write_csv(
-                buffer,
-                has_header,
-                ord(separator),
-                ord(quote),
-                batch_size,
-                datetime_format,
-                date_format,
-                time_format,
-                float_precision,
-                null_value,
-            )
-            return str(buffer.getvalue(), encoding="utf-8")
-
-        if isinstance(file, (str, Path)):
+            buffer = file = BytesIO()
+            should_return_buffer = True
+        elif isinstance(file, (str, Path)):
             file = normalise_filepath(file)
         elif isinstance(file, TextIOWrapper):
             file = cast(TextIOWrapper, file.buffer)
@@ -2492,6 +2485,7 @@ class DataFrame:
             file,
             has_header,
             ord(separator),
+            line_terminator,
             ord(quote),
             batch_size,
             datetime_format,
@@ -2500,6 +2494,10 @@ class DataFrame:
             float_precision,
             null_value,
         )
+
+        if should_return_buffer:
+            return str(buffer.getvalue(), encoding="utf-8")
+
         return None
 
     def write_avro(

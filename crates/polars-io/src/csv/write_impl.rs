@@ -25,8 +25,7 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
 
         if needs_escaping {
             let replaced = unsafe {
-                // replace from single quote "
-                // to double quote ""
+                // Replace from single quote " to double quote "".
                 v.replace(
                     std::str::from_utf8_unchecked(&[options.quote]),
                     std::str::from_utf8_unchecked(&[options.quote, options.quote]),
@@ -143,24 +142,27 @@ unsafe fn write_anyvalue(
     })
 }
 
-/// Options to serialize logical types to CSV
+/// Options to serialize logical types to CSV.
+///
 /// The default is to format times and dates as `chrono` crate formats them.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct SerializeOptions {
-    /// used for [`DataType::Date`]
+    /// Used for [`DataType::Date`].
     pub date_format: Option<String>,
-    /// used for [`DataType::Time`]
+    /// Used for [`DataType::Time`].
     pub time_format: Option<String>,
-    /// used for [`DataType::Datetime]
+    /// Used for [`DataType::Datetime`].
     pub datetime_format: Option<String>,
-    /// used for [`DataType::Float64`] and [`DataType::Float32`]
+    /// Used for [`DataType::Float64`] and [`DataType::Float32`].
     pub float_precision: Option<usize>,
-    /// used as separator/delimiter
+    /// Used as separator/delimiter.
     pub delimiter: u8,
-    /// quoting character
+    /// Quoting character.
     pub quote: u8,
-    /// null value representation
+    /// Null value representation.
     pub null: String,
+    /// String appended after every row.
+    pub line_terminator: String,
 }
 
 impl Default for SerializeOptions {
@@ -173,11 +175,12 @@ impl Default for SerializeOptions {
             delimiter: b',',
             quote: b'"',
             null: String::new(),
+            line_terminator: "\n".into(),
         }
     }
 }
 
-/// Utility to write to `&mut Vec<u8>` buffer
+/// Utility to write to `&mut Vec<u8>` buffer.
 struct StringWrap<'a>(pub &'a mut Vec<u8>);
 
 impl<'a> std::fmt::Write for StringWrap<'a> {
@@ -212,7 +215,7 @@ pub(crate) fn write<W: Write>(
         );
     }
 
-    // check that the double quote is valid utf8
+    // Check that the double quote is valid UTF-8.
     polars_ensure!(
         std::str::from_utf8(&[options.quote, options.quote]).is_ok(),
         ComputeError: "quote char results in invalid utf-8",
@@ -355,7 +358,7 @@ pub(crate) fn write<W: Write>(
                     }
                 }
                 if !finished {
-                    writeln!(&mut write_buffer).unwrap();
+                    write!(&mut write_buffer, "{}", options.line_terminator).unwrap();
                 }
             }
 
@@ -381,7 +384,7 @@ pub(crate) fn write<W: Write>(
     Ok(())
 }
 
-/// Writes a CSV header to `writer`
+/// Writes a CSV header to `writer`.
 pub(crate) fn write_header<W: Write>(
     writer: &mut W,
     names: &[&str],
@@ -393,7 +396,7 @@ pub(crate) fn write_header<W: Write>(
     for name in names {
         fmt_and_escape_str(&mut nm, name, options)?;
         unsafe {
-            // Safety: we know headers will be valid utf8 at this point
+            // SAFETY: we know headers will be valid UTF-8 at this point
             escaped_names.push(std::str::from_utf8_unchecked(&nm).to_string());
         }
         nm.clear();
@@ -403,6 +406,6 @@ pub(crate) fn write_header<W: Write>(
             .join(std::str::from_utf8(&[options.delimiter]).unwrap())
             .as_bytes(),
     )?;
-    writer.write_all(&[b'\n'])?;
+    writer.write_all(options.line_terminator.as_bytes())?;
     Ok(())
 }
