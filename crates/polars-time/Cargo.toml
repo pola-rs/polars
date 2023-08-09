@@ -14,15 +14,15 @@ polars-core = { version = "0.31.1", path = "../polars-core", default-features = 
 polars-ops = { version = "0.31.1", path = "../polars-ops" }
 polars-utils = { version = "0.31.1", path = "../polars-utils" }
 
-arrow.workspace = true
-atoi = "2.0.0"
-chrono = { version = "0.4", default-features = false, features = ["std"] }
-chrono-tz = { version = "0.8", optional = true }
-now = "0.1"
-once_cell.workspace = true
-regex = "1.7.1"
-serde = { version = "1", features = ["derive"], optional = true }
-smartstring.workspace = true
+arrow = { workspace = true }
+atoi = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true, optional = true }
+now = { version = "0.1" }
+once_cell = { workspace = true }
+regex = { version = "1.7.1" }
+serde = { workspace = true, features = ["derive"], optional = true }
+smartstring = { workspace = true }
 
 [features]
 dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]

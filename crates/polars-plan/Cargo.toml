@@ -19,19 +19,19 @@ polars-ops = { version = "0.31.1", path = "../polars-ops", default-features = fa
 polars-time = { version = "0.31.1", path = "../polars-time", optional = true }
 polars-utils = { version = "0.31.1", path = "../polars-utils" }
 
-ahash.workspace = true
-arrow.workspace = true
-chrono = { version = "0.4", optional = true }
-chrono-tz = { version = "0.8", optional = true }
-ciborium = { version = "0.2", optional = true }
-futures = { version = "0.3.25", optional = true }
-once_cell.workspace = true
-pyo3 = { version = "0.19", optional = true }
-rayon.workspace = true
-regex = { version = "1.6", optional = true }
-serde = { version = "1", features = ["derive", "rc"], optional = true }
-smartstring.workspace = true
-strum_macros.workspace = true
+ahash = { workspace = true }
+arrow = { workspace = true }
+chrono = { workspace = true, optional = true }
+chrono-tz = { workspace = true, optional = true }
+ciborium = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+once_cell = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+rayon = { workspace = true }
+regex = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive", "rc"], optional = true }
+smartstring = { workspace = true }
+strum_macros = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }

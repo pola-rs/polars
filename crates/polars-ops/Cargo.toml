@@ -15,18 +15,18 @@ polars-json = { version = "0.31.1", optional = true, path = "../polars-json", de
 polars-utils = { version = "0.31.1", path = "../polars-utils", default-features = false }
 
 argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
-arrow.workspace = true
+arrow = { workspace = true }
 base64 = { version = "0.21", optional = true }
-chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
-chrono-tz = { version = "0.8", optional = true }
-either.workspace = true
+chrono = { workspace = true, optional = true }
+chrono-tz = { workspace = true, optional = true }
+either = { workspace = true }
 hex = { version = "0.4", optional = true }
-indexmap.workspace = true
+indexmap = { workspace = true }
 jsonpath_lib = { version = "0.3.0", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
-memchr.workspace = true
-serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
-smartstring.workspace = true
+memchr = { workspace = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true, optional = true }
+smartstring = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }

@@ -3,15 +3,16 @@ name = "py-polars"
 version = "0.18.13"
 edition = "2021"
 
-[workspace]
-# prevents package from thinking it's in the workspace
-[target.'cfg(any(not(target_os = "linux"), use_mimalloc))'.dependencies]
-mimalloc = { version = "*", default-features = false }
-
-[target.'cfg(all(target_os = "linux", not(use_mimalloc)))'.dependencies]
-jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
+[lib]
+name = "polars"
+crate-type = ["cdylib"]
 
 [dependencies]
+polars-algo = { path = "../crates/polars-algo", default-features = false }
+polars-core = { path = "../crates/polars-core", features = ["python"], default-features = false }
+polars-error = { path = "../crates/polars-error" }
+polars-lazy = { path = "../crates/polars-lazy", features = ["python"], default-features = false }
+
 ahash = "0.8"
 ciborium = "0.2.0"
 either = "1.8"
@@ -21,15 +22,75 @@ libc = "0.2"
 ndarray = "0.15"
 numpy = "0.19"
 once_cell = "1"
-polars-algo = { path = "../crates/polars-algo", default-features = false }
-polars-core = { path = "../crates/polars-core", features = ["python"], default-features = false }
-polars-error = { path = "../crates/polars-error" }
-polars-lazy = { path = "../crates/polars-lazy", features = ["python"], default-features = false }
 pyo3 = { version = "0.19", features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
 pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 smartstring = "1"
 thiserror = "^1.0"
+
+[dependencies.polars]
+path = "../crates/polars"
+default-features = false
+features = [
+  "abs",
+  "approx_unique",
+  "arg_where",
+  "concat_str",
+  "cum_agg",
+  "cumulative_eval",
+  "dataframe_arithmetic",
+  "date_offset",
+  "diagonal_concat",
+  "diff",
+  "dot_diagram",
+  "dot_product",
+  "dtype-categorical",
+  "dtype-full",
+  "dynamic_groupby",
+  "ewma",
+  "fmt",
+  "horizontal_concat",
+  "interpolate",
+  "is_first",
+  "is_unique",
+  "lazy",
+  "list_eval",
+  "list_to_struct",
+  "log",
+  "mode",
+  "moment",
+  "ndarray",
+  "partition_by",
+  "product",
+  "random",
+  "range",
+  "rank",
+  "reinterpret",
+  "rolling_window",
+  "round_series",
+  "row_hash",
+  "rows",
+  "semi_anti_join",
+  "serde-lazy",
+  "string_encoding",
+  "string_from_radix",
+  "string_justify",
+  "strings",
+  "temporal",
+  "to_dummies",
+  "true_div",
+  "unique_counts",
+  "zip_with",
+]
+
+[build-dependencies]
+built = { version = "0.6", features = ["chrono", "git2"], optional = true }
+
+[target.'cfg(any(not(target_os = "linux"), use_mimalloc))'.dependencies]
+mimalloc = { version = "*", default-features = false }
+
+[target.'cfg(all(target_os = "linux", not(use_mimalloc)))'.dependencies]
+jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]
@@ -131,65 +192,6 @@ default = [
   "nightly",
 ]
 
-[dependencies.polars]
-path = "../crates/polars"
-default-features = false
-features = [
-  "dynamic_groupby",
-  "zip_with",
-  "lazy",
-  "strings",
-  "temporal",
-  "random",
-  "fmt",
-  "dtype-full",
-  "rows",
-  "round_series",
-  "is_first",
-  "is_unique",
-  "dot_product",
-  "concat_str",
-  "row_hash",
-  "reinterpret",
-  "mode",
-  "cum_agg",
-  "rolling_window",
-  "interpolate",
-  "rank",
-  "diff",
-  "moment",
-  "range",
-  "true_div",
-  "dtype-categorical",
-  "diagonal_concat",
-  "horizontal_concat",
-  "abs",
-  "ewma",
-  "dot_diagram",
-  "dataframe_arithmetic",
-  "string_encoding",
-  "product",
-  "ndarray",
-  "unique_counts",
-  "log",
-  "serde-lazy",
-  "partition_by",
-  "semi_anti_join",
-  "list_eval",
-  "cumulative_eval",
-  "list_to_struct",
-  "to_dummies",
-  "string_justify",
-  "string_from_radix",
-  "arg_where",
-  "date_offset",
-  "approx_unique",
-]
-
-[lib]
-name = "polars"
-crate-type = ["cdylib"]
-
 [profile.opt-dev]
 inherits = "dev"
 opt-level = 1
@@ -209,8 +211,8 @@ lto = "fat"
 # Should not be used when packaging
 # target-cpu = "native"
 
-[build-dependencies]
-built = { version = "0.6", features = ["chrono", "git2"], optional = true }
-
 [patch.crates-io]
 simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "initialize" }
+
+# Prevent package from thinking it's in the workspace
+[workspace]

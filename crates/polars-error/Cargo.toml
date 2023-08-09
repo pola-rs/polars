@@ -9,6 +9,6 @@ repository = { workspace = true }
 description = "Error definitions for the Polars DataFrame library"
 
 [dependencies]
-arrow.workspace = true
-regex = { version = "1.6", optional = true }
-thiserror.workspace = true
+arrow = { workspace = true }
+regex = { workspace = true, optional = true }
+thiserror = { workspace = true }
