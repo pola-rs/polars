@@ -292,10 +292,6 @@ impl SQLContext {
             None => lf,
         };
 
-        if !query.order_by.is_empty() {
-            lf = self.process_order_by(lf, &query.order_by)?;
-        }
-
         // Column Projections
         let projections: Vec<_> = select_stmt
             .projection
@@ -344,8 +340,25 @@ impl SQLContext {
             })
             .collect::<PolarsResult<_>>()?;
 
-        if group_by_keys.is_empty() {
-            lf = lf.select(projections)
+        lf = if groupby_keys.is_empty() {
+            if  query.order_by.is_empty() {
+                lf.select(projections)
+            } else {
+                let schema = lf.schema()?;
+                let column_names = schema.get_names();
+                lf = lf.with_columns(projections);
+                lf = self.process_order_by(lf, &query.order_by)?;
+
+                let value = projections
+                .iter()
+                .find(|expr| match expr {
+                            Expr::Alias(expr, name) => true,  
+                            Expr::Column(name) => false,  
+                            _ => false,
+                        });
+
+                lf.drop_columns(column_names)
+            }
         } else {
             lf = self.process_group_by(lf, contains_wildcard, &group_by_keys, &projections)?;
 
