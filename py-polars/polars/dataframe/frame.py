@@ -2471,10 +2471,10 @@ class DataFrame:
         elif null_value == "":
             null_value = None
 
-        should_return = False
+        should_return_buffer = False
         if file is None:
-            file = BytesIO()
-            should_return = True
+            buffer = file = BytesIO()
+            should_return_buffer = True
         elif isinstance(file, (str, Path)):
             file = normalise_filepath(file)
         elif isinstance(file, TextIOWrapper):
@@ -2494,8 +2494,10 @@ class DataFrame:
             null_value,
         )
 
-        if should_return:
-            return str(file.getvalue(), encoding="utf-8")
+        if should_return_buffer:
+            return str(buffer.getvalue(), encoding="utf-8")
+
+        return None
 
     def write_avro(
         self,
