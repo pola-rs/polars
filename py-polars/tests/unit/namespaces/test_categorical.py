@@ -89,7 +89,7 @@ def test_categorical_get_categories() -> None:
     ).cat.get_categories().to_list() == ["foo", "bar", "ham"]
 
 
-def test_categorical_to_local() -> None:
+def test_cat_to_local() -> None:
     with pl.StringCache():
         s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
         s2 = pl.Series(["c", "b", "d"], dtype=pl.Categorical)
@@ -111,7 +111,7 @@ def test_categorical_to_local() -> None:
     assert s2.to_list() == ["c", "b", "d"]
 
 
-def test_categorical_to_local_already_local() -> None:
+def test_cat_to_local_already_local() -> None:
     s = pl.Series(["a", "c", "a", "b"], dtype=pl.Categorical)
 
     assert s.cat.is_local()
@@ -121,7 +121,7 @@ def test_categorical_to_local_already_local() -> None:
     assert out.to_list() == ["a", "c", "a", "b"]
 
 
-def test_categorical_is_local() -> None:
+def test_cat_is_local() -> None:
     s = pl.Series(["a", "c", "a", "b"], dtype=pl.Categorical)
     assert s.cat.is_local()
 

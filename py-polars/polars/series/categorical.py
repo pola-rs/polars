@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.series.utils import expr_dispatch
+from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from polars import Series
@@ -133,6 +134,7 @@ class CatNameSpace:
         ]
 
         """
+        return wrap_s(self._s.cat_to_local())
 
     def uses_lexical_ordering(self) -> bool:
         """
