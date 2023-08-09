@@ -20,8 +20,8 @@ type SubExprCount = PlHashMap<Identifier, (Node, usize)>;
 /// (post_visit_idx, identifier);
 type IdentifierArray = Vec<(usize, Identifier)>;
 
-fn replace_name(id: &str, output_name: &str) -> String {
-    format!("{}_POLARS_START{}_POLARS_END{}", CSE_REPLACED, output_name, id)
+fn replace_name(id: &str) -> String {
+    format!("{}{}", CSE_REPLACED, id)
 }
 
 #[derive(Debug)]
@@ -253,17 +253,18 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 struct CommonSubExprRewriter<'a> {
     sub_expr_map: &'a SubExprCount,
     identifier_array: &'a IdentifierArray,
-    /// keep track of the replaced identifiers
+    /// keep track of the replaced identifiers.
     replaced_identifiers: &'a mut PlHashSet<Identifier>,
-    input_schema: &'a Schema,
 
     max_post_visit_idx: usize,
     /// index in traversal order in which `identifier_array`
     /// was written. This is the index in `identifier_array`.
     visited_idx: usize,
-    /// Offset in the identifier array
-    /// this allows us to use a single `vec` on multiple expressions
+    /// Offset in the identifier array.
+    /// This allows us to use a single `vec` on multiple expressions
     id_array_offset: usize,
+    /// Indicates if this expression is rewritten.
+    rewritten: bool,
 }
 
 impl<'a> CommonSubExprRewriter<'a> {
@@ -271,17 +272,16 @@ impl<'a> CommonSubExprRewriter<'a> {
         sub_expr_map: &'a SubExprCount,
         identifier_array: &'a IdentifierArray,
         replaced_identifiers: &'a mut PlHashSet<Identifier>,
-        input_schema: &'a Schema,
         id_array_offset: usize,
     ) -> Self {
         Self {
             sub_expr_map,
             identifier_array,
             replaced_identifiers,
-            input_schema,
             max_post_visit_idx: 0,
             visited_idx: 0,
             id_array_offset,
+            rewritten: false,
         }
     }
 }
@@ -390,9 +390,9 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             self.visited_idx += 1;
         }
 
-        let output_field = node.to_field(self.input_schema)?;
-        let name = replace_name(id.as_ref(), output_field.name.as_ref());
+        let name = replace_name(id.as_ref());
         node.assign(AExpr::col(name.as_ref()));
+        self.rewritten = true;
 
         Ok(node)
     }
@@ -436,29 +436,32 @@ impl<'a> CommonSubExprOptimizer<'a> {
         ae_node.visit(&mut visitor).map(|_| ())?;
         Ok((visitor.id_array_offset, visitor.has_sub_expr))
     }
-    fn mutate_expression<'b>(
+
+    /// Mutate the expression.
+    /// Returns a new expression and a `bool` indicating if it was rewritten or not.
+    fn mutate_expression(
         &mut self,
         ae_node: AexprNode,
         id_array_offset: usize,
-        schema: &'b Schema,
-    ) -> PolarsResult<AexprNode> {
+    ) -> PolarsResult<(AexprNode, bool)> {
         let mut rewriter = CommonSubExprRewriter::new(
             &self.se_count,
             &self.id_array,
             &mut self.replaced_identifiers,
-            schema,
             id_array_offset,
         );
-        ae_node.rewrite(&mut rewriter)
+        ae_node
+            .rewrite(&mut rewriter)
+            .map(|out| (out, rewriter.rewritten))
     }
 
-    fn find_cse<'b>(
+    fn find_cse(
         &mut self,
         expr: &[Node],
         expr_arena: &mut Arena<AExpr>,
         id_array_offsets: &mut Vec<u32>,
         is_groupby: bool,
-        schema: &'b Schema,
+        schema: &Schema,
     ) -> PolarsResult<Option<ProjectionExprs>> {
         let mut has_sub_expr = false;
 
@@ -477,16 +480,33 @@ impl<'a> CommonSubExprOptimizer<'a> {
             has_sub_expr |= this_expr_has_se;
         }
 
-        dbg!(&self.se_count);
         if has_sub_expr {
             let mut new_expr = Vec::with_capacity_by_factor(expr.len(), 1.3);
 
             // then rewrite the expressions that have a cse count > 1
             for (node, offset) in expr.iter().zip(id_array_offsets.iter()) {
-                let new_node = AexprNode::with_context(*node, expr_arena, |ae_node| {
-                    self.mutate_expression(ae_node, *offset as usize, schema)
-                })?;
-                new_expr.push(new_node.node())
+                let new_node =
+                    AexprNode::with_context_and_arena(*node, expr_arena, |ae_node, expr_arena| {
+                        let (out, rewritten) = self.mutate_expression(ae_node, *offset as usize)?;
+
+                        let mut out_node = out.node();
+                        if !rewritten {
+                            return Ok(out_node);
+                        }
+
+                        let ae = expr_arena.get(out_node);
+                        // If we don't end with an alias we add an alias. Because the normal left-hand
+                        // rule we apply for determining the name will not work we now refer to
+                        // intermediate temporary names starting with the `CSE_REPLACED` constant.
+                        if !matches!(ae, AExpr::Alias(_, _)) {
+                            let name = ae_node.to_field(schema)?.name;
+                            out_node =
+                                expr_arena.add(AExpr::Alias(out_node, Arc::from(name.as_str())))
+                        }
+
+                        PolarsResult::Ok(out_node)
+                    })?;
+                new_expr.push(new_node)
             }
             // Add the tmp columns
             for id in &self.replaced_identifiers {
@@ -602,26 +622,10 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         let maintain_order = *maintain_order;
                         let input = *input;
 
-                        pub fn dbg_nodes(nodes: &[Node], arena: &Arena<AExpr>) {
-                            println!("[");
-                            for node in nodes {
-                                let e = node_to_expr(*node, arena);
-                                println!("{e}")
-                            }
-                            println!("]");
-                        }
-
-                        dbg_nodes(aggs.cse_exprs(), &expr_arena);
-
-                        println!("---");
-                        dbg_nodes(aggs.default_exprs(), &expr_arena);
-
-
                         let lp = ALogicalPlanBuilder::new(input, &mut expr_arena, lp_arena)
                             .with_columns(aggs.cse_exprs().to_vec(), Default::default())
                             .build();
                         let input = lp_arena.add(lp);
-
 
                         let lp = ALogicalPlan::Aggregate {
                             input,
@@ -673,13 +677,8 @@ mod test {
         schema.with_column("bar".into(), DataType::Int32);
 
         let mut replaced_ids = Default::default();
-        let mut rewriter = CommonSubExprRewriter::new(
-            &se_count,
-            &id_array,
-            &mut replaced_ids,
-            &schema,
-            id_array_offset,
-        );
+        let mut rewriter =
+            CommonSubExprRewriter::new(&se_count, &id_array, &mut replaced_ids, id_array_offset);
         let ae_node =
             AexprNode::with_context(node, &mut arena, |ae_node| ae_node.rewrite(&mut rewriter))
                 .unwrap();

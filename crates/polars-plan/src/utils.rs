@@ -6,7 +6,6 @@ use std::vec::IntoIter;
 use polars_core::prelude::*;
 use smartstring::alias::String as SmartString;
 
-use crate::constants::CSE_REPLACED;
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
@@ -416,18 +415,4 @@ pub fn expr_is_projected_upstream(
         .unwrap();
     let output_name = output_field.name();
     projected_names.contains(output_name.as_str())
-}
-
-pub fn rename_cse_tmp_series(s: &mut Series) {
-    if s.name().starts_with(CSE_REPLACED) {
-        let field = s.field().into_owned();
-        let name = &field.name;
-        let pat = "_POLARS_START";
-        let offset = name.find(pat).unwrap() + pat.len();
-        let pat = "_POLARS_END";
-        let offset2 = name.find(pat).unwrap();
-        let name = &name[offset..offset2];
-        dbg!(name);
-        s.rename(name);
-    }
 }

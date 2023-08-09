@@ -163,16 +163,10 @@ pub(super) fn evaluate_physical_expressions(
         unsafe {
             df.hstack_mut_unchecked(&tmp_cols);
         }
-        let mut result = expr_runner(df, exprs, state)?;
+        let result = expr_runner(df, exprs, state)?;
         // restore original df
         unsafe {
             df.get_columns_mut().truncate(width);
-        }
-
-        // the replace CSE has a temporary name
-        // we don't want this name in the result
-        for s in result.iter_mut() {
-            rename_cse_tmp_series(s);
         }
 
         result
