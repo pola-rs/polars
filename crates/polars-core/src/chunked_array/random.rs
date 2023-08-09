@@ -29,8 +29,13 @@ fn create_rand_index_no_replacement(
     shuffle: bool,
 ) -> IdxCa {
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
-    let mut buf = vec![0; n];
-    (0..len as IdxSize).choose_multiple_fill(&mut rng, &mut buf);
+    let mut buf;
+    if n == len {
+        buf = (0..len as IdxSize).collect();
+    } else {
+        buf = vec![0; n];
+        (0..len as IdxSize).choose_multiple_fill(&mut rng, &mut buf);
+    }
     if shuffle {
         buf.shuffle(&mut rng)
     }
