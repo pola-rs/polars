@@ -27,7 +27,7 @@ use arrow::compute::comparison::Simd8;
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::simd::Simd;
-use arrow::types::{NativeType, Offset};
+use arrow::types::NativeType;
 pub use dtype::*;
 pub use field::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
@@ -107,7 +107,7 @@ impl PolarsDataType for Utf8Type {
     }
 }
 
-unsafe impl<O: Offset> StaticallyMatchesPolarsType<Utf8Type> for Utf8Array<O> {}
+unsafe impl StaticallyMatchesPolarsType<Utf8Type> for Utf8Array<i64> {}
 
 impl PolarsDataType for BinaryType {
     fn get_dtype() -> DataType {
@@ -115,7 +115,7 @@ impl PolarsDataType for BinaryType {
     }
 }
 
-unsafe impl<O: Offset> StaticallyMatchesPolarsType<BinaryType> for BinaryArray<O> {}
+unsafe impl StaticallyMatchesPolarsType<BinaryType> for BinaryArray<i64> {}
 
 pub struct BooleanType {}
 
@@ -134,7 +134,7 @@ impl PolarsDataType for ListType {
     }
 }
 
-unsafe impl<O: Offset> StaticallyMatchesPolarsType<ListType> for ListArray<O> {}
+unsafe impl StaticallyMatchesPolarsType<ListType> for ListArray<i64> {}
 
 #[cfg(feature = "dtype-array")]
 impl PolarsDataType for FixedSizeListType {

@@ -46,13 +46,11 @@ where
     T: PolarsNumericType,
 {
     fn from_iter<I: IntoIterator<Item = (Vec<T::Native>, Option<Bitmap>)>>(iter: I) -> Self {
-        let mut chunks = vec![];
-
-        for (values, opt_buffer) in iter {
-            chunks.push(to_array::<T>(values, opt_buffer))
-        }
-        // safety: same type
-        unsafe { ChunkedArray::from_chunks("from_iter", chunks) }
+        // SAFETY: all same type.
+        let chunks = iter
+            .into_iter()
+            .map(|(values, opt_buffer)| to_array::<T>(values, opt_buffer));
+        unsafe { ChunkedArray::from_chunks("from_iter", chunks.collect()) }
     }
 }
 
@@ -72,8 +70,8 @@ where
     T: PolarsNumericType,
 {
     fn from_slice(name: &str, v: &[T::Native]) -> Self {
+        // SAFETY: all same type.
         let arr = PrimitiveArray::<T::Native>::from_slice(v).to(T::get_dtype().to_arrow());
-        // safety: same type
         unsafe { ChunkedArray::from_chunks(name, vec![Box::new(arr)]) }
     }
 
