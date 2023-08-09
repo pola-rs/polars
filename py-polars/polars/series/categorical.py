@@ -75,6 +75,15 @@ class CatNameSpace:
 
         """
 
+    def is_local(self) -> bool:
+        """
+        Return whether or not the categorical is a local categorical.
+
+        See StringCache for more info.
+
+        """
+        return self._s.cat_is_local()
+
     def to_local(self) -> Series:
         """
         Convert a categorical column to its local representation.

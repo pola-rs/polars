@@ -101,10 +101,12 @@ def test_categorical_to_local() -> None:
     out = s2.cat.to_local()
 
     # Physical has changed and now starts at 0, string values are the same
+    assert out.cat.is_local()
     assert out.to_physical().to_list() == [0, 1, 2]
     assert out.to_list() == s2.to_list()
 
-    # s2 should be unchanged
+    # s2 should be unchanged after the operation
+    assert not s2.cat.is_local()
     assert s2.to_physical().to_list() == [2, 1, 3]
     assert s2.to_list() == ["c", "b", "d"]
 
@@ -112,7 +114,28 @@ def test_categorical_to_local() -> None:
 def test_categorical_to_local_already_local() -> None:
     s = pl.Series(["a", "c", "a", "b"], dtype=pl.Categorical)
 
+    assert s.cat.is_local()
     out = s.cat.to_local()
 
     assert out.to_physical().to_list() == [0, 1, 0, 2]
     assert out.to_list() == ["a", "c", "a", "b"]
+
+
+def test_categorical_is_local() -> None:
+    s = pl.Series(["a", "c", "a", "b"], dtype=pl.Categorical)
+    assert s.cat.is_local()
+
+    with pl.StringCache():
+        s2 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
+    assert not s2.cat.is_local()
+
+
+def test_cat_uses_lexical_ordering() -> None:
+    s = pl.Series(["a", "b", None, "b"]).cast(pl.Categorical)
+    assert s.cat.uses_lexical_ordering() is False
+
+    s = s.cat.set_ordering("lexical")
+    assert s.cat.uses_lexical_ordering() is True
+
+    s = s.cat.set_ordering("physical")
+    assert s.cat.uses_lexical_ordering() is False

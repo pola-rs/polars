@@ -99,6 +99,11 @@ impl PySeries {
         Ok(ca.uses_lexical_ordering())
     }
 
+    pub fn cat_is_local(&self) -> PyResult<bool> {
+        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
+        Ok(ca.get_rev_map().is_local())
+    }
+
     fn estimated_size(&self) -> usize {
         self.series.estimated_size()
     }
