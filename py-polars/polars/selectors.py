@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import timezone
-from typing import TYPE_CHECKING, Any, Collection, TypeVar
+from typing import TYPE_CHECKING, Any, Collection, Mapping, TypeVar
 
 from polars import functions as F
 from polars.datatypes import (
@@ -17,6 +17,7 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.expr import Expr
+from polars.utils.deprecation import deprecate_function
 
 if TYPE_CHECKING:
     import sys
@@ -31,11 +32,91 @@ if TYPE_CHECKING:
         from typing_extensions import Self
 
 
+def is_selector(obj: Any) -> bool:
+    """
+    Indicate whether the given object/expression is a selector.
+
+    Examples
+    --------
+    >>> from polars.selectors import is_selector
+    >>> import polars.selectors as cs
+    >>> is_selector(pl.col("colx"))
+    False
+    >>> is_selector(cs.first() | cs.last())
+    True
+    """
+    # note: don't want to expose the "_selector_proxy_" object
+    return isinstance(obj, _selector_proxy_)
+
+
+def expand_selector(
+    target: DataFrame | LazyFrame | Mapping[str, PolarsDataType], selector: SelectorType
+) -> tuple[str, ...]:
+    """
+    Expand a selector to column names with respect to a specific frame or schema target.
+
+    Parameters
+    ----------
+    target
+        A polars DataFrame, LazyFrame or schema.
+    selector
+        An arbitrary polars selector (or compound selector).
+
+    Examples
+    --------
+    >>> from polars.selectors import expand_selector
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "colx": ["x", "y"],
+    ...         "coly": [123, 456],
+    ...         "colz": [2.0, 5.5],
+    ...     }
+    ... )
+    >>> expand_selector(df, cs.numeric())
+    ('coly', 'colz')
+    >>> expand_selector(df, cs.first() | cs.last())
+    ('colx', 'colz')
+    >>> expand_selector(df, ~(cs.first() | cs.last()))
+    ('coly',)
+    """
+    if isinstance(target, Mapping):
+        from polars.dataframe import DataFrame
+
+        target = DataFrame(schema=target)
+
+    return tuple(target.select(selector).columns)
+
+
+@deprecate_function(
+    message="This function has been superseded by `expand_selector`; please update accordingly",
+    version="0.18.13",
+)
+def selector_column_names(
+    frame: DataFrame | LazyFrame, selector: SelectorType
+) -> tuple[str, ...]:
+    """
+    Return the column names that would be selected from the given frame.
+
+    .. deprecated:: 0.18.13
+       Use :func:`expand_selector` instead.
+
+    Parameters
+    ----------
+    frame
+        A polars DataFrame or LazyFrame.
+    selector
+        An arbitrary polars selector (or compound selector).
+
+    """
+    return expand_selector(target=frame, selector=selector)
+
+
 def _expand_selectors(
     frame: DataFrame | LazyFrame, items: Any, *more_items: Any
 ) -> list[Any]:
     """
-    Expand any selectors to column names in the given input.
+    Internal function that expands any selectors to column names in the given input.
 
     Non-selector values are left as-is.
 
@@ -67,62 +148,11 @@ def _expand_selectors(
         *more_items,
     ):
         if is_selector(item):
-            selector_cols = selector_column_names(frame, item)
+            selector_cols = expand_selector(frame, item)
             expanded.extend(selector_cols)
         else:
             expanded.append(item)
     return expanded
-
-
-def is_selector(obj: Any) -> bool:
-    """
-    Indicate whether the given object/expression is a selector.
-
-    Examples
-    --------
-    >>> from polars.selectors import is_selector
-    >>> import polars.selectors as cs
-    >>> is_selector(pl.col("colx"))
-    False
-    >>> is_selector(cs.first() | cs.last())
-    True
-    """
-    # note: don't want to expose the "_selector_proxy_" object
-    return isinstance(obj, _selector_proxy_)
-
-
-def selector_column_names(
-    frame: DataFrame | LazyFrame, selector: SelectorType
-) -> tuple[str, ...]:
-    """
-    Return the column names that would be selected from the given frame.
-
-    Parameters
-    ----------
-    frame
-        A polars DataFrame or LazyFrame.
-    selector
-        An arbitrary polars selector (or compound selector).
-
-    Examples
-    --------
-    >>> from polars.selectors import selector_column_names
-    >>> import polars.selectors as cs
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "colx": ["x", "y"],
-    ...         "coly": [123, 456],
-    ...         "colz": [2.0, 5.5],
-    ...     }
-    ... )
-    >>> selector_column_names(df, cs.numeric())
-    ('coly', 'colz')
-    >>> selector_column_names(df, cs.first() | cs.last())
-    ('colx', 'colz')
-    >>> selector_column_names(df, ~(cs.first() | cs.last()))
-    ('coly',)
-    """
-    return tuple(frame.clear().select(selector).columns)
 
 
 class _selector_proxy_(Expr):
@@ -1408,6 +1438,6 @@ __all__ = [
     "temporal",
     "string",
     "is_selector",
-    "selector_column_names",
+    "expand_selector",
     "SelectorType",
 ]

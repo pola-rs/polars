@@ -8809,10 +8809,10 @@ class DataFrame:
         iter_rows : Row iterator over frame data (does not materialise all rows).
 
         """
-        from polars.selectors import is_selector, selector_column_names
+        from polars.selectors import expand_selector, is_selector
 
         if is_selector(key):
-            key_tuple = selector_column_names(frame=self, selector=key)  # type: ignore[type-var]
+            key_tuple = expand_selector(target=self, selector=key)  # type: ignore[type-var]
         elif not isinstance(key, str):
             key_tuple = tuple(key)  # type: ignore[arg-type]
         else:
