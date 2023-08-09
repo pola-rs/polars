@@ -295,7 +295,7 @@ impl PolarsFloatType for Float64Type {}
 pub type CloudOptions = PlHashMap<String, String>;
 
 /// Used to safely match the underlying type of Polars data structures.
-/// 
+///
 /// # Safety
 ///
 /// The underlying physical type of the data structure on which this
