@@ -60,12 +60,12 @@ impl CategoricalChunked {
     }
 
     /// Convert a global categorical to a local categorical.
-    pub fn to_local(self) -> Self {
+    pub fn to_local(&self) -> Self {
         let rev_map = self.get_rev_map();
         let (physical_map, categories) = match rev_map.get_physical_map_and_categories() {
             Some(v) => v,
             // The categorical is already local
-            None => return self,
+            None => return self.clone(),
         };
 
         let local_ca = self.logical().apply(|v| *physical_map.get(&v).unwrap());
@@ -73,7 +73,7 @@ impl CategoricalChunked {
 
         let mut out =
             unsafe { Self::from_cats_and_rev_map_unchecked(local_ca, local_rev_map.into()) };
-        // TODO: Set ORIGINAL flag here?
+        out.set_fast_unique(self.can_fast_unique());
         out.set_lexical_ordering(self.uses_lexical_ordering());
 
         out

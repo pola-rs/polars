@@ -65,6 +65,6 @@ fn get_categories(s: &Series) -> PolarsResult<Series> {
 
 fn to_local(s: Series) -> PolarsResult<Series> {
     let ca = s.categorical()?;
-    let out = ca.clone().to_local();
+    let out = ca.to_local();
     Ok(out.into_series())
 }
