@@ -27,11 +27,9 @@ fn cast_and_apply<
                 },
             )
             .unwrap();
-            Box::from(func(&*arr).unwrap()) as ArrayRef
-        })
-        .collect();
-
-    unsafe { ChunkedArray::from_chunks(ca.name(), chunks) }
+            func(&*arr).unwrap()
+        });
+    ChunkedArray::from_chunk_iter(ca.name(), chunks)
 }
 
 pub trait DatetimeMethods: AsDatetime {
