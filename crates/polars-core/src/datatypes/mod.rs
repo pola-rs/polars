@@ -27,7 +27,7 @@ use arrow::compute::comparison::Simd8;
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::simd::Simd;
-use arrow::types::NativeType;
+use arrow::types::{NativeType, Offset};
 pub use dtype::*;
 pub use field::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
@@ -63,6 +63,8 @@ pub trait PolarsDataType: Send + Sync {
         Self: Sized;
 }
 
+pub unsafe trait StaticallyMatchesPolarsType<T: PolarsDataType> {}
+
 macro_rules! impl_polars_datatype {
     ($ca:ident, $variant:ident, $physical:ty) => {
         #[derive(Clone, Copy)]
@@ -74,6 +76,8 @@ macro_rules! impl_polars_datatype {
                 DataType::$variant
             }
         }
+
+        unsafe impl StaticallyMatchesPolarsType<$ca> for PrimitiveArray<$physical> {}
     };
 }
 
@@ -101,11 +105,15 @@ impl PolarsDataType for Utf8Type {
     }
 }
 
+unsafe impl<O: Offset> StaticallyMatchesPolarsType<Utf8Type> for Utf8Array<O> {}
+
 impl PolarsDataType for BinaryType {
     fn get_dtype() -> DataType {
         DataType::Binary
     }
 }
+
+unsafe impl<O: Offset> StaticallyMatchesPolarsType<BinaryType> for BinaryArray<O> {}
 
 pub struct BooleanType {}
 
@@ -114,6 +122,8 @@ impl PolarsDataType for BooleanType {
         DataType::Boolean
     }
 }
+
+unsafe impl StaticallyMatchesPolarsType<BooleanType> for BooleanArray {}
 
 impl PolarsDataType for ListType {
     fn get_dtype() -> DataType {

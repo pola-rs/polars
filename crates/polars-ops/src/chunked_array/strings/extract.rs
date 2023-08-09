@@ -101,12 +101,9 @@ pub(super) fn extract_group(
     group_index: usize,
 ) -> PolarsResult<Utf8Chunked> {
     let reg = Regex::new(pat)?;
-
-    let chunks = ca
-        .downcast_iter()
-        .map(|array| Ok(extract_group_array(array, &reg, group_index)?.to_boxed()))
-        .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?;
-
-    // SAFETY: all chunks have type Utf8Array
-    unsafe { Ok(ChunkedArray::from_chunks(ca.name(), chunks)) }
+    ChunkedArray::try_from_chunk_iter(
+        ca.name(),
+        ca.downcast_iter()
+            .map(|array| extract_group_array(array, &reg, group_index)),
+    )
 }
