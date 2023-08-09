@@ -243,6 +243,7 @@ impl Hash for FunctionExpr {
         match self {
             FunctionExpr::BinaryExpr(f) => f.hash(state),
             FunctionExpr::Boolean(f) => f.hash(state),
+            #[cfg(feature = "strings")]
             FunctionExpr::StringExpr(f) => f.hash(state),
             #[cfg(feature = "random")]
             FunctionExpr::Random { method, .. } => method.hash(state),
