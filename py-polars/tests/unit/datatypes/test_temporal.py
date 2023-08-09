@@ -1974,7 +1974,7 @@ def test_utc_deprecation() -> None:
 def test_strptime_unguessable_format() -> None:
     with pytest.raises(
         ComputeError,
-        match="could not find an appropriate format to parse dates, please define a fmt",
+        match="could not find an appropriate format to parse dates, please define a format",
     ):
         pl.Series(["foobar"]).str.strptime(pl.Datetime)
 

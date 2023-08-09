@@ -346,19 +346,13 @@ impl PartitionGroupByExec {
                 .zip(&df.get_columns()[self.phys_keys.len()..])
                 .map(|(expr, partitioned_s)| {
                     let agg_expr = expr.as_partitioned_aggregator().unwrap();
-                    agg_expr
-                        .finalize(partitioned_s.clone(), groups, state)
-                        .map(|mut s| {
-                            rename_cse_tmp_series(&mut s);
-                            s
-                        })
+                    agg_expr.finalize(partitioned_s.clone(), groups, state)
                 })
                 .collect();
 
             out
         };
-        let (mut columns, agg_columns): (Vec<_>, _) =
-            POOL.install(|| rayon::join(get_columns, get_agg));
+        let (mut columns, agg_columns): (Vec<_>, _) = POOL.join(get_columns, get_agg);
 
         columns.extend(agg_columns?);
         state.clear_schema_cache();

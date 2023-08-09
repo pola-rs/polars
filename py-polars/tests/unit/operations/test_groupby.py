@@ -861,3 +861,11 @@ def test_groupby_agg_deprecation_aggs_keyword() -> None:
 
     expected = pl.DataFrame({"a": [1, 2], "b": [[3, 4], [5]]})
     assert_frame_equal(result, expected)
+
+
+def test_groupby_partitioned_ending_cast(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
+    df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
+    out = df.groupby(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))
+    expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
+    assert_frame_equal(out, expected)

@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 #[cfg(feature = "string_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
@@ -14,11 +12,6 @@ use polars_core::export::regex::{escape, Regex};
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
-
-fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
-    reg.captures(input)
-        .and_then(|cap| cap.get(group_index).map(|m| Cow::Borrowed(m.as_str())))
-}
 
 pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(not(feature = "binary_encoding"))]
@@ -298,8 +291,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// Extract the nth capture group from pattern
     fn extract(&self, pat: &str, group_index: usize) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
-        let reg = Regex::new(pat)?;
-        Ok(ca.apply_on_opt(|e| e.and_then(|input| f_regex_extract(&reg, input, group_index))))
+        super::extract::extract_group(ca, pat, group_index)
     }
 
     /// Extract each successive non-overlapping regex match in an individual string as an array

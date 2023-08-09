@@ -254,7 +254,7 @@ impl PhysicalExpr for ApplyExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate(df, state);
-        let mut inputs = if self.allow_threading {
+        let mut inputs = if self.allow_threading && self.inputs.len() > 1 {
             POOL.install(|| {
                 self.inputs
                     .par_iter()

@@ -190,6 +190,7 @@ pub enum LogicalPlan {
         expr: Vec<Expr>,
         input: Box<LogicalPlan>,
         schema: SchemaRef,
+        options: ProjectionOptions,
     },
     /// Groupby aggregation
     Aggregate {
@@ -216,6 +217,7 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         exprs: Vec<Expr>,
         schema: SchemaRef,
+        options: ProjectionOptions,
     },
     /// Remove duplicates from the table
     Distinct {

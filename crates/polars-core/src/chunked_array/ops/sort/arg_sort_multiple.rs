@@ -72,7 +72,7 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_) => {
             let ca = by.categorical().unwrap();
-            if ca.use_lexical_sort() {
+            if ca.uses_lexical_ordering() {
                 by.to_arrow(0)
             } else {
                 ca.logical().chunks[0].clone()

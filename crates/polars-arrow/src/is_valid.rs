@@ -7,10 +7,6 @@ pub trait IsValid {
     /// # Safety
     /// no bound checks
     unsafe fn is_valid_unchecked(&self, i: usize) -> bool;
-
-    /// # Safety
-    /// no bound checks
-    unsafe fn is_null_unchecked(&self, i: usize) -> bool;
 }
 
 pub trait ArrowArray: Array {}
@@ -29,9 +25,5 @@ impl<A: ArrowArray> IsValid for A {
         } else {
             true
         }
-    }
-
-    unsafe fn is_null_unchecked(&self, i: usize) -> bool {
-        !self.is_valid_unchecked(i)
     }
 }

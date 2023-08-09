@@ -202,7 +202,9 @@ impl ProjectionPushDown {
         builder: ALogicalPlanBuilder,
     ) -> ALogicalPlan {
         if !local_projections.is_empty() {
-            builder.project(local_projections).build()
+            builder
+                .project(local_projections, Default::default())
+                .build()
         } else {
             builder.build()
         }
@@ -629,10 +631,16 @@ impl ProjectionPushDown {
                     expr_arena,
                 ),
             },
-            HStack { input, exprs, .. } => process_hstack(
+            HStack {
+                input,
+                exprs,
+                options,
+                ..
+            } => process_hstack(
                 self,
                 input,
                 exprs.exprs(),
+                options,
                 acc_projections,
                 projected_names,
                 projections_seen,
@@ -721,7 +729,7 @@ impl ProjectionPushDown {
                 } else {
                     Ok(
                         ALogicalPlanBuilder::from_lp(logical_plan, expr_arena, lp_arena)
-                            .project(acc_projections)
+                            .project(acc_projections, Default::default())
                             .build(),
                     )
                 }

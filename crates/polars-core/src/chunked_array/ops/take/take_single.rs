@@ -67,8 +67,12 @@ where
     }
     fn last(&self) -> Option<Self::Item> {
         let chunks = self.downcast_chunks();
-        let arr = chunks.get(chunks.len() - 1).unwrap();
-        arr.get(arr.len().saturating_sub(1))
+        let arr = chunks.get(chunks.len().saturating_sub(1)).unwrap();
+        if arr.len() > 0 {
+            arr.get(arr.len() - 1)
+        } else {
+            None
+        }
     }
 }
 
@@ -89,8 +93,12 @@ where
     }
     fn last(&self) -> Option<Self::Item> {
         let chunks = self.downcast_chunks();
-        let arr = chunks.get(chunks.len() - 1).unwrap();
-        arr.get(arr.len().saturating_sub(1))
+        let arr = chunks.get(chunks.len().saturating_sub(1)).unwrap();
+        if arr.len() > 0 {
+            arr.get(arr.len() - 1)
+        } else {
+            None
+        }
     }
 }
 
@@ -109,8 +117,12 @@ impl TakeRandom for BooleanChunked {
     }
     fn last(&self) -> Option<Self::Item> {
         let chunks = self.downcast_chunks();
-        let arr = chunks.get(chunks.len() - 1).unwrap();
-        arr.get(arr.len().saturating_sub(1))
+        let arr = chunks.get(chunks.len().saturating_sub(1)).unwrap();
+        if arr.len() > 0 {
+            arr.get(arr.len() - 1)
+        } else {
+            None
+        }
     }
 }
 
@@ -128,8 +140,12 @@ impl<'a> TakeRandom for &'a BooleanChunked {
     }
     fn last(&self) -> Option<Self::Item> {
         let chunks = self.downcast_chunks();
-        let arr = chunks.get(chunks.len() - 1).unwrap();
-        arr.get(arr.len().saturating_sub(1))
+        let arr = chunks.get(chunks.len().saturating_sub(1)).unwrap();
+        if arr.len() > 0 {
+            arr.get(arr.len() - 1)
+        } else {
+            None
+        }
     }
 }
 
@@ -144,8 +160,12 @@ impl<'a> TakeRandom for &'a Utf8Chunked {
     }
     fn last(&self) -> Option<Self::Item> {
         let chunks = self.downcast_chunks();
-        let arr = chunks.get(chunks.len() - 1).unwrap();
-        arr.get(arr.len().saturating_sub(1))
+        let arr = chunks.get(chunks.len().saturating_sub(1)).unwrap();
+        if arr.len() > 0 {
+            arr.get(arr.len() - 1)
+        } else {
+            None
+        }
     }
 }
 
@@ -160,8 +180,12 @@ impl<'a> TakeRandom for &'a BinaryChunked {
     }
     fn last(&self) -> Option<Self::Item> {
         let chunks = self.downcast_chunks();
-        let arr = chunks.get(chunks.len() - 1).unwrap();
-        arr.get(arr.len().saturating_sub(1))
+        let arr = chunks.get(chunks.len().saturating_sub(1)).unwrap();
+        if arr.len() > 0 {
+            arr.get(arr.len() - 1)
+        } else {
+            None
+        }
     }
 }
 
@@ -184,8 +208,12 @@ impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
 
     fn last(&self) -> Option<Self::Item> {
         let chunks = self.downcast_chunks();
-        let arr = chunks.get(chunks.len() - 1).unwrap();
-        arr.get(arr.len().saturating_sub(1))
+        let arr = chunks.get(chunks.len().saturating_sub(1)).unwrap();
+        if arr.len() > 0 {
+            arr.get(arr.len() - 1)
+        } else {
+            None
+        }
     }
 }
 
@@ -207,8 +235,12 @@ impl<'a, T: PolarsObject> TakeRandom for &'a ObjectChunked<T> {
 
     fn last(&self) -> Option<Self::Item> {
         let chunks = self.downcast_chunks();
-        let arr = chunks.get(chunks.len() - 1).unwrap();
-        arr.get(arr.len().saturating_sub(1))
+        let arr = chunks.get(chunks.len().saturating_sub(1)).unwrap();
+        if arr.len() > 0 {
+            arr.get(arr.len() - 1)
+        } else {
+            None
+        }
     }
 }
 
@@ -243,14 +275,18 @@ impl TakeRandom for ListChunked {
 
     fn last(&self) -> Option<Self::Item> {
         let chunks = self.downcast_chunks();
-        let arr = chunks.get(chunks.len() - 1).unwrap();
-        arr.get(arr.len().saturating_sub(1)).map(|arr| unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                self.name(),
-                vec![arr],
-                &self.inner_dtype().to_physical(),
-            )
-        })
+        let arr = chunks.get(chunks.len().saturating_sub(1)).unwrap();
+        if arr.len() > 0 {
+            arr.get(arr.len() - 1).map(|arr| unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    self.name(),
+                    vec![arr],
+                    &self.inner_dtype().to_physical(),
+                )
+            })
+        } else {
+            None
+        }
     }
 }
 
@@ -286,13 +322,17 @@ impl TakeRandom for ArrayChunked {
 
     fn last(&self) -> Option<Self::Item> {
         let chunks = self.downcast_chunks();
-        let arr = chunks.get(chunks.len() - 1).unwrap();
-        arr.get(arr.len().saturating_sub(1)).map(|arr| unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                self.name(),
-                vec![arr],
-                &self.inner_dtype().to_physical(),
-            )
-        })
+        let arr = chunks.get(chunks.len().saturating_sub(1)).unwrap();
+        if arr.len() > 0 {
+            arr.get(arr.len() - 1).map(|arr| unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    self.name(),
+                    vec![arr],
+                    &self.inner_dtype().to_physical(),
+                )
+            })
+        } else {
+            None
+        }
     }
 }

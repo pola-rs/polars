@@ -29,7 +29,7 @@ impl SeriesWrap<CategoricalChunked> {
         if keep_fast_unique && self.0.can_fast_unique() {
             out.set_fast_unique(true)
         }
-        out.set_lexical_sorted(self.0.use_lexical_sort());
+        out.set_lexical_ordering(self.0.uses_lexical_ordering());
         out
     }
 
@@ -91,7 +91,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             .map(|ca| ca.into_series())
     }
     fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
-        if self.0.use_lexical_sort() {
+        if self.0.uses_lexical_ordering() {
             (&self.0).into_partial_ord_inner()
         } else {
             self.0.logical().into_partial_ord_inner()

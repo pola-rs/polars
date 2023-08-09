@@ -16,9 +16,10 @@ use crate::prelude::*;
 bitflags! {
     #[derive(Default)]
     struct BitSettings: u8 {
-    const ORIGINAL = 0x01;
-    const LEXICAL_SORT = 0x02;
-}}
+        const ORIGINAL = 0x01;
+        const LEXICAL_ORDERING = 0x02;
+    }
+}
 
 #[derive(Clone)]
 pub struct CategoricalChunked {
@@ -75,16 +76,18 @@ impl CategoricalChunked {
         }
     }
 
-    pub fn set_lexical_sorted(&mut self, toggle: bool) {
+    pub fn set_lexical_ordering(&mut self, toggle: bool) {
         if toggle {
-            self.bit_settings.insert(BitSettings::LEXICAL_SORT);
+            self.bit_settings.insert(BitSettings::LEXICAL_ORDERING);
         } else {
-            self.bit_settings.remove(BitSettings::LEXICAL_SORT);
+            self.bit_settings.remove(BitSettings::LEXICAL_ORDERING);
         }
     }
 
-    pub(crate) fn use_lexical_sort(&self) -> bool {
-        self.bit_settings.contains(BitSettings::LEXICAL_SORT)
+    /// Return whether or not the [`CategoricalChunked`] uses the lexical order
+    /// of the string values when sorting.
+    pub fn uses_lexical_ordering(&self) -> bool {
+        self.bit_settings.contains(BitSettings::LEXICAL_ORDERING)
     }
 
     /// Create a [`CategoricalChunked`] from an array of `idx` and an existing [`RevMapping`]:  `rev_map`.

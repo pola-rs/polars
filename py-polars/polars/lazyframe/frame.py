@@ -47,6 +47,7 @@ from polars.io._utils import _is_local_file
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.groupby import LazyGroupBy
+from polars.selectors import _expand_selectors
 from polars.slice import LazyPolarsSlice
 from polars.utils._parse_expr_input import (
     parse_as_expression,
@@ -55,6 +56,8 @@ from polars.utils._parse_expr_input import (
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
+    deprecate_function,
+    deprecate_renamed_function,
     deprecate_renamed_methods,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
@@ -69,7 +72,6 @@ from polars.utils.various import (
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame
 
-
 if TYPE_CHECKING:
     import sys
     from io import IOBase
@@ -78,9 +80,11 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from polars import DataFrame, Expr
+    from polars.polars import PyExpr
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
+        ColumnNameOrSelector,
         CsvEncoding,
         FillNullStrategy,
         FrameInitTypes,
@@ -111,9 +115,38 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
+def _prepare_select(
+    *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
+) -> list[PyExpr]:
+    structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
+    if "exprs" in named_exprs:
+        issue_deprecation_warning(
+            "passing expressions to `select` using the keyword argument `exprs` is"
+            " deprecated. Use positional syntax instead.",
+            version="0.18.1",
+        )
+        first_input = named_exprs.pop("exprs")
+        pyexprs = parse_as_list_of_expressions(
+            first_input, *exprs, **named_exprs, __structify=structify
+        )
+    else:
+        pyexprs = parse_as_list_of_expressions(
+            *exprs, **named_exprs, __structify=structify
+        )
+
+    return pyexprs
+
+
 @deprecate_renamed_methods(
-    mapping={"approx_unique": "approx_n_unique"},
-    versions={"approx_unique": "0.18.12"},
+    mapping={
+        "approx_unique": "approx_n_unique",
+        "write_json": "serialize",
+    },
+    versions={
+        "approx_unique": "0.18.12",
+        "write_json": "0.18.12",
+    },
 )
 class LazyFrame:
     """
@@ -523,9 +556,17 @@ class LazyFrame:
         return self
 
     @classmethod
+    @deprecate_function(
+        "Convert the JSON string to `StringIO` and then use `LazyFrame.deserialize`.",
+        version="0.18.12",
+    )
     def from_json(cls, json: str) -> Self:
         """
         Read a logical plan from a JSON string to construct a LazyFrame.
+
+        .. deprecated:: 0.18.12
+            This method is deprecated. Convert the JSON string to ``StringIO``
+            and then use ``LazyFrame.deserialize``.
 
         Parameters
         ----------
@@ -534,34 +575,69 @@ class LazyFrame:
 
         See Also
         --------
-        read_json
+        deserialize
 
         """
-        bytes = StringIO(json).getvalue().encode()
-        file = BytesIO(bytes)
-        return cls._from_pyldf(PyLazyFrame.read_json(file))
+        return cls.deserialize(StringIO(json))
 
     @classmethod
-    def read_json(cls, file: str | Path | IOBase) -> Self:
+    @deprecate_renamed_function("deserialize", version="0.18.12")
+    @deprecate_renamed_parameter("file", "source", version="0.18.12")
+    def read_json(cls, source: str | Path | IOBase) -> Self:
+        """
+        Read a logical plan from a JSON file to construct a LazyFrame.
+
+        .. deprecated:: 0.18.12
+            This class method has been renamed to ``deserialize``.
+
+        Parameters
+        ----------
+        source
+            Path to a file or a file-like object.
+
+        See Also
+        --------
+        deserialize
+
+        """
+        return cls.deserialize(source)
+
+    @classmethod
+    def deserialize(cls, source: str | Path | IOBase) -> Self:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
 
         Parameters
         ----------
-        file
+        source
             Path to a file or a file-like object.
 
         See Also
         --------
-        LazyFrame.from_json, LazyFrame.write_json
+        LazyFrame.serialize
+
+        Examples
+        --------
+        >>> import io
+        >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
+        >>> json = lf.serialize()
+        >>> pl.LazyFrame.deserialize(io.StringIO(json)).collect()
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 6   │
+        └─────┘
 
         """
-        if isinstance(file, StringIO):
-            file = BytesIO(file.getvalue().encode())
-        elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+        if isinstance(source, StringIO):
+            source = BytesIO(source.getvalue().encode())
+        elif isinstance(source, (str, Path)):
+            source = normalise_filepath(source)
 
-        return cls._from_pyldf(PyLazyFrame.read_json(file))
+        return cls._from_pyldf(PyLazyFrame.deserialize(source))
 
     @property
     def columns(self) -> list[str]:
@@ -742,16 +818,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 """
 
     @overload
-    def write_json(self, file: None = ...) -> str:
+    def serialize(self, file: None = ...) -> str:
         ...
 
     @overload
-    def write_json(self, file: IOBase | str | Path) -> None:
+    def serialize(self, file: IOBase | str | Path) -> None:
         ...
 
-    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
+    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
         """
-        Write the logical plan of this LazyFrame to a file or string in JSON format.
+        Serialize the logical plan of this LazyFrame to a file or string in JSON format.
 
         Parameters
         ----------
@@ -761,18 +837,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         See Also
         --------
-        LazyFrame.read_json
+        LazyFrame.deserialize
 
         Examples
         --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...     }
-        ... )
-        >>> lf.write_json()
-        '{"DataFrameScan":{"df":{"columns":[{"name":"foo","datatype":"Int64","values":[1,2,3]},{"name":"bar","datatype":"Int64","values":[6,7,8]}]},"schema":{"inner":{"foo":"Int64","bar":"Int64"}},"output_schema":null,"projection":null,"selection":null}}'
+        Serialize the logical plan into a JSON string.
+
+        >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
+        >>> json = lf.serialize()
+        >>> json
+        '{"LocalProjection":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}}}}'
+
+        The logical plan can later be deserialized back into a LazyFrame.
+
+        >>> import io
+        >>> pl.LazyFrame.deserialize(io.StringIO(json)).collect()
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 6   │
+        └─────┘
 
         """
         if isinstance(file, (str, Path)):
@@ -780,7 +867,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
-                self._ldf.write_json(buf)
+                self._ldf.serialize(buf)
                 json_bytes = buf.getvalue()
 
             json_str = json_bytes.decode("utf8")
@@ -789,7 +876,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             else:
                 return json_str
         else:
-            self._ldf.write_json(file)
+            self._ldf.serialize(file)
         return None
 
     def pipe(
@@ -2138,24 +2225,35 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └───────────┘
 
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        if "exprs" in named_exprs:
-            issue_deprecation_warning(
-                "passing expressions to `select` using the keyword argument `exprs` is"
-                " deprecated. Use positional syntax instead.",
-                version="0.18.1",
-            )
-            first_input = named_exprs.pop("exprs")
-            pyexprs = parse_as_list_of_expressions(
-                first_input, *exprs, **named_exprs, __structify=structify
-            )
-        else:
-            pyexprs = parse_as_list_of_expressions(
-                *exprs, **named_exprs, __structify=structify
-            )
-
+        pyexprs = _prepare_select(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.select(pyexprs))
+
+    def select_seq(
+        self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
+    ) -> Self:
+        """
+        Select columns from this LazyFrame.
+
+        This will run all expression sequentially instead of in parallel.
+        Use this when the work per expression is cheap.
+
+        Parameters
+        ----------
+        *exprs
+            Column(s) to select, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names,
+            other non-expression inputs are parsed as literals.
+        **named_exprs
+            Additional columns to select, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
+
+        See Also
+        --------
+        select
+
+        """
+        pyexprs = _prepare_select(*exprs, **named_exprs)
+        return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
     def groupby(
         self,
@@ -3264,24 +3362,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┴─────────────┘
 
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        if "exprs" in named_exprs:
-            issue_deprecation_warning(
-                "passing expressions to `with_columns` using the keyword argument"
-                " `exprs` is deprecated. Use positional syntax instead.",
-                version="0.18.1",
-            )
-            first_input = named_exprs.pop("exprs")
-            pyexprs = parse_as_list_of_expressions(
-                first_input, *exprs, **named_exprs, __structify=structify
-            )
-        else:
-            pyexprs = parse_as_list_of_expressions(
-                *exprs, **named_exprs, __structify=structify
-            )
-
+        pyexprs = _prepare_select(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
+
+    def with_columns_seq(
+        self,
+        *exprs: IntoExpr | Iterable[IntoExpr],
+        **named_exprs: IntoExpr,
+    ) -> Self:
+        """
+        Add columns to this DataFrame.
+
+        Added columns will replace existing columns with the same name.
+
+        This will run all expression sequentially instead of in parallel.
+        Use this when the work per expression is cheap.
+
+        Parameters
+        ----------
+        *exprs
+            Column(s) to add, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
+        **named_exprs
+            Additional columns to add, specified as keyword arguments.
+            The columns will be renamed to the keyword used.
+
+        Returns
+        -------
+        LazyFrame
+            A new LazyFrame with the columns added.
+
+        See Also
+        --------
+        with_columns
+
+        """
+        pyexprs = _prepare_select(*exprs, **named_exprs)
+        return self._from_pyldf(self._ldf.with_columns_seq(pyexprs))
 
     def with_context(self, other: Self | list[Self]) -> Self:
         """
@@ -3341,7 +3459,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
-    def drop(self, columns: str | Collection[str], *more_columns: str) -> Self:
+    def drop(
+        self,
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+        *more_columns: ColumnNameOrSelector,
+    ) -> Self:
         """
         Remove columns from the dataframe.
 
@@ -3375,23 +3497,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 8.0 │
         └─────┴─────┘
 
-        Drop multiple columns by passing a list of column names.
+        Drop multiple columns by passing a selector.
 
-        >>> lf.drop(["bar", "ham"]).collect()
-        shape: (3, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 1   │
-        │ 2   │
-        │ 3   │
-        └─────┘
-
-        Or use positional arguments to drop multiple columns in the same way.
-
-        >>> lf.drop("foo", "bar").collect()
+        >>> import polars.selectors as cs
+        >>> lf.drop(cs.numeric()).collect()
         shape: (3, 1)
         ┌─────┐
         │ ham │
@@ -3403,10 +3512,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   │
         └─────┘
 
+        Use positional arguments to drop multiple columns.
+
+        >>> lf.drop("foo", "ham").collect()
+        shape: (3, 1)
+        ┌─────┐
+        │ bar │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 6.0 │
+        │ 7.0 │
+        │ 8.0 │
+        └─────┘
+
         """
-        if isinstance(columns, str):
-            columns = [columns]
-        return self._from_pyldf(self._ldf.drop([*columns, *more_columns]))
+        drop_cols = _expand_selectors(self, columns, *more_columns)
+        return self._from_pyldf(self._ldf.drop(drop_cols))
 
     def rename(self, mapping: dict[str, str]) -> Self:
         """
@@ -4338,7 +4460,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def explode(
         self,
-        columns: str | Sequence[str] | Expr | Sequence[Expr],
+        columns: str | Expr | Sequence[str | Expr],
         *more_columns: str | Expr,
     ) -> Self:
         """
@@ -4347,8 +4469,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         columns
-            Name of the column(s) to explode. Columns must be of datatype List or Utf8.
-            Accepts ``col`` expressions as input as well.
+            Column names, expressions, or a selector defining them. The underlying
+            columns being exploded must be of List or Utf8 datatype.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
 
@@ -4378,12 +4500,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────┴─────────┘
 
         """
-        columns = parse_as_list_of_expressions(columns, *more_columns)
+        columns = parse_as_list_of_expressions(
+            *_expand_selectors(self, columns, *more_columns)
+        )
         return self._from_pyldf(self._ldf.explode(columns))
 
     def unique(
         self,
-        subset: str | Sequence[str] | None = None,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
         *,
         keep: UniqueKeepStrategy = "any",
         maintain_order: bool = False,
@@ -4394,8 +4518,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         subset
-            Column name(s) to consider when identifying duplicates.
-            If set to ``None`` (default), use all columns.
+            Column name(s) or selector(s), to consider when identifying
+            duplicate rows. If set to ``None`` (default), use all columns.
         keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
 
@@ -4462,11 +4586,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        if isinstance(subset, str):
-            subset = [subset]
+        if subset is not None:
+            subset = _expand_selectors(self, subset)
         return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
 
-    def drop_nulls(self, subset: str | Collection[str] | None = None) -> Self:
+    def drop_nulls(
+        self,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+    ) -> Self:
         """
         Drop all rows that contain null values.
 
@@ -4484,24 +4611,43 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6, None, 8],
-        ...         "ham": ["a", "b", "c"],
+        ...         "ham": ["a", "b", None],
         ...     }
         ... )
+
+        The default behavior of this method is to drop rows where any single
+        value of the row is null.
+
         >>> lf.drop_nulls().collect()
-        shape: (2, 3)
+        shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
         │ 1   ┆ 6   ┆ a   │
-        │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
+
+        This behaviour can be constrained to consider only a subset of columns, as
+        defined by name or with a selector. For example, dropping rows if there is
+        a null in any of the integer columns:
+
+        >>> import polars.selectors as cs
+        >>> lf.drop_nulls(subset=cs.integer()).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬──────┐
+        │ foo ┆ bar ┆ ham  │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ i64 ┆ str  │
+        ╞═════╪═════╪══════╡
+        │ 1   ┆ 6   ┆ a    │
+        │ 3   ┆ 8   ┆ null │
+        └─────┴─────┴──────┘
 
         This method drops a row if any single value of the row is null.
 
-        Below are some example snippets that show how you could drop null values based
-        on other conditions:
+        Below are some example snippets that show how you could drop null
+        values based on other conditions:
 
         >>> lf = pl.LazyFrame(
         ...     {
@@ -4539,15 +4685,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         if subset is not None:
-            if isinstance(subset, str):
-                subset = [subset]
-            subset = list(subset)
+            subset = _expand_selectors(self, subset)
         return self._from_pyldf(self._ldf.drop_nulls(subset))
 
     def melt(
         self,
-        id_vars: str | list[str] | None = None,
-        value_vars: str | list[str] | None = None,
+        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
         *,
@@ -4559,17 +4703,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Optionally leaves identifiers set.
 
         This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars), while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis, leaving just
+        columns are identifier variables (id_vars) while all other columns, considered
+        measured variables (value_vars), are "unpivoted" to the row axis leaving just
         two non-identifier columns, 'variable' and 'value'.
 
         Parameters
         ----------
         id_vars
-            Columns to use as identifier variables.
+            Column(s) or selector(s) to use as identifier variables.
         value_vars
-            Values to use as identifier variables.
-            If `value_vars` is empty all columns that are not in `id_vars` will be used.
+            Column(s) or selector(s) to use as values variables; if `value_vars`
+            is empty all columns that are not in `id_vars` will be used.
         variable_name
             Name to give to the `variable` column. Defaults to "variable"
         value_name
@@ -4588,7 +4732,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [2, 4, 6],
         ...     }
         ... )
-        >>> lf.melt(id_vars="a", value_vars=["b", "c"]).collect()
+        >>> import polars.selectors as cs
+        >>> lf.melt(id_vars="a", value_vars=cs.numeric()).collect()
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
         │ a   ┆ variable ┆ value │
@@ -4604,14 +4749,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────────┴───────┘
 
         """
-        if isinstance(value_vars, str):
-            value_vars = [value_vars]
-        if isinstance(id_vars, str):
-            id_vars = [id_vars]
-        if value_vars is None:
-            value_vars = []
-        if id_vars is None:
-            id_vars = []
+        value_vars = [] if value_vars is None else _expand_selectors(self, value_vars)
+        id_vars = [] if id_vars is None else _expand_selectors(self, id_vars)
+
         return self._from_pyldf(
             self._ldf.melt(id_vars, value_vars, value_name, variable_name, streamable)
         )

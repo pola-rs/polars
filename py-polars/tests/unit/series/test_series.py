@@ -10,6 +10,7 @@ import pyarrow as pa
 import pytest
 from numpy.testing import assert_array_equal
 
+import polars
 import polars as pl
 from polars.datatypes import (
     Date,
@@ -26,6 +27,7 @@ from polars.datatypes import (
 from polars.exceptions import PolarsInefficientApplyWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
+from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from polars.type_aliases import EpochTimeUnit, PolarsDataType, TimeUnit
@@ -1158,25 +1160,25 @@ def test_describe() -> None:
     pl.DataFrame
     assert dict(num_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3.0,
-        "max": 3.0,
         "mean": 2.0,
-        "min": 1.0,
         "null_count": 0.0,
         "std": 1.0,
-        "median": 2.0,
+        "min": 1.0,
         "25%": 1.0,
+        "50%": 2.0,
         "75%": 3.0,
+        "max": 3.0,
     }
     assert dict(float_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3.0,
-        "max": 8.9,
         "mean": 4.933333333333334,
-        "min": 1.3,
         "null_count": 0.0,
         "std": 3.8109491381194442,
-        "median": 4.6,
+        "min": 1.3,
         "25%": 1.3,
+        "50%": 4.6,
         "75%": 8.9,
+        "max": 8.9,
     }
     assert dict(str_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3,
@@ -1190,9 +1192,9 @@ def test_describe() -> None:
     }
     assert dict(date_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": "3",
-        "max": "2021-01-03",
         "min": "2021-01-01",
-        "median": "2021-01-02",
+        "50%": "2021-01-02",
+        "max": "2021-01-03",
         "null_count": "0",
     }
 
@@ -2442,12 +2444,49 @@ def test_ptr() -> None:
     # not much to test on the ptr value itself.
     s = pl.Series([1, None, 3])
 
-    ptr = s._get_ptr()
+    ptr = s._get_ptr()[2]
     assert isinstance(ptr, int)
     s2 = s.append(pl.Series([1, 2]))
 
-    ptr2 = s2.rechunk()._get_ptr()
+    ptr2 = s2.rechunk()._get_ptr()[2]
     assert ptr != ptr2
+
+    for dtype in list(polars.datatypes.FLOAT_DTYPES) + list(
+        polars.datatypes.INTEGER_DTYPES
+    ):
+        assert pl.Series([1, 2, 3], dtype=dtype)._s.get_ptr()[2] > 0
+
+
+def test_get_buffer() -> None:
+    s = pl.Series(["a", "bc", None, "éâç", ""])
+
+    data = s._s.get_buffer(0)
+    expected = pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8)
+    assert_series_equal(wrap_s(data), expected)
+
+    validity = s._s.get_buffer(1)
+    expected = pl.Series([True, True, False, True, True])
+    assert_series_equal(wrap_s(validity), expected)
+
+    offsets = s._s.get_buffer(2)
+    expected = pl.Series([0, 1, 3, 3, 9, 9], dtype=pl.Int64)
+    assert_series_equal(wrap_s(offsets), expected)
+
+
+def test_get_buffer_no_validity_or_offsets() -> None:
+    s = pl.Series([1, 2, 3])
+
+    validity = s._s.get_buffer(1)
+    assert validity is None
+
+    offsets = s._s.get_buffer(2)
+    assert offsets is None
+
+
+def test_get_buffer_invalid_index() -> None:
+    s = pl.Series([1, None, 3])
+    with pytest.raises(ValueError):
+        s._s.get_buffer(3)
 
 
 def test_null_comparisons() -> None:

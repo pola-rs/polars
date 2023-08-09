@@ -57,6 +57,7 @@ pub(crate) struct ExpressionConversionState {
 struct LocalConversionState {
     has_implode: bool,
     has_window: bool,
+    has_lit: bool,
 }
 
 impl ExpressionConversionState {
@@ -148,10 +149,13 @@ pub(crate) fn create_physical_expr(
                 expr: node_to_expr(expression, expr_arena),
             }))
         }
-        Literal(value) => Ok(Arc::new(LiteralExpr::new(
-            value,
-            node_to_expr(expression, expr_arena),
-        ))),
+        Literal(value) => {
+            state.local.has_lit = true;
+            Ok(Arc::new(LiteralExpr::new(
+                value,
+                node_to_expr(expression, expr_arena),
+            )))
+        }
         BinaryExpr { left, op, right } => {
             let lhs = create_physical_expr(left, ctxt, expr_arena, schema, state)?;
             let rhs = create_physical_expr(right, ctxt, expr_arena, schema, state)?;
@@ -160,6 +164,7 @@ pub(crate) fn create_physical_expr(
                 op,
                 rhs,
                 node_to_expr(expression, expr_arena),
+                state.local.has_lit,
             )))
         }
         Column(column) => Ok(Arc::new(ColumnExpr::new(
@@ -421,14 +426,22 @@ pub(crate) fn create_physical_expr(
             truthy,
             falsy,
         } => {
+            let mut lit_count = 0u8;
+            state.reset();
             let predicate = create_physical_expr(predicate, ctxt, expr_arena, schema, state)?;
+            lit_count += state.local.has_lit as u8;
+            state.reset();
             let truthy = create_physical_expr(truthy, ctxt, expr_arena, schema, state)?;
+            lit_count += state.local.has_lit as u8;
+            state.reset();
             let falsy = create_physical_expr(falsy, ctxt, expr_arena, schema, state)?;
+            lit_count += state.local.has_lit as u8;
             Ok(Arc::new(TernaryExpr::new(
                 predicate,
                 truthy,
                 falsy,
                 node_to_expr(expression, expr_arena),
+                lit_count < 2,
             )))
         }
         AnonymousFunction {

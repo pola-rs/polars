@@ -38,7 +38,7 @@ struct State {
 
 #[derive(Default)]
 pub(crate) struct RevMapMerger {
-    id: u128,
+    id: u32,
     original: Arc<RevMapping>,
     // only initiate state when
     // we encounter a rev-map from a different source,

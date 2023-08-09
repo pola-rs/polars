@@ -870,7 +870,7 @@ def test_exclude(input: tuple[Any, ...], expected: list[str]) -> None:
     assert df.select(pl.all().exclude(*input)).columns == expected
 
 
-@pytest.mark.parametrize("input", [(5,), (["a"], "b"), (pl.Int64, "a")])
+@pytest.mark.parametrize("input", [(5,), (["a"], date.today()), (pl.Int64, "a")])
 def test_exclude_invalid_input(input: tuple[Any, ...]) -> None:
     df = pl.DataFrame(schema=["a", "b", "c"])
     with pytest.raises(TypeError):

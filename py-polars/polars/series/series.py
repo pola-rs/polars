@@ -96,6 +96,7 @@ from polars.utils.deprecation import (
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
+    parse_percentiles,
     parse_version,
     range_to_series,
     range_to_slice,
@@ -346,12 +347,14 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
 
-    def _get_ptr(self) -> int:
+    def _get_ptr(self) -> tuple[int, int, int]:
         """
         Get a pointer to the start of the values buffer of a numeric Series.
 
         This will raise an error if the
         ``Series`` contains multiple chunks
+
+        This will return the offset, length and the pointer itself.
 
         """
         return self._s.get_ptr()
@@ -1349,10 +1352,10 @@ class Series:
         │ mean       ┆ 3.0      │
         │ std        ┆ 1.581139 │
         │ min        ┆ 1.0      │
-        │ max        ┆ 5.0      │
-        │ median     ┆ 3.0      │
         │ 25%        ┆ 2.0      │
+        │ 50%        ┆ 3.0      │
         │ 75%        ┆ 4.0      │
+        │ max        ┆ 5.0      │
         └────────────┴──────────┘
 
         >>> series_str = pl.Series(["a", "a", None, "b", "c"])
@@ -1369,11 +1372,6 @@ class Series:
         └────────────┴───────┘
 
         """
-        if isinstance(percentiles, float):
-            percentiles = [percentiles]
-        if percentiles and not all((0 <= p <= 1) for p in percentiles):
-            raise ValueError("Percentiles must all be in the range [0, 1].")
-
         stats: dict[str, PythonLiteral | None]
 
         if self.len() == 0:
@@ -1387,11 +1385,10 @@ class Series:
                 "mean": s.mean(),
                 "std": s.std(),
                 "min": s.min(),
-                "max": s.max(),
-                "median": s.median(),
             }
-            if percentiles:
-                stats.update({f"{p:.0%}": s.quantile(p) for p in percentiles})
+            for p in parse_percentiles(percentiles):
+                stats[f"{p:.0%}"] = s.quantile(p)
+            stats["max"] = s.max()
 
         elif self.is_boolean():
             stats = {
@@ -1412,8 +1409,8 @@ class Series:
                 "count": str(self.len()),
                 "null_count": str(self.null_count()),
                 "min": str(self.dt.min()),
+                "50%": str(self.dt.median()),
                 "max": str(self.dt.max()),
-                "median": str(self.dt.median()),
             }
         else:
             raise TypeError("This type is not supported")

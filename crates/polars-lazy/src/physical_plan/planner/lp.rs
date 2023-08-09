@@ -232,6 +232,7 @@ pub fn create_physical_plan(
             expr,
             input,
             schema: _schema,
+            options,
             ..
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
@@ -259,6 +260,7 @@ pub fn create_physical_plan(
                 input_schema,
                 #[cfg(test)]
                 schema: _schema,
+                options,
             }))
         }
         LocalProjection {
@@ -286,6 +288,7 @@ pub fn create_physical_plan(
                 input_schema,
                 #[cfg(test)]
                 schema: _schema,
+                options: Default::default(),
             }))
         }
         DataFrameScan {
@@ -519,6 +522,7 @@ pub fn create_physical_plan(
             input,
             exprs,
             schema: _schema,
+            options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
@@ -547,6 +551,7 @@ pub fn create_physical_plan(
                 cse_exprs,
                 exprs: phys_exprs,
                 input_schema,
+                options,
             }))
         }
         MapFunction {

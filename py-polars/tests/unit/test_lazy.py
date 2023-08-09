@@ -68,7 +68,7 @@ def test_lazyframe_membership_operator() -> None:
 
 def test_apply() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    new = ldf.with_columns(pl.col("a").map(lambda s: s * 2).alias("foo"))
+    new = ldf.with_columns_seq(pl.col("a").map(lambda s: s * 2).alias("foo"))
 
     expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert_frame_equal(new, expected)
@@ -172,7 +172,7 @@ def test_filter_str() -> None:
     )
 
     # last row based on a filter
-    result = ldf.filter(pl.col("bools")).select(pl.last("*")).collect()
+    result = ldf.filter(pl.col("bools")).select_seq(pl.last("*")).collect()
     expected = pl.DataFrame({"time": ["11:13:00"], "bools": [True]})
     assert_frame_equal(result, expected)
 

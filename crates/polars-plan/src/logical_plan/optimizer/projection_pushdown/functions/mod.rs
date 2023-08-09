@@ -112,12 +112,12 @@ pub(super) fn process_functions(
                     // if we would project, we would remove pushed down predicates
                     if local_projections.len() < original_acc_projection_len {
                         Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                            .with_columns(local_projections)
+                            .with_columns(local_projections, Default::default())
                             .build())
                         // all projections are local
                     } else {
                         Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                            .project(local_projections)
+                            .project(local_projections, Default::default())
                             .build())
                     }
                 }

@@ -7,6 +7,7 @@ import pandas as pd
 import pyarrow as pa
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal
 
 
@@ -95,8 +96,8 @@ def test_struct_hashes() -> None:
 
 
 def test_struct_unnesting() -> None:
-    df = pl.DataFrame({"a": [1, 2]})
-    out = df.select(
+    df_base = pl.DataFrame({"a": [1, 2]})
+    df = df_base.select(
         [
             pl.all().alias("a_original"),
             pl.col("a")
@@ -104,8 +105,7 @@ def test_struct_unnesting() -> None:
             .struct.rename_fields(["a", "a_squared", "mod2eq0"])
             .alias("foo"),
         ]
-    ).unnest("foo")
-
+    )
     expected = pl.DataFrame(
         {
             "a_original": [1, 2],
@@ -114,11 +114,12 @@ def test_struct_unnesting() -> None:
             "mod2eq0": [False, True],
         }
     )
-
-    assert_frame_equal(out, expected)
+    for cols in ("foo", cs.ends_with("oo")):
+        out = df.unnest(cols)  # type: ignore[arg-type]
+        assert_frame_equal(out, expected)
 
     out = (
-        df.lazy()
+        df_base.lazy()
         .select(
             [
                 pl.all().alias("a_original"),

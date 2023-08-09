@@ -46,7 +46,7 @@ pub(super) fn process_generic(
             // so we ensure we do the 'a' projection again before we concatenate
             if !acc_projections.is_empty() && inputs.len() > 1 {
                 alp = ALogicalPlanBuilder::from_lp(alp, expr_arena, lp_arena)
-                    .project(acc_projections.clone())
+                    .project(acc_projections.clone(), Default::default())
                     .build()
             }
             lp_arena.replace(node, alp);
