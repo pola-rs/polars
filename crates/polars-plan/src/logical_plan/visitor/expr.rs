@@ -1,3 +1,5 @@
+use polars_core::prelude::{Field, Schema};
+
 use super::*;
 use crate::prelude::*;
 
@@ -26,6 +28,7 @@ impl TreeWalker for Expr {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct AexprNode {
     node: Node,
     arena: *mut Arena<AExpr>,
@@ -47,12 +50,21 @@ impl AexprNode {
     }
 
     /// Safe interface. Take the `&mut Arena` only for the duration of `op`.
-    pub fn with_context<F, T>(node: Node, arena: &mut Arena<AExpr>, mut op: F) -> T
+    pub fn with_context<F, T>(node: Node, arena: &mut Arena<AExpr>, op: F) -> T
     where
-        F: FnMut(AexprNode) -> T,
+        F: FnOnce(AexprNode) -> T,
     {
         // safety: we drop this context before arena is out of scope
         unsafe { op(Self::new(node, arena)) }
+    }
+
+    /// Safe interface. Take the `&mut Arena` only for the duration of `op`.
+    pub fn with_context_and_arena<F, T>(node: Node, arena: &mut Arena<AExpr>, op: F) -> T
+    where
+        F: FnOnce(AexprNode, &mut Arena<AExpr>) -> T,
+    {
+        // safety: we drop this context before arena is out of scope
+        unsafe { op(Self::new(node, arena), arena) }
     }
 
     /// Get the `Node`.
@@ -103,6 +115,13 @@ impl AexprNode {
 
     pub fn to_expr(&self) -> Expr {
         self.with_arena(|arena| node_to_expr(self.node, arena))
+    }
+
+    pub fn to_field(&self, schema: &Schema) -> PolarsResult<Field> {
+        self.with_arena(|arena| {
+            let ae = arena.get(self.node);
+            ae.to_field(schema, Context::Default, arena)
+        })
     }
 
     // traverses all nodes and does a full equality check

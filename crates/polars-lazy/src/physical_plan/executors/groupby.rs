@@ -11,10 +11,8 @@ pub(super) fn evaluate_aggs(
     POOL.install(|| {
         aggs.par_iter()
             .map(|expr| {
-                let mut agg = expr.evaluate_on_groups(df, groups, state)?.finalize();
+                let agg = expr.evaluate_on_groups(df, groups, state)?.finalize();
                 polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
-
-                rename_cse_tmp_series(&mut agg);
                 Ok(agg)
             })
             .collect::<PolarsResult<Vec<_>>>()
