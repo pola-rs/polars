@@ -65,21 +65,6 @@ fn get_categories(s: &Series) -> PolarsResult<Series> {
 
 fn to_local(s: Series) -> PolarsResult<Series> {
     let ca = s.categorical()?;
-    let rev_map = ca.get_rev_map();
-
-    let (physical_map, categories) = match rev_map.get_physical_map_and_categories() {
-        Some(v) => v,
-        // The categorical is already local
-        None => return Ok(s),
-    };
-    let local_ca = ca.logical().apply(|v| *physical_map.get(&v).unwrap());
-    let local_rev_map = RevMapping::Local(categories.clone());
-
-    let mut out = unsafe {
-        CategoricalChunked::from_cats_and_rev_map_unchecked(local_ca, local_rev_map.into())
-    };
-    // TODO: Set ORIGINAL flag here?
-    out.set_lexical_ordering(ca.uses_lexical_ordering());
-
+    let out = ca.clone().to_local();
     Ok(out.into_series())
 }

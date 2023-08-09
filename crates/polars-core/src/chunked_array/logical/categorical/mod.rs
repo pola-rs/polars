@@ -59,6 +59,26 @@ impl CategoricalChunked {
         &mut self.logical
     }
 
+    /// Convert a global categorical to a local categorical.
+    pub fn to_local(self) -> Self {
+        let rev_map = self.get_rev_map();
+        let (physical_map, categories) = match rev_map.get_physical_map_and_categories() {
+            Some(v) => v,
+            // The categorical is already local
+            None => return self,
+        };
+
+        let local_ca = self.logical().apply(|v| *physical_map.get(&v).unwrap());
+        let local_rev_map = RevMapping::Local(categories.clone());
+
+        let mut out =
+            unsafe { Self::from_cats_and_rev_map_unchecked(local_ca, local_rev_map.into()) };
+        // TODO: Set ORIGINAL flag here?
+        out.set_lexical_ordering(self.uses_lexical_ordering());
+
+        out
+    }
+
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
     pub(crate) fn from_chunks_original(
         name: &str,
