@@ -1064,13 +1064,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (n, with_replacement, shuffle, seed))]
-    fn sample_n(
-        &self,
-        n: usize,
-        with_replacement: bool,
-        shuffle: bool,
-        seed: Option<u64>,
-    ) -> Self {
+    fn sample_n(&self, n: usize, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
         self.inner
             .clone()
             .sample_n(n, with_replacement, shuffle, seed)

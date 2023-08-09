@@ -27,11 +27,7 @@ impl Hash for RandomMethod {
     }
 }
 
-pub(super) fn random(
-    s: &Series,
-    method: RandomMethod,
-    seed: Option<u64>,
-) -> PolarsResult<Series> {
+pub(super) fn random(s: &Series, method: RandomMethod, seed: Option<u64>) -> PolarsResult<Series> {
     match method {
         RandomMethod::Shuffle => Ok(s.shuffle(seed)),
         RandomMethod::SampleFrac {

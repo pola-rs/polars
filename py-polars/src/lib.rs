@@ -218,6 +218,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(__register_startup_deps))
         .unwrap();
 
+    // Functions - random
+    m.add_wrapped(wrap_pyfunction!(functions::random::set_random_seed))
+        .unwrap();
+
     // Exceptions
     m.add("ArrowError", py.get_type::<ArrowErrorException>())
         .unwrap();

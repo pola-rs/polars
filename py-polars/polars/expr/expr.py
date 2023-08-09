@@ -4,7 +4,6 @@ import contextlib
 import math
 import operator
 import os
-import random
 import warnings
 from datetime import timedelta
 from functools import partial, reduce
@@ -7934,9 +7933,7 @@ class Expr:
 
         if fraction is not None:
             return self._from_pyexpr(
-                self._pyexpr.sample_frac(
-                    fraction, with_replacement, shuffle, seed
-                )
+                self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
             )
 
         if n is None:

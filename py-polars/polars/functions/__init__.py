@@ -63,6 +63,7 @@ from polars.functions.lazy import (
     var,
 )
 from polars.functions.lit import lit
+from polars.functions.random import set_random_seed
 from polars.functions.range import (
     arange,
     date_range,
@@ -143,6 +144,7 @@ __all__ = [
     "rolling_corr",
     "rolling_cov",
     "select",
+    "set_random_seed",
     "std",
     "struct",
     "tail",

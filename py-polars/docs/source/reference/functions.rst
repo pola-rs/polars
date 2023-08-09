@@ -32,6 +32,13 @@ Parallelization
 
    collect_all
 
+Random
+~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   set_random_seed
+
 StringCache
 ~~~~~~~~~~~
 

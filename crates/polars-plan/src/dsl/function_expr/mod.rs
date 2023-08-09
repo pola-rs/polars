@@ -633,14 +633,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             RLEID => map!(rle_id),
             ToPhysical => map!(dispatch::to_physical),
             #[cfg(feature = "random")]
-            Random {
-                method,
-                seed,
-            } => map!(
-                random::random,
-                method,
-                seed
-            ),
+            Random { method, seed } => map!(random::random, method, seed),
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
         }
     }
