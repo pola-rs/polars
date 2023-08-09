@@ -112,11 +112,16 @@ def test_from_dataframe_data_type_not_implemented_by_arrow(
         pl.from_dataframe(dfi)
 
 
-@pytest.mark.parametrize("dtype", [pl.Boolean])
-def test_from_dataframe_data_type_not_yet_implemented_by_arrow(
-    dtype: pl.PolarsDataType,
-) -> None:
-    df = pl.Series(dtype=dtype).to_frame()
-    dfi = df.__dataframe__()
-    with pytest.raises(NotImplementedError, match="not yet supported"):
-        pl.from_dataframe(dfi)
+# Remove xfail marker when the issue is fixed:
+# https://github.com/apache/arrow/issues/37050
+@pytest.mark.xfail(
+    reason="Bug in pyarrow's implementation of the interchange protocol."
+)
+def test_from_dataframe_empty_arrow_interchange_object() -> None:
+    df = pl.Series("a", dtype=pl.Int8).to_frame()
+    df_pa = df.to_arrow()
+    dfi = df_pa.__dataframe__()
+
+    result = pl.from_dataframe(dfi)
+
+    assert_frame_equal(result, df)
