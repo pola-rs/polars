@@ -312,6 +312,10 @@ pub fn lit<L: Literal>(t: L) -> Expr {
 
 impl Hash for LiteralValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.to_anyvalue().hash(state)
+        if let Some(v) = self.to_anyvalue() {
+            v.hash_impl(state, true)
+        } else {
+            0.hash(state)
+        }
     }
 }
