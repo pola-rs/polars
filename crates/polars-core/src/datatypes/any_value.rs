@@ -548,19 +548,13 @@ impl AnyValue<'_> {
             BinaryOwned(v) => v.hash(state),
             Boolean(v) => v.hash(state),
             List(v) => {
-                if cheap {
-                    let ptr = v as *const _ as usize;
-                    ptr.hash(state);
-                } else {
+                if !cheap {
                     Hash::hash(&Wrap(v.clone()), state)
                 }
             }
             #[cfg(feature = "dtype-array")]
             Array(v, width) => {
-                if cheap {
-                    let ptr = v as *const _ as usize;
-                    ptr.hash(state);
-                } else {
+                if !cheap {
                     Hash::hash(&Wrap(v.clone()), state)
                 }
                 width.hash(state)
@@ -587,25 +581,11 @@ impl AnyValue<'_> {
             #[cfg(feature = "object")]
             ObjectOwned(_) => {}
             #[cfg(feature = "dtype-struct")]
-            Struct(_, arr, _) => {
-                if cheap {
-                    let ptr = &(**arr) as *const StructArray;
-                    ptr.hash(state)
-                } else {
-                    let s = Series::try_from(("", arr.to_boxed())).unwrap();
-                    Hash::hash(&Wrap(s), state)
-                }
-            }
-            #[cfg(feature = "dtype-struct")]
-            StructOwned(bx) => {
-                if cheap {
-                    let ptr = bx as *const Box<_> as usize;
-                    ptr.hash(state);
-                } else {
-                    let arr = &bx.as_ref().0;
-                    for av in arr {
-                        av.hash_impl(state, cheap);
-                    }
+            Struct(_, _, _) | StructOwned(_) => {
+                if !cheap {
+                    let mut buf = vec![];
+                    self._materialize_struct_av(&mut buf);
+                    buf.hash(state)
                 }
             }
             #[cfg(feature = "dtype-decimal")]
