@@ -267,7 +267,7 @@ class BytecodeParser:
             self._can_attempt_rewrite[self._apply_target] = False
             if self._rewritten_instructions and self._param_name is not None:
                 self._can_attempt_rewrite[self._apply_target] = (
-                    # check minimum number of ops, ensure all are whitelisted
+                    # check minimum number of ops, ensuring all are parseable
                     len(self._rewritten_instructions) >= 2
                     and all(
                         inst.opname in OpNames.PARSEABLE_OPS
