@@ -1384,10 +1384,8 @@ class Series:
                 "std": s.std(),
                 "min": s.min(),
             }
-
             for p in parse_percentiles(percentiles):
                 stats[f"{p:.0%}"] = s.quantile(p)
-
             stats["max"] = s.max()
 
         elif self.is_boolean():

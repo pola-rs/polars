@@ -464,8 +464,8 @@ def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[f
     """
     if isinstance(percentiles, float):
         percentiles = [percentiles]
-    if not percentiles:
-        percentiles = ()
+    elif percentiles is None:
+        percentiles = []
     if not all((0 <= p <= 1) for p in percentiles):
         raise ValueError("Percentiles must all be in the range [0, 1].")
 
