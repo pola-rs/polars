@@ -48,14 +48,39 @@ impl CategoricalChunked {
         self.logical.name()
     }
 
-    /// Get a reference to the logical array (the categories).
+    // TODO: Rename this
+    /// Get a reference to the physical array (the categories).
     pub fn logical(&self) -> &UInt32Chunked {
         &self.logical
     }
 
-    /// Get a reference to the logical array (the categories).
+    /// Get a mutable reference to the physical array (the categories).
     pub(crate) fn logical_mut(&mut self) -> &mut UInt32Chunked {
         &mut self.logical
+    }
+
+    /// Convert a categorical column to its local representation.
+    pub fn to_local(&self) -> Self {
+        let rev_map = self.get_rev_map();
+        let (physical_map, categories) = match rev_map.as_ref() {
+            RevMapping::Global(m, c, _) => (m, c),
+            RevMapping::Local(_) => return self.clone(),
+        };
+
+        let local_rev_map = RevMapping::Local(categories.clone());
+        // TODO: A fast path can possibly be implemented here:
+        // if all physical map keys are equal to their values,
+        // we can skip the apply and only update the rev_map
+        let local_ca = self
+            .logical()
+            .apply_on_opt(|opt_v| opt_v.map(|v| *physical_map.get(&v).unwrap()));
+
+        let mut out =
+            unsafe { Self::from_cats_and_rev_map_unchecked(local_ca, local_rev_map.into()) };
+        out.set_fast_unique(self.can_fast_unique());
+        out.set_lexical_ordering(self.uses_lexical_ordering());
+
+        out
     }
 
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
@@ -93,7 +118,7 @@ impl CategoricalChunked {
     /// Create a [`CategoricalChunked`] from an array of `idx` and an existing [`RevMapping`]:  `rev_map`.
     ///
     /// # Safety
-    /// Invariant in `v < rev_map.len() for v in idx` must be hold.
+    /// Invariant in `v < rev_map.len() for v in idx` must hold.
     pub unsafe fn from_cats_and_rev_map_unchecked(
         idx: UInt32Chunked,
         rev_map: Arc<RevMapping>,
@@ -119,8 +144,8 @@ impl CategoricalChunked {
         self.bit_settings.contains(BitSettings::ORIGINAL) && self.logical.chunks.len() == 1
     }
 
-    pub(crate) fn set_fast_unique(&mut self, can: bool) {
-        if can {
+    pub(crate) fn set_fast_unique(&mut self, toggle: bool) {
+        if toggle {
             self.bit_settings.insert(BitSettings::ORIGINAL);
         } else {
             self.bit_settings.remove(BitSettings::ORIGINAL);
