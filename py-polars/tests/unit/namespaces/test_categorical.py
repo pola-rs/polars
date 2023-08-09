@@ -111,6 +111,15 @@ def test_cat_to_local() -> None:
     assert s2.to_list() == ["c", "b", "d"]
 
 
+def test_cat_to_local_missing_values() -> None:
+    with pl.StringCache():
+        _ = pl.Series(["a", "b"], dtype=pl.Categorical)
+        s = pl.Series(["c", "b", None, "d"], dtype=pl.Categorical)
+
+    out = s.cat.to_local()
+    assert out.to_physical().to_list() == [0, 1, None, 2]
+
+
 def test_cat_to_local_already_local() -> None:
     s = pl.Series(["a", "c", "a", "b"], dtype=pl.Categorical)
 
