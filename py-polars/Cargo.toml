@@ -9,9 +9,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 polars-algo = { path = "../crates/polars-algo", default-features = false }
-polars-core = { path = "../crates/polars-core", features = ["python"], default-features = false }
+polars-core = { path = "../crates/polars-core", default-features = false, features = ["python"] }
 polars-error = { path = "../crates/polars-error" }
-polars-lazy = { path = "../crates/polars-lazy", features = ["python"], default-features = false }
+polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
 
 ahash = "0.8.0"
 ciborium = "0.2.0"
