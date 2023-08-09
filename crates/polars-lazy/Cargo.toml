@@ -21,7 +21,7 @@ polars-utils = { version = "0.31.1", path = "../polars-utils" }
 
 ahash = { workspace = true }
 bitflags = { workspace = true }
-glob = { version = "0.3" }
+glob = { version = "0.3.0" }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }

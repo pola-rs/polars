@@ -28,7 +28,7 @@ version_check = { workspace = true }
 
 # enable js feature for getrandom to work in wasm
 [target.'cfg(target_family = "wasm")'.dependencies.getrandom]
-version = "0.2"
+version = "0.2.0"
 features = ["js"]
 
 [features]
