@@ -9,15 +9,14 @@ crate-type = ["cdylib"]
 
 [dependencies]
 polars-algo = { path = "../crates/polars-algo", default-features = false }
-polars-core = { path = "../crates/polars-core", features = ["python"], default-features = false }
+polars-core = { path = "../crates/polars-core", default-features = false, features = ["python"] }
 polars-error = { path = "../crates/polars-error" }
-polars-lazy = { path = "../crates/polars-lazy", features = ["python"], default-features = false }
+polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
 
 ahash = "0.8"
-ciborium = "0.2.0"
+ciborium = "0.2"
 either = "1.8"
 lexical-core = "0.8"
-# todo: unfix when compilation problem is solved
 libc = "0.2"
 ndarray = "0.15"
 numpy = "0.19"
@@ -26,7 +25,7 @@ pyo3 = { version = "0.19", features = ["abi3-py38", "extension-module", "multipl
 pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 smartstring = "1"
-thiserror = "^1.0"
+thiserror = "1"
 
 [dependencies.polars]
 path = "../crates/polars"
@@ -87,7 +86,7 @@ features = [
 built = { version = "0.6", features = ["chrono", "git2"], optional = true }
 
 [target.'cfg(any(not(target_os = "linux"), use_mimalloc))'.dependencies]
-mimalloc = { version = "*", default-features = false }
+mimalloc = { version = "0.1", default-features = false }
 
 [target.'cfg(all(target_os = "linux", not(use_mimalloc)))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }

@@ -14,7 +14,7 @@ use super::*;
 use crate::prelude::*;
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     struct BitSettings: u8 {
         const ORIGINAL = 0x01;
         const LEXICAL_ORDERING = 0x02;

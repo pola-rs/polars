@@ -553,6 +553,7 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     let mut parser = Parser::new(&GenericDialect);
     parser = parser.with_options(ParserOptions {
         trailing_commas: true,
+        ..Default::default()
     });
 
     let mut ast = parser.try_with_sql(s.as_ref()).map_err(to_compute_err)?;

@@ -93,6 +93,7 @@ impl SQLContext {
         let mut parser = Parser::new(&GenericDialect);
         parser = parser.with_options(ParserOptions {
             trailing_commas: true,
+            ..Default::default()
         });
 
         let ast = parser
