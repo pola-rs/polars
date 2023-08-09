@@ -167,8 +167,7 @@ where
         _ => return None,
     };
     infer_pattern_single(val).and_then(|pattern| {
-        match DatetimeInfer::try_from_with_unit(pattern, Some(TimeUnit::Microseconds))
-        {
+        match DatetimeInfer::try_from_with_unit(pattern, Some(TimeUnit::Microseconds)) {
             Ok(mut infer) => infer.parse(val),
             Err(_) => None,
         }

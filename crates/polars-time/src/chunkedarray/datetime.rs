@@ -15,20 +15,18 @@ fn cast_and_apply<
     func: F,
 ) -> ChunkedArray<T> {
     let dtype = ca.dtype().to_arrow();
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| {
-            let arr = cast(
-                arr,
-                &dtype,
-                CastOptions {
-                    wrapped: true,
-                    partial: false,
-                },
-            )
-            .unwrap();
-            func(&*arr).unwrap()
-        });
+    let chunks = ca.downcast_iter().map(|arr| {
+        let arr = cast(
+            arr,
+            &dtype,
+            CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )
+        .unwrap();
+        func(&*arr).unwrap()
+    });
     ChunkedArray::from_chunk_iter(ca.name(), chunks)
 }
 

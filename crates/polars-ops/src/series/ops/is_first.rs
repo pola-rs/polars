@@ -14,28 +14,22 @@ where
     T::Native: Hash + Eq,
 {
     let mut unique = PlHashSet::new();
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| -> BooleanArray {
-            arr
-                .into_iter()
-                .map(|opt_v| unique.insert(opt_v))
-                .collect_trusted()
-        });
+    let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
+        arr.into_iter()
+            .map(|opt_v| unique.insert(opt_v))
+            .collect_trusted()
+    });
 
     BooleanChunked::from_chunk_iter(ca.name(), chunks)
 }
 
 fn is_first_bin(ca: &BinaryChunked) -> BooleanChunked {
     let mut unique = PlHashSet::new();
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| -> BooleanArray {
-            arr
-                .into_iter()
-                .map(|opt_v| unique.insert(opt_v))
-                .collect_trusted()
-        });
+    let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
+        arr.into_iter()
+            .map(|opt_v| unique.insert(opt_v))
+            .collect_trusted()
+    });
 
     BooleanChunked::from_chunk_iter(ca.name(), chunks)
 }

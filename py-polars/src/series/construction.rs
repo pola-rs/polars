@@ -281,7 +281,7 @@ impl PySeries {
                     }
                     previous = o;
                 }
-                
+
                 // SAFETY: we checked the type in the downcast.
                 let mut out = unsafe { ListChunked::from_chunks(name, vec![arr]) };
                 if fast_explode {

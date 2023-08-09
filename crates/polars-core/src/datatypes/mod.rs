@@ -294,8 +294,6 @@ impl PolarsFloatType for Float64Type {}
 // Provide options to cloud providers (credentials, region).
 pub type CloudOptions = PlHashMap<String, String>;
 
-
-
 /// SAFETY: the underlying physical type of the data structure on which this is
 /// implemented must always match the given PolarsDataType.
 pub unsafe trait StaticallyMatchesPolarsType<T: PolarsDataType> {}

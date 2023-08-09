@@ -371,17 +371,15 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
 
 impl<T: PolarsNumericType> DatetimeInfer<T>
 where
-    ChunkedArray<T>: IntoSeries
+    ChunkedArray<T>: IntoSeries,
 {
     fn coerce_utf8(&mut self, ca: &Utf8Chunked) -> Series {
-        let chunks = ca
-            .downcast_iter()
-            .map(|array| {
-                let iter = array
-                    .into_iter()
-                    .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
-                PrimitiveArray::from_trusted_len_iter(iter)
-            });
+        let chunks = ca.downcast_iter().map(|array| {
+            let iter = array
+                .into_iter()
+                .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
+            PrimitiveArray::from_trusted_len_iter(iter)
+        });
         let mut out = ChunkedArray::from_chunk_iter(ca.name(), chunks)
             .into_series()
             .cast(&self.logical_type)
