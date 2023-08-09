@@ -103,6 +103,7 @@ from polars.utils.various import (
     is_int_sequence,
     is_str_sequence,
     normalise_filepath,
+    parse_percentiles,
     parse_version,
     range_to_slice,
     scale_bytes,
@@ -3918,24 +3919,20 @@ class DataFrame:
         │ mean       ┆ 2.266667 ┆ 4.5      ┆ 0.666667 ┆ null ┆ null ┆ null       │
         │ std        ┆ 1.101514 ┆ 0.707107 ┆ 0.57735  ┆ null ┆ null ┆ null       │
         │ min        ┆ 1.0      ┆ 4.0      ┆ 0.0      ┆ b    ┆ eur  ┆ 2020-01-01 │
-        │ max        ┆ 3.0      ┆ 5.0      ┆ 1.0      ┆ c    ┆ usd  ┆ 2022-01-01 │
-        │ median     ┆ 2.8      ┆ 4.5      ┆ 1.0      ┆ null ┆ null ┆ null       │
         │ 25%        ┆ 1.0      ┆ 4.0      ┆ null     ┆ null ┆ null ┆ null       │
+        │ 50%        ┆ 2.8      ┆ 5.0      ┆ null     ┆ null ┆ null ┆ null       │
         │ 75%        ┆ 3.0      ┆ 5.0      ┆ null     ┆ null ┆ null ┆ null       │
+        │ max        ┆ 3.0      ┆ 5.0      ┆ 1.0      ┆ c    ┆ usd  ┆ 2022-01-01 │
         └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
 
         """
-        if isinstance(percentiles, float):
-            percentiles = [percentiles]
-        if percentiles and not all((0 <= p <= 1) for p in percentiles):
-            raise ValueError("Percentiles must all be in the range [0, 1].")
-
-        # determine metrics (optional/additional percentiles)
-        metrics = ["count", "null_count", "mean", "std", "min", "max", "median"]
+        # determine metrics and optional/additional percentiles
+        metrics = ["count", "null_count", "mean", "std", "min"]
         percentile_exprs = []
-        for p in percentiles or ():
+        for p in parse_percentiles(percentiles):
             percentile_exprs.append(F.all().quantile(p).prefix(f"{p}:"))
             metrics.append(f"{p:.0%}")
+        metrics.append("max")
 
         # execute metrics in parallel
         df_metrics = self.select(
@@ -3944,9 +3941,8 @@ class DataFrame:
             F.all().mean().prefix("mean:"),
             F.all().std().prefix("std:"),
             F.all().min().prefix("min:"),
-            F.all().max().prefix("max:"),
-            F.all().median().prefix("median:"),
             *percentile_exprs,
+            F.all().max().prefix("max:"),
         ).row(0)
 
         # reshape wide result
