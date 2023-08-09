@@ -742,8 +742,8 @@ impl LazyFrame {
     ///       df.lazy()
     ///        .groupby([col("date")])
     ///        .agg([
-    ///            col("rain").min(),
-    ///            col("rain").sum(),
+    ///            col("rain").min().alias("min_rain"),
+    ///            col("rain").sum().alias("sum_rain"),
     ///            col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
     /// }
@@ -1370,8 +1370,8 @@ impl LazyGroupBy {
     ///       df.lazy()
     ///        .groupby_stable([col("date")])
     ///        .agg([
-    ///            col("rain").min(),
-    ///            col("rain").sum(),
+    ///            col("rain").min().alias("min_rain"),
+    ///            col("rain").sum().alias("sum_rain"),
     ///            col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
     /// }
