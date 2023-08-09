@@ -84,8 +84,6 @@ def expand_selector(
         from polars.dataframe import DataFrame
 
         target = DataFrame(schema=target)
-    else:
-        target = target.clear()
 
     return tuple(target.select(selector).columns)
 
