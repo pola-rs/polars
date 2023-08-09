@@ -63,6 +63,8 @@ pub trait PolarsDataType: Send + Sync {
         Self: Sized;
 }
 
+/// SAFETY: the underlying physical type of the data structure on which this is
+/// implemented must always match the given PolarsDataType.
 pub unsafe trait StaticallyMatchesPolarsType<T: PolarsDataType> {}
 
 macro_rules! impl_polars_datatype {
@@ -131,6 +133,8 @@ impl PolarsDataType for ListType {
         DataType::List(Box::new(DataType::Null))
     }
 }
+
+unsafe impl<O: Offset> StaticallyMatchesPolarsType<ListType> for ListArray<O> {}
 
 #[cfg(feature = "dtype-array")]
 impl PolarsDataType for FixedSizeListType {
