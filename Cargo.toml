@@ -46,7 +46,7 @@ serde = "1.0.160"
 serde_json = "1.0.0"
 simd-json = { version = "0.10.0", features = ["allow-non-simd", "known-key"] }
 smartstring = "1.0.0"
-sqlparser = "0.34.0"
+sqlparser = "0.36.0"
 strum_macros = "0.25"
 thiserror = "1.0.0"
 url = "2.3.1"
