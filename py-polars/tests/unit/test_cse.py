@@ -273,24 +273,37 @@ def test_windows_cse_excluded() -> None:
 
 
 def test_cse_groupby_10215() -> None:
-    assert (
+    q = (
         pl.DataFrame(
             {
-                "a": [1, 2, 3],
-                "b": [1, 1, 1],
+                "a": [1],
+                "b": [1],
             }
         )
         .lazy()
         .groupby(
-            "a",
+            "b",
         )
         .agg(
             (pl.col("a").sum() * pl.col("a").sum()).alias("x"),
             (pl.col("b").sum() * pl.col("b").sum()).alias("y"),
+            (pl.col("a").sum() * pl.col("a").sum()).alias("x2"),
+            ((pl.col("a") + 2).sum() * pl.col("a").sum()).alias("x3"),
+            ((pl.col("a") + 2).sum() * pl.col("b").sum()).alias("x4"),
+            ((pl.col("a") + 2).sum() * pl.col("b").sum()),
         )
-        .collect()
-        .sort("a")
-    ).to_dict(False) == {"a": [1, 2, 3], "x": [1, 4, 9], "y": [1, 1, 1]}
+    )
+    out = q.collect(comm_subexpr_elim=True).to_dict(False)
+    assert "__POLARS_CSER" in q.explain(comm_subexpr_elim=True)
+    assert out == {
+        "b": [1],
+        "x": [1],
+        "y": [1],
+        "x2": [1],
+        "x3": [3],
+        "x4": [3],
+        "a": [3],
+    }
 
 
 def test_cse_mixed_window_functions() -> None:
