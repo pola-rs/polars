@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use polars_utils::vec::CapacityByFactor;
 
 use super::*;
@@ -8,21 +6,127 @@ use crate::logical_plan::projection_expr::ProjectionExprs;
 use crate::logical_plan::visitor::{RewriteRecursion, VisitRecursion};
 use crate::prelude::visitor::{ALogicalPlanNode, AexprNode, RewritingVisitor, TreeWalker, Visitor};
 
-/// Identifier that shows the sub-expression path.
-/// Must implement hash and equality and ideally
-/// have little collisions
-/// We will do a full expression comparison to check if the
-/// expressions with equal identifiers are truly equal
-// TODO! try to use a hash `usize` for this?
-type Identifier = Rc<str>;
+// We use hashes to get an Identifier
+// but this is very hard to debug, so we also have a version that
+// uses a string trail.
+#[cfg(feature = "debug_cse")]
+mod identifier_impl {
+    use super::*;
+    /// Identifier that shows the sub-expression path.
+    /// Must implement hash and equality and ideally
+    /// have little collisions
+    /// We will do a full expression comparison to check if the
+    /// expressions with equal identifiers are truly equal
+    #[derive(Clone, Hash, Eq, PartialEq, Debug)]
+    pub struct Identifier {
+        inner: String,
+    }
+
+    impl Identifier {
+        pub fn new() -> Self {
+            Self {
+                inner: String::new(),
+            }
+        }
+
+        pub fn is_valid(&self) -> bool {
+            !self.inner.is_empty()
+        }
+
+        pub fn materialize(&self) -> &str {
+            format!("{}{}", CSE_REPLACED, self.inner.as_ref())
+        }
+
+        pub fn combine(&mut self, other: &Identifier) {
+            self.inner.push('!');
+            self.inner.push_str(other.materialize());
+        }
+
+        pub fn add_ae_node(&self, ae: &AExpr) -> Self {
+            let inner = format!("{:E}{}", ae_node, self.inner);
+            Self { inner }
+        }
+    }
+}
+
+#[cfg(not(feature = "debug_cse"))]
+mod identifier_impl {
+    use std::hash::{Hash, Hasher};
+
+    use ahash::RandomState;
+    use polars_core::hashing::_boost_hash_combine;
+
+    use super::*;
+    /// Identifier that shows the sub-expression path.
+    /// Must implement hash and equality and ideally
+    /// have little collisions
+    /// We will do a full expression comparison to check if the
+    /// expressions with equal identifiers are truly equal
+    #[derive(Clone, Debug)]
+    pub struct Identifier {
+        inner: Option<u64>,
+        hb: RandomState,
+    }
+
+    impl PartialEq<Self> for Identifier {
+        fn eq(&self, other: &Self) -> bool {
+            self.inner == other.inner
+        }
+    }
+
+    impl Eq for Identifier {}
+
+    impl Hash for Identifier {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            state.write_u64(self.inner.unwrap_or(0))
+        }
+    }
+
+    impl Identifier {
+        pub fn new() -> Self {
+            Self {
+                inner: None,
+                hb: RandomState::with_seed(0),
+            }
+        }
+
+        pub fn is_valid(&self) -> bool {
+            self.inner.is_some()
+        }
+
+        pub fn materialize(&self) -> String {
+            format!("{}{}", CSE_REPLACED, self.inner.unwrap_or(0))
+        }
+
+        pub fn combine(&mut self, other: &Identifier) {
+            let inner = match (self.inner, other.inner) {
+                (Some(l), Some(r)) => _boost_hash_combine(l, r),
+                (None, Some(r)) => r,
+                (Some(l), None) => l,
+                _ => return,
+            };
+            self.inner = Some(inner);
+        }
+
+        pub fn add_ae_node(&self, ae: &AExpr) -> Self {
+            let hashed = self.hb.hash_one(ae);
+            let inner = Some(
+                self.inner
+                    .map_or(hashed, |l| _boost_hash_combine(l, hashed)),
+            );
+            Self {
+                inner,
+                hb: self.hb.clone(),
+            }
+        }
+    }
+}
+use identifier_impl::*;
+
 /// Identifier maps to Expr Node and count.
 type SubExprCount = PlHashMap<Identifier, (Node, usize)>;
 /// (post_visit_idx, identifier);
 type IdentifierArray = Vec<(usize, Identifier)>;
-
-fn replace_name(id: &str) -> String {
-    format!("{}{}", CSE_REPLACED, id)
-}
 
 #[derive(Debug)]
 enum VisitRecord {
@@ -135,15 +239,14 @@ impl ExprIdentifierVisitor<'_> {
     /// If we traverse another expression in the mean time, it will get popped of the stack first
     /// so the returned identifier belongs to a single sub-expression
     fn pop_until_entered(&mut self) -> (usize, Identifier, bool) {
-        let mut id = String::new();
+        let mut id = Identifier::new();
         let mut is_valid_accumulated = true;
 
         while let Some(item) = self.visit_stack.pop() {
             match item {
-                VisitRecord::Entered(idx) => return (idx, Rc::from(id), is_valid_accumulated),
+                VisitRecord::Entered(idx) => return (idx, id, is_valid_accumulated),
                 VisitRecord::SubExprId(s, valid) => {
-                    id.push('!');
-                    id.push_str(s.as_ref());
+                    id.combine(&s);
                     is_valid_accumulated &= valid
                 }
             }
@@ -203,7 +306,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 
         // implement default placeholders
         self.identifier_array
-            .push((self.id_array_offset, "".into()));
+            .push((self.id_array_offset, Identifier::new()));
 
         Ok(VisitRecursion::Continue)
     }
@@ -214,7 +317,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 
         let (pre_visit_idx, sub_expr_id, is_valid_accumulated) = self.pop_until_entered();
         // create the id of this node
-        let id: Identifier = Rc::from(format!("{:E}{}", ae, sub_expr_id));
+        let id: Identifier = sub_expr_id.add_ae_node(ae);
 
         if !is_valid_accumulated {
             self.identifier_array[pre_visit_idx + self.id_array_offset].0 = self.post_visit_idx;
@@ -339,7 +442,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         let id = &self.identifier_array[self.visited_idx + self.id_array_offset].1;
 
         // placeholder not overwritten, so we can skip this sub-expression
-        if id.is_empty() {
+        if !id.is_valid() {
             self.visited_idx += 1;
             let recurse = if ae_node.is_leaf() {
                 RewriteRecursion::Stop
@@ -390,7 +493,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             self.visited_idx += 1;
         }
 
-        let name = replace_name(id.as_ref());
+        let name = id.materialize();
         node.assign(AExpr::col(name.as_ref()));
         self.rewritten = true;
 
@@ -511,7 +614,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
             // Add the tmp columns
             for id in &self.replaced_identifiers {
                 let (node, _count) = self.se_count.get(id).unwrap();
-                let name = replace_name(id.as_ref());
+                let name = id.materialize();
                 let ae = AExpr::Alias(*node, Arc::from(name));
                 let node = expr_arena.add(ae);
                 new_expr.push(node)
@@ -664,7 +767,7 @@ mod test {
         let mut se_count = Default::default();
 
         // Pre-fill `id_array` with a value to also check if we deal with the offset correct;
-        let mut id_array = vec![(0, Rc::from("")); 1];
+        let mut id_array = vec![(0, Identifier::new()); 1];
         let id_array_offset = id_array.len();
         let mut visit_stack = vec![];
         let mut visitor =
