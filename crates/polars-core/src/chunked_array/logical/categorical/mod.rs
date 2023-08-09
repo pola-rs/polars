@@ -68,8 +68,11 @@ impl CategoricalChunked {
             None => return self.clone(),
         };
 
-        let local_ca = self.logical().apply(|v| *physical_map.get(&v).unwrap());
         let local_rev_map = RevMapping::Local(categories.clone());
+        // TODO: A fast path can possibly be implemented here:
+        // if all physical map keys are equal to their values,
+        // we can skip the apply and only update the rev_map to local
+        let local_ca = self.logical().apply(|v| *physical_map.get(&v).unwrap());
 
         let mut out =
             unsafe { Self::from_cats_and_rev_map_unchecked(local_ca, local_rev_map.into()) };
