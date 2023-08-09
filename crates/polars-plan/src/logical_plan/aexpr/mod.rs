@@ -1,3 +1,4 @@
+mod hash;
 mod schema;
 
 use std::sync::Arc;

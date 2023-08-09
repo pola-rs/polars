@@ -23,6 +23,12 @@ pub enum RandomMethod {
     },
 }
 
+impl Hash for RandomMethod {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state)
+    }
+}
+
 pub(super) fn random(
     s: &Series,
     method: RandomMethod,
