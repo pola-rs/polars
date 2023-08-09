@@ -23,13 +23,13 @@ comfy-table = { version = "7.0.1", default_features = false, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
-itoap = { version = "1.0.0", optional = true, features = ["simd"] }
-ndarray = { version = "0.15.0", optional = true, default_features = false }
+itoap = { version = "1", optional = true, features = ["simd"] }
+ndarray = { version = "0.15", optional = true, default_features = false }
 num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
-rand_distr = { version = "0.4.0", optional = true }
+rand_distr = { version = "0.4", optional = true }
 rayon = { workspace = true }
 regex = { workspace = true, optional = true }
 # activate if you want serde support for Series and DataFrames
@@ -41,7 +41,7 @@ url = { workspace = true, optional = true }
 xxhash-rust = { workspace = true }
 
 [dev-dependencies]
-bincode = { version = "1.0.0" }
+bincode = { version = "1" }
 serde_json = { workspace = true }
 
 [build-dependencies]

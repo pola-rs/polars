@@ -18,7 +18,7 @@ arrow = { workspace = true }
 atoi = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
-now = { version = "0.1.0" }
+now = { version = "0.1" }
 once_cell = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
