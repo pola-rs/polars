@@ -47,7 +47,6 @@ from polars.datatypes import (
     Time,
     Utf8,
     py_type_to_dtype,
-    unpack_dtypes,
 )
 from polars.dependencies import (
     _PYARROW_AVAILABLE,
@@ -112,7 +111,6 @@ from polars.utils.various import (
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
 
-
 if TYPE_CHECKING:
     import sys
     from datetime import timedelta
@@ -120,10 +118,10 @@ if TYPE_CHECKING:
     from typing import Literal
 
     import deltalake
-    from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
     from polars import Expr, LazyFrame, Series
+    from polars.interchange.dataframe import PolarsDataFrame
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -1208,7 +1206,7 @@ class DataFrame:
 
     def __dataframe__(
         self, nan_as_null: bool = False, allow_copy: bool = True
-    ) -> _PyArrowDataFrame:
+    ) -> PolarsDataFrame:
         """
         Convert to a dataframe object implementing the dataframe interchange protocol.
 
@@ -1216,40 +1214,43 @@ class DataFrame:
         ----------
         nan_as_null
             Overwrite null values in the data with ``NaN``.
+
+            .. warning::
+                This functionality has not been implemented and the parameter will be
+                removed in a future version.
+                Setting this to ``True`` will raise a ``NotImplementedError``.
         allow_copy
-            Allow memory to be copied to perform the conversion. If set to False, causes
-            conversions that are not zero-copy to fail.
+            Allow memory to be copied to perform the conversion. If set to ``False``,
+            causes conversions that are not zero-copy to fail.
 
         Notes
         -----
-        Details on the dataframe interchange protocol:
+        Details on the Python dataframe interchange protocol:
         https://data-apis.org/dataframe-protocol/latest/index.html
 
-        ``nan_as_null`` currently has no effect; once support for nullable extension
-        dtypes is added, this value should be propagated to columns.
+        Examples
+        --------
+        Convert a Polars dataframe to a generic dataframe object and access some
+        properties.
 
-        Polars currently relies on pyarrow's implementation of the dataframe interchange
-        protocol. Therefore, pyarrow>=11.0.0 is required for this method to work.
-
-        Because Polars can not currently guarantee zero-copy conversion to Arrow for
-        categorical columns, ``allow_copy=False`` will not work if the dataframe
-        contains categorical data.
+        >>> df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
+        >>> dfi = df.__dataframe__()
+        >>> dfi.num_rows()
+        2
+        >>> dfi.get_column(1).dtype
+        (<DtypeKind.FLOAT: 2>, 64, 'g', '=')
 
         """
-        if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
-            "11"
-        ):
-            raise ImportError(
-                "pyarrow>=11.0.0 is required for converting a Polars dataframe to a"
-                " dataframe interchange object."
+        if nan_as_null:
+            raise NotImplementedError(
+                "functionality for `nan_as_null` has not been implemented and the"
+                " parameter will be removed in a future version."
+                " Use the default `nan_as_null=False`."
             )
-        if not allow_copy and Categorical in unpack_dtypes(*self.dtypes):
-            raise TypeError(
-                "Polars can not currently guarantee zero-copy conversion to Arrow for"
-                " categorical columns. Set `allow_copy=True` or cast categorical"
-                " columns to string first."
-            )
-        return self.to_arrow().__dataframe__(nan_as_null, allow_copy)
+
+        from polars.interchange.dataframe import PolarsDataFrame
+
+        return PolarsDataFrame(self, allow_copy=allow_copy)
 
     def __dataframe_consortium_standard__(
         self, *, api_version: str | None = None
