@@ -63,10 +63,6 @@ pub trait PolarsDataType: Send + Sync {
         Self: Sized;
 }
 
-/// SAFETY: the underlying physical type of the data structure on which this is
-/// implemented must always match the given PolarsDataType.
-pub unsafe trait StaticallyMatchesPolarsType<T: PolarsDataType> {}
-
 macro_rules! impl_polars_datatype {
     ($ca:ident, $variant:ident, $physical:ty) => {
         #[derive(Clone, Copy)]
@@ -78,8 +74,6 @@ macro_rules! impl_polars_datatype {
                 DataType::$variant
             }
         }
-
-        unsafe impl StaticallyMatchesPolarsType<$ca> for PrimitiveArray<$physical> {}
     };
 }
 
@@ -107,15 +101,11 @@ impl PolarsDataType for Utf8Type {
     }
 }
 
-unsafe impl StaticallyMatchesPolarsType<Utf8Type> for Utf8Array<i64> {}
-
 impl PolarsDataType for BinaryType {
     fn get_dtype() -> DataType {
         DataType::Binary
     }
 }
-
-unsafe impl StaticallyMatchesPolarsType<BinaryType> for BinaryArray<i64> {}
 
 pub struct BooleanType {}
 
@@ -125,16 +115,12 @@ impl PolarsDataType for BooleanType {
     }
 }
 
-unsafe impl StaticallyMatchesPolarsType<BooleanType> for BooleanArray {}
-
 impl PolarsDataType for ListType {
     fn get_dtype() -> DataType {
         // null as we cannot know anything without self.
         DataType::List(Box::new(DataType::Null))
     }
 }
-
-unsafe impl StaticallyMatchesPolarsType<ListType> for ListArray<i64> {}
 
 #[cfg(feature = "dtype-array")]
 impl PolarsDataType for FixedSizeListType {
@@ -307,3 +293,15 @@ impl PolarsFloatType for Float64Type {}
 
 // Provide options to cloud providers (credentials, region).
 pub type CloudOptions = PlHashMap<String, String>;
+
+
+
+/// SAFETY: the underlying physical type of the data structure on which this is
+/// implemented must always match the given PolarsDataType.
+pub unsafe trait StaticallyMatchesPolarsType<T: PolarsDataType> {}
+
+unsafe impl<T: PolarsNumericType> StaticallyMatchesPolarsType<T> for PrimitiveArray<T::Native> {}
+unsafe impl StaticallyMatchesPolarsType<Utf8Type> for Utf8Array<i64> {}
+unsafe impl StaticallyMatchesPolarsType<BinaryType> for BinaryArray<i64> {}
+unsafe impl StaticallyMatchesPolarsType<BooleanType> for BooleanArray {}
+unsafe impl StaticallyMatchesPolarsType<ListType> for ListArray<i64> {}
