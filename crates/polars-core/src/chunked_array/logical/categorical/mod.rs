@@ -62,10 +62,9 @@ impl CategoricalChunked {
     /// Convert a categorical column to its local representation.
     pub fn to_local(&self) -> Self {
         let rev_map = self.get_rev_map();
-        let (physical_map, categories) = match rev_map.get_physical_map_and_categories() {
-            Some(v) => v,
-            // The categorical is already local
-            None => return self.clone(),
+        let (physical_map, categories) = match rev_map.as_ref() {
+            RevMapping::Global(m, c, _) => (m, c),
+            RevMapping::Local(_) => return self.clone(),
         };
 
         let local_rev_map = RevMapping::Local(categories.clone());

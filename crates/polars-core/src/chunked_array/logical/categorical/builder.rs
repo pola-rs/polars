@@ -100,16 +100,6 @@ impl RevMapping {
         }
     }
 
-    /// Get the global-to-local map in this RevMapping
-    pub fn get_physical_map_and_categories(
-        &self,
-    ) -> Option<(&PlHashMap<u32, u32>, &Utf8Array<i64>)> {
-        match self {
-            Self::Global(m, c, _) => Some((m, c)),
-            Self::Local(_) => None,
-        }
-    }
-
     /// Get the length of the [`RevMapping`]
     pub fn len(&self) -> usize {
         self.get_categories().len()
