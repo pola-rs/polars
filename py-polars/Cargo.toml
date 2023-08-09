@@ -87,7 +87,7 @@ features = [
 built = { version = "0.6.0", features = ["chrono", "git2"], optional = true }
 
 [target.'cfg(any(not(target_os = "linux"), use_mimalloc))'.dependencies]
-mimalloc = { version = "*", default-features = false }
+mimalloc = { version = "0.1.37", default-features = false }
 
 [target.'cfg(all(target_os = "linux", not(use_mimalloc)))'.dependencies]
 jemallocator = { version = "0.5.0", features = ["disable_initial_exec_tls"] }
