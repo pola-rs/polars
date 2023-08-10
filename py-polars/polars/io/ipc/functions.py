@@ -37,8 +37,10 @@ def read_ipc(
     Parameters
     ----------
     source
-        Path to a file or a file-like object.
-        If ``fsspec`` is installed, it will be used to open remote files.
+        Path to a file or a file-like object (by file-like object, we refer to objects
+        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
+        function) or ``BytesIO``). If ``fsspec`` is installed, it will be used to open
+        remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -117,7 +119,9 @@ def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDa
     Parameters
     ----------
     source
-        Path to a file or a file-like object.
+        Path to a file or a file-like object (by file-like object, we refer to objects
+        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
+        function) or ``BytesIO``).
 
     Returns
     -------

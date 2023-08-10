@@ -264,7 +264,7 @@ impl LogicalPlanBuilder {
         })?;
         let mut magic_nr = [0u8; 2];
         file.read_exact(&mut magic_nr)
-            .map_err(|_| polars_err!(NoData: "empty csv"))?;
+            .map_err(|_| polars_err!(NoData: "empty CSV"))?;
         polars_ensure!(
             !is_compressed(&magic_nr),
             ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
