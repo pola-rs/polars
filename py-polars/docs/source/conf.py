@@ -83,7 +83,6 @@ intersphinx_mapping = {
 # Used in favor of sphinx.ext.napoleon for nicer render of docstring sections
 numpydoc_show_class_members = False
 
-
 # Sphinx-copybutton - add copy button to code blocks
 # https://sphinx-copybutton.readthedocs.io/en/latest/index.html
 # strip the '>>>' and '...' prompt/continuation prefixes.
@@ -103,7 +102,6 @@ html_theme = "pydata_sphinx_theme"
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]  # relative to html_static_path
 html_show_sourcelink = False
-
 
 # key site root paths
 static_assets_root = "https://raw.githubusercontent.com/pola-rs/polars-static/master"
@@ -145,6 +143,8 @@ html_theme_options = {
     },
 }
 
+# sphinx-favicon - Add support for custom favicons
+# https://github.com/tcmetzger/sphinx-favicon
 favicons = [
     {
         "rel": "icon",
