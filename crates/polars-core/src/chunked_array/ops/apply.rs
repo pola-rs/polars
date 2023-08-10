@@ -4,13 +4,22 @@ use std::convert::TryFrom;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
-use polars_arrow::array::PolarsArray;
+use arrow::bitmap::Bitmap;
+use arrow::trusted_len::TrustedLen;
+use arrow::types::NativeType;
 use polars_arrow::bitmap::unary_mut;
 use polars_arrow::trusted_len::TrustedLenPush;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
+
+fn collect_array<T: NativeType, I: TrustedLen<Item = T>>(
+    iter: I,
+    validity: Option<Bitmap>,
+) -> PrimitiveArray<T> {
+    PrimitiveArray::from_trusted_len_values_iter(iter).with_validity(validity)
+}
 
 macro_rules! try_apply {
     ($self:expr, $f:expr) => {{
@@ -62,41 +71,34 @@ where
     S: PolarsNumericType,
 {
     use arrow::Either::*;
-    let chunks = chunks
-        .into_iter()
-        .map(|arr| {
-            let owned_arr = arr
-                .as_any()
-                .downcast_ref::<PrimitiveArray<S::Native>>()
-                .unwrap()
-                .clone();
-            // make sure we have a single ref count coming in.
-            drop(arr);
+    let chunks = chunks.into_iter().map(|arr| {
+        let owned_arr = arr
+            .as_any()
+            .downcast_ref::<PrimitiveArray<S::Native>>()
+            .unwrap()
+            .clone();
+        // Make sure we have a single ref count coming in.
+        drop(arr);
 
-            let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
-                Box::new(arrow::compute::arity::unary(
-                    arr,
-                    f,
-                    S::get_dtype().to_arrow(),
-                ))
-            };
+        let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
+            arrow::compute::arity::unary(arr, f, S::get_dtype().to_arrow())
+        };
 
-            if owned_arr.values().is_sliced() {
-                compute_immutable(&owned_arr)
-            } else {
-                match owned_arr.into_mut() {
-                    Left(immutable) => compute_immutable(&immutable),
-                    Right(mut mutable) => {
-                        let vals = mutable.values_mut_slice();
-                        vals.iter_mut().for_each(|v| *v = f(*v));
-                        let a: PrimitiveArray<_> = mutable.into();
-                        Box::new(a) as ArrayRef
-                    }
+        if owned_arr.values().is_sliced() {
+            compute_immutable(&owned_arr)
+        } else {
+            match owned_arr.into_mut() {
+                Left(immutable) => compute_immutable(&immutable),
+                Right(mut mutable) => {
+                    let vals = mutable.values_mut_slice();
+                    vals.iter_mut().for_each(|v| *v = f(*v));
+                    mutable.into()
                 }
             }
-        })
-        .collect();
-    unsafe { ChunkedArray::<S>::from_chunks(name, chunks) }
+        }
+    });
+
+    ChunkedArray::from_chunk_iter(name, chunks)
 }
 
 impl<T: PolarsNumericType> ChunkedArray<T> {
@@ -157,11 +159,9 @@ where
             .data_views()
             .zip(self.iter_validities())
             .map(|(slice, validity)| {
-                let values = Vec::<_>::from_trusted_len_iter(slice.iter().map(|&v| f(v)));
-                to_array::<S>(values, validity.cloned())
-            })
-            .collect();
-        unsafe { ChunkedArray::<S>::from_chunks(self.name(), chunks) }
+                collect_array(slice.iter().copied().map(f), validity.cloned())
+            });
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
@@ -169,20 +169,16 @@ where
         F: Fn(Option<T::Native>) -> S::Native,
         S: PolarsNumericType,
     {
-        let chunks = self
-            .downcast_iter()
-            .map(|array| {
-                let values = if !array.has_validity() {
-                    let values = array.values().iter().map(|&v| f(Some(v)));
-                    Vec::<_>::from_trusted_len_iter(values)
-                } else {
-                    let values = array.into_iter().map(|v| f(v.copied()));
-                    Vec::<_>::from_trusted_len_iter(values)
-                };
-                to_array::<S>(values, None)
-            })
-            .collect();
-        unsafe { ChunkedArray::<S>::from_chunks(self.name(), chunks) }
+        let chunks = self.downcast_iter().map(|array| {
+            if array.null_count() == 0 {
+                let values = array.values().iter().map(|&v| f(Some(v)));
+                collect_array(values, None)
+            } else {
+                let values = array.into_iter().map(|v| f(v.copied()));
+                collect_array(values, None)
+            }
+        });
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -193,12 +189,9 @@ where
             .data_views()
             .zip(self.iter_validities())
             .map(|(slice, validity)| {
-                let values = slice.iter().copied().map(f);
-                let values = Vec::<_>::from_trusted_len_iter(values);
-                to_array::<T>(values, validity.cloned())
-            })
-            .collect();
-        unsafe { ChunkedArray::<T>::from_chunks(self.name(), chunks) }
+                collect_array(slice.iter().copied().map(f), validity.cloned())
+            });
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
     fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
@@ -221,16 +214,11 @@ where
     where
         F: Fn(Option<T::Native>) -> Option<T::Native> + Copy,
     {
-        let chunks = self
-            .downcast_iter()
-            .map(|arr| {
-                let iter = arr.into_iter().map(|opt_v| f(opt_v.copied()));
-                let arr = PrimitiveArray::<T::Native>::from_trusted_len_iter(iter)
-                    .to(T::get_dtype().to_arrow());
-                Box::new(arr) as ArrayRef
-            })
-            .collect();
-        unsafe { Self::from_chunks(self.name(), chunks) }
+        let chunks = self.downcast_iter().map(|arr| {
+            let iter = arr.into_iter().map(|opt_v| f(opt_v.copied()));
+            PrimitiveArray::<T::Native>::from_trusted_len_iter(iter)
+        });
+        Self::from_chunk_iter(self.name(), chunks)
     }
 
     fn apply_with_idx<F>(&'a self, f: F) -> Self
@@ -346,39 +334,36 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         F: Fn(bool) -> PolarsResult<bool> + Copy,
     {
         let mut failed: Option<PolarsError> = None;
-        let chunks = self
-            .downcast_iter()
-            .map(|arr| {
-                let values = unary_mut(arr.values(), |chunk| {
-                    let bytes = chunk.to_ne_bytes();
+        let chunks = self.downcast_iter().map(|arr| {
+            let values = unary_mut(arr.values(), |chunk| {
+                let bytes = chunk.to_ne_bytes();
 
-                    // different output as that might lead
-                    // to better internal parallelism
+                if failed.is_some() {
+                    0
+                } else {
                     let mut out = 0u64.to_ne_bytes();
-                    for i in 0..64 {
+                    // We reverse the order of the loop so we keep the first error, if any.
+                    for i in (0..64).rev() {
                         unsafe {
                             let val = get_bit_unchecked(&bytes, i);
                             match f(val) {
                                 Ok(res) => set_bit_unchecked(&mut out, i, res),
-                                Err(e) => {
-                                    if failed.is_none() {
-                                        failed = Some(e)
-                                    }
-                                }
+                                Err(e) => failed = Some(e),
                             }
                         };
                     }
                     u64::from_ne_bytes(out)
-                });
-                Ok(BooleanArray::from_data_default(values, arr.validity().cloned()).boxed())
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
+                }
+            });
 
+            BooleanArray::from_data_default(values, arr.validity().cloned())
+        });
+
+        let ret = BooleanChunked::from_chunk_iter(self.name(), chunks);
         if let Some(e) = failed {
             return Err(e);
         }
-
-        Ok(unsafe { BooleanChunked::from_chunks(self.name(), chunks) })
+        Ok(ret)
     }
 
     fn apply_on_opt<F>(&'a self, f: F) -> Self
@@ -427,16 +412,13 @@ impl Utf8Chunked {
         F: FnMut(&'a str) -> &'a str,
     {
         use polars_arrow::array::utf8::Utf8FromIter;
-        let chunks = self
-            .downcast_iter()
-            .map(|arr| {
-                let iter = arr.values_iter().map(&mut f);
-                let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
-                let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), value_size);
-                Box::new(new.with_validity(arr.validity().cloned())) as ArrayRef
-            })
-            .collect();
-        unsafe { Utf8Chunked::from_chunks(self.name(), chunks) }
+        let chunks = self.downcast_iter().map(|arr| {
+            let iter = arr.values_iter().map(&mut f);
+            let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
+            let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), value_size);
+            new.with_validity(arr.validity().cloned())
+        });
+        Utf8Chunked::from_chunk_iter(self.name(), chunks)
     }
 }
 
@@ -446,16 +428,13 @@ impl BinaryChunked {
         F: FnMut(&'a [u8]) -> &'a [u8],
     {
         use polars_arrow::array::utf8::BinaryFromIter;
-        let chunks = self
-            .downcast_iter()
-            .map(|arr| {
-                let iter = arr.values_iter().map(&mut f);
-                let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
-                let new = BinaryArray::<i64>::from_values_iter(iter, arr.len(), value_size);
-                Box::new(new.with_validity(arr.validity().cloned())) as ArrayRef
-            })
-            .collect();
-        unsafe { BinaryChunked::from_chunks(self.name(), chunks) }
+        let chunks = self.downcast_iter().map(|arr| {
+            let iter = arr.values_iter().map(&mut f);
+            let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
+            let new = BinaryArray::<i64>::from_values_iter(iter, arr.len(), value_size);
+            new.with_validity(arr.validity().cloned())
+        });
+        BinaryChunked::from_chunk_iter(self.name(), chunks)
     }
 }
 
@@ -465,15 +444,11 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
         F: Fn(&'a str) -> S::Native + Copy,
         S: PolarsNumericType,
     {
-        let chunks = self
-            .downcast_iter()
-            .map(|array| {
-                let values = array.values_iter().map(f);
-                let values = Vec::<_>::from_trusted_len_iter(values);
-                to_array::<S>(values, array.validity().cloned())
-            })
-            .collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        let chunks = self.downcast_iter().map(|array| {
+            let values = array.values_iter().map(f);
+            collect_array(values, array.validity().cloned())
+        });
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&'a self, f: F) -> ChunkedArray<S>
@@ -481,15 +456,11 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
         F: Fn(Option<&'a str>) -> S::Native + Copy,
         S: PolarsNumericType,
     {
-        let chunks = self
-            .downcast_iter()
-            .map(|array| {
-                let values = array.into_iter().map(f);
-                let values = Vec::<_>::from_trusted_len_iter(values);
-                to_array::<S>(values, array.validity().cloned())
-            })
-            .collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        let chunks = self.downcast_iter().map(|array| {
+            let values = array.into_iter().map(f);
+            collect_array(values, array.validity().cloned())
+        });
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -497,16 +468,13 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
         F: Fn(&'a str) -> Cow<'a, str> + Copy,
     {
         use polars_arrow::array::utf8::Utf8FromIter;
-        let chunks = self
-            .downcast_iter()
-            .map(|arr| {
-                let iter = arr.values_iter().map(f);
-                let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
-                let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), value_size);
-                Box::new(new.with_validity(arr.validity().cloned())) as ArrayRef
-            })
-            .collect();
-        unsafe { Utf8Chunked::from_chunks(self.name(), chunks) }
+        let chunks = self.downcast_iter().map(|arr| {
+            let iter = arr.values_iter().map(f);
+            let size_hint = (arr.get_values_size() as f64 * 1.3) as usize;
+            let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), size_hint);
+            new.with_validity(arr.validity().cloned())
+        });
+        Utf8Chunked::from_chunk_iter(self.name(), chunks)
     }
 
     fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
@@ -566,15 +534,11 @@ impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
         F: Fn(&'a [u8]) -> S::Native + Copy,
         S: PolarsNumericType,
     {
-        let chunks = self
-            .downcast_iter()
-            .map(|array| {
-                let values = array.values_iter().map(f);
-                let values = Vec::<_>::from_trusted_len_iter(values);
-                to_array::<S>(values, array.validity().cloned())
-            })
-            .collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        let chunks = self.downcast_iter().map(|array| {
+            let values = array.values_iter().map(f);
+            collect_array(values, array.validity().cloned())
+        });
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&'a self, f: F) -> ChunkedArray<S>
@@ -584,13 +548,8 @@ impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
     {
         let chunks = self
             .downcast_iter()
-            .map(|array| {
-                let values = array.into_iter().map(f);
-                let values = Vec::<_>::from_trusted_len_iter(values);
-                to_array::<S>(values, array.validity().cloned())
-            })
-            .collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+            .map(|array| collect_array(array.into_iter().map(f), array.validity().cloned()));
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -720,27 +679,20 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         S: PolarsNumericType,
     {
         let dtype = self.inner_dtype();
-        let chunks = self
-            .downcast_iter()
-            .map(|array| {
-                unsafe {
-                    let values = array
-                        .values_iter()
-                        .map(|array| {
-                            // safety
-                            // reported dtype is correct
-                            let series =
-                                Series::from_chunks_and_dtype_unchecked("", vec![array], &dtype);
-                            f(series)
-                        })
-                        .trust_my_length(self.len())
-                        .collect_trusted::<Vec<_>>();
+        let chunks = self.downcast_iter().map(|array| unsafe {
+            let values = array
+                .values_iter()
+                .map(|array| {
+                    // SAFETY: reported dtype is correct.
+                    let series = Series::from_chunks_and_dtype_unchecked("", vec![array], &dtype);
+                    f(series)
+                })
+                // SAFETY: we know the iterator's length.
+                .trust_my_length(self.len());
+            collect_array(values, array.validity().cloned())
+        });
 
-                    to_array::<S>(values, array.validity().cloned())
-                }
-            })
-            .collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
@@ -749,27 +701,20 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         S: PolarsNumericType,
     {
         let dtype = self.inner_dtype();
-        let chunks = self
-            .downcast_iter()
-            .map(|array| {
-                let values = array.iter().map(|x| {
-                    let x = x.map(|x| {
-                        // safety
-                        // reported dtype is correct
-                        unsafe { Series::from_chunks_and_dtype_unchecked("", vec![x], &dtype) }
-                    });
-                    f(x)
+        let chunks = self.downcast_iter().map(|array| unsafe {
+            let values = array.iter().map(|x| {
+                let x = x.map(|x| {
+                    // SAFETY: reported dtype is correct.
+                    Series::from_chunks_and_dtype_unchecked("", vec![x], &dtype)
                 });
-                let len = array.len();
+                f(x)
+            });
+            let len = array.len();
+            // SAFETY: we know the iterator's length.
+            collect_array(values.trust_my_length(len), array.validity().cloned())
+        });
 
-                // we know the iterators len
-                unsafe {
-                    let values = Vec::<_>::from_trusted_len_iter(values.trust_my_length(len));
-                    to_array::<S>(values, array.validity().cloned())
-                }
-            })
-            .collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
     /// Apply a closure `F` elementwise.

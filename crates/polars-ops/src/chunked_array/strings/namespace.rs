@@ -403,7 +403,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             .downcast_iter()
             .map(|c| substring(c, start, &length))
             .collect::<arrow::error::Result<_>>()?;
-
+        // SAFETY: these are all the same type.
         unsafe { Ok(Utf8Chunked::from_chunks(ca.name(), chunks)) }
     }
 }

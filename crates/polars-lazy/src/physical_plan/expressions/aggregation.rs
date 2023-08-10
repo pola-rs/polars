@@ -445,17 +445,14 @@ impl PartitionedAggregation for AggregationExpr {
                 let values = concatenate(&vals).unwrap();
 
                 let data_type = ListArray::<i64>::default_datatype(values.data_type().clone());
-                // Safety:
-                // offsets are monotonically increasing
-                let arr = unsafe {
-                    Box::new(ListArray::<i64>::new(
-                        data_type,
-                        Offsets::new_unchecked(offsets).into(),
-                        values,
-                        None,
-                    )) as ArrayRef
-                };
-                let mut ca = unsafe { ListChunked::from_chunks(&new_name, vec![arr]) };
+                // SAFETY: offsets are monotonically increasing.
+                let arr = ListArray::<i64>::new(
+                    data_type,
+                    unsafe { Offsets::new_unchecked(offsets).into() },
+                    values,
+                    None,
+                );
+                let mut ca = ListChunked::from_chunk_iter(&new_name, [arr]);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }

@@ -22,8 +22,8 @@ where
     T: PolarsNumericType,
 {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = new_null_array(T::get_dtype().to_arrow(), length);
-        unsafe { ChunkedArray::from_chunks(name, vec![arr]) }
+        let arr = PrimitiveArray::new_null(T::get_dtype().to_arrow(), length);
+        ChunkedArray::from_chunk_iter(name, [arr])
     }
 }
 impl ChunkFull<bool> for BooleanChunked {
@@ -39,8 +39,8 @@ impl ChunkFull<bool> for BooleanChunked {
 
 impl ChunkFullNull for BooleanChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = new_null_array(DataType::Boolean.to_arrow(), length);
-        unsafe { BooleanChunked::from_chunks(name, vec![arr]) }
+        let arr = BooleanArray::new_null(DataType::Boolean.to_arrow(), length);
+        ChunkedArray::from_chunk_iter(name, [arr])
     }
 }
 
@@ -59,8 +59,8 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
 
 impl ChunkFullNull for Utf8Chunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = new_null_array(DataType::Utf8.to_arrow(), length);
-        unsafe { Utf8Chunked::from_chunks(name, vec![arr]) }
+        let arr = Utf8Array::new_null(DataType::Utf8.to_arrow(), length);
+        ChunkedArray::from_chunk_iter(name, [arr])
     }
 }
 
@@ -79,8 +79,8 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
 
 impl ChunkFullNull for BinaryChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = new_null_array(DataType::Binary.to_arrow(), length);
-        unsafe { BinaryChunked::from_chunks(name, vec![arr]) }
+        let arr = BinaryArray::new_null(DataType::Binary.to_arrow(), length);
+        ChunkedArray::from_chunk_iter(name, [arr])
     }
 }
 
@@ -109,14 +109,14 @@ impl ArrayChunked {
         inner_dtype: &DataType,
         width: usize,
     ) -> ArrayChunked {
-        let arr = new_null_array(
+        let arr = FixedSizeListArray::new_null(
             ArrowDataType::FixedSizeList(
                 Box::new(ArrowField::new("item", inner_dtype.to_arrow(), true)),
                 width,
             ),
             length,
         );
-        unsafe { ArrayChunked::from_chunks(name, vec![arr]) }
+        ChunkedArray::from_chunk_iter(name, [arr])
     }
 }
 
@@ -133,9 +133,8 @@ impl ChunkFull<&Series> for ArrayChunked {
             Box::new(ArrowField::new("item", values.data_type().clone(), true)),
             width,
         );
-
-        let arr = Box::new(FixedSizeListArray::new(data_type, values, None)) as ArrayRef;
-        unsafe { ArrayChunked::from_chunks(name, vec![arr]) }
+        let arr = FixedSizeListArray::new(data_type, values, None);
+        ChunkedArray::from_chunk_iter(name, [arr])
     }
 }
 
@@ -148,7 +147,7 @@ impl ChunkFullNull for ArrayChunked {
 
 impl ListChunked {
     pub fn full_null_with_dtype(name: &str, length: usize, inner_dtype: &DataType) -> ListChunked {
-        let arr = new_null_array(
+        let arr = ListArray::new_null(
             ArrowDataType::LargeList(Box::new(ArrowField::new(
                 "item",
                 inner_dtype.to_arrow(),
@@ -156,7 +155,7 @@ impl ListChunked {
             ))),
             length,
         );
-        unsafe { ListChunked::from_chunks(name, vec![arr]) }
+        ChunkedArray::from_chunk_iter(name, [arr])
     }
 }
 #[cfg(feature = "dtype-struct")]

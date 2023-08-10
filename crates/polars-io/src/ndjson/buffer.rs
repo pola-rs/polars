@@ -160,15 +160,14 @@ fn deserialize_number<T: NativeType + NumCast>(value: &Value) -> Option<T> {
 fn deserialize_datetime<T>(value: &Value) -> Option<T::Native>
 where
     T: PolarsNumericType,
-    DatetimeInfer<T::Native>: TryFromWithUnit<Pattern>,
+    DatetimeInfer<T>: TryFromWithUnit<Pattern>,
 {
     let val = match value {
         Value::String(s) => s,
         _ => return None,
     };
     infer_pattern_single(val).and_then(|pattern| {
-        match DatetimeInfer::<T::Native>::try_from_with_unit(pattern, Some(TimeUnit::Microseconds))
-        {
+        match DatetimeInfer::try_from_with_unit(pattern, Some(TimeUnit::Microseconds)) {
             Ok(mut infer) => infer.parse(val),
             Err(_) => None,
         }

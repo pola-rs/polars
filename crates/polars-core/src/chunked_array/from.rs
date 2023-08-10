@@ -74,6 +74,30 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
+    pub fn from_chunk_iter<I>(name: &str, iter: I) -> Self
+    where
+        I: IntoIterator,
+        <I as IntoIterator>::Item: StaticallyMatchesPolarsType<T> + Array,
+    {
+        let chunks = iter
+            .into_iter()
+            .map(|x| Box::new(x) as Box<dyn Array>)
+            .collect();
+        unsafe { Self::from_chunks(name, chunks) }
+    }
+
+    pub fn try_from_chunk_iter<I, A, E>(name: &str, iter: I) -> Result<Self, E>
+    where
+        I: IntoIterator<Item = Result<A, E>>,
+        A: StaticallyMatchesPolarsType<T> + Array,
+    {
+        let chunks: Result<_, _> = iter
+            .into_iter()
+            .map(|x| Ok(Box::new(x?) as Box<dyn Array>))
+            .collect();
+        unsafe { Ok(Self::from_chunks(name, chunks?)) }
+    }
+
     /// Create a new ChunkedArray from existing chunks.
     ///
     /// # Safety

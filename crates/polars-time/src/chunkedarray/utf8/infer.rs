@@ -2,7 +2,6 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use once_cell::sync::Lazy;
 use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::prelude::*;
-use polars_core::utils::arrow::types::NativeType;
 use regex::Regex;
 
 use super::patterns::{self, Pattern};
@@ -141,7 +140,7 @@ pub trait StrpTimeParser<T> {
 }
 
 #[cfg(feature = "dtype-datetime")]
-impl StrpTimeParser<i64> for DatetimeInfer<i64> {
+impl StrpTimeParser<i64> for DatetimeInfer<Int64Type> {
     fn parse_bytes(&mut self, val: &[u8], time_unit: Option<TimeUnit>) -> Option<i64> {
         if self.fmt_len == 0 {
             self.fmt_len = strptime::fmt_len(self.latest_fmt.as_bytes())?;
@@ -179,7 +178,7 @@ impl StrpTimeParser<i64> for DatetimeInfer<i64> {
 }
 
 #[cfg(feature = "dtype-date")]
-impl StrpTimeParser<i32> for DatetimeInfer<i32> {
+impl StrpTimeParser<i32> for DatetimeInfer<Int32Type> {
     fn parse_bytes(&mut self, val: &[u8], _time_unit: Option<TimeUnit>) -> Option<i32> {
         if self.fmt_len == 0 {
             self.fmt_len = strptime::fmt_len(self.latest_fmt.as_bytes())?;
@@ -211,11 +210,11 @@ impl StrpTimeParser<i32> for DatetimeInfer<i32> {
 }
 
 #[derive(Clone)]
-pub struct DatetimeInfer<T> {
+pub struct DatetimeInfer<T: PolarsNumericType> {
     pub pattern: Pattern,
     patterns: &'static [&'static str],
     latest_fmt: &'static str,
-    transform: fn(&str, &str) -> Option<T>,
+    transform: fn(&str, &str) -> Option<T::Native>,
     transform_bytes: StrpTimeState,
     fmt_len: u16,
     pub logical_type: DataType,
@@ -227,7 +226,7 @@ pub trait TryFromWithUnit<T>: Sized {
 }
 
 #[cfg(feature = "dtype-datetime")]
-impl TryFromWithUnit<Pattern> for DatetimeInfer<i64> {
+impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
     type Error = PolarsError;
 
     fn try_from_with_unit(value: Pattern, time_unit: Option<TimeUnit>) -> PolarsResult<Self> {
@@ -320,7 +319,7 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<i64> {
 }
 
 #[cfg(feature = "dtype-date")]
-impl TryFromWithUnit<Pattern> for DatetimeInfer<i32> {
+impl TryFromWithUnit<Pattern> for DatetimeInfer<Int32Type> {
     type Error = PolarsError;
 
     fn try_from_with_unit(value: Pattern, _time_unit: Option<TimeUnit>) -> PolarsResult<Self> {
@@ -348,8 +347,8 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<i32> {
     }
 }
 
-impl<T: NativeType> DatetimeInfer<T> {
-    pub fn parse(&mut self, val: &str) -> Option<T> {
+impl<T: PolarsNumericType> DatetimeInfer<T> {
+    pub fn parse(&mut self, val: &str) -> Option<T::Native> {
         match (self.transform)(val, self.latest_fmt) {
             Some(parsed) => Some(parsed),
             // try other patterns
@@ -368,28 +367,23 @@ impl<T: NativeType> DatetimeInfer<T> {
             }
         }
     }
+}
 
+impl<T: PolarsNumericType> DatetimeInfer<T>
+where
+    ChunkedArray<T>: IntoSeries,
+{
     fn coerce_utf8(&mut self, ca: &Utf8Chunked) -> Series {
-        let chunks = ca
-            .downcast_iter()
-            .map(|array| {
-                let iter = array
-                    .into_iter()
-                    .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
-                Box::new(PrimitiveArray::from_trusted_len_iter(iter)) as ArrayRef
-            })
-            .collect();
-        let mut out = match self.logical_type {
-            DataType::Date => unsafe { Int32Chunked::from_chunks(ca.name(), chunks) }
-                .into_series()
-                .cast(&self.logical_type)
-                .unwrap(),
-            DataType::Datetime(_, _) => unsafe { Int64Chunked::from_chunks(ca.name(), chunks) }
-                .into_series()
-                .cast(&self.logical_type)
-                .unwrap(),
-            _ => unreachable!(),
-        };
+        let chunks = ca.downcast_iter().map(|array| {
+            let iter = array
+                .into_iter()
+                .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
+            PrimitiveArray::from_trusted_len_iter(iter)
+        });
+        let mut out = ChunkedArray::from_chunk_iter(ca.name(), chunks)
+            .into_series()
+            .cast(&self.logical_type)
+            .unwrap();
         out.rename(ca.name());
         out
     }
@@ -509,7 +503,7 @@ pub(crate) fn to_datetime(
                 .into_iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_datetime_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<i64>::try_from_with_unit(pattern, Some(tu))?;
+            let mut infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu))?;
             if pattern == Pattern::DatetimeYMDZ
                 && tz.is_some()
                 && tz.map(|x| x.as_str()) != Some("UTC")
@@ -548,7 +542,7 @@ pub(crate) fn to_date(ca: &Utf8Chunked) -> PolarsResult<DateChunked> {
                 .into_iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_date_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<i32>::try_from_with_unit(pattern, None).unwrap();
+            let mut infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None).unwrap();
             infer.coerce_utf8(ca).date().cloned()
         }
     }

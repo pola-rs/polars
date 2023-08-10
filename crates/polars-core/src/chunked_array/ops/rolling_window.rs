@@ -197,9 +197,9 @@ mod inner_mod {
             let ca = self.rechunk();
             let arr = ca.downcast_iter().next().unwrap();
 
-            // we create a temporary dummy ChunkedArray
-            // this will be a container where we swap the window contents every iteration
-            // doing so will save a lot of heap allocations.
+            // We create a temporary dummy ChunkedArray. This will be a
+            // container where we swap the window contents every iteration doing
+            // so will save a lot of heap allocations.
             let mut heap_container = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
             let array_ptr = &heap_container.chunks()[0];
             let ptr = array_ptr.as_ref() as *const dyn Array as *mut dyn Array
@@ -216,13 +216,11 @@ mod inner_mod {
             for offset in 0..self.len() + 1 - window_size {
                 debug_assert!(offset + window_size <= arr.len());
                 let arr_window = unsafe { arr.slice_typed_unchecked(offset, window_size) };
-                // the lengths are cached, so we must update them
+                // The lengths are cached, so we must update them.
                 heap_container.length = arr_window.len() as IdxSize;
 
-                // Safety.
-                // ptr is not dropped as we are in scope
-                // We are also the only owner of the contents of the Arc
-                // we do this to reduce heap allocs.
+                // SAFETY: ptr is not dropped as we are in scope. We are also the only
+                // owner of the contents of the Arc (we do this to reduce heap allocs).
                 unsafe {
                     *ptr = arr_window;
                 }
@@ -230,12 +228,12 @@ mod inner_mod {
                 let out = f(&mut heap_container);
                 match out {
                     Some(v) => {
-                        // Safety: we have pre-allocated
+                        // SAFETY: we have pre-allocated.
                         unsafe { values.push_unchecked(v) }
                     }
                     None => {
-                        // safety: we allocated enough for both the `values` vec
-                        // and the `validity_ptr`
+                        // SAFETY: we allocated enough for both the `values` vec
+                        // and the `validity_ptr`.
                         unsafe {
                             values.push_unchecked(T::Native::default());
                             unset_bit_raw(validity_ptr, offset + window_size - 1);
@@ -248,7 +246,7 @@ mod inner_mod {
                 values.into(),
                 Some(validity.into()),
             );
-            unsafe { Ok(Self::from_chunks(self.name(), vec![Box::new(arr)])) }
+            Ok(Self::from_chunk_iter(self.name(), [arr]))
         }
     }
 }

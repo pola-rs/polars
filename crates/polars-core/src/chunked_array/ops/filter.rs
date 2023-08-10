@@ -22,7 +22,7 @@ where
     T: PolarsNumericType,
 {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<T>> {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
@@ -43,7 +43,7 @@ where
 
 impl ChunkFilter<BooleanType> for BooleanChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<BooleanType>> {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
@@ -71,7 +71,7 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
 
 impl ChunkFilter<BinaryType> for BinaryChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<BinaryType>> {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
@@ -93,16 +93,14 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
 
 impl ChunkFilter<ListType> for ListChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ListChunked> {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => unsafe {
-                    Ok(ListChunked::from_chunks(
-                        self.name(),
-                        vec![new_empty_array(self.dtype().to_arrow())],
-                    ))
-                },
+                _ => Ok(ListChunked::from_chunk_iter(
+                    self.name(),
+                    [ListArray::new_empty(self.dtype().to_arrow())],
+                )),
             };
         }
         let (left, filter) = align_chunks_binary(self, filter);
@@ -124,16 +122,14 @@ impl ChunkFilter<ListType> for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkFilter<FixedSizeListType> for ArrayChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ArrayChunked> {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => unsafe {
-                    Ok(ChunkedArray::from_chunks(
-                        self.name(),
-                        vec![new_empty_array(self.dtype().to_arrow())],
-                    ))
-                },
+                _ => Ok(ArrayChunked::from_chunk_iter(
+                    self.name(),
+                    [FixedSizeListArray::new_empty(self.dtype().to_arrow())],
+                )),
             };
         }
         let (left, filter) = align_chunks_binary(self, filter);
@@ -161,7 +157,7 @@ where
     where
         Self: Sized,
     {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),

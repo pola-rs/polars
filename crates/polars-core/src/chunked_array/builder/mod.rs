@@ -22,6 +22,7 @@ pub use list::*;
 pub use primitive::*;
 pub use utf8::*;
 
+use crate::chunked_array::to_primitive;
 use crate::prelude::*;
 use crate::utils::{get_iter_capacity, NoNull};
 
@@ -46,13 +47,10 @@ where
     T: PolarsNumericType,
 {
     fn from_iter<I: IntoIterator<Item = (Vec<T::Native>, Option<Bitmap>)>>(iter: I) -> Self {
-        let mut chunks = vec![];
-
-        for (values, opt_buffer) in iter {
-            chunks.push(to_array::<T>(values, opt_buffer))
-        }
-        // safety: same type
-        unsafe { ChunkedArray::from_chunks("from_iter", chunks) }
+        let chunks = iter
+            .into_iter()
+            .map(|(values, opt_buffer)| to_primitive::<T>(values, opt_buffer));
+        ChunkedArray::from_chunk_iter("from_iter", chunks)
     }
 }
 
@@ -72,9 +70,8 @@ where
     T: PolarsNumericType,
 {
     fn from_slice(name: &str, v: &[T::Native]) -> Self {
-        let arr = PrimitiveArray::<T::Native>::from_slice(v).to(T::get_dtype().to_arrow());
-        // safety: same type
-        unsafe { ChunkedArray::from_chunks(name, vec![Box::new(arr)]) }
+        let arr = PrimitiveArray::from_slice(v).to(T::get_dtype().to_arrow());
+        ChunkedArray::from_chunk_iter(name, [arr])
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<T::Native>]) -> Self {
@@ -131,13 +128,10 @@ where
 {
     fn from_slice(name: &str, v: &[S]) -> Self {
         let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
-
         let mut builder = MutableUtf8Array::<i64>::with_capacities(v.len(), values_size);
         builder.extend_trusted_len_values(v.iter().map(|s| s.as_ref()));
-
-        let chunks = vec![builder.as_box()];
-        // safety: same type
-        unsafe { ChunkedArray::from_chunks(name, chunks) }
+        let imm: Utf8Array<i64> = builder.into();
+        ChunkedArray::from_chunk_iter(name, [imm])
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<S>]) -> Self {
@@ -147,10 +141,8 @@ where
         });
         let mut builder = MutableUtf8Array::<i64>::with_capacities(opt_v.len(), values_size);
         builder.extend_trusted_len(opt_v.iter().map(|s| s.as_ref()));
-
-        let chunks = vec![builder.as_box()];
-        // safety: same type
-        unsafe { ChunkedArray::from_chunks(name, chunks) }
+        let imm: Utf8Array<i64> = builder.into();
+        ChunkedArray::from_chunk_iter(name, [imm])
     }
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<S>>) -> Self {
@@ -175,13 +167,10 @@ where
 {
     fn from_slice(name: &str, v: &[B]) -> Self {
         let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
-
         let mut builder = MutableBinaryArray::<i64>::with_capacities(v.len(), values_size);
         builder.extend_trusted_len_values(v.iter().map(|s| s.as_ref()));
-
-        let chunks = vec![builder.as_box()];
-        // safety: same type
-        unsafe { ChunkedArray::from_chunks(name, chunks) }
+        let imm: BinaryArray<i64> = builder.into();
+        ChunkedArray::from_chunk_iter(name, [imm])
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<B>]) -> Self {
@@ -191,10 +180,8 @@ where
         });
         let mut builder = MutableBinaryArray::<i64>::with_capacities(opt_v.len(), values_size);
         builder.extend_trusted_len(opt_v.iter().map(|s| s.as_ref()));
-
-        let chunks = vec![builder.as_box()];
-        // safety: same type
-        unsafe { ChunkedArray::from_chunks(name, chunks) }
+        let imm: BinaryArray<i64> = builder.into();
+        ChunkedArray::from_chunk_iter(name, [imm])
     }
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<B>>) -> Self {
@@ -233,7 +220,7 @@ mod test {
         let mut builder =
             ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 5, DataType::Int32);
 
-        // create a series containing two chunks
+        // Create a series containing two chunks.
         let mut s1 = Int32Chunked::from_slice("a", &[1, 2, 3]).into_series();
         let s2 = Int32Chunked::from_slice("b", &[4, 5, 6]).into_series();
         s1.append(&s2).unwrap();
@@ -252,7 +239,8 @@ mod test {
         } else {
             panic!()
         }
-        // test list collect
+
+        // Test list collect.
         let out = [&s1, &s2].iter().copied().collect::<ListChunked>();
         assert_eq!(out.get(0).unwrap().len(), 6);
         assert_eq!(out.get(1).unwrap().len(), 3);

@@ -1,6 +1,6 @@
 #[cfg(feature = "extract_groups")]
-use arrow::array::StructArray;
-use arrow::array::{Array, MutableArray, MutableUtf8Array, Utf8Array};
+use arrow::array::{Array, StructArray};
+use arrow::array::{MutableArray, MutableUtf8Array, Utf8Array};
 use polars_core::export::regex::Regex;
 
 use super::*;
@@ -101,12 +101,8 @@ pub(super) fn extract_group(
     group_index: usize,
 ) -> PolarsResult<Utf8Chunked> {
     let reg = Regex::new(pat)?;
-
     let chunks = ca
         .downcast_iter()
-        .map(|array| Ok(extract_group_array(array, &reg, group_index)?.to_boxed()))
-        .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?;
-
-    // SAFETY: all chunks have type Utf8Array
-    unsafe { Ok(ChunkedArray::from_chunks(ca.name(), chunks)) }
+        .map(|array| extract_group_array(array, &reg, group_index));
+    ChunkedArray::try_from_chunk_iter(ca.name(), chunks)
 }

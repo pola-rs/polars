@@ -1,6 +1,5 @@
 use arrow::array::{Array, PrimitiveArray};
 use num::NumCast;
-use polars_arrow::prelude::ArrayRef;
 use polars_arrow::utils::combine_validities_and;
 use polars_core::datatypes::PolarsNumericType;
 use polars_core::export::num;
@@ -85,11 +84,8 @@ fn floor_div_ca<T: PolarsNumericType>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) 
     let chunks = a
         .downcast_iter()
         .zip(b.downcast_iter())
-        .map(|(a, b)| Box::new(floor_div_array(a, b)) as ArrayRef)
-        .collect();
-
-    // safety: same dtypes
-    unsafe { ChunkedArray::from_chunks(a.name(), chunks) }
+        .map(|(a, b)| floor_div_array(a, b));
+    ChunkedArray::from_chunk_iter(a.name(), chunks)
 }
 
 pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {

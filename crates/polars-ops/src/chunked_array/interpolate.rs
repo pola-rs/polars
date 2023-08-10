@@ -88,17 +88,17 @@ where
     T: PolarsNumericType,
     I: Fn(T::Native, T::Native, IdxSize, T::Native, &mut Vec<T::Native>),
 {
-    // This implementation differs from pandas as that boundary None's are not removed
-    // this prevents a lot of errors due to expressions leading to different lengths
+    // This implementation differs from pandas as that boundary None's are not removed.
+    // This prevents a lot of errors due to expressions leading to different lengths.
     if !chunked_arr.has_validity() || chunked_arr.null_count() == chunked_arr.len() {
         return chunked_arr.clone();
     }
 
-    // we first find the first and last so that we can set the null buffer
+    // We first find the first and last so that we can set the null buffer.
     let first = chunked_arr.first_non_null().unwrap();
     let last = chunked_arr.last_non_null().unwrap() + 1;
 
-    // fill av with first
+    // Fill av with first.
     let mut av = Vec::with_capacity(chunked_arr.len());
     let mut iter = chunked_arr.into_iter();
     for _ in 0..first {
@@ -115,18 +115,14 @@ where
             }
             Some(None) => {
                 match low_val {
-                    // not a non-null value encountered yet
-                    // so we skip
-                    None => continue,
+                    None => continue, // Not a non-null value encountered yet so we skip.
                     Some(low) => {
                         let mut steps = 1 as IdxSize;
                         loop {
                             steps += 1;
                             match iter.next() {
-                                // end of iterator, break
-                                None => break,
-                                // another null
-                                Some(None) => {}
+                                None => break,   // End of iterator, break.
+                                Some(None) => {} // Another null.
                                 Some(Some(high)) => {
                                     let steps_n: T::Native = NumCast::from(steps).unwrap();
                                     interpolation_branch(low, high, steps, steps_n, &mut av);
@@ -159,7 +155,7 @@ where
 
         let array =
             PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), Some(validity.into()));
-        unsafe { ChunkedArray::from_chunks(chunked_arr.name(), vec![Box::new(array)]) }
+        ChunkedArray::from_chunk_iter(chunked_arr.name(), [array])
     } else {
         ChunkedArray::from_vec(chunked_arr.name(), av)
     }

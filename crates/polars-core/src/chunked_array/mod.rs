@@ -215,15 +215,15 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     .remove(Settings::SORTED_ASC | Settings::SORTED_DSC);
             }
             IsSorted::Ascending => {
-                // // unset descending sorted
+                // Unset descending sorted.
                 self.bit_settings.remove(Settings::SORTED_DSC);
-                // set ascending sorted
+                // Set ascending sorted.
                 self.bit_settings.insert(Settings::SORTED_ASC)
             }
             IsSorted::Descending => {
-                // unset ascending sorted
+                // Unset ascending sorted.
                 self.bit_settings.remove(Settings::SORTED_ASC);
-                // set descending sorted
+                // Set descending sorted.
                 self.bit_settings.insert(Settings::SORTED_DSC)
             }
         }

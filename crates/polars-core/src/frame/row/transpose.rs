@@ -251,10 +251,7 @@ where
                     values.into(),
                     validity,
                 );
-                unsafe {
-                    ChunkedArray::<T>::from_chunks(name, vec![Box::new(arr) as ArrayRef])
-                        .into_series()
-                }
+                ChunkedArray::from_chunk_iter(name, [arr]).into_series()
             })
     }));
 }

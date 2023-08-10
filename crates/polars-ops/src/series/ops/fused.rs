@@ -1,5 +1,4 @@
 use arrow::array::PrimitiveArray;
-use polars_arrow::prelude::ArrayRef;
 use polars_arrow::utils::combine_validities_and;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_ternary;
@@ -37,16 +36,12 @@ fn fma_ca<T: PolarsNumericType>(
     c: &ChunkedArray<T>,
 ) -> ChunkedArray<T> {
     let (a, b, c) = align_chunks_ternary(a, b, c);
-
     let chunks = a
         .downcast_iter()
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
-        .map(|((a, b), c)| Box::new(fma_arr(a, b, c)) as ArrayRef)
-        .collect();
-
-    // safety: same dtypes
-    unsafe { ChunkedArray::from_chunks(a.name(), chunks) }
+        .map(|((a, b), c)| fma_arr(a, b, c));
+    ChunkedArray::from_chunk_iter(a.name(), chunks)
 }
 
 pub fn fma_series(a: &Series, b: &Series, c: &Series) -> Series {
@@ -95,16 +90,12 @@ fn fsm_ca<T: PolarsNumericType>(
     c: &ChunkedArray<T>,
 ) -> ChunkedArray<T> {
     let (a, b, c) = align_chunks_ternary(a, b, c);
-
     let chunks = a
         .downcast_iter()
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
-        .map(|((a, b), c)| Box::new(fsm_arr(a, b, c)) as ArrayRef)
-        .collect();
-
-    // safety: same dtypes
-    unsafe { ChunkedArray::from_chunks(a.name(), chunks) }
+        .map(|((a, b), c)| fsm_arr(a, b, c));
+    ChunkedArray::from_chunk_iter(a.name(), chunks)
 }
 
 pub fn fsm_series(a: &Series, b: &Series, c: &Series) -> Series {
@@ -152,16 +143,12 @@ fn fms_ca<T: PolarsNumericType>(
     c: &ChunkedArray<T>,
 ) -> ChunkedArray<T> {
     let (a, b, c) = align_chunks_ternary(a, b, c);
-
     let chunks = a
         .downcast_iter()
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
-        .map(|((a, b), c)| Box::new(fms_arr(a, b, c)) as ArrayRef)
-        .collect();
-
-    // safety: same dtypes
-    unsafe { ChunkedArray::from_chunks(a.name(), chunks) }
+        .map(|((a, b), c)| fms_arr(a, b, c));
+    ChunkedArray::from_chunk_iter(a.name(), chunks)
 }
 
 pub fn fms_series(a: &Series, b: &Series, c: &Series) -> Series {
