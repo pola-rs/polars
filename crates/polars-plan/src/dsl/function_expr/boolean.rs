@@ -4,9 +4,7 @@ use polars_core::POOL;
 use rayon::prelude::*;
 
 use super::*;
-use crate::map;
-#[cfg(feature = "is_in")]
-use crate::wrap;
+use crate::{map, wrap};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
