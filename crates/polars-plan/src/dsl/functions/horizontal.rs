@@ -195,14 +195,18 @@ where
 /// The name of the resulting column will be "all"; use [`alias`](Expr::alias) to choose a different name.
 pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| {
-        Ok(Some(
-            s1.bool()?
-                .bitand(s2.cast(&DataType::Boolean)?.bool()?)
-                .into_series(),
-        ))
-    };
-    fold_exprs(lit(true), func, exprs).alias("all")
+    Expr::Function {
+        input: exprs,
+        function: FunctionExpr::Boolean(BooleanFunction::AllHorizontal),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            cast_to_supertypes: false,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
 }
 
 /// Create a new column with the the bitwise-or of the elements in each row.
@@ -210,14 +214,18 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 /// The name of the resulting column will be "any"; use [`alias`](Expr::alias) to choose a different name.
 pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| {
-        Ok(Some(
-            s1.bool()?
-                .bitor(s2.cast(&DataType::Boolean)?.bool()?)
-                .into_series(),
-        ))
-    };
-    fold_exprs(lit(false), func, exprs).alias("any")
+    Expr::Function {
+        input: exprs,
+        function: FunctionExpr::Boolean(BooleanFunction::AnyHorizontal),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            cast_to_supertypes: false,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
 }
 
 /// Create a new column with the the maximum value per row.
