@@ -71,6 +71,34 @@ templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]
 exclude_patterns = ["Thumbs.db", ".DS_Store"]
 
 
+# -- Extension settings  -----------------------------------------------------
+
+# sphinx.ext.intersphinx - link to other projects' documentation
+# https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html
+intersphinx_mapping = {
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "pandas": ("https://pandas.pydata.org/docs/", None),
+    "pyarrow": ("https://arrow.apache.org/docs/", None),
+    "python": ("https://docs.python.org/3", None),
+}
+
+# sphinx.ext.napoleon - parse numpy docstrings
+# https://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html
+# Used in addition to numpydoc for stricter parsing requirements
+napoleon_numpy_docstring = True
+napoleon_google_docstring = False
+
+# numpydoc - parse numpy docstrings
+# https://numpydoc.readthedocs.io/en/latest/
+# Used in addition to Napoleon for nicer (more spacious) render of docstring sections
+numpydoc_show_class_members = False
+
+# Sphinx-copybutton - add copy button to code blocks
+# https://sphinx-copybutton.readthedocs.io/en/latest/index.html
+# strip the '>>>' and '...' prompt/continuation prefixes.
+copybutton_prompt_text = r">>> |\.\.\. "
+copybutton_prompt_is_regexp = True
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
@@ -85,13 +113,6 @@ html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]  # relative to html_static_path
 html_show_sourcelink = False
 
-# adds useful copy functionality to all the examples; also
-# strips the '>>>' and '...' prompt/continuation prefixes.
-copybutton_prompt_text = r">>> |\.\.\. "
-copybutton_prompt_is_regexp = True
-
-autosummary_generate = True
-numpydoc_show_class_members = False
 
 # key site root paths
 static_assets_root = "https://raw.githubusercontent.com/pola-rs/polars-static/master"
@@ -145,13 +166,6 @@ favicons = [
         "href": f"{static_assets_root}/icons/touchicon-180x180.png",
     },
 ]
-
-intersphinx_mapping = {
-    "numpy": ("https://numpy.org/doc/stable/", None),
-    "pandas": ("https://pandas.pydata.org/docs/", None),
-    "pyarrow": ("https://arrow.apache.org/docs/", None),
-    "python": ("https://docs.python.org/3", None),
-}
 
 
 def linkcode_resolve(domain, info):
