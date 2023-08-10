@@ -1788,12 +1788,16 @@ class DataFrame:
                     f"Can only call '.item()' if the dataframe is of shape (1,1), or if "
                     f"explicit row/col values are provided; frame has shape {self.shape}"
                 )
-            return self[0, 0]
+            return self._df.select_at_idx(0).get_idx(0)
 
         elif row is None or column is None:
             raise ValueError("Cannot call '.item()' with only one of 'row' or 'column'")
 
-        return self[row, column]
+        return (
+            self._df.select_at_idx(column)
+            if isinstance(column, int)
+            else self._df.column(column)
+        ).get_idx(row)
 
     def to_arrow(self) -> pa.Table:
         """
