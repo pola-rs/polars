@@ -1,6 +1,4 @@
 use arrow::bitmap::MutableBitmap;
-use arrow::compute::comparison::Simd8Lanes;
-use arrow::types::PrimitiveType;
 use polars_arrow::array::default_arrays::FromData;
 
 use crate::chunked_array::builder::get_list_builder;
