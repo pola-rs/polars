@@ -1,62 +1,13 @@
+from __future__ import annotations
+
 from typing import Any
 
 import pandas as pd
+import pyarrow as pa
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
-
-
-def test_interchange() -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
-    dfi = df.__dataframe__()
-
-    # Testing some random properties to make sure conversion happened correctly
-    assert dfi.num_rows() == 2
-    assert dfi.get_column(0).dtype[1] == 64
-    assert dfi.get_column_by_name("c").get_buffers()["data"][0].bufsize == 6
-
-
-def test_interchange_pyarrow_required(monkeypatch: Any) -> None:
-    monkeypatch.setattr(pl.dataframe.frame, "_PYARROW_AVAILABLE", False)
-
-    df = pl.DataFrame({"a": [1, 2]})
-    with pytest.raises(ImportError, match="pyarrow"):
-        df.__dataframe__()
-
-
-def test_interchange_pyarrow_min_version(monkeypatch: Any) -> None:
-    monkeypatch.setattr(
-        pl.dataframe.frame.pa,  # type: ignore[attr-defined]
-        "__version__",
-        "10.0.0",
-    )
-
-    df = pl.DataFrame({"a": [1, 2]})
-    with pytest.raises(ImportError, match="pyarrow"):
-        df.__dataframe__()
-
-
-def test_interchange_categorical() -> None:
-    df = pl.DataFrame({"a": ["foo", "bar"]}, schema={"a": pl.Categorical})
-
-    # Conversion requires copy
-    dfi = df.__dataframe__(allow_copy=True)
-    assert dfi.get_column_by_name("a").dtype[0] == 23  # 23 signifies categorical dtype
-
-    # If copy not allowed, throws an error
-    with pytest.raises(TypeError, match="categorical"):
-        df.__dataframe__(allow_copy=False)
-
-
-def test_interchange_nested_categorical() -> None:
-    df = pl.DataFrame(
-        {"a": [1, 2], "b": ["a", "b"], "c": [["q"], ["x"]]},
-        schema_overrides={"c": pl.List(pl.Categorical)},
-    )
-
-    with pytest.raises(TypeError, match="categorical"):
-        df.__dataframe__(allow_copy=False)
 
 
 def test_from_dataframe_polars() -> None:
@@ -84,6 +35,26 @@ def test_from_dataframe_pandas() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_from_dataframe_pyarrow_table_zero_copy() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
+    df_pa = df.to_arrow()
+
+    result = pl.from_dataframe(df_pa, allow_copy=False)
+    assert_frame_equal(result, df)
+
+
+def test_from_dataframe_pyarrow_recordbatch_zero_copy() -> None:
+    a = pa.array([1, 2])
+    b = pa.array([3.0, 4.0])
+    c = pa.array(["foo", "bar"])
+    batch = pa.record_batch([a, b, c], names=["a", "b", "c"])
+
+    result = pl.from_dataframe(batch, allow_copy=False)
+
+    expected = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
+    assert_frame_equal(result, expected)
+
+
 def test_from_dataframe_allow_copy() -> None:
     # Zero copy only allowed when input is already a Polars dataframe
     df = pl.DataFrame({"a": [1, 2]})
@@ -107,7 +78,7 @@ def test_from_dataframe_invalid_type() -> None:
 
 
 def test_from_dataframe_pyarrow_required(monkeypatch: Any) -> None:
-    monkeypatch.setattr(pl.convert, "_PYARROW_AVAILABLE", False)
+    monkeypatch.setattr(pl.interchange.from_dataframe, "_PYARROW_AVAILABLE", False)
 
     df = pl.DataFrame({"a": [1, 2]})
     with pytest.raises(ImportError, match="pyarrow"):
@@ -129,3 +100,28 @@ def test_from_dataframe_pyarrow_min_version(monkeypatch: Any) -> None:
 
     with pytest.raises(ImportError, match="pyarrow"):
         pl.from_dataframe(dfi)
+
+
+@pytest.mark.parametrize("dtype", [pl.Date, pl.Time, pl.Duration])
+def test_from_dataframe_data_type_not_implemented_by_arrow(
+    dtype: pl.PolarsDataType,
+) -> None:
+    df = pl.Series(dtype=dtype).to_frame()
+    dfi = df.__dataframe__()
+    with pytest.raises(NotImplementedError, match="not supported"):
+        pl.from_dataframe(dfi)
+
+
+# Remove xfail marker when the issue is fixed:
+# https://github.com/apache/arrow/issues/37050
+@pytest.mark.xfail(
+    reason="Bug in pyarrow's implementation of the interchange protocol."
+)
+def test_from_dataframe_empty_arrow_interchange_object() -> None:
+    df = pl.Series("a", dtype=pl.Int8).to_frame()
+    df_pa = df.to_arrow()
+    dfi = df_pa.__dataframe__()
+
+    result = pl.from_dataframe(dfi)
+
+    assert_frame_equal(result, df)
