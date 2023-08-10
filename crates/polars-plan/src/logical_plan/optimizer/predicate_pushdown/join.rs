@@ -1,6 +1,10 @@
 use super::*;
 
-fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> bool {
+// Block pushdown to left and right side individually
+#[derive(PartialEq, Eq)]
+struct BlockPushdown(bool, bool);
+
+fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> BlockPushdown {
     use AExpr::*;
     match ae {
         // joins can produce null values
@@ -10,12 +14,12 @@ fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> bool {
                 | FunctionExpr::Boolean(BooleanFunction::IsNull)
                 | FunctionExpr::FillNull { .. },
             ..
-        } => join_produces_null(how),
+        } => block_by_join_type(how),
         #[cfg(feature = "is_in")]
         Function {
             function: FunctionExpr::Boolean(BooleanFunction::IsIn),
             ..
-        } => join_produces_null(how),
+        } => block_by_join_type(how),
         // joins can produce duplicates
         #[cfg(feature = "is_unique")]
         Function {
@@ -23,31 +27,45 @@ fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> bool {
                 FunctionExpr::Boolean(BooleanFunction::IsUnique)
                 | FunctionExpr::Boolean(BooleanFunction::IsDuplicated),
             ..
-        } => true,
+        } => BlockPushdown(true, true),
         #[cfg(feature = "is_first")]
         Function {
             function: FunctionExpr::Boolean(BooleanFunction::IsFirst),
             ..
-        } => true,
+        } => BlockPushdown(true, true),
         // any operation that checks for equality or ordering can be wrong because
         // the join can produce null values
         // TODO! check if we can be less conservative here
-        BinaryExpr { op, .. } => !matches!(op, Operator::NotEq) && join_produces_null(how),
-        _ => false,
+        BinaryExpr { op, .. } => {
+            if matches!(op, Operator::NotEq) {
+                BlockPushdown(false, false)
+            } else {
+                block_by_join_type(how)
+            }
+        }
+        _ => BlockPushdown(false, false),
     }
 }
 
-fn join_produces_null(how: &JoinType) -> bool {
+fn block_by_join_type(how: &JoinType) -> BlockPushdown {
     #[cfg(feature = "asof_join")]
     {
-        matches!(
+        if matches!(
             how,
             JoinType::Left | JoinType::Outer | JoinType::Cross | JoinType::AsOf(_)
-        )
+        ) {
+            BlockPushdown(true, true)
+        } else {
+            BlockPushdown(false, false)
+        }
     }
     #[cfg(not(feature = "asof_join"))]
     {
-        matches!(how, JoinType::Left | JoinType::Outer | JoinType::Cross)
+        if matches!(how, JoinType::Left | JoinType::Outer | JoinType::Cross) {
+            BlockPushdown(true, true)
+        } else {
+            BlockPushdown(false, false)
+        };
     }
 }
 
@@ -75,7 +93,7 @@ pub(super) fn process_join(
     for (_, predicate) in acc_predicates {
         // check if predicate can pass the joins node
         if has_aexpr(predicate, expr_arena, |ae| {
-            should_block_join_specific(ae, &options.args.how)
+            should_block_join_specific(ae, &options.args.how) == BlockPushdown(true, true)
         }) {
             local_predicates.push(predicate);
             continue;
