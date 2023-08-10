@@ -71,7 +71,7 @@ where
 {
     fn from_slice(name: &str, v: &[T::Native]) -> Self {
         let arr = PrimitiveArray::from_slice(v).to(T::get_dtype().to_arrow());
-        ChunkedArray::from_chunk_iter(name, Some(arr))
+        ChunkedArray::from_chunk_iter(name, [arr])
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<T::Native>]) -> Self {
@@ -131,7 +131,7 @@ where
         let mut builder = MutableUtf8Array::<i64>::with_capacities(v.len(), values_size);
         builder.extend_trusted_len_values(v.iter().map(|s| s.as_ref()));
         let imm: Utf8Array<i64> = builder.into();
-        ChunkedArray::from_chunk_iter(name, Some(imm))
+        ChunkedArray::from_chunk_iter(name, [imm])
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<S>]) -> Self {
@@ -142,7 +142,7 @@ where
         let mut builder = MutableUtf8Array::<i64>::with_capacities(opt_v.len(), values_size);
         builder.extend_trusted_len(opt_v.iter().map(|s| s.as_ref()));
         let imm: Utf8Array<i64> = builder.into();
-        ChunkedArray::from_chunk_iter(name, Some(imm))
+        ChunkedArray::from_chunk_iter(name, [imm])
     }
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<S>>) -> Self {
@@ -170,7 +170,7 @@ where
         let mut builder = MutableBinaryArray::<i64>::with_capacities(v.len(), values_size);
         builder.extend_trusted_len_values(v.iter().map(|s| s.as_ref()));
         let imm: BinaryArray<i64> = builder.into();
-        ChunkedArray::from_chunk_iter(name, Some(imm))
+        ChunkedArray::from_chunk_iter(name, [imm])
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<B>]) -> Self {
@@ -181,7 +181,7 @@ where
         let mut builder = MutableBinaryArray::<i64>::with_capacities(opt_v.len(), values_size);
         builder.extend_trusted_len(opt_v.iter().map(|s| s.as_ref()));
         let imm: BinaryArray<i64> = builder.into();
-        ChunkedArray::from_chunk_iter(name, Some(imm))
+        ChunkedArray::from_chunk_iter(name, [imm])
     }
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<B>>) -> Self {

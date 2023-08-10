@@ -101,9 +101,8 @@ pub(super) fn extract_group(
     group_index: usize,
 ) -> PolarsResult<Utf8Chunked> {
     let reg = Regex::new(pat)?;
-    ChunkedArray::try_from_chunk_iter(
-        ca.name(),
-        ca.downcast_iter()
-            .map(|array| extract_group_array(array, &reg, group_index)),
-    )
+    let chunks = ca
+        .downcast_iter()
+        .map(|array| extract_group_array(array, &reg, group_index));
+    ChunkedArray::try_from_chunk_iter(ca.name(), chunks)
 }

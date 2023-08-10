@@ -35,7 +35,7 @@ where
         unsafe { values.set_unchecked(idx as usize, setter) }
     }
     let arr = BooleanArray::from_data_default(values.into(), None);
-    BooleanChunked::from_chunk_iter(ca.name(), Some(arr))
+    BooleanChunked::from_chunk_iter(ca.name(), [arr])
 }
 
 fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
