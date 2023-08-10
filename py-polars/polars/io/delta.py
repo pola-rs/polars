@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from functools import reduce
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Mapping
 from urllib.parse import urlparse
 
 from polars.convert import from_arrow
+from polars.datatypes import Categorical, List, Null, Struct, Time
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.dependencies import pyarrow as pa
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
+    from polars.type_aliases import PolarsDataType
 
 
 def read_delta(
@@ -318,8 +320,31 @@ def _check_if_delta_available() -> None:
         )
 
 
-def _create_nested_type(type_list: list[pa.DataType]) -> pa.DataType:
-    return reduce(lambda x, y: y(x), reversed(type_list))
+def _check_for_unsupported_types(schema: Mapping[str, PolarsDataType]) -> None:
+    unsupported_cols = {}
+    unsupported_types = [Time, Categorical, Null]
+
+    def check_unsupported_types(n: str, t: PolarsDataType | None) -> None:
+        if t is None or t in unsupported_types:
+            unsupported_cols[n] = t
+        elif isinstance(t, Struct):
+            for i in t.fields:
+                check_unsupported_types(f"{n}.{i.name}", i.dtype)
+        elif isinstance(t, List):
+            check_unsupported_types(n, t.inner)
+
+    for name, data_type in schema.items():
+        check_unsupported_types(name, data_type)
+
+    if len(unsupported_cols) != 0:
+        raise TypeError(f"Column(s) in {unsupported_cols} have unsupported data types.")
+
+
+def _create_delta_compatible_schema(schema: pa.schema) -> pa.Schema:
+    """Makes the dataframe schema compatible with Delta lake protocol."""
+    schema_out = list(map(_reconstruct_field_type, schema, schema))
+    schema = pa.schema(schema_out, metadata=schema.metadata)
+    return schema
 
 
 def _reconstruct_field_type(
@@ -328,35 +353,18 @@ def _reconstruct_field_type(
     reconstructed_field: list[pa.DataType] | None = None,
 ) -> pa.Field:
     """
-    Recursive function that traverses through pyArrow fields.
+    Recursive function that traverses through PyArrow fields.
 
     Parameters
     ----------
-    field : pa.Field
-        field to analyze
-    field_head : pa.Field
-        field head to retain column names
-    reconstructed_field : List, optional
-        Collection of dtypes to reconstruct a field, by default None
+    field
+        Field to analyze.
+    field_head
+        Field head to retain column names.
+    reconstructed_field
+        Collection of dtypes to reconstruct a field.
 
-    Returns
-    -------
-    pa.Field
-        Reconstructed field
     """
-    type_mapping = {
-        pa.uint8(): pa.int8(),
-        pa.uint16(): pa.int16(),
-        pa.uint32(): pa.int32(),
-        pa.uint64(): pa.int64(),
-        pa.large_string(): pa.string(),
-        pa.large_binary(): pa.binary(),
-        pa.timestamp(unit="ns"): pa.timestamp(
-            unit="us"
-        ),  # Always cast to no timezone, since Delta-rs does not support UTC yet, once fixed upstream, add tz=field.type.tz
-        pa.timestamp(unit="ms"): pa.timestamp(unit="us"),
-    }
-
     if reconstructed_field is None:
         if isinstance(field.type, pa.LargeListType):
             return _reconstruct_field_type(
@@ -365,16 +373,15 @@ def _reconstruct_field_type(
         elif isinstance(field.type, pa.StructType):
             return pa.field(
                 name=field_head.name,
-                type=pa.struct([*map(_reconstruct_field_type, field.type, field.type)]),
+                type=pa.struct(
+                    list(map(_reconstruct_field_type, field.type, field.type))
+                ),
             )
-        elif isinstance(field.type, pa.DataType) and not isinstance(
-            field.type, (pa.LargeListType, pa.StructType)
-        ):
-            for polars_type, primitive_type in type_mapping.items():
-                if field.type.equals(polars_type):
-                    return pa.field(name=field.name, type=primitive_type)
-            else:
-                return field
+        else:
+            if (primitive := pa_type_to_primitive.get(field.type)) is not None:
+                return pa.field(name=field.name, type=primitive)
+            return field
+
     else:
         if isinstance(field.type, pa.LargeListType):
             reconstructed_field.append(pa.list_)
@@ -383,45 +390,39 @@ def _reconstruct_field_type(
             )
         elif isinstance(field.type, pa.StructType):
             reconstructed_field.append(
-                pa.struct([*map(_reconstruct_field_type, field.type, field.type)])
+                pa.struct(list(map(_reconstruct_field_type, field.type, field.type)))
             )
             return pa.field(
                 name=field_head.name,
                 type=_create_nested_type(reconstructed_field),
             )
-        elif isinstance(field.type, pa.DataType) and not isinstance(
-            field.type, (pa.LargeListType, pa.StructType)
-        ):
-            for polars_type, primitive_type in type_mapping.items():
-                if field.type.equals(polars_type):
-                    reconstructed_field.append(primitive_type)
-                    return pa.field(
-                        name=field_head.name,
-                        type=_create_nested_type(reconstructed_field),
-                    )
-            else:
-                reconstructed_field.append(field.type)
+        else:
+            if (primitive := pa_type_to_primitive.get(field.type)) is not None:
+                reconstructed_field.append(primitive)
                 return pa.field(
-                    name=field_head.name,
-                    type=_create_nested_type(reconstructed_field),
+                    name=field_head.name, type=_create_nested_type(reconstructed_field)
                 )
 
+            reconstructed_field.append(field.type)
+            return pa.field(
+                name=field_head.name,
+                type=_create_nested_type(reconstructed_field),
+            )
 
-def _create_delta_compatible_schema(schema: pa.schema) -> pa.Schema:
-    """
-    Makes the dataframe schema compatible with Delta lake protocol.
 
-    Parameters
-    ----------
-    schema : pa.schema
-        input schema
+pa_type_to_primitive = {
+    pa.uint8(): pa.int8(),
+    pa.uint16(): pa.int16(),
+    pa.uint32(): pa.int32(),
+    pa.uint64(): pa.int64(),
+    pa.large_string(): pa.string(),
+    pa.large_binary(): pa.binary(),
+    pa.timestamp(unit="ns"): pa.timestamp(
+        unit="us"
+    ),  # Always cast to no timezone, since Delta-rs does not support UTC yet, once fixed upstream, add tz=field.type.tz
+    pa.timestamp(unit="ms"): pa.timestamp(unit="us"),
+}
 
-    Returns
-    -------
-    pa.Schema
-        delta compatible schema
-    """
-    schema_out = [*map(_reconstruct_field_type, schema, schema)]
-    schema = pa.schema(schema_out, metadata=schema.metadata)
 
-    return schema
+def _create_nested_type(type_list: list[pa.DataType]) -> pa.DataType:
+    return reduce(lambda x, y: y(x), reversed(type_list))

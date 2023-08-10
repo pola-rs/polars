@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pyarrow.fs
 import pytest
+from deltalake import DeltaTable
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_not_equal
@@ -104,8 +105,6 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
-    from deltalake import DeltaTable
-
     v0 = df.select(pl.col(pl.Utf8))
     v1 = df.select(pl.col(pl.Int64))
     df_supported = df.drop(["cat", "time"])
@@ -340,9 +339,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     ],
 )
 def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> None:
-    from deltalake import DeltaTable
-
-    df = pl.DataFrame(series)
+    df = series.to_frame()
 
     # Create table
     df.write_delta(tmp_path, mode="append")
@@ -351,5 +348,4 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
     df.write_delta(tmp_path, mode="append")
 
     tbl = DeltaTable(tmp_path)
-
     assert tbl.version() == 1
