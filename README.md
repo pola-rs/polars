@@ -135,22 +135,21 @@ shape: (5, 8)
 ... ).collect())
 ```
 
-SQL commands can also be ran directly from your terminal.
+SQL commands can also be ran directly from your terminal using the Polars CLI:
 
 ```bash
-> cargo install polars-cli --locked
 # run an inline sql query
 > polars -c "SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM read_ipc('file.arrow') WHERE id1 = 'id016' LIMIT 10"
 
 # run interactively
 > polars
-Polars CLI v0.1.0
+Polars CLI v0.3.0
 Type .help for help.
 
 > SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM read_ipc('file.arrow') WHERE id1 = 'id016' LIMIT 10;
 ```
 
-Refer to [polars-cli](./polars-cli/README.md) for more information.
+Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for more information.
 
 ## Performance 🚀🚀
 
