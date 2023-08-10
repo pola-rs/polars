@@ -291,14 +291,14 @@ impl AggList for ListChunked {
                         }
 
                         *length_so_far += idx_len as i64;
-                        // Safety:
+                        // SAFETY:
                         // group tuples are in bounds
                         {
                             let mut s = ca.take_unchecked(idx.into());
                             let arr = s.chunks.pop().unwrap_unchecked_release();
                             list_values.push_unchecked(arr);
 
-                            // Safety:
+                            // SAFETY:
                             // we know that offsets has allocated enough slots
                             offsets.push_unchecked(*length_so_far);
                         }
@@ -326,7 +326,7 @@ impl AggList for ListChunked {
                         list_values.push_unchecked(arr);
 
                         {
-                            // Safety:
+                            // SAFETY:
                             // we know that offsets has allocated enough slots
                             offsets.push_unchecked(*length_so_far);
                         }
@@ -359,7 +359,7 @@ impl AggList for ArrayChunked {
 
                         *length_so_far += idx_len as i64;
 
-                        // Safety:
+                        // SAFETY:
                         // we know that offsets has allocated enough slots
                         offsets.push_unchecked(*length_so_far);
 
@@ -421,7 +421,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
                 .flat_map(|indicator| {
                     let (group_vals, len) = match indicator {
                         GroupsIndicator::Idx((_first, idx)) => {
-                            // Safety:
+                            // SAFETY:
                             // group tuples always in bounds
                             let group_vals = self.take_unchecked(idx.into());
 
@@ -438,7 +438,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
                         can_fast_explode = false;
                     }
                     length_so_far += len as i64;
-                    // Safety:
+                    // SAFETY:
                     // we know that offsets has allocated enough slots
                     offsets.push_unchecked(length_so_far);
 
@@ -450,7 +450,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
 
         let mut pe = create_extension(iter);
 
-        // Safety:
+        // SAFETY:
         // this is safe because we just created the PolarsExtension
         // meaning that the sentinel is heap allocated and the dereference of the
         // pointer does not fail
@@ -459,7 +459,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         let extension_dtype = extension_array.data_type();
 
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
-        // Safety:
+        // SAFETY:
         // offsets are monotonically increasing
         let arr = Box::new(ListArray::<i64>::new(
             data_type,
