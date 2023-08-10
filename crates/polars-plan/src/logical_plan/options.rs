@@ -190,7 +190,9 @@ pub struct FunctionOptions {
     pub auto_explode: bool,
     // if the expression and its inputs should be cast to supertypes
     pub cast_to_supertypes: bool,
-    // apply physical expression may rename the output of this function
+    // The physical expression may rename the output of this function.
+    // If set to `false` the physical engine will ensure the left input
+    // expression is the output name.
     pub allow_rename: bool,
     // if set, then the `Series` passed to the function in the groupby operation
     // will ensure the name is set. This is an extra heap allocation per group.
