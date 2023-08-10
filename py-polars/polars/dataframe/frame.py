@@ -37,14 +37,9 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     NUMERIC_DTYPES,
     Boolean,
-    Categorical,
     DataTypeClass,
     Float64,
-    List,
-    Null,
     Object,
-    Struct,
-    Time,
     Utf8,
     py_type_to_dtype,
 )
@@ -3314,9 +3309,6 @@ class DataFrame:
         """
         Write DataFrame as delta table.
 
-        Note: Some polars data types like `Null`, `Categorical` and `Time` are
-        not supported by the delta protocol specification.
-
         Parameters
         ----------
         target
@@ -3341,9 +3333,35 @@ class DataFrame:
             Additional keyword arguments while writing a Delta lake Table.
             See a list of supported write options `here <https://github.com/delta-io/delta-rs/blob/395d48b47ea638b70415899dc035cc895b220e55/python/deltalake/writer.py#L65>`__.
 
+        Raises
+        ------
+        TypeError
+            If the DataFrame contains unsupported data types.
+        ArrowInvalidError
+            If the DataFrame contains data types that could not be cast to their
+            primitive type.
+
+        Notes
+        -----
+        The Polars data types :class:`Null`, :class:`Categorical` and :class:`Time`
+        are not supported by the delta protocol specification and will raise a
+        TypeError.
+
+        Some other data types are not supported but have an associated `primitive type
+        <https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types>`__
+        to which they can be cast. This affects the following data types:
+
+        - Unsigned integers
+        - :class:`Datetime` types with millisecond or nanosecond precision
+        - :class:`Utf8`, :class:`Binary`, and :class:`List` ('large' types)
+
+        Polars columns are always nullable. To write data to a delta table with
+        non-nullable columns, a custom pyarrow schema has to be passed to the
+        `delta_write_options`. See the last example below.
+
         Examples
         --------
-        Instantiate a basic dataframe:
+        Write a dataframe to the local filesystem as a Delta Lake table.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -3352,28 +3370,25 @@ class DataFrame:
         ...         "ham": ["a", "b", "c", "d", "e"],
         ...     }
         ... )
-
-        Write DataFrame as a Delta Lake table on local filesystem.
-
         >>> table_path = "/path/to/delta-table/"
         >>> df.write_delta(table_path)  # doctest: +SKIP
 
-        Append data to an existing Delta Lake table on local filesystem.
-        Note: This will fail if schema of the new data does not match the
-        schema of existing table.
+        Append data to an existing Delta Lake table on the local filesystem.
+        Note that this will fail if the schema of the new data does not match the
+        schema of the existing table.
 
         >>> df.write_delta(table_path, mode="append")  # doctest: +SKIP
 
         Overwrite a Delta Lake table as a new version.
-        Note: If the schema of the new and old data is same,
-        then setting `overwrite_schema` is not required.
+        If the schemas of the new and old data are the same, setting
+        `overwrite_schema` is not required.
 
         >>> existing_table_path = "/path/to/delta-table/"
         >>> df.write_delta(
         ...     existing_table_path, mode="overwrite", overwrite_schema=True
         ... )  # doctest: +SKIP
 
-        Write DataFrame as a Delta Lake table on cloud object store like S3.
+        Write a dataframe as a Delta Lake table to a cloud object store like S3.
 
         >>> table_path = "s3://bucket/prefix/to/delta-table/"
         >>> df.write_delta(
@@ -3385,15 +3400,28 @@ class DataFrame:
         ...     },
         ... )  # doctest: +SKIP
 
+        Write DataFrame as a Delta Lake table with non-nullable columns.
+
+        >>> import pyarrow as pa
+        >>> existing_table_path = "/path/to/delta-table/"
+        >>> df.write_delta(
+        ...     existing_table_path,
+        ...     delta_write_options={
+        ...         "schema": pa.schema([pa.field("foo", pa.int64(), nullable=False)])
+        ...     },
+        ... )  # doctest: +SKIP
+
         """
-        from polars.io.delta import _check_if_delta_available, _resolve_delta_lake_uri
+        from polars.io.delta import (
+            _check_for_unsupported_types,
+            _check_if_delta_available,
+            _convert_pa_schema_to_delta,
+            _resolve_delta_lake_uri,
+        )
 
         _check_if_delta_available()
 
-        from deltalake.writer import (
-            try_get_deltatable,
-            write_deltalake,
-        )
+        from deltalake.writer import write_deltalake
 
         if delta_write_options is None:
             delta_write_options = {}
@@ -3401,43 +3429,21 @@ class DataFrame:
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
-        unsupported_cols = {}
-        unsupported_types = [Time, Categorical, Null]
-
-        def check_unsupported_types(n: str, t: PolarsDataType | None) -> None:
-            if t is None or t in unsupported_types:
-                unsupported_cols[n] = t
-            elif isinstance(t, Struct):
-                for i in t.fields:
-                    check_unsupported_types(f"{n}.{i.name}", i.dtype)
-            elif isinstance(t, List):
-                check_unsupported_types(n, t.inner)
-
-        for name, data_type in self.schema.items():
-            check_unsupported_types(name, data_type)
-
-        if len(unsupported_cols) != 0:
-            raise TypeError(
-                f"Column(s) in {unsupported_cols} have unsupported data types."
-            )
+        _check_for_unsupported_types(self.dtypes)
 
         data = self.to_arrow()
-        data_schema = data.schema
 
-        # Workaround to prevent manual casting of large types
-        table = try_get_deltatable(target, storage_options)  # type: ignore[arg-type]
+        schema = delta_write_options.get("schema")
+        if schema is None:
+            schema = _convert_pa_schema_to_delta(data.schema)
 
-        if table is not None:
-            table_schema = table.schema()
-
-            if data_schema == table_schema.to_pyarrow(as_large_types=True):
-                data_schema = table_schema.to_pyarrow()
+        data = data.cast(schema)
 
         write_deltalake(
             table_or_uri=target,
             data=data,
+            schema=schema,
             mode=mode,
-            schema=data_schema,
             overwrite_schema=overwrite_schema,
             storage_options=storage_options,
             **delta_write_options,

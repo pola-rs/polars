@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pyarrow.fs
 import pytest
+from deltalake import DeltaTable
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_not_equal
@@ -103,8 +105,6 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
-    from deltalake import DeltaTable
-
     v0 = df.select(pl.col(pl.Utf8))
     v1 = df.select(pl.col(pl.Int64))
     df_supported = df.drop(["cat", "time"])
@@ -179,3 +179,159 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     assert df_supported.columns == pl_df_partitioned.columns
 
     df_supported.write_delta(partitioned_tbl_uri, mode="overwrite")
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize(
+    "series",
+    [
+        pl.Series("string", ["test"], dtype=pl.Utf8),
+        pl.Series("uint", [1], dtype=pl.UInt64),
+        pl.Series("int", [1], dtype=pl.Int64),
+        pl.Series(
+            "uint_list",
+            [[[[[1, 2, 3], [1, 2, 3]], [[1, 2, 3], [1, 2, 3]]]]],
+            dtype=pl.List(pl.List(pl.List(pl.List(pl.UInt16)))),
+        ),
+        pl.Series(
+            "date_ns",
+            [datetime(2010, 1, 1, 0, 0)],
+            dtype=pl.Datetime(time_unit="ns"),
+        ),
+        pl.Series(
+            "date_us",
+            [datetime(2010, 1, 1, 0, 0)],
+            dtype=pl.Datetime(time_unit="us"),
+        ),
+        pl.Series(
+            "list_date",
+            [
+                [
+                    datetime(2010, 1, 1, 0, 0),
+                    datetime(2010, 1, 2, 0, 0),
+                ]
+            ],
+            dtype=pl.List(pl.Datetime(time_unit="ns")),
+        ),
+        pl.Series(
+            "list_date_us",
+            [
+                [
+                    datetime(2010, 1, 1, 0, 0),
+                    datetime(2010, 1, 2, 0, 0),
+                ]
+            ],
+            dtype=pl.List(pl.Datetime(time_unit="ms")),
+        ),
+        pl.Series(
+            "nested_list_date",
+            [
+                [
+                    [
+                        datetime(2010, 1, 1, 0, 0),
+                        datetime(2010, 1, 2, 0, 0),
+                    ]
+                ]
+            ],
+            dtype=pl.List(pl.List(pl.Datetime(time_unit="ns"))),
+        ),
+        pl.Series(
+            "struct_with_list",
+            [
+                {
+                    "date_range": [
+                        datetime(2010, 1, 1, 0, 0),
+                        datetime(2010, 1, 2, 0, 0),
+                    ],
+                    "date_us": [
+                        datetime(2010, 1, 1, 0, 0),
+                        datetime(2010, 1, 2, 0, 0),
+                    ],
+                    "date_range_nested": [
+                        [
+                            datetime(2010, 1, 1, 0, 0),
+                            datetime(2010, 1, 2, 0, 0),
+                        ]
+                    ],
+                    "string": "test",
+                    "int": 1,
+                }
+            ],
+            dtype=pl.Struct(
+                [
+                    pl.Field(
+                        "date_range",
+                        pl.List(pl.Datetime(time_unit="ms", time_zone=None)),
+                    ),
+                    pl.Field(
+                        "date_us", pl.List(pl.Datetime(time_unit="ms", time_zone=None))
+                    ),
+                    pl.Field(
+                        "date_range_nested",
+                        pl.List(pl.List(pl.Datetime(time_unit="ms", time_zone=None))),
+                    ),
+                    pl.Field("string", pl.Utf8),
+                    pl.Field("int", pl.UInt32),
+                ]
+            ),
+        ),
+        pl.Series(
+            "list_with_struct_with_list",
+            [
+                [
+                    {
+                        "date_range": [
+                            datetime(2010, 1, 1, 0, 0),
+                            datetime(2010, 1, 2, 0, 0),
+                        ],
+                        "date_ns": [
+                            datetime(2010, 1, 1, 0, 0),
+                            datetime(2010, 1, 2, 0, 0),
+                        ],
+                        "date_range_nested": [
+                            [
+                                datetime(2010, 1, 1, 0, 0),
+                                datetime(2010, 1, 2, 0, 0),
+                            ]
+                        ],
+                        "string": "test",
+                        "int": 1,
+                    }
+                ]
+            ],
+            dtype=pl.List(
+                pl.Struct(
+                    [
+                        pl.Field(
+                            "date_range",
+                            pl.List(pl.Datetime(time_unit="ns", time_zone=None)),
+                        ),
+                        pl.Field(
+                            "date_ns",
+                            pl.List(pl.Datetime(time_unit="ns", time_zone=None)),
+                        ),
+                        pl.Field(
+                            "date_range_nested",
+                            pl.List(
+                                pl.List(pl.Datetime(time_unit="ns", time_zone=None))
+                            ),
+                        ),
+                        pl.Field("string", pl.Utf8),
+                        pl.Field("int", pl.UInt32),
+                    ]
+                )
+            ),
+        ),
+    ],
+)
+def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> None:
+    df = series.to_frame()
+
+    # Create table
+    df.write_delta(tmp_path, mode="append")
+
+    # Write to table again, should pass with reconstructed schema
+    df.write_delta(tmp_path, mode="append")
+
+    tbl = DeltaTable(tmp_path)
+    assert tbl.version() == 1
