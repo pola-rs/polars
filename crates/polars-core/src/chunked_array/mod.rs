@@ -196,11 +196,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Set flags for the Chunked Array
     pub(crate) fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
         Settings::from_bits(flags)
-            .ok_or_else(|| {
-                PolarsError::ComputeError(
-                    format!("corrupt flags {} for {}", flags, self.dtype()).into(),
-                )
-            })
+            .ok_or_else(
+                || polars_err!(ComputeError: "corrupt flags {} for {}", flags, self.dtype()),
+            )
             .map(|settings| {
                 self.bit_settings = settings;
             })
