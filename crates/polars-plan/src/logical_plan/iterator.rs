@@ -6,31 +6,31 @@ macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) | Count => {}
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) | Count => {},
             Alias(e, _) => $push(e),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first
                 $push(right);
                 $push(left);
-            }
+            },
             Cast { expr, .. } => $push(expr),
             Sort { expr, .. } => $push(expr),
             Take { expr, idx } => {
                 $push(idx);
                 $push(expr);
-            }
+            },
             Filter { input, by } => {
                 $push(by);
                 // latest, so that it is popped first
                 $push(input);
-            }
+            },
             SortBy { expr, by, .. } => {
                 for e in by {
                     $push(e)
                 }
                 // latest, so that it is popped first
                 $push(expr);
-            }
+            },
             Agg(agg_e) => {
                 use AggExpr::*;
                 match agg_e {
@@ -49,7 +49,7 @@ macro_rules! push_expr {
                     Std(e, _) => $push(e),
                     Var(e, _) => $push(e),
                 }
-            }
+            },
             Ternary {
                 truthy,
                 falsy,
@@ -59,7 +59,7 @@ macro_rules! push_expr {
                 $push(falsy);
                 // latest, so that it is popped first
                 $push(truthy);
-            }
+            },
             // we iterate in reverse order, so that the lhs is popped first and will be found
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
             AnonymousFunction { input, .. } => input.$iter().rev().for_each(|e| $push(e)),
@@ -79,7 +79,7 @@ macro_rules! push_expr {
                 }
                 // latest so that it is popped first
                 $push(function);
-            }
+            },
             Slice {
                 input,
                 offset,
@@ -89,12 +89,12 @@ macro_rules! push_expr {
                 $push(offset);
                 // latest, so that it is popped first
                 $push(input);
-            }
+            },
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
             RenameAlias { expr, .. } => $push(expr),
             // pass
-            Selector(_) => {}
+            Selector(_) => {},
         }
     }};
 }

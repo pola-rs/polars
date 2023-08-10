@@ -285,7 +285,7 @@ impl ListNameSpace {
 
                             *lock = Some(dt.clone());
                             dt
-                        }
+                        },
                     }
                 }),
             )

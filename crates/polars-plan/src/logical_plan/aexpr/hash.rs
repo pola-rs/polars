@@ -17,11 +17,11 @@ impl Hash for AExpr {
             } => {
                 options.hash(state);
                 function.hash(state)
-            }
+            },
             AExpr::AnonymousFunction { options, .. } => {
                 options.hash(state);
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 }

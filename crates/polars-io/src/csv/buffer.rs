@@ -112,7 +112,7 @@ where
                         ComputeError: "remaining bytes non-empty",
                     );
                     self.append_null()
-                }
+                },
             };
         }
         Ok(())
@@ -216,7 +216,7 @@ impl ParsedBuffer for Utf8Field {
                 unsafe { self.data.set_len(data_len + n_written) }
                 self.offsets.push(self.data.len() as i64);
                 self.validity.push(true);
-            }
+            },
             false => {
                 if matches!(self.encoding, CsvEncoding::LossyUtf8) {
                     // Safety:
@@ -243,7 +243,7 @@ impl ParsedBuffer for Utf8Field {
                 } else {
                     polars_bail!(ComputeError: "invalid utf-8 sequence");
                 }
-            }
+            },
         }
 
         Ok(())
@@ -439,7 +439,7 @@ where
             None => {
                 buf.builder.append_null();
                 return Ok(());
-            }
+            },
         },
     };
     match DatetimeInfer::try_from_with_unit(pattern, time_unit) {
@@ -448,11 +448,11 @@ where
             buf.compiled = Some(infer);
             buf.builder.append_option(parsed);
             Ok(())
-        }
+        },
         Err(_) => {
             buf.builder.append_null();
             Ok(())
-        }
+        },
     }
 }
 
@@ -482,13 +482,13 @@ where
                     Some(parsed) => {
                         self.builder.append_value(parsed);
                         Ok(())
-                    }
+                    },
                     // fall back on chrono parser
                     // this is a lot slower, we need to do utf8 checking and use
                     // the slower parser
                     None => slow_datetime_parser(self, bytes, time_unit, ignore_errors),
                 }
-            }
+            },
         }
     }
 }
@@ -544,7 +544,7 @@ pub(crate) fn init_buffers<'a>(
                 #[cfg(feature = "dtype-categorical")]
                 &DataType::Categorical(_) => {
                     Buffer::Categorical(CategoricalField::new(name, capacity, quote_char))
-                }
+                },
                 dt => polars_bail!(
                     ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
                 ),
@@ -657,7 +657,7 @@ impl<'a> Buffer<'a> {
                 {
                     panic!("activate 'dtype-categorical' feature")
                 }
-            }
+            },
         };
         Ok(s)
     }
@@ -674,7 +674,7 @@ impl<'a> Buffer<'a> {
             Buffer::Utf8(v) => {
                 v.offsets.push(v.data.len() as i64);
                 v.validity.push(valid);
-            }
+            },
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { buf, .. } => buf.builder.append_null(),
             #[cfg(feature = "dtype-date")]
@@ -689,7 +689,7 @@ impl<'a> Buffer<'a> {
                 {
                     panic!("activate 'dtype-categorical' feature")
                 }
-            }
+            },
         };
     }
 
@@ -717,7 +717,7 @@ impl<'a> Buffer<'a> {
                 {
                     panic!("activate 'dtype-categorical' feature")
                 }
-            }
+            },
         }
     }
 
@@ -805,7 +805,7 @@ impl<'a> Buffer<'a> {
                     missing_is_null,
                     Some(*time_unit),
                 )
-            }
+            },
             #[cfg(feature = "dtype-date")]
             Date(buf) => <DatetimeField<Int32Type> as ParsedBuffer>::parse_bytes(
                 buf,
@@ -826,7 +826,7 @@ impl<'a> Buffer<'a> {
                 {
                     panic!("activate 'dtype-categorical' feature")
                 }
-            }
+            },
         }
     }
 }

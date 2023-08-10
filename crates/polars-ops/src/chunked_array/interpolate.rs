@@ -112,7 +112,7 @@ where
             Some(Some(v)) => {
                 av.push(v);
                 low_val = Some(v);
-            }
+            },
             Some(None) => {
                 match low_val {
                     None => continue, // Not a non-null value encountered yet so we skip.
@@ -121,23 +121,23 @@ where
                         loop {
                             steps += 1;
                             match iter.next() {
-                                None => break,   // End of iterator, break.
-                                Some(None) => {} // Another null.
+                                None => break,    // End of iterator, break.
+                                Some(None) => {}, // Another null.
                                 Some(Some(high)) => {
                                     let steps_n: T::Native = NumCast::from(steps).unwrap();
                                     interpolation_branch(low, high, steps, steps_n, &mut av);
                                     av.push(high);
                                     low_val = Some(high);
                                     break;
-                                }
+                                },
                             }
                         }
-                    }
+                    },
                 }
-            }
+            },
             None => {
                 break;
-            }
+            },
         }
     }
     if first != 0 || last != chunked_arr.len() {
@@ -180,7 +180,7 @@ fn interpolate_nearest(s: &Series) -> Series {
             }
             let out = downcast_as_macro_arg_physical!(s, dispatch);
             out.cast(logical).unwrap()
-        }
+        },
     }
 }
 
@@ -214,7 +214,7 @@ fn interpolate_linear(s: &Series) -> Series {
                 _ => s.as_ref().clone(),
             };
             out.cast(logical).unwrap()
-        }
+        },
     }
 }
 

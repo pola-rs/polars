@@ -148,14 +148,14 @@ pub(crate) fn create_physical_expr(
                 options,
                 expr: node_to_expr(expression, expr_arena),
             }))
-        }
+        },
         Literal(value) => {
             state.local.has_lit = true;
             Ok(Arc::new(LiteralExpr::new(
                 value,
                 node_to_expr(expression, expr_arena),
             )))
-        }
+        },
         BinaryExpr { left, op, right } => {
             let lhs = create_physical_expr(left, ctxt, expr_arena, schema, state)?;
             let rhs = create_physical_expr(right, ctxt, expr_arena, schema, state)?;
@@ -166,7 +166,7 @@ pub(crate) fn create_physical_expr(
                 node_to_expr(expression, expr_arena),
                 state.local.has_lit,
             )))
-        }
+        },
         Column(column) => Ok(Arc::new(ColumnExpr::new(
             column,
             node_to_expr(expression, expr_arena),
@@ -179,7 +179,7 @@ pub(crate) fn create_physical_expr(
                 options,
                 node_to_expr(expression, expr_arena),
             )))
-        }
+        },
         Take { expr, idx } => {
             let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             let phys_idx = create_physical_expr(idx, ctxt, expr_arena, schema, state)?;
@@ -188,7 +188,7 @@ pub(crate) fn create_physical_expr(
                 idx: phys_idx,
                 expr: node_to_expr(expression, expr_arena),
             }))
-        }
+        },
         SortBy {
             expr,
             by,
@@ -203,7 +203,7 @@ pub(crate) fn create_physical_expr(
                 descending,
                 node_to_expr(expression, expr_arena),
             )))
-        }
+        },
         Filter { input, by } => {
             let phys_input = create_physical_expr(input, ctxt, expr_arena, schema, state)?;
             let phys_by = create_physical_expr(by, ctxt, expr_arena, schema, state)?;
@@ -212,7 +212,7 @@ pub(crate) fn create_physical_expr(
                 phys_by,
                 node_to_expr(expression, expr_arena),
             )))
-        }
+        },
         Alias(expr, name) => {
             let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(AliasExpr::new(
@@ -220,7 +220,7 @@ pub(crate) fn create_physical_expr(
                 name,
                 node_to_expr(expression, expr_arena),
             )))
-        }
+        },
         Agg(agg) => {
             let expr = agg.get_input().first();
             let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
@@ -258,7 +258,7 @@ pub(crate) fn create_physical_expr(
                                 match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
                                         Ok(Some(s.min_as_series()))
-                                    }
+                                    },
                                     IsSorted::Not => parallel_op_series(
                                         |s| Ok(s.min_as_series()),
                                         s,
@@ -267,7 +267,7 @@ pub(crate) fn create_physical_expr(
                                     ),
                                 }
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::Max { propagate_nans, .. } => {
                             let state = *state;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
@@ -294,7 +294,7 @@ pub(crate) fn create_physical_expr(
                                 match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
                                         Ok(Some(s.max_as_series()))
-                                    }
+                                    },
                                     IsSorted::Not => parallel_op_series(
                                         |s| Ok(s.max_as_series()),
                                         s,
@@ -303,7 +303,7 @@ pub(crate) fn create_physical_expr(
                                     ),
                                 }
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::Median(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             Ok(Some(s.median_as_series()))
@@ -319,7 +319,7 @@ pub(crate) fn create_physical_expr(
                                     )
                                 })
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::First(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             Ok(Some(s.head(Some(1))))
@@ -340,17 +340,17 @@ pub(crate) fn create_physical_expr(
                                 let s = &s[0];
                                 s.implode().map(|ca| Some(ca.into_series()))
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::Quantile { .. } => {
                             unreachable!()
-                        }
+                        },
                         AAggExpr::Sum(_) => {
                             let state = *state;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 parallel_op_series(|s| Ok(s.sum_as_series()), s, None, state)
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::Count(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             let count = s.len();
@@ -364,16 +364,16 @@ pub(crate) fn create_physical_expr(
                                 let s = std::mem::take(&mut s[0]);
                                 Ok(Some(s.std_as_series(ddof)))
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::Var(_, ddof) => {
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 Ok(Some(s.var_as_series(ddof)))
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::AggGroups(_) => {
                             panic!("agg groups expression only supported in aggregation context")
-                        }
+                        },
                     };
                     Ok(Arc::new(ApplyExpr::new_minimal(
                         vec![input],
@@ -381,7 +381,7 @@ pub(crate) fn create_physical_expr(
                         node_to_expr(expression, expr_arena),
                         ApplyOptions::ApplyFlat,
                     )))
-                }
+                },
                 _ => {
                     if let AAggExpr::Quantile {
                         expr,
@@ -405,9 +405,9 @@ pub(crate) fn create_physical_expr(
                         .transpose()?;
                     let agg_method: GroupByMethod = agg.into();
                     Ok(Arc::new(AggregationExpr::new(input, agg_method, field)))
-                }
+                },
             }
-        }
+        },
         Cast {
             expr,
             data_type,
@@ -420,7 +420,7 @@ pub(crate) fn create_physical_expr(
                 expr: node_to_expr(expression, expr_arena),
                 strict,
             }))
-        }
+        },
         Ternary {
             predicate,
             truthy,
@@ -443,7 +443,7 @@ pub(crate) fn create_physical_expr(
                 node_to_expr(expression, expr_arena),
                 lit_count < 2,
             )))
-        }
+        },
         AnonymousFunction {
             input,
             function,
@@ -479,7 +479,7 @@ pub(crate) fn create_physical_expr(
                 check_lengths: options.check_lengths(),
                 allow_group_aware: options.allow_group_aware,
             }))
-        }
+        },
         Function {
             input,
             function,
@@ -515,7 +515,7 @@ pub(crate) fn create_physical_expr(
                 check_lengths: options.check_lengths(),
                 allow_group_aware: options.allow_group_aware,
             }))
-        }
+        },
         Slice {
             input,
             offset,
@@ -531,7 +531,7 @@ pub(crate) fn create_physical_expr(
                 length,
                 expr: node_to_expr(expression, expr_arena),
             }))
-        }
+        },
         Explode(expr) => {
             let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             let function =
@@ -543,7 +543,7 @@ pub(crate) fn create_physical_expr(
                 node_to_expr(expression, expr_arena),
                 ApplyOptions::ApplyGroups,
             )))
-        }
+        },
         Wildcard => panic!("should be no wildcard at this point"),
         Nth(_) => panic!("should be no nth at this point"),
     }

@@ -50,7 +50,7 @@ where
                     out = out * base.clone()
                 }
                 out.into_series()
-            }
+            },
             _ => base.apply(|v| Pow::pow(v, exponent_value)).into_series(),
         };
         Ok(Some(s))
@@ -82,15 +82,15 @@ fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series
         Float32 => {
             let ca = base.f32().unwrap();
             pow_on_floats(ca, exponent)
-        }
+        },
         Float64 => {
             let ca = base.f64().unwrap();
             pow_on_floats(ca, exponent)
-        }
+        },
         _ => {
             let base = base.cast(&DataType::Float64)?;
             pow_on_series(&base, exponent)
-        }
+        },
     }
 }
 
@@ -117,15 +117,15 @@ pub(super) fn sqrt(base: &Series) -> PolarsResult<Series> {
         Float32 => {
             let ca = base.f32().unwrap();
             sqrt_on_floats(ca)
-        }
+        },
         Float64 => {
             let ca = base.f64().unwrap();
             sqrt_on_floats(ca)
-        }
+        },
         _ => {
             let base = base.cast(&DataType::Float64)?;
             sqrt(&base)
-        }
+        },
     }
 }
 
@@ -144,15 +144,15 @@ pub(super) fn cbrt(base: &Series) -> PolarsResult<Series> {
         Float32 => {
             let ca = base.f32().unwrap();
             cbrt_on_floats(ca)
-        }
+        },
         Float64 => {
             let ca = base.f64().unwrap();
             cbrt_on_floats(ca)
-        }
+        },
         _ => {
             let base = base.cast(&DataType::Float64)?;
             cbrt(&base)
-        }
+        },
     }
 }
 

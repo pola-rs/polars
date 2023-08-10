@@ -199,12 +199,12 @@ fn upsample_single_impl(
                         &[index_col_name],
                         JoinArgs::new(JoinType::Left),
                     )
-                }
+                },
                 _ => polars_bail!(
                     ComputeError: "cannot determine upsample boundaries: all elements are null"
                 ),
             }
-        }
+        },
         dt => polars_bail!(
             ComputeError: "upsample not allowed for index column of dtype {}", dt,
         ),

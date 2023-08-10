@@ -128,7 +128,7 @@ impl Add for &BinaryChunked {
                         // ref is valid for the lifetime of this closure
                         unsafe { std::mem::transmute::<_, &'static [u8]>(out) }
                     })
-                }
+                },
                 None => BinaryChunked::full_null(self.name(), self.len()),
             };
         }

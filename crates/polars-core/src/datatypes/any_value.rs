@@ -124,11 +124,11 @@ impl Serialize for AnyValue<'_> {
             AnyValue::Utf8(v) => serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v),
             AnyValue::Utf8Owned(v) => {
                 serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v.as_str())
-            }
+            },
             AnyValue::Binary(v) => serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v),
             AnyValue::BinaryOwned(v) => {
                 serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v)
-            }
+            },
             _ => todo!(),
         }
     }
@@ -244,7 +244,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                             &String::from_utf8_lossy(v),
                             VARIANTS,
                         ))
-                    }
+                    },
                 };
                 Ok(field)
             }
@@ -277,59 +277,59 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                     (AvField::Int8, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::Int8(value)
-                    }
+                    },
                     (AvField::Int16, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::Int16(value)
-                    }
+                    },
                     (AvField::Int32, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::Int32(value)
-                    }
+                    },
                     (AvField::Int64, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::Int64(value)
-                    }
+                    },
                     (AvField::UInt8, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::UInt8(value)
-                    }
+                    },
                     (AvField::UInt16, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::UInt16(value)
-                    }
+                    },
                     (AvField::UInt32, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::UInt32(value)
-                    }
+                    },
                     (AvField::UInt64, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::UInt64(value)
-                    }
+                    },
                     (AvField::Float32, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::Float32(value)
-                    }
+                    },
                     (AvField::Float64, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::Float64(value)
-                    }
+                    },
                     (AvField::Bool, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::Boolean(value)
-                    }
+                    },
                     (AvField::List, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::List(value)
-                    }
+                    },
                     (AvField::Utf8Owned, variant) => {
                         let value: String = variant.newtype_variant()?;
                         AnyValue::Utf8Owned(value.into())
-                    }
+                    },
                     (AvField::BinaryOwned, variant) => {
                         let value = variant.newtype_variant()?;
                         AnyValue::BinaryOwned(value)
-                    }
+                    },
                 };
                 Ok(out)
             }
@@ -406,7 +406,7 @@ impl<'a> AnyValue<'a> {
                 } else {
                     NumCast::from(0)
                 }
-            }
+            },
             _ => None,
         }
     }
@@ -484,7 +484,7 @@ impl<'a> AnyValue<'a> {
                     let ndt = convert(*v);
                     let date_value = naive_datetime_to_date(ndt);
                     AnyValue::Date(date_value)
-                }
+                },
                 _ => polars_bail!(
                     ComputeError: format!("cannot cast 'datetime' any-value to dtype {dtype}")
                 ),
@@ -510,7 +510,7 @@ impl<'a> AnyValue<'a> {
                     };
                     let value = func(ndt);
                     AnyValue::Datetime(value, *tu, &None)
-                }
+                },
                 _ => polars_bail!(
                     ComputeError: format!("cannot cast 'date' any-value to dtype {dtype}")
                 ),
@@ -551,14 +551,14 @@ impl AnyValue<'_> {
                 if !cheap {
                     Hash::hash(&Wrap(v.clone()), state)
                 }
-            }
+            },
             #[cfg(feature = "dtype-array")]
             Array(v, width) => {
                 if !cheap {
                     Hash::hash(&Wrap(v.clone()), state)
                 }
                 width.hash(state)
-            }
+            },
             #[cfg(feature = "dtype-date")]
             Date(v) => v.hash(state),
             #[cfg(feature = "dtype-datetime")]
@@ -566,20 +566,20 @@ impl AnyValue<'_> {
                 v.hash(state);
                 tu.hash(state);
                 tz.hash(state);
-            }
+            },
             #[cfg(feature = "dtype-duration")]
             Duration(v, tz) => {
                 v.hash(state);
                 tz.hash(state);
-            }
+            },
             #[cfg(feature = "dtype-time")]
             Time(v) => v.hash(state),
             #[cfg(feature = "dtype-categorical")]
             Categorical(v, _, _) => v.hash(state),
             #[cfg(feature = "object")]
-            Object(_) => {}
+            Object(_) => {},
             #[cfg(feature = "object")]
-            ObjectOwned(_) => {}
+            ObjectOwned(_) => {},
             #[cfg(feature = "dtype-struct")]
             Struct(_, _, _) | StructOwned(_) => {
                 if !cheap {
@@ -587,13 +587,13 @@ impl AnyValue<'_> {
                     self._materialize_struct_av(&mut buf);
                     buf.hash(state)
                 }
-            }
+            },
             #[cfg(feature = "dtype-decimal")]
             Decimal(v, k) => {
                 v.hash(state);
                 k.hash(state);
-            }
-            Null => {}
+            },
+            Null => {},
         }
     }
 }
@@ -714,19 +714,19 @@ impl<'a> AnyValue<'a> {
             Struct(idx, arr, fields) => {
                 let avs = struct_to_avs_static(idx, arr, fields);
                 StructOwned(Box::new((avs, fields.to_vec())))
-            }
+            },
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => {
                 let av = StructOwned(payload);
                 // safety: owned is already static
                 unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
-            }
+            },
             #[cfg(feature = "object")]
             ObjectOwned(payload) => {
                 let av = ObjectOwned(payload);
                 // safety: owned is already static
                 unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
-            }
+            },
             #[cfg(feature = "dtype-decimal")]
             Decimal(val, scale) => Decimal(val, scale),
             dt => polars_bail!(ComputeError: "cannot get static any-value from {}", dt),
@@ -747,7 +747,7 @@ impl<'a> AnyValue<'a> {
                     unsafe { arr.deref_unchecked().value(*idx as usize) }
                 };
                 Some(s)
-            }
+            },
             _ => None,
         }
     }
@@ -809,16 +809,16 @@ impl PartialEq for AnyValue<'_> {
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (Datetime(l, tul, tzl), Datetime(r, tur, tzr)) => {
                 *l == *r && *tul == *tur && tzl == tzr
-            }
+            },
             (List(l), List(r)) => l == r,
             #[cfg(feature = "dtype-categorical")]
             (Categorical(idx_l, rev_l, _), Categorical(idx_r, rev_r, _)) => match (rev_l, rev_r) {
                 (RevMapping::Global(_, _, id_l), RevMapping::Global(_, _, id_r)) => {
                     id_l == id_r && idx_l == idx_r
-                }
+                },
                 (RevMapping::Local(arr_l), RevMapping::Local(arr_r)) => {
                     std::ptr::eq(arr_l, arr_r) && idx_l == idx_r
-                }
+                },
                 _ => false,
             },
             #[cfg(feature = "dtype-duration")]
@@ -828,20 +828,20 @@ impl PartialEq for AnyValue<'_> {
                 let l = &*l.0;
                 let r = &*r.0;
                 l == r
-            }
+            },
             // TODO! add structowned with idx and arced structarray
             #[cfg(feature = "dtype-struct")]
             (StructOwned(l), Struct(idx, arr, fields)) => {
                 let fields_left = &*l.0;
                 let avs = struct_to_avs_static(*idx, arr, fields);
                 fields_left == avs
-            }
+            },
             #[cfg(feature = "dtype-struct")]
             (Struct(idx, arr, fields), StructOwned(r)) => {
                 let fields_right = &*r.0;
                 let avs = struct_to_avs_static(*idx, arr, fields);
                 fields_right == avs
-            }
+            },
             _ => false,
         }
     }
@@ -1021,7 +1021,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Int8(v),
                 }
-            }
+            },
             ArrowDataType::Int16 => {
                 let arr = self
                     .as_any()
@@ -1031,7 +1031,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Int16(v),
                 }
-            }
+            },
             ArrowDataType::Int32 => {
                 let arr = self
                     .as_any()
@@ -1041,7 +1041,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Int32(v),
                 }
-            }
+            },
             ArrowDataType::Int64 => {
                 let arr = self
                     .as_any()
@@ -1051,7 +1051,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Int64(v),
                 }
-            }
+            },
             ArrowDataType::UInt8 => {
                 let arr = self
                     .as_any()
@@ -1061,7 +1061,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::UInt8(v),
                 }
-            }
+            },
             ArrowDataType::UInt16 => {
                 let arr = self
                     .as_any()
@@ -1071,7 +1071,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::UInt16(v),
                 }
-            }
+            },
             ArrowDataType::UInt32 => {
                 let arr = self
                     .as_any()
@@ -1081,7 +1081,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::UInt32(v),
                 }
-            }
+            },
             ArrowDataType::UInt64 => {
                 let arr = self
                     .as_any()
@@ -1091,7 +1091,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::UInt64(v),
                 }
-            }
+            },
             ArrowDataType::Float32 => {
                 let arr = self
                     .as_any()
@@ -1101,7 +1101,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Float32(v),
                 }
-            }
+            },
             ArrowDataType::Float64 => {
                 let arr = self
                     .as_any()
@@ -1111,7 +1111,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Float64(v),
                 }
-            }
+            },
             ArrowDataType::Boolean => {
                 let arr = self
                     .as_any()
@@ -1121,7 +1121,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Boolean(v),
                 }
-            }
+            },
             ArrowDataType::LargeUtf8 => {
                 let arr = self
                     .as_any()
@@ -1131,7 +1131,7 @@ impl GetAnyValue for ArrayRef {
                     None => AnyValue::Null,
                     Some(v) => AnyValue::Utf8(v),
                 }
-            }
+            },
             _ => unimplemented!(),
         }
     }
@@ -1143,34 +1143,34 @@ impl<K: NumericNative> From<K> for AnyValue<'_> {
             match K::PRIMITIVE {
                 PrimitiveType::Int8 => {
                     AnyValue::Int8(NumCast::from(value).unwrap_unchecked_release())
-                }
+                },
                 PrimitiveType::Int16 => {
                     AnyValue::Int16(NumCast::from(value).unwrap_unchecked_release())
-                }
+                },
                 PrimitiveType::Int32 => {
                     AnyValue::Int32(NumCast::from(value).unwrap_unchecked_release())
-                }
+                },
                 PrimitiveType::Int64 => {
                     AnyValue::Int64(NumCast::from(value).unwrap_unchecked_release())
-                }
+                },
                 PrimitiveType::UInt8 => {
                     AnyValue::UInt8(NumCast::from(value).unwrap_unchecked_release())
-                }
+                },
                 PrimitiveType::UInt16 => {
                     AnyValue::UInt16(NumCast::from(value).unwrap_unchecked_release())
-                }
+                },
                 PrimitiveType::UInt32 => {
                     AnyValue::UInt32(NumCast::from(value).unwrap_unchecked_release())
-                }
+                },
                 PrimitiveType::UInt64 => {
                     AnyValue::UInt64(NumCast::from(value).unwrap_unchecked_release())
-                }
+                },
                 PrimitiveType::Float32 => {
                     AnyValue::Float32(NumCast::from(value).unwrap_unchecked_release())
-                }
+                },
                 PrimitiveType::Float64 => {
                     AnyValue::Float64(NumCast::from(value).unwrap_unchecked_release())
-                }
+                },
                 // not supported by polars
                 _ => unreachable!(),
             }

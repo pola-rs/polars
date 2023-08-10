@@ -140,7 +140,7 @@ impl SCacheInner {
         match entry {
             RawEntryMut::Occupied(entry) => {
                 global_idx = entry.key().idx;
-            }
+            },
             RawEntryMut::Vacant(entry) => {
                 let idx = self.payloads.len() as u32;
                 let key = Key::new(h, idx);
@@ -148,7 +148,7 @@ impl SCacheInner {
 
                 // only just now we allocate the string
                 self.payloads.push(s.into());
-            }
+            },
         }
         global_idx
     }

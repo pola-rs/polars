@@ -61,9 +61,9 @@ impl<K: NumericNative, F: Fn(&K, &K) -> Ordering> MinMaxAgg<K, F> {
                 if (self.cmp_fn)(&current_agg, &val) == Ordering::Less {
                     self.agg = Some(val);
                 }
-            }
+            },
             (Some(val), None) => self.agg = Some(val),
-            (None, _) => {}
+            (None, _) => {},
         }
     }
 }

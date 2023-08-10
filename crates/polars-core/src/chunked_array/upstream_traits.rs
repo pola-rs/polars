@@ -60,7 +60,7 @@ where
                 #[cfg(not(feature = "performant"))]
                 iter.collect::<PrimitiveArray<T::Native>>()
                     .to(T::get_dtype().to_arrow())
-            }
+            },
             _ => iter
                 .collect::<PrimitiveArray<T::Native>>()
                 .to(T::get_dtype().to_arrow()),
@@ -204,10 +204,10 @@ impl FromIterator<Option<Series>> for ListChunked {
                 Some(Some(s)) => {
                     first_value = Some(s);
                     break;
-                }
+                },
                 Some(None) => {
                     init_null_count += 1;
-                }
+                },
                 None => return ListChunked::full_null("", init_null_count),
             }
         }
@@ -216,7 +216,7 @@ impl FromIterator<Option<Series>> for ListChunked {
             None => {
                 // already returned full_null above
                 unreachable!()
-            }
+            },
             Some(ref first_s) => {
                 // AnyValues with empty lists in python can create
                 // Series of an unknown dtype.
@@ -249,7 +249,7 @@ impl FromIterator<Option<Series>> for ListChunked {
                                 builder.append_opt_series(opt_s.as_ref()).unwrap();
                             }
                             builder.finish()
-                        }
+                        },
                         _ => {
                             // We don't know the needed capacity. We arbitrarily choose an average of 5 elements per series.
                             let mut builder = get_list_builder(
@@ -269,10 +269,10 @@ impl FromIterator<Option<Series>> for ListChunked {
                                 builder.append_opt_series(opt_s.as_ref()).unwrap();
                             }
                             builder.finish()
-                        }
+                        },
                     }
                 }
-            }
+            },
         }
     }
 }
@@ -335,11 +335,11 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
                 Some(value) => {
                     null_mask_builder.push(true);
                     value
-                }
+                },
                 None => {
                     null_mask_builder.push(false);
                     T::default()
-                }
+                },
             })
             .collect();
 
@@ -472,14 +472,14 @@ where
                         match opt_v {
                             Some(v) => {
                                 std::ptr::write(values_buf_ptr.add(i), v);
-                            }
+                            },
                             None => {
                                 let validity = match &mut local_validity {
                                     None => {
                                         let validity = MutableBitmap::with_capacity(local_len);
                                         local_validity = Some(validity);
                                         local_validity.as_mut().unwrap_unchecked()
-                                    }
+                                    },
                                     Some(validity) => validity,
                                 };
                                 validity.extend_constant(i - latest_validy_written, true);
@@ -487,7 +487,7 @@ where
                                 validity.push_unchecked(false);
                                 // initialize value
                                 std::ptr::write(values_buf_ptr.add(i), T::Native::default());
-                            }
+                            },
                         }
                     }
                 }
@@ -720,7 +720,7 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
                     }
                 }
                 builder.finish()
-            }
+            },
             Some(dtype) => {
                 let mut builder =
                     get_list_builder(dtype, value_capacity, list_capacity, "collected").unwrap();
@@ -730,7 +730,7 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
                     }
                 }
                 builder.finish()
-            }
+            },
             None => ListChunked::full_null_with_dtype("collected", list_capacity, &DataType::Null),
         }
     }

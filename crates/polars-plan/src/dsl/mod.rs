@@ -84,7 +84,7 @@ impl Expr {
                     output_type,
                     options,
                 }
-            }
+            },
             Self::Function {
                 input,
                 function,
@@ -96,10 +96,10 @@ impl Expr {
                     function,
                     options,
                 }
-            }
+            },
             _ => {
                 panic!("implementation error")
-            }
+            },
         }
     }
 

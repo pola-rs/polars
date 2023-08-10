@@ -238,7 +238,7 @@ impl<'a> CoreReader<'a> {
                     )?;
                     Arc::new(inferred_schema)
                 }
-            }
+            },
         };
         if let Some(dtypes) = dtype_overwrite {
             let s = Arc::make_mut(&mut schema);
@@ -326,7 +326,7 @@ impl<'a> CoreReader<'a> {
                 let pos = match bytes.first() {
                     Some(first) if Some(*first) == self.comment_char => {
                         next_line_position_naive(bytes, eol_char)
-                    }
+                    },
                     // we don't pass expected fields
                     // as we want to skip all rows
                     // no matter the no. of fields

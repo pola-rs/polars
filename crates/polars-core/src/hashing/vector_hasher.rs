@@ -124,7 +124,7 @@ where
                         // inlined from ahash. This ensures we combine with the previous state
                         *h = folded_multiply(to_hash ^ *h, MULTIPLE);
                     });
-            }
+            },
         }
         offset += arr.len();
     });
@@ -213,7 +213,7 @@ impl VecHash for BinaryChunked {
                             };
                             *h = _boost_hash_combine(l, *h)
                         });
-                }
+                },
             }
             offset += arr.len();
         });
@@ -274,7 +274,7 @@ impl VecHash for BooleanChunked {
                             };
                             *h = _boost_hash_combine(l, *h)
                         });
-                }
+                },
             }
             offset += arr.len();
         });
@@ -410,11 +410,11 @@ where
                                 match entry {
                                     RawEntryMut::Vacant(entry) => {
                                         entry.insert_hashed_nocheck(*h, *k, (false, vec![idx]));
-                                    }
+                                    },
                                     RawEntryMut::Occupied(mut entry) => {
                                         let (_k, v) = entry.get_key_value_mut();
                                         v.1.push(idx);
-                                    }
+                                    },
                                 }
                             }
                         });

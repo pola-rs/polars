@@ -41,7 +41,7 @@ fn probe_outer<T, F, G, H>(
                     let (tracker, indexes_b) = occupied.get_mut();
                     *tracker = true;
                     results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
-                }
+                },
                 // no match
                 RawEntryMut::Vacant(_) => results.push(swap_fn_no_match(idx_a)),
             }

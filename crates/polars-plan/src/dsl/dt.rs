@@ -32,12 +32,12 @@ impl DateLikeNameSpace {
                 DataType::Datetime(_, _) => {
                     let ca = s.datetime().unwrap();
                     Ok(Some(ca.cast_time_unit(tu).into_series()))
-                }
+                },
                 #[cfg(feature = "dtype-duration")]
                 DataType::Duration(_) => {
                     let ca = s.duration().unwrap();
                     Ok(Some(ca.cast_time_unit(tu).into_series()))
-                }
+                },
                 dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
             },
             GetOutput::map_dtype(move |dtype| match dtype {
@@ -56,13 +56,13 @@ impl DateLikeNameSpace {
                     let mut ca = s.datetime().unwrap().clone();
                     ca.set_time_unit(tu);
                     Ok(Some(ca.into_series()))
-                }
+                },
                 #[cfg(feature = "dtype-duration")]
                 DataType::Duration(_) => {
                     let mut ca = s.duration().unwrap().clone();
                     ca.set_time_unit(tu);
                     Ok(Some(ca.into_series()))
-                }
+                },
                 dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
             },
             GetOutput::same_type(),
@@ -79,7 +79,7 @@ impl DateLikeNameSpace {
                     let mut ca = s.datetime().unwrap().clone();
                     ca.set_time_zone(time_zone.clone())?;
                     Ok(Some(ca.into_series()))
-                }
+                },
                 _ => polars_bail!(
                     ComputeError:
                     "cannot call `convert_time_zone` on tz-naive; set a time zone first \

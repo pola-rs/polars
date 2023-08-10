@@ -18,11 +18,11 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
     Ok(match data_type {
         SQLDataType::Array(Some(inner_type)) => {
             DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
-        }
+        },
         SQLDataType::BigInt(_) => DataType::Int64,
         SQLDataType::Binary(_) | SQLDataType::Blob(_) | SQLDataType::Varbinary(_) => {
             DataType::Binary
-        }
+        },
         SQLDataType::Boolean => DataType::Boolean,
         SQLDataType::Char(_)
         | SQLDataType::CharVarying(_)
@@ -83,10 +83,10 @@ impl SqlExprVisitor<'_> {
             } => self.visit_is_in(expr, list, *negated),
             SqlExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
-            }
+            },
             SqlExpr::IsNotDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.eq_missing(self.visit_expr(e2)?))
-            }
+            },
             SqlExpr::IsFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false))),
             SqlExpr::IsNotFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false)).not()),
             SqlExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
@@ -104,7 +104,7 @@ impl SqlExprVisitor<'_> {
             e @ SqlExpr::Case { .. } => self.visit_when_then(e),
             other => {
                 polars_bail!(InvalidOperation: "SQL expression {:?} is not yet supported", other)
-            }
+            },
         }
     }
 
@@ -131,7 +131,7 @@ impl SqlExprVisitor<'_> {
                         tbl_name
                     )
                 }
-            }
+            },
             _ => polars_bail!(
                 ComputeError: "Invalid identifier {:?}",
                 idents
@@ -185,7 +185,7 @@ impl SqlExprVisitor<'_> {
             SQLBinaryOperator::Spaceship => left.eq_missing(right),
             SQLBinaryOperator::StringConcat => {
                 left.cast(DataType::Utf8) + right.cast(DataType::Utf8)
-            }
+            },
             SQLBinaryOperator::Xor => left.xor(right),
             // ----
             // Regular expression operators
@@ -201,13 +201,13 @@ impl SqlExprVisitor<'_> {
             SQLBinaryOperator::PGRegexIMatch => match right {
                 Expr::Literal(LiteralValue::Utf8(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true)
-                }
+                },
                 _ => polars_bail!(ComputeError: "Invalid pattern for '~*' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match right {
                 Expr::Literal(LiteralValue::Utf8(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true).not()
-                }
+                },
                 _ => polars_bail!(ComputeError: "Invalid pattern for '!~*' operator: {:?}", right),
             },
             other => polars_bail!(ComputeError: "SQL operator {:?} is not yet supported", other),
@@ -257,7 +257,7 @@ impl SqlExprVisitor<'_> {
                     s.parse::<i64>().map(lit).map_err(|_| ())
                 }
                 .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}", s))?
-            }
+            },
             SqlValue::SingleQuotedString(s) => lit(s.clone()),
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
         })
@@ -276,7 +276,7 @@ impl SqlExprVisitor<'_> {
                     s.parse::<i64>().map(AnyValue::Int64).map_err(|_| ())
                 }
                 .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}"))?
-            }
+            },
             SqlValue::SingleQuotedString(s)
             | SqlValue::NationalStringLiteral(s)
             | SqlValue::HexStringLiteral(s)
@@ -514,11 +514,11 @@ pub(super) fn process_join_constraint(
                         }
                     }
                 }
-            }
+            },
             (SqlExpr::Identifier(left), SqlExpr::Identifier(right)) => {
                 return Ok((col(&left.value), col(&right.value)))
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     if let JoinConstraint::Using(idents) = constraint {
@@ -563,7 +563,7 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
         SelectItem::ExprWithAlias { expr, alias } => {
             let expr = parse_sql_expr(expr, &ctx)?;
             expr.alias(&alias.value)
-        }
+        },
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &ctx)?,
         _ => polars_bail!(InvalidOperation: "Unable to parse '{}' as Expr", s.as_ref()),
     })

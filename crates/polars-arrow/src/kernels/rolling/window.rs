@@ -82,7 +82,7 @@ where
                         (true, false) => Ordering::Greater,
                         (false, true) => Ordering::Less,
                     }
-                }
+                },
                 _ => a.partial_cmp(b).unwrap(),
             }
         });
@@ -107,7 +107,7 @@ where
                     (true, false) => Ordering::Greater,
                     (false, true) => Ordering::Less,
                 }
-            }
+            },
             _ => a.partial_cmp(&b).unwrap(),
         }
     } else {

@@ -89,11 +89,11 @@ macro_rules! iter_to_values {
                     $validity.push(true);
                     $offsets.push($length_so_far);
                     Some(it)
-                }
+                },
                 None => {
                     $validity.push(false);
                     None
-                }
+                },
             })
             .flatten()
             .collect()
@@ -191,11 +191,11 @@ pub trait ListFromIter {
                     validity.push(true);
                     offsets.push(length_so_far);
                     Some(it)
-                }
+                },
                 None => {
                     validity.push(false);
                     None
-                }
+                },
             })
             .flatten()
             .trust_my_length(n_elements)
@@ -237,11 +237,11 @@ pub trait ListFromIter {
                     validity.push(true);
                     offsets.push(length_so_far);
                     Some(it)
-                }
+                },
                 None => {
                     validity.push(false);
                     None
-                }
+                },
             })
             .flatten()
             .trust_my_length(n_elements)

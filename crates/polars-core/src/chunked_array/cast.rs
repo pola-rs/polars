@@ -47,7 +47,7 @@ fn cast_impl_inner(
             Some(tz) => {
                 validate_time_zone(tz)?;
                 out.into_datetime(*tu, Some(tz.clone()))
-            }
+            },
             _ => out.into_datetime(*tu, None),
         },
         Duration(tu) => out.into_duration(*tu),
@@ -108,7 +108,7 @@ where
                 // we are guarded by the type system
                 let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
                 CategoricalChunked::from_global_indices(ca.clone()).map(|ca| ca.into_series())
-            }
+            },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
             _ => cast_impl_inner(self.name(), &self.chunks, data_type, checked).map(|mut s| {
@@ -162,7 +162,7 @@ where
                 } else {
                     polars_bail!(ComputeError: "cannot cast numeric types to 'Categorical'");
                 }
-            }
+            },
             _ => self.cast_impl(data_type, false),
         }
     }
@@ -178,7 +178,7 @@ impl ChunkCast for Utf8Chunked {
                 builder.drain_iter(iter);
                 let ca = builder.finish();
                 Ok(ca.into_series())
-            }
+            },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
             #[cfg(feature = "dtype-decimal")]
@@ -197,11 +197,11 @@ impl ChunkCast for Utf8Chunked {
                             .into_decimal_unchecked(*precision, *scale)
                             .into_series())
                     }
-                }
+                },
                 (None, None) => self.to_decimal(100),
                 _ => {
                     polars_bail!(ComputeError: "expected 'precision' or 'scale' when casting to Decimal")
-                }
+                },
             },
             _ => cast_impl(self.name(), &self.chunks, data_type),
         }
@@ -289,7 +289,7 @@ impl ChunkCast for BooleanChunked {
                 let mut ca = boolean_to_utf8(self);
                 ca.rename(self.name());
                 Ok(ca.into_series())
-            }
+            },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
             _ => cast_impl(self.name(), &self.chunks, data_type),
@@ -312,7 +312,7 @@ impl ChunkCast for ListChunked {
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None)) if !matches!(dt, Utf8 | Null) => {
                         polars_bail!(ComputeError: "cannot cast List inner type: '{:?}' to Categorical", dt)
-                    }
+                    },
                     _ => {
                         // ensure the inner logical type bubbles up
                         let (arr, child_type) = cast_list(self, child_type)?;
@@ -325,22 +325,22 @@ impl ChunkCast for ListChunked {
                                 &List(Box::new(child_type)),
                             ))
                         }
-                    }
+                    },
                 }
-            }
+            },
             #[cfg(feature = "dtype-array")]
             Array(_, _) => {
                 // TODO! bubble up logical types
                 let chunks = cast_chunks(self.chunks(), data_type, true)?;
                 unsafe { Ok(ArrayChunked::from_chunks(self.name(), chunks).into_series()) }
-            }
+            },
             _ => {
                 polars_bail!(
                     ComputeError: "cannot cast List type (inner: '{:?}', to: '{:?}')",
                     self.inner_dtype(),
                     data_type,
                 )
-            }
+            },
         }
     }
 
@@ -361,7 +361,7 @@ impl ChunkCast for ArrayChunked {
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None)) if !matches!(dt, Utf8) => {
                         polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to Categorical", dt)
-                    }
+                    },
                     _ => {
                         // ensure the inner logical type bubbles up
                         let (arr, child_type) = cast_fixed_size_list(self, child_type)?;
@@ -374,14 +374,14 @@ impl ChunkCast for ArrayChunked {
                                 &Array(Box::new(child_type), *width),
                             ))
                         }
-                    }
+                    },
                 }
-            }
+            },
             List(_) => {
                 // TODO! bubble up logical types
                 let chunks = cast_chunks(self.chunks(), data_type, true)?;
                 unsafe { Ok(ListChunked::from_chunks(self.name(), chunks).into_series()) }
-            }
+            },
             _ => polars_bail!(ComputeError: "cannot cast list type"),
         }
     }

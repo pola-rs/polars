@@ -45,24 +45,24 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
         Boolean => {
             let ca = s.bool().unwrap();
             is_unique_ca(ca, invert)
-        }
+        },
         Binary => {
             let ca = s.binary().unwrap();
             is_unique_ca(ca, invert)
-        }
+        },
         Utf8 => {
             let s = s.cast(&Binary).unwrap();
             let ca = s.binary().unwrap();
             is_unique_ca(ca, invert)
-        }
+        },
         Float32 => {
             let ca = s.bit_repr_small();
             is_unique_ca(&ca, invert)
-        }
+        },
         Float64 => {
             let ca = s.bit_repr_large();
             is_unique_ca(&ca, invert)
-        }
+        },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let ca = s.struct_().unwrap().clone();
@@ -72,13 +72,13 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             } else {
                 df.is_unique()
             };
-        }
+        },
         dt if dt.is_numeric() => {
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_unique_ca(ca, invert)
             })
-        }
+        },
         dt => polars_bail!(opq = is_unique, dt),
     };
     Ok(out)

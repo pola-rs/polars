@@ -95,7 +95,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 panic!("implementation error")
-            }
+            },
             _ => {
                 fn inner_rechunk(chunks: &[ArrayRef]) -> Vec<ArrayRef> {
                     vec![concatenate_owned_unchecked(chunks).unwrap()]
@@ -107,7 +107,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     let chunks = inner_rechunk(&self.chunks);
                     unsafe { self.copy_with_chunks(chunks, true, true) }
                 }
-            }
+            },
         }
     }
 

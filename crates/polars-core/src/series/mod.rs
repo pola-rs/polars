@@ -267,7 +267,7 @@ impl Series {
                 } else {
                     Err(err)
                 }
-            }
+            },
         }
     }
 
@@ -281,21 +281,21 @@ impl Series {
             DataType::Struct(_) => {
                 let ca = self.struct_().unwrap();
                 ca.cast_unchecked(dtype)
-            }
+            },
             DataType::List(_) => {
                 let ca = self.list().unwrap();
                 ca.cast_unchecked(dtype)
-            }
+            },
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                     let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
                         ca.cast_unchecked(dtype)
                 })
-            }
+            },
             DataType::Binary => {
                 let ca = self.binary().unwrap();
                 ca.cast_unchecked(dtype)
-            }
+            },
             _ => self.cast(dtype),
         }
     }
@@ -444,7 +444,7 @@ impl Series {
                         .unwrap()
                         .into_series(),
                 )
-            }
+            },
             _ => Cow::Borrowed(self),
         }
     }
@@ -637,37 +637,37 @@ impl Series {
                 Int8 | UInt8 | Int16 | UInt16 => {
                     let s = self.cast(&Int64).unwrap();
                     s.cumsum(reverse)
-                }
+                },
                 Int32 => {
                     let ca = self.i32().unwrap();
                     ca.cumsum(reverse).into_series()
-                }
+                },
                 UInt32 => {
                     let ca = self.u32().unwrap();
                     ca.cumsum(reverse).into_series()
-                }
+                },
                 UInt64 => {
                     let ca = self.u64().unwrap();
                     ca.cumsum(reverse).into_series()
-                }
+                },
                 Int64 => {
                     let ca = self.i64().unwrap();
                     ca.cumsum(reverse).into_series()
-                }
+                },
                 Float32 => {
                     let ca = self.f32().unwrap();
                     ca.cumsum(reverse).into_series()
-                }
+                },
                 Float64 => {
                     let ca = self.f64().unwrap();
                     ca.cumsum(reverse).into_series()
-                }
+                },
                 #[cfg(feature = "dtype-duration")]
                 Duration(tu) => {
                     let ca = self.to_physical_repr();
                     let ca = ca.i64().unwrap();
                     ca.cumsum(reverse).cast(&Duration(*tu)).unwrap()
-                }
+                },
                 dt => panic!("cumsum not supported for dtype: {dt:?}"),
             }
         }
@@ -691,23 +691,23 @@ impl Series {
                 Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 => {
                     let s = self.cast(&Int64).unwrap();
                     s.cumprod(reverse)
-                }
+                },
                 Int64 => {
                     let ca = self.i64().unwrap();
                     ca.cumprod(reverse).into_series()
-                }
+                },
                 UInt64 => {
                     let ca = self.u64().unwrap();
                     ca.cumprod(reverse).into_series()
-                }
+                },
                 Float32 => {
                     let ca = self.f32().unwrap();
                     ca.cumprod(reverse).into_series()
-                }
+                },
                 Float64 => {
                     let ca = self.f64().unwrap();
                     ca.cumprod(reverse).into_series()
-                }
+                },
                 dt => panic!("cumprod not supported for dtype: {dt:?}"),
             }
         }
@@ -730,23 +730,23 @@ impl Series {
                 Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 => {
                     let s = self.cast(&Int64).unwrap();
                     s.product()
-                }
+                },
                 Int64 => {
                     let ca = self.i64().unwrap();
                     ca.prod_as_series()
-                }
+                },
                 UInt64 => {
                     let ca = self.u64().unwrap();
                     ca.prod_as_series()
-                }
+                },
                 Float32 => {
                     let ca = self.f32().unwrap();
                     ca.prod_as_series()
-                }
+                },
                 Float64 => {
                     let ca = self.f64().unwrap();
                     ca.prod_as_series()
-                }
+                },
                 dt => panic!("cumprod not supported for dtype: {dt:?}"),
             }
         }
@@ -768,12 +768,12 @@ impl Series {
 
         match self.dtype() {
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {}
+            DataType::Struct(_) => {},
             _ => {
                 if null_count == len {
                     return Ok(Series::full_null(self.name(), len, dtype));
                 }
-            }
+            },
         }
         let s = self.0.cast(dtype)?;
         if null_count != s.null_count() {
@@ -909,7 +909,7 @@ impl Series {
                 } else {
                     unsafe { Cow::Borrowed(arr.deref_unchecked().value(idx as usize)) }
                 }
-            }
+            },
             av => Cow::Owned(format!("{av}")),
         };
         Ok(out)
@@ -936,16 +936,16 @@ impl Series {
             DataType::Float32 => {
                 let val = &[self.mean().map(|m| m as f32)];
                 Series::new(self.name(), val)
-            }
+            },
             dt if dt.is_numeric() || matches!(dt, DataType::Boolean) => {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
-            }
+            },
             dt @ DataType::Duration(_) => {
                 Series::new(self.name(), &[self.mean().map(|v| v as i64)])
                     .cast(dt)
                     .unwrap()
-            }
+            },
             _ => return Series::full_null(self.name(), 1, self.dtype()),
         }
     }
@@ -996,9 +996,9 @@ impl Series {
                 RevMapping::Global(map, arr, _) => {
                     size +=
                         map.capacity() * std::mem::size_of::<u32>() * 2 + estimated_bytes_size(arr);
-                }
+                },
             },
-            _ => {}
+            _ => {},
         }
 
         size
@@ -1062,7 +1062,7 @@ where
                         self.dtype()
                     );
                 }
-            }
+            },
         }
     }
 }

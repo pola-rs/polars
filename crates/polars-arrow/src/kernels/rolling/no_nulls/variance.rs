@@ -185,7 +185,7 @@ where
                 compute_var_weights,
                 &wts,
             )
-        }
+        },
     }
 }
 

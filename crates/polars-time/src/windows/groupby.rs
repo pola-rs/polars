@@ -202,7 +202,7 @@ pub fn groupby_windows(
                 &mut upper_bound,
                 &mut groups,
             );
-        }
+        },
         _ => {
             update_groups_and_bounds(
                 window
@@ -217,7 +217,7 @@ pub fn groupby_windows(
                 &mut upper_bound,
                 &mut groups,
             );
-        }
+        },
     };
 
     (groups, lower_bound, upper_bound)

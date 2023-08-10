@@ -80,7 +80,7 @@ impl<'a, T: 'a + MmapBytesReader> From<&'a T> for ReaderBytes<'a> {
                 let f = m.to_file().unwrap();
                 let mmap = unsafe { memmap::Mmap::map(f).unwrap() };
                 ReaderBytes::Mapped(mmap, f)
-            }
+            },
         }
     }
 }

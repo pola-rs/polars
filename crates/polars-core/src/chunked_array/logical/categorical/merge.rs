@@ -105,7 +105,7 @@ impl RevMapMerger {
             Some(state) => {
                 let new_rev = RevMapping::Global(state.map, state.slots.into(), self.id);
                 Arc::new(new_rev)
-            }
+            },
         }
     }
 }
@@ -119,7 +119,7 @@ pub(crate) fn merge_rev_map(
             let mut merger = RevMapMerger::new(left.clone());
             merger.merge_map(right)?;
             Ok(merger.finish())
-        }
+        },
         (RevMapping::Local(arr_l), RevMapping::Local(arr_r)) => {
             // they are from the same source, just clone
             if std::ptr::eq(arr_l, arr_r) {
@@ -134,7 +134,7 @@ pub(crate) fn merge_rev_map(
                 .clone();
 
             Ok(Arc::new(RevMapping::Local(arr)))
-        }
+        },
         _ => polars_bail!(
             ComputeError:
             "unable to merge categorical under a global string cache with a non-cached one"

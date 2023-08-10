@@ -114,12 +114,12 @@ impl Source for GroupBySource {
                             .collect::<Vec<_>>();
 
                         Ok(SourceResult::GotMoreData(chunks))
-                    }
+                    },
                     // recursively out of core path
                     FinalizedSink::Source(mut src) => src.get_batches(context),
                     _ => unreachable!(),
                 }
-            }
+            },
         }
     }
 

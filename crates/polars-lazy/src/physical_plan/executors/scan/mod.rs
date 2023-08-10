@@ -110,7 +110,7 @@ impl Executor for AnonymousScanExec {
                 (true, Some(predicate)) => {
                     self.options.predicate = predicate.as_expression().cloned();
                     self.function.scan(self.options.clone())
-                }
+                },
                 (false, Some(predicate)) => {
                     let mut df = self.function.scan(self.options.clone())?;
                     let s = predicate.evaluate(&df, state)?;
@@ -120,7 +120,7 @@ impl Executor for AnonymousScanExec {
                     df = df.filter(mask)?;
 
                     Ok(df)
-                }
+                },
                 _ => self.function.scan(self.options.clone()),
             },
             "anonymous_scan".into(),

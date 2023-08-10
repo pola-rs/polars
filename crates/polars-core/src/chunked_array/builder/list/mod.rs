@@ -101,8 +101,8 @@ pub fn get_list_builder(
                 value_capacity,
                 inner_type_logical.clone(),
             )))
-        }
-        _ => {}
+        },
+        _ => {},
     }
 
     let physical_type = inner_type_logical.to_physical();
@@ -162,6 +162,6 @@ pub fn get_list_builder(
                 get_binary_builder,
                 get_bool_builder
             ))
-        }
+        },
     }
 }

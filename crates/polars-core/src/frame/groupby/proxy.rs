@@ -317,7 +317,7 @@ impl GroupsProxy {
                     .iter()
                     .map(|&[first, len]| (first, (first..first + len).collect_trusted::<Vec<_>>()))
                     .collect()
-            }
+            },
         }
     }
 
@@ -331,10 +331,10 @@ impl GroupsProxy {
                 if !groups.is_sorted_flag() {
                     groups.sort()
                 }
-            }
+            },
             GroupsProxy::Slice { .. } => {
                 // invariant of the type
-            }
+            },
         }
     }
 
@@ -363,7 +363,7 @@ impl GroupsProxy {
             GroupsProxy::Idx(mut groups) => std::mem::take(&mut groups.first),
             GroupsProxy::Slice { groups, .. } => {
                 groups.into_iter().map(|[first, _len]| first).collect()
-            }
+            },
         }
     }
 
@@ -401,7 +401,7 @@ impl GroupsProxy {
                 let first = groups.first[index];
                 let all = &groups.all[index];
                 GroupsIndicator::Idx((first, all))
-            }
+            },
             GroupsProxy::Slice { groups, .. } => GroupsIndicator::Slice(groups[index]),
         }
     }
@@ -437,11 +437,11 @@ impl GroupsProxy {
                     .map(|(_first, idx)| idx.len() as IdxSize)
                     .collect_trusted();
                 ca.into_inner()
-            }
+            },
             GroupsProxy::Slice { groups, .. } => {
                 let ca: NoNull<IdxCa> = groups.iter().map(|[_first, len]| *len).collect_trusted();
                 ca.into_inner()
-            }
+            },
         }
     }
     pub fn as_list_chunked(&self) -> ListChunked {
@@ -477,7 +477,7 @@ impl GroupsProxy {
                     groups,
                     rolling: false,
                 }
-            }
+            },
         }
     }
 
@@ -505,7 +505,7 @@ impl GroupsProxy {
                     all,
                     groups.is_sorted_flag(),
                 )))
-            }
+            },
             GroupsProxy::Slice { groups, rolling } => {
                 let groups = unsafe {
                     let groups = slice_slice(groups, offset, len);
@@ -517,7 +517,7 @@ impl GroupsProxy {
                     groups,
                     rolling: *rolling,
                 })
-            }
+            },
         };
 
         SlicedGroups {
@@ -588,10 +588,10 @@ impl<'a> Iterator for GroupsProxyIter<'a> {
                 GroupsProxy::Idx(groups) => {
                     let item = groups.get_unchecked(self.idx);
                     Some(GroupsIndicator::Idx(item))
-                }
+                },
                 GroupsProxy::Slice { groups, .. } => {
                     Some(GroupsIndicator::Slice(*groups.get_unchecked(self.idx)))
-                }
+                },
             }
         };
         self.idx += 1;
@@ -625,7 +625,7 @@ impl<'a> ParallelIterator for GroupsProxyParIter<'a> {
                     GroupsProxy::Idx(groups) => GroupsIndicator::Idx(groups.get_unchecked(i)),
                     GroupsProxy::Slice { groups, .. } => {
                         GroupsIndicator::Slice(*groups.get_unchecked(i))
-                    }
+                    },
                 }
             })
             .drive_unindexed(consumer)

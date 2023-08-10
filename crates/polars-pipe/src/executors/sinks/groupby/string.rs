@@ -288,7 +288,7 @@ impl Utf8GroupbySink {
                     unsafe {
                         self.ooc_state.set_row_as_ooc(iteration_idx);
                     }
-                }
+                },
                 RawEntryMut::Occupied(entry) => {
                     let agg_idx = *entry.get();
                     // # Safety
@@ -296,7 +296,7 @@ impl Utf8GroupbySink {
                     // this is sound because we writes are trailing from iteration
                     unsafe { write_agg_idx(agg_idx_ptr, processed, agg_idx) };
                     processed += 1;
-                }
+                },
             };
         }
 
@@ -368,7 +368,7 @@ impl Sink for Utf8GroupbySink {
                         aggregators.push(agg_fn.split())
                     }
                     value_offset
-                }
+                },
                 RawEntryMut::Occupied(entry) => *entry.get(),
             };
             // # Safety
@@ -456,7 +456,7 @@ impl Sink for Utf8GroupbySink {
                                 self.aggregators.push(agg_fn.split())
                             }
                             values_offset
-                        }
+                        },
                         RawEntryMut::Occupied(entry) => *entry.get(),
                     };
 

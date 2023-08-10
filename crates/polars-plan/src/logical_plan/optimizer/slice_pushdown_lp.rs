@@ -39,7 +39,7 @@ impl SlicePushDown {
                     len: state.len,
                 };
                 Ok(lp)
-            }
+            },
             None => Ok(lp),
         }
     }

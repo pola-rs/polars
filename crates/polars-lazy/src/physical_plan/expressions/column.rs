@@ -39,7 +39,7 @@ impl ColumnExpr {
                     }
                     Err(e)
                 }
-            }
+            },
         }
     }
 
@@ -139,15 +139,15 @@ impl PhysicalExpr for ColumnExpr {
                                 } else {
                                     self.process_by_linear_search(df, state, true)
                                 }
-                            }
+                            },
                         }
-                    }
+                    },
                     // in the future we will throw an error here
                     // now we do a linear search first as the lazy reported schema may still be incorrect
                     // in debug builds we panic so that it can be fixed when occurring
                     None => self.process_by_linear_search(df, state, true),
                 }
-            }
+            },
         };
         self.check_external_context(out, state)
     }

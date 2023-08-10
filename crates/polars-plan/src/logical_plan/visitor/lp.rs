@@ -107,7 +107,7 @@ impl TreeWalker for ALogicalPlanNode {
                 arena: self.arena,
             };
             match op(&lp_node)? {
-                VisitRecursion::Continue => {}
+                VisitRecursion::Continue => {},
                 // early stop
                 VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
                 VisitRecursion::Stop => return Ok(VisitRecursion::Stop),

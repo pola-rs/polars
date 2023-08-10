@@ -11,7 +11,7 @@ macro_rules! fallible {
                     .0
                     .into();
                 return lf;
-            }
+            },
         }
     }};
 }

@@ -24,12 +24,12 @@ impl Series {
                 let lhs = lhs.as_binary();
                 let rhs = rhs.as_binary();
                 lhs.hash_join_left(&rhs, validate)
-            }
+            },
             Binary => {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 lhs.hash_join_left(rhs, validate)
-            }
+            },
             _ => {
                 if self.bit_repr_is_large() {
                     let lhs = lhs.bit_repr_large();
@@ -40,7 +40,7 @@ impl Series {
                     let rhs = rhs.bit_repr_small();
                     num_group_join_left(&lhs, &rhs, validate)
                 }
-            }
+            },
         }
     }
 
@@ -57,12 +57,12 @@ impl Series {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 lhs.hash_join_semi_anti(rhs, anti)
-            }
+            },
             Binary => {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 lhs.hash_join_semi_anti(rhs, anti)
-            }
+            },
             _ => {
                 if self.bit_repr_is_large() {
                     let lhs = lhs.bit_repr_large();
@@ -73,7 +73,7 @@ impl Series {
                     let rhs = rhs.bit_repr_small();
                     num_group_join_anti_semi(&lhs, &rhs, anti)
                 }
-            }
+            },
         }
     }
 
@@ -95,12 +95,12 @@ impl Series {
                 let lhs = lhs.as_binary();
                 let rhs = rhs.as_binary();
                 lhs.hash_join_inner(&rhs, validate)
-            }
+            },
             Binary => {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 lhs.hash_join_inner(rhs, validate)
-            }
+            },
             _ => {
                 if self.bit_repr_is_large() {
                     let lhs = self.bit_repr_large();
@@ -111,7 +111,7 @@ impl Series {
                     let rhs = other.bit_repr_small();
                     num_group_join_inner(&lhs, &rhs, validate)
                 }
-            }
+            },
         }
     }
 
@@ -132,12 +132,12 @@ impl Series {
                 let lhs = lhs.as_binary();
                 let rhs = rhs.as_binary();
                 lhs.hash_join_outer(&rhs, validate)
-            }
+            },
             Binary => {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 lhs.hash_join_outer(rhs, validate)
-            }
+            },
             _ => {
                 if self.bit_repr_is_large() {
                     let lhs = self.bit_repr_large();
@@ -148,7 +148,7 @@ impl Series {
                     let rhs = other.bit_repr_small();
                     lhs.hash_join_outer(&rhs, validate)
                 }
-            }
+            },
         }
     }
 }
@@ -210,7 +210,7 @@ where
                 hash_join_tuples_inner(keys_a, keys_b, swapped, validate)?,
                 !swapped,
             ))
-        }
+        },
         (true, true, _, _) => {
             let keys_a = splitted_by_chunks(&splitted_a);
             let keys_b = splitted_by_chunks(&splitted_b);
@@ -218,7 +218,7 @@ where
                 hash_join_tuples_inner(keys_a, keys_b, swapped, validate)?,
                 !swapped,
             ))
-        }
+        },
         _ => {
             let keys_a = splitted_to_opt_vec(&splitted_a);
             let keys_b = splitted_to_opt_vec(&splitted_b);
@@ -226,7 +226,7 @@ where
                 hash_join_tuples_inner(keys_a, keys_b, swapped, validate)?,
                 !swapped,
             ))
-        }
+        },
     }
 }
 
@@ -289,7 +289,7 @@ where
             let keys_a = splitted_to_slice(&splitted_a);
             let keys_b = splitted_to_slice(&splitted_b);
             hash_join_tuples_left(keys_a, keys_b, None, None, validate)
-        }
+        },
         (0, 0, _, _) => {
             let keys_a = splitted_by_chunks(&splitted_a);
             let keys_b = splitted_by_chunks(&splitted_b);
@@ -303,7 +303,7 @@ where
                 mapping_right.as_deref(),
                 validate,
             )
-        }
+        },
         _ => {
             let keys_a = splitted_to_opt_vec(&splitted_a);
             let keys_b = splitted_to_opt_vec(&splitted_b);
@@ -316,7 +316,7 @@ where
                 mapping_right.as_deref(),
                 validate,
             )
-        }
+        },
     }
 }
 
@@ -347,7 +347,7 @@ where
                     .map(|ca| ca.into_no_null_iter())
                     .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
-            }
+            },
             _ => {
                 let iters_a = splitted_a
                     .iter()
@@ -358,7 +358,7 @@ where
                     .map(|ca| ca.into_iter())
                     .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
-            }
+            },
         }
     }
 }
@@ -476,7 +476,7 @@ impl BinaryChunked {
                     .map(|ca| ca.into_no_null_iter())
                     .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
-            }
+            },
             _ => {
                 let iters_a = splitted_a
                     .iter()
@@ -487,7 +487,7 @@ impl BinaryChunked {
                     .map(|ca| ca.into_iter())
                     .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
-            }
+            },
         }
     }
 }
@@ -520,7 +520,7 @@ where
             } else {
                 hash_join_tuples_left_semi(keys_a, keys_b)
             }
-        }
+        },
         (0, 0, _, _) => {
             let keys_a = splitted_by_chunks(&splitted_a);
             let keys_b = splitted_by_chunks(&splitted_b);
@@ -529,7 +529,7 @@ where
             } else {
                 hash_join_tuples_left_semi(keys_a, keys_b)
             }
-        }
+        },
         _ => {
             let keys_a = splitted_to_opt_vec(&splitted_a);
             let keys_b = splitted_to_opt_vec(&splitted_b);
@@ -538,6 +538,6 @@ where
             } else {
                 hash_join_tuples_left_semi(keys_a, keys_b)
             }
-        }
+        },
     }
 }

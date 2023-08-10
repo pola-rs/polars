@@ -113,7 +113,7 @@ impl StringFunction {
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
             Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) | Slice(_, _) => {
                 mapper.with_same_dtype()
-            }
+            },
             #[cfg(feature = "string_justify")]
             Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
         }
@@ -208,7 +208,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                 } else {
                     ca.contains(pat, strict)?
                 }
-            }
+            },
             None => BooleanChunked::full(ca.name(), false, ca.len()),
         },
         _ => {
@@ -227,7 +227,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                         (Some(src), Some(pat)) => {
                             let re = Regex::new(pat)?;
                             Ok(re.is_match(src))
-                        }
+                        },
                         _ => Ok(false),
                     })
                     .collect::<PolarsResult<_>>()?
@@ -240,7 +240,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                     })
                     .collect_trusted()
             }
-        }
+        },
     };
 
     out.rename(ca.name());
@@ -414,7 +414,7 @@ pub(super) fn strptime(
         DataType::Date => to_date(s, options),
         DataType::Datetime(time_unit, time_zone) => {
             to_datetime(s, &time_unit, time_zone.as_ref(), options)
-        }
+        },
         DataType::Time => to_time(s, options),
         dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
     }
@@ -611,9 +611,9 @@ fn replace_n<'a>(
                         polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
                     }
                     ca.replace(pat, val)
-                }
+                },
             }
-        }
+        },
         (1, len_val) => {
             if n > 1 {
                 polars_bail!(ComputeError: "multivalue replacement with 'n > 1' not yet supported")
@@ -642,7 +642,7 @@ fn replace_n<'a>(
                 }
             };
             Ok(iter_and_replace(ca, val, f))
-        }
+        },
         _ => polars_bail!(
             ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
         ),
@@ -668,7 +668,7 @@ fn replace_all<'a>(
                 true => ca.replace_literal_all(pat, val),
                 false => ca.replace_all(pat, val),
             }
-        }
+        },
         (1, len_val) => {
             let mut pat = get_pat(pat)?.to_string();
             polars_ensure!(
@@ -687,7 +687,7 @@ fn replace_all<'a>(
 
             let f = |s: &'a str, val: &'a str| reg.replace_all(s, val);
             Ok(iter_and_replace(ca, val, f))
-        }
+        },
         _ => polars_bail!(
             ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
         ),

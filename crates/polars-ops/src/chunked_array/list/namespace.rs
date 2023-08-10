@@ -107,7 +107,7 @@ pub trait ListNameSpaceImpl: AsList {
                     builder.append_option(opt_val)
                 });
                 Ok(builder.finish())
-            }
+            },
             dt => polars_bail!(op = "`lst.join`", got = dt, expected = "Utf8"),
         }
     }
@@ -296,7 +296,7 @@ pub trait ListNameSpaceImpl: AsList {
                             match (opt_s, opt_idx) {
                                 (Some(s), Some(idx)) => {
                                     Some(take_series(s.as_ref(), idx, null_on_oob))
-                                }
+                                },
                                 _ => None,
                             }
                         }
@@ -306,7 +306,7 @@ pub trait ListNameSpaceImpl: AsList {
                 out.rename(list_ca.name());
 
                 Ok(out.into_series())
-            }
+            },
             UInt32 | UInt64 => index_typed_index(idx),
             dt if dt.is_signed() => {
                 if let Some(min) = idx.min::<i64>() {
@@ -327,7 +327,7 @@ pub trait ListNameSpaceImpl: AsList {
                 } else {
                     polars_bail!(ComputeError: "all indices are null");
                 }
-            }
+            },
             dt => polars_bail!(ComputeError: "cannot use dtype `{}` as an index", dt),
         }
     }
@@ -347,14 +347,14 @@ pub trait ListNameSpaceImpl: AsList {
                     if let DataType::Categorical(_) = &inner_super_type {
                         inner_super_type = merge_dtypes(&inner_super_type, inner_type)?;
                     }
-                }
+                },
                 dt => {
                     inner_super_type = try_get_supertype(&inner_super_type, dt)?;
                     #[cfg(feature = "dtype-categorical")]
                     if let DataType::Categorical(_) = &inner_super_type {
                         inner_super_type = merge_dtypes(&inner_super_type, dt)?;
                     }
-                }
+                },
             }
         }
 
@@ -404,7 +404,7 @@ pub trait ListNameSpaceImpl: AsList {
                         #[cfg(feature = "dtype-struct")]
                         DataType::Struct(_) => s = s.rechunk(),
                         // nothing
-                        _ => {}
+                        _ => {},
                     }
                     s
                 });
@@ -442,7 +442,7 @@ pub trait ListNameSpaceImpl: AsList {
                             it.next().unwrap();
                         }
                         continue;
-                    }
+                    },
                 };
 
                 let mut has_nulls = false;
@@ -452,10 +452,10 @@ pub trait ListNameSpaceImpl: AsList {
                             if !has_nulls {
                                 acc.append(s.as_ref())?;
                             }
-                        }
+                        },
                         None => {
                             has_nulls = true;
-                        }
+                        },
                     }
                 }
                 if has_nulls {
@@ -468,7 +468,7 @@ pub trait ListNameSpaceImpl: AsList {
                     #[cfg(feature = "dtype-struct")]
                     DataType::Struct(_) => acc = acc.rechunk(),
                     // nothing
-                    _ => {}
+                    _ => {},
                 }
                 builder.append_series(&acc).unwrap();
             }
@@ -532,7 +532,7 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             } else {
                 idx.cast(&IDX_DTYPE).unwrap()
             }
-        }
+        },
         #[cfg(feature = "big_idx")]
         UInt64 => {
             if null_on_oob {
@@ -541,7 +541,7 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             } else {
                 idx
             }
-        }
+        },
         #[cfg(not(feature = "big_idx"))]
         UInt64 => {
             if null_on_oob {
@@ -550,7 +550,7 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             } else {
                 idx.cast(&IDX_DTYPE).unwrap()
             }
-        }
+        },
         #[cfg(not(feature = "big_idx"))]
         UInt32 => {
             if null_on_oob {
@@ -559,27 +559,27 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             } else {
                 idx
             }
-        }
+        },
         dt if dt.is_unsigned() => idx.cast(&IDX_DTYPE).unwrap(),
         Int8 => {
             let a = idx.i8().unwrap();
             cast_signed_index_ca(a, len)
-        }
+        },
         Int16 => {
             let a = idx.i16().unwrap();
             cast_signed_index_ca(a, len)
-        }
+        },
         Int32 => {
             let a = idx.i32().unwrap();
             cast_signed_index_ca(a, len)
-        }
+        },
         Int64 => {
             let a = idx.i64().unwrap();
             cast_signed_index_ca(a, len)
-        }
+        },
         _ => {
             unreachable!()
-        }
+        },
     };
     polars_ensure!(
         out.null_count() == idx_null_count || null_on_oob,

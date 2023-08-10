@@ -253,7 +253,7 @@ impl DataFrame {
                                 &s.len(),
                             );
                         }
-                    }
+                    },
                     None => first_len = Some(s.len()),
                 }
 
@@ -288,7 +288,7 @@ impl DataFrame {
                                 &series.len(),
                             );
                         }
-                    }
+                    },
                     None => first_len = Some(series.len()),
                 }
 
@@ -473,7 +473,7 @@ impl DataFrame {
                     }
                 }
                 false
-            }
+            },
         }
     }
 
@@ -1026,7 +1026,7 @@ impl DataFrame {
             Some(cols) => {
                 selected_series = self.select_series(cols)?;
                 selected_series.iter()
-            }
+            },
             None => self.columns.iter(),
         };
 
@@ -1241,7 +1241,7 @@ impl DataFrame {
                 if s.len() <= idx {
                     return None;
                 }
-            }
+            },
             None => return None,
         }
         // safety: we just checked bounds
@@ -1928,7 +1928,7 @@ impl DataFrame {
                     return Ok(out.into_frame());
                 }
                 s.arg_sort(options)
-            }
+            },
             _ => {
                 if nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
                     argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
@@ -1941,7 +1941,7 @@ impl DataFrame {
                     };
                     first.arg_sort_multiple(&options)?
                 }
-            }
+            },
         };
 
         if let Some((offset, len)) = slice {
@@ -2164,10 +2164,10 @@ impl DataFrame {
             1 => {
                 let new_col = new_col.new_from_index(0, df_height);
                 let _ = mem::replace(col, new_col);
-            }
+            },
             len if (len == df_height) => {
                 let _ = mem::replace(col, new_col);
-            }
+            },
             len => polars_bail!(
                 ShapeMismatch:
                 "resulting series has length {} while the dataframe has height {}",
@@ -2886,7 +2886,7 @@ impl DataFrame {
                         .unwrap()
                         .map(|cow| Some(cow.into_owned()))
                 })
-            }
+            },
         }
     }
 
@@ -2912,7 +2912,7 @@ impl DataFrame {
                         .unwrap()
                         .map(|cow| Some(cow.into_owned()))
                 })
-            }
+            },
         }
     }
 
@@ -2951,7 +2951,7 @@ impl DataFrame {
                         .unwrap()
                         .map(|cow| Some(cow.into_owned()))
                 })
-            }
+            },
         }
     }
 
@@ -3000,7 +3000,7 @@ impl DataFrame {
                     .cast(&DataType::Float64)?;
 
                 Ok(sum.map(|sum| &sum / &value_length))
-            }
+            },
         }
     }
 
@@ -3102,7 +3102,7 @@ impl DataFrame {
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
                 df.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
-            }
+            },
             (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
                 // are sorted by the first value
@@ -3119,26 +3119,26 @@ impl DataFrame {
                     Some((offset, len)) => {
                         let (offset, len) = slice_offsets(offset, len, groups.len());
                         groups.iter().skip(offset).take(len).map(func).collect()
-                    }
+                    },
                 };
 
                 let last_idx = last_idx.sort(false);
                 return Ok(unsafe { df.take_unchecked(&last_idx) });
-            }
+            },
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
                 let gb = df.groupby(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
                 df.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
-            }
+            },
             (UniqueKeepStrategy::Last, false) => {
                 let gb = df.groupby(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
                 df.apply_columns_par(&|s| unsafe { s.agg_last(&groups) })
-            }
+            },
             (UniqueKeepStrategy::None, _) => {
                 let df_part = df.select(names)?;
                 let mask = df_part.is_unique()?;
@@ -3147,7 +3147,7 @@ impl DataFrame {
                     Some((offset, len)) => mask.slice(offset, len),
                 };
                 return df.filter(&mask);
-            }
+            },
         };
         Ok(DataFrame::new_no_checks(columns))
     }
@@ -3310,11 +3310,11 @@ impl DataFrame {
                 match sorted {
                     IsSorted::Ascending => {
                         assert!(idx[0] <= idx[idx.len() - 1]);
-                    }
+                    },
                     IsSorted::Descending => {
                         assert!(idx[0] >= idx[idx.len() - 1]);
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
         }
@@ -3358,7 +3358,7 @@ impl DataFrame {
                             }
                         })
                         .collect())
-                }
+                },
                 GroupsProxy::Slice { groups, .. } => Ok(groups
                     .into_par_iter()
                     .map(|[first, len]| df.slice(first as i64, len as usize))

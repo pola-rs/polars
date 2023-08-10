@@ -77,31 +77,31 @@ impl PhysicalExpr for AggregationExpr {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_min(&groups);
                     rename_series(agg_s, &keep_name)
-                }
+                },
                 GroupByMethod::Max => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_max(&groups);
                     rename_series(agg_s, &keep_name)
-                }
+                },
                 GroupByMethod::Median => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_median(&groups);
                     rename_series(agg_s, &keep_name)
-                }
+                },
                 GroupByMethod::Mean => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_mean(&groups);
                     rename_series(agg_s, &keep_name)
-                }
+                },
                 GroupByMethod::Sum => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_sum(&groups);
                     rename_series(agg_s, &keep_name)
-                }
+                },
                 GroupByMethod::Count => {
                     // a few fast paths that prevent materializing new groups
                     match ac.update_groups {
@@ -126,7 +126,7 @@ impl PhysicalExpr for AggregationExpr {
                                         })
                                         .collect_trusted();
                                     counts.into_inner()
-                                }
+                                },
                                 _ => {
                                     let counts: NoNull<IdxCa> = list
                                         .amortized_iter()
@@ -139,11 +139,11 @@ impl PhysicalExpr for AggregationExpr {
                                         })
                                         .collect_trusted();
                                     counts.into_inner()
-                                }
+                                },
                             };
                             s.rename(&keep_name);
                             s.into_series()
-                        }
+                        },
                         UpdateGroups::WithGroupsLen => {
                             // no need to update the groups
                             // we can just get the attribute, because we only need the length,
@@ -151,33 +151,33 @@ impl PhysicalExpr for AggregationExpr {
                             let mut ca = ac.groups.group_count();
                             ca.rename(&keep_name);
                             ca.into_series()
-                        }
+                        },
                         // materialize groups
                         _ => {
                             let mut ca = ac.groups().group_count();
                             ca.rename(&keep_name);
                             ca.into_series()
-                        }
+                        },
                     }
-                }
+                },
                 GroupByMethod::First => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_first(&groups);
                     rename_series(agg_s, &keep_name)
-                }
+                },
                 GroupByMethod::Last => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_last(&groups);
                     rename_series(agg_s, &keep_name)
-                }
+                },
                 GroupByMethod::NUnique => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_n_unique(&groups);
                     rename_series(agg_s, &keep_name)
-                }
+                },
                 GroupByMethod::Implode => {
                     // if the aggregation is already
                     // in an aggregate flat state for instance by
@@ -192,31 +192,31 @@ impl PhysicalExpr for AggregationExpr {
                         _ => {
                             let agg = ac.aggregated();
                             agg.as_list().into_series()
-                        }
+                        },
                     };
                     rename_series(s, &keep_name)
-                }
+                },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
                     column.rename(&keep_name);
                     column.into_series()
-                }
+                },
                 GroupByMethod::Std(ddof) => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_std(&groups, ddof);
                     rename_series(agg_s, &keep_name)
-                }
+                },
                 GroupByMethod::Var(ddof) => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_var(&groups, ddof);
                     rename_series(agg_s, &keep_name)
-                }
+                },
                 GroupByMethod::Quantile(_, _) => {
                     // implemented explicitly in AggQuantile struct
                     unimplemented!()
-                }
+                },
                 GroupByMethod::NanMin => {
                     #[cfg(feature = "propagate_nans")]
                     {
@@ -233,7 +233,7 @@ impl PhysicalExpr for AggregationExpr {
                     {
                         panic!("activate 'propagate_nans' feature")
                     }
-                }
+                },
                 GroupByMethod::NanMax => {
                     #[cfg(feature = "propagate_nans")]
                     {
@@ -250,7 +250,7 @@ impl PhysicalExpr for AggregationExpr {
                     {
                         panic!("activate 'propagate_nans' feature")
                     }
-                }
+                },
             }
         };
 
@@ -320,46 +320,46 @@ impl PartitionedAggregation for AggregationExpr {
                             .unwrap()
                             .into_series())
                     }
-                }
+                },
                 GroupByMethod::Implode => {
                     let new_name = series.name();
                     let mut agg = series.agg_list(groups);
                     agg.rename(new_name);
                     Ok(agg)
-                }
+                },
                 GroupByMethod::First => {
                     let mut agg = series.agg_first(groups);
                     agg.rename(series.name());
                     Ok(agg)
-                }
+                },
                 GroupByMethod::Last => {
                     let mut agg = series.agg_last(groups);
                     agg.rename(series.name());
                     Ok(agg)
-                }
+                },
                 GroupByMethod::Max => {
                     let mut agg = series.agg_max(groups);
                     agg.rename(series.name());
                     Ok(agg)
-                }
+                },
                 GroupByMethod::Min => {
                     let mut agg = series.agg_min(groups);
                     agg.rename(series.name());
                     Ok(agg)
-                }
+                },
                 GroupByMethod::Sum => {
                     let mut agg = series.agg_sum(groups);
                     agg.rename(series.name());
                     Ok(agg)
-                }
+                },
                 GroupByMethod::Count => {
                     let mut ca = groups.group_count();
                     ca.rename(series.name());
                     Ok(ca.into_series())
-                }
+                },
                 _ => {
                     unimplemented!()
-                }
+                },
             }
         }
     }
@@ -375,7 +375,7 @@ impl PartitionedAggregation for AggregationExpr {
                 let mut agg = unsafe { partitioned.agg_sum(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)
-            }
+            },
             #[cfg(feature = "dtype-struct")]
             GroupByMethod::Mean => {
                 let new_name = partitioned.name();
@@ -388,14 +388,14 @@ impl PartitionedAggregation for AggregationExpr {
                             unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
                         let agg_s = &agg_s / &agg_count;
                         Ok(rename_series(agg_s, new_name))
-                    }
+                    },
                     _ => Ok(Series::full_null(
                         new_name,
                         groups.len(),
                         partitioned.dtype(),
                     )),
                 }
-            }
+            },
             GroupByMethod::Implode => {
                 // the groups are scattered over multiple groups/sub dataframes.
                 // we now must collect them into a single group
@@ -431,14 +431,14 @@ impl PartitionedAggregation for AggregationExpr {
                             };
                             process_group(ca)?;
                         }
-                    }
+                    },
                     GroupsProxy::Slice { groups, .. } => {
                         for [first, len] in groups {
                             let len = *len as usize;
                             let ca = ca.slice(*first as i64, len);
                             process_group(ca)?;
                         }
-                    }
+                    },
                 }
 
                 let vals = values.iter().map(|arr| &**arr).collect::<Vec<_>>();
@@ -457,27 +457,27 @@ impl PartitionedAggregation for AggregationExpr {
                     ca.set_fast_explode()
                 }
                 Ok(ca.into_series().as_list().into_series())
-            }
+            },
             GroupByMethod::First => {
                 let mut agg = unsafe { partitioned.agg_first(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)
-            }
+            },
             GroupByMethod::Last => {
                 let mut agg = unsafe { partitioned.agg_last(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)
-            }
+            },
             GroupByMethod::Max => {
                 let mut agg = unsafe { partitioned.agg_max(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)
-            }
+            },
             GroupByMethod::Min => {
                 let mut agg = unsafe { partitioned.agg_min(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)
-            }
+            },
             _ => unimplemented!(),
         }
     }

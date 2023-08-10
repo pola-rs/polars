@@ -35,31 +35,31 @@ pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
         CloudType::File => {
             let local = LocalFileSystem::new();
             Ok::<_, PolarsError>(Box::new(local) as Box<dyn ObjectStore>)
-        }
+        },
         CloudType::Aws => {
             #[cfg(feature = "aws")]
             match _options {
                 Some(options) => {
                     let store = options.build_aws(&cloud_location.bucket)?;
                     Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
-                }
+                },
                 _ => return err_missing_configuration("aws", &cloud_location.scheme),
             }
             #[cfg(not(feature = "aws"))]
             return err_missing_feature("aws", &cloud_location.scheme);
-        }
+        },
         CloudType::Gcp => {
             #[cfg(feature = "gcp")]
             match _options {
                 Some(options) => {
                     let store = options.build_gcp(&cloud_location.bucket)?;
                     Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
-                }
+                },
                 _ => return err_missing_configuration("gcp", &cloud_location.scheme),
             }
             #[cfg(not(feature = "gcp"))]
             return err_missing_feature("gcp", &cloud_location.scheme);
-        }
+        },
         CloudType::Azure => {
             {
                 #[cfg(feature = "azure")]
@@ -67,13 +67,13 @@ pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
                     Some(options) => {
                         let store = options.build_azure(&cloud_location.bucket)?;
                         Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
-                    }
+                    },
                     _ => return err_missing_configuration("azure", &cloud_location.scheme),
                 }
             }
             #[cfg(not(feature = "azure"))]
             return err_missing_feature("azure", &cloud_location.scheme);
-        }
+        },
     }?;
     Ok((cloud_location, store))
 }

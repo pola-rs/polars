@@ -23,11 +23,11 @@ impl ArgAgg for Series {
             Utf8 => {
                 let ca = s.utf8().unwrap();
                 arg_min_str(ca)
-            }
+            },
             Boolean => {
                 let ca = s.bool().unwrap();
                 arg_min_bool(ca)
-            }
+            },
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
@@ -39,7 +39,7 @@ impl ArgAgg for Series {
                         arg_min_numeric(ca)
                     }
                 })
-            }
+            },
             _ => None,
         }
     }
@@ -51,11 +51,11 @@ impl ArgAgg for Series {
             Utf8 => {
                 let ca = s.utf8().unwrap();
                 arg_max_str(ca)
-            }
+            },
             Boolean => {
                 let ca = s.bool().unwrap();
                 arg_max_bool(ca)
-            }
+            },
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
@@ -67,7 +67,7 @@ impl ArgAgg for Series {
                         arg_max_numeric(ca)
                     }
                 })
-            }
+            },
             _ => None,
         }
     }
@@ -260,7 +260,7 @@ where
                             } else {
                                 (acc.0, acc.1, new_offset)
                             }
-                        }
+                        },
                         (None, None, offset) => match chunk_min_idx {
                             Some(idx) => (Some(idx + offset), chunk_min_val, new_offset),
                             None => (None, None, new_offset),
@@ -269,7 +269,7 @@ where
                     }
                 })
                 .0
-        }
+        },
     }
 }
 
@@ -315,7 +315,7 @@ where
                             } else {
                                 (acc.0, acc.1, new_offset)
                             }
-                        }
+                        },
                         (None, None, offset) => match chunk_max_idx {
                             Some(idx) => (Some(idx + offset), chunk_max_val, new_offset),
                             None => (None, None, new_offset),
@@ -324,7 +324,7 @@ where
                     }
                 })
                 .0
-        }
+        },
     }
 }
 

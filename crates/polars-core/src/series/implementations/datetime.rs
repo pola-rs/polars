@@ -128,7 +128,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
-            }
+            },
             (DataType::Datetime(tu, tz), DataType::Duration(tur)) => {
                 assert_eq!(tu, tur);
                 let lhs = self.cast(&DataType::Int64).unwrap();
@@ -137,7 +137,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                     .subtract(&rhs)?
                     .into_datetime(*tu, tz.clone())
                     .into_series())
-            }
+            },
             (dtl, dtr) => polars_bail!(opq = sub, dtl, dtr),
         }
     }
@@ -151,7 +151,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                     .add_to(&rhs)?
                     .into_datetime(*tu, tz.clone())
                     .into_series())
-            }
+            },
             (dtl, dtr) => polars_bail!(opq = add, dtl, dtr),
         }
     }
@@ -323,13 +323,13 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         match (data_type, self.0.time_unit()) {
             (DataType::Utf8, TimeUnit::Milliseconds) => {
                 Ok(self.0.to_string("%F %T%.3f")?.into_series())
-            }
+            },
             (DataType::Utf8, TimeUnit::Microseconds) => {
                 Ok(self.0.to_string("%F %T%.6f")?.into_series())
-            }
+            },
             (DataType::Utf8, TimeUnit::Nanoseconds) => {
                 Ok(self.0.to_string("%F %T%.9f")?.into_series())
-            }
+            },
             _ => self.0.cast(data_type),
         }
     }

@@ -24,7 +24,7 @@ fn any_values_to_utf8(avs: &[AnyValue], strict: bool) -> PolarsResult<Utf8Chunke
                     polars_bail!(ComputeError: "mixed dtypes found when building Utf8 Series")
                 }
                 builder.append_null()
-            }
+            },
             av => {
                 if strict {
                     polars_bail!(ComputeError: "mixed dtypes found when building Utf8 Series")
@@ -32,7 +32,7 @@ fn any_values_to_utf8(avs: &[AnyValue], strict: bool) -> PolarsResult<Utf8Chunke
                 owned.clear();
                 write!(owned, "{av}").unwrap();
                 builder.append_value(&owned);
-            }
+            },
         }
     }
     Ok(builder.finish())
@@ -140,7 +140,7 @@ fn any_values_to_list(
                 _ => {
                     valid = false;
                     None
-                }
+                },
             })
             .collect_trusted()
     }
@@ -157,12 +157,12 @@ fn any_values_to_list(
                             Err(_) => Some(Series::full_null(b.name(), b.len(), inner_type)),
                         }
                     }
-                }
+                },
                 AnyValue::Null => None,
                 _ => {
                     valid = false;
                     None
-                }
+                },
             })
             .collect_trusted()
     };
@@ -233,7 +233,7 @@ impl Series {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 any_values_to_decimal(av, *precision, *scale)?.into_series()
-            }
+            },
             DataType::List(inner) => any_values_to_list(av, inner, strict)?.into_series(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(dtype_fields) => {
@@ -290,7 +290,7 @@ impl Series {
                                     // search for the name
                                     append_by_search()
                                 }
-                            }
+                            },
                             _ => field_avs.push(AnyValue::Null),
                         }
                     }
@@ -308,7 +308,7 @@ impl Series {
                     series_fields.push(s)
                 }
                 return StructChunked::new(name, &series_fields).map(|ca| ca.into_series());
-            }
+            },
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 use crate::chunked_array::object::registry;
@@ -323,7 +323,7 @@ impl Series {
                     }
                 }
                 return Ok(builder.to_series());
-            }
+            },
             DataType::Null => Series::full_null(name, av.len(), &DataType::Null),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
@@ -331,7 +331,7 @@ impl Series {
                     match single_av {
                         AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) | AnyValue::Null => {
                             any_values_to_utf8(av, strict)?
-                        }
+                        },
                         _ => polars_bail!(
                              ComputeError:
                              "categorical dtype with any-values of dtype {} not supported",
@@ -343,7 +343,7 @@ impl Series {
                 };
 
                 ca.cast(&DataType::Categorical(None)).unwrap()
-            }
+            },
             dt => panic!("{dt:?} not supported"),
         };
         s.rename(name);
@@ -371,7 +371,7 @@ impl Series {
                         unreachable!()
                     }
                 }
-            }
+            },
             Some(av) => {
                 #[cfg(feature = "dtype-decimal")]
                 {
@@ -383,7 +383,7 @@ impl Series {
                 }
                 let dtype: DataType = av.into();
                 Series::from_any_values_and_dtype(name, avs, &dtype, strict)
-            }
+            },
         }
     }
 }
@@ -430,7 +430,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
                     let rev_map = RevMapping::Local(array);
                     DataType::Categorical(Some(Arc::new(rev_map)))
                 }
-            }
+            },
             #[cfg(feature = "object")]
             Object(o) => DataType::Object(o.type_name()),
             #[cfg(feature = "object")]

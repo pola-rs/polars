@@ -208,7 +208,7 @@ impl CloudOptions {
                 {
                     polars_bail!(ComputeError: "'aws' feature is not enabled");
                 }
-            }
+            },
             CloudType::Azure => {
                 #[cfg(feature = "azure")]
                 {
@@ -219,7 +219,7 @@ impl CloudOptions {
                 {
                     polars_bail!(ComputeError: "'azure' feature is not enabled");
                 }
-            }
+            },
             CloudType::File => Ok(Self::default()),
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
@@ -231,7 +231,7 @@ impl CloudOptions {
                 {
                     polars_bail!(ComputeError: "'gcp' feature is not enabled");
                 }
-            }
+            },
         }
     }
 }

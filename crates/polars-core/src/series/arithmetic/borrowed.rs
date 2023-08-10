@@ -205,7 +205,7 @@ pub mod checked {
                                 } else {
                                     Some(l / r)
                                 }
-                            }
+                            },
                             _ => None,
                         })
                 })
@@ -237,7 +237,7 @@ pub mod checked {
                                 } else {
                                     Some(l / r)
                                 }
-                            }
+                            },
                             _ => None,
                         })
                 })
@@ -347,7 +347,7 @@ pub(crate) fn coerce_lhs_rhs<'a>(
         #[cfg(feature = "dtype-struct")]
         (DataType::Struct(_), DataType::Struct(_)) => {
             return Ok((Cow::Borrowed(lhs), Cow::Borrowed(rhs)))
-        }
+        },
         _ => try_get_supertype(lhs.dtype(), rhs.dtype())?,
     };
 
@@ -386,7 +386,7 @@ fn coerce_time_units<'a>(
                 Cow::Owned(rhs.cast(&DataType::Duration(units)).ok()?)
             };
             Some((left, right))
-        }
+        },
         // make sure to return Some here, so we don't cast to supertype.
         (DataType::Date, DataType::Duration(_)) => Some((Cow::Borrowed(lhs), Cow::Borrowed(rhs))),
         (DataType::Duration(lu), DataType::Duration(ru)) => {
@@ -402,13 +402,13 @@ fn coerce_time_units<'a>(
                 Cow::Owned(rhs.cast(&DataType::Duration(units)).ok()?)
             };
             Some((left, right))
-        }
+        },
         // swap the order
         (DataType::Duration(_), DataType::Datetime(_, _))
         | (DataType::Duration(_), DataType::Date) => {
             let (right, left) = coerce_time_units(rhs, lhs)?;
             Some((left, right))
-        }
+        },
         _ => None,
     }
 }
@@ -428,11 +428,11 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
         (_, 1) => {
             let rhs = &rhs.fields()[0];
             s.apply_fields(|s| func(s, rhs)).into_series()
-        }
+        },
         (1, _) => {
             let s = &s.fields()[0];
             rhs.apply_fields(|rhs| func(s, rhs)).into_series()
-        }
+        },
         _ => {
             let mut rhs_iter = rhs.fields().iter();
 
@@ -441,7 +441,7 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
                 None => s.clone(),
             })
             .into_series()
-        }
+        },
     }
 }
 
@@ -453,11 +453,11 @@ impl Sub for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.sub(b))
-            }
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
                 lhs.subtract(rhs.as_ref()).expect("data types don't match")
-            }
+            },
         }
     }
 }
@@ -468,11 +468,11 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 Ok(_struct_arithmetic(self, rhs, |a, b| a.add(b)))
-            }
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
                 lhs.add_to(rhs.as_ref())
-            }
+            },
         }
     }
 }
@@ -497,11 +497,11 @@ impl Mul for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.mul(b))
-            }
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
                 lhs.multiply(rhs.as_ref()).expect("data types don't match")
-            }
+            },
         }
     }
 }
@@ -519,11 +519,11 @@ impl Div for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.div(b))
-            }
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
                 lhs.divide(rhs.as_ref()).expect("data types don't match")
-            }
+            },
         }
     }
 }
@@ -541,11 +541,11 @@ impl Rem for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.rem(b))
-            }
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
                 lhs.remainder(rhs.as_ref()).expect("data types don't match")
-            }
+            },
         }
     }
 }

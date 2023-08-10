@@ -139,7 +139,7 @@ impl PhysicalExpr for SortByExpr {
                                 });
                                 Some(unsafe { s.take_unchecked(&idx).unwrap() })
                             }
-                        }
+                        },
                         _ => None,
                     })
                     .collect()
@@ -185,7 +185,7 @@ impl PhysicalExpr for SortByExpr {
                                         ..Default::default()
                                     });
                                     map_sorted_indices_to_group_idx(&sorted_idx, idx)
-                                }
+                                },
                                 GroupsIndicator::Slice([first, len]) => {
                                     let group = sort_by_s.slice(first as i64, len as usize);
                                     let sorted_idx = group.arg_sort(SortOptions {
@@ -195,7 +195,7 @@ impl PhysicalExpr for SortByExpr {
                                         ..Default::default()
                                     });
                                     map_sorted_indices_to_group_slice(&sorted_idx, first)
-                                }
+                                },
                             };
                             let first = new_idx.first().unwrap_or_else(|| {
                                 invalid.store(true, Ordering::Relaxed);
@@ -264,7 +264,7 @@ impl PhysicalExpr for SortByExpr {
 
                                     let sorted_idx = groups[0].arg_sort_multiple(&options).unwrap();
                                     map_sorted_indices_to_group_idx(&sorted_idx, idx)
-                                }
+                                },
                                 GroupsIndicator::Slice([first, len]) => {
                                     let groups = sort_by_s
                                         .iter()
@@ -278,7 +278,7 @@ impl PhysicalExpr for SortByExpr {
                                     };
                                     let sorted_idx = groups[0].arg_sort_multiple(&options).unwrap();
                                     map_sorted_indices_to_group_slice(&sorted_idx, first)
-                                }
+                                },
                             };
                             let first = new_idx.first().unwrap_or_else(|| {
                                 invalid.store(true, Ordering::Relaxed);

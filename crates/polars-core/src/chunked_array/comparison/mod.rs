@@ -60,19 +60,19 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.equal(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::eq(x, y))
-            }
+            },
         }
     }
 
@@ -85,19 +85,19 @@ where
                 } else {
                     self.is_null()
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.equal_missing(value)
                 } else {
                     rhs.is_null()
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::eq_and_validity(x, y))
-            }
+            },
         }
     }
 
@@ -110,19 +110,19 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.not_equal(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::neq(x, y))
-            }
+            },
         }
     }
 
@@ -135,19 +135,19 @@ where
                 } else {
                     self.is_not_null()
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.not_equal_missing(value)
                 } else {
                     rhs.is_not_null()
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::neq_and_validity(x, y))
-            }
+            },
         }
     }
 
@@ -160,19 +160,19 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.lt(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::gt(x, y))
-            }
+            },
         }
     }
 
@@ -185,19 +185,19 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.lt_eq(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::gt_eq(x, y))
-            }
+            },
         }
     }
 
@@ -210,19 +210,19 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::lt(x, y))
-            }
+            },
         }
     }
 
@@ -235,19 +235,19 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt_eq(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::lt_eq(x, y))
-            }
+            },
         }
     }
 }
@@ -282,13 +282,13 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => rhs.equal(self),
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::eq(lhs, rhs))
-            }
+            },
         }
     }
 
@@ -325,13 +325,13 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     self.is_null()
                 }
-            }
+            },
             (1, _) => rhs.equal_missing(self),
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::eq_and_validity(lhs, rhs))
-            }
+            },
         }
     }
 
@@ -348,13 +348,13 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => rhs.not_equal(self),
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::neq(lhs, rhs))
-            }
+            },
         }
     }
 
@@ -390,7 +390,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     self.is_not_null()
                 }
-            }
+            },
             (1, _) => rhs.not_equal_missing(self),
             _ => {
                 // same length
@@ -398,7 +398,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 compare_bools(&lhs, &rhs, |lhs, rhs| {
                     comparison::neq_and_validity(lhs, rhs)
                 })
-            }
+            },
         }
     }
 
@@ -414,7 +414,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     match value {
@@ -424,12 +424,12 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::gt(lhs, rhs))
-            }
+            },
         }
     }
 
@@ -445,7 +445,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     match value {
@@ -455,12 +455,12 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::gt_eq(lhs, rhs))
-            }
+            },
         }
     }
 
@@ -476,7 +476,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     match value {
@@ -486,12 +486,12 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::lt(lhs, rhs))
-            }
+            },
         }
     }
 
@@ -507,7 +507,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     match value {
@@ -517,12 +517,12 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::lt_eq(lhs, rhs))
-            }
+            },
         }
     }
 }

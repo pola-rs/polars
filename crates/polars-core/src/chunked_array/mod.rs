@@ -213,19 +213,19 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             IsSorted::Not => {
                 self.bit_settings
                     .remove(Settings::SORTED_ASC | Settings::SORTED_DSC);
-            }
+            },
             IsSorted::Ascending => {
                 // Unset descending sorted.
                 self.bit_settings.remove(Settings::SORTED_DSC);
                 // Set ascending sorted.
                 self.bit_settings.insert(Settings::SORTED_ASC)
-            }
+            },
             IsSorted::Descending => {
                 // Unset ascending sorted.
                 self.bit_settings.remove(Settings::SORTED_ASC);
                 // Set descending sorted.
                 self.bit_settings.insert(Settings::SORTED_DSC)
-            }
+            },
         }
     }
 
@@ -283,7 +283,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             match (self.dtype(), series.dtype()) {
                 (Int64, Datetime(_, _)) | (Int64, Duration(_)) | (Int32, Date) => {
                     &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>)
-                }
+                },
                 _ => panic!(
                     "cannot unpack series {:?} into matching type {:?}",
                     series,

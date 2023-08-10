@@ -95,8 +95,8 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
             return Ok(_struct_arithmetic(a, b, |a, b| {
                 floor_div_series(a, b).unwrap()
             }))
-        }
-        _ => {}
+        },
+        _ => {},
     }
 
     let logical_type = a.dtype();
