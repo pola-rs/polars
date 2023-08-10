@@ -1792,7 +1792,11 @@ class DataFrame:
         elif row is None or column is None:
             raise ValueError("Cannot call '.item()' with only one of 'row' or 'column'")
 
-        return self[row, column]
+        return (
+            self._df.select_at_idx(column)
+            if isinstance(column, int)
+            else self._df.column(column)
+        ).get_idx(row)
 
     def to_arrow(self) -> pa.Table:
         """
