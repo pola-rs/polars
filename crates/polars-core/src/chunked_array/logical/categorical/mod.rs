@@ -84,7 +84,7 @@ impl CategoricalChunked {
     }
 
     pub(crate) fn get_flags(&self) -> u8 {
-        self.bit_settings.bits
+        self.bit_settings.bits()
     }
 
     /// Set flags for the Chunked Array
