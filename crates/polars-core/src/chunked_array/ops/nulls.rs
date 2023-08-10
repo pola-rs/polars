@@ -26,32 +26,27 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         unsafe { self.copy_with_chunks(chunks, true, false) }
     }
 }
+
 pub fn is_not_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {
-    let chunks = chunks
-        .iter()
-        .map(|arr| {
-            let bitmap = arr
-                .validity()
-                .cloned()
-                .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
-            Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
-        })
-        .collect::<Vec<_>>();
-    unsafe { BooleanChunked::from_chunks(name, chunks) }
+    let chunks = chunks.iter().map(|arr| {
+        let bitmap = arr
+            .validity()
+            .cloned()
+            .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
+        BooleanArray::from_data_default(bitmap, None)
+    });
+    BooleanChunked::from_chunk_iter(name, chunks)
 }
 
 pub fn is_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {
-    let chunks = chunks
-        .iter()
-        .map(|arr| {
-            let bitmap = arr
-                .validity()
-                .map(|bitmap| !bitmap)
-                .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
-            Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
-        })
-        .collect::<Vec<_>>();
-    unsafe { BooleanChunked::from_chunks(name, chunks) }
+    let chunks = chunks.iter().map(|arr| {
+        let bitmap = arr
+            .validity()
+            .map(|bitmap| !bitmap)
+            .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
+        BooleanArray::from_data_default(bitmap, None)
+    });
+    BooleanChunked::from_chunk_iter(name, chunks)
 }
 
 pub(crate) fn coalesce_nulls(chunks: &[ArrayRef], other: &[ArrayRef]) -> Vec<ArrayRef> {
