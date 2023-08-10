@@ -136,8 +136,8 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
     // First do a pass to determine the required value capacity.
     let mut values_capacity = 0;
     for (opt_start, opt_end) in start.into_iter().zip(end) {
-        match (opt_start, opt_end) {
-            (Some(start_v), Some(end_v)) => match step {
+        if let (Some(start_v), Some(end_v)) = (opt_start, opt_end) {
+            match step {
                 1 => {
                     values_capacity += (end_v - start_v) as usize;
                 }
@@ -149,8 +149,7 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
                     values_capacity +=
                         ((end_v - start_v) as usize / step.unsigned_abs() as usize) + 1;
                 }
-            },
-            _ => {}
+            }
         }
     }
 
