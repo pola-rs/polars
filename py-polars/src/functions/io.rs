@@ -13,7 +13,7 @@ pub fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(mut r) => {
             read_file_metadata(&mut r).map_err(PyPolarsErr::from)?
-        }
+        },
         EitherRustPythonFile::Py(mut r) => read_file_metadata(&mut r).map_err(PyPolarsErr::from)?,
     };
 

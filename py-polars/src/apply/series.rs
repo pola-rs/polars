@@ -82,7 +82,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
                 applyer
                     .apply_extract_any_values(py, lambda, null_count, av.0)
                     .map(|s| s.into())
-            }
+            },
         }
     } else if out.is_instance_of::<PyDict>() {
         let first = out.extract::<Wrap<AnyValue<'_>>>()?;
@@ -1133,10 +1133,10 @@ fn append_series(
             builder
                 .append_series(&pyseries.series)
                 .map_err(PyPolarsErr::from)?;
-        }
+        },
         Err(_) => {
             builder.append_opt_series(None).map_err(PyPolarsErr::from)?;
-        }
+        },
     };
     Ok(())
 }
@@ -1161,7 +1161,7 @@ fn call_series_lambda(pypolars: &PyModule, lambda: &PyAny, series: Series) -> Op
                 .expect("could not get series attribute '_s'");
             let pyseries = py_pyseries.extract::<PySeries>().unwrap();
             Some(pyseries.series)
-        }
+        },
         Err(_) => None,
     }
 }
@@ -1259,7 +1259,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 };
                 let ca = builder.finish();
                 Ok(PySeries::new(ca.into_series()))
-            }
+            },
             _ => unimplemented!(),
         }
     }
@@ -1738,7 +1738,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 };
                 let ca = builder.finish();
                 Ok(PySeries::new(ca.into_series()))
-            }
+            },
             _ => unimplemented!(),
         }
     }

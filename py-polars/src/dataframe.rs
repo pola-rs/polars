@@ -61,11 +61,11 @@ impl PyDataFrame {
             DataType::Null => {
                 fld.coerce(DataType::Boolean);
                 fld
-            }
+            },
             DataType::Decimal(_, _) => {
                 fld.coerce(DataType::Decimal(None, None));
                 fld
-            }
+            },
             _ => fld,
         });
         let mut schema = Schema::from_iter(fields);
@@ -263,7 +263,7 @@ impl PyDataFrame {
                     .use_statistics(use_statistics)
                     .set_rechunk(rechunk)
                     .finish()
-            }
+            },
             Rust(f) => ParquetReader::new(f.into_inner())
                 .with_projection(projection)
                 .with_columns(columns)
@@ -393,7 +393,7 @@ impl PyDataFrame {
                         .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
                     Ok(out.into())
                 }
-            }
+            },
         }
     }
 
@@ -638,7 +638,7 @@ impl PyDataFrame {
                     DataType::Object(_) => {
                         let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                         obj.to_object(py)
-                    }
+                    },
                     _ => Wrap(s.get(idx).unwrap()).into_py(py),
                 }),
             )
@@ -662,7 +662,7 @@ impl PyDataFrame {
                                 let obj: Option<&ObjectValue> =
                                     s.get_object(idx).map(|any| any.into());
                                 obj.to_object(py)
-                            }
+                            },
                             // safety: we are in bounds.
                             _ => unsafe { Wrap(s.get_unchecked(idx)).into_py(py) },
                         }),
@@ -681,7 +681,7 @@ impl PyDataFrame {
                 None => st = Some(dt_i.clone()),
                 Some(ref mut st) => {
                     *st = try_get_supertype(st, dt_i).ok()?;
-                }
+                },
             }
         }
         let st = st?;
@@ -1306,43 +1306,43 @@ impl PyDataFrame {
                 Some(DataType::Int32) => {
                     apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::Int64) => {
                     apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::UInt32) => {
                     apply_lambda_with_primitive_out_type::<UInt32Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::UInt64) => {
                     apply_lambda_with_primitive_out_type::<UInt64Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::Float32) => {
                     apply_lambda_with_primitive_out_type::<Float32Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::Float64) => {
                     apply_lambda_with_primitive_out_type::<Float64Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::Boolean) => {
                     apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series()
-                }
+                },
                 Some(DataType::Date) => {
                     apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
                         .into_date()
                         .into_series()
-                }
+                },
                 Some(DataType::Datetime(tu, tz)) => {
                     apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
                         .into_datetime(tu, tz)
                         .into_series()
-                }
+                },
                 Some(DataType::Utf8) => {
                     apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series()
-                }
+                },
                 _ => return apply_lambda_unknown(df, py, lambda, inference_size),
             };
 

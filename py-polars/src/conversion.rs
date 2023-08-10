@@ -224,11 +224,11 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     unsafe { arr.deref_unchecked().value(idx as usize) }
                 };
                 s.into_py(py)
-            }
+            },
             AnyValue::Date(v) => {
                 let convert = utils.getattr(intern!(py, "_to_python_date")).unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
-            }
+            },
             AnyValue::Datetime(v, time_unit, time_zone) => {
                 let convert = utils.getattr(intern!(py, "_to_python_datetime")).unwrap();
                 let time_unit = time_unit.to_ascii();
@@ -236,16 +236,16 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     .call1((v, time_unit, time_zone.as_ref().map(|s| s.as_str())))
                     .unwrap()
                     .into_py(py)
-            }
+            },
             AnyValue::Duration(v, time_unit) => {
                 let convert = utils.getattr(intern!(py, "_to_python_timedelta")).unwrap();
                 let time_unit = time_unit.to_ascii();
                 convert.call1((v, time_unit)).unwrap().into_py(py)
-            }
+            },
             AnyValue::Time(v) => {
                 let convert = utils.getattr(intern!(py, "_to_python_time")).unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
-            }
+            },
             AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
             ref av @ AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
             AnyValue::StructOwned(payload) => struct_dict(py, payload.0.into_iter(), &payload.1),
@@ -253,12 +253,12 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Object(v) => {
                 let object = v.as_any().downcast_ref::<ObjectValue>().unwrap();
                 object.inner.clone()
-            }
+            },
             #[cfg(feature = "object")]
             AnyValue::ObjectOwned(v) => {
                 let object = v.0.as_any().downcast_ref::<ObjectValue>().unwrap();
                 object.inner.clone()
-            }
+            },
             AnyValue::Binary(v) => v.into_py(py),
             AnyValue::BinaryOwned(v) => v.into_py(py),
             AnyValue::Decimal(v, scale) => {
@@ -277,7 +277,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     .call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
                     .unwrap()
                     .into_py(py)
-            }
+            },
         }
     }
 }
@@ -310,12 +310,12 @@ impl ToPyObject for Wrap<DataType> {
                 let inner = Wrap(*inner.clone()).to_object(py);
                 let list_class = pl.getattr(intern!(py, "Array")).unwrap();
                 list_class.call1((*size, inner)).unwrap().into()
-            }
+            },
             DataType::List(inner) => {
                 let inner = Wrap(*inner.clone()).to_object(py);
                 let list_class = pl.getattr(intern!(py, "List")).unwrap();
                 list_class.call1((inner,)).unwrap().into()
-            }
+            },
             DataType::Date => pl.getattr(intern!(py, "Date")).unwrap().into(),
             DataType::Datetime(tu, tz) => {
                 let datetime_class = pl.getattr(intern!(py, "Datetime")).unwrap();
@@ -323,11 +323,11 @@ impl ToPyObject for Wrap<DataType> {
                     .call1((tu.to_ascii(), tz.clone()))
                     .unwrap()
                     .into()
-            }
+            },
             DataType::Duration(tu) => {
                 let duration_class = pl.getattr(intern!(py, "Duration")).unwrap();
                 duration_class.call1((tu.to_ascii(),)).unwrap().into()
-            }
+            },
             #[cfg(feature = "object")]
             DataType::Object(_) => pl.getattr(intern!(py, "Object")).unwrap().into(),
             DataType::Categorical(_) => pl.getattr(intern!(py, "Categorical")).unwrap().into(),
@@ -342,7 +342,7 @@ impl ToPyObject for Wrap<DataType> {
                 let fields = PyList::new(py, iter);
                 let struct_class = pl.getattr(intern!(py, "Struct")).unwrap();
                 struct_class.call1((fields,)).unwrap().into()
-            }
+            },
             DataType::Null => pl.getattr(intern!(py, "Null")).unwrap().into(),
             DataType::Unknown => pl.getattr(intern!(py, "Unknown")).unwrap().into(),
         }
@@ -400,38 +400,38 @@ impl FromPyObject<'_> for Wrap<DataType> {
                         return Err(PyValueError::new_err(format!(
                             "{dt} is not a recognised polars DataType.",
                         )))
-                    }
+                    },
                 }
-            }
+            },
             "Duration" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
                 DataType::Duration(time_unit)
-            }
+            },
             "Datetime" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
                 let time_zone = ob.getattr(intern!(py, "time_zone")).unwrap();
                 let time_zone = time_zone.extract()?;
                 DataType::Datetime(time_unit, time_zone)
-            }
+            },
             "Decimal" => {
                 let precision = ob.getattr(intern!(py, "precision"))?.extract()?;
                 let scale = ob.getattr(intern!(py, "scale"))?.extract()?;
                 DataType::Decimal(precision, Some(scale))
-            }
+            },
             "List" => {
                 let inner = ob.getattr(intern!(py, "inner")).unwrap();
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 DataType::List(Box::new(inner.0))
-            }
+            },
             "Array" => {
                 let inner = ob.getattr(intern!(py, "inner")).unwrap();
                 let width = ob.getattr(intern!(py, "width")).unwrap();
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 let width = width.extract::<usize>()?;
                 DataType::Array(Box::new(inner.0), width)
-            }
+            },
             "Struct" => {
                 let fields = ob.getattr(intern!(py, "fields"))?;
                 let fields = fields
@@ -440,13 +440,13 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     .map(|f| f.0)
                     .collect::<Vec<Field>>();
                 DataType::Struct(fields)
-            }
+            },
             dt => {
                 return Err(PyTypeError::new_err(format!(
                     "A {dt} object is not a recognised polars DataType. \
                     Hint: use the class without instantiating it.",
                 )))
-            }
+            },
         };
         Ok(Wrap(dtype))
     }
@@ -877,16 +877,16 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                                                 // `datetime.datetime` is a subclass of `datetime.date`,
                                                 // so need to check `datetime.datetime` first
                                                 return convert_datetime;
-                                            }
+                                            },
                                             "<class 'datetime.date'>" => {
                                                 return convert_date;
-                                            }
+                                            },
                                             _ => (),
                                         }
                                     }
 
                                     get_object
-                                }
+                                },
                             }
                         }
                     },
@@ -1070,7 +1070,7 @@ impl FromPyObject<'_> for Wrap<AsofStrategy> {
                 return Err(PyValueError::new_err(format!(
                     "strategy must be one of {{'backward', 'forward', 'nearest'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1085,7 +1085,7 @@ impl FromPyObject<'_> for Wrap<InterpolationMethod> {
                 return Err(PyValueError::new_err(format!(
                     "method must be one of {{'linear', 'nearest'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1102,7 +1102,7 @@ impl FromPyObject<'_> for Wrap<Option<AvroCompression>> {
                 return Err(PyValueError::new_err(format!(
                     "compression must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1117,7 +1117,7 @@ impl FromPyObject<'_> for Wrap<CategoricalOrdering> {
                 return Err(PyValueError::new_err(format!(
                     "ordering must be one of {{'physical', 'lexical'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1156,7 +1156,7 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
                 return Err(PyValueError::new_err(format!(
                     "closed must be one of {{'left', 'right', 'both', 'none'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1171,7 +1171,7 @@ impl FromPyObject<'_> for Wrap<CsvEncoding> {
                 return Err(PyValueError::new_err(format!(
                     "encoding must be one of {{'utf8', 'utf8-lossy'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1188,7 +1188,7 @@ impl FromPyObject<'_> for Wrap<Option<IpcCompression>> {
                 return Err(PyValueError::new_err(format!(
                     "compression must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1208,7 +1208,7 @@ impl FromPyObject<'_> for Wrap<JoinType> {
                 return Err(PyValueError::new_err(format!(
                 "how must be one of {{'inner', 'left', 'outer', 'semi', 'anti', 'cross'}}, got {v}",
             )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1223,7 +1223,7 @@ impl FromPyObject<'_> for Wrap<ListToStructWidthStrategy> {
                 return Err(PyValueError::new_err(format!(
                     "n_field_strategy must be one of {{'first_non_null', 'max_width'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1238,7 +1238,7 @@ impl FromPyObject<'_> for Wrap<NullBehavior> {
                 return Err(PyValueError::new_err(format!(
                     "null behavior must be one of {{'drop', 'ignore'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1253,7 +1253,7 @@ impl FromPyObject<'_> for Wrap<NullStrategy> {
                 return Err(PyValueError::new_err(format!(
                     "null strategy must be one of {{'ignore', 'propagate'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1271,7 +1271,7 @@ impl FromPyObject<'_> for Wrap<ParallelStrategy> {
                 return Err(PyValueError::new_err(format!(
                     "parallel must be one of {{'auto', 'columns', 'row_groups', 'none'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1286,7 +1286,7 @@ impl FromPyObject<'_> for Wrap<IndexOrder> {
                 return Err(PyValueError::new_err(format!(
                     "order must be one of {{'fortran', 'c'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1339,7 +1339,7 @@ impl FromPyObject<'_> for Wrap<TimeUnit> {
                 return Err(PyValueError::new_err(format!(
                     "time unit must be one of {{'ns', 'us', 'ms'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1356,7 +1356,7 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
                 return Err(PyValueError::new_err(format!(
                     "keep must be one of {{'first', 'last', 'any', 'none'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1372,7 +1372,7 @@ impl FromPyObject<'_> for Wrap<IpcCompression> {
                 return Err(PyValueError::new_err(format!(
                     "compression must be one of {{'zstd', 'lz4'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1388,7 +1388,7 @@ impl FromPyObject<'_> for Wrap<SearchSortedSide> {
                 return Err(PyValueError::new_err(format!(
                     "side must be one of {{'any', 'left', 'right'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1404,7 +1404,7 @@ impl FromPyObject<'_> for Wrap<WindowMapping> {
                 return Err(PyValueError::new_err(format!(
                     "side must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1421,7 +1421,7 @@ impl FromPyObject<'_> for Wrap<JoinValidation> {
                 return Err(PyValueError::new_err(format!(
                     "validate must be one of {{'m:m', 'm:1', '1:m', '1:1'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }
