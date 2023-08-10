@@ -1,16 +1,6 @@
 # Configuration file for the Sphinx documentation builder.
-#
-# This file only contains a selection of the most common options. For a full
-# list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# -- Path setup --------------------------------------------------------------
-
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-
-import datetime
 import inspect
 import os
 import re
@@ -20,38 +10,30 @@ from pathlib import Path
 
 import sphinx_autosummary_accessors
 
-# add polars directory
+# -- Path setup --------------------------------------------------------------
+
+# If extensions (or modules to document with autodoc) are in another directory,
+# add these directories to sys.path here.
+
+# Add py-polars directory
 sys.path.insert(0, str(Path("../..").resolve()))
 
 # -- Project information -----------------------------------------------------
 
 project = "Polars"
 author = "Ritchie Vink"
-copyright = f"{datetime.date.today().year}, {author}"
-
+copyright = f"2020, {author}"
 
 # -- General configuration ---------------------------------------------------
 
-# Add any Sphinx extension module names here, as strings. They can be
-# extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
-# ones.
 extensions = [
-    # ----------------------
-    # sphinx extensions
-    # ----------------------
+    # Sphinx extensions
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
-    "sphinx.ext.coverage",
-    "sphinx.ext.doctest",
-    "sphinx.ext.extlinks",
-    "sphinx.ext.ifconfig",
     "sphinx.ext.intersphinx",
     "sphinx.ext.linkcode",
     "sphinx.ext.mathjax",
-    "sphinx.ext.todo",
-    # ----------------------
-    # third-party extensions
-    # ----------------------
+    # Third-party extensions
     "autodocsumm",
     "numpydoc",
     "sphinx_autosummary_accessors",
@@ -62,7 +44,9 @@ extensions = [
 
 maximum_signature_line_length = 88
 
-# Add any paths that contain templates here, relative to this directory.
+# Below setting is used by
+# sphinx-autosummary-accessors - build docs for namespace accessors like `Series.str`
+# https://sphinx-autosummary-accessors.readthedocs.io/en/stable/
 templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]
 
 # List of patterns, relative to source directory, that match files and
@@ -70,12 +54,31 @@ templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["Thumbs.db", ".DS_Store"]
 
+# -- Extension settings  -----------------------------------------------------
+
+# sphinx.ext.intersphinx - link to other projects' documentation
+# https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html
+intersphinx_mapping = {
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "pandas": ("https://pandas.pydata.org/docs/", None),
+    "pyarrow": ("https://arrow.apache.org/docs/", None),
+    "python": ("https://docs.python.org/3", None),
+}
+
+# numpydoc - parse numpy docstrings
+# https://numpydoc.readthedocs.io/en/latest/
+# Used in favor of sphinx.ext.napoleon for nicer render of docstring sections
+numpydoc_show_class_members = False
+
+# Sphinx-copybutton - add copy button to code blocks
+# https://sphinx-copybutton.readthedocs.io/en/latest/index.html
+# strip the '>>>' and '...' prompt/continuation prefixes.
+copybutton_prompt_text = r">>> |\.\.\. "
+copybutton_prompt_is_regexp = True
 
 # -- Options for HTML output -------------------------------------------------
 
-# The theme to use for HTML and HTML Help pages.  See the documentation for
-# a list of builtin themes.
-
+# The theme to use for HTML and HTML Help pages.
 html_theme = "pydata_sphinx_theme"
 
 # Add any paths that contain custom static files (such as style sheets) here,
@@ -84,14 +87,6 @@ html_theme = "pydata_sphinx_theme"
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]  # relative to html_static_path
 html_show_sourcelink = False
-
-# adds useful copy functionality to all the examples; also
-# strips the '>>>' and '...' prompt/continuation prefixes.
-copybutton_prompt_text = r">>> |\.\.\. "
-copybutton_prompt_is_regexp = True
-
-autosummary_generate = True
-numpydoc_show_class_members = False
 
 # key site root paths
 static_assets_root = "https://raw.githubusercontent.com/pola-rs/polars-static/master"
@@ -133,6 +128,8 @@ html_theme_options = {
     },
 }
 
+# sphinx-favicon - Add support for custom favicons
+# https://github.com/tcmetzger/sphinx-favicon
 favicons = [
     {
         "rel": "icon",
@@ -146,14 +143,9 @@ favicons = [
     },
 ]
 
-intersphinx_mapping = {
-    "numpy": ("https://numpy.org/doc/stable/", None),
-    "pandas": ("https://pandas.pydata.org/docs/", None),
-    "pyarrow": ("https://arrow.apache.org/docs/", None),
-    "python": ("https://docs.python.org/3", None),
-}
 
-
+# sphinx-ext-linkcode - Add external links to source code
+# https://www.sphinx-doc.org/en/master/usage/extensions/linkcode.html
 def linkcode_resolve(domain, info):
     """
     Determine the URL corresponding to Python object.

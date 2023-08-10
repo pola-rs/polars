@@ -2065,6 +2065,7 @@ def from_epoch(
     Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
 
     Depending on the `time_unit` provided, this function will return a different dtype:
+
     - time_unit="d" returns pl.Date
     - time_unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
     - time_unit="ms" returns pl.Datetime["ms"]
