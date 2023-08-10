@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 #[cfg(feature = "temporal")]
 use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
@@ -306,4 +308,14 @@ impl Literal for LiteralValue {
 /// the column is `5`.
 pub fn lit<L: Literal>(t: L) -> Expr {
     t.lit()
+}
+
+impl Hash for LiteralValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        if let Some(v) = self.to_anyvalue() {
+            v.hash_impl(state, true)
+        } else {
+            0.hash(state)
+        }
+    }
 }

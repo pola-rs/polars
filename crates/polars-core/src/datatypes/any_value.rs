@@ -527,29 +527,80 @@ impl From<AnyValue<'_>> for DataType {
     }
 }
 
+impl AnyValue<'_> {
+    pub fn hash_impl<H: Hasher>(&self, state: &mut H, cheap: bool) {
+        use AnyValue::*;
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Int8(v) => v.hash(state),
+            Int16(v) => v.hash(state),
+            Int32(v) => v.hash(state),
+            Int64(v) => v.hash(state),
+            UInt8(v) => v.hash(state),
+            UInt16(v) => v.hash(state),
+            UInt32(v) => v.hash(state),
+            UInt64(v) => v.hash(state),
+            Utf8(v) => v.hash(state),
+            Utf8Owned(v) => v.hash(state),
+            Float32(v) => v.to_ne_bytes().hash(state),
+            Float64(v) => v.to_ne_bytes().hash(state),
+            Binary(v) => v.hash(state),
+            BinaryOwned(v) => v.hash(state),
+            Boolean(v) => v.hash(state),
+            List(v) => {
+                if !cheap {
+                    Hash::hash(&Wrap(v.clone()), state)
+                }
+            }
+            #[cfg(feature = "dtype-array")]
+            Array(v, width) => {
+                if !cheap {
+                    Hash::hash(&Wrap(v.clone()), state)
+                }
+                width.hash(state)
+            }
+            #[cfg(feature = "dtype-date")]
+            Date(v) => v.hash(state),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(v, tu, tz) => {
+                v.hash(state);
+                tu.hash(state);
+                tz.hash(state);
+            }
+            #[cfg(feature = "dtype-duration")]
+            Duration(v, tz) => {
+                v.hash(state);
+                tz.hash(state);
+            }
+            #[cfg(feature = "dtype-time")]
+            Time(v) => v.hash(state),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(v, _, _) => v.hash(state),
+            #[cfg(feature = "object")]
+            Object(_) => {}
+            #[cfg(feature = "object")]
+            ObjectOwned(_) => {}
+            #[cfg(feature = "dtype-struct")]
+            Struct(_, _, _) | StructOwned(_) => {
+                if !cheap {
+                    let mut buf = vec![];
+                    self._materialize_struct_av(&mut buf);
+                    buf.hash(state)
+                }
+            }
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(v, k) => {
+                v.hash(state);
+                k.hash(state);
+            }
+            Null => {}
+        }
+    }
+}
+
 impl<'a> Hash for AnyValue<'a> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        use AnyValue::*;
-        match self {
-            Null => state.write_u64(u64::MAX / 2 + 135123),
-            Int8(v) => state.write_i8(*v),
-            Int16(v) => state.write_i16(*v),
-            Int32(v) => state.write_i32(*v),
-            Int64(v) => state.write_i64(*v),
-            UInt8(v) => state.write_u8(*v),
-            UInt16(v) => state.write_u16(*v),
-            UInt32(v) => state.write_u32(*v),
-            UInt64(v) => state.write_u64(*v),
-            Utf8(v) => state.write(v.as_bytes()),
-            Utf8Owned(v) => state.write(v.as_bytes()),
-            Float32(v) => state.write_u32(v.to_bits()),
-            Float64(v) => state.write_u64(v.to_bits()),
-            Binary(v) => state.write(v),
-            BinaryOwned(v) => state.write(v),
-            Boolean(v) => state.write_u8(*v as u8),
-            List(v) => Hash::hash(&Wrap(v.clone()), state),
-            _ => unimplemented!(),
-        }
+        self.hash_impl(state, false)
     }
 }
 

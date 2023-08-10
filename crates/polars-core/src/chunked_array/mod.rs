@@ -161,12 +161,19 @@ pub struct ChunkedArray<T: PolarsDataType> {
 }
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Default, Clone, Copy)]
     pub(crate) struct Settings: u8 {
-    const SORTED_ASC = 0x01;
-    const SORTED_DSC = 0x02;
-    const FAST_EXPLODE_LIST = 0x04;
-}}
+        const SORTED_ASC = 0x01;
+        const SORTED_DSC = 0x02;
+        const FAST_EXPLODE_LIST = 0x04;
+    }
+}
+
+impl Settings {
+    pub fn clear(&mut self) {
+        *self.0.bits_mut() = 0;
+    }
+}
 
 impl<T: PolarsDataType> ChunkedArray<T> {
     pub(crate) fn is_sorted_ascending_flag(&self) -> bool {
@@ -182,7 +189,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     pub(crate) fn clear_settings(&mut self) {
-        self.bit_settings.bits = 0;
+        self.bit_settings.clear()
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {

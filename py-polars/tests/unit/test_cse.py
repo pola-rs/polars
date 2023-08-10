@@ -344,3 +344,11 @@ def test_cse_mixed_window_functions() -> None:
         "c_diff": [None],
         "c_diff_by_a": [None],
     }
+
+
+def test_cse_10401() -> None:
+    df = pl.DataFrame({"clicks": [1.0, float("nan"), None]})
+
+    q = df.lazy().with_columns(pl.all().fill_null(0).fill_nan(0))
+    assert r"""col("clicks").fill_null([0]).alias("__POLARS_CSER""" in q.explain()
+    assert q.collect().to_dict(False) == {"clicks": [1.0, 0.0, 0.0]}

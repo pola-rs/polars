@@ -53,6 +53,7 @@ mod trigonometry;
 mod unique;
 
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 #[cfg(feature = "random")]
 use std::sync::atomic::AtomicU64;
 
@@ -234,6 +235,33 @@ pub enum FunctionExpr {
         fixed_seed: bool,
     },
     SetSortedFlag(IsSorted),
+}
+
+impl Hash for FunctionExpr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            FunctionExpr::BinaryExpr(f) => f.hash(state),
+            FunctionExpr::Boolean(f) => f.hash(state),
+            #[cfg(feature = "strings")]
+            FunctionExpr::StringExpr(f) => f.hash(state),
+            #[cfg(feature = "random")]
+            FunctionExpr::Random { method, .. } => method.hash(state),
+            #[cfg(feature = "range")]
+            FunctionExpr::Range(f) => f.hash(state),
+            #[cfg(feature = "temporal")]
+            FunctionExpr::TemporalExpr(f) => f.hash(state),
+            #[cfg(feature = "trigonometry")]
+            FunctionExpr::Trigonometry(f) => f.hash(state),
+            #[cfg(feature = "fused")]
+            FunctionExpr::Fused(f) => f.hash(state),
+            #[cfg(feature = "interpolate")]
+            FunctionExpr::Interpolate(f) => f.hash(state),
+            #[cfg(feature = "dtype-categorical")]
+            FunctionExpr::Categorical(f) => f.hash(state),
+            _ => {}
+        }
+    }
 }
 
 impl Display for FunctionExpr {

@@ -104,8 +104,8 @@ pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
 }
 
 pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
-    let start = &s[0];
-    let end = &s[1];
+    let start = &s[0].rechunk();
+    let end = &s[1].rechunk();
 
     let output_name = "int_range";
 
@@ -129,30 +129,51 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
 
     let start = start.i64()?;
     let end = end.i64()?;
+
+    let start = start.downcast_iter().next().unwrap();
+    let end = end.downcast_iter().next().unwrap();
+
+    // First do a pass to determine the required value capacity.
+    let mut values_capacity = 0;
+    for (opt_start, opt_end) in start.into_iter().zip(end) {
+        if let (Some(start_v), Some(end_v)) = (opt_start, opt_end) {
+            match step {
+                1 => {
+                    values_capacity += (end_v - start_v) as usize;
+                }
+                2.. => {
+                    values_capacity += ((end_v - start_v) as usize / step as usize) + 1;
+                }
+                _ => {
+                    polars_ensure!(start_v > end_v, InvalidOperation: "range must be decreasing if 'step' is negative");
+                    values_capacity +=
+                        ((end_v - start_v) as usize / step.unsigned_abs() as usize) + 1;
+                }
+            }
+        }
+    }
+
     let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
         output_name,
         start.len(),
-        start.len() * 3,
+        values_capacity,
         DataType::Int64,
     );
 
     for (opt_start, opt_end) in start.into_iter().zip(end) {
         match (opt_start, opt_end) {
-            (Some(start_v), Some(end_v)) => match step {
+            (Some(&start_v), Some(&end_v)) => match step {
                 1 => {
                     builder.append_iter_values(start_v..end_v);
                 }
                 2.. => {
                     builder.append_iter_values((start_v..end_v).step_by(step as usize));
                 }
-                _ => {
-                    polars_ensure!(start_v > end_v, InvalidOperation: "range must be decreasing if 'step' is negative");
-                    builder.append_iter_values(
-                        (end_v..=start_v)
-                            .rev()
-                            .step_by(step.unsigned_abs() as usize),
-                    )
-                }
+                _ => builder.append_iter_values(
+                    (end_v..=start_v)
+                        .rev()
+                        .step_by(step.unsigned_abs() as usize),
+                ),
             },
             _ => builder.append_null(),
         }

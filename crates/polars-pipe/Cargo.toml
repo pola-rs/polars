@@ -19,11 +19,11 @@ polars-utils = { version = "0.31.1", path = "../polars-utils", features = ["sysi
 
 crossbeam-channel = { version = "0.5", optional = true }
 crossbeam-queue = { version = "0.3", optional = true }
-enum_dispatch = "0.3"
-hashbrown.workspace = true
-num-traits.workspace = true
-rayon.workspace = true
-smartstring = { version = "1" }
+enum_dispatch = { version = "0.3" }
+hashbrown = { workspace = true }
+num-traits = { workspace = true }
+rayon = { workspace = true }
+smartstring = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }

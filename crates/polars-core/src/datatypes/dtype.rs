@@ -110,6 +110,7 @@ impl DataType {
         }
     }
 
+    /// Get the inner data type of a nested type.
     pub fn inner_dtype(&self) -> Option<&DataType> {
         match self {
             DataType::List(inner) => Some(inner),

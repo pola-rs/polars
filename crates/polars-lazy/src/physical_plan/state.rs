@@ -20,6 +20,7 @@ pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
 
 bitflags! {
     #[repr(transparent)]
+    #[derive(Copy, Clone)]
     pub(super) struct StateFlags: u8 {
         /// More verbose logging
         const VERBOSE = 0x01;
