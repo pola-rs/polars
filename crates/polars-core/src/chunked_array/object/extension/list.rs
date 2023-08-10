@@ -63,29 +63,24 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
         let ca = values_builder.finish();
         let obj_arr = ca.downcast_chunks().get(0).unwrap().clone();
 
+        // SAFETY: this is safe because we just created the PolarsExtension
+        // meaning that the sentinel is heap allocated and the dereference of
+        // the pointer does not fail.
         let mut pe = create_extension(obj_arr.into_iter_cloned());
-
-        // Safety:
-        // this is safe because we just created the PolarsExtension
-        // meaning that the sentinel is heap allocated and the dereference of the
-        // pointer does not fail
         unsafe { pe.set_to_series_fn::<T>() };
         let extension_array = Box::new(pe.take_and_forget()) as ArrayRef;
         let extension_dtype = extension_array.data_type();
 
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
-        // Safety:
-        // offsets are monotonically increasing
-        let arr = unsafe {
-            Box::new(ListArray::<i64>::new(
-                data_type,
-                Offsets::new_unchecked(offsets).into(),
-                extension_array,
-                None,
-            )) as ArrayRef
-        };
+        let arr = ListArray::<i64>::new(
+            data_type,
+            // SAFETY: offsets are monotonically increasing.
+            unsafe { Offsets::new_unchecked(offsets).into() },
+            extension_array,
+            None,
+        );
 
-        let mut listarr = unsafe { ListChunked::from_chunks(ca.name(), vec![arr]) };
+        let mut listarr = ListChunked::from_chunk_iter(ca.name(), [arr]);
         if self.fast_explode {
             listarr.set_fast_explode()
         }
