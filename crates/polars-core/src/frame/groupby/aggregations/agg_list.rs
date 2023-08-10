@@ -226,13 +226,17 @@ impl AggList for BinaryChunked {
     }
 }
 
-fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<ArrayRef>) -> bool>(
-    ca: &ListChunked,
+/// This aggregates into a `ListChunked` by slicing the array that is aggregated.
+/// Used for `List` and `Array` data types.
+fn agg_list_by_slicing<
+    A: PolarsDataType,
+    F: Fn(&ChunkedArray<A>, bool, &mut Vec<i64>, &mut i64, &mut Vec<ArrayRef>) -> bool,
+>(
+    ca: &ChunkedArray<A>,
+    dtype: DataType,
     groups_len: usize,
     func: F,
 ) -> Series {
-    let inner_dtype = ca.inner_dtype();
-    let inner_dtype_physical = inner_dtype.to_physical();
     let can_fast_explode = true;
     let mut offsets = Vec::<i64>::with_capacity(groups_len + 1);
     let mut length_so_far = 0i64;
@@ -252,7 +256,7 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
     }
     let list_values = concatenate_owned_unchecked(&list_values).unwrap();
     let data_type = ListArray::<i64>::default_datatype(list_values.data_type().clone());
-    // Safety:
+    // SAFETY:
     // offsets are monotonically increasing
     let arr = unsafe {
         Box::new(ListArray::<i64>::new(
@@ -266,9 +270,7 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
     if can_fast_explode {
         listarr.set_fast_explode()
     }
-    if inner_dtype_physical != inner_dtype {
-        listarr.to_physical(DataType::List(Box::new(inner_dtype)));
-    }
+    listarr.to_logical(dtype);
     listarr.into_series()
 }
 
@@ -289,14 +291,14 @@ impl AggList for ListChunked {
                         }
 
                         *length_so_far += idx_len as i64;
-                        // Safety:
+                        // SAFETY:
                         // group tuples are in bounds
                         {
                             let mut s = ca.take_unchecked(idx.into());
                             let arr = s.chunks.pop().unwrap_unchecked_release();
                             list_values.push_unchecked(arr);
 
-                            // Safety:
+                            // SAFETY:
                             // we know that offsets has allocated enough slots
                             offsets.push_unchecked(*length_so_far);
                         }
@@ -304,7 +306,7 @@ impl AggList for ListChunked {
                     can_fast_explode
                 };
 
-                agg_list_list(self, groups.len(), func)
+                agg_list_by_slicing(self, self.dtype().clone(), groups.len(), func)
             }
             GroupsProxy::Slice { groups, .. } => {
                 let func = |ca: &ListChunked,
@@ -324,7 +326,7 @@ impl AggList for ListChunked {
                         list_values.push_unchecked(arr);
 
                         {
-                            // Safety:
+                            // SAFETY:
                             // we know that offsets has allocated enough slots
                             offsets.push_unchecked(*length_so_far);
                         }
@@ -332,35 +334,10 @@ impl AggList for ListChunked {
                     can_fast_explode
                 };
 
-                agg_list_list(self, groups.len(), func)
+                agg_list_by_slicing(self, self.dtype().clone(), groups.len(), func)
             }
         }
     }
-}
-
-#[cfg(feature = "dtype-array")]
-fn agg_list_fixed_size_list<F: Fn(&ArrayChunked, &mut Vec<ArrayRef>)>(
-    ca: &ArrayChunked,
-    groups_len: usize,
-    func: F,
-    width: usize,
-) -> Series {
-    let inner_dtype = ca.inner_dtype();
-    let inner_dtype_physical = inner_dtype.to_physical();
-    let mut list_values = Vec::with_capacity(groups_len);
-
-    func(ca, &mut list_values);
-    if groups_len == 0 {
-        list_values.push(ca.chunks[0].sliced(0, 0))
-    }
-    let list_values = concatenate_owned_unchecked(&list_values).unwrap();
-    let data_type = FixedSizeListArray::default_datatype(list_values.data_type().clone(), width);
-    let arr = Box::new(FixedSizeListArray::new(data_type, list_values, None)) as ArrayRef;
-    let mut listarr = unsafe { ListChunked::from_chunks(ca.name(), vec![arr]) };
-    if inner_dtype_physical != inner_dtype {
-        listarr.to_physical(DataType::List(Box::new(inner_dtype)));
-    }
-    listarr.into_series()
 }
 
 #[cfg(feature = "dtype-array")]
@@ -368,10 +345,25 @@ impl AggList for ArrayChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => {
-                let func = |ca: &ArrayChunked, list_values: &mut Vec<ArrayRef>| {
+                let func = |ca: &ArrayChunked,
+                            mut can_fast_explode: bool,
+                            offsets: &mut Vec<i64>,
+                            length_so_far: &mut i64,
+                            list_values: &mut Vec<ArrayRef>| {
                     assert!(list_values.capacity() >= groups.len());
                     groups.iter().for_each(|(_, idx)| {
-                        // Safety:
+                        let idx_len = idx.len();
+                        if idx_len == 0 {
+                            can_fast_explode = false;
+                        }
+
+                        *length_so_far += idx_len as i64;
+
+                        // SAFETY:
+                        // we know that offsets has allocated enough slots
+                        offsets.push_unchecked(*length_so_far);
+
+                        // SAFETY:
                         // group tuples are in bounds
                         {
                             let mut s = ca.take_unchecked(idx.into());
@@ -379,21 +371,36 @@ impl AggList for ArrayChunked {
                             list_values.push_unchecked(arr);
                         }
                     });
+                    can_fast_explode
                 };
 
-                agg_list_fixed_size_list(self, groups.len(), func, self.width())
+                agg_list_by_slicing(self, self.dtype().clone(), groups.len(), func)
             }
             GroupsProxy::Slice { groups, .. } => {
-                let func = |ca: &ArrayChunked, list_values: &mut Vec<ArrayRef>| {
+                let func = |ca: &ArrayChunked,
+                            mut can_fast_explode: bool,
+                            offsets: &mut Vec<i64>,
+                            length_so_far: &mut i64,
+                            list_values: &mut Vec<ArrayRef>| {
                     assert!(list_values.capacity() >= groups.len());
                     groups.iter().for_each(|&[first, len]| {
+                        if len == 0 {
+                            can_fast_explode = false;
+                        }
+
+                        *length_so_far += len as i64;
+                        // SAFETY:
+                        // we know that offsets has allocated enough slots
+                        offsets.push_unchecked(*length_so_far);
+
                         let mut s = ca.slice(first as i64, len as usize);
                         let arr = s.chunks.pop().unwrap_unchecked_release();
                         list_values.push_unchecked(arr);
                     });
+                    can_fast_explode
                 };
 
-                agg_list_fixed_size_list(self, groups.len(), func, self.width())
+                agg_list_by_slicing(self, self.dtype().clone(), groups.len(), func)
             }
         }
     }
@@ -414,7 +421,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
                 .flat_map(|indicator| {
                     let (group_vals, len) = match indicator {
                         GroupsIndicator::Idx((_first, idx)) => {
-                            // Safety:
+                            // SAFETY:
                             // group tuples always in bounds
                             let group_vals = self.take_unchecked(idx.into());
 
@@ -431,7 +438,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
                         can_fast_explode = false;
                     }
                     length_so_far += len as i64;
-                    // Safety:
+                    // SAFETY:
                     // we know that offsets has allocated enough slots
                     offsets.push_unchecked(length_so_far);
 
@@ -443,7 +450,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
 
         let mut pe = create_extension(iter);
 
-        // Safety:
+        // SAFETY:
         // this is safe because we just created the PolarsExtension
         // meaning that the sentinel is heap allocated and the dereference of the
         // pointer does not fail
@@ -452,7 +459,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         let extension_dtype = extension_array.data_type();
 
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
-        // Safety:
+        // SAFETY:
         // offsets are monotonically increasing
         let arr = Box::new(ListArray::<i64>::new(
             data_type,
