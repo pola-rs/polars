@@ -14,7 +14,18 @@ if TYPE_CHECKING:
 
 
 class PolarsDataFrame:
-    """A dataframe object backed by a Polars DataFrame."""
+    """
+    A dataframe object backed by a Polars DataFrame.
+
+    Parameters
+    ----------
+    column
+        The Polars DataFrame backing the dataframe object.
+    allow_copy
+        Allow data to be copied during operations on this column. If set to ``False``,
+        a RuntimeError is raised if data would be copied.
+
+    """
 
     def __init__(self, df: DataFrame, *, allow_copy: bool = True):
         self._df = df
@@ -81,12 +92,28 @@ class PolarsDataFrame:
         return self._df.columns
 
     def get_column(self, i: int) -> PolarsColumn:
-        """Return the column at the indicated position."""
+        """
+        Return the column at the indicated position.
+
+        Parameters
+        ----------
+        i
+            Index of the column.
+
+        """
         s = self._df.to_series(i)
         return PolarsColumn(s, allow_copy=self._allow_copy)
 
     def get_column_by_name(self, name: str) -> PolarsColumn:
-        """Return the column with the given name."""
+        """
+        Return the column with the given name.
+
+        Parameters
+        ----------
+        name
+            Name of the column.
+
+        """
         s = self._df.get_column(name)
         return PolarsColumn(s, allow_copy=self._allow_copy)
 
@@ -96,7 +123,15 @@ class PolarsDataFrame:
             yield PolarsColumn(column, allow_copy=self._allow_copy)
 
     def select_columns(self, indices: Sequence[int]) -> PolarsDataFrame:
-        """Create a new DataFrame by selecting a subset of columns by index."""
+        """
+        Create a new DataFrame by selecting a subset of columns by index.
+
+        Parameters
+        ----------
+        indices
+            Column indices
+
+        """
         if not isinstance(indices, Sequence):
             raise TypeError("`indices` is not a sequence")
         if not isinstance(indices, list):
@@ -108,7 +143,15 @@ class PolarsDataFrame:
         )
 
     def select_columns_by_name(self, names: Sequence[str]) -> PolarsDataFrame:
-        """Create a new dataframe by selecting a subset of columns by name."""
+        """
+        Create a new dataframe by selecting a subset of columns by name.
+
+        Parameters
+        ----------
+        names
+            Column names.
+
+        """
         if not isinstance(names, Sequence):
             raise TypeError("`names` is not a sequence")
 
@@ -118,7 +161,23 @@ class PolarsDataFrame:
         )
 
     def get_chunks(self, n_chunks: int | None = None) -> Iterator[PolarsDataFrame]:
-        """Return an iterator yielding the chunks of the dataframe."""
+        """
+        Return an iterator yielding the chunks of the dataframe.
+
+        Parameters
+        ----------
+        n_chunks
+            The number of chunks to return. Must be a multiple of the number of chunks
+            in the dataframe. If set to ``None`` (default), returns all chunks.
+
+        Notes
+        -----
+        When the columns in the dataframe are chunked unevenly, or when ``n_chunks`` is
+        higher than the number of chunks in the dataframe, a slice must be performed
+        that is not on the chunk boundary. This will trigger some compute for columns
+        that contain null values and boolean columns.
+
+        """
         total_n_chunks = self.num_chunks()
         chunks = self._get_chunks_from_col_chunks()
 
@@ -151,6 +210,7 @@ class PolarsDataFrame:
 
         If columns are not all chunked identically, they will be rechunked like the
         first column. If copy is not allowed, this raises a RuntimeError.
+
         """
         col_chunks = self.get_column(0).get_chunks()
         chunk_sizes = [chunk.size() for chunk in col_chunks]

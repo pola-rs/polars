@@ -12,7 +12,18 @@ if TYPE_CHECKING:
 
 
 class PolarsBuffer:
-    """A buffer backed by a Polars Series consisting of a single chunk."""
+    """
+    A buffer object backed by a Polars Series consisting of a single chunk.
+
+    Parameters
+    ----------
+    data
+        The Polars Series backing the buffer object.
+    allow_copy
+        Allow data to be copied during operations on this column. If set to ``False``,
+        a RuntimeError will be raised if data would be copied.
+
+    """
 
     def __init__(self, data: Series, *, allow_copy: bool = True):
         if data.n_chunks() > 1:

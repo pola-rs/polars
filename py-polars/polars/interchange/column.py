@@ -17,7 +17,18 @@ if TYPE_CHECKING:
 
 
 class PolarsColumn:
-    """A column backed by a Polars Series."""
+    """
+    A column object backed by a Polars Series.
+
+    Parameters
+    ----------
+    column
+        The Polars Series backing the column object.
+    allow_copy
+        Allow data to be copied during operations on this column. If set to ``False``,
+        a RuntimeError will be raised if data would be copied.
+
+    """
 
     def __init__(self, column: Series, *, allow_copy: bool = True):
         if column.dtype == Categorical and not column.cat.is_local():
@@ -91,7 +102,23 @@ class PolarsColumn:
         return self._col.n_chunks()
 
     def get_chunks(self, n_chunks: int | None = None) -> Iterator[PolarsColumn]:
-        """Return an iterator yielding the column chunks."""
+        """
+        Return an iterator yielding the column chunks.
+
+        Parameters
+        ----------
+        n_chunks
+            The number of chunks to return. Must be a multiple of the number of chunks
+            in the column.
+
+        Notes
+        -----
+        When ``n_chunks`` is higher than the number of chunks in the column, a slice
+        must be performed that is not on the chunk boundary. This will trigger some
+        compute if the column contains null values or if the column is of data type
+        boolean.
+
+        """
         total_n_chunks = self.num_chunks()
         chunks = self._col.get_chunks()
 
