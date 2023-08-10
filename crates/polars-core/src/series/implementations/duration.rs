@@ -36,9 +36,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _clear_settings(&mut self) {
-        self.0.clear_settings()
-    }
 
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0
@@ -63,8 +60,11 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
-        self.0.deref_mut().set_sorted_flag(is_sorted)
+    fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+        self.0.deref_mut().set_flags(flags)
+    }
+    fn _get_flags(&self) -> u8 {
+        self.0.deref().get_flags()
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {

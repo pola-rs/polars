@@ -48,8 +48,10 @@ impl PrivateSeries for NullChunked {
     fn _field(&self) -> Cow<Field> {
         Cow::Owned(Field::new(self.name(), DataType::Null))
     }
-    fn _clear_settings(&mut self) {
-        // no-op
+
+    #[allow(unused)]
+    fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+        Ok(())
     }
 
     fn _dtype(&self) -> &DataType {
@@ -62,6 +64,10 @@ impl PrivateSeries for NullChunked {
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         ExplodeByOffsets::explode_by_offsets(self, offsets)
+    }
+
+    fn _get_flags(&self) -> u8 {
+        0u8
     }
 }
 

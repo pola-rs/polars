@@ -5,6 +5,7 @@ pub mod series;
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use crate::series::IsSorted;
 
     #[test]
     fn test_serde() -> PolarsResult<()> {
@@ -43,6 +44,20 @@ mod test {
         let s_list = Series::new("list", &[s1.clone(), s1.clone(), s1.clone()]);
 
         DataFrame::new(vec![s1, s2, s3, s_list]).unwrap()
+    }
+
+    #[test]
+    fn test_serde_flags() {
+        let df = sample_dataframe();
+
+        for mut column in df.columns {
+            column.set_sorted_flag(IsSorted::Descending);
+            let json = serde_json::to_string(&column).unwrap();
+            let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
+            let f = out.get_flags();
+            assert_ne!(f, 0u8);
+            assert_eq!(column.get_flags(), out.get_flags());
+        }
     }
 
     #[test]

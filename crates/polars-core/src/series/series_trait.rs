@@ -77,9 +77,11 @@ pub(crate) mod private {
 
         fn _dtype(&self) -> &DataType;
 
-        fn _clear_settings(&mut self);
-
         fn compute_len(&mut self);
+
+        fn _get_flags(&self) -> u8;
+
+        fn _set_flags(&mut self, flags: u8) -> PolarsResult<()>;
 
         fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
             invalid_operation_panic!(explode_by_offsets, self)

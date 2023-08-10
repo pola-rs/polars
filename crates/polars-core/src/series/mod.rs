@@ -198,8 +198,15 @@ impl Series {
     }
 
     pub(crate) fn clear_settings(&mut self) {
-        let inner = self._get_inner_mut();
-        inner._clear_settings()
+        let _ = self.set_flags(0u8);
+    }
+    #[allow(dead_code)]
+    pub(crate) fn get_flags(&self) -> u8 {
+        self.0._get_flags()
+    }
+
+    pub(crate) fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+        self._get_inner_mut()._set_flags(flags)
     }
 
     pub fn into_frame(self) -> DataFrame {

@@ -76,7 +76,7 @@ impl<'de> Deserialize<'de> for Series {
     where
         D: Deserializer<'de>,
     {
-        const FIELDS: &[&str] = &["name", "datatype", "values"];
+        const FIELDS: &[&str] = &["name", "datatype", "bit_settings", "values"];
 
         struct SeriesVisitor;
 
@@ -85,7 +85,7 @@ impl<'de> Deserialize<'de> for Series {
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter
-                    .write_str("struct {name: <name>, datatype: <dtype>, values: <values array>}")
+                    .write_str("struct {name: <name>, datatype: <dtype>, bit_settings?: <settings>, values: <values array>}")
             }
 
             fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
@@ -94,10 +94,9 @@ impl<'de> Deserialize<'de> for Series {
             {
                 let mut name: Option<Cow<'de, str>> = None;
                 let mut dtype = None;
+                let mut bit_settings: Option<u8> = None;
                 let mut values_set = false;
-                let mut count = 0;
                 while let Some(key) = map.next_key::<Cow<str>>().unwrap() {
-                    count += 1;
                     match key.as_ref() {
                         "name" => {
                             name = match map.next_value::<Cow<str>>() {
@@ -108,14 +107,12 @@ impl<'de> Deserialize<'de> for Series {
                         "datatype" => {
                             dtype = Some(map.next_value()?);
                         }
+                        "bit_settings" => {
+                            bit_settings = Some(map.next_value()?);
+                        }
                         "values" => {
                             // we delay calling next_value until we know the dtype
                             values_set = true;
-                            if count != 3 {
-                                return Err(de::Error::custom(
-                                    "field values should be behind name and datatype",
-                                ));
-                            }
                             break;
                         }
                         fld => return Err(de::Error::unknown_field(fld, FIELDS)),
@@ -127,7 +124,7 @@ impl<'de> Deserialize<'de> for Series {
                 let name = name.ok_or_else(|| de::Error::missing_field("name"))?;
                 let dtype = dtype.ok_or_else(|| de::Error::missing_field("datatype"))?;
 
-                match dtype {
+                let mut s = match dtype {
                     #[cfg(feature = "dtype-i8")]
                     DataType::Int8 => {
                         let values: Vec<Option<i8>> = map.next_value()?;
@@ -230,7 +227,13 @@ impl<'de> Deserialize<'de> for Series {
                     dt => {
                         panic!("{dt:?} dtype deserialization not yet implemented")
                     }
+                }?;
+
+                if let Some(f) = bit_settings {
+                    s.set_flags(f)
+                        .map_err(|_| de::Error::custom("bit flags are corrupt"))?
                 }
+                Ok(s)
             }
         }
 

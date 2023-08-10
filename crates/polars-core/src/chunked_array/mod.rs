@@ -169,12 +169,6 @@ bitflags! {
     }
 }
 
-impl Settings {
-    pub fn clear(&mut self) {
-        *self.0.bits_mut() = 0;
-    }
-}
-
 impl<T: PolarsDataType> ChunkedArray<T> {
     pub(crate) fn is_sorted_ascending_flag(&self) -> bool {
         self.bit_settings.contains(Settings::SORTED_ASC)
@@ -188,8 +182,19 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
     }
 
-    pub(crate) fn clear_settings(&mut self) {
-        self.bit_settings.clear()
+    pub(crate) fn get_flags(&self) -> u8 {
+        self.bit_settings.bits()
+    }
+
+    /// Set flags for the Chunked Array
+    pub(crate) fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+        Settings::from_bits(flags)
+            .ok_or_else(
+                || polars_err!(ComputeError: "corrupt flags {} for {}", flags, self.dtype()),
+            )
+            .map(|settings| {
+                self.bit_settings = settings;
+            })
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
