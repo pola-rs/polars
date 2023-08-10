@@ -2,54 +2,81 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import polars as pl
+from polars.datatypes import (
+    Boolean,
+    Categorical,
+    Date,
+    Datetime,
+    Duration,
+    Float32,
+    Float64,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    Time,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    Utf8,
+)
 from polars.interchange.protocol import DtypeKind, Endianness
 
 if TYPE_CHECKING:
+    from polars.datatypes import DataTypeClass
     from polars.interchange.protocol import Dtype
     from polars.type_aliases import PolarsDataType
+
+NE = Endianness.NATIVE
+
+dtype_map: dict[DataTypeClass, Dtype] = {
+    Int8: (DtypeKind.INT, 8, "c", NE),
+    Int16: (DtypeKind.INT, 16, "s", NE),
+    Int32: (DtypeKind.INT, 32, "i", NE),
+    Int64: (DtypeKind.INT, 64, "l", NE),
+    UInt8: (DtypeKind.UINT, 8, "C", NE),
+    UInt16: (DtypeKind.UINT, 16, "S", NE),
+    UInt32: (DtypeKind.UINT, 32, "I", NE),
+    UInt64: (DtypeKind.UINT, 64, "L", NE),
+    Float32: (DtypeKind.FLOAT, 32, "f", NE),
+    Float64: (DtypeKind.FLOAT, 64, "g", NE),
+    Boolean: (DtypeKind.BOOL, 1, "b", NE),
+    Utf8: (DtypeKind.STRING, 8, "U", NE),
+    Date: (DtypeKind.DATETIME, 32, "tdD", NE),
+    Time: (DtypeKind.DATETIME, 64, "ttu", NE),
+    Datetime: (DtypeKind.DATETIME, 64, "tsu:", NE),
+    Duration: (DtypeKind.DATETIME, 64, "tDu", NE),
+    Categorical: (DtypeKind.CATEGORICAL, 32, "I", NE),
+}
 
 
 def polars_dtype_to_dtype(dtype: PolarsDataType) -> Dtype:
     """Convert Polars data type to interchange protocol data type."""
-    if dtype == pl.Int8:
-        return DtypeKind.INT, 8, "c", Endianness.NATIVE
-    elif dtype == pl.Int16:
-        return DtypeKind.INT, 16, "s", Endianness.NATIVE
-    elif dtype == pl.Int32:
-        return DtypeKind.INT, 32, "i", Endianness.NATIVE
-    elif dtype == pl.Int64:
-        return DtypeKind.INT, 64, "l", Endianness.NATIVE
-    elif dtype == pl.UInt8:
-        return DtypeKind.UINT, 8, "C", Endianness.NATIVE
-    elif dtype == pl.UInt16:
-        return DtypeKind.UINT, 16, "S", Endianness.NATIVE
-    elif dtype == pl.UInt32:
-        return DtypeKind.UINT, 32, "I", Endianness.NATIVE
-    elif dtype == pl.UInt64:
-        return DtypeKind.UINT, 64, "L", Endianness.NATIVE
-    elif dtype == pl.Float32:
-        return DtypeKind.FLOAT, 32, "f", Endianness.NATIVE
-    elif dtype == pl.Float64:
-        return DtypeKind.FLOAT, 64, "g", Endianness.NATIVE
-    elif dtype == pl.Boolean:
-        return DtypeKind.BOOL, 1, "b", Endianness.NATIVE
-    elif dtype == pl.Utf8:
-        return DtypeKind.STRING, 8, "U", Endianness.NATIVE
-    elif dtype == pl.Date:
-        return DtypeKind.DATETIME, 32, "tdD", Endianness.NATIVE
-    elif dtype == pl.Time:
-        return DtypeKind.DATETIME, 64, "ttu", Endianness.NATIVE
-    elif dtype == pl.Datetime:
-        tu = dtype.time_unit[0] if dtype.time_unit is not None else "u"  # type: ignore[union-attr]
-        tz = dtype.time_zone if dtype.time_zone is not None else ""  # type: ignore[union-attr]
-        arrow_c_type = f"ts{tu}:{tz}"
-        return DtypeKind.DATETIME, 64, arrow_c_type, Endianness.NATIVE
-    elif dtype == pl.Duration:
-        tu = dtype.time_unit[0] if dtype.time_unit is not None else "u"  # type: ignore[union-attr]
-        arrow_c_type = f"tD{tu}"
-        return DtypeKind.DATETIME, 64, arrow_c_type, Endianness.NATIVE
-    elif dtype == pl.Categorical:
-        return DtypeKind.CATEGORICAL, 32, "I", Endianness.NATIVE
-    else:
-        raise ValueError(f"data type {dtype} not supported by interchange protocol")
+    try:
+        result = dtype_map[dtype.base_type()]
+    except KeyError as exc:
+        raise ValueError(
+            f"data type {dtype} not supported by the interchange protocol"
+        ) from exc
+
+    # Handle instantiated data types
+    if isinstance(dtype, Datetime):
+        return _datetime_to_dtype(dtype)
+    elif isinstance(dtype, Duration):
+        return _duration_to_dtype(dtype)
+
+    return result
+
+
+def _datetime_to_dtype(dtype: Datetime) -> Dtype:
+    tu = dtype.time_unit[0] if dtype.time_unit is not None else "u"
+    tz = dtype.time_zone if dtype.time_zone is not None else ""
+    arrow_c_type = f"ts{tu}:{tz}"
+    return DtypeKind.DATETIME, 64, arrow_c_type, NE
+
+
+def _duration_to_dtype(dtype: Duration) -> Dtype:
+    tu = dtype.time_unit[0] if dtype.time_unit is not None else "u"
+    arrow_c_type = f"tD{tu}"
+    return DtypeKind.DATETIME, 64, arrow_c_type, NE
