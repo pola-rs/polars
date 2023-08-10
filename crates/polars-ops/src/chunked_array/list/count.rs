@@ -36,18 +36,12 @@ pub fn list_count_match(ca: &ListChunked, value: AnyValue) -> PolarsResult<Serie
 }
 
 pub(super) fn count_boolean_bits(ca: &ListChunked) -> IdxCa {
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| {
-            let inner_arr = arr.values();
-            let mask = inner_arr.as_any().downcast_ref::<BooleanArray>().unwrap();
-            assert_eq!(mask.null_count(), 0);
-            let out = count_bits_set_by_offsets(mask.values(), arr.offsets().as_slice());
-            Box::new(IdxArr::from_data_default(
-                out.into(),
-                arr.validity().cloned(),
-            )) as ArrayRef
-        })
-        .collect();
-    unsafe { IdxCa::from_chunks(ca.name(), chunks) }
+    let chunks = ca.downcast_iter().map(|arr| {
+        let inner_arr = arr.values();
+        let mask = inner_arr.as_any().downcast_ref::<BooleanArray>().unwrap();
+        assert_eq!(mask.null_count(), 0);
+        let out = count_bits_set_by_offsets(mask.values(), arr.offsets().as_slice());
+        IdxArr::from_data_default(out.into(), arr.validity().cloned())
+    });
+    IdxCa::from_chunk_iter(ca.name(), chunks)
 }
