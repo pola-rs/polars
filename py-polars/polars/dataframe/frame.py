@@ -37,7 +37,6 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     NUMERIC_DTYPES,
     Boolean,
-    Categorical,
     DataTypeClass,
     Float64,
     Object,
