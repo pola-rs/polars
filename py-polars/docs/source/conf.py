@@ -47,7 +47,6 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.linkcode",
     "sphinx.ext.mathjax",
-    "sphinx.ext.napoleon",
     "sphinx.ext.todo",
     # ----------------------
     # third-party extensions
@@ -82,15 +81,9 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
 
-# sphinx.ext.napoleon - parse numpy docstrings
-# https://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html
-# Used in addition to numpydoc for stricter parsing requirements
-napoleon_numpy_docstring = True
-napoleon_google_docstring = False
-
 # numpydoc - parse numpy docstrings
 # https://numpydoc.readthedocs.io/en/latest/
-# Used in addition to Napoleon for nicer (more spacious) render of docstring sections
+# Used in favor of sphinx.ext.napoleon for nicer render of docstring sections
 numpydoc_show_class_members = False
 
 # Sphinx-copybutton - add copy button to code blocks
