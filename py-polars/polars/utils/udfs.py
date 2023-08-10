@@ -18,8 +18,6 @@ from typing import (
     AbstractSet,
     Any,
     Callable,
-    Any,
-    Callable,
     ClassVar,
     Iterator,
     Literal,
@@ -601,7 +599,7 @@ class RewrittenInstructions:
     _ignored_ops = frozenset(
         ["COPY_FREE_VARS", "PRECALL", "PUSH_NULL", "RESUME", "RETURN_VALUE"]
     )
-    _caller_variables: dict[str, Any] = {}
+    _caller_variables: ClassVar[dict[str, Any]] = {}
 
     def __init__(self, instructions: Iterator[Instruction]):
         self._original_instructions = list(instructions)
