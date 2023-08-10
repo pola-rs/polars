@@ -1925,13 +1925,13 @@ class ExprDateTimeNameSpace:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
+            By "calendar day", we mean the corresponding time on the next day (which may
+            not be 24 hours, due to daylight savings). Similarly for "calendar week",
+            "calendar month", "calendar quarter", and "calendar year".
 
         Returns
         -------
@@ -1989,6 +1989,7 @@ class ExprDateTimeNameSpace:
         │ 2004-01-31 00:00:00 │
         │ 2005-01-31 00:00:00 │
         └─────────────────────┘
+
         """
         return wrap_expr(self._pyexpr.dt_offset_by(by))
 
