@@ -1,6 +1,5 @@
 use arrow::array::PrimitiveArray;
 use polars_arrow::prelude::FromData;
-use polars_row::ArrayRef;
 
 use crate::datatypes::PolarsNumericType;
 use crate::prelude::*;
@@ -23,14 +22,11 @@ where
                 .zip(right.values().iter())
                 .map(|(l, r)| op(*l, *r))
                 .collect::<Vec<_>>();
-            let arr = PrimitiveArray::from_data_default(values.into(), None);
-
-            Box::new(arr) as ArrayRef
-        })
-        .collect();
-
-    unsafe { ChunkedArray::from_chunks(left.name(), chunks) }
+            PrimitiveArray::from_data_default(values.into(), None)
+        });
+    ChunkedArray::from_chunk_iter(left.name(), chunks)
 }
+
 fn min_binary<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
