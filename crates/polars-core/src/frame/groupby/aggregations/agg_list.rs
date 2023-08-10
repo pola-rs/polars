@@ -83,7 +83,7 @@ where
                     None,
                 );
 
-                let mut ca = unsafe { ListChunked::from_chunks(self.name(), vec![Box::new(arr)]) };
+                let mut ca = ListChunked::from_chunk_iter(self.name(), [arr]);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -140,7 +140,7 @@ where
                     Box::new(array),
                     None,
                 );
-                let mut ca = unsafe { ListChunked::from_chunks(self.name(), vec![Box::new(arr)]) };
+                let mut ca = ListChunked::from_chunk_iter(self.name(), [arr]);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -258,15 +258,13 @@ fn agg_list_by_slicing<
     let data_type = ListArray::<i64>::default_datatype(list_values.data_type().clone());
     // SAFETY:
     // offsets are monotonically increasing
-    let arr = unsafe {
-        Box::new(ListArray::<i64>::new(
-            data_type,
-            Offsets::new_unchecked(offsets).into(),
-            list_values,
-            None,
-        )) as ArrayRef
-    };
-    let mut listarr = unsafe { ListChunked::from_chunks(ca.name(), vec![arr]) };
+    let arr = ListArray::<i64>::new(
+        data_type,
+        unsafe { Offsets::new_unchecked(offsets).into() },
+        list_values,
+        None,
+    );
+    let mut listarr = ListChunked::from_chunk_iter(ca.name(), [arr]);
     if can_fast_explode {
         listarr.set_fast_explode()
     }
@@ -359,12 +357,10 @@ impl AggList for ArrayChunked {
 
                         *length_so_far += idx_len as i64;
 
-                        // SAFETY:
-                        // we know that offsets has allocated enough slots
+                        // SAFETY: we know that offsets has allocated enough slots
                         offsets.push_unchecked(*length_so_far);
 
-                        // SAFETY:
-                        // group tuples are in bounds
+                        // SAFETY: group tuples are in bounds
                         {
                             let mut s = ca.take_unchecked(idx.into());
                             let arr = s.chunks.pop().unwrap_unchecked_release();
@@ -450,25 +446,22 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
 
         let mut pe = create_extension(iter);
 
-        // SAFETY:
-        // this is safe because we just created the PolarsExtension
-        // meaning that the sentinel is heap allocated and the dereference of the
-        // pointer does not fail
+        // SAFETY: This is safe because we just created the PolarsExtension
+        // meaning that the sentinel is heap allocated and the dereference of
+        // the pointer does not fail.
         pe.set_to_series_fn::<T>();
         let extension_array = Box::new(pe.take_and_forget()) as ArrayRef;
         let extension_dtype = extension_array.data_type();
 
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
-        // SAFETY:
-        // offsets are monotonically increasing
-        let arr = Box::new(ListArray::<i64>::new(
+        // SAFETY: offsets are monotonically increasing.
+        let arr = ListArray::<i64>::new(
             data_type,
             Offsets::new_unchecked(offsets).into(),
             extension_array,
             None,
-        )) as ArrayRef;
-
-        let mut listarr = unsafe { ListChunked::from_chunks(self.name(), vec![arr]) };
+        );
+        let mut listarr = ListChunked::from_chunk_iter(self.name(), [arr]);
         if can_fast_explode {
             listarr.set_fast_explode()
         }
