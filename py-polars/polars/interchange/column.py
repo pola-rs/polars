@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes import Boolean, Categorical, Int64, UInt32
+from polars.datatypes import Categorical
 from polars.interchange.buffer import PolarsBuffer
-from polars.interchange.protocol import ColumnNullType, DtypeKind
+from polars.interchange.protocol import ColumnNullType, DtypeKind, Endianness
 from polars.interchange.utils import polars_dtype_to_dtype
 from polars.utils._wrap import wrap_s
 
@@ -153,13 +153,13 @@ class PolarsColumn:
         }
 
     def _get_data_buffer(self) -> tuple[PolarsBuffer, Dtype]:
-        if self.dtype[0] == DtypeKind.CATEGORICAL:
-            dtype = polars_dtype_to_dtype(UInt32)
-        else:
-            dtype = self.dtype
-
         s = wrap_s(self._col._s.get_buffer(0))
         buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
+
+        dtype = self.dtype
+        if dtype[0] == DtypeKind.CATEGORICAL:
+            dtype = (DtypeKind.UINT, 32, "I", Endianness.NATIVE)
+
         return buffer, dtype
 
     def _get_validity_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:
@@ -169,7 +169,7 @@ class PolarsColumn:
 
         s = wrap_s(buffer)
         buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
-        dtype = polars_dtype_to_dtype(Boolean)
+        dtype = (DtypeKind.BOOL, 1, "b", Endianness.NATIVE)
         return buffer, dtype
 
     def _get_offsets_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:
@@ -179,5 +179,5 @@ class PolarsColumn:
 
         s = wrap_s(buffer)
         buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
-        dtype = polars_dtype_to_dtype(Int64)
+        dtype = (DtypeKind.INT, 64, "l", Endianness.NATIVE)
         return buffer, dtype
