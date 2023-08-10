@@ -40,14 +40,9 @@ extensions = [
     # ----------------------
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
-    "sphinx.ext.coverage",
-    "sphinx.ext.doctest",
-    "sphinx.ext.extlinks",
-    "sphinx.ext.ifconfig",
     "sphinx.ext.intersphinx",
     "sphinx.ext.linkcode",
     "sphinx.ext.mathjax",
-    "sphinx.ext.todo",
     # ----------------------
     # third-party extensions
     # ----------------------
@@ -61,7 +56,9 @@ extensions = [
 
 maximum_signature_line_length = 88
 
-# Add any paths that contain templates here, relative to this directory.
+# Below setting is used by
+# sphinx-autosummary-accessors - build docs for namespace accessors like `Series.str`
+# https://sphinx-autosummary-accessors.readthedocs.io/en/stable/
 templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]
 
 # List of patterns, relative to source directory, that match files and
@@ -85,6 +82,7 @@ intersphinx_mapping = {
 # https://numpydoc.readthedocs.io/en/latest/
 # Used in favor of sphinx.ext.napoleon for nicer render of docstring sections
 numpydoc_show_class_members = False
+
 
 # Sphinx-copybutton - add copy button to code blocks
 # https://sphinx-copybutton.readthedocs.io/en/latest/index.html
@@ -161,6 +159,8 @@ favicons = [
 ]
 
 
+# sphinx-ext-linkcode - Add external links to source code
+# https://www.sphinx-doc.org/en/master/usage/extensions/linkcode.html
 def linkcode_resolve(domain, info):
     """
     Determine the URL corresponding to Python object.
