@@ -211,11 +211,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
                     datetime(2010, 1, 2, 0, 0),
                 ]
             ],
-            dtype=pl.List(
-                pl.Datetime(
-                    time_unit="ns",
-                )
-            ),
+            dtype=pl.List(pl.Datetime(time_unit="ns")),
         ),
         pl.Series(
             "list_date_us",
@@ -225,11 +221,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
                     datetime(2010, 1, 2, 0, 0),
                 ]
             ],
-            dtype=pl.List(
-                pl.Datetime(
-                    time_unit="ms",
-                )
-            ),
+            dtype=pl.List(pl.Datetime(time_unit="ms")),
         ),
         pl.Series(
             "nested_list_date",
@@ -241,13 +233,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
                     ]
                 ]
             ],
-            dtype=pl.List(
-                pl.List(
-                    pl.Datetime(
-                        time_unit="ns",
-                    )
-                )
-            ),
+            dtype=pl.List(pl.List(pl.Datetime(time_unit="ns"))),
         ),
         pl.Series(
             "struct_with_list",

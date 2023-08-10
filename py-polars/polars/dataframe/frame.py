@@ -3416,7 +3416,7 @@ class DataFrame:
         from polars.io.delta import (
             _check_for_unsupported_types,
             _check_if_delta_available,
-            _create_delta_compatible_schema,
+            _convert_pa_schema_to_delta,
             _resolve_delta_lake_uri,
         )
 
@@ -3430,13 +3430,13 @@ class DataFrame:
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
-        _check_for_unsupported_types(self.schema)
+        _check_for_unsupported_types(self.dtypes)
 
         data = self.to_arrow()
 
         schema = delta_write_options.get("schema")
         if schema is None:
-            schema = _create_delta_compatible_schema(data.schema)
+            schema = _convert_pa_schema_to_delta(data.schema)
 
         data = data.cast(schema)
 

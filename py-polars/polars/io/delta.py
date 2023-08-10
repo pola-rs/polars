@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from functools import reduce
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from polars.convert import from_arrow
-from polars.datatypes import Categorical, List, Null, Struct, Time
+from polars.datatypes import Categorical, Null, Time
+from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.dependencies import pyarrow as pa
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
@@ -320,109 +320,49 @@ def _check_if_delta_available() -> None:
         )
 
 
-def _check_for_unsupported_types(schema: Mapping[str, PolarsDataType]) -> None:
-    unsupported_cols = {}
-    unsupported_types = [Time, Categorical, Null]
+def _check_for_unsupported_types(dtypes: list[PolarsDataType]) -> None:
+    schema_dtypes = unpack_dtypes(*dtypes)
+    unsupported_types = {Time, Categorical, Null}
+    overlap = schema_dtypes & unsupported_types
 
-    def check_unsupported_types(n: str, t: PolarsDataType | None) -> None:
-        if t is None or t in unsupported_types:
-            unsupported_cols[n] = t
-        elif isinstance(t, Struct):
-            for i in t.fields:
-                check_unsupported_types(f"{n}.{i.name}", i.dtype)
-        elif isinstance(t, List):
-            check_unsupported_types(n, t.inner)
-
-    for name, data_type in schema.items():
-        check_unsupported_types(name, data_type)
-
-    if len(unsupported_cols) != 0:
-        raise TypeError(f"Column(s) in {unsupported_cols} have unsupported data types.")
+    if overlap:
+        raise TypeError(f"dataframe contains unsupported data types: {overlap}")
 
 
-def _create_delta_compatible_schema(schema: pa.schema) -> pa.Schema:
-    """Makes the dataframe schema compatible with Delta lake protocol."""
-    schema_out = list(map(_reconstruct_field_type, schema, schema))
-    schema = pa.schema(schema_out, metadata=schema.metadata)
-    return schema
+def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
+    """Convert a PyArrow schema to a schema compatible with Delta Lake."""
+    # TODO: Add time zone support
+    dtype_map = {
+        pa.uint8(): pa.int8(),
+        pa.uint16(): pa.int16(),
+        pa.uint32(): pa.int32(),
+        pa.uint64(): pa.int64(),
+        pa.timestamp("ns"): pa.timestamp("us"),
+        pa.timestamp("ms"): pa.timestamp("us"),
+        pa.large_string(): pa.string(),
+        pa.large_binary(): pa.binary(),
+    }
 
+    def dtype_to_delta_dtype(dtype: pa.DataType) -> pa.DataType:
+        # Handle nested types
+        if isinstance(dtype, pa.LargeListType):
+            return list_to_delta_dtype(dtype)
+        elif isinstance(dtype, pa.StructType):
+            return struct_to_delta_dtype(dtype)
 
-def _reconstruct_field_type(
-    field: pa.Field,
-    field_head: pa.Field,
-    reconstructed_field: list[pa.DataType] | None = None,
-) -> pa.Field:
-    """
-    Recursive function that traverses through PyArrow fields.
+        try:
+            return dtype_map[dtype]
+        except KeyError:
+            return dtype
 
-    Parameters
-    ----------
-    field
-        Field to analyze.
-    field_head
-        Field head to retain column names.
-    reconstructed_field
-        Collection of dtypes to reconstruct a field.
+    def list_to_delta_dtype(dtype: pa.LargeListType) -> pa.ListType:
+        nested_dtype = dtype.value_type
+        nested_dtype_cast = dtype_to_delta_dtype(nested_dtype)
+        return pa.list_(nested_dtype_cast)
 
-    """
-    if reconstructed_field is None:
-        if isinstance(field.type, pa.LargeListType):
-            return _reconstruct_field_type(
-                field.type.value_field, field_head, [pa.list_]
-            )
-        elif isinstance(field.type, pa.StructType):
-            return pa.field(
-                name=field_head.name,
-                type=pa.struct(
-                    list(map(_reconstruct_field_type, field.type, field.type))
-                ),
-            )
-        else:
-            if (primitive := pa_type_to_primitive.get(field.type)) is not None:
-                return pa.field(name=field.name, type=primitive)
-            return field
+    def struct_to_delta_dtype(dtype: pa.StructType) -> pa.StructType:
+        fields = [dtype.field(i) for i in range(dtype.num_fields)]
+        fields_cast = [pa.field(f.name, dtype_to_delta_dtype(f.type)) for f in fields]
+        return pa.struct(fields_cast)
 
-    else:
-        if isinstance(field.type, pa.LargeListType):
-            reconstructed_field.append(pa.list_)
-            return _reconstruct_field_type(
-                field.type.value_field, field_head, reconstructed_field
-            )
-        elif isinstance(field.type, pa.StructType):
-            reconstructed_field.append(
-                pa.struct(list(map(_reconstruct_field_type, field.type, field.type)))
-            )
-            return pa.field(
-                name=field_head.name,
-                type=_create_nested_type(reconstructed_field),
-            )
-        else:
-            if (primitive := pa_type_to_primitive.get(field.type)) is not None:
-                reconstructed_field.append(primitive)
-                return pa.field(
-                    name=field_head.name, type=_create_nested_type(reconstructed_field)
-                )
-
-            reconstructed_field.append(field.type)
-            return pa.field(
-                name=field_head.name,
-                type=_create_nested_type(reconstructed_field),
-            )
-
-
-pa_type_to_primitive = {
-    pa.uint8(): pa.int8(),
-    pa.uint16(): pa.int16(),
-    pa.uint32(): pa.int32(),
-    pa.uint64(): pa.int64(),
-    pa.large_string(): pa.string(),
-    pa.large_binary(): pa.binary(),
-    pa.timestamp(unit="ns"): pa.timestamp(
-        unit="us"
-    ),  # Always cast to no timezone, since Delta-rs does not support UTC yet, once fixed upstream, add tz=field.type.tz
-    pa.timestamp(unit="ms"): pa.timestamp(unit="us"),
-}
-
-
-def _create_nested_type(type_list: list[pa.DataType]) -> pa.DataType:
-    return reduce(lambda x, y: y(x), reversed(type_list))
+    return pa.schema([pa.field(f.name, dtype_to_delta_dtype(f.type)) for f in schema])
