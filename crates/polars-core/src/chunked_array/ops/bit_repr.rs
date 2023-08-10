@@ -4,20 +4,21 @@ use crate::prelude::*;
 
 /// Reinterprets the type of a ChunkedArray. T and U must have the same size
 /// and alignment.
-fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(ca: &ChunkedArray<T>) -> ChunkedArray<U> {
+fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+) -> ChunkedArray<U> {
     assert!(std::mem::size_of::<T::Native>() == std::mem::size_of::<U::Native>());
     assert!(std::mem::align_of::<T::Native>() == std::mem::align_of::<U::Native>());
 
-    let chunks = ca
-        .downcast_iter()
-        .map(|array| {
-            let buf = array.values().clone();
-            // SAFETY: we checked that the size and alignment matches.
-            #[allow(clippy::transmute_undefined_repr)]
-            let reinterpreted_buf = unsafe { std::mem::transmute::<Buffer<T::Native>, Buffer<U::Native>>(buf) };
-            PrimitiveArray::from_data_default(reinterpreted_buf, array.validity().cloned())
-        });
-    
+    let chunks = ca.downcast_iter().map(|array| {
+        let buf = array.values().clone();
+        // SAFETY: we checked that the size and alignment matches.
+        #[allow(clippy::transmute_undefined_repr)]
+        let reinterpreted_buf =
+            unsafe { std::mem::transmute::<Buffer<T::Native>, Buffer<U::Native>>(buf) };
+        PrimitiveArray::from_data_default(reinterpreted_buf, array.validity().cloned())
+    });
+
     ChunkedArray::from_chunk_iter(ca.name(), chunks)
 }
 
