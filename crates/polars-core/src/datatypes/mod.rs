@@ -308,3 +308,4 @@ unsafe impl StaticallyMatchesPolarsType<Utf8Type> for Utf8Array<i64> {}
 unsafe impl StaticallyMatchesPolarsType<BinaryType> for BinaryArray<i64> {}
 unsafe impl StaticallyMatchesPolarsType<BooleanType> for BooleanArray {}
 unsafe impl StaticallyMatchesPolarsType<ListType> for ListArray<i64> {}
+unsafe impl StaticallyMatchesPolarsType<FixedSizeListType> for FixedSizeListArray {}
