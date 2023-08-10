@@ -68,11 +68,6 @@ test-doc:  ## Run doc examples
 	    -p polars-arrow \
 		-p polars-sql
 
-.PHONY: generate_test_files
-generate_test_files:  ## Generate some datasets
-	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o parquet > ../examples/datasets/foods1.parquet
-	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o arrow > ../examples/datasets/foods1.ipc
-
 .PHONY: bench-save
 bench-save:  ## Run benchmark and save
 	cargo bench --features=random --bench $(BENCH) -- --save-baseline $(SAVE)
@@ -110,7 +105,6 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-algo
 	cargo publish --allow-dirty -p polars-sql
 	cargo publish --allow-dirty -p polars
-	cd .. && cargo publish --allow-dirty -p polars-cli
 
 .PHONY: help
 help:  ## Display this help screen

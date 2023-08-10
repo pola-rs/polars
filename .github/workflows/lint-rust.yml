@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - crates/**
-      - polars-cli/**
       - examples/**
       - Cargo.toml
       - .github/workflows/lint-rust.yml
@@ -13,7 +12,6 @@ on:
       - main
     paths:
       - crates/**
-      - polars-cli/**
       - examples/**
       - Cargo.toml
       - .github/workflows/lint-rust.yml
