@@ -1,14 +1,5 @@
 # Configuration file for the Sphinx documentation builder.
-#
-# This file only contains a selection of the most common options. For a full
-# list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
-
-# -- Path setup --------------------------------------------------------------
-
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
 
 import inspect
 import os
@@ -19,7 +10,12 @@ from pathlib import Path
 
 import sphinx_autosummary_accessors
 
-# add polars directory
+# -- Path setup --------------------------------------------------------------
+
+# If extensions (or modules to document with autodoc) are in another directory,
+# add these directories to sys.path here.
+
+# Add py-polars directory
 sys.path.insert(0, str(Path("../..").resolve()))
 
 # -- Project information -----------------------------------------------------
@@ -28,24 +24,16 @@ project = "Polars"
 author = "Ritchie Vink"
 copyright = f"2020, {author}"
 
-
 # -- General configuration ---------------------------------------------------
 
-# Add any Sphinx extension module names here, as strings. They can be
-# extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
-# ones.
 extensions = [
-    # ----------------------
-    # sphinx extensions
-    # ----------------------
+    # Sphinx extensions
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.intersphinx",
     "sphinx.ext.linkcode",
     "sphinx.ext.mathjax",
-    # ----------------------
-    # third-party extensions
-    # ----------------------
+    # Third-party extensions
     "autodocsumm",
     "numpydoc",
     "sphinx_autosummary_accessors",
@@ -65,7 +53,6 @@ templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["Thumbs.db", ".DS_Store"]
-
 
 # -- Extension settings  -----------------------------------------------------
 
@@ -91,9 +78,7 @@ copybutton_prompt_is_regexp = True
 
 # -- Options for HTML output -------------------------------------------------
 
-# The theme to use for HTML and HTML Help pages.  See the documentation for
-# a list of builtin themes.
-
+# The theme to use for HTML and HTML Help pages.
 html_theme = "pydata_sphinx_theme"
 
 # Add any paths that contain custom static files (such as style sheets) here,
