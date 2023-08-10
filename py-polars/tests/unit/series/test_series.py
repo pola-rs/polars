@@ -1157,7 +1157,6 @@ def test_describe() -> None:
     date_s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
     empty_s = pl.Series(np.empty(0))
 
-    pl.DataFrame
     assert dict(num_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3.0,
         "mean": 2.0,

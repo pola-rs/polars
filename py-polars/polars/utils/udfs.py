@@ -12,7 +12,16 @@ from dis import get_instructions
 from inspect import signature
 from itertools import count, zip_longest
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, NamedTuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    ClassVar,
+    Iterator,
+    Literal,
+    NamedTuple,
+    Union,
+)
 
 if TYPE_CHECKING:
     from dis import Instruction
@@ -37,7 +46,7 @@ _MIN_PY311 = sys.version_info >= (3, 11)
 
 
 class OpNames:
-    BINARY = {
+    BINARY: ClassVar[dict[str, str]] = {
         "BINARY_ADD": "+",
         "BINARY_AND": "&",
         "BINARY_FLOOR_DIVIDE": "//",
@@ -49,8 +58,11 @@ class OpNames:
         "BINARY_TRUE_DIVIDE": "/",
         "BINARY_XOR": "^",
     }
-    CALL = {"CALL"} if _MIN_PY311 else {"CALL_FUNCTION", "CALL_METHOD"}
-    CONTROL_FLOW = (
+
+    CALL: ClassVar[set[str]] = (
+        {"CALL"} if _MIN_PY311 else {"CALL_FUNCTION", "CALL_METHOD"}
+    )
+    CONTROL_FLOW: ClassVar[dict[str, str]] = (
         {
             "POP_JUMP_FORWARD_IF_FALSE": "&",
             "POP_JUMP_FORWARD_IF_TRUE": "|",
@@ -66,16 +78,19 @@ class OpNames:
         }
     )
     LOAD_VALUES = frozenset(("LOAD_CONST", "LOAD_DEREF", "LOAD_FAST", "LOAD_GLOBAL"))
-    LOAD_ATTR = {"LOAD_METHOD", "LOAD_ATTR"} if _MIN_PY311 else {"LOAD_METHOD"}
+    LOAD_ATTR: ClassVar[set[str]] = (
+        {"LOAD_METHOD", "LOAD_ATTR"} if _MIN_PY311 else {"LOAD_METHOD"}
+    )
     LOAD = LOAD_VALUES | {"LOAD_METHOD", "LOAD_ATTR"}
-    SYNTHETIC = {
+    SYNTHETIC: ClassVar[dict[str, int]] = {
         "POLARS_EXPRESSION": 1,
     }
-    UNARY = {
+    UNARY: ClassVar[dict[str, str]] = {
         "UNARY_NEGATIVE": "-",
         "UNARY_POSITIVE": "+",
         "UNARY_NOT": "~",
     }
+
     PARSEABLE_OPS = (
         {"BINARY_OP", "BINARY_SUBSCR", "COMPARE_OP", "CONTAINS_OP", "IS_OP"}
         | set(UNARY)
