@@ -33,8 +33,7 @@ impl Series {
                 let new_values = if let DataType::Null = &**inner {
                     arr.values().clone()
                 } else {
-                    // we pass physical arrays
-                    // and cast to logical before we convert to arrow
+                    // We pass physical arrays and cast to logical before we convert to arrow.
                     let s = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
                             "",
@@ -61,10 +60,10 @@ impl Series {
             DataType::Categorical(_) => {
                 let ca = self.categorical().unwrap();
                 let arr = ca.logical().chunks()[chunk_idx].clone();
+                // SAFETY: categoricals are always u32's.
                 let cats = unsafe { UInt32Chunked::from_chunks("", vec![arr]) };
 
-                // safety:
-                // we only take a single chunk and change nothing about the index/rev_map mapping
+                // SAFETY: we only take a single chunk and change nothing about the index/rev_map mapping.
                 let new = unsafe {
                     CategoricalChunked::from_cats_and_rev_map_unchecked(
                         cats,

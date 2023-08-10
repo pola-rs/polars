@@ -303,6 +303,7 @@ pub type CloudOptions = PlHashMap<String, String>;
 pub unsafe trait StaticallyMatchesPolarsType<T: PolarsDataType> {}
 
 unsafe impl<T: PolarsNumericType> StaticallyMatchesPolarsType<T> for PrimitiveArray<T::Native> {}
+unsafe impl StaticallyMatchesPolarsType<CategoricalType> for PrimitiveArray<u32> {}
 unsafe impl StaticallyMatchesPolarsType<Utf8Type> for Utf8Array<i64> {}
 unsafe impl StaticallyMatchesPolarsType<BinaryType> for BinaryArray<i64> {}
 unsafe impl StaticallyMatchesPolarsType<BooleanType> for BooleanArray {}
