@@ -206,17 +206,7 @@ impl Series {
 
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
         let mut flags = self.get_flags();
-        match sorted {
-            IsSorted::Not => flags.remove(Settings::SORTED_DSC | Settings::SORTED_ASC),
-            IsSorted::Ascending => {
-                flags.remove(Settings::SORTED_DSC);
-                flags.insert(Settings::SORTED_ASC);
-            },
-            IsSorted::Descending => {
-                flags.remove(Settings::SORTED_ASC);
-                flags.insert(Settings::SORTED_DSC);
-            },
-        }
+        flags.set_sorted_flag(sorted);
         self.set_flags(flags);
     }
 

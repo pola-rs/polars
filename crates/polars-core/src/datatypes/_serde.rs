@@ -95,6 +95,7 @@ impl From<&DataType> for SerializableDataType {
             Categorical(_) => Self::Categorical,
             #[cfg(feature = "object")]
             Object(name) => Self::Object(name.to_string()),
+            dt => panic!("{dt:?} not supported"),
         }
     }
 }
