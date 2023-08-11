@@ -428,7 +428,7 @@ where
                                 self.aggregators.push(agg_fn.split())
                             }
                             offset
-                        }
+                        },
                         RawEntryMut::Occupied(entry) => *entry.get(),
                     };
                     // combine the aggregation functions
@@ -519,7 +519,7 @@ where
                 current_aggregators.push(agg_fn.split())
             }
             offset
-        }
+        },
         RawEntryMut::Occupied(entry) => *entry.get(),
     }
 }

@@ -84,14 +84,14 @@ impl From<AAggExpr> for GroupByMethod {
                 } else {
                     GroupByMethod::Min
                 }
-            }
+            },
             Max { propagate_nans, .. } => {
                 if propagate_nans {
                     GroupByMethod::NanMax
                 } else {
                     GroupByMethod::Max
                 }
-            }
+            },
             Median(_) => GroupByMethod::Median,
             NUnique(_) => GroupByMethod::NUnique,
             First(_) => GroupByMethod::First,
@@ -245,36 +245,36 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {}
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {},
             Alias(e, _) => container.push(*e),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first
                 container.push(*right);
                 container.push(*left);
-            }
+            },
             Cast { expr, .. } => container.push(*expr),
             Sort { expr, .. } => container.push(*expr),
             Take { expr, idx } => {
                 container.push(*idx);
                 // latest, so that it is popped first
                 container.push(*expr);
-            }
+            },
             SortBy { expr, by, .. } => {
                 for node in by {
                     container.push(*node)
                 }
                 // latest, so that it is popped first
                 container.push(*expr);
-            }
+            },
             Filter { input, by } => {
                 container.push(*by);
                 // latest, so that it is popped first
                 container.push(*input);
-            }
+            },
             Agg(agg_e) => {
                 let node = agg_e.get_input().first();
                 container.push(node);
-            }
+            },
             Ternary {
                 truthy,
                 falsy,
@@ -284,7 +284,7 @@ impl AExpr {
                 container.push(*falsy);
                 // latest, so that it is popped first
                 container.push(*truthy);
-            }
+            },
             AnonymousFunction { input, .. } | Function { input, .. } =>
             // we iterate in reverse order, so that the lhs is popped first and will be found
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
@@ -294,7 +294,7 @@ impl AExpr {
                     .rev()
                     .copied()
                     .for_each(|node| container.push(node))
-            }
+            },
             Explode(e) => container.push(*e),
             Window {
                 function,
@@ -310,7 +310,7 @@ impl AExpr {
                 }
                 // latest so that it is popped first
                 container.push(*function);
-            }
+            },
             Slice {
                 input,
                 offset,
@@ -320,7 +320,7 @@ impl AExpr {
                 container.push(*offset);
                 // latest so that it is popped first
                 container.push(*input);
-            }
+            },
         }
     }
 
@@ -335,28 +335,28 @@ impl AExpr {
                 *right = inputs[0];
                 *left = inputs[1];
                 return self;
-            }
+            },
             Take { expr, idx } => {
                 *idx = inputs[0];
                 *expr = inputs[1];
                 return self;
-            }
+            },
             Sort { expr, .. } => expr,
             SortBy { expr, by, .. } => {
                 *expr = *inputs.last().unwrap();
                 by.clear();
                 by.extend_from_slice(&inputs[..inputs.len() - 1]);
                 return self;
-            }
+            },
             Filter { input, by, .. } => {
                 *by = inputs[0];
                 *input = inputs[1];
                 return self;
-            }
+            },
             Agg(a) => {
                 a.set_input(inputs[0]);
                 return self;
-            }
+            },
             Ternary {
                 truthy,
                 falsy,
@@ -366,12 +366,12 @@ impl AExpr {
                 *falsy = inputs[1];
                 *truthy = inputs[2];
                 return self;
-            }
+            },
             AnonymousFunction { input, .. } | Function { input, .. } => {
                 input.clear();
                 input.extend(inputs.iter().rev().copied());
                 return self;
-            }
+            },
             Window {
                 function,
                 partition_by,
@@ -384,7 +384,7 @@ impl AExpr {
 
                 assert!(order_by.is_none());
                 return self;
-            }
+            },
         };
         *input = inputs[0];
         self

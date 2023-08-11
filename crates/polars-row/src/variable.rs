@@ -78,7 +78,7 @@ unsafe fn encode_one(
             };
             *out.get_unchecked_release_mut(0) = MaybeUninit::new(byte);
             1
-        }
+        },
         Some(val) => {
             let block_count = ceil(val.len(), BLOCK_SIZE);
             let end_offset = 1 + block_count * (BLOCK_SIZE + 1);
@@ -138,13 +138,13 @@ unsafe fn encode_one(
                 }
             }
             end_offset
-        }
+        },
         None => {
             *out.get_unchecked_release_mut(0) = MaybeUninit::new(get_null_sentinel(field));
             // // write remainder as zeros
             // out.get_unchecked_release_mut(1..).fill(MaybeUninit::new(0));
             1
-        }
+        },
     }
 }
 pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(

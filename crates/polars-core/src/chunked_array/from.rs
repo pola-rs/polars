@@ -39,7 +39,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             chunks.clear();
             chunks.push(Box::new(new_array));
             DataType::List(Box::new(cat.dtype().clone()))
-        }
+        },
         #[cfg(all(feature = "dtype-array", feature = "dtype-categorical"))]
         DataType::Array(inner, width) if *inner == DataType::Categorical(None) => {
             let array = concatenate_owned_unchecked(chunks).unwrap();
@@ -65,7 +65,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             chunks.clear();
             chunks.push(Box::new(new_array));
             DataType::Array(Box::new(cat.dtype().clone()), width)
-        }
+        },
         _ => dtype,
     }
 }

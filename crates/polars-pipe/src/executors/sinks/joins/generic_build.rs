@@ -197,10 +197,10 @@ impl Sink for GenericBuild {
                 RawEntryMut::Vacant(entry) => {
                     let key = Key::new(*h, current_chunk_offset, current_df_idx);
                     entry.insert(key, vec![payload]);
-                }
+                },
                 RawEntryMut::Occupied(mut entry) => {
                     entry.get_mut().push(payload);
-                }
+                },
             };
 
             current_df_idx += 1;
@@ -260,13 +260,13 @@ impl Sink for GenericBuild {
                                 payload.extend(iter);
                             }
                             entry.insert(key, payload);
-                        }
+                        },
                         RawEntryMut::Occupied(mut entry) => {
                             let iter = val
                                 .iter()
                                 .map(|[chunk_idx, val_idx]| [*chunk_idx + chunks_offset, *val_idx]);
                             entry.get_mut().extend(iter);
-                        }
+                        },
                     }
                 }
             })
@@ -325,7 +325,7 @@ impl Sink for GenericBuild {
                     self.join_type.clone(),
                 );
                 Ok(FinalizedSink::Operator(Box::new(probe_operator)))
-            }
+            },
             _ => unimplemented!(),
         }
     }

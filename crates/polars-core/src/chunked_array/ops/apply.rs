@@ -93,7 +93,7 @@ where
                     let vals = mutable.values_mut_slice();
                     vals.iter_mut().for_each(|v| *v = f(*v));
                     mutable.into()
-                }
+                },
             }
         }
     });

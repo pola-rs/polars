@@ -79,7 +79,7 @@ impl std::fmt::Display for ErrorState {
             ErrorState::NotYetEncountered { err } => write!(f, "NotYetEncountered({err})")?,
             ErrorState::AlreadyEncountered { prev_err_msg } => {
                 write!(f, "AlreadyEncountered({prev_err_msg})")?
-            }
+            },
         };
 
         Ok(())
@@ -121,12 +121,12 @@ impl ErrorStateSync {
                     ErrorState::NotYetEncountered { err } => err,
                     ErrorState::AlreadyEncountered { .. } => unreachable!(),
                 }
-            }
+            },
             ErrorState::AlreadyEncountered { prev_err_msg } => {
                 polars_err!(
                     ComputeError: "LogicalPlan already failed with error: '{}'", prev_err_msg,
                 )
-            }
+            },
         }
     }
 }

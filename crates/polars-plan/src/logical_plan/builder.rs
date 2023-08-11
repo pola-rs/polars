@@ -293,14 +293,14 @@ impl LogicalPlanBuilder {
             match schema {
                 None => {
                     let _ = inferred_schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
-                }
+                },
                 Some(inner) => {
                     schema = Some(Arc::new(
                         inner
                             .new_inserting_at_index(0, rc.name.as_str().into(), IDX_DTYPE)
                             .unwrap(),
                     ));
-                }
+                },
             }
         }
 
@@ -407,7 +407,7 @@ impl LogicalPlanBuilder {
             .filter_map(|(name, dtype)| match dtype {
                 DataType::Float32 | DataType::Float64 => {
                     Some(col(name).fill_nan(fill_value.clone()).alias(name))
-                }
+                },
                 _ => None,
             })
             .collect();
@@ -489,7 +489,7 @@ impl LogicalPlanBuilder {
             Expr::Column(name) => is_regex_projection(name),
             Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_) | Expr::DtypeColumn(_) => {
                 true
-            }
+            },
             _ => false,
         }) {
             let schema = try_delayed!(self.0.schema(), &self.0, into);
@@ -502,13 +502,13 @@ impl LogicalPlanBuilder {
                 1 => {
                     // all good
                     rewritten.pop().unwrap()
-                }
+                },
                 0 => {
                     let msg = "The predicate expanded to zero expressions. \
                         This may for example be caused by a regex not matching column names or \
                         a column dtype match not hitting any dtypes in the DataFrame";
                     return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
-                }
+                },
                 _ => {
                     let mut expanded = String::new();
                     for e in rewritten.iter().take(5) {
@@ -528,7 +528,7 @@ impl LogicalPlanBuilder {
                             This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression.")
                     };
                     return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
-                }
+                },
             }
         } else {
             predicate

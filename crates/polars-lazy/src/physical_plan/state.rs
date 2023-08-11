@@ -102,7 +102,7 @@ impl ExecutionState {
 
                 timer.store(start, end, name.as_ref().to_string());
                 out
-            }
+            },
         }
     }
 

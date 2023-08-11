@@ -50,7 +50,7 @@ pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Ser
                 }
             }
             default(series, fill_value)
-        }
+        },
         _ => default(series, fill_value),
     }
 }

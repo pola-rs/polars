@@ -86,7 +86,7 @@ unsafe fn write_anyvalue(
         AnyValue::Categorical(idx, rev_map, _) => {
             let v = rev_map.get(idx);
             fmt_and_escape_str(f, v, options)
-        }
+        },
         #[cfg(feature = "dtype-date")]
         AnyValue::Date(v) => {
             let date = temporal_conversions::date32_to_date(v);
@@ -94,7 +94,7 @@ unsafe fn write_anyvalue(
                 None => write!(f, "{date}"),
                 Some(fmt) => write!(f, "{}", date.format(fmt)),
             }
-        }
+        },
         #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(v, tu, _) => {
             let datetime_format = { *datetime_formats.get_unchecked(i) };
@@ -110,11 +110,11 @@ unsafe fn write_anyvalue(
                 #[cfg(not(feature = "timezones"))]
                 Some(_) => {
                     panic!("activate 'timezones' feature");
-                }
+                },
                 _ => ndt.format(datetime_format),
             };
             write!(f, "{formatted}")
-        }
+        },
         #[cfg(feature = "dtype-time")]
         AnyValue::Time(v) => {
             let date = temporal_conversions::time64ns_to_time(v);
@@ -122,7 +122,7 @@ unsafe fn write_anyvalue(
                 None => write!(f, "{date}"),
                 Some(fmt) => write!(f, "{}", date.format(fmt)),
             }
-        }
+        },
         ref dt => polars_bail!(ComputeError: "datatype {} cannot be written to csv", dt),
     }
     .map_err(|err| match value {
@@ -137,7 +137,7 @@ unsafe fn write_anyvalue(
             polars_err!(
                 ComputeError: "cannot format {} with format '{}'", type_name, datetime_format,
             )
-        }
+        },
         _ => polars_err!(ComputeError: "error writing value {}: {}", value, err),
     })
 }
@@ -206,7 +206,7 @@ pub(crate) fn write<W: Write>(
                 return Err(PolarsError::ComputeError(
                     "csv writer does not support object dtype".into(),
                 ))
-            }
+            },
             _ => false,
         };
         polars_ensure!(
@@ -245,7 +245,7 @@ pub(crate) fn write<W: Write>(
                     ),
                 };
                 (format, tz_parsed)
-            }
+            },
             DataType::Datetime(TimeUnit::Microseconds, tz) => {
                 let (format, tz_parsed) = match tz {
                     #[cfg(feature = "timezones")]
@@ -265,7 +265,7 @@ pub(crate) fn write<W: Write>(
                     ),
                 };
                 (format, tz_parsed)
-            }
+            },
             DataType::Datetime(TimeUnit::Nanoseconds, tz) => {
                 let (format, tz_parsed) = match tz {
                     #[cfg(feature = "timezones")]
@@ -285,7 +285,7 @@ pub(crate) fn write<W: Write>(
                     ),
                 };
                 (format, tz_parsed)
-            }
+            },
             _ => ("", None),
         })
         .unzip();
@@ -350,7 +350,7 @@ pub(crate) fn write<W: Write>(
                         None => {
                             finished = true;
                             break;
-                        }
+                        },
                     }
                     let current_ptr = col as *const SeriesIter;
                     if current_ptr != last_ptr {

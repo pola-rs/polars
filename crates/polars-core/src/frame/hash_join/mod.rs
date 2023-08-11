@@ -241,14 +241,14 @@ impl DataFrame {
                     left_idx = slice_slice(left_idx, offset, len);
                 }
                 unsafe { self._create_left_df_from_slice(left_idx, true, true) }
-            }
+            },
             ChunkJoinIds::Right(left_idx) => {
                 let mut left_idx = &*left_idx;
                 if let Some((offset, len)) = slice {
                     left_idx = slice_slice(left_idx, offset, len);
                 }
                 unsafe { self.create_left_df_chunked(left_idx, true) }
-            }
+            },
         };
 
         let materialize_right = || match right_idx {
@@ -262,14 +262,14 @@ impl DataFrame {
                         right_idx.iter().map(|opt_i| opt_i.map(|i| i as usize)),
                     )
                 }
-            }
+            },
             ChunkJoinOptIds::Right(right_idx) => {
                 let mut right_idx = &*right_idx;
                 if let Some((offset, len)) = slice {
                     right_idx = slice_slice(right_idx, offset, len);
                 }
                 unsafe { other.take_opt_chunked_unchecked(right_idx) }
-            }
+            },
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
 
@@ -390,7 +390,7 @@ impl DataFrame {
                     CategoricalChunked::from_cats_and_rev_map_unchecked(logical, new_rev_map)
                         .into_series()
                 }
-            }
+            },
             dt @ DataType::Datetime(_, _)
             | dt @ DataType::Time
             | dt @ DataType::Date

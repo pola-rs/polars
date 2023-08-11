@@ -60,12 +60,12 @@ fn deserialize_utf8_into<'a, O: Offset, A: Borrow<BorrowedValue<'a>>>(
             BorrowedValue::String(v) => target.push(Some(v.as_ref())),
             BorrowedValue::Static(StaticNode::Bool(v)) => {
                 target.push(Some(if *v { "true" } else { "false" }))
-            }
+            },
             BorrowedValue::Static(node) if !matches!(node, StaticNode::Null) => {
                 write!(scratch, "{node}").unwrap();
                 target.push(Some(scratch.as_str()));
                 scratch.clear();
-            }
+            },
             _ => target.push_null(),
         }
     }
@@ -87,11 +87,11 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
             offsets
                 .try_push_usize(value.len())
                 .expect("List offset is too large :/");
-        }
+        },
         _ => {
             validity.push(false);
             offsets.extend_constant(1);
-        }
+        },
     });
 
     let values = _deserialize(&inner, child.clone());
@@ -173,7 +173,7 @@ fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
         ),
         _ => {
             todo!()
-        }
+        },
     }
 }
 
@@ -197,13 +197,13 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
                     inner.push(value.get(*s).unwrap_or(&JSON_NULL_VALUE))
                 });
                 validity.push(true);
-            }
+            },
             _ => {
                 values
                     .iter_mut()
                     .for_each(|(_, (_, inner))| inner.push(&JSON_NULL_VALUE));
                 validity.push(false);
-            }
+            },
         };
     });
 
@@ -296,10 +296,10 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         DataType::Null => Box::new(NullArray::new(data_type, rows.len())),
         DataType::Boolean => {
             fill_generic_array_from::<_, _, BooleanArray>(deserialize_boolean_into, rows)
-        }
+        },
         DataType::Int8 => {
             fill_array_from::<_, _, PrimitiveArray<i8>>(deserialize_primitive_into, data_type, rows)
-        }
+        },
         DataType::Int16 => fill_array_from::<_, _, PrimitiveArray<i16>>(
             deserialize_primitive_into,
             data_type,
@@ -314,17 +314,17 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
                 data_type,
                 rows,
             )
-        }
+        },
         DataType::Interval(IntervalUnit::DayTime) => {
             unimplemented!("There is no natural representation of DayTime in JSON.")
-        }
+        },
         DataType::Int64 | DataType::Date64 | DataType::Time64(_) | DataType::Duration(_) => {
             fill_array_from::<_, _, PrimitiveArray<i64>>(
                 deserialize_primitive_into,
                 data_type,
                 rows,
             )
-        }
+        },
         DataType::Timestamp(tu, tz) => {
             let iter = rows.iter().map(|row| match row.borrow() {
                 BorrowedValue::Static(StaticNode::I64(v)) => Some(*v),
@@ -333,15 +333,15 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
                     (_, Some(ref tz)) => {
                         let tz = temporal_conversions::parse_offset(tz).unwrap();
                         temporal_conversions::utf8_to_timestamp_scalar(v, "%+", &tz, tu)
-                    }
+                    },
                 },
                 _ => None,
             });
             Box::new(Int64Array::from_iter(iter).to(data_type))
-        }
+        },
         DataType::UInt8 => {
             fill_array_from::<_, _, PrimitiveArray<u8>>(deserialize_primitive_into, data_type, rows)
-        }
+        },
         DataType::UInt16 => fill_array_from::<_, _, PrimitiveArray<u16>>(
             deserialize_primitive_into,
             data_type,
@@ -370,7 +370,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ),
         DataType::LargeUtf8 => {
             fill_generic_array_from::<_, _, Utf8Array<i64>>(deserialize_utf8_into, rows)
-        }
+        },
         DataType::LargeList(_) => Box::new(deserialize_list(rows, data_type)),
         DataType::LargeBinary => Box::new(deserialize_binary(rows)),
         DataType::Struct(_) => Box::new(deserialize_struct(rows, data_type)),
@@ -448,20 +448,20 @@ pub fn deserialize_records(json: &BorrowedValue, schema: &Schema) -> PolarsResul
                             })?;
                             deserialize_into(arr, &[value]);
                         }
-                    }
+                    },
                     _ => {
                         return Err(PolarsError::ComputeError(
                             "each row must be an Object".into(),
                         ))
-                    }
+                    },
                 }
             }
-        }
+        },
         _ => {
             return Err(PolarsError::ComputeError(
                 "outer type must be an Array".into(),
             ))
-        }
+        },
     }
 
     Ok(Chunk::new(

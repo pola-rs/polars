@@ -44,7 +44,7 @@ pub(super) fn process_functions(
                 function: function.clone(),
             };
             Ok(lp)
-        }
+        },
         Explode { columns, .. } => {
             columns.iter().for_each(|name| {
                 add_str_to_accumulated(name, &mut acc_projections, &mut projected_names, expr_arena)
@@ -60,7 +60,7 @@ pub(super) fn process_functions(
             Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
                 .explode(columns.clone())
                 .build())
-        }
+        },
         Melt { args, .. } => {
             let lp = ALogicalPlan::MapFunction {
                 input,
@@ -77,7 +77,7 @@ pub(super) fn process_functions(
                 lp_arena,
                 expr_arena,
             )
-        }
+        },
         _ => {
             let lp = ALogicalPlan::MapFunction {
                 input,
@@ -131,6 +131,6 @@ pub(super) fn process_functions(
                     expr_arena,
                 )
             }
-        }
+        },
     }
 }

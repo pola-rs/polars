@@ -282,7 +282,7 @@ impl Sink for SortSinkMultiple {
                     &self.output_schema,
                 );
                 Ok(FinalizedSink::Finished(df))
-            }
+            },
             FinalizedSink::Source(source) => Ok(FinalizedSink::Source(Box::new(DropEncoded {
                 source,
                 sort_idx: self.sort_idx.clone(),

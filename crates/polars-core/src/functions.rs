@@ -168,7 +168,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
                 None => {
                     // should not happen as the out loop counts to length
                     unreachable!()
-                }
+                },
             }
         });
 

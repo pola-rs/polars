@@ -108,7 +108,7 @@ fn process_list_arithmetic(
             } else {
                 Ok(None)
             }
-        }
+        },
         (_, DataType::List(inner)) => {
             if type_left != **inner {
                 let new_node_left = expr_arena.add(AExpr::Cast {
@@ -125,7 +125,7 @@ fn process_list_arithmetic(
             } else {
                 Ok(None)
             }
-        }
+        },
         _ => unreachable!(),
     }
 }
@@ -157,7 +157,7 @@ fn process_struct_numeric_arithmetic(
             } else {
                 Ok(None)
             }
-        }
+        },
         (_, DataType::Struct(fields)) => {
             if let Some(first) = fields.first() {
                 let new_node_left = expr_arena.add(AExpr::Cast {
@@ -174,7 +174,7 @@ fn process_struct_numeric_arithmetic(
             } else {
                 Ok(None)
             }
-        }
+        },
         _ => unreachable!(),
     }
 }
@@ -221,25 +221,25 @@ pub(super) fn process_binary(
             if op.is_comparison() && dt.is_numeric() =>
         {
             return Ok(None)
-        }
+        },
         #[cfg(feature = "dtype-categorical")]
         (Utf8 | Categorical(_), dt, op) | (dt, Utf8 | Categorical(_), op)
             if op.is_comparison() && dt.is_numeric() =>
         {
             return Ok(None)
-        }
+        },
         #[cfg(feature = "dtype-date")]
         (Date, Utf8, op) | (Utf8, Date, op) if op.is_comparison() => err_date_str_compare()?,
         #[cfg(feature = "dtype-datetime")]
         (Datetime(_, _), Utf8, op) | (Utf8, Datetime(_, _), op) if op.is_comparison() => {
             err_date_str_compare()?
-        }
+        },
         #[cfg(feature = "dtype-time")]
         (Time, Utf8, op) if op.is_comparison() => err_date_str_compare()?,
         // structs can be arbitrarily nested, leave the complexity to the caller for now.
         #[cfg(feature = "dtype-struct")]
         (Struct(_), Struct(_), _op) => return Ok(None),
-        _ => {}
+        _ => {},
     }
     let compare_cat_to_string = compares_cat_to_string(&type_left, &type_right, op);
     let datetime_arithmetic = is_datetime_arithmetic(&type_left, &type_right, op);

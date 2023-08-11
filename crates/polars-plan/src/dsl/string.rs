@@ -169,7 +169,7 @@ impl StringNameSpace {
                 } else {
                     TimeUnit::Microseconds
                 }
-            }
+            },
             (None, None) => TimeUnit::Microseconds,
         };
 
@@ -222,7 +222,7 @@ impl StringNameSpace {
                 Some(s) => {
                     let iter = s.split(&by);
                     builder.append_values_iter(iter);
-                }
+                },
             });
             Ok(Some(builder.finish().into_series()))
         };
@@ -247,7 +247,7 @@ impl StringNameSpace {
                 Some(s) => {
                     let iter = s.split_inclusive(&by);
                     builder.append_values_iter(iter);
-                }
+                },
             });
             Ok(Some(builder.finish().into_series()))
         };
@@ -276,7 +276,7 @@ impl StringNameSpace {
                     for arr in &mut arrs {
                         arr.push_null()
                     }
-                }
+                },
                 Some(s) => {
                     let mut arr_iter = arrs.iter_mut();
                     let split_iter = s.split(&by);
@@ -287,7 +287,7 @@ impl StringNameSpace {
                     for arr in arr_iter {
                         arr.push_null()
                     }
-                }
+                },
             });
             let fields = arrs
                 .into_iter()
@@ -330,7 +330,7 @@ impl StringNameSpace {
                     for arr in &mut arrs {
                         arr.push_null()
                     }
-                }
+                },
                 Some(s) => {
                     let mut arr_iter = arrs.iter_mut();
                     let split_iter = s.split_inclusive(&by);
@@ -341,7 +341,7 @@ impl StringNameSpace {
                     for arr in arr_iter {
                         arr.push_null()
                     }
-                }
+                },
             });
             let fields = arrs
                 .into_iter()
@@ -384,7 +384,7 @@ impl StringNameSpace {
                     for arr in &mut arrs {
                         arr.push_null()
                     }
-                }
+                },
                 Some(s) => {
                     let mut arr_iter = arrs.iter_mut();
                     let split_iter = s.splitn(n, &by);
@@ -395,7 +395,7 @@ impl StringNameSpace {
                     for arr in arr_iter {
                         arr.push_null()
                     }
-                }
+                },
             });
             let fields = arrs
                 .into_iter()

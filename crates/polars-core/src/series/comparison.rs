@@ -57,7 +57,7 @@ where
         Some(cat_idx) => {
             let cat = cat.cast(&DataType::UInt32).unwrap();
             compare(&cat, cat_idx)
-        }
+        },
     }
 }
 
@@ -112,7 +112,7 @@ impl ChunkCompare<&Series> for Series {
                     |s, idx| s.equal(idx),
                     false,
                 );
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             (Utf8, Categorical(_), 1, _) => {
                 return compare_cat_to_str_series(
@@ -122,7 +122,7 @@ impl ChunkCompare<&Series> for Series {
                     |s, idx| s.equal(idx),
                     false,
                 );
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
@@ -144,11 +144,11 @@ impl ChunkCompare<&Series> for Series {
                         consider setting a global string cache"
                     );
                 }
-            }
+            },
             (Null, Null, _, _) => BooleanChunked::full_null(self.name(), self.len()),
             _ => {
                 impl_compare!(self, rhs, equal)
-            }
+            },
         };
         out.rename(self.name());
         Ok(out)
@@ -168,7 +168,7 @@ impl ChunkCompare<&Series> for Series {
                     |s, idx| s.equal_missing(idx),
                     false,
                 );
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             (Utf8, Categorical(_), 1, _) => {
                 return compare_cat_to_str_series(
@@ -178,7 +178,7 @@ impl ChunkCompare<&Series> for Series {
                     |s, idx| s.equal_missing(idx),
                     false,
                 );
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
@@ -200,11 +200,11 @@ impl ChunkCompare<&Series> for Series {
                         consider setting a global string cache"
                     );
                 }
-            }
+            },
             (Null, Null, _, _) => BooleanChunked::full(self.name(), true, self.len()),
             _ => {
                 impl_compare!(self, rhs, equal_missing)
-            }
+            },
         };
         out.rename(self.name());
         Ok(out)
@@ -224,7 +224,7 @@ impl ChunkCompare<&Series> for Series {
                     |s, idx| s.not_equal(idx),
                     true,
                 );
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             (Utf8, Categorical(_), 1, _) => {
                 return compare_cat_to_str_series(
@@ -234,7 +234,7 @@ impl ChunkCompare<&Series> for Series {
                     |s, idx| s.not_equal(idx),
                     true,
                 );
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
@@ -256,11 +256,11 @@ impl ChunkCompare<&Series> for Series {
                         consider setting a global string cache"
                     );
                 }
-            }
+            },
             (Null, Null, _, _) => BooleanChunked::full_null(self.name(), self.len()),
             _ => {
                 impl_compare!(self, rhs, not_equal)
-            }
+            },
         };
         out.rename(self.name());
         Ok(out)
@@ -280,7 +280,7 @@ impl ChunkCompare<&Series> for Series {
                     |s, idx| s.not_equal_missing(idx),
                     true,
                 );
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             (Utf8, Categorical(_), 1, _) => {
                 return compare_cat_to_str_series(
@@ -290,7 +290,7 @@ impl ChunkCompare<&Series> for Series {
                     |s, idx| s.not_equal_missing(idx),
                     true,
                 );
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
@@ -312,11 +312,11 @@ impl ChunkCompare<&Series> for Series {
                         consider setting a global string cache"
                     );
                 }
-            }
+            },
             (Null, Null, _, _) => BooleanChunked::full(self.name(), false, self.len()),
             _ => {
                 impl_compare!(self, rhs, not_equal_missing)
-            }
+            },
         };
         out.rename(self.name());
         Ok(out)
@@ -434,7 +434,7 @@ impl ChunkCompare<&str> for Series {
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => {
                 compare_cat_to_str_value(self, rhs, self.name(), |lhs, idx| lhs.equal(idx), false)
-            }
+            },
             _ => Ok(BooleanChunked::full(self.name(), false, self.len())),
         }
     }

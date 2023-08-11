@@ -72,29 +72,29 @@ pub fn is_first(s: &Series) -> PolarsResult<BooleanChunked> {
         Boolean => {
             let ca = s.bool().unwrap();
             is_first_boolean(ca)
-        }
+        },
         Binary => {
             let ca = s.binary().unwrap();
             is_first_bin(ca)
-        }
+        },
         Utf8 => {
             let s = s.cast(&Binary).unwrap();
             return is_first(&s);
-        }
+        },
         Float32 => {
             let ca = s.bit_repr_small();
             is_first_numeric(&ca)
-        }
+        },
         Float64 => {
             let ca = s.bit_repr_large();
             is_first_numeric(&ca)
-        }
+        },
         dt if dt.is_numeric() => {
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_first_numeric(ca)
             })
-        }
+        },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_first_struct(&s),
         dt => polars_bail!(opq = is_first, dt),

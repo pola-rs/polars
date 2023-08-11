@@ -364,7 +364,7 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
                     }
                 }
                 None
-            }
+            },
         }
     }
 }
@@ -529,7 +529,7 @@ pub(crate) fn to_datetime(
                     }
                 })?,
             }
-        }
+        },
     }
 }
 #[cfg(feature = "dtype-date")]
@@ -544,6 +544,6 @@ pub(crate) fn to_date(ca: &Utf8Chunked) -> PolarsResult<DateChunked> {
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
             let mut infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None).unwrap();
             infer.coerce_utf8(ca).date().cloned()
-        }
+        },
     }
 }

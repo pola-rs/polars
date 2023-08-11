@@ -123,14 +123,14 @@ where
                         match opt_v {
                             Some(&v) if v >= len => {
                                 inbounds = false;
-                            }
-                            _ => {}
+                            },
+                            _ => {},
                         }
                     }
                 }
                 polars_ensure!(inbounds, ComputeError: "take indices are out of bounds");
                 Ok(())
-            }
+            },
         }
     }
 }

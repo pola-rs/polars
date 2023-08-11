@@ -77,7 +77,7 @@ where
                     }
                 }
                 Ok(Some(acc))
-            }
+            },
             None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
     }) as Arc<dyn SeriesUdf>);
@@ -122,7 +122,7 @@ where
                 }
 
                 StructChunked::new(acc.name(), &result).map(|ca| Some(ca.into_series()))
-            }
+            },
             None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
     }) as Arc<dyn SeriesUdf>);

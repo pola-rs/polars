@@ -44,7 +44,7 @@ where
                             old_wt = if adjust { old_wt + new_wt } else { T::one() };
                         }
                     }
-                }
+                },
             }
             match non_null_cnt < min_periods {
                 true => None,

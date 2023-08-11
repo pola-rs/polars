@@ -14,13 +14,13 @@ pub(crate) fn agg_source_paths(
         match lp {
             Scan { path, .. } => {
                 paths.insert(path.clone());
-            }
+            },
             // always block parallel on anonymous sources
             // as we cannot know if they will lock or not.
             AnonymousScan { .. } => {
                 paths.insert("anonymous".into());
-            }
-            _ => {}
+            },
+            _ => {},
         }
     })
 }

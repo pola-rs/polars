@@ -48,7 +48,7 @@ pub(super) fn collect_trails(
             *id += 1;
             trails.insert(*id, new_trail);
             collect_trails(*input_right, lp_arena, trails, id, true)?;
-        }
+        },
         Union { inputs, .. } => {
             if inputs.len() > 200 {
                 // don't even bother with cse on this many inputs
@@ -68,10 +68,10 @@ pub(super) fn collect_trails(
                     trails.insert(*id, new_trail.clone());
                 }
             }
-        }
+        },
         ExtContext { .. } => {
             // block for now.
-        }
+        },
         lp => {
             // other nodes have only a single input
             let nodes = &mut [None];
@@ -79,7 +79,7 @@ pub(super) fn collect_trails(
             if let Some(input) = nodes[0] {
                 collect_trails(input, lp_arena, trails, id, collect)?
             }
-        }
+        },
     }
     Some(())
 }
@@ -133,10 +133,10 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
             path_left == path_right
                 && scan_type_left == scan_type_right
                 && predicate_equal(*predicate_left, *predicate_right, expr_arena)
-        }
+        },
         (Selection { predicate: l, .. }, Selection { predicate: r, .. }) => {
             AExpr::is_equal(*l, *r, expr_arena)
-        }
+        },
         (Projection { expr: l, .. }, Projection { expr: r, .. })
         | (HStack { exprs: l, .. }, HStack { exprs: r, .. }) => expr_nodes_equal(l, r, expr_arena),
         (
@@ -187,7 +187,7 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
                 && options_l == options_r
                 && expr_nodes_equal(keys_l, keys_r, expr_arena)
                 && expr_nodes_equal(agg_l, agg_r, expr_arena)
-        }
+        },
         #[cfg(feature = "python")]
         (PythonScan { options: l, .. }, PythonScan { options: r, .. }) => l == r,
         _ => {
@@ -197,7 +197,7 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
             // is below the joining/union root
             // that gets complicated quick
             false
-        }
+        },
     }
 }
 
@@ -323,7 +323,7 @@ pub(crate) fn elim_cmn_subplans(
                 cache_mapping.insert(node1, cache_id);
                 cache_mapping.insert(node2, cache_id);
                 cache_id
-            }
+            },
         };
         *cache_counts.entry(cache_id).or_insert(0usize) += 1;
     }
@@ -344,7 +344,7 @@ pub(crate) fn elim_cmn_subplans(
             (_, Some(h)) => *h,
             _ => {
                 unreachable!()
-            }
+            },
         };
         let cache_count = *cache_counts.get(&cache_id).unwrap();
 
@@ -393,7 +393,7 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
             } else {
                 options.file_counter -= acc_count as FileCount
             }
-        }
+        },
         Cache { count, input, .. } => {
             // we use usize::MAX for an infinite cache.
             let new_count = if *count != usize::MAX {
@@ -402,7 +402,7 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
                 acc_count
             };
             decrement_file_counters_by_cache_hits(*input, lp_arena, _expr_arena, new_count, scratch)
-        }
+        },
         lp => {
             lp.copy_inputs(scratch);
             while let Some(input) = scratch.pop() {
@@ -414,6 +414,6 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
                     scratch,
                 )
             }
-        }
+        },
     }
 }

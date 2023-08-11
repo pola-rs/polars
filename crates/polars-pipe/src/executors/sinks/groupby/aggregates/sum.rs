@@ -27,7 +27,7 @@ impl<K: NumericNative + Add<Output = K> + NumCast> SumAgg<K> {
         match (item.map(|v| K::from(v).unwrap()), self.sum) {
             (Some(val), Some(sum)) => self.sum = Some(sum + val),
             (Some(val), None) => self.sum = Some(val),
-            (None, _) => {}
+            (None, _) => {},
         }
     }
 }
@@ -99,11 +99,11 @@ where
         match (sum_primitive(arr), self.sum) {
             (Some(val), Some(sum)) => {
                 self.sum = Some(sum + val);
-            }
+            },
             (Some(val), None) => {
                 self.sum = Some(val);
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 

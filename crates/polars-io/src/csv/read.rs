@@ -56,7 +56,7 @@ impl NullValuesCompiled {
             Columns(v) => {
                 debug_assert!(index < v.len());
                 v.get_unchecked(index).as_bytes() == field
-            }
+            },
         }
     }
 }
@@ -73,7 +73,7 @@ impl NullValues {
                     null_values[i] = null_value;
                 }
                 NullValuesCompiled::Columns(null_values)
-            }
+            },
         })
     }
 }
@@ -389,31 +389,31 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                         to_cast.push(fld);
                         // let inference decide the column type
                         None
-                    }
+                    },
                     Int8 | Int16 | UInt8 | UInt16 => {
                         // We have not compiled these buffers, so we cast them later.
                         to_cast.push(fld.clone());
                         fld.coerce(DataType::Int32);
                         Some(fld)
-                    }
+                    },
                     #[cfg(feature = "dtype-categorical")]
                     Categorical(_) => {
                         _has_categorical = true;
                         Some(fld)
-                    }
+                    },
                     #[cfg(feature = "dtype-decimal")]
                     Decimal(precision, scale) => match (precision, scale) {
                         (_, Some(_)) => {
                             to_cast.push(fld.clone());
                             fld.coerce(Utf8);
                             Some(fld)
-                        }
+                        },
                         _ => {
                             _err = Some(PolarsError::ComputeError(
                                 "'scale' must be set when reading csv column as Decimal".into(),
                             ));
                             None
-                        }
+                        },
                     },
                     _ => Some(fld),
                 }
@@ -479,7 +479,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_mmap(self, schema))
-            }
+            },
         }
     }
     pub fn batched_read(
@@ -507,7 +507,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_read(self, schema))
-            }
+            },
         }
     }
 }
@@ -613,7 +613,7 @@ where
                         .collect::<Schema>();
 
                     Arc::new(schema)
-                }
+                },
                 _ => Arc::default(),
             };
             df = parse_dates(df, &fixed_schema)
@@ -640,7 +640,7 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
                         return ca.into_series();
                     }
                     s
-                }
+                },
                 _ => s,
             }
         })

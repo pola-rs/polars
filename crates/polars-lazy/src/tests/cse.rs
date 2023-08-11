@@ -54,7 +54,7 @@ fn test_cse_unions() -> PolarsResult<()> {
                 } else {
                     false
                 }
-            }
+            },
             _ => true,
         }
     }));
@@ -139,7 +139,7 @@ fn test_cse_union2_4925() -> PolarsResult<()> {
                 Cache { id, count, .. } => {
                     assert_eq!(*count, 1);
                     Some(*id)
-                }
+                },
                 _ => None,
             }
         })
@@ -197,7 +197,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
                     ));
 
                     Some(*id)
-                }
+                },
                 _ => None,
             }
         })

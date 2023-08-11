@@ -230,7 +230,7 @@ mod inner_mod {
                     Some(v) => {
                         // SAFETY: we have pre-allocated.
                         unsafe { values.push_unchecked(v) }
-                    }
+                    },
                     None => {
                         // SAFETY: we allocated enough for both the `values` vec
                         // and the `validity_ptr`.
@@ -238,7 +238,7 @@ mod inner_mod {
                             values.push_unchecked(T::Native::default());
                             unset_bit_raw(validity_ptr, offset + window_size - 1);
                         }
-                    }
+                    },
                 }
             }
             let arr = PrimitiveArray::new(

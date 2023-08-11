@@ -150,7 +150,7 @@ pub(super) fn time(s: &Series) -> PolarsResult<Series> {
         DataType::Datetime(_, Some(_)) => {
             polars_ops::prelude::replace_time_zone(s.datetime().unwrap(), None, None)?
                 .cast(&DataType::Time)
-        }
+        },
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Time),
         DataType::Date => s.datetime().unwrap().cast(&DataType::Time),
         DataType::Time => Ok(s.clone()),
@@ -170,7 +170,7 @@ pub(super) fn date(s: &Series) -> PolarsResult<Series> {
                 out.set_sorted_flag(IsSorted::Not);
             }
             Ok(out)
-        }
+        },
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Date),
         DataType::Date => Ok(s.clone()),
         dtype => polars_bail!(ComputeError: "expected Datetime or Date, got {}", dtype),
@@ -189,7 +189,7 @@ pub(super) fn datetime(s: &Series) -> PolarsResult<Series> {
                 out.set_sorted_flag(IsSorted::Not);
             }
             Ok(out)
-        }
+        },
         DataType::Datetime(tu, _) => s.datetime().unwrap().cast(&DataType::Datetime(*tu, None)),
         dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
     }
@@ -276,7 +276,7 @@ pub(super) fn base_utc_offset(s: &Series) -> PolarsResult<Series> {
                 .parse::<Tz>()
                 .expect("Time zone has already been validated");
             Ok(base_utc_offset_fn(s.datetime().unwrap(), time_unit, &tz).into_series())
-        }
+        },
         dt => polars_bail!(
             opq = base_utc_offset,
             got = dt,
@@ -292,7 +292,7 @@ pub(super) fn dst_offset(s: &Series) -> PolarsResult<Series> {
                 .parse::<Tz>()
                 .expect("Time zone has already been validated");
             Ok(dst_offset_fn(s.datetime().unwrap(), time_unit, &tz).into_series())
-        }
+        },
         dt => polars_bail!(
             opq = dst_offset,
             got = dt,

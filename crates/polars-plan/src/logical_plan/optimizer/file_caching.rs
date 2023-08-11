@@ -45,7 +45,7 @@ fn process_with_columns(
         // no projection, so we must take all columns
         None => {
             cols.1.extend(schema.iter_names().map(|t| t.to_string()));
-        }
+        },
     }
 }
 
@@ -73,12 +73,12 @@ pub fn collect_fingerprints(
                 slice,
             };
             fps.push(fp);
-        }
+        },
         lp => {
             for input in lp.get_inputs() {
                 collect_fingerprints(input, fps, lp_arena, expr_arena)
             }
-        }
+        },
     }
 }
 
@@ -113,12 +113,12 @@ pub fn find_column_union_and_fingerprints(
                 columns,
                 &file_info.schema,
             );
-        }
+        },
         lp => {
             for input in lp.get_inputs() {
                 find_column_union_and_fingerprints(input, columns, lp_arena, expr_arena)
             }
-        }
+        },
     }
 }
 
@@ -246,7 +246,7 @@ impl FileCacher {
                         behind_cache,
                     );
                     lp_arena.replace(root, lp);
-                }
+                },
                 lp => {
                     let behind_cache = behind_cache || matches!(&lp, ALogicalPlan::Cache { .. });
 
@@ -255,7 +255,7 @@ impl FileCacher {
                         stack.push((input, behind_cache))
                     }
                     lp_arena.replace(root, lp);
-                }
+                },
             }
         }
         scratch.clear();

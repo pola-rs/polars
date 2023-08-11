@@ -18,7 +18,7 @@ impl DtypeMerger {
             #[cfg(feature = "dtype-categorical")]
             Some(DataType::Categorical(Some(rev_map))) if rev_map.is_global() => {
                 DtypeMerger::Categorical(RevMapMerger::new(rev_map))
-            }
+            },
             _ => DtypeMerger::Other(dtype),
         }
     }
@@ -32,11 +32,11 @@ impl DtypeMerger {
                     polars_bail!(ComputeError: "expected categorical rev-map")
                 };
                 return merger.merge_map(rev_map);
-            }
+            },
             DtypeMerger::Other(Some(set_dtype)) => {
                 polars_ensure!(set_dtype == dtype, ComputeError: "dtypes don't match, got {}, expected: {}", dtype, set_dtype)
-            }
-            _ => {}
+            },
+            _ => {},
         }
         Ok(())
     }

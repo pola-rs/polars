@@ -54,7 +54,7 @@ pub fn _use_rolling_kernels(groups: &GroupsSlice, chunks: &[ArrayRef]) -> bool {
             let second_offset = groups[1][0];
 
             second_offset < (first_offset + first_len) && chunks.len() == 1
-        }
+        },
     }
 }
 
@@ -106,7 +106,7 @@ where
                     // safety: we are in bounds
                     unsafe { validity.set_unchecked(idx, false) };
                     T::default()
-                }
+                },
             }
         })
         .collect_trusted::<Vec<_>>();
@@ -359,7 +359,7 @@ where
                 // checked with invalid quantile check
                 take._quantile(quantile, interpol).unwrap_unchecked()
             })
-        }
+        },
         GroupsProxy::Slice { groups, .. } => {
             if _use_rolling_kernels(groups, ca.chunks()) {
                 // this cast is a no-op for floats
@@ -387,7 +387,7 @@ where
                                 interpol,
                             })),
                         )
-                    }
+                    },
                 };
                 // The rolling kernels works on the dtype, this is not yet the
                 // float output type we need.
@@ -405,11 +405,11 @@ where
                                 ._quantile(quantile, interpol)
                                 .unwrap_unchecked()
                                 .map(|flt| NumCast::from(flt).unwrap_unchecked())
-                        }
+                        },
                     }
                 })
             }
-        }
+        },
     }
 }
 
@@ -432,10 +432,10 @@ where
                 let take = { ca.take_unchecked(idx.into()) };
                 take._median()
             })
-        }
+        },
         GroupsProxy::Slice { .. } => {
             agg_quantile_generic::<T, K>(ca, groups, 0.5, QuantileInterpolOptions::Linear)
-        }
+        },
     }
 }
 
@@ -461,11 +461,11 @@ where
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_first(groups);
-            }
+            },
             (IsSorted::Descending, 0) => {
                 return self.clone().into_series().agg_last(groups);
-            }
-            _ => {}
+            },
+            _ => {},
         }
         match groups {
             GroupsProxy::Idx(groups) => {
@@ -495,7 +495,7 @@ where
                         )
                     }
                 })
-            }
+            },
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
@@ -528,11 +528,11 @@ where
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.min()
-                            }
+                            },
                         }
                     })
                 }
-            }
+            },
         }
     }
 
@@ -541,11 +541,11 @@ where
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_last(groups);
-            }
+            },
             (IsSorted::Descending, 0) => {
                 return self.clone().into_series().agg_first(groups);
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         match groups {
@@ -578,7 +578,7 @@ where
                         )
                     }
                 })
-            }
+            },
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
@@ -611,11 +611,11 @@ where
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.max()
-                            }
+                            },
                         }
                     })
                 }
-            }
+            },
         }
     }
 
@@ -649,7 +649,7 @@ where
                         .unwrap_or(T::Native::zero())
                     }
                 })
-            }
+            },
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
@@ -679,11 +679,11 @@ where
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.sum().unwrap_or(T::Native::zero())
-                            }
+                            },
                         }
                     })
                 }
-            }
+            },
         }
     }
 }
@@ -743,7 +743,7 @@ where
                     };
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
-            }
+            },
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
@@ -773,11 +773,11 @@ where
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.mean().map(|flt| NumCast::from(flt).unwrap())
-                            }
+                            },
                         }
                     })
                 }
-            }
+            },
         }
     }
 
@@ -803,7 +803,7 @@ where
                     };
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
-            }
+            },
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
@@ -822,7 +822,7 @@ where
                                 offset_iter,
                                 Some(Arc::new(RollingVarParams { ddof })),
                             )
-                        }
+                        },
                     };
                     ChunkedArray::<T>::from_chunk_iter("", [arr]).into_series()
                 } else {
@@ -834,11 +834,11 @@ where
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof).map(|flt| NumCast::from(flt).unwrap())
-                            }
+                            },
                         }
                     })
                 }
-            }
+            },
         }
     }
     pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series
@@ -862,7 +862,7 @@ where
                     };
                     out.map(|flt| NumCast::from(flt.sqrt()).unwrap())
                 })
-            }
+            },
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
@@ -881,7 +881,7 @@ where
                                 offset_iter,
                                 Some(Arc::new(RollingVarParams { ddof })),
                             )
-                        }
+                        },
                     };
 
                     let mut ca = ChunkedArray::<T>::from_chunk_iter("", [arr]);
@@ -896,11 +896,11 @@ where
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof).map(|flt| NumCast::from(flt).unwrap())
-                            }
+                            },
                         }
                     })
                 }
-            }
+            },
         }
     }
 }
@@ -985,15 +985,15 @@ where
                                 .map(|(sum, null_count)| {
                                     sum / (idx.len() as f64 - null_count as f64)
                                 })
-                            }
+                            },
                             _ => {
                                 let take = { self.take_unchecked(idx.into()) };
                                 take.mean()
-                            }
+                            },
                         }
                     }
                 })
-            }
+            },
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
@@ -1010,11 +1010,11 @@ where
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.mean()
-                            }
+                            },
                         }
                     })
                 }
-            }
+            },
         }
     }
 
@@ -1035,7 +1035,7 @@ where
                         take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
                     }
                 })
-            }
+            },
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
@@ -1052,11 +1052,11 @@ where
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof)
-                            }
+                            },
                         }
                     })
                 }
-            }
+            },
         }
     }
     pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
@@ -1077,7 +1077,7 @@ where
                     };
                     out.map(|v| v.sqrt())
                 })
-            }
+            },
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
@@ -1094,11 +1094,11 @@ where
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof)
-                            }
+                            },
                         }
                     })
                 }
-            }
+            },
         }
     }
 

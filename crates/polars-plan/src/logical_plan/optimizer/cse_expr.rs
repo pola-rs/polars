@@ -248,7 +248,7 @@ impl ExprIdentifierVisitor<'_> {
                 VisitRecord::SubExprId(s, valid) => {
                     id.combine(&s);
                     is_valid_accumulated &= valid
-                }
+                },
             }
         }
         unreachable!()
@@ -264,7 +264,7 @@ impl ExprIdentifierVisitor<'_> {
             // skip window functions for now until we properly implemented the physical side
             AExpr::Column(_) | AExpr::Count | AExpr::Literal(_) | AExpr::Alias(_, _) => {
                 Some((VisitRecursion::Continue, true))
-            }
+            },
             #[cfg(feature = "random")]
             AExpr::Function {
                 function: FunctionExpr::Random { .. },
@@ -278,20 +278,20 @@ impl ExprIdentifierVisitor<'_> {
                     match ae {
                         AExpr::Agg(_) | AExpr::AnonymousFunction { .. } => {
                             Some((VisitRecursion::Continue, false))
-                        }
+                        },
                         AExpr::Function { options, .. } => {
                             if options.is_groups_sensitive() {
                                 Some((VisitRecursion::Continue, false))
                             } else {
                                 None
                             }
-                        }
+                        },
                         _ => None,
                     }
                 } else {
                     None
                 }
-            }
+            },
         }
     }
 }
@@ -635,7 +635,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
         Ok(match node.to_alp() {
             Projection { .. } | HStack { .. } | Aggregate { .. } => {
                 RewriteRecursion::MutateAndContinue
-            }
+            },
             _ => RewriteRecursion::NoMutateAndContinue,
         })
     }
@@ -677,7 +677,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         };
                         lp_arena.replace(arena_idx, lp);
                     }
-                }
+                },
                 ALogicalPlan::HStack {
                     input,
                     exprs,
@@ -700,7 +700,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         };
                         lp_arena.replace(arena_idx, lp);
                     }
-                }
+                },
                 ALogicalPlan::Aggregate {
                     input,
                     keys,
@@ -741,8 +741,8 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         };
                         lp_arena.replace(arena_idx, lp);
                     }
-                }
-                _ => {}
+                },
+                _ => {},
             }
             PolarsResult::Ok(())
         })?;

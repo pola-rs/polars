@@ -203,7 +203,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
                         ))
                     }
                 }
-            }
+            },
             v => polars_bail!(
                 ComputeError: "cannot convert any-value {:?} to literal", v
             ),

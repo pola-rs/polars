@@ -311,7 +311,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                     } else {
                         builder.append_null()
                     }
-                }
+                },
             }
         }
         Ok(builder.finish())
@@ -339,7 +339,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                     } else {
                         builder.append_null()
                     }
-                }
+                },
             }
         }
         Ok(builder.finish())

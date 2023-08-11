@@ -130,7 +130,7 @@ impl Series {
                         }))
                             as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
                     }
-                }
+                },
                 DataType::Boolean => {
                     let arr = arr.as_any().downcast_ref::<BooleanArray>().unwrap();
                     if arr.null_count() == 0 {
@@ -144,7 +144,7 @@ impl Series {
                         }))
                             as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
                     }
-                }
+                },
                 _ => Box::new(self.iter()),
             }
         }

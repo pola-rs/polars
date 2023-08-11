@@ -88,7 +88,7 @@ pub trait LogSeries: SeriesSealed {
 
                 let log_pk = pk.log(base);
                 (&pk * &log_pk).sum::<f64>().map(|v| -v)
-            }
+            },
             _ => s
                 .cast(&DataType::Float64)
                 .ok()

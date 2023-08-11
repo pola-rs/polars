@@ -305,7 +305,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
                 let main_thread = POOL.current_thread_index().is_none();
                 let groups = self.group_tuples(main_thread, false)?;
                 Ok(groups.len())
-            }
+            },
         }
     }
 

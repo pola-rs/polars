@@ -96,7 +96,7 @@ impl PySeries {
                             return Err(e);
                         }
                         builder.append_null()
-                    }
+                    },
                 }
             }
         }
@@ -129,7 +129,7 @@ where
                         return Err(e);
                     }
                     builder.append_null()
-                }
+                },
             }
         }
     }
@@ -247,7 +247,7 @@ impl PySeries {
                         ))
                         .map_err(PyPolarsErr::from)?;
                     Ok(series.into())
-                }
+                },
                 _ => Err(PyValueError::new_err("could not create Array from input")),
             }
         }
@@ -288,12 +288,12 @@ impl PySeries {
                     out.set_fast_explode()
                 }
                 Ok(out.into_series().into())
-            }
+            },
             _ => {
                 let series: Series =
                     std::convert::TryFrom::try_from((name, arr)).map_err(PyPolarsErr::from)?;
                 Ok(series.into())
-            }
+            },
         }
     }
 }

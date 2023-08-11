@@ -48,7 +48,7 @@ impl PhysicalExpr for CastExpr {
                 let ca = s.list().unwrap();
                 let casted = ca.apply_to_inner(&|s| self.finish(&s))?;
                 ac.with_series(casted.into_series(), true, None)?;
-            }
+            },
             AggState::AggregatedFlat(s) => {
                 let s = self.finish(s)?;
                 if ac.is_literal() {
@@ -56,7 +56,7 @@ impl PhysicalExpr for CastExpr {
                 } else {
                     ac.with_series(s, true, None)?;
                 }
-            }
+            },
             _ => {
                 // before we flatten, make sure that groups are updated
                 ac.groups();
@@ -69,7 +69,7 @@ impl PhysicalExpr for CastExpr {
                 } else {
                     ac.with_series(s, false, None)?;
                 }
-            }
+            },
         }
 
         Ok(ac)

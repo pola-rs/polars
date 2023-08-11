@@ -102,7 +102,7 @@ impl ChunkShiftFill<ListType, Option<&Series>> for ListChunked {
             Some(val) => Self::full(self.name(), val, fill_length),
             None => {
                 ListChunked::full_null_with_dtype(self.name(), fill_length, &self.inner_dtype())
-            }
+            },
         };
 
         if periods < 0 {
@@ -136,7 +136,7 @@ impl ChunkShiftFill<FixedSizeListType, Option<&Series>> for ArrayChunked {
             Some(val) => Self::full(self.name(), val, fill_length),
             None => {
                 ArrayChunked::full_null_with_dtype(self.name(), fill_length, &self.inner_dtype(), 0)
-            }
+            },
         };
 
         if periods < 0 {

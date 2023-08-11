@@ -65,7 +65,7 @@ fn jit_insert_slice(
                 unreachable!()
             };
             (offset, len)
-        }
+        },
         Union {
             options:
                 UnionOptions {
@@ -146,24 +146,24 @@ pub(super) fn construct(
                         Rc::new(RefCell::new(1))
                     };
                     sink_nodes.push((operator_offset, node, shared_count))
-                }
+                },
                 PipelineNode::Operator(node) => {
                     operator_nodes.push(node);
                     let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
                     operators.push(op);
-                }
+                },
                 PipelineNode::Union(node) => {
                     operator_nodes.push(node);
                     jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
                     let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
                     operators.push(op);
-                }
+                },
                 PipelineNode::RhsJoin(node) => {
                     operator_nodes.push(node);
                     jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
                     let op = get_dummy_operator();
                     operators.push(op)
-                }
+                },
             }
         }
         let execution_id = branch.execution_id;
@@ -204,7 +204,7 @@ pub(super) fn construct(
                 // default case if the tree ended with a file_sink
                 final_sink
             }
-        }
+        },
         _ => unreachable!(),
     };
     // keep the original around for formatting purposes

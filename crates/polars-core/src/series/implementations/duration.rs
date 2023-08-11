@@ -156,7 +156,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
-            }
+            },
             (dtl, dtr) => polars_bail!(opq = sub, dtl, dtr),
         }
     }
@@ -167,7 +167,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.add_to(&rhs)?.into_duration(*tu).into_series())
-            }
+            },
             (DataType::Duration(tu), DataType::Datetime(tur, tz)) => {
                 polars_ensure!(tu == tur, InvalidOperation: "units are different");
                 let lhs = self.cast(&DataType::Int64).unwrap();
@@ -176,7 +176,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                     .add_to(&rhs)?
                     .into_datetime(*tu, tz.clone())
                     .into_series())
-            }
+            },
             (dtl, dtr) => polars_bail!(opq = add, dtl, dtr),
         }
     }

@@ -138,11 +138,11 @@ where
                 DataType::Float32 => {
                     let ca: &mut ChunkedArray<Float32Type> = s._get_inner_mut().as_mut();
                     ca.apply_mut(|v| v.powf(0.5))
-                }
+                },
                 DataType::Float64 => {
                     let ca: &mut ChunkedArray<Float64Type> = s._get_inner_mut().as_mut();
                     ca.apply_mut(|v| v.powf(0.5))
-                }
+                },
                 _ => unreachable!(),
             }
             s

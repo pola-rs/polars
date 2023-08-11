@@ -248,7 +248,7 @@ impl ExplodeByOffsets for ListChunked {
                             // safety: the pointer is still valid as `owned` will not reallocate
                             builder.push(&*ptr as &dyn Array);
                         }
-                    }
+                    },
                 }
             }
         };

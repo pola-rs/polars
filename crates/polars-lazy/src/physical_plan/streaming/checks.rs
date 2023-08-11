@@ -36,7 +36,7 @@ pub(super) fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Cont
         AExpr::Column(_) => {
             seen_column = true;
             true
-        }
+        },
         AExpr::Ternary { .. }
         | AExpr::BinaryExpr { .. }
         | AExpr::Alias(_, _)
@@ -45,7 +45,7 @@ pub(super) fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Cont
             LiteralValue::Series(_) | LiteralValue::Range { .. } => {
                 seen_lit_range = true;
                 true
-            }
+            },
             _ => true,
         },
         _ => false,

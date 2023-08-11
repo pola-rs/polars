@@ -159,7 +159,7 @@ impl SQLContext {
             } => self.process_union(left, right, set_quantifier, query),
             SetExpr::SetOperation { op, .. } => {
                 polars_bail!(InvalidOperation: "{} operation not yet supported", op)
-            }
+            },
             op => polars_bail!(InvalidOperation: "{} operation not yet supported", op),
         }
     }
@@ -198,7 +198,7 @@ impl SQLContext {
 
                 let df = DataFrame::new(vec![plan])?;
                 Ok(df.lazy())
-            }
+            },
             _ => unreachable!(),
         }
     }
@@ -217,7 +217,7 @@ impl SQLContext {
                     self.table_map.remove(&name.to_string());
                 }
                 Ok(DataFrame::empty().lazy())
-            }
+            },
             _ => unreachable!(),
         }
     }
@@ -247,24 +247,24 @@ impl SQLContext {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         lf = lf.inner_join(join_tbl, left_on, right_on)
-                    }
+                    },
                     JoinOperator::LeftOuter(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         lf = lf.left_join(join_tbl, left_on, right_on)
-                    }
+                    },
                     JoinOperator::FullOuter(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         lf = lf.outer_join(join_tbl, left_on, right_on)
-                    }
+                    },
                     JoinOperator::CrossJoin => lf = lf.cross_join(join_tbl),
                     join_type => {
                         polars_bail!(
                             InvalidOperation:
                             "join type '{:?}' not yet supported by polars-sql", join_type
                         );
-                    }
+                    },
                 }
             }
         };
@@ -288,7 +288,7 @@ impl SQLContext {
             Some(expr) => {
                 let filter_expression = parse_sql_expr(expr, self)?;
                 lf.filter(filter_expression)
-            }
+            },
             None => lf,
         };
 
@@ -302,15 +302,15 @@ impl SQLContext {
                     SelectItem::ExprWithAlias { expr, alias } => {
                         let expr = parse_sql_expr(expr, self)?;
                         expr.alias(&alias.value)
-                    }
+                    },
                     SelectItem::QualifiedWildcard(oname, wildcard_options) => {
                         self.process_qualified_wildcard(oname, wildcard_options)?
-                    }
+                    },
                     SelectItem::Wildcard(wildcard_options) => {
                         contains_wildcard = true;
                         let e = col("*");
                         self.process_wildcard_additional_options(e, wildcard_options)?
-                    }
+                    },
                 })
             })
             .collect::<PolarsResult<_>>()?;
@@ -331,7 +331,7 @@ impl SQLContext {
                         Ok(idx) => Ok(idx),
                     }?;
                     Ok(projections[idx].clone())
-                }
+                },
                 SqlExpr::Value(_) => Err(polars_err!(
                     ComputeError:
                     "groupby error: a positive number or an expression expected",
@@ -377,7 +377,7 @@ impl SQLContext {
                     lf = self.process_order_by(lf, &query.order_by)?;
                 }
                 return Ok(lf.unique_stable(Some(cols), UniqueKeepStrategy::First));
-            }
+            },
             None => lf,
         };
 
@@ -436,7 +436,7 @@ impl SQLContext {
                 } else {
                     polars_bail!(ComputeError: "relation '{}' was not found", tbl_name);
                 }
-            }
+            },
             // Support bare table, optional with alias for now
             _ => polars_bail!(ComputeError: "not implemented"),
         }
@@ -599,7 +599,7 @@ impl SQLContext {
                 })?;
                 let schema = lf.schema()?;
                 cols(schema.iter_names())
-            }
+            },
             e => polars_bail!(
                 ComputeError: "Invalid wildcard expression: {:?}",
                 e
@@ -620,7 +620,7 @@ impl SQLContext {
             Some(ExcludeSelectItem::Single(ident)) => expr.exclude(vec![&ident.value]),
             Some(ExcludeSelectItem::Multiple(idents)) => {
                 expr.exclude(idents.iter().map(|i| &i.value))
-            }
+            },
             _ => expr,
         })
     }

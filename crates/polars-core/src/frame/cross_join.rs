@@ -16,7 +16,7 @@ fn slice_take(
         Some((offset, len)) => {
             let (offset, len) = slice_offsets(offset, len, total_rows as usize);
             inner(offset as IdxSize, (len + offset) as IdxSize, n_rows_right)
-        }
+        },
     }
 }
 

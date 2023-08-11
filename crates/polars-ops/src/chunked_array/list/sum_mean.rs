@@ -80,49 +80,49 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Series
                 .map(|s| s.and_then(|s| s.as_ref().sum()))
                 .collect();
             out.into_series()
-        }
+        },
         UInt32 => {
             let out: UInt32Chunked = ca
                 .amortized_iter()
                 .map(|s| s.and_then(|s| s.as_ref().sum()))
                 .collect();
             out.into_series()
-        }
+        },
         UInt64 => {
             let out: UInt64Chunked = ca
                 .amortized_iter()
                 .map(|s| s.and_then(|s| s.as_ref().sum()))
                 .collect();
             out.into_series()
-        }
+        },
         Int32 => {
             let out: Int32Chunked = ca
                 .amortized_iter()
                 .map(|s| s.and_then(|s| s.as_ref().sum()))
                 .collect();
             out.into_series()
-        }
+        },
         Int64 => {
             let out: Int64Chunked = ca
                 .amortized_iter()
                 .map(|s| s.and_then(|s| s.as_ref().sum()))
                 .collect();
             out.into_series()
-        }
+        },
         Float32 => {
             let out: Float32Chunked = ca
                 .amortized_iter()
                 .map(|s| s.and_then(|s| s.as_ref().sum()))
                 .collect();
             out.into_series()
-        }
+        },
         Float64 => {
             let out: Float64Chunked = ca
                 .amortized_iter()
                 .map(|s| s.and_then(|s| s.as_ref().sum()))
                 .collect();
             out.into_series()
-        }
+        },
         // slowest sum_as_series path
         _ => ca
             .apply_amortized(|s| s.as_ref().sum_as_series())
@@ -205,7 +205,7 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
 
             out.rename(ca.name());
             out.into_series()
-        }
+        },
         _ => {
             let mut out: Float64Chunked = ca
                 .amortized_iter()
@@ -214,6 +214,6 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
 
             out.rename(ca.name());
             out.into_series()
-        }
+        },
     };
 }

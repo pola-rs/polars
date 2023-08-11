@@ -165,7 +165,7 @@ impl Wrap<&DataFrame> {
                 )?;
                 let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
                 return Ok((out, by, gt));
-            }
+            },
             Int64 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&time_type).unwrap();
@@ -179,7 +179,7 @@ impl Wrap<&DataFrame> {
                 )?;
                 let out = out.cast(&Int64).unwrap();
                 return Ok((out, by, gt));
-            }
+            },
             dt => polars_bail!(
                 ComputeError:
                 "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
@@ -190,7 +190,7 @@ impl Wrap<&DataFrame> {
             #[cfg(feature = "timezones")]
             Some(tz) => {
                 self.impl_groupby_rolling(dt, by, options, tu, tz.parse::<Tz>().ok(), time_type)
-            }
+            },
             _ => self.impl_groupby_rolling(dt, by, options, tu, None, time_type),
         }
     }
@@ -239,7 +239,7 @@ impl Wrap<&DataFrame> {
                     }
                 }
                 return Ok((out, keys, gt));
-            }
+            },
             Int64 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&time_type).unwrap();
@@ -252,7 +252,7 @@ impl Wrap<&DataFrame> {
                     }
                 }
                 return Ok((out, keys, gt));
-            }
+            },
             dt => polars_bail!(
                 ComputeError:
                 "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
@@ -302,11 +302,11 @@ impl Wrap<&DataFrame> {
                 (None, None) => {
                     lower_bound = Some(lower);
                     upper_bound = Some(upper);
-                }
+                },
                 (Some(lower_bound), Some(upper_bound)) => {
                     lower_bound.extend_from_slice(&lower);
                     upper_bound.extend_from_slice(&upper);
-                }
+                },
                 _ => unreachable!(),
             };
 
@@ -375,7 +375,7 @@ impl Wrap<&DataFrame> {
 
                         // then parallelize the flatten in the `from` impl
                         Ok(GroupsProxy::Idx(GroupsIdx::from(groups)))
-                    }
+                    },
                     GroupsProxy::Slice { groups, .. } => {
                         let mut ir = groups
                             .par_iter()
@@ -412,7 +412,7 @@ impl Wrap<&DataFrame> {
                             groups,
                             rolling: false,
                         })
-                    }
+                    },
                 })
             } else {
                 POOL.install(|| match groups {
@@ -442,7 +442,7 @@ impl Wrap<&DataFrame> {
                             })
                             .collect::<PolarsResult<Vec<_>>>()?;
                         Ok(GroupsProxy::Idx(GroupsIdx::from(groupsidx)))
-                    }
+                    },
                     GroupsProxy::Slice { groups, .. } => {
                         let groups = groups
                             .par_iter()
@@ -470,7 +470,7 @@ impl Wrap<&DataFrame> {
                             groups,
                             rolling: false,
                         })
-                    }
+                    },
                 })
             }
         }?;
@@ -586,7 +586,7 @@ impl Wrap<&DataFrame> {
                         .collect::<PolarsResult<Vec<_>>>()?;
 
                     Ok(GroupsProxy::Idx(GroupsIdx::from(idx)))
-                }
+                },
                 GroupsProxy::Slice { groups, .. } => {
                     let slice_groups = groups
                         .par_iter()
@@ -611,7 +611,7 @@ impl Wrap<&DataFrame> {
                         groups: slice_groups,
                         rolling: false,
                     })
-                }
+                },
             })
         }?;
 

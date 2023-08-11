@@ -37,20 +37,20 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 PolarsError::Duplicate(err) => DuplicateError::new_err(err.to_string()),
                 PolarsError::InvalidOperation(err) => {
                     InvalidOperationError::new_err(err.to_string())
-                }
+                },
                 PolarsError::Io(err) => PyIOError::new_err(err.to_string()),
                 PolarsError::NoData(err) => NoDataError::new_err(err.to_string()),
                 PolarsError::SchemaFieldNotFound(name) => {
                     SchemaFieldNotFoundError::new_err(name.to_string())
-                }
+                },
                 PolarsError::SchemaMismatch(err) => SchemaError::new_err(err.to_string()),
                 PolarsError::ShapeMismatch(err) => ShapeError::new_err(err.to_string()),
                 PolarsError::StringCacheMismatch(err) => {
                     StringCacheMismatchError::new_err(err.to_string())
-                }
+                },
                 PolarsError::StructFieldNotFound(name) => {
                     StructFieldNotFoundError::new_err(name.to_string())
-                }
+                },
             },
             Arrow(err) => ArrowErrorException::new_err(format!("{err:?}")),
             _ => default(),

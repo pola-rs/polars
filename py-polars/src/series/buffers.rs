@@ -21,7 +21,7 @@ impl PySeries {
                 // into the first byte.
                 let (slice, start, len) = arr.values().as_slice();
                 Ok((start, len, slice.as_ptr() as usize))
-            }
+            },
             dt if dt.is_numeric() => Ok(with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 (0, ca.len(), get_ptr(ca))
@@ -30,16 +30,16 @@ impl PySeries {
                 let ca = s.utf8().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
                 Ok((0, arr.len(), arr.values().as_ptr() as usize))
-            }
+            },
             DataType::Binary => {
                 let ca = s.binary().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
                 Ok((0, arr.len(), arr.values().as_ptr() as usize))
-            }
+            },
             _ => {
                 let msg = "Cannot take pointer of nested type, try to first select a buffer";
                 raise_err!(msg, ComputeError);
-            }
+            },
         }
     }
 
@@ -49,7 +49,7 @@ impl PySeries {
             DataType::Boolean => get_buffer_from_primitive(&self.series, index),
             DataType::Utf8 | DataType::List(_) | DataType::Binary => {
                 get_buffer_from_nested(&self.series, index)
-            }
+            },
             DataType::Array(_, _) => {
                 let ca = self.series.array().unwrap();
                 match index {
@@ -63,12 +63,12 @@ impl PySeries {
                                 .map_err(PyPolarsErr::from)?
                                 .into(),
                         ))
-                    }
+                    },
                     1 => Ok(get_bitmap(&self.series)),
                     2 => Ok(None),
                     _ => Err(PyValueError::new_err("expected an index <= 2")),
                 }
-            }
+            },
             _ => todo!(),
         }
     }
@@ -89,23 +89,23 @@ fn get_buffer_from_nested(s: &Series, index: usize) -> PyResult<Option<PySeries>
                 DataType::List(_) => {
                     let ca = s.list().unwrap();
                     Box::new(ca.downcast_iter().map(|arr| arr.values().clone()))
-                }
+                },
                 DataType::Utf8 => {
                     let ca = s.utf8().unwrap();
                     Box::new(ca.downcast_iter().map(|arr| {
                         PrimitiveArray::from_data_default(arr.values().clone(), None).boxed()
                     }))
-                }
+                },
                 DataType::Binary => {
                     let ca = s.binary().unwrap();
                     Box::new(ca.downcast_iter().map(|arr| {
                         PrimitiveArray::from_data_default(arr.values().clone(), None).boxed()
                     }))
-                }
+                },
                 dt => {
                     let msg = format!("{dt} not yet supported as nested buffer access");
                     raise_err!(msg, ComputeError);
-                }
+                },
             };
             let buffers = buffers.collect::<Vec<_>>();
             Ok(Some(
@@ -113,7 +113,7 @@ fn get_buffer_from_nested(s: &Series, index: usize) -> PyResult<Option<PySeries>
                     .map_err(PyPolarsErr::from)?
                     .into(),
             ))
-        }
+        },
         1 => Ok(get_bitmap(s)),
         2 => get_offsets(s).map(Some),
         _ => Err(PyValueError::new_err("expected an index <= 2")),
@@ -125,11 +125,11 @@ fn get_offsets(s: &Series) -> PyResult<PySeries> {
         DataType::List(_) => {
             let ca = s.list().unwrap();
             Box::new(ca.downcast_iter().map(|arr| arr.offsets()))
-        }
+        },
         DataType::Utf8 => {
             let ca = s.utf8().unwrap();
             Box::new(ca.downcast_iter().map(|arr| arr.offsets()))
-        }
+        },
         _ => return Err(PyValueError::new_err("expected list/utf8")),
     };
     let buffers = buffers
@@ -153,7 +153,7 @@ fn get_buffer_from_primitive(s: &Series, index: usize) -> PyResult<Option<PySeri
                     .map_err(PyPolarsErr::from)?
                     .into(),
             ))
-        }
+        },
         1 => Ok(get_bitmap(s)),
         2 => Ok(None),
         _ => Err(PyValueError::new_err("expected an index <= 2")),

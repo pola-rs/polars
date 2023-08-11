@@ -73,6 +73,6 @@ pub(super) fn finalize_groupby(
             Ok(FinalizedSink::Source(Box::new(GroupBySource::new(
                 iot, df, sink, slice,
             )?)))
-        }
+        },
     }
 }

@@ -225,13 +225,13 @@ impl LogicalType for CategoricalChunked {
 
                 let ca = builder.finish();
                 Ok(ca.into_series())
-            }
+            },
             DataType::UInt32 => {
                 let ca = unsafe {
                     UInt32Chunked::from_chunks(self.logical.name(), self.logical.chunks.clone())
                 };
                 Ok(ca.into_series())
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => Ok(self.clone().into_series()),
             _ => self.logical.cast(dtype),
@@ -358,7 +358,7 @@ mod test {
                 let str_s = s.cast(&DataType::Utf8).unwrap();
                 assert_eq!(str_s.get(0)?, AnyValue::Utf8("a"));
                 assert_eq!(s.len(), 1);
-            }
+            },
             _ => panic!(),
         }
         let flat = aggregated.explode()?;

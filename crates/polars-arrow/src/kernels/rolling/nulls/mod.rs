@@ -55,7 +55,7 @@ where
             let mut validity = MutableBitmap::with_capacity(len);
             validity.extend_constant(len, true);
             validity
-        }
+        },
     };
 
     let out = (0..len)
@@ -73,12 +73,12 @@ where
                         unsafe { validity.set_unchecked(idx, false) };
                         T::default()
                     }
-                }
+                },
                 None => {
                     // safety: we are in bounds
                     unsafe { validity.set_unchecked(idx, false) };
                     T::default()
-                }
+                },
             }
         })
         .collect_trusted::<Vec<_>>();

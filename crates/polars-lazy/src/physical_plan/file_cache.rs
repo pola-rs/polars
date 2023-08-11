@@ -22,7 +22,7 @@ impl FileCache {
                     mapping.insert(fp, Mutex::new((0, Default::default())));
                 }
                 Arc::new(mapping)
-            }
+            },
         };
 
         Self { inner }

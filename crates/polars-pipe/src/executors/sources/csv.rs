@@ -125,12 +125,12 @@ impl Drop for CsvSource {
             match self.batched_reader {
                 Some(Either::Left(ptr)) => {
                     let _to_drop = Box::from_raw(ptr);
-                }
+                },
                 Some(Either::Right(ptr)) => {
                     let _to_drop = Box::from_raw(ptr);
-                }
+                },
                 // nothing initialized, nothing to drop
-                _ => {}
+                _ => {},
             }
             if let Some(ptr) = self.reader {
                 let _to_drop = Box::from_raw(ptr);
@@ -153,12 +153,12 @@ impl Source for CsvSource {
                 let reader = unsafe { &mut *batched_reader };
 
                 reader.next_batches(self.n_threads)?
-            }
+            },
             Either::Right(batched_reader) => {
                 let reader = unsafe { &mut *batched_reader };
 
                 reader.next_batches(self.n_threads)?
-            }
+            },
         };
         Ok(match batches {
             None => SourceResult::Finished,

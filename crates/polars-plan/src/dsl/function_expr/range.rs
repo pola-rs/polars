@@ -38,7 +38,7 @@ where
                 name,
                 (end..=start).rev().step_by(step.unsigned_abs() as usize),
             )
-        }
+        },
     };
 
     let is_sorted = if end < start {
@@ -86,7 +86,7 @@ pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
                 .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
 
             int_range_impl::<IdxType>(start, end, step)
-        }
+        },
         _ => {
             let start = start.cast(&DataType::Int64)?;
             let end = end.cast(&DataType::Int64)?;
@@ -99,7 +99,7 @@ pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
                 .get(0)
                 .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
             int_range_impl::<Int64Type>(start, end, step)
-        }
+        },
     }
 }
 
@@ -140,15 +140,15 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
             match step {
                 1 => {
                     values_capacity += (end_v - start_v) as usize;
-                }
+                },
                 2.. => {
                     values_capacity += ((end_v - start_v) as usize / step as usize) + 1;
-                }
+                },
                 _ => {
                     polars_ensure!(start_v > end_v, InvalidOperation: "range must be decreasing if 'step' is negative");
                     values_capacity +=
                         ((end_v - start_v) as usize / step.unsigned_abs() as usize) + 1;
-                }
+                },
             }
         }
     }
@@ -165,10 +165,10 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
             (Some(&start_v), Some(&end_v)) => match step {
                 1 => {
                     builder.append_iter_values(start_v..end_v);
-                }
+                },
                 2.. => {
                     builder.append_iter_values((start_v..end_v).step_by(step as usize));
-                }
+                },
                 _ => builder.append_iter_values(
                     (end_v..=start_v)
                         .rev()

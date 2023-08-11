@@ -76,13 +76,13 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8
                 return None;
             }
             atoi::<i128>(rhs)
-        }
+        },
         (Some(lhs), None) => {
             if lhs.len() > precision as usize || scale != 0 {
                 return None;
             }
             atoi::<i128>(lhs)
-        }
+        },
         (None, None) => None,
     }
 }

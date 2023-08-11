@@ -196,7 +196,7 @@ fn can_run_partitioned(
                 // we never sample less than 100 data points.
                 let sample_size = std::cmp::max(100, sample_size);
                 (estimate_unique_count(keys, sample_size)?, "estimated")
-            }
+            },
         };
         if state.verbose() {
             eprintln!("{sampled_method} unique values: {unique_estimate}");

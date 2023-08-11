@@ -78,7 +78,7 @@ impl PyLazyFrame {
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 self.ldf = LazyFrame::from(lp);
                 Ok(())
-            }
+            },
             Err(e) => Err(e),
         }
     }

@@ -48,7 +48,7 @@ impl<
             | QuantileInterpolOptions::Midpoint
             | QuantileInterpolOptions::Linear => {
                 ((length as f64 - 1.0) * self.prob).floor() as usize
-            }
+            },
             QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * self.prob).ceil() as usize,
         };
 
@@ -69,7 +69,7 @@ impl<
 
                     (mid + mid_plus_1) / T::from::<f64>(2.0f64).unwrap()
                 }
-            }
+            },
             QuantileInterpolOptions::Linear => {
                 let float_idx = (length as f64 - 1.0) * self.prob;
                 let top_idx = f64::ceil(float_idx) as usize;
@@ -82,12 +82,12 @@ impl<
                     let proportion = T::from(float_idx - idx as f64).unwrap();
                     proportion * (vals[top_idx] - vals[idx]) + vals[idx]
                 }
-            }
+            },
             _ => {
                 // safety
                 // we are in bounds
                 unsafe { *vals.get_unchecked(idx) }
-            }
+            },
         }
     }
 }
@@ -144,7 +144,7 @@ where
                 weights,
                 wsum,
             ))
-        }
+        },
     }
 }
 
@@ -186,12 +186,12 @@ where
             } else {
                 vk
             }
-        }
+        },
         (_, Midpoint) => (vk + v_old) * NumCast::from(0.5).unwrap(),
         // This is seemingly the canonical way to do it.
         (_, Linear) => {
             v_old + <T as NumCast>::from((h - s_old) / (s - s_old)).unwrap() * (vk - v_old)
-        }
+        },
     }
 }
 

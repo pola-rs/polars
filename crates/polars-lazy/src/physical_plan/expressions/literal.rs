@@ -54,13 +54,13 @@ impl PhysicalExpr for LiteralExpr {
                     let high = *high as i32;
                     let ca: NoNull<Int32Chunked> = (low..high).collect();
                     ca.into_inner().into_series()
-                }
+                },
                 DataType::Int64 => {
                     let low = *low;
                     let high = *high;
                     let ca: NoNull<Int64Chunked> = (low..high).collect();
                     ca.into_inner().into_series()
-                }
+                },
                 DataType::UInt32 => {
                     polars_ensure!(
                         *low >= 0 && *high <= u32::MAX as i64,
@@ -70,7 +70,7 @@ impl PhysicalExpr for LiteralExpr {
                     let high = *high as u32;
                     let ca: NoNull<UInt32Chunked> = (low..high).collect();
                     ca.into_inner().into_series()
-                }
+                },
                 dt => polars_bail!(
                     InvalidOperation: "datatype `{}` is not supported as range", dt
                 ),

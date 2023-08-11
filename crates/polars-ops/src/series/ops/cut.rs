@@ -39,7 +39,7 @@ fn map_cats(
                 None => {
                     bld.append_null();
                     brk_vals.append_null();
-                }
+                },
                 Some(idx) => unsafe {
                     bld.append_value(cl.get_unchecked(idx));
                     brk_vals.append_value(*right_ends.get_unchecked(idx));
@@ -79,7 +79,7 @@ pub fn cut(
         Some(ll) => {
             polars_ensure!(ll.len() == sorted_breaks.len() + 1, ShapeMismatch: "Provide nbreaks + 1 labels");
             ll
-        }
+        },
         None => (once(&f64::NEG_INFINITY).chain(sorted_breaks.iter()))
             .zip(sorted_breaks.iter().chain(once(&f64::INFINITY)))
             .map(|v| {
@@ -131,7 +131,7 @@ pub fn qcut(
                         .unzip::<_, _, Vec<_>, Vec<_>>()
                         .1,
                 )
-            }
+            },
         };
         qbreaks.dedup();
         return cut(&s, qbreaks, lfilt, left_closed, include_breaks);

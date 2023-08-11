@@ -299,7 +299,7 @@ mod inner {
                             Some(idx) => {
                                 total_idx += idx;
                                 break;
-                            }
+                            },
                         }
                     }
                 }

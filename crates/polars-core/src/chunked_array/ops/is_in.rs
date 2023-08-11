@@ -133,7 +133,7 @@ impl IsIn for Utf8Chunked {
                                 .collect_trusted();
                             ca.rename(self.name());
                             Ok(ca)
-                        }
+                        },
                         Some(value) => {
                             match rev_map.find(value) {
                                 // all false
@@ -155,14 +155,14 @@ impl IsIn for Utf8Chunked {
                                         .collect_trusted();
                                     ca.rename(self.name());
                                     Ok(ca)
-                                }
+                                },
                             }
-                        }
+                        },
                     }
                 } else {
                     unreachable!()
                 }
-            }
+            },
             DataType::List(dt) if DataType::Utf8 == **dt => self.as_binary().is_in(
                 &other
                     .cast(&DataType::List(Box::new(DataType::Binary)))
@@ -320,14 +320,14 @@ impl IsIn for StructChunked {
                             (val, Some(series)) => {
                                 let ca = series.as_ref().struct_().unwrap();
                                 ca.into_iter().any(|a| a == val)
-                            }
+                            },
                             _ => false,
                         })
                         .collect()
                 };
                 ca.rename(self.name());
                 Ok(ca)
-            }
+            },
             _ => {
                 let other = other.cast(&other.dtype().to_physical()).unwrap();
                 let other = other.struct_()?;
@@ -386,7 +386,7 @@ impl IsIn for StructChunked {
                     .collect();
                 ca.rename(self.name());
                 Ok(ca)
-            }
+            },
         }
     }
 }

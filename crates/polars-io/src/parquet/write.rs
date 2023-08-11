@@ -77,15 +77,15 @@ impl From<ParquetCompression> for CompressionOptions {
             Snappy => CompressionOptions::Snappy,
             Gzip(level) => {
                 CompressionOptions::Gzip(level.map(|v| GzipLevelParquet::try_new(v.0).unwrap()))
-            }
+            },
             Lzo => CompressionOptions::Lzo,
             Brotli(level) => {
                 CompressionOptions::Brotli(level.map(|v| BrotliLevelParquet::try_new(v.0).unwrap()))
-            }
+            },
             Lz4Raw => CompressionOptions::Lz4Raw,
             Zstd(level) => {
                 CompressionOptions::Zstd(level.map(|v| ZstdLevelParquet::try_new(v.0).unwrap()))
-            }
+            },
         }
     }
 }
@@ -218,7 +218,7 @@ fn prepare_rg_iter<'a>(
                 create_serializer(batch, parquet_schema.fields(), encodings, options, parallel);
 
             Some(row_group)
-        }
+        },
     })
 }
 

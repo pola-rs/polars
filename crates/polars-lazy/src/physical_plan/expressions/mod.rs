@@ -66,7 +66,7 @@ impl AggState {
                     // or single groups with more than one index
                     || !groups.is_empty()
                     && groups.get(0).len() > 1))
-            }
+            },
             _ => true,
         }
     }
@@ -116,7 +116,7 @@ pub struct AggregationContext<'a> {
 impl<'a> AggregationContext<'a> {
     pub(crate) fn groups(&mut self) -> &Cow<'a, GroupsProxy> {
         match self.update_groups {
-            UpdateGroups::No => {}
+            UpdateGroups::No => {},
             UpdateGroups::WithGroupsLen => {
                 // the groups are unordered
                 // and the series is aggregated with this groups
@@ -140,16 +140,16 @@ impl<'a> AggregationContext<'a> {
                             groups,
                             rolling: false,
                         })
-                    }
+                    },
                     // sliced groups are already in correct order
-                    GroupsProxy::Slice { .. } => {}
+                    GroupsProxy::Slice { .. } => {},
                 }
                 self.update_groups = UpdateGroups::No;
-            }
+            },
             UpdateGroups::WithSeriesLen => {
                 let s = self.series().clone();
                 self.det_groups_from_list(&s);
-            }
+            },
         }
         &self.groups
     }
@@ -194,11 +194,11 @@ impl<'a> AggregationContext<'a> {
             (true, &DataType::List(_)) => {
                 assert_eq!(series.len(), groups.len());
                 AggState::AggregatedList(series)
-            }
+            },
             (true, _) => {
                 assert_eq!(series.len(), groups.len());
                 AggState::AggregatedFlat(series)
-            }
+            },
             _ => AggState::NotAggregated(series),
         };
 
@@ -263,7 +263,7 @@ impl<'a> AggregationContext<'a> {
                     groups,
                     rolling: false,
                 });
-            }
+            },
             _ => {
                 let groups = self
                     .series()
@@ -286,7 +286,7 @@ impl<'a> AggregationContext<'a> {
                     groups,
                     rolling: false,
                 });
-            }
+            },
         }
         self.update_groups = UpdateGroups::No;
     }
@@ -308,10 +308,10 @@ impl<'a> AggregationContext<'a> {
                     self.update_groups = UpdateGroups::WithGroupsLen;
                     self.state = AggState::AggregatedList(agg);
                 }
-            }
-            AggState::AggregatedFlat(_) => {}
-            AggState::AggregatedList(_) => {}
-            AggState::Literal(_) => {}
+            },
+            AggState::AggregatedFlat(_) => {},
+            AggState::AggregatedList(_) => {},
+            AggState::Literal(_) => {},
         }
     }
 
@@ -352,7 +352,7 @@ impl<'a> AggregationContext<'a> {
                     );
                 }
                 AggState::AggregatedList(series)
-            }
+            },
             (true, _) => AggState::AggregatedFlat(series),
             _ => {
                 match self.state {
@@ -362,10 +362,10 @@ impl<'a> AggregationContext<'a> {
                     // applying a function on a literal, keeps the literal state
                     AggState::Literal(_) if series.len() == 1 && mapped => {
                         AggState::Literal(series)
-                    }
+                    },
                     _ => AggState::NotAggregated(series),
                 }
-            }
+            },
         };
         Ok(self)
     }
@@ -412,14 +412,14 @@ impl<'a> AggregationContext<'a> {
                 self.sorted = true;
                 self.update_groups = UpdateGroups::WithGroupsLen;
                 out
-            }
+            },
             AggState::AggregatedList(s) | AggState::AggregatedFlat(s) => s,
             AggState::Literal(s) => {
                 self.groups();
                 let rows = self.groups.len();
                 let s = s.new_from_index(0, rows);
                 s.reshape(&[rows as i64, -1]).unwrap()
-            }
+            },
         }
     }
 
@@ -433,7 +433,7 @@ impl<'a> AggregationContext<'a> {
                 self.groups();
                 let rows = self.groups.len();
                 s.new_from_index(0, rows)
-            }
+            },
             _ => self.aggregated(),
         }
     }
@@ -485,7 +485,7 @@ impl<'a> AggregationContext<'a> {
                 // [3, 4]
                 let groups = groups.unroll();
                 (flattened, Cow::Owned(groups))
-            }
+            },
         }
     }
 
@@ -507,7 +507,7 @@ impl<'a> AggregationContext<'a> {
                 }
 
                 Cow::Owned(s.explode().unwrap())
-            }
+            },
             AggState::AggregatedFlat(s) => Cow::Borrowed(s),
             AggState::Literal(s) => Cow::Borrowed(s),
         }

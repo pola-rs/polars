@@ -384,7 +384,7 @@ impl PySeries {
                         call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, input)
                             .unwrap()
                             .0
-                    }
+                    },
                 });
                 avs.extend(iter);
                 return Ok(Series::new(self.name(), &avs).into());
@@ -401,7 +401,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Int16) => {
                     let ca: Int16Chunked = dispatch_apply!(
                         series,
@@ -412,7 +412,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Int32) => {
                     let ca: Int32Chunked = dispatch_apply!(
                         series,
@@ -423,7 +423,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Int64) => {
                     let ca: Int64Chunked = dispatch_apply!(
                         series,
@@ -434,7 +434,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::UInt8) => {
                     let ca: UInt8Chunked = dispatch_apply!(
                         series,
@@ -445,7 +445,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::UInt16) => {
                     let ca: UInt16Chunked = dispatch_apply!(
                         series,
@@ -456,7 +456,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::UInt32) => {
                     let ca: UInt32Chunked = dispatch_apply!(
                         series,
@@ -467,7 +467,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::UInt64) => {
                     let ca: UInt64Chunked = dispatch_apply!(
                         series,
@@ -478,7 +478,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Float32) => {
                     let ca: Float32Chunked = dispatch_apply!(
                         series,
@@ -489,7 +489,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Float64) => {
                     let ca: Float64Chunked = dispatch_apply!(
                         series,
@@ -500,7 +500,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Boolean) => {
                     let ca: BooleanChunked = dispatch_apply!(
                         series,
@@ -511,7 +511,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Utf8) => {
                     let ca = dispatch_apply!(
                         series,
@@ -523,7 +523,7 @@ impl PySeries {
                     )?;
 
                     ca.into_series()
-                }
+                },
                 #[cfg(feature = "object")]
                 Some(DataType::Object(_)) => {
                     let ca = dispatch_apply!(
@@ -535,7 +535,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 None => return dispatch_apply!(series, apply_lambda_unknown, py, lambda),
 
                 _ => return dispatch_apply!(series, apply_lambda_unknown, py, lambda),
@@ -614,7 +614,7 @@ impl PySeries {
                 self.series = ciborium::de::from_reader(s.as_bytes())
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
-            }
+            },
             Err(e) => Err(e),
         }
     }
