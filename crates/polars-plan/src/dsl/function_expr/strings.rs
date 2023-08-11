@@ -511,11 +511,18 @@ fn to_datetime(
             options.cache,
             tz_aware,
             time_zone,
+            options.use_earliest,
         )?
         .into_series()
     } else {
-        ca.as_datetime_not_exact(options.format.as_deref(), *time_unit, tz_aware, time_zone)?
-            .into_series()
+        ca.as_datetime_not_exact(
+            options.format.as_deref(),
+            *time_unit,
+            tz_aware,
+            time_zone,
+            options.use_earliest,
+        )?
+        .into_series()
     };
 
     if options.strict && ca.null_count() != out.null_count() {

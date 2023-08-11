@@ -629,3 +629,53 @@ def test_to_time_format_warning() -> None:
     with pytest.warns(pl.ChronoFormatWarning, match=".%f"):
         result = s.str.to_time("%H:%M:%S.%f").item()
     assert result == time(5, 10, 10, 74)
+
+
+@pytest.mark.parametrize("exact", [True, False])
+def test_to_datetime_use_earliest(exact: bool) -> None:
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.to_datetime(time_zone="Europe/London", use_earliest=True, exact=exact)
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=0, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.to_datetime(time_zone="Europe/London", use_earliest=False, exact=exact)
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    with pytest.raises(ArrowError):
+        pl.Series(["2020-10-25 01:00"]).str.to_datetime(
+            time_zone="Europe/London",
+            exact=exact,
+        ).item()
+
+
+@pytest.mark.parametrize("exact", [True, False])
+def test_strptime_use_earliest(exact: bool) -> None:
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.strptime(
+            pl.Datetime("us", "Europe/London"), use_earliest=True, exact=exact
+        )
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=0, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.strptime(
+            pl.Datetime("us", "Europe/London"), use_earliest=False, exact=exact
+        )
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    with pytest.raises(ArrowError):
+        pl.Series(["2020-10-25 01:00"]).str.strptime(
+            pl.Datetime("us", "Europe/London"),
+            exact=exact,
+        ).item()

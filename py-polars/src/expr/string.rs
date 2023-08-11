@@ -18,11 +18,12 @@ impl PyExpr {
             strict,
             exact,
             cache,
+            use_earliest: None,
         };
         self.inner.clone().str().to_date(options).into()
     }
 
-    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache))]
+    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, use_earliest))]
     #[allow(clippy::too_many_arguments)]
     fn str_to_datetime(
         &self,
@@ -32,12 +33,14 @@ impl PyExpr {
         strict: bool,
         exact: bool,
         cache: bool,
+        use_earliest: Option<bool>,
     ) -> Self {
         let options = StrptimeOptions {
             format,
             strict,
             exact,
             cache,
+            use_earliest,
         };
         self.inner
             .clone()
@@ -53,6 +56,7 @@ impl PyExpr {
             strict,
             cache,
             exact: true,
+            use_earliest: None,
         };
         self.inner.clone().str().to_time(options).into()
     }
