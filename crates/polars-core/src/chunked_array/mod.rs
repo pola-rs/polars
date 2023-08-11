@@ -609,7 +609,7 @@ pub(crate) mod test {
         let a = &Int32Chunked::new("a", &[1, 100, 6, 40]);
         let b = &Int32Chunked::new("b", &[-1, 2, 3, 4]);
 
-        // Not really asserting anything here but shill making sure the code is exercised
+        // Not really asserting anything here but still making sure the code is exercised
         // This (and more) is properly tested from the integration test suite and Python bindings.
         println!("{:?}", a + b);
         println!("{:?}", a - b);
