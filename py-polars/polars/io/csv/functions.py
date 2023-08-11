@@ -13,7 +13,6 @@ from typing import (
 
 import polars._reexport as pl
 from polars.datatypes import N_INFER_DEFAULT, Utf8
-from polars.exceptions import NoDataError
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
@@ -189,12 +188,6 @@ def read_csv(
     _check_arg_is_1byte("eol_char", eol_char, False)
 
     projection, columns = handle_projection_columns(columns)
-
-    if isinstance(source, bytes) and len(source) == 0:
-        if raise_if_empty:
-            raise NoDataError("Empty bytes data provided.")
-        return pl.DataFrame()
-
     storage_options = storage_options or {}
 
     if columns and not has_header:
@@ -568,11 +561,6 @@ def read_csv_batched(
 
     """
     projection, columns = handle_projection_columns(columns)
-
-    if isinstance(source, bytes) and len(source) == 0:
-        if raise_if_empty:
-            raise NoDataError("Empty bytes data provided.")
-        return pl.DataFrame()
 
     if columns and not has_header:
         for column in columns:
