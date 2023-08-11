@@ -4,6 +4,7 @@ pub mod series;
 
 #[cfg(test)]
 mod test {
+    use crate::chunked_array::Settings;
     use crate::prelude::*;
     use crate::series::IsSorted;
 
@@ -55,7 +56,7 @@ mod test {
             let json = serde_json::to_string(&column).unwrap();
             let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
             let f = out.get_flags();
-            assert_ne!(f, 0u8);
+            assert_ne!(f, Settings::empty());
             assert_eq!(column.get_flags(), out.get_flags());
         }
     }

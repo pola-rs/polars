@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
+use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 pub struct IterSer<I>
@@ -46,7 +47,7 @@ fn serialize_impl<T, S>(
     serializer: S,
     name: &str,
     dtype: &DataType,
-    bit_settings: u8,
+    bit_settings: Settings,
     ca: &ChunkedArray<T>,
 ) -> std::result::Result<<S as Serializer>::Ok, <S as Serializer>::Error>
 where

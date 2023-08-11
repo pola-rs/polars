@@ -60,10 +60,10 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+    fn _set_flags(&mut self, flags: Settings) {
         self.0.deref_mut().set_flags(flags)
     }
-    fn _get_flags(&self) -> u8 {
+    fn _get_flags(&self) -> Settings {
         self.0.deref().get_flags()
     }
 
@@ -207,10 +207,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DurationChunked> {
-    fn is_sorted_flag(&self) -> IsSorted {
-        self.0.is_sorted_flag()
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }

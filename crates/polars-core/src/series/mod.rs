@@ -27,6 +27,7 @@ use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
+use crate::chunked_array::Settings;
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
@@ -192,20 +193,42 @@ impl Series {
         &mut *chunks
     }
 
+    pub fn is_sorted_flag(&self) -> IsSorted {
+        let flags = self.get_flags();
+        if flags.contains(Settings::SORTED_DSC) {
+            IsSorted::Descending
+        } else if flags.contains(Settings::SORTED_ASC) {
+            IsSorted::Ascending
+        } else {
+            IsSorted::Not
+        }
+    }
+
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
-        let inner = self._get_inner_mut();
-        inner._set_sorted_flag(sorted)
+        let mut flags = self.get_flags();
+        match sorted {
+            IsSorted::Not => flags.remove(Settings::SORTED_DSC | Settings::SORTED_ASC),
+            IsSorted::Ascending => {
+                flags.remove(Settings::SORTED_DSC);
+                flags.insert(Settings::SORTED_ASC);
+            },
+            IsSorted::Descending => {
+                flags.remove(Settings::SORTED_ASC);
+                flags.insert(Settings::SORTED_DSC);
+            },
+        }
+        self.set_flags(flags);
     }
 
     pub(crate) fn clear_settings(&mut self) {
-        let _ = self.set_flags(0u8);
+        self.set_flags(Settings::empty());
     }
     #[allow(dead_code)]
-    pub(crate) fn get_flags(&self) -> u8 {
+    pub fn get_flags(&self) -> Settings {
         self.0._get_flags()
     }
 
-    pub(crate) fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+    pub(crate) fn set_flags(&mut self, flags: Settings) {
         self._get_inner_mut()._set_flags(flags)
     }
 

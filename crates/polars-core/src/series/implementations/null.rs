@@ -50,9 +50,7 @@ impl PrivateSeries for NullChunked {
     }
 
     #[allow(unused)]
-    fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
-        Ok(())
-    }
+    fn _set_flags(&mut self, flags: Settings) {}
 
     fn _dtype(&self) -> &DataType {
         &DataType::Null
@@ -66,8 +64,8 @@ impl PrivateSeries for NullChunked {
         ExplodeByOffsets::explode_by_offsets(self, offsets)
     }
 
-    fn _get_flags(&self) -> u8 {
-        0u8
+    fn _get_flags(&self) -> Settings {
+        Settings::empty()
     }
 }
 

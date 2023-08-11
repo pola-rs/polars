@@ -16,7 +16,7 @@ polars-utils = { version = "0.31.1", path = "../polars-utils" }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
-bitflags = { workspace = true }
+bitflags = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 comfy-table = { version = "7.0.1", default_features = false, optional = true }

@@ -6,6 +6,8 @@ use std::sync::Arc;
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use polars_arrow::prelude::ValueSize;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
@@ -161,11 +163,40 @@ pub struct ChunkedArray<T: PolarsDataType> {
 }
 
 bitflags! {
-    #[derive(Default, Clone, Copy)]
-    pub(crate) struct Settings: u8 {
+    #[derive(Default, Debug, Clone, Copy,PartialEq)]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
+    pub struct Settings: u8 {
         const SORTED_ASC = 0x01;
         const SORTED_DSC = 0x02;
         const FAST_EXPLODE_LIST = 0x04;
+    }
+}
+
+impl Settings {
+    pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
+        match sorted {
+            IsSorted::Not => {
+                self.remove(Settings::SORTED_ASC | Settings::SORTED_DSC);
+            },
+            IsSorted::Ascending => {
+                self.remove(Settings::SORTED_DSC);
+                self.insert(Settings::SORTED_ASC)
+            },
+            IsSorted::Descending => {
+                self.remove(Settings::SORTED_ASC);
+                self.insert(Settings::SORTED_DSC)
+            },
+        }
+    }
+
+    pub fn get_sorted_flag(&self) -> IsSorted {
+        if self.contains(Settings::SORTED_ASC) {
+            IsSorted::Ascending
+        } else if self.contains(Settings::SORTED_DSC) {
+            IsSorted::Descending
+        } else {
+            IsSorted::Not
+        }
     }
 }
 
@@ -182,51 +213,22 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
     }
 
-    pub(crate) fn get_flags(&self) -> u8 {
-        self.bit_settings.bits()
+    pub fn get_flags(&self) -> Settings {
+        self.bit_settings
     }
 
     /// Set flags for the Chunked Array
-    pub(crate) fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
-        Settings::from_bits(flags)
-            .ok_or_else(
-                || polars_err!(ComputeError: "corrupt flags {} for {}", flags, self.dtype()),
-            )
-            .map(|settings| {
-                self.bit_settings = settings;
-            })
+    pub(crate) fn set_flags(&mut self, flags: Settings) {
+        self.bit_settings = flags;
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
-        if self.is_sorted_ascending_flag() {
-            IsSorted::Ascending
-        } else if self.is_sorted_descending_flag() {
-            IsSorted::Descending
-        } else {
-            IsSorted::Not
-        }
+        self.bit_settings.get_sorted_flag()
     }
 
     /// Set the 'sorted' bit meta info.
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
-        match sorted {
-            IsSorted::Not => {
-                self.bit_settings
-                    .remove(Settings::SORTED_ASC | Settings::SORTED_DSC);
-            },
-            IsSorted::Ascending => {
-                // Unset descending sorted.
-                self.bit_settings.remove(Settings::SORTED_DSC);
-                // Set ascending sorted.
-                self.bit_settings.insert(Settings::SORTED_ASC)
-            },
-            IsSorted::Descending => {
-                // Unset ascending sorted.
-                self.bit_settings.remove(Settings::SORTED_ASC);
-                // Set descending sorted.
-                self.bit_settings.insert(Settings::SORTED_DSC)
-            },
-        }
+        self.bit_settings.set_sorted_flag(sorted)
     }
 
     /// Get the index of the first non null value in this ChunkedArray.

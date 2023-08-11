@@ -4,11 +4,10 @@ use std::borrow::Cow;
 use super::{private, IntoSeries, SeriesTrait};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::AsSinglePtr;
+use crate::chunked_array::{AsSinglePtr, Settings};
 use crate::frame::groupby::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-use crate::series::IsSorted;
 
 impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     fn compute_len(&mut self) {
@@ -21,20 +20,16 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
         self.0.ref_field().data_type()
     }
 
-    fn _get_flags(&self) -> u8 {
+    fn _get_flags(&self) -> Settings {
         self.0.get_flags()
     }
 
-    fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+    fn _set_flags(&mut self, flags: Settings) {
         self.0.set_flags(flags)
     }
 
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0.explode_by_offsets(offsets)
-    }
-
-    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
-        self.0.set_sorted_flag(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
