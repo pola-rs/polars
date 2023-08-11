@@ -307,7 +307,7 @@ pub fn infer_file_schema_inner(
             raise_if_empty,
         );
     } else if !raise_if_empty {
-        return Ok((Schema::new(), 0, start_ptr));
+        return Ok((Schema::new(), 0, 0));
     } else {
         polars_bail!(NoData: "empty CSV");
     };
