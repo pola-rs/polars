@@ -132,6 +132,7 @@ where
     skip_rows_after_header: usize,
     try_parse_dates: bool,
     row_count: Option<RowCount>,
+    raise_if_empty: bool,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -295,6 +296,12 @@ where
         self
     }
 
+    /// Raise an error if CSV is empty (otherwise return an empty frame)
+    pub fn raise_if_empty(mut self, toggle: bool) -> Self {
+        self.raise_if_empty = toggle;
+        self
+    }
+
     /// Reduce memory consumption at the expense of performance
     pub fn low_memory(mut self, toggle: bool) -> Self {
         self.low_memory = toggle;
@@ -366,6 +373,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.skip_rows_after_header,
             std::mem::take(&mut self.row_count),
             self.try_parse_dates,
+            self.raise_if_empty,
         )
     }
 
@@ -476,6 +484,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.eol_char,
                     self.null_values.as_ref(),
                     self.try_parse_dates,
+                    self.raise_if_empty,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_mmap(self, schema))
@@ -504,6 +513,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.eol_char,
                     self.null_values.as_ref(),
                     self.try_parse_dates,
+                    self.raise_if_empty,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_read(self, schema))
@@ -547,6 +557,7 @@ where
             skip_rows_after_header: 0,
             try_parse_dates: false,
             row_count: None,
+            raise_if_empty: true,
         }
     }
 

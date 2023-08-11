@@ -228,7 +228,11 @@ def read_csv(
             include_columns = [f"f{column_idx}" for column_idx in projection]
 
         with _prepare_file_arg(
-            source, encoding=None, use_pyarrow=True, **storage_options
+            source,
+            encoding=None,
+            use_pyarrow=True,
+            raise_if_empty=raise_if_empty,
+            **storage_options,
         ) as data:
             import pyarrow as pa
             import pyarrow.csv
@@ -356,40 +360,41 @@ def read_csv(
                 new_to_current.get(column_name, column_name): column_dtype
                 for column_name, column_dtype in dtypes.items()
             }
-    try:
-        with _prepare_file_arg(
-            source, encoding=encoding, use_pyarrow=False, **storage_options
-        ) as data:
-            df = pl.DataFrame._read_csv(
-                data,
-                has_header=has_header,
-                columns=columns if columns else projection,
-                separator=separator,
-                comment_char=comment_char,
-                quote_char=quote_char,
-                skip_rows=skip_rows,
-                dtypes=dtypes,
-                null_values=null_values,
-                missing_utf8_is_empty_string=missing_utf8_is_empty_string,
-                ignore_errors=ignore_errors,
-                try_parse_dates=try_parse_dates,
-                n_threads=n_threads,
-                infer_schema_length=infer_schema_length,
-                batch_size=batch_size,
-                n_rows=n_rows,
-                encoding=encoding if encoding == "utf8-lossy" else "utf8",
-                low_memory=low_memory,
-                rechunk=rechunk,
-                skip_rows_after_header=skip_rows_after_header,
-                row_count_name=row_count_name,
-                row_count_offset=row_count_offset,
-                sample_size=sample_size,
-                eol_char=eol_char,
-            )
-    except NoDataError:
-        if not raise_if_empty:
-            return pl.DataFrame()
-        raise
+
+    with _prepare_file_arg(
+        source,
+        encoding=encoding,
+        use_pyarrow=False,
+        raise_if_empty=raise_if_empty,
+        **storage_options,
+    ) as data:
+        df = pl.DataFrame._read_csv(
+            data,
+            has_header=has_header,
+            columns=columns if columns else projection,
+            separator=separator,
+            comment_char=comment_char,
+            quote_char=quote_char,
+            skip_rows=skip_rows,
+            dtypes=dtypes,
+            null_values=null_values,
+            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+            ignore_errors=ignore_errors,
+            try_parse_dates=try_parse_dates,
+            n_threads=n_threads,
+            infer_schema_length=infer_schema_length,
+            batch_size=batch_size,
+            n_rows=n_rows,
+            encoding=encoding if encoding == "utf8-lossy" else "utf8",
+            low_memory=low_memory,
+            rechunk=rechunk,
+            skip_rows_after_header=skip_rows_after_header,
+            row_count_name=row_count_name,
+            row_count_offset=row_count_offset,
+            sample_size=sample_size,
+            eol_char=eol_char,
+            raise_if_empty=raise_if_empty,
+        )
 
     if new_columns:
         return _update_columns(df, new_columns)
@@ -893,32 +898,29 @@ def scan_csv(
 
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
-    try:
-        return pl.LazyFrame._scan_csv(
-            source,
-            has_header=has_header,
-            separator=separator,
-            comment_char=comment_char,
-            quote_char=quote_char,
-            skip_rows=skip_rows,
-            dtypes=dtypes,  # type: ignore[arg-type]
-            null_values=null_values,
-            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
-            ignore_errors=ignore_errors,
-            cache=cache,
-            with_column_names=with_column_names,
-            infer_schema_length=infer_schema_length,
-            n_rows=n_rows,
-            low_memory=low_memory,
-            rechunk=rechunk,
-            skip_rows_after_header=skip_rows_after_header,
-            encoding=encoding,
-            row_count_name=row_count_name,
-            row_count_offset=row_count_offset,
-            try_parse_dates=try_parse_dates,
-            eol_char=eol_char,
-        )
-    except NoDataError:
-        if raise_if_empty:
-            raise
-        return pl.LazyFrame()
+
+    return pl.LazyFrame._scan_csv(
+        source,
+        has_header=has_header,
+        separator=separator,
+        comment_char=comment_char,
+        quote_char=quote_char,
+        skip_rows=skip_rows,
+        dtypes=dtypes,  # type: ignore[arg-type]
+        null_values=null_values,
+        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+        ignore_errors=ignore_errors,
+        cache=cache,
+        with_column_names=with_column_names,
+        infer_schema_length=infer_schema_length,
+        n_rows=n_rows,
+        low_memory=low_memory,
+        rechunk=rechunk,
+        skip_rows_after_header=skip_rows_after_header,
+        encoding=encoding,
+        row_count_name=row_count_name,
+        row_count_offset=row_count_offset,
+        try_parse_dates=try_parse_dates,
+        eol_char=eol_char,
+        raise_if_empty=raise_if_empty,
+    )

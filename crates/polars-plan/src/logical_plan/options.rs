@@ -34,6 +34,7 @@ pub struct CsvParserOptions {
     pub null_values: Option<NullValues>,
     pub encoding: CsvEncoding,
     pub try_parse_dates: bool,
+    pub raise_if_empty: bool,
 }
 
 #[cfg(feature = "parquet")]
