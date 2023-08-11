@@ -35,7 +35,7 @@ def test_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
 def test_write_json_to_string() -> None:
     # Tests if it runs if no arg given
     df = pl.DataFrame({"a": [1, 2, 3]})
-    expected_str = '{"columns":[{"name":"a","datatype":"Int64","bit_settings":0,"values":[1,2,3]}]}'
+    expected_str = '{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]}'
     assert df.write_json() == expected_str
 
 
