@@ -1569,7 +1569,7 @@ class DataFrame:
                 if (col_selection >= 0 and col_selection >= self.width) or (
                     col_selection < 0 and col_selection < -self.width
                 ):
-                    raise ValueError(f'Column index "{col_selection}" is out of bounds')
+                    raise ValueError(f"column index {col_selection!r} is out of bounds")
                 series = self.to_series(col_selection)
                 return series[row_selection]
 
@@ -1792,7 +1792,7 @@ class DataFrame:
             else self._df.column(column)
         )
         if s is None:
-            raise ValueError(f'Column index "{column}" is out of bounds.')
+            raise ValueError(f"column index {column!r} is out of bounds")
         return s.get_idx(row)
 
     def to_arrow(self) -> pa.Table:

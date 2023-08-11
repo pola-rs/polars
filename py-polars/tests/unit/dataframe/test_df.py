@@ -3269,7 +3269,7 @@ def test_item() -> None:
     df = pl.DataFrame({})
     with pytest.raises(ValueError, match=r".* frame has shape \(0, 0\)"):
         df.item()
-    with pytest.raises(ValueError, match='Column index "10" is out of bounds'):
+    with pytest.raises(ValueError, match="column index 10 is out of bounds"):
         df.item(0, 10)
 
 
