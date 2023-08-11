@@ -5,6 +5,7 @@ use ahash::RandomState;
 
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::compare_inner::{IntoPartialEqInner, PartialEqInner};
+use crate::chunked_array::Settings;
 use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;

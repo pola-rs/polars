@@ -8,6 +8,7 @@ use crate::chunked_array::{AsSinglePtr, Settings};
 use crate::frame::groupby::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
+use crate::series::IsSorted;
 
 impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn compute_len(&mut self) {
