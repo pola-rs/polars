@@ -147,7 +147,7 @@ impl StructNameSpace {
                             })
                             .collect();
                         DataType::Struct(fields)
-                    }
+                    },
                     // The types will be incorrect, but its better than nothing
                     // we can get an incorrect type with python lambdas, because we only know return type when running
                     // the query
