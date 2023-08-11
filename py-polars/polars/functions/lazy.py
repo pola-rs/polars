@@ -748,7 +748,7 @@ def last(column: str | Series | None = None) -> Expr:
         if column.len() > 0:
             return column[-1]
         else:
-            raise IndexError("The series is empty, so no last value can be returned,")
+            raise IndexError("the series is empty, so no last value can be returned")
     return col(column).last()
 
 

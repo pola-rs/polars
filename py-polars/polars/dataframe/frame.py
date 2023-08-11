@@ -1569,9 +1569,7 @@ class DataFrame:
                 if (col_selection >= 0 and col_selection >= self.width) or (
                     col_selection < 0 and col_selection < -self.width
                 ):
-                    raise ValueError(
-                        f'Column index "{col_selection}" is out of bounds.'
-                    )
+                    raise ValueError(f"column index {col_selection!r} is out of bounds")
                 series = self.to_series(col_selection)
                 return series[row_selection]
 
@@ -1786,13 +1784,16 @@ class DataFrame:
             return self._df.select_at_idx(0).get_idx(0)
 
         elif row is None or column is None:
-            raise ValueError("Cannot call '.item()' with only one of 'row' or 'column'")
+            raise ValueError("cannot call `.item()` with only one of `row` or `column`")
 
-        return (
+        s = (
             self._df.select_at_idx(column)
             if isinstance(column, int)
             else self._df.column(column)
-        ).get_idx(row)
+        )
+        if s is None:
+            raise ValueError(f"column index {column!r} is out of bounds")
+        return s.get_idx(row)
 
     def to_arrow(self) -> pa.Table:
         """
