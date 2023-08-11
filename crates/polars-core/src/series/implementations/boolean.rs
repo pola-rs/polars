@@ -113,13 +113,7 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 
 impl SeriesTrait for SeriesWrap<BooleanChunked> {
     fn is_sorted_flag(&self) -> IsSorted {
-        if self.0.is_sorted_ascending_flag() {
-            IsSorted::Ascending
-        } else if self.0.is_sorted_descending_flag() {
-            IsSorted::Descending
-        } else {
-            IsSorted::Not
-        }
+        self.0.is_sorted_flag()
     }
 
     fn bitxor(&self, other: &Series) -> PolarsResult<Series> {
