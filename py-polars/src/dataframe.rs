@@ -554,6 +554,7 @@ impl PyDataFrame {
         time_format: Option<String>,
         float_precision: Option<usize>,
         null_value: Option<String>,
+        quotes_style: Option<Wrap<QuoteStyle>>
     ) -> PyResult<()> {
         let null = null_value.unwrap_or_default();
 
@@ -572,6 +573,7 @@ impl PyDataFrame {
                     .with_time_format(time_format)
                     .with_float_precision(float_precision)
                     .with_null_value(null)
+                    .with_quote_style(quotes_style.map(|wrap| wrap.0).unwrap_or(Default::default()))
                     .finish(&mut self.df)
                     .map_err(PyPolarsErr::from)
             })?;
