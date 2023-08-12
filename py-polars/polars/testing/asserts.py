@@ -12,6 +12,7 @@ from polars.datatypes import (
     DataTypeClass,
     List,
     Struct,
+    UInt64,
     Utf8,
     dtype_to_py_type,
     unpack_dtypes,
@@ -407,7 +408,9 @@ def _assert_series_inner(
 
             if all(tp in UNSIGNED_INTEGER_DTYPES for tp in (left.dtype, right.dtype)):
                 # avoid potential "subtract-with-overflow" panic on uint math
-                s_diff = Series("diff", [abs(v1 - v2) for v1, v2 in zip(left, right)])
+                s_diff = Series(
+                    "diff", [abs(v1 - v2) for v1, v2 in zip(left, right)], dtype=UInt64
+                )
             else:
                 s_diff = (left - right).abs()
 
