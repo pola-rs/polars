@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import gzip
 import io
+import sys
 import textwrap
-import typing
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -14,15 +13,12 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, NoDataError
-from polars.testing import (
-    assert_frame_equal,
-    assert_frame_equal_local_categoricals,
-    assert_series_equal,
-)
-from polars.testing._tempdir import TemporaryDirectory
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.type_aliases import TimeUnit
 
 
@@ -54,24 +50,25 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
     )
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
     with pytest.raises(AssertionError):
-        assert_frame_equal_local_categoricals(df.select(["time", "cat"]), read_df)
+        assert_frame_equal(df.select("time", "cat"), read_df, categorical_as_str=True)
 
 
 @pytest.mark.write_disk()
-def test_to_from_file(df_no_lists: pl.DataFrame) -> None:
+def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     df = df_no_lists.drop("strings_nulls")
 
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.csv"
-        df.write_csv(file_path)
-        read_df = pl.read_csv(file_path, try_parse_dates=True)
+    file_path = tmp_path / "small.csv"
+    df.write_csv(file_path)
+    read_df = pl.read_csv(file_path, try_parse_dates=True)
 
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
     )
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 def test_normalise_filepath(io_files_path: Path) -> None:
@@ -367,7 +364,9 @@ def test_read_csv_buffer_ownership() -> None:
 
 
 @pytest.mark.write_disk()
-def test_read_csv_encoding() -> None:
+def test_read_csv_encoding(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     bts = (
         b"Value1,Value2,Value3,Value4,Region\n"
         b"-30,7.5,2578,1,\xa5x\xa5_\n-32,7.97,3006,1,\xa5x\xa4\xa4\n"
@@ -375,25 +374,23 @@ def test_read_csv_encoding() -> None:
         b"-20,7.91,3384,4,\xac\xfc\xb0\xea\n"
     )
 
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "encoding.csv"
-        with open(file_path, "wb") as f:
-            f.write(bts)
+    file_path = tmp_path / "encoding.csv"
+    file_path.write_bytes(bts)
 
-        file_str = str(file_path)
-        bytesio = io.BytesIO(bts)
+    file_str = str(file_path)
+    bytesio = io.BytesIO(bts)
 
-        for use_pyarrow in (False, True):
-            bytesio.seek(0)
-            for file in [file_path, file_str, bts, bytesio]:
-                assert_series_equal(
-                    pl.read_csv(
-                        file,  # type: ignore[arg-type]
-                        encoding="big5",
-                        use_pyarrow=use_pyarrow,
-                    ).get_column("Region"),
-                    pl.Series("Region", ["台北", "台中", "新竹", "高雄", "美國"]),
-                )
+    for use_pyarrow in (False, True):
+        bytesio.seek(0)
+        for file in [file_path, file_str, bts, bytesio]:
+            assert_series_equal(
+                pl.read_csv(
+                    file,  # type: ignore[arg-type]
+                    encoding="big5",
+                    use_pyarrow=use_pyarrow,
+                ).get_column("Region"),
+                pl.Series("Region", ["台北", "台中", "新竹", "高雄", "美國"]),
+            )
 
 
 def test_column_rename_and_dtype_overwrite() -> None:
@@ -485,9 +482,8 @@ def test_compressed_csv(io_files_path: Path) -> None:
 
 def test_partial_decompression(foods_file_path: Path) -> None:
     f_out = io.BytesIO()
-    with open(foods_file_path, "rb") as f_read:  # noqa: SIM117
-        with gzip.GzipFile(fileobj=f_out, mode="w") as f:
-            f.write(f_read.read())
+    with gzip.GzipFile(fileobj=f_out, mode="w") as f:
+        f.write(foods_file_path.read_bytes())
 
     csv_bytes = f_out.getvalue()
     for n_rows in [1, 5, 26]:
@@ -699,6 +695,14 @@ def test_write_csv_delimiter() -> None:
     assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
 
 
+def test_write_csv_line_terminator() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_csv(f, line_terminator="\r\n")
+    f.seek(0)
+    assert f.read() == b"a,b\r\n1,1\r\n2,2\r\n3,3\r\n"
+
+
 def test_escaped_null_values() -> None:
     csv = textwrap.dedent(
         """\
@@ -774,6 +778,36 @@ def test_tz_aware_try_parse_dates() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("try_parse_dates", [True, False])
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_csv_overwrite_datetime_dtype(
+    try_parse_dates: bool, time_unit: TimeUnit
+) -> None:
+    data = """\
+    a
+    2020-1-1T00:00:00.123456789
+    2020-1-2T00:00:00.987654321
+    2020-1-3T00:00:00.132547698
+    """
+    result = pl.read_csv(
+        io.StringIO(data),
+        try_parse_dates=try_parse_dates,
+        dtypes={"a": pl.Datetime(time_unit)},
+    )
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [
+                    "2020-01-01T00:00:00.123456789",
+                    "2020-01-02T00:00:00.987654321",
+                    "2020-01-03T00:00:00.132547698",
+                ]
+            ).str.to_datetime(time_unit=time_unit)
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_csv_string_escaping() -> None:
     df = pl.DataFrame({"a": ["Free trip to A,B", '''Special rate "1.79"''']})
     f = io.BytesIO()
@@ -784,15 +818,16 @@ def test_csv_string_escaping() -> None:
 
 
 @pytest.mark.write_disk()
-def test_glob_csv(df_no_lists: pl.DataFrame) -> None:
-    df = df_no_lists.drop("strings_nulls")
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.csv"
-        df.write_csv(file_path)
+def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
 
-        path_glob = Path(temp_dir) / "small*.csv"
-        assert pl.scan_csv(path_glob).collect().shape == (3, 11)
-        assert pl.read_csv(path_glob).shape == (3, 11)
+    df = df_no_lists.drop("strings_nulls")
+    file_path = tmp_path / "small.csv"
+    df.write_csv(file_path)
+
+    path_glob = tmp_path / "small*.csv"
+    assert pl.scan_csv(path_glob).collect().shape == (3, 11)
+    assert pl.read_csv(path_glob).shape == (3, 11)
 
 
 def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
@@ -1106,7 +1141,7 @@ def test_csv_categorical_lifetime() -> None:
         "b": ["b", "b", None],
     }
 
-    assert (df["a"] == df["b"]).to_list() == [False, False, False]
+    assert (df["a"] == df["b"]).to_list() == [False, False, None]
 
 
 def test_csv_categorical_categorical_merge() -> None:
@@ -1119,7 +1154,6 @@ def test_csv_categorical_categorical_merge() -> None:
     )["x"].to_list() == ["A", "B"]
 
 
-@typing.no_type_check
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     batches = reader.next_batches(5)
@@ -1142,13 +1176,13 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
     # the final batch of the low-memory variant is different
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(5)
-    assert len(batches) == 5
-    batches += reader.next_batches(5)
+    assert len(batches) == 5  # type: ignore[arg-type]
+    batches += reader.next_batches(5)  # type: ignore[operator]
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(10)
-    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
+    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
 
 
 def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:
@@ -1238,13 +1272,15 @@ def test_csv_statistics_offset() -> None:
 
 
 @pytest.mark.write_disk()
-def test_csv_scan_categorical() -> None:
+def test_csv_scan_categorical(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     N = 5_000
     df = pl.DataFrame({"x": ["A"] * N})
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "test_csv_scan_categorical.csv"
-        df.write_csv(file_path)
-        result = pl.scan_csv(file_path, dtypes={"x": pl.Categorical}).collect()
+
+    file_path = tmp_path / "test_csv_scan_categorical.csv"
+    df.write_csv(file_path)
+    result = pl.scan_csv(file_path, dtypes={"x": pl.Categorical}).collect()
 
     assert result["x"].dtype == pl.Categorical
 
@@ -1305,3 +1341,43 @@ def test_read_csv_n_rows_outside_heuristic() -> None:
 
     f.seek(0)
     assert pl.read_csv(f, n_rows=2048, has_header=False).shape == (2048, 4)
+
+
+def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    # The capsys fixture allows pytest to access stdout/stderr. See
+    # https://docs.pytest.org/en/7.1.x/how-to/capture-stdout-stderr.html
+    df = pl.DataFrame(
+        {
+            "numbers": [1, 2, 3],
+            "strings": ["test", "csv", "stdout"],
+            "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
+        }
+    )
+
+    # pytest hijacks sys.stdout and changes its type, which causes mypy failure
+    df.write_csv(sys.stdout)  # type: ignore[call-overload]
+    captured = capsys.readouterr()
+    assert captured.out == (
+        "numbers,strings,dates\n"
+        "1,test,2023-01-01\n"
+        "2,csv,2023-01-02\n"
+        "3,stdout,2023-01-03\n"
+    )
+
+    df.write_csv(sys.stderr)  # type: ignore[call-overload]
+    captured = capsys.readouterr()
+    assert captured.err == (
+        "numbers,strings,dates\n"
+        "1,test,2023-01-01\n"
+        "2,csv,2023-01-02\n"
+        "3,stdout,2023-01-03\n"
+    )
+
+
+def test_csv_9929() -> None:
+    df = pl.DataFrame({"nrs": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_csv(f)
+    f.seek(0)
+    with pytest.raises(pl.NoDataError):
+        pl.read_csv(f, skip_rows=10**6)

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import inspect
-import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Sequence
 
 import pytest
 
@@ -15,8 +13,8 @@ from polars.utils.convert import (
     _timedelta_to_pl_duration,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.decorators import deprecate_nonkeyword_arguments, redirect
-from polars.utils.various import parse_version
+from polars.utils.meta import get_idx_type
+from polars.utils.various import _in_notebook, parse_percentiles, parse_version
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
@@ -118,43 +116,35 @@ def test_parse_version(v1: Any, v2: Any) -> None:
     assert parse_version(v2) < parse_version(v1)
 
 
-class Foo:
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "baz"])
-    def bar(self, baz: str, ham: str | None = None, foobar: str | None = None) -> None:
-        ...
+def test_get_idx_type_deprecation() -> None:
+    with pytest.deprecated_call():
+        get_idx_type()
 
 
-def test_deprecate_nonkeyword_arguments_method_signature() -> None:
-    # Note the added star indicating keyword-only arguments after 'baz'
-    expected = "(self, baz: 'str', *, ham: 'str | None' = None, foobar: 'str | None' = None) -> 'None'"
-    assert str(inspect.signature(Foo.bar)) == expected
+def test_in_notebook() -> None:
+    # private function, but easier to test this separately and mock it in the callers
+    assert not _in_notebook()
 
 
-def test_deprecate_nonkeyword_arguments_method_warning() -> None:
-    msg = (
-        r"All arguments of Foo\.bar except for \'baz\' will be keyword-only in the next breaking release."
-        r" Use keyword arguments to silence this warning."
-    )
-    with pytest.deprecated_call(match=msg):
-        Foo().bar("qux", "quox")
+@pytest.mark.parametrize(
+    ("percentiles", "expected"),
+    [
+        (None, [0.5]),
+        (0.2, [0.2, 0.5]),
+        (0.5, [0.5]),
+        ((0.25, 0.75), [0.25, 0.5, 0.75]),
+        # Undocumented effect - percentiles get sorted.
+        # Can be changed, this serves as documentation of current behaviour.
+        ((0.6, 0.3), [0.3, 0.5, 0.6]),
+    ],
+)
+def test_parse_percentiles(
+    percentiles: Sequence[float] | float | None, expected: Sequence[float]
+) -> None:
+    assert parse_percentiles(percentiles) == expected
 
 
-def test_redirect() -> None:
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-
-        # one-to-one redirection
-        @redirect({"foo": "bar"})
-        class DemoClass1:
-            def bar(self, upper: bool = False) -> str:
-                return "BAZ" if upper else "baz"
-
-        assert DemoClass1().foo() == "baz"  # type: ignore[attr-defined]
-
-        # redirection with **kwargs
-        @redirect({"foo": ("bar", {"upper": True})})
-        class DemoClass2:
-            def bar(self, upper: bool = False) -> str:
-                return "BAZ" if upper else "baz"
-
-        assert DemoClass2().foo() == "BAZ"  # type: ignore[attr-defined]
+@pytest.mark.parametrize(("percentiles"), [(1.1), ([-0.1])])
+def test_parse_percentiles_errors(percentiles: Sequence[float] | float | None) -> None:
+    with pytest.raises(ValueError):
+        parse_percentiles(percentiles)

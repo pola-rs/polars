@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import no_type_check
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -42,7 +42,6 @@ def test_custom_df_namespace() -> None:
     ]
 
 
-@no_type_check
 def test_custom_expr_namespace() -> None:
     @pl.api.register_expr_namespace("power")
     class PowersOfN:
@@ -62,9 +61,9 @@ def test_custom_expr_namespace() -> None:
     assert df.select(
         [
             pl.col("n"),
-            pl.col("n").power.next(p=2).alias("next_pow2"),
-            pl.col("n").power.previous(p=2).alias("prev_pow2"),
-            pl.col("n").power.nearest(p=2).alias("nearest_pow2"),
+            pl.col("n").power.next(p=2).alias("next_pow2"),  # type: ignore[attr-defined]
+            pl.col("n").power.previous(p=2).alias("prev_pow2"),  # type: ignore[attr-defined]
+            pl.col("n").power.nearest(p=2).alias("nearest_pow2"),  # type: ignore[attr-defined]
         ]
     ).rows() == [
         (1.4, 2, 1, 1),
@@ -74,7 +73,6 @@ def test_custom_expr_namespace() -> None:
     ]
 
 
-@no_type_check
 def test_custom_lazy_namespace() -> None:
     @pl.api.register_lazyframe_namespace("split")
     class SplitFrame:
@@ -92,7 +90,7 @@ def test_custom_lazy_namespace() -> None:
         orient="row",
     ).lazy()
 
-    df1, df2 = (d.collect() for d in ldf.split.by_column_dtypes())
+    df1, df2 = (d.collect() for d in ldf.split.by_column_dtypes())  # type: ignore[attr-defined]
     assert_frame_equal(
         df1, pl.DataFrame([("xx",), ("xy",), ("yy",), ("yz",)], schema=["a1"])
     )
@@ -141,3 +139,26 @@ def test_class_namespaces_are_registered() -> None:
                         assert (
                             ns in namespaces
                         ), f"{ns!r} should be registered in {pcls.__name__}._accessors"
+
+
+def test_namespace_cannot_override_builtin() -> None:
+    with pytest.raises(AttributeError):
+
+        @pl.api.register_dataframe_namespace("dt")
+        class CustomDt:
+            def __init__(self, df: pl.DataFrame):
+                self._df = df
+
+
+def test_namespace_warning_on_override() -> None:
+    @pl.api.register_dataframe_namespace("math")
+    class CustomMath:
+        def __init__(self, df: pl.DataFrame):
+            self._df = df
+
+    with pytest.raises(UserWarning):
+
+        @pl.api.register_dataframe_namespace("math")
+        class CustomMath2:
+            def __init__(self, df: pl.DataFrame):
+                self._df = df

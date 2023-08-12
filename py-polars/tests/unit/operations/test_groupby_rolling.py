@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import ClosedInterval
 
 
 def bad_agg_parameters() -> list[Any]:
@@ -27,7 +30,7 @@ def test_groupby_rolling_apply() -> None:
             "a": [1, 2, 3, 4, 5],
             "b": [1, 2, 3, 4, 5],
         }
-    )
+    ).set_sorted("a")
 
     def apply(df: pl.DataFrame) -> pl.DataFrame:
         return df.select(
@@ -47,13 +50,8 @@ def test_groupby_rolling_apply() -> None:
 
 
 def test_rolling_groupby_overlapping_groups() -> None:
-    # this first aggregates overlapping groups
-    # so they cannot be naively flattened
-    df = pl.DataFrame(
-        {
-            "a": [41, 60, 37, 51, 52, 39, 40],
-        }
-    )
+    # this first aggregates overlapping groups so they cannot be naively flattened
+    df = pl.DataFrame({"a": [41, 60, 37, 51, 52, 39, 40]})
 
     assert_series_equal(
         (
@@ -64,7 +62,7 @@ def test_rolling_groupby_overlapping_groups() -> None:
                 period="5i",
             )
             .agg(
-                # the apply to trigger the apply on the expression engine
+                # trigger the apply on the expression engine
                 pl.col("a")
                 .apply(lambda x: x)
                 .sum()
@@ -174,3 +172,128 @@ def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> 
         }
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize(
+    ("offset", "closed", "expected_values"),
+    [
+        ("0d", "left", [[1, 4], [4, 9], [9, 155], [155]]),
+        ("0d", "right", [[4, 9], [9, 155], [155], []]),
+        ("0d", "both", [[1, 4, 9], [4, 9, 155], [9, 155], [155]]),
+        ("0d", "none", [[4], [9], [155], []]),
+        ("1d", "left", [[4, 9], [9, 155], [155], []]),
+        ("1d", "right", [[9, 155], [155], [], []]),
+        ("1d", "both", [[4, 9, 155], [9, 155], [155], []]),
+        ("1d", "none", [[9], [155], [], []]),
+    ],
+)
+def test_groupby_rolling_non_negative_offset_9077(
+    time_zone: str | None,
+    offset: str,
+    closed: ClosedInterval,
+    expected_values: list[list[int]],
+) -> None:
+    df = pl.DataFrame(
+        {
+            "datetime": pl.date_range(
+                datetime(2021, 11, 6),
+                datetime(2021, 11, 9),
+                "1d",
+                time_zone=time_zone,
+                eager=True,
+            ),
+            "value": [1, 4, 9, 155],
+        }
+    )
+    result = df.groupby_rolling(
+        index_column="datetime", period="2d", offset=offset, closed=closed
+    ).agg(pl.col("value"))
+    expected = pl.DataFrame(
+        {
+            "datetime": pl.date_range(
+                datetime(2021, 11, 6),
+                datetime(2021, 11, 9),
+                "1d",
+                time_zone=time_zone,
+                eager=True,
+            ),
+            "value": expected_values,
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_groupby_rolling_dynamic_sortedness_check() -> None:
+    # when the by argument is passed, the sortedness flag
+    # will be unset as the take shuffles data, so we must explicitly
+    # check the sortedness
+    df = pl.DataFrame(
+        {
+            "idx": [1, 2, -1, 2, 1, 1],
+            "group": [1, 1, 1, 2, 2, 1],
+        }
+    )
+
+    with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
+        df.groupby_dynamic("idx", every="2i", by="group").agg(
+            pl.col("idx").alias("idx1")
+        )
+
+    with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
+        df.groupby_rolling("idx", period="2i", by="group").agg(
+            pl.col("idx").alias("idx1")
+        )
+
+    # no `by` argument
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"argument in operation 'groupby_dynamic' is not explicitly sorted",
+    ):
+        df.groupby_dynamic("idx", every="2i").agg(pl.col("idx").alias("idx1"))
+
+    # no `by` argument
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"argument in operation 'groupby_rolling' is not explicitly sorted",
+    ):
+        df.groupby_rolling("idx", period="2i").agg(pl.col("idx").alias("idx1"))
+
+
+def test_groupby_rolling_empty_groups_9973() -> None:
+    dt1 = date(2001, 1, 1)
+    dt2 = date(2001, 1, 2)
+
+    data = pl.DataFrame(
+        {
+            "id": ["A", "A", "B", "B", "C", "C"],
+            "date": [dt1, dt2, dt1, dt2, dt1, dt2],
+            "value": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        }
+    ).sort(by=["id", "date"])
+
+    expected = pl.DataFrame(
+        {
+            "id": ["A", "A", "B", "B", "C", "C"],
+            "date": [
+                date(2001, 1, 1),
+                date(2001, 1, 2),
+                date(2001, 1, 1),
+                date(2001, 1, 2),
+                date(2001, 1, 1),
+                date(2001, 1, 2),
+            ],
+            "value": [[2.0], [], [4.0], [], [6.0], []],
+        }
+    )
+
+    out = data.groupby_rolling(
+        index_column="date",
+        by="id",
+        period="2d",
+        offset="1d",
+        closed="left",
+        check_sorted=True,
+    ).agg(pl.col("value"))
+
+    assert_frame_equal(out, expected)

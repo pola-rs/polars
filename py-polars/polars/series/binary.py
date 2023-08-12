@@ -30,7 +30,8 @@ class BinaryNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Series
+            Series of data type :class:`Boolean`.
 
         """
 
@@ -81,6 +82,7 @@ class BinaryNameSpace:
 
         Returns
         -------
-        Binary array with values encoded using provided encoding
+        Series
+            Series of data type :class:`Boolean`.
 
         """

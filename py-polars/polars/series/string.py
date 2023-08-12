@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING
 
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -52,6 +53,10 @@ class StringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the conversion.
 
@@ -102,6 +107,10 @@ class StringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
         utc
@@ -162,7 +171,8 @@ class StringNameSpace:
 
         """
 
-    @deprecated_alias(datatype="dtype", fmt="format")
+    @deprecate_renamed_parameter("datatype", "dtype", version="0.17.3")
+    @deprecate_renamed_parameter("fmt", "format", version="0.17.3")
     def strptime(
         self,
         dtype: PolarsTemporalType,
@@ -190,6 +200,10 @@ class StringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string. Conversion to the Time type is always exact.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         utc
@@ -250,14 +264,13 @@ class StringNameSpace:
         ]
         """
         if utc is not None:
-            warnings.warn(
+            issue_deprecation_warning(
                 "The `utc` argument is now a no-op and has no effect. "
                 "You can safely remove it. "
                 "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
                 "and offset-aware strings are converted to "
                 '``pl.Datetime(time_unit, "UTC")``.',
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.17.15",
             )
         s = wrap_s(self._s)
         return (
@@ -274,6 +287,40 @@ class StringNameSpace:
             .to_series()
         )
 
+    def to_decimal(
+        self,
+        inference_length: int = 100,
+    ) -> Series:
+        """
+        Convert a Utf8 column into a Decimal column.
+
+        This method infers the needed parameters ``precision`` and ``scale``.
+
+        Parameters
+        ----------
+        inference_length
+            Number of elements to parse to determine the `precision` and `scale`
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     ["40.12", "3420.13", "120134.19", "3212.98", "12.90", "143.09", "143.9"]
+        ... )
+        >>> s.str.to_decimal()
+        shape: (7,)
+        Series: '' [decimal[2]]
+        [
+            40.12
+            3420.13
+            120134.19
+            3212.98
+            12.9
+            143.09
+            143.9
+        ]
+
+        """
+
     def lengths(self) -> Series:
         """
         Get length of the string values in the Series (as number of bytes).
@@ -285,7 +332,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series[u32]
+        Series
+            Series of data type :class:`UInt32`.
 
         Examples
         --------
@@ -308,7 +356,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series[u32]
+        Series
+            Series of data type :class:`UInt32`.
 
         Notes
         -----
@@ -341,7 +390,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series of dtype Utf8
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -390,7 +440,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -497,7 +548,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Utf8 array with values encoded using provided encoding
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -513,7 +565,9 @@ class StringNameSpace:
 
         """
 
-    def json_extract(self, dtype: PolarsDataType | None = None) -> Series:
+    def json_extract(
+        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+    ) -> Series:
         """
         Parse string values as JSON.
 
@@ -524,6 +578,9 @@ class StringNameSpace:
         dtype
             The dtype to cast the extracted value to. If None, the dtype will be
             inferred from the JSON value.
+        infer_schema_length
+            How many rows to parse to determine the schema.
+            If ``None`` all rows are used.
 
         Examples
         --------
@@ -561,8 +618,9 @@ class StringNameSpace:
 
         Returns
         -------
-        Utf8 array. Contain null if original value is null or the json_path return
-        nothing.
+        Series
+            Series of data type :class:`Utf8`. Contains null values if the original
+            value is null or the json_path returns nothing.
 
         Examples
         --------
@@ -596,6 +654,12 @@ class StringNameSpace:
             Group 0 mean the whole pattern, first group begin at index 1
             Default to the first capture group
 
+        Returns
+        -------
+        Series
+            Series of data type :class:`Utf8`. Contains null values if the original
+            value is null or regex captures nothing.
+
         Notes
         -----
         To modify regular expression behaviour (such as multi-line matching)
@@ -619,10 +683,6 @@ class StringNameSpace:
         See the regex crate's section on `grouping and flags
         <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
         additional information about the use of inline expression modifiers.
-
-        Returns
-        -------
-        Utf8 array. Contain null if original value is null or regex capture nothing.
 
         Examples
         --------
@@ -698,7 +758,8 @@ class StringNameSpace:
 
         Returns
         -------
-        List[Utf8]
+        Series
+            Series of data type ``List(Utf8)``.
 
         Examples
         --------
@@ -713,6 +774,62 @@ class StringNameSpace:
 
         '''
 
+    def extract_groups(self, pattern: str) -> Series:
+        r"""
+        Extract all capture groups for the given regex pattern.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+
+        Notes
+        -----
+        All group names are **strings**.
+
+        If your pattern contains unnamed groups, their numerical position is converted
+        to a string.
+
+        For example, we can access the first group via the string `"1"`::
+
+            >>> (
+            ...     pl.Series(["foo bar baz"])
+            ...     .str.extract_groups(r"(\w+) (.+) (\w+)")
+            ...     .struct["1"]
+            ... )
+            shape: (1,)
+            Series: '1' [str]
+            [
+                "foo"
+            ]
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     name="url",
+        ...     values=[
+        ...         "http://vote.com/ballon_dor?candidate=messi&ref=python",
+        ...         "http://vote.com/ballon_dor?candidate=weghorst&ref=polars",
+        ...         "http://vote.com/ballon_dor?error=404&ref=rust",
+        ...     ],
+        ... )
+        >>> s.str.extract_groups(r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)")
+        shape: (3,)
+        Series: 'url' [struct[2]]
+        [
+            {"messi","python"}
+            {"weghorst","polars"}
+            {null,null}
+        ]
+
+        """
+
     def count_match(self, pattern: str) -> Series:
         r"""
         Count all successive non-overlapping regex matches.
@@ -725,7 +842,9 @@ class StringNameSpace:
 
         Returns
         -------
-        UInt32 array. Contain null if original value is null or regex capture nothing.
+        Series
+            Series of data type :class:`UInt32`. Contains null values if the original
+            value is null or if the regex captures nothing.
 
         Examples
         --------
@@ -754,7 +873,8 @@ class StringNameSpace:
 
         Returns
         -------
-        List of Utf8 type
+        Series
+            Series of data type ``List(Utf8)``.
 
         """
 
@@ -813,7 +933,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Struct of Utf8 type
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         """
 
@@ -870,7 +991,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Struct of Utf8 type
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         """
         s = wrap_s(self._s)
@@ -992,14 +1114,15 @@ class StringNameSpace:
         ]
 
         Characters can be stripped by passing a string as argument. Note that whitespace
-        will not be stripped automatically when doing so.
+        will not be stripped automatically when doing so, unless that whitespace is
+        also included in the string.
 
-        >>> s.str.strip("od\t")
+        >>> s.str.strip("o ")
         shape: (2,)
         Series: '' [str]
         [
-                " hello "
-                "worl"
+            "hell"
+            "	world"
         ]
 
         """
@@ -1064,12 +1187,12 @@ class StringNameSpace:
         Characters can be stripped by passing a string as argument. Note that whitespace
         will not be stripped automatically when doing so.
 
-        >>> s.str.rstrip("wod\t")
+        >>> s.str.rstrip("orld\t")
         shape: (2,)
         Series: '' [str]
         [
-                " hello "
-                "worl"
+            " hello "
+            "w"
         ]
 
         """
@@ -1151,10 +1274,55 @@ class StringNameSpace:
         """
 
     def to_lowercase(self) -> Series:
-        """Modify the strings to their lowercase equivalent."""
+        """
+        Modify the strings to their lowercase equivalent.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", ["CAT", "DOG"])
+        >>> s.str.to_lowercase()
+        shape: (2,)
+        Series: 'foo' [str]
+        [
+            "cat"
+            "dog"
+        ]
+
+        """
 
     def to_uppercase(self) -> Series:
-        """Modify the strings to their uppercase equivalent."""
+        """
+        Modify the strings to their uppercase equivalent.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", ["cat", "dog"])
+        >>> s.str.to_uppercase()
+        shape: (2,)
+        Series: 'foo' [str]
+        [
+            "CAT"
+            "DOG"
+        ]
+
+        """
+
+    def to_titlecase(self) -> Series:
+        """
+        Modify the strings to their titlecase equivalent.
+
+        Examples
+        --------
+        >>> s = pl.Series("sing", ["welcome to my world", "THERE'S NO TURNING BACK"])
+        >>> s.str.to_titlecase()
+        shape: (2,)
+        Series: 'sing' [str]
+        [
+            "Welcome To My …
+            "There's No Tur…
+        ]
+
+        """
 
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
@@ -1171,7 +1339,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of dtype Utf8.
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         Examples
         --------
@@ -1206,7 +1374,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Exploded column with string datatype.
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -1243,7 +1412,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series of parsed integers in i32 format
+        Series
+            Series of data type :class:`Int32`.
 
         Examples
         --------

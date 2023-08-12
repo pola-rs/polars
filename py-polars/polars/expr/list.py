@@ -5,17 +5,34 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.utils._parse_expr_input import expr_to_lit_or_expr
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import (
+    deprecate_renamed_methods,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Expr, Series
-    from polars.type_aliases import NullBehavior, ToStructStrategy
+    from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
 
 
+@deprecate_renamed_methods(
+    {
+        "difference": "set_difference",
+        "symmetric_difference": "set_symmetric_difference",
+        "intersection": "set_intersection",
+        "union": "set_union",
+    },
+    versions={
+        "difference": "0.18.10",
+        "symmetric_difference": "0.18.10",
+        "intersection": "0.18.10",
+        "union": "0.18.10",
+    },
+)
 class ExprListNameSpace:
     """Namespace for list related expressions."""
 
@@ -26,6 +43,60 @@ class ExprListNameSpace:
 
     def __getitem__(self, item: int) -> Expr:
         return self.get(item)
+
+    def all(self) -> Expr:
+        """
+        Evaluate whether all boolean values in a list are true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.all())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ true  │
+        │ null  │
+        └───────┘
+
+        """
+        return wrap_expr(self._pyexpr.list_all())
+
+    def any(self) -> Expr:
+        """
+        Evaluate whether any boolean value in a list is true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.any())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ null  │
+        └───────┘
+
+        """
+        return wrap_expr(self._pyexpr.list_any())
 
     def lengths(self) -> Expr:
         """
@@ -295,7 +366,7 @@ class ExprListNameSpace:
         └──────┘
 
         """
-        index = expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
+        index = parse_as_expression(index)
         return wrap_expr(self._pyexpr.list_get(index))
 
     def take(
@@ -323,7 +394,7 @@ class ExprListNameSpace:
         """
         if isinstance(index, list):
             index = pl.Series(index)
-        index = expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
+        index = parse_as_expression(index)
         return wrap_expr(self._pyexpr.list_take(index, null_on_oob))
 
     def first(self) -> Expr:
@@ -383,7 +454,8 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -401,7 +473,8 @@ class ExprListNameSpace:
         └───────┘
 
         """
-        return wrap_expr(self._pyexpr.list_contains(expr_to_lit_or_expr(item)._pyexpr))
+        item = parse_as_expression(item, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_contains(item))
 
     def join(self, separator: str) -> Expr:
         """
@@ -416,7 +489,8 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Series of dtype Utf8
+        Expr
+            Expression of data type :class:`Utf8`.
 
         Examples
         --------
@@ -441,7 +515,9 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Expr
+            Expression of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         Examples
         --------
@@ -470,7 +546,9 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Expr
+            Expression of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         Examples
         --------
@@ -592,8 +670,8 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = expr_to_lit_or_expr(offset, str_to_lit=False)._pyexpr
-        length = expr_to_lit_or_expr(length, str_to_lit=False)._pyexpr
+        offset = parse_as_expression(offset)
+        length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.list_slice(offset, length))
 
     def head(self, n: int | str | Expr = 5) -> Expr:
@@ -640,8 +718,8 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = -expr_to_lit_or_expr(n, str_to_lit=False)
-        return self.slice(offset, n)
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.list_tail(n))
 
     def explode(self) -> Expr:
         """
@@ -649,7 +727,8 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Exploded column with the datatype of the list elements.
+        Expr
+            Expression with the data type of the list elements.
 
         See Also
         --------
@@ -676,9 +755,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.explode())
 
-    def count_match(
-        self, element: float | str | bool | int | date | datetime | time | Expr
-    ) -> Expr:
+    def count_match(self, element: IntoExpr) -> Expr:
         """
         Count how often the value produced by ``element`` occurs.
 
@@ -705,11 +782,10 @@ class ExprListNameSpace:
         └────────────────┘
 
         """
-        return wrap_expr(
-            self._pyexpr.list_count_match(expr_to_lit_or_expr(element)._pyexpr)
-        )
+        element = parse_as_expression(element, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_count_match(element))
 
-    @deprecated_alias(name_generator="fields")
+    @deprecate_renamed_parameter("name_generator", "fields", version="0.17.12")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
@@ -821,3 +897,149 @@ class ExprListNameSpace:
 
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
+
+    def set_union(self, other: Expr | IntoExpr) -> Expr:
+        """
+        Compute the SET UNION between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
+        ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("a").list.set_union("b").alias("union")
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (4, 3)
+        ┌───────────┬──────────────┬───────────────┐
+        │ a         ┆ b            ┆ union         │
+        │ ---       ┆ ---          ┆ ---           │
+        │ list[i64] ┆ list[i64]    ┆ list[i64]     │
+        ╞═══════════╪══════════════╪═══════════════╡
+        │ [1, 2, 3] ┆ [2, 3, 4]    ┆ [1, 2, 3, 4]  │
+        │ []        ┆ [3]          ┆ [3]           │
+        │ [null, 3] ┆ [3, 4, null] ┆ [null, 3, 4]  │
+        │ [5, 6, 7] ┆ [6, 8]       ┆ [5, 6, 7, 8]  │
+        └───────────┴──────────────┴───────────────┘
+
+        """  # noqa: W505.
+        other = parse_as_expression(other, str_as_lit=False)
+        return wrap_expr(self._pyexpr.list_set_operation(other, "union"))
+
+    def set_difference(self, other: Expr | IntoExpr) -> Expr:
+        """
+        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
+        ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("a").list.set_difference("b").alias("difference"))
+        shape: (4, 3)
+        ┌───────────┬──────────────┬────────────┐
+        │ a         ┆ b            ┆ difference │
+        │ ---       ┆ ---          ┆ ---        │
+        │ list[i64] ┆ list[i64]    ┆ list[i64]  │
+        ╞═══════════╪══════════════╪════════════╡
+        │ [1, 2, 3] ┆ [2, 3, 4]    ┆ [1]        │
+        │ []        ┆ [3]          ┆ []         │
+        │ [null, 3] ┆ [3, 4, null] ┆ []         │
+        │ [5, 6, 7] ┆ [6, 8]       ┆ [5, 7]     │
+        └───────────┴──────────────┴────────────┘
+
+        See Also
+        --------
+        polars.Expr.list.diff: Calculates the n-th discrete difference of every sublist.
+
+        """  # noqa: W505.
+        other = parse_as_expression(other, str_as_lit=False)
+        return wrap_expr(self._pyexpr.list_set_operation(other, "difference"))
+
+    def set_intersection(self, other: Expr | IntoExpr) -> Expr:
+        """
+        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
+        ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("a").list.set_intersection("b").alias("intersection")
+        ... )
+        shape: (4, 3)
+        ┌───────────┬──────────────┬──────────────┐
+        │ a         ┆ b            ┆ intersection │
+        │ ---       ┆ ---          ┆ ---          │
+        │ list[i64] ┆ list[i64]    ┆ list[i64]    │
+        ╞═══════════╪══════════════╪══════════════╡
+        │ [1, 2, 3] ┆ [2, 3, 4]    ┆ [2, 3]       │
+        │ []        ┆ [3]          ┆ []           │
+        │ [null, 3] ┆ [3, 4, null] ┆ [null, 3]    │
+        │ [5, 6, 7] ┆ [6, 8]       ┆ [6]          │
+        └───────────┴──────────────┴──────────────┘
+
+        """  # noqa: W505.
+        other = parse_as_expression(other, str_as_lit=False)
+        return wrap_expr(self._pyexpr.list_set_operation(other, "intersection"))
+
+    def set_symmetric_difference(self, other: Expr | IntoExpr) -> Expr:
+        """
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
+        ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("b").list.set_symmetric_difference("a").alias("sdiff")
+        ... )
+        shape: (4, 3)
+        ┌───────────┬──────────────┬───────────┐
+        │ a         ┆ b            ┆ sdiff     │
+        │ ---       ┆ ---          ┆ ---       │
+        │ list[i64] ┆ list[i64]    ┆ list[i64] │
+        ╞═══════════╪══════════════╪═══════════╡
+        │ [1, 2, 3] ┆ [2, 3, 4]    ┆ [4, 1]    │
+        │ []        ┆ [3]          ┆ [3]       │
+        │ [null, 3] ┆ [3, 4, null] ┆ [4]       │
+        │ [5, 6, 7] ┆ [6, 8]       ┆ [8, 5, 7] │
+        └───────────┴──────────────┴───────────┘
+        """  # noqa: W505.
+        other = parse_as_expression(other, str_as_lit=False)
+        return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))

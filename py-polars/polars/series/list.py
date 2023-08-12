@@ -5,7 +5,10 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import (
+    deprecate_renamed_methods,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -16,6 +19,20 @@ if TYPE_CHECKING:
 
 
 @expr_dispatch
+@deprecate_renamed_methods(
+    {
+        "difference": "set_difference",
+        "symmetric_difference": "set_symmetric_difference",
+        "intersection": "set_intersection",
+        "union": "set_union",
+    },
+    versions={
+        "difference": "0.18.10",
+        "symmetric_difference": "0.18.10",
+        "intersection": "0.18.10",
+        "union": "0.18.10",
+    },
+)
 class ListNameSpace:
     """Namespace for list related methods."""
 
@@ -23,6 +40,58 @@ class ListNameSpace:
 
     def __init__(self, series: Series):
         self._s: PySeries = series._s
+
+    def all(self) -> Expr:
+        """
+        Evaluate whether all boolean values in a list are true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.all())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ true  │
+        │ null  │
+        └───────┘
+
+        """
+
+    def any(self) -> Expr:
+        """
+        Evaluate whether any boolean value in a list is true.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[True, True], [False, True], [False, False], [None], [], None]}
+        ... )
+        >>> df.select(pl.col("a").list.any())
+        shape: (6, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ true  │
+        │ false │
+        │ false │
+        │ false │
+        │ null  │
+        └───────┘
+
+        """
 
     def lengths(self) -> Series:
         """
@@ -159,7 +228,8 @@ class ListNameSpace:
 
         Returns
         -------
-        Series of dtype Utf8
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -191,7 +261,8 @@ class ListNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Series
+            Series of data type :class:`Boolean`.
 
         """
 
@@ -201,7 +272,9 @@ class ListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Series
+            Series of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         """
 
@@ -211,7 +284,9 @@ class ListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Series
+            Series of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         """
 
@@ -277,7 +352,7 @@ class ListNameSpace:
 
         """
 
-    def slice(self, offset: int, length: int | None = None) -> Series:
+    def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Series:
         """
         Slice every sublist.
 
@@ -302,7 +377,7 @@ class ListNameSpace:
 
         """
 
-    def head(self, n: int = 5) -> Series:
+    def head(self, n: int | Expr = 5) -> Series:
         """
         Slice the first `n` values of every sublist.
 
@@ -324,7 +399,7 @@ class ListNameSpace:
 
         """
 
-    def tail(self, n: int = 5) -> Series:
+    def tail(self, n: int | Expr = 5) -> Series:
         """
         Slice the last `n` values of every sublist.
 
@@ -352,7 +427,8 @@ class ListNameSpace:
 
         Returns
         -------
-        Exploded column with the datatype of the list elements.
+        Series
+            Series with the data type of the list elements.
 
         See Also
         --------
@@ -388,7 +464,7 @@ class ListNameSpace:
 
         """
 
-    @deprecated_alias(name_generator="fields")
+    @deprecate_renamed_parameter("name_generator", "fields", version="0.17.12")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
@@ -497,3 +573,93 @@ class ListNameSpace:
         └─────┴─────┴────────────┘
 
         """
+
+    def set_union(self, other: Series) -> Series:
+        """
+        Compute the SET UNION between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
+        >>> a.list.set_union(b)  # doctest: +IGNORE_RESULT
+        shape: (4,)
+        Series: '' [list[i64]]
+        [
+                [1, 2, 3, 4]
+                [3]
+                [null, 3, 4]
+                [5, 6, 7, 8]
+        ]
+
+        """  # noqa: W505.
+
+    def set_difference(self, other: Series) -> Series:
+        """
+        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
+        >>> a.list.set_difference(b)
+        shape: (4,)
+        Series: '' [list[i64]]
+        [
+                [1]
+                []
+                []
+                [5, 7]
+        ]
+
+        See Also
+        --------
+        polars.Series.list.diff: Calculates the n-th discrete difference of every sublist.
+
+        """  # noqa: W505.
+
+    def set_intersection(self, other: Series) -> Series:
+        """
+        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
+        >>> a.list.set_intersection(b)
+        shape: (4,)
+        Series: '' [list[i64]]
+        [
+                [2, 3]
+                []
+                [null, 3]
+                [6]
+        ]
+
+        """  # noqa: W505.
+
+    def set_symmetric_difference(self, other: Series) -> Series:
+        """
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        """  # noqa: W505.

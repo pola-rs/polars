@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import typing
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import pandas as pd
@@ -360,8 +359,17 @@ def test_sorted_flag_after_joins() -> None:
     joined = dfb.join(dfa, on="b", how="anti")
     assert not joined["a"].flags["SORTED_ASC"]
 
+    # streaming left join
+    df1 = pl.DataFrame({"x": [1, 2, 3, 4], "y": [2, 4, 6, 6]}).set_sorted("x")
+    df2 = pl.DataFrame({"x": [4, 2, 3, 1], "z": [1, 4, 9, 1]})
+    assert (
+        df1.lazy()
+        .join(df2.lazy(), on="x", how="left")
+        .collect(streaming=True)["x"]
+        .flags["SORTED_ASC"]
+    )
 
-@typing.no_type_check
+
 def test_jit_sort_joins() -> None:
     n = 200
     # Explicitly specify numpy dtype because of different defaults on Windows
@@ -382,9 +390,10 @@ def test_jit_sort_joins() -> None:
     dfa_pl = pl.from_pandas(dfa).sort("a")
     dfb_pl = pl.from_pandas(dfb)
 
-    for how in ["left", "inner"]:
+    join_strategies: list[Literal["left", "inner"]] = ["left", "inner"]
+    for how in join_strategies:
         pd_result = dfa.merge(dfb, on="a", how=how)
-        pd_result.columns = ["a", "b", "b_right"]
+        pd_result.columns = pd.Index(["a", "b", "b_right"])
 
         # left key sorted right is not
         pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(["a", "b"])
@@ -395,7 +404,7 @@ def test_jit_sort_joins() -> None:
 
         # left key sorted right is not
         pd_result = dfb.merge(dfa, on="a", how=how)
-        pd_result.columns = ["a", "b", "b_right"]
+        pd_result.columns = pd.Index(["a", "b", "b_right"])
         pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(["a", "b"])
 
         a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
@@ -403,7 +412,6 @@ def test_jit_sort_joins() -> None:
         assert pl_result["a"].flags["SORTED_ASC"]
 
 
-@typing.no_type_check
 def test_streaming_joins() -> None:
     n = 100
     dfa = pd.DataFrame(
@@ -423,9 +431,10 @@ def test_streaming_joins() -> None:
     dfa_pl = pl.from_pandas(dfa).sort("a")
     dfb_pl = pl.from_pandas(dfb)
 
-    for how in ["inner", "left"]:
+    join_strategies: list[Literal["inner", "left"]] = ["inner", "left"]
+    for how in join_strategies:
         pd_result = dfa.merge(dfb, on="a", how=how)
-        pd_result.columns = ["a", "b", "b_right"]
+        pd_result.columns = pd.Index(["a", "b", "b_right"])
 
         pl_result = (
             dfa_pl.lazy()
@@ -512,19 +521,18 @@ def test_update() -> None:
     assert c.rows() == a.rows()
 
 
-@typing.no_type_check
 def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
     ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()
 
     with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
-        _ = ldf.join(df, on="A")
+        _ = ldf.join(df, on="A")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
-        _ = df.join(ldf, on="A")
+        _ = df.join(ldf, on="A")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
-        _ = ldf.join_asof(df, on="A")
+        _ = ldf.join_asof(df, on="A")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
-        _ = df.join_asof(ldf, on="A")
+        _ = df.join_asof(ldf, on="A")  # type: ignore[arg-type]
 
 
 def test_join_concat_projection_pd_case_7071() -> None:
@@ -556,3 +564,82 @@ def test_join_sorted_fast_paths_null() -> None:
         "x": [0, 0, 1, None],
         "y": [0, 0, None, 1],
     }
+
+
+def test_outer_join_list_() -> None:
+    schema = {"id": pl.Int64, "vals": pl.List(pl.Float64)}
+
+    df1 = pl.DataFrame({"id": [1], "vals": [[]]}, schema=schema)  # type: ignore[arg-type]
+    df2 = pl.DataFrame({"id": [2, 3], "vals": [[], [4]]}, schema=schema)  # type: ignore[arg-type]
+    assert df1.join(df2, on="id", how="outer").to_dict(False) == {
+        "id": [2, 3, 1],
+        "vals": [None, None, []],
+        "vals_right": [[], [4.0], None],
+    }
+
+
+def test_join_validation() -> None:
+    def test_each_join_validation(
+        unique: pl.DataFrame, duplicate: pl.DataFrame, how: JoinStrategy
+    ) -> None:
+        # one_to_many
+        _one_to_many_success_inner = unique.join(
+            duplicate, on="id", how=how, validate="1:m"
+        )
+
+        with pytest.raises(pl.ComputeError):
+            _one_to_many_fail_inner = duplicate.join(
+                unique, on="id", how=how, validate="1:m"
+            )
+
+        # one to one
+        with pytest.raises(pl.ComputeError):
+            _one_to_one_fail_1_inner = unique.join(
+                duplicate, on="id", how=how, validate="1:1"
+            )
+
+        with pytest.raises(pl.ComputeError):
+            _one_to_one_fail_2_inner = duplicate.join(
+                unique, on="id", how=how, validate="1:1"
+            )
+
+        # many to one
+        with pytest.raises(pl.ComputeError):
+            _many_to_one_fail_inner = unique.join(
+                duplicate, on="id", how=how, validate="m:1"
+            )
+
+        _many_to_one_success_inner = duplicate.join(
+            unique, on="id", how=how, validate="m:1"
+        )
+
+        # many to many
+        _many_to_many_success_1_inner = duplicate.join(
+            unique, on="id", how=how, validate="m:m"
+        )
+
+        _many_to_many_success_2_inner = unique.join(
+            duplicate, on="id", how=how, validate="m:m"
+        )
+
+    # test data
+    short_unique = pl.DataFrame(
+        {"id": [1, 2, 3, 4], "name": ["hello", "world", "rust", "polars"]}
+    )
+    short_duplicate = pl.DataFrame({"id": [1, 2, 3, 1], "cnt": [2, 4, 6, 1]})
+    long_unique = pl.DataFrame(
+        {"id": [1, 2, 3, 4, 5], "name": ["hello", "world", "rust", "polars", "meow"]}
+    )
+    long_duplicate = pl.DataFrame({"id": [1, 2, 3, 1, 5], "cnt": [2, 4, 6, 1, 8]})
+
+    join_strategies: list[JoinStrategy] = ["inner", "outer", "left"]
+
+    for how in join_strategies:
+        # same size
+        test_each_join_validation(long_unique, long_duplicate, how)
+
+        # left longer
+        test_each_join_validation(long_unique, short_duplicate, how)
+
+        # right longer
+        test_each_join_validation(short_unique, long_duplicate, how)

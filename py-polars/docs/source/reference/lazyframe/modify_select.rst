@@ -31,6 +31,7 @@ Manipulation/selection
     LazyFrame.rename
     LazyFrame.reverse
     LazyFrame.select
+    LazyFrame.select_seq
     LazyFrame.set_sorted
     LazyFrame.shift
     LazyFrame.shift_and_fill
@@ -43,5 +44,6 @@ Manipulation/selection
     LazyFrame.unnest
     LazyFrame.update
     LazyFrame.with_columns
+    LazyFrame.with_columns_seq
     LazyFrame.with_context
     LazyFrame.with_row_count

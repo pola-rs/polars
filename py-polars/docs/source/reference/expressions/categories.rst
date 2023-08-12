@@ -9,4 +9,5 @@ The following methods are available under the `expr.cat` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Expr.cat.get_categories
     Expr.cat.set_ordering

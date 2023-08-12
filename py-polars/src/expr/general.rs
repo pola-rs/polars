@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
@@ -9,6 +11,7 @@ use pyo3::types::{PyBytes, PyFloat};
 
 use crate::apply::lazy::{call_lambda_with_series, map_single};
 use crate::conversion::{parse_fill_null_strategy, Wrap};
+use crate::error::PyPolarsErr;
 use crate::series::PySeries;
 use crate::utils::reinterpret;
 use crate::PyExpr;
@@ -51,8 +54,15 @@ impl PyExpr {
     fn eq(&self, other: Self) -> Self {
         self.clone().inner.eq(other.inner).into()
     }
+
+    fn eq_missing(&self, other: Self) -> Self {
+        self.clone().inner.eq_missing(other.inner).into()
+    }
     fn neq(&self, other: Self) -> Self {
         self.clone().inner.neq(other.inner).into()
+    }
+    fn neq_missing(&self, other: Self) -> Self {
+        self.clone().inner.neq_missing(other.inner).into()
     }
     fn gt(&self, other: Self) -> Self {
         self.clone().inner.gt(other.inner).into()
@@ -69,39 +79,22 @@ impl PyExpr {
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
-        #[cfg(feature = "json")]
-        {
-            let s = serde_json::to_string(&self.inner).unwrap();
-            Ok(PyBytes::new(py, s.as_bytes()).to_object(py))
-        }
-        #[cfg(not(feature = "json"))]
-        {
-            panic!("activate 'json' feature")
-        }
+        let mut writer: Vec<u8> = vec![];
+        ciborium::ser::into_writer(&self.inner, &mut writer)
+            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+
+        Ok(PyBytes::new(py, &writer).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
-        #[cfg(feature = "json")]
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
-                // Safety
-                // we skipped the serializing/deserializing of the static in lifetime in `DataType`
-                // so we actually don't have a lifetime at all when serializing.
-
-                // PyBytes still has a lifetime. Bit its ok, because we drop it immediately
-                // in this scope
-                let s = unsafe { std::mem::transmute::<&'_ PyBytes, &'static PyBytes>(s) };
-                self.inner = serde_json::from_slice(s.as_bytes()).unwrap();
-
+                self.inner = ciborium::de::from_reader(s.as_bytes())
+                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
-            }
+            },
             Err(e) => Err(e),
-        }
-
-        #[cfg(not(feature = "json"))]
-        {
-            panic!("activate 'json' feature")
         }
     }
 
@@ -184,6 +177,67 @@ impl PyExpr {
             .quantile(quantile.inner, interpolation.0)
             .into()
     }
+
+    #[pyo3(signature = (breaks, labels, left_closed, include_breaks))]
+    #[cfg(feature = "cutqcut")]
+    fn cut(
+        &self,
+        breaks: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .cut(breaks, labels, left_closed, include_breaks)
+            .into()
+    }
+    #[pyo3(signature = (probs, labels, left_closed, allow_duplicates, include_breaks))]
+    #[cfg(feature = "cutqcut")]
+    fn qcut(
+        &self,
+        probs: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .qcut(probs, labels, left_closed, allow_duplicates, include_breaks)
+            .into()
+    }
+    #[pyo3(signature = (n_bins, labels, left_closed, allow_duplicates, include_breaks))]
+    #[cfg(feature = "cutqcut")]
+    fn qcut_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .qcut_uniform(
+                n_bins,
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
+            )
+            .into()
+    }
+
+    #[cfg(feature = "rle")]
+    fn rle(&self) -> Self {
+        self.clone().inner.rle().into()
+    }
+    #[cfg(feature = "rle")]
+    fn rle_id(&self) -> Self {
+        self.clone().inner.rle_id().into()
+    }
+
     fn agg_groups(&self) -> Self {
         self.clone().inner.agg_groups().into()
     }
@@ -218,6 +272,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }
@@ -229,6 +284,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }
@@ -316,21 +372,25 @@ impl PyExpr {
     fn filter(&self, predicate: Self) -> Self {
         self.clone().inner.filter(predicate.inner).into()
     }
+
     fn reverse(&self) -> Self {
         self.clone().inner.reverse().into()
     }
+
     fn std(&self, ddof: u8) -> Self {
         self.clone().inner.std(ddof).into()
     }
+
     fn var(&self, ddof: u8) -> Self {
         self.clone().inner.var(ddof).into()
     }
+
     fn is_unique(&self) -> Self {
         self.clone().inner.is_unique().into()
     }
 
-    fn approx_unique(&self) -> Self {
-        self.clone().inner.approx_unique().into()
+    fn approx_n_unique(&self) -> Self {
+        self.clone().inner.approx_n_unique().into()
     }
 
     fn is_first(&self) -> Self {
@@ -345,7 +405,10 @@ impl PyExpr {
         self.clone()
             .inner
             .map(
-                move |s: Series| Ok(Some(s.take_every(n))),
+                move |s: Series| {
+                    polars_ensure!(n > 0, InvalidOperation: "take_every(n): n can't be zero");
+                    Ok(Some(s.take_every(n)))
+                },
                 GetOutput::same_type(),
             )
             .with_fmt("take_every")
@@ -437,6 +500,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "trigonometry")]
+    fn arctan2(&self, y: Self) -> Self {
+        self.clone().inner.arctan2(y.inner).into()
+    }
+
+    #[cfg(feature = "trigonometry")]
     fn sinh(&self) -> Self {
         self.clone().inner.sinh().into()
     }
@@ -464,6 +532,16 @@ impl PyExpr {
     #[cfg(feature = "trigonometry")]
     fn arctanh(&self) -> Self {
         self.clone().inner.arctanh().into()
+    }
+
+    #[cfg(feature = "trigonometry")]
+    pub fn degrees(&self) -> Self {
+        self.clone().inner.degrees().into()
+    }
+
+    #[cfg(feature = "trigonometry")]
+    pub fn radians(&self) -> Self {
+        self.clone().inner.radians().into()
     }
 
     #[cfg(feature = "sign")]
@@ -511,6 +589,14 @@ impl PyExpr {
         self.clone().inner.pow(exponent.inner).into()
     }
 
+    fn sqrt(&self) -> Self {
+        self.clone().inner.sqrt().into()
+    }
+
+    fn cbrt(&self) -> Self {
+        self.clone().inner.cbrt().into()
+    }
+
     fn cumsum(&self, reverse: bool) -> Self {
         self.clone().inner.cumsum(reverse).into()
     }
@@ -536,7 +622,6 @@ impl PyExpr {
     #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
     fn rolling_apply(
         &self,
-        py: Python,
         lambda: PyObject,
         window_size: usize,
         weights: Option<Vec<f64>>,
@@ -548,23 +633,20 @@ impl PyExpr {
             weights,
             min_periods,
             center,
+            ..Default::default()
         };
-        // get the pypolars module
-        // do the import outside of the function.
-        let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
-
         let function = move |s: &Series| {
             Python::with_gil(|py| {
-                let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars)
+                let out = call_lambda_with_series(py, s.clone(), &lambda)
                     .expect("python function failed");
                 match out.getattr(py, "_s") {
                     Ok(pyseries) => {
                         let pyseries = pyseries.extract::<PySeries>(py).unwrap();
                         pyseries.series
-                    }
+                    },
                     Err(_) => {
                         let obj = out;
-                        let is_float = obj.as_ref(py).is_instance_of::<PyFloat>().unwrap();
+                        let is_float = obj.as_ref(py).is_instance_of::<PyFloat>();
 
                         let dtype = s.dtype();
 
@@ -578,7 +660,7 @@ impl PyExpr {
                                     obj.extract::<u8>(py)
                                         .map(|v| UInt8Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             UInt16 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -587,7 +669,7 @@ impl PyExpr {
                                     obj.extract::<u16>(py)
                                         .map(|v| UInt16Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             UInt32 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -596,7 +678,7 @@ impl PyExpr {
                                     obj.extract::<u32>(py)
                                         .map(|v| UInt32Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             UInt64 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -605,7 +687,7 @@ impl PyExpr {
                                     obj.extract::<u64>(py)
                                         .map(|v| UInt64Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int8 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -614,7 +696,7 @@ impl PyExpr {
                                     obj.extract::<i8>(py)
                                         .map(|v| Int8Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int16 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -623,7 +705,7 @@ impl PyExpr {
                                     obj.extract::<i16>(py)
                                         .map(|v| Int16Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int32 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -632,7 +714,7 @@ impl PyExpr {
                                     obj.extract::<i32>(py)
                                         .map(|v| Int32Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int64 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -641,7 +723,7 @@ impl PyExpr {
                                     obj.extract::<i64>(py)
                                         .map(|v| Int64Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Float32 => obj
                                 .extract::<f32>(py)
                                 .map(|v| Float32Chunked::from_slice("", &[v]).into_series()),
@@ -655,9 +737,9 @@ impl PyExpr {
                             Ok(s) => s,
                             Err(e) => {
                                 panic!("{e:?}")
-                            }
+                            },
                         }
-                    }
+                    },
                 }
             })
         };
@@ -745,6 +827,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
         self.inner.clone().rolling_sum(options).into()
     }
@@ -766,6 +849,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
         self.inner.clone().rolling_min(options).into()
     }
@@ -787,6 +871,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
         self.inner.clone().rolling_max(options).into()
     }
@@ -808,12 +893,14 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
 
         self.inner.clone().rolling_mean(options).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof))]
+    #[allow(clippy::too_many_arguments)]
     fn rolling_std(
         &self,
         window_size: &str,
@@ -822,6 +909,7 @@ impl PyExpr {
         center: bool,
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
+        ddof: u8,
     ) -> Self {
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
@@ -830,12 +918,14 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
         };
 
         self.inner.clone().rolling_std(options).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof))]
+    #[allow(clippy::too_many_arguments)]
     fn rolling_var(
         &self,
         window_size: &str,
@@ -844,6 +934,7 @@ impl PyExpr {
         center: bool,
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
+        ddof: u8,
     ) -> Self {
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
@@ -852,6 +943,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
         };
 
         self.inner.clone().rolling_var(options).into()
@@ -874,8 +966,12 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            fn_params: Some(Arc::new(RollingQuantileParams {
+                prob: 0.5,
+                interpol: QuantileInterpolOptions::Linear,
+            }) as Arc<dyn Any + Send + Sync>),
         };
-        self.inner.clone().rolling_median(options).into()
+        self.inner.clone().rolling_quantile(options).into()
     }
 
     #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center, by, closed))]
@@ -898,12 +994,13 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            fn_params: Some(Arc::new(RollingQuantileParams {
+                prob: quantile,
+                interpol: interpolation.0,
+            }) as Arc<dyn Any + Send + Sync>),
         };
 
-        self.inner
-            .clone()
-            .rolling_quantile(quantile, interpolation.0, options)
-            .into()
+        self.inner.clone().rolling_quantile(options).into()
     }
 
     fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
@@ -958,37 +1055,41 @@ impl PyExpr {
     }
 
     fn to_physical(&self) -> Self {
+        self.inner.clone().to_physical().into()
+    }
+
+    #[pyo3(signature = (seed, fixed_seed))]
+    fn shuffle(&self, seed: Option<u64>, fixed_seed: bool) -> Self {
+        self.inner.clone().shuffle(seed, fixed_seed).into()
+    }
+
+    #[pyo3(signature = (n, with_replacement, shuffle, seed, fixed_seed))]
+    fn sample_n(
+        &self,
+        n: usize,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+        fixed_seed: bool,
+    ) -> Self {
         self.inner
             .clone()
-            .map(
-                |s| Ok(Some(s.to_physical_repr().into_owned())),
-                GetOutput::map_dtype(|dt| dt.to_physical()),
-            )
-            .with_fmt("to_physical")
+            .sample_n(n, with_replacement, shuffle, seed, fixed_seed)
             .into()
     }
 
-    fn shuffle(&self, seed: Option<u64>) -> Self {
-        self.inner.clone().shuffle(seed).into()
-    }
-
-    fn sample_n(&self, n: usize, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
-        self.inner
-            .clone()
-            .sample_n(n, with_replacement, shuffle, seed)
-            .into()
-    }
-
+    #[pyo3(signature = (frac, with_replacement, shuffle, seed, fixed_seed))]
     fn sample_frac(
         &self,
         frac: f64,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
+        fixed_seed: bool,
     ) -> Self {
         self.inner
             .clone()
-            .sample_frac(frac, with_replacement, shuffle, seed)
+            .sample_frac(frac, with_replacement, shuffle, seed, fixed_seed)
             .into()
     }
 
@@ -1052,12 +1153,12 @@ impl PyExpr {
             .with_fmt("extend")
             .into()
     }
-    fn any(&self) -> Self {
-        self.inner.clone().any().into()
+    fn any(&self, drop_nulls: bool) -> Self {
+        self.inner.clone().any(drop_nulls).into()
     }
 
-    fn all(&self) -> Self {
-        self.inner.clone().all().into()
+    fn all(&self, drop_nulls: bool) -> Self {
+        self.inner.clone().all(drop_nulls).into()
     }
 
     fn log(&self, base: f64) -> Self {
@@ -1085,9 +1186,5 @@ impl PyExpr {
             IsSorted::Ascending
         };
         self.inner.clone().set_sorted_flag(is_sorted).into()
-    }
-
-    fn cache(&self) -> Self {
-        self.inner.clone().cache().into()
     }
 }

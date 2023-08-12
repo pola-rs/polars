@@ -58,13 +58,6 @@ def read_csv(
     """
     Read a CSV file into a DataFrame.
 
-    Notes
-    -----
-    This operation defaults to a `rechunk` operation at the end, meaning that
-    all data will be stored continuously in memory.
-    Set `rechunk=False` if you are benchmarking the csv-reader. A `rechunk` is
-    an expensive operation.
-
     Parameters
     ----------
     source
@@ -174,6 +167,13 @@ def read_csv(
     Returns
     -------
     DataFrame
+
+    Notes
+    -----
+    This operation defaults to a `rechunk` operation at the end, meaning that
+    all data will be stored continuously in memory.
+    Set `rechunk=False` if you are benchmarking the csv-reader. A `rechunk` is
+    an expensive operation.
 
     See Also
     --------

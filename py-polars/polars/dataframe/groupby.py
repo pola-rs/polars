@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.functions.whenthen import WhenThen, WhenThenThen
 from polars.utils.convert import _timedelta_to_pl_duration
 
 if TYPE_CHECKING:
@@ -64,9 +63,7 @@ class GroupBy:
         """
         Allows iteration over the groups of the groupby operation.
 
-        Returns
-        -------
-        Iterator returning tuples of (name, data) for each group.
+        Each group is represented by a tuple of (name, data).
 
         Examples
         --------
@@ -110,10 +107,7 @@ class GroupBy:
         # When grouping by a single column, group name is a single value
         # When grouping by multiple columns, group name is a tuple of values
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if (
-            isinstance(self.by, (str, pl.Expr, WhenThen, WhenThenThen))
-            and not self.more_by
-        ):
+        if isinstance(self.by, (str, pl.Expr)) and not self.more_by:
             self._group_names = iter(group_names.to_series())
         else:
             self._group_names = group_names.iter_rows()
@@ -137,8 +131,7 @@ class GroupBy:
 
     def agg(
         self,
-        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
-        *more_aggs: IntoExpr,
+        *aggs: IntoExpr | Iterable[IntoExpr],
         **named_aggs: IntoExpr,
     ) -> DataFrame:
         """
@@ -146,18 +139,17 @@ class GroupBy:
 
         Parameters
         ----------
-        aggs
-            Aggregations to compute for each group of the groupby operation.
+        *aggs
+            Aggregations to compute for each group of the groupby operation,
+            specified as positional arguments.
             Accepts expression input. Strings are parsed as column names.
-        *more_aggs
-            Additional aggregations, specified as positional arguments.
         **named_aggs
-            Additional aggregations, specified as keyword arguments. The resulting
-            columns will be renamed to the keyword used.
+            Additional aggregations, specified as keyword arguments.
+            The resulting columns will be renamed to the keyword used.
 
         Examples
         --------
-        Compute the sum of a column for each group.
+        Compute the aggregation of the columns for each group.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -166,6 +158,22 @@ class GroupBy:
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
+        >>> df.groupby("a").agg([pl.col("b"), pl.col("c")])  # doctest: +IGNORE_RESULT
+        shape: (3, 3)
+        ┌─────┬───────────┬───────────┐
+        │ a   ┆ b         ┆ c         │
+        │ --- ┆ ---       ┆ ---       │
+        │ str ┆ list[i64] ┆ list[i64] │
+        ╞═════╪═══════════╪═══════════╡
+        │ a   ┆ [1, 1]    ┆ [5, 3]    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b   ┆ [2, 3]    ┆ [4, 2]    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ c   ┆ [3]       ┆ [1]       │
+        └─────┴───────────┴───────────┘
+
+        Compute the sum of a column for each group.
+
         >>> df.groupby("a").agg(pl.col("b").sum())  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
@@ -230,13 +238,17 @@ class GroupBy:
         return (
             self.df.lazy()
             .groupby(self.by, *self.more_by, maintain_order=self.maintain_order)
-            .agg(aggs, *more_aggs, **named_aggs)
+            .agg(*aggs, **named_aggs)
             .collect(no_optimization=True)
         )
 
     def apply(self, function: Callable[[DataFrame], DataFrame]) -> DataFrame:
         """
         Apply a custom/user-defined function (UDF) over the groups as a sub-DataFrame.
+
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
 
         Implementing logic using a Python function is almost always _significantly_
         slower and more memory intensive than implementing the same logic using
@@ -302,7 +314,7 @@ class GroupBy:
         It is better to implement this with an expression:
 
         >>> df.filter(
-        ...     pl.arange(0, pl.count()).shuffle().over("color") < 2
+        ...     pl.int_range(0, pl.count()).shuffle().over("color") < 2
         ... )  # doctest: +IGNORE_RESULT
 
         """
@@ -310,7 +322,7 @@ class GroupBy:
 
         if isinstance(self.by, str):
             by = [self.by]
-        elif isinstance(self.by, Iterable) and all(isinstance(c, str) for c in self.by):  # type: ignore[union-attr]
+        elif isinstance(self.by, Iterable) and all(isinstance(c, str) for c in self.by):
             by = list(self.by)  # type: ignore[arg-type]
         else:
             raise TypeError("Cannot call `apply` when grouping by an expression.")
@@ -765,6 +777,7 @@ class RollingGroupBy:
         offset: str | timedelta | None,
         closed: ClosedInterval,
         by: IntoExpr | Iterable[IntoExpr] | None,
+        check_sorted: bool,
     ):
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
@@ -775,6 +788,7 @@ class RollingGroupBy:
         self.offset = offset
         self.closed = closed
         self.by = by
+        self.check_sorted = check_sorted
 
     def __iter__(self) -> Self:
         temp_col = "__POLARS_GB_GROUP_INDICES"
@@ -787,6 +801,7 @@ class RollingGroupBy:
                 offset=self.offset,
                 closed=self.closed,
                 by=self.by,
+                check_sorted=self.check_sorted,
             )
             .agg(F.col(temp_col))
             .collect(no_optimization=True)
@@ -821,10 +836,22 @@ class RollingGroupBy:
 
     def agg(
         self,
-        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
-        *more_aggs: IntoExpr,
+        *aggs: IntoExpr | Iterable[IntoExpr],
         **named_aggs: IntoExpr,
     ) -> DataFrame:
+        """
+        Compute aggregations for each group of a groupby operation.
+
+        Parameters
+        ----------
+        *aggs
+            Aggregations to compute for each group of the groupby operation,
+            specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names.
+        **named_aggs
+            Additional aggregations, specified as keyword arguments.
+            The resulting columns will be renamed to the keyword used.
+        """
         return (
             self.df.lazy()
             .groupby_rolling(
@@ -833,8 +860,9 @@ class RollingGroupBy:
                 offset=self.offset,
                 closed=self.closed,
                 by=self.by,
+                check_sorted=self.check_sorted,
             )
-            .agg(aggs, *more_aggs, **named_aggs)
+            .agg(*aggs, **named_aggs)
             .collect(no_optimization=True)
         )
 
@@ -914,7 +942,7 @@ class RollingGroupBy:
 
         >>> (
         ...     df.lazy()
-        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .filter(pl.int_range(0, pl.count()).shuffle().over("color") < 2)
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 
@@ -927,6 +955,7 @@ class RollingGroupBy:
                 offset=self.offset,
                 closed=self.closed,
                 by=self.by,
+                check_sorted=self.check_sorted,
             )
             .apply(function, schema)
             .collect(no_optimization=True)
@@ -953,10 +982,11 @@ class DynamicGroupBy:
         closed: ClosedInterval,
         by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
+        check_sorted: bool,
     ):
+        every = _timedelta_to_pl_duration(every)
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
-        every = _timedelta_to_pl_duration(every)
 
         self.df = df
         self.time_column = index_column
@@ -968,6 +998,7 @@ class DynamicGroupBy:
         self.closed = closed
         self.by = by
         self.start_by = start_by
+        self.check_sorted = check_sorted
 
     def __iter__(self) -> Self:
         temp_col = "__POLARS_GB_GROUP_INDICES"
@@ -984,6 +1015,7 @@ class DynamicGroupBy:
                 closed=self.closed,
                 by=self.by,
                 start_by=self.start_by,
+                check_sorted=self.check_sorted,
             )
             .agg(F.col(temp_col))
             .collect(no_optimization=True)
@@ -1018,10 +1050,22 @@ class DynamicGroupBy:
 
     def agg(
         self,
-        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
-        *more_aggs: IntoExpr,
+        *aggs: IntoExpr | Iterable[IntoExpr],
         **named_aggs: IntoExpr,
     ) -> DataFrame:
+        """
+        Compute aggregations for each group of a groupby operation.
+
+        Parameters
+        ----------
+        *aggs
+            Aggregations to compute for each group of the groupby operation,
+            specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names.
+        **named_aggs
+            Additional aggregations, specified as keyword arguments.
+            The resulting columns will be renamed to the keyword used.
+        """
         return (
             self.df.lazy()
             .groupby_dynamic(
@@ -1034,8 +1078,9 @@ class DynamicGroupBy:
                 closed=self.closed,
                 by=self.by,
                 start_by=self.start_by,
+                check_sorted=self.check_sorted,
             )
-            .agg(aggs, *more_aggs, **named_aggs)
+            .agg(*aggs, **named_aggs)
             .collect(no_optimization=True)
         )
 
@@ -1115,7 +1160,7 @@ class DynamicGroupBy:
 
         >>> (
         ...     df.lazy()
-        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .filter(pl.int_range(0, pl.count()).shuffle().over("color") < 2)
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 
@@ -1132,6 +1177,7 @@ class DynamicGroupBy:
                 closed=self.closed,
                 by=self.by,
                 start_by=self.start_by,
+                check_sorted=self.check_sorted,
             )
             .apply(function, schema)
             .collect(no_optimization=True)

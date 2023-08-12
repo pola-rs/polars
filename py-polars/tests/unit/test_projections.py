@@ -1,5 +1,3 @@
-import typing
-
 import numpy as np
 
 import polars as pl
@@ -158,7 +156,6 @@ def test_double_projection_union() -> None:
     }
 
 
-@typing.no_type_check
 def test_asof_join_projection_() -> None:
     lf1 = (
         pl.DataFrame(
@@ -270,4 +267,59 @@ def test_distinct_projection_pd_7578() -> None:
     assert q.collect().sort("bar").to_dict(False) == {
         "bar": ["a", "b"],
         "count": [3, 2],
+    }
+
+
+def test_join_suffix_collision_9562() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    other_df = pl.DataFrame(
+        {
+            "apple": ["x", "y", "z"],
+            "ham": ["a", "b", "d"],
+        }
+    )
+    df.join(other_df, on="ham")
+    assert df.lazy().join(
+        other_df.lazy(), how="inner", left_on="ham", right_on="ham", suffix="m"
+    ).select("ham").collect().to_dict(False) == {"ham": ["a", "b"]}
+
+
+def test_projection_join_names_9955() -> None:
+    batting = pl.DataFrame(
+        {
+            "playerID": ["abercda01"],
+            "yearID": [1871],
+            "lgID": ["NA"],
+        }
+    ).lazy()
+
+    awards_players = pl.DataFrame(
+        {
+            "playerID": ["bondto01"],
+            "yearID": [1877],
+            "lgID": ["NL"],
+        }
+    ).lazy()
+
+    right = awards_players.filter(pl.col("lgID") == "NL").select("playerID")
+
+    q = batting.join(
+        right,
+        left_on=[pl.col("playerID")],
+        right_on=[pl.col("playerID")],
+        how="inner",
+    )
+
+    q = q.select(batting.columns)
+
+    assert q.collect().schema == {
+        "playerID": pl.Utf8,
+        "yearID": pl.Int64,
+        "lgID": pl.Utf8,
     }

@@ -66,9 +66,9 @@ def test_str_decode() -> None:
 
 def test_str_decode_exception() -> None:
     s = pl.Series(["not a valid", "626172", None])
-    with pytest.raises(Exception):
+    with pytest.raises(pl.ComputeError):
         s.str.decode(encoding="hex")
-    with pytest.raises(Exception):
+    with pytest.raises(pl.ComputeError):
         s.str.decode(encoding="base64")
     with pytest.raises(ValueError):
         s.str.decode("utf8")  # type: ignore[arg-type]
@@ -189,8 +189,8 @@ def test_str_strip() -> None:
     expected = pl.Series(["hello", "world"])
     assert_series_equal(s.str.strip(), expected)
 
-    expected = pl.Series(["hello", "worl"])
-    assert_series_equal(s.str.strip().str.strip("d"), expected)
+    expected = pl.Series(["hell", "world"])
+    assert_series_equal(s.str.strip().str.strip("o"), expected)
 
     expected = pl.Series(["ell", "rld\t"])
     assert_series_equal(s.str.strip(" hwo"), expected)
@@ -265,6 +265,11 @@ def test_json_extract_series() -> None:
     expected = pl.Series([{"a": 1}, None, {"a": 2}])
     dtype2 = pl.Struct([pl.Field("a", pl.Int64)])
     assert_series_equal(s.str.json_extract(dtype2), expected)
+
+    s = pl.Series([], dtype=pl.Utf8)
+    expected = pl.Series([], dtype=pl.List(pl.Int64))
+    dtype = pl.List(pl.Int64)
+    assert_series_equal(s.str.json_extract(dtype), expected)
 
 
 def test_json_extract_lazy_expr() -> None:
@@ -532,6 +537,62 @@ def test_extract_all_many() -> None:
     assert df["foo"].str.extract_all(df["re"]).to_list() == [["a"], ["bc"], ["abc"]]
 
 
+def test_extract_groups() -> None:
+    def _named_groups_builder(pattern: str, groups: dict[str, str]) -> str:
+        return pattern.format(
+            **{name: f"(?<{name}>{value})" for name, value in groups.items()}
+        )
+
+    expected = {
+        "authority": ["ISO", "ISO/IEC/IEEE"],
+        "spec_num": ["80000", "29148"],
+        "part_num": ["1", None],
+        "revision_year": ["2009", "2018"],
+    }
+
+    pattern = _named_groups_builder(
+        r"{authority}\s{spec_num}(?:-{part_num})?(?::{revision_year})",
+        {
+            "authority": r"^ISO(?:/[A-Z]+)*",
+            "spec_num": r"\d+",
+            "part_num": r"\d+",
+            "revision_year": r"\d{4}",
+        },
+    )
+
+    df = pl.DataFrame({"iso_code": ["ISO 80000-1:2009", "ISO/IEC/IEEE 29148:2018"]})
+
+    assert (
+        df.select(pl.col("iso_code").str.extract_groups(pattern))
+        .unnest("iso_code")
+        .to_dict(False)
+        == expected
+    )
+
+    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(False) == {
+        "iso_code": [{"iso_code": None}, {"iso_code": None}]
+    }
+
+    assert df.select(
+        pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")
+    ).to_dict(False) == {
+        "iso_code": [{"1": "ISO", "2": "80000"}, {"1": "ISO/IEC/IEEE", "2": "29148"}]
+    }
+
+    assert df.select(
+        pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(?<year>\d+)\z")
+    ).to_dict(False) == {
+        "iso_code": [
+            {"1": "ISO", "year": "2009"},
+            {"1": "ISO/IEC/IEEE", "year": "2018"},
+        ]
+    }
+
+    assert pl.select(
+        pl.lit(r"foobar").str.extract_groups(r"(?<foo>.{3})|(?<bar>...)")
+    ).to_dict(False) == {"literal": [{"foo": "foo", "bar": None}]}
+
+
 def test_zfill() -> None:
     df = pl.DataFrame(
         {
@@ -629,17 +690,6 @@ def test_decode_strict() -> None:
         df.select(pl.col("strings").str.decode("base64", strict=True))
 
 
-def test_wildcard_expansion() -> None:
-    # one function requires wildcard expansion the other need
-    # this tests the nested behavior
-    # see: #2867
-
-    df = pl.DataFrame({"a": ["x", "Y", "z"], "b": ["S", "o", "S"]})
-    assert df.select(
-        pl.concat_str(pl.all()).str.to_lowercase()
-    ).to_series().to_list() == ["xs", "yo", "zs"]
-
-
 def test_split() -> None:
     df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
     out = df.select([pl.col("x").str.split("_")])
@@ -707,3 +757,57 @@ def test_splitn() -> None:
 
     assert_frame_equal(out, expected)
     assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
+
+
+def test_titlecase() -> None:
+    df = pl.DataFrame(
+        {
+            "sing": [
+                "welcome to my world",
+                "THERE'S NO TURNING BACK",
+                "double  space",
+                "and\ta\t tab",
+            ]
+        }
+    )
+
+    assert df.select(pl.col("sing").str.to_titlecase()).to_dict(False) == {
+        "sing": [
+            "Welcome To My World",
+            "There's No Turning Back",
+            "Double  Space",
+            "And\tA\t Tab",
+        ]
+    }
+
+
+def test_string_replace_with_nulls_10124() -> None:
+    df = pl.DataFrame({"col1": ["S", "S", "S", None, "S", "S", "S", "S"]})
+
+    assert df.select(
+        pl.col("col1"),
+        pl.col("col1").str.replace("S", "O", n=1).alias("n_1"),
+        pl.col("col1").str.replace("S", "O", n=3).alias("n_3"),
+    ).to_dict(False) == {
+        "col1": ["S", "S", "S", None, "S", "S", "S", "S"],
+        "n_1": ["O", "O", "O", None, "O", "O", "O", "O"],
+        "n_3": ["O", "O", "O", None, "O", "O", "O", "O"],
+    }
+
+
+def test_string_extract_groups_lazy_schema_10305() -> None:
+    df = pl.LazyFrame(
+        data={
+            "url": [
+                "http://vote.com/ballon_dor?candidate=messi&ref=python",
+                "http://vote.com/ballon_dor?candidate=weghorst&ref=polars",
+                "http://vote.com/ballon_dor?error=404&ref=rust",
+            ]
+        }
+    )
+    pattern = r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)"
+    df = df.select(captures=pl.col("url").str.extract_groups(pattern)).unnest(
+        "captures"
+    )
+
+    assert df.schema == {"candidate": pl.Utf8, "ref": pl.Utf8}

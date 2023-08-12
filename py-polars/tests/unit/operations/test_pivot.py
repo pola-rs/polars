@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
@@ -169,12 +170,21 @@ def test_pivot_multiple_values_column_names_5116() -> None:
 
 def test_pivot_duplicate_names_7731() -> None:
     df = pl.DataFrame(
-        {"a": [1, 4], "b": [1, 2], "c": ["x", "x"], "d": [7, 8], "e": ["x", "y"]}
+        {
+            "a": [1, 4],
+            "b": [1.5, 2.5],
+            "c": ["x", "x"],
+            "d": [7, 8],
+            "e": ["x", "y"],
+        }
     )
     assert df.pivot(
-        values=["a", "d"], index="b", columns=["c", "e"], aggregate_function="first"
+        values=cs.integer(),
+        index=cs.float(),
+        columns=cs.string(),
+        aggregate_function="first",
     ).to_dict(False) == {
-        "b": [1, 2],
+        "b": [1.5, 2.5],
         "a_c_x": [1, 4],
         "d_c_x": [7, 8],
         "a_e_x": [1, None],
@@ -302,9 +312,8 @@ def test_pivot_negative_duration() -> None:
 
 def test_aggregate_function_deprecation_warning() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["foo", "foo"], "c": ["x", "x"]})
-    with pytest.warns(
-        DeprecationWarning,
-        match="the default `aggregate_function` will change from `'first'` to `None`",
+    with pytest.deprecated_call(
+        match="the default `aggregate_function` will change from `'first'` to `None`"
     ):
         df.pivot("a", "b", "c")
 

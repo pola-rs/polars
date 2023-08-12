@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import pytest
@@ -6,5 +5,4 @@ import pytest
 
 @pytest.fixture()
 def io_files_path() -> Path:
-    current_dir = os.path.dirname(__file__)
-    return Path(current_dir) / ".." / "io" / "files"
+    return Path(__file__).parent.parent / "io" / "files"

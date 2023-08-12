@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import contextlib
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from polars.dependencies import json
+from polars.utils.various import normalise_filepath
 
 
 # dummy func required (so docs build)
-def _get_float_fmt() -> str:
+def _get_float_fmt() -> str:  # pragma: no cover
     return "n/a"
 
 
@@ -18,15 +20,10 @@ with contextlib.suppress(ImportError):
     from polars.polars import set_float_fmt as _set_float_fmt
 
 if TYPE_CHECKING:
-    import sys
     from types import TracebackType
+    from typing import Literal
 
     from polars.type_aliases import FloatFmt
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 # note: register all Config-specific environment variable names here; need to constrain
@@ -57,14 +54,14 @@ _POLARS_CFG_ENV_VARS = {
 _POLARS_CFG_DIRECT_VARS = {"set_fmt_float": _get_float_fmt}
 
 
-class Config:
+class Config(contextlib.ContextDecorator):
     """
     Configure polars; offers options for table formatting and more.
 
     Notes
     -----
-    Can also be used as a context manager in order to temporarily scope
-    the lifetime of specific options. For example:
+    Can also be used as a context manager OR a function decorator in order to
+    temporarily scope the lifetime of specific options. For example:
 
     >>> with pl.Config() as cfg:
     ...     # set verbose for more detailed output within the scope
@@ -79,6 +76,14 @@ class Config:
     ...
 
     (The compact format is available for all `Config` methods that take a single value).
+
+    Alternatively, you can use as a decorator in order to scope the duration of the
+    selected options to a specific function:
+
+    >>> @pl.Config(verbose=True)
+    ... def test():
+    ...     pass
+    ...
 
     """
 
@@ -139,17 +144,21 @@ class Config:
         self._original_state = ""
 
     @classmethod
-    def load(cls, cfg: str) -> type[Config]:
+    def load(cls, cfg: Path | str) -> type[Config]:
         """
-        Load and set previously saved (or shared) Config options.
+        Load and set previously saved (or shared) Config options from json/file.
 
         Parameters
         ----------
         cfg : str
-            json string produced by ``Config.save()``.
+            json string produced by ``Config.save()``, or a filepath to the same.
 
         """
-        options = json.loads(cfg)
+        options = json.loads(
+            Path(normalise_filepath(cfg)).read_text()
+            if isinstance(cfg, Path) or Path(cfg).exists()
+            else cfg
+        )
         os.environ.update(options.get("environment", {}))
         for cfg_methodname, value in options.get("direct", {}).items():
             if hasattr(cls, cfg_methodname):
@@ -180,13 +189,24 @@ class Config:
         return cls
 
     @classmethod
-    def save(cls) -> str:
+    def save(cls, file: Path | str | None = None) -> str:
         """
-        Save the current set of Config options as a json string.
+        Save the current set of Config options as a json string or file.
+
+        Parameters
+        ----------
+        file
+            optional path to a file into which the json string will be written.
 
         Examples
         --------
         >>> cfg = pl.Config.save()
+
+        Returns
+        -------
+        str
+            JSON string containing current Config options, or the path to the file where
+            the options are saved.
 
         """
         environment_vars = {
@@ -198,10 +218,16 @@ class Config:
             cfg_methodname: get_value()
             for cfg_methodname, get_value in _POLARS_CFG_DIRECT_VARS.items()
         }
-        return json.dumps(
+        options = json.dumps(
             {"environment": environment_vars, "direct": direct_vars},
             separators=(",", ":"),
         )
+        if isinstance(file, (str, Path)):
+            file = Path(normalise_filepath(file)).resolve()
+            file.write_text(options)
+            return str(file)
+
+        return options
 
     @classmethod
     def state(

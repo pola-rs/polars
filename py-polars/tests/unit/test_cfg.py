@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Iterator
 
 import pytest
 
 import polars as pl
 from polars.config import _get_float_fmt
+from polars.exceptions import StringCacheMismatchError
 from polars.testing import assert_frame_equal
 
 
@@ -20,24 +22,25 @@ def _environ() -> Iterator[None]:
 def test_ascii_tables() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
 
+    ascii_table_repr = (
+        "shape: (3, 3)\n"
+        "+-----+-----+-----+\n"
+        "| a   | b   | c   |\n"
+        "| --- | --- | --- |\n"
+        "| i64 | i64 | i64 |\n"
+        "+=================+\n"
+        "| 1   | 4   | 7   |\n"
+        "| 2   | 5   | 8   |\n"
+        "| 3   | 6   | 9   |\n"
+        "+-----+-----+-----+"
+    )
     # note: expect to render ascii only within the given scope
     with pl.Config(set_ascii_tables=True):
-        assert (
-            str(df) == "shape: (3, 3)\n"
-            "+-----+-----+-----+\n"
-            "| a   | b   | c   |\n"
-            "| --- | --- | --- |\n"
-            "| i64 | i64 | i64 |\n"
-            "+=================+\n"
-            "| 1   | 4   | 7   |\n"
-            "| 2   | 5   | 8   |\n"
-            "| 3   | 6   | 9   |\n"
-            "+-----+-----+-----+"
-        )
+        assert repr(df) == ascii_table_repr
 
     # confirm back to utf8 default after scope-exit
     assert (
-        str(df) == "shape: (3, 3)\n"
+        repr(df) == "shape: (3, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -49,6 +52,12 @@ def test_ascii_tables() -> None:
         "└─────┴─────┴─────┘"
     )
 
+    @pl.Config(set_ascii_tables=True)
+    def ascii_table() -> str:
+        return repr(df)
+
+    assert ascii_table() == ascii_table_repr
+
 
 def test_hide_header_elements() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
@@ -56,13 +65,13 @@ def test_hide_header_elements() -> None:
     pl.Config.set_tbl_hide_column_data_types(True)
     assert (
         str(df) == "shape: (3, 3)\n"
-        "┌─────┬─────┬─────┐\n"
-        "│ a   ┆ b   ┆ c   │\n"
-        "╞═════╪═════╪═════╡\n"
-        "│ 1   ┆ 4   ┆ 7   │\n"
-        "│ 2   ┆ 5   ┆ 8   │\n"
-        "│ 3   ┆ 6   ┆ 9   │\n"
-        "└─────┴─────┴─────┘"
+        "┌───┬───┬───┐\n"
+        "│ a ┆ b ┆ c │\n"
+        "╞═══╪═══╪═══╡\n"
+        "│ 1 ┆ 4 ┆ 7 │\n"
+        "│ 2 ┆ 5 ┆ 8 │\n"
+        "│ 3 ┆ 6 ┆ 9 │\n"
+        "└───┴───┴───┘"
     )
 
     pl.Config.set_tbl_hide_column_data_types(False).set_tbl_hide_column_names(True)
@@ -331,12 +340,24 @@ def test_set_tbl_width_chars() -> None:
     pl.Config.set_tbl_width_chars(60)
     assert max(len(line) for line in str(df).split("\n")) == 60
 
-    # formula for determining min width is
-    # sum(max(min(header.len, 12), 5)) + header.len + 1
-    # so we end up with 12+5+10+4 = 31
-
+    # force minimal table size (will hard-wrap everything; "don't try this at home" :p)
     pl.Config.set_tbl_width_chars(0)
-    assert max(len(line) for line in str(df).split("\n")) == 31
+    assert max(len(line) for line in str(df).split("\n")) == 19
+
+    # this check helps to check that column width bucketing
+    # is exact; no extraneous character allocation
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "fruits": ["banana", "banana", "apple", "apple", "banana"],
+            "B": [5, 4, 3, 2, 1],
+            "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+        },
+        schema_overrides={"A": pl.Int64, "B": pl.Int64},
+    ).select(pl.all(), pl.all().suffix("_suffix!"))
+
+    with pl.Config(tbl_width_chars=87):
+        assert max(len(line) for line in str(df).split("\n")) == 87
 
 
 def test_shape_below_table_and_inlined_dtype() -> None:
@@ -471,7 +492,7 @@ def test_string_cache() -> None:
 
     df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
     df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(StringCacheMismatchError):
         _ = df1a.join(df2a, on="a", how="inner")
 
     # now turn on the cache
@@ -488,39 +509,43 @@ def test_string_cache() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_config_load_save() -> None:
-    # set some config options...
-    pl.Config.set_tbl_cols(12)
-    pl.Config.set_verbose(True)
-    pl.Config.set_fmt_float("full")
-    assert os.environ.get("POLARS_VERBOSE") == "1"
+@pytest.mark.write_disk()
+def test_config_load_save(tmp_path: Path) -> None:
+    for file in (None, tmp_path / "polars.config", str(tmp_path / "polars.config")):
+        # set some config options...
+        pl.Config.set_tbl_cols(12)
+        pl.Config.set_verbose(True)
+        pl.Config.set_fmt_float("full")
+        assert os.environ.get("POLARS_VERBOSE") == "1"
 
-    cfg = pl.Config.save()
-    assert isinstance(cfg, str)
-    assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
+        cfg = pl.Config.save(file)
+        assert isinstance(cfg, str)
+        assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
 
-    # ...modify the same options...
-    pl.Config.set_tbl_cols(10)
-    pl.Config.set_verbose(False)
-    assert os.environ.get("POLARS_VERBOSE") == "0"
+        # ...modify the same options...
+        pl.Config.set_tbl_cols(10)
+        pl.Config.set_verbose(False)
+        assert os.environ.get("POLARS_VERBOSE") == "0"
 
-    # ...load back from config...
-    pl.Config.load(cfg)
+        # ...load back from config...
+        if file is not None:
+            assert Path(cfg).is_file()
+        pl.Config.load(cfg)
 
-    # ...and confirm the saved options were set.
-    assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
-    assert os.environ.get("POLARS_VERBOSE") == "1"
-    assert _get_float_fmt() == "full"
+        # ...and confirm the saved options were set.
+        assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
+        assert os.environ.get("POLARS_VERBOSE") == "1"
+        assert _get_float_fmt() == "full"
 
-    # restore all default options (unsets from env)
-    pl.Config.restore_defaults()
-    for e in ("POLARS_FMT_MAX_COLS", "POLARS_VERBOSE"):
-        assert e not in pl.Config.state(if_set=True)
-        assert e in pl.Config.state()
+        # restore all default options (unsets from env)
+        pl.Config.restore_defaults()
+        for e in ("POLARS_FMT_MAX_COLS", "POLARS_VERBOSE"):
+            assert e not in pl.Config.state(if_set=True)
+            assert e in pl.Config.state()
 
-    assert os.environ.get("POLARS_FMT_MAX_COLS") is None
-    assert os.environ.get("POLARS_VERBOSE") is None
-    assert _get_float_fmt() == "mixed"
+        assert os.environ.get("POLARS_FMT_MAX_COLS") is None
+        assert os.environ.get("POLARS_VERBOSE") is None
+        assert _get_float_fmt() == "mixed"
 
 
 def test_config_scope() -> None:
@@ -550,3 +575,44 @@ def test_config_scope() -> None:
 
     # expect scope-exit to restore original state
     assert pl.Config.state() == initial_state
+
+
+def test_config_raise_error_if_not_exist() -> None:
+    with pytest.raises(AttributeError), pl.Config(i_do_not_exist=True):
+        pass
+
+
+def test_config_state_env_only() -> None:
+    pl.Config.set_verbose(False)
+    pl.Config.set_fmt_float("full")
+
+    state_all = pl.Config.state(env_only=False)
+    state_env_only = pl.Config.state(env_only=True)
+    assert len(state_env_only) < len(state_all)
+    assert "set_fmt_float" in state_all
+    assert "set_fmt_float" not in state_env_only
+
+
+def test_activate_decimals() -> None:
+    with pl.Config() as cfg:
+        cfg.activate_decimals(True)
+        assert os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1"
+        cfg.activate_decimals(False)
+        assert "POLARS_ACTIVATE_DECIMAL" not in os.environ
+
+
+def test_set_streaming_chunk_size() -> None:
+    with pl.Config() as cfg:
+        cfg.set_streaming_chunk_size(8)
+        assert os.environ.get("POLARS_STREAMING_CHUNK_SIZE") == "8"
+
+    with pytest.raises(ValueError), pl.Config() as cfg:
+        cfg.set_streaming_chunk_size(0)
+
+
+def test_set_fmt_str_lengths_invalid_length() -> None:
+    with pl.Config() as cfg:
+        with pytest.raises(ValueError):
+            cfg.set_fmt_str_lengths(0)
+        with pytest.raises(ValueError):
+            cfg.set_fmt_str_lengths(-2)

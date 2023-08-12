@@ -9,6 +9,16 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
+    #[cfg(feature = "list_any_all")]
+    fn list_all(&self) -> Self {
+        self.inner.clone().list().all().into()
+    }
+
+    #[cfg(feature = "list_any_all")]
+    fn list_any(&self) -> Self {
+        self.inner.clone().list().any().into()
+    }
+
     fn list_arg_max(&self) -> Self {
         self.inner.clone().list().arg_max().into()
     }
@@ -80,6 +90,10 @@ impl PyExpr {
         self.inner.clone().list().slice(offset.inner, length).into()
     }
 
+    fn list_tail(&self, n: PyExpr) -> Self {
+        self.inner.clone().list().tail(n.inner).into()
+    }
+
     fn list_sort(&self, descending: bool) -> Self {
         self.inner
             .clone()
@@ -138,5 +152,17 @@ impl PyExpr {
         } else {
             e.list().unique().into()
         }
+    }
+
+    #[cfg(feature = "list_sets")]
+    fn list_set_operation(&self, other: PyExpr, operation: Wrap<SetOperation>) -> Self {
+        let e = self.inner.clone().list();
+        match operation.0 {
+            SetOperation::Intersection => e.intersection(other.inner),
+            SetOperation::Difference => e.difference(other.inner),
+            SetOperation::Union => e.union(other.inner),
+            SetOperation::SymmetricDifference => e.symmetric_difference(other.inner),
+        }
+        .into()
     }
 }

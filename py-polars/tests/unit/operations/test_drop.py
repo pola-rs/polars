@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal
 
 
@@ -71,6 +72,7 @@ def test_drop() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
     df = df.drop(columns="a")
     assert df.shape == (3, 2)
+
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
     s = df.drop_in_place("a")
     assert s.name == "a"
@@ -87,9 +89,15 @@ def test_drop_nulls_lazy() -> None:
     result = df.lazy().drop_nulls().collect()
     assert_frame_equal(result, expected)
 
+    result = df.drop_nulls(cs.contains("a"))
+    assert_frame_equal(result, expected)
+
 
 def test_drop_columns() -> None:
-    out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop(["a", "b"])
+    out = pl.LazyFrame({"a": [1], "b": [2], "c": [3]}).drop(["a", "b"])
+    assert out.columns == ["c"]
+
+    out = pl.LazyFrame({"a": [1], "b": [2], "c": [3]}).drop(~cs.starts_with("c"))
     assert out.columns == ["c"]
 
     out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop("a")

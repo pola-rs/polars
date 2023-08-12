@@ -1,0 +1,91 @@
+[package]
+name = "polars-ops"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "More operations on Polars data structures"
+
+[dependencies]
+polars-arrow = { version = "0.31.1", path = "../polars-arrow", default-features = false }
+polars-core = { version = "0.31.1", path = "../polars-core", features = [], default-features = false }
+polars-json = { version = "0.31.1", optional = true, path = "../polars-json", default-features = false }
+polars-utils = { version = "0.31.1", path = "../polars-utils", default-features = false }
+
+argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
+arrow = { workspace = true }
+base64 = { version = "0.21", optional = true }
+chrono = { workspace = true, optional = true }
+chrono-tz = { workspace = true, optional = true }
+either = { workspace = true }
+hex = { version = "0.4", optional = true }
+indexmap = { workspace = true }
+jsonpath_lib = { version = "0.3", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
+memchr = { workspace = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true, optional = true }
+smartstring = { workspace = true }
+
+[build-dependencies]
+version_check = { workspace = true }
+
+[features]
+simd = ["argminmax/nightly_simd"]
+nightly = ["polars-utils/nightly"]
+dtype-categorical = ["polars-core/dtype-categorical"]
+dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]
+dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal"]
+dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
+dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
+dtype-struct = ["polars-core/dtype-struct", "polars-core/temporal"]
+dtype-u8 = ["polars-core/dtype-u8"]
+dtype-u16 = ["polars-core/dtype-u16"]
+dtype-i8 = ["polars-core/dtype-i8"]
+dtype-i16 = ["polars-core/dtype-i16"]
+dtype-array = ["polars-core/dtype-array"]
+dtype-decimal = ["polars-core/dtype-decimal"]
+object = ["polars-core/object"]
+propagate_nans = []
+performant = ["polars-core/performant", "fused"]
+big_idx = ["polars-core/bigidx"]
+round_series = []
+is_first = []
+is_unique = []
+approx_unique = []
+fused = []
+cutqcut = ["dtype-categorical", "dtype-struct"]
+rle = ["dtype-struct"]
+timezones = ["chrono-tz", "chrono"]
+
+# extra utilities for BinaryChunked
+binary_encoding = ["base64", "hex"]
+string_encoding = ["base64", "hex"]
+
+# ops
+to_dummies = []
+interpolate = []
+list_to_struct = ["polars-core/dtype-struct"]
+list_count = []
+diff = ["polars-core/diff"]
+strings = ["polars-core/strings"]
+string_justify = ["polars-core/strings"]
+string_from_radix = ["polars-core/strings"]
+extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
+log = []
+hash = []
+rolling_window = ["polars-core/rolling_window"]
+moment = ["polars-core/moment"]
+search_sorted = []
+merge_sorted = []
+top_k = []
+pivot = ["polars-core/reinterpret"]
+cross_join = ["polars-core/cross_join"]
+chunked_ids = ["polars-core/chunked_ids"]
+asof_join = ["polars-core/asof_join"]
+semi_anti_join = ["polars-core/semi_anti_join"]
+list_take = []
+list_sets = []
+list_any_all = []
+extract_groups = ["dtype-struct", "polars-core/regex"]

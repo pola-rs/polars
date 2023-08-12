@@ -46,7 +46,8 @@ def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray[Any, Any]:
 
     Returns
     -------
-    View of memory block as numpy array.
+    numpy.ndarray
+        View of memory block as numpy array.
 
     """
     ptr_ctype = ctypes.cast(ptr, ctypes.POINTER(ptr_type))

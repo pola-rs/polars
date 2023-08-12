@@ -2,6 +2,7 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
+use crate::error::PyPolarsErr;
 use crate::PyExpr;
 
 #[pymethods]
@@ -84,28 +85,17 @@ impl PyExpr {
         self.inner.clone().str().to_lowercase().into()
     }
 
+    #[cfg(feature = "nightly")]
+    fn str_to_titlecase(&self) -> Self {
+        self.inner.clone().str().to_titlecase().into()
+    }
+
     fn str_lengths(&self) -> Self {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(Some(ca.str_lengths().into_series()))
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.lengths")
-            .into()
+        self.inner.clone().str().lengths().into()
     }
 
     fn str_n_chars(&self) -> Self {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(Some(ca.str_n_chars().into_series()))
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.n_chars")
-            .into()
+        self.inner.clone().str().n_chars().into()
     }
 
     #[cfg(feature = "lazy_regex")]
@@ -215,26 +205,16 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    fn str_json_extract(&self, dtype: Option<Wrap<DataType>>) -> Self {
+    fn str_json_extract(
+        &self,
+        dtype: Option<Wrap<DataType>>,
+        infer_schema_len: Option<usize>,
+    ) -> Self {
         let dtype = dtype.map(|wrap| wrap.0);
-
-        let output_type = match dtype.clone() {
-            Some(dtype) => GetOutput::from_type(dtype),
-            None => GetOutput::from_type(DataType::Unknown),
-        };
-
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            match ca.json_extract(dtype.clone()) {
-                Ok(ca) => Ok(Some(ca.into_series())),
-                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
-            }
-        };
-
-        self.clone()
-            .inner
-            .map(function, output_type)
-            .with_fmt("str.json_extract")
+        self.inner
+            .clone()
+            .str()
+            .json_extract(dtype, infer_schema_len)
             .into()
     }
 
@@ -262,6 +242,17 @@ impl PyExpr {
         self.inner.clone().str().extract_all(pat.inner).into()
     }
 
+    #[cfg(feature = "extract_groups")]
+    fn str_extract_groups(&self, pat: &str) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .str()
+            .extract_groups(pat)
+            .map_err(PyPolarsErr::from)?
+            .into())
+    }
+
     fn str_count_match(&self, pat: &str) -> Self {
         self.inner.clone().str().count_match(pat).into()
     }
@@ -284,5 +275,9 @@ impl PyExpr {
 
     fn str_splitn(&self, by: &str, n: usize) -> Self {
         self.inner.clone().str().splitn(by, n).into()
+    }
+
+    fn str_to_decimal(&self, infer_len: usize) -> Self {
+        self.inner.clone().str().to_decimal(infer_len).into()
     }
 }

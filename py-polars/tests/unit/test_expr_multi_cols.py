@@ -31,19 +31,6 @@ def test_fold_regex_expand() -> None:
     }
 
 
-def test_expanding_sum() -> None:
-    df = pl.DataFrame(
-        {
-            "x": [0, 1, 2],
-            "y_1": [1.1, 2.2, 3.3],
-            "y_2": [1.0, 2.5, 3.5],
-        }
-    )
-    assert df.with_columns(pl.sum(pl.col(r"^y_.*$")).alias("y_sum"))[
-        "y_sum"
-    ].to_list() == [2.1, 4.7, 6.8]
-
-
 def test_arg_sort_argument_expansion() -> None:
     df = pl.DataFrame(
         {
@@ -81,3 +68,20 @@ def test_append_root_columns() -> None:
             ]
         )
     ).columns == ["col2", "col1", "prefix_col1", "col1_suffix"]
+
+
+def test_multiple_columns_length_9137() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1],
+            "b": ["c", "d"],
+        }
+    )
+
+    # list is larger than groups
+    cmp_list = ["a", "b", "c"]
+
+    assert df.groupby("a").agg(pl.col("b").is_in(cmp_list)).to_dict(False) == {
+        "a": [1],
+        "b": [[True, False]],
+    }

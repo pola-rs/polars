@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import typing
 import warnings
 from datetime import date, datetime, time
-from typing import Any, cast, no_type_check
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -12,6 +11,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -41,8 +41,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
         ),
     ]
 )
-@no_type_check
-def numpy_interop_test_data(request):
+def numpy_interop_test_data(request: Any) -> Any:
     return request.param
 
 
@@ -72,9 +71,10 @@ def test_to_numpy(numpy_interop_test_data: Any, use_pyarrow: bool) -> None:
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 @pytest.mark.parametrize("has_null", [True, False])
 @pytest.mark.parametrize("dtype", [pl.Time, pl.Boolean, pl.Utf8])
-@no_type_check
-def test_to_numpy_no_zero_copy(use_pyarrow, has_null, dtype):
-    data = ["a", None] if dtype == pl.Utf8 else [0, None]
+def test_to_numpy_no_zero_copy(
+    use_pyarrow: bool, has_null: bool, dtype: pl.PolarsDataType
+) -> None:
+    data: list[Any] = ["a", None] if dtype == pl.Utf8 else [0, None]
     series = pl.Series(data if has_null else data[:1], dtype=dtype)
     with pytest.raises(ValueError):
         series.to_numpy(zero_copy_only=True, use_pyarrow=use_pyarrow)
@@ -218,6 +218,23 @@ def test_arrow_null_roundtrip() -> None:
     assert arw.schema.names == tbl.schema.names
     for c1, c2 in zip(arw.columns, tbl.columns):
         assert c1.to_pylist() == c2.to_pylist()
+
+
+def test_arrow_empty_dataframe() -> None:
+    # 0x0 dataframe
+    df = pl.DataFrame({})
+    tbl = pa.table({})
+    assert df.to_arrow() == tbl
+    df2 = cast(pl.DataFrame, pl.from_arrow(df.to_arrow()))
+    assert_frame_equal(df2, df)
+
+    # 0 row dataframe
+    df = pl.DataFrame({}, schema={"a": pl.Int32})
+    tbl = pa.Table.from_batches([], pa.schema([pa.field("a", pa.int32())]))
+    assert df.to_arrow() == tbl
+    df2 = cast(pl.DataFrame, pl.from_arrow(df.to_arrow()))
+    assert df2.schema == {"a": pl.Int32}
+    assert df2.shape == (0, 1)
 
 
 def test_arrow_dict_to_polars() -> None:
@@ -522,17 +539,14 @@ def test_no_rechunk() -> None:
 def test_cat_to_pandas() -> None:
     df = pl.DataFrame({"a": ["best", "test"]})
     df = df.with_columns(pl.all().cast(pl.Categorical))
+
     pd_out = df.to_pandas()
-    assert "category" in str(pd_out["a"].dtype)
-    try:
-        pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
-        assert pd_pa_out["a"].dtype.type in (
-            pd.core.dtypes.dtypes.CategoricalDtypeType,
-            pa.DictionaryType,
-        )
-    except ModuleNotFoundError:
-        # Skip test if suitable pandas version not installed.
-        pass
+    assert isinstance(pd_out["a"].dtype, pd.CategoricalDtype)
+
+    pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
+    assert pd_pa_out["a"].dtype == pd.ArrowDtype(
+        pa.dictionary(pa.int64(), pa.large_string())
+    )
 
 
 def test_to_pandas() -> None:
@@ -683,9 +697,8 @@ def test_from_pandas_ns_resolution() -> None:
     assert cast(datetime, pl.from_pandas(df)[0, 0]) == datetime(2021, 1, 1, 1, 0, 1)
 
 
-@no_type_check
 def test_pandas_string_none_conversion_3298() -> None:
-    data = {"col_1": ["a", "b", "c", "d"]}
+    data: dict[str, list[str | None]] = {"col_1": ["a", "b", "c", "d"]}
     data["col_1"][0] = None
     df_pd = pd.DataFrame(data)
     df_pl = pl.DataFrame(df_pd)
@@ -751,7 +764,6 @@ def test_from_pandas_null_struct_6412() -> None:
     assert pl.from_pandas(df_pandas).to_dict(False) == {"a": [{"b": None}, {"b": None}]}
 
 
-@typing.no_type_check
 def test_from_pyarrow_map() -> None:
     pa_table = pa.table(
         [[1, 2], [[("a", "something")], [("a", "else"), ("b", "another key")]]],
@@ -760,8 +772,8 @@ def test_from_pyarrow_map() -> None:
         ),
     )
 
-    df = pl.from_arrow(pa_table)
-    assert df.to_dict(False) == {
+    result = cast(pl.DataFrame, pl.from_arrow(pa_table))
+    assert result.to_dict(False) == {
         "idx": [1, 2],
         "mapping": [
             [{"key": "a", "value": "something"}],
@@ -793,11 +805,10 @@ def test_to_numpy_datelike() -> None:
     )
 
 
-@typing.no_type_check
 def test_from_fixed_size_binary_list() -> None:
     val = [[b"63A0B1C66575DD5708E1EB2B"]]
     arrow_array = pa.array(val, type=pa.list_(pa.binary(24)))
-    s = pl.from_arrow(arrow_array)
+    s = cast(pl.Series, pl.from_arrow(arrow_array))
     assert s.dtype == pl.List(pl.Binary)
     assert s.to_list() == val
 
@@ -1069,7 +1080,6 @@ def test_untrusted_categorical_input() -> None:
     }
 
 
-@typing.no_type_check
 def test_sliced_struct_from_arrow() -> None:
     # Create a dataset with 3 rows
     tbl = pa.Table.from_arrays(
@@ -1087,9 +1097,18 @@ def test_sliced_struct_from_arrow() -> None:
 
     # slice the table
     # check if FFI correctly reads sliced
-    assert pl.from_arrow(tbl.slice(1, 2)).to_dict(False) == {
+    result = cast(pl.DataFrame, pl.from_arrow(tbl.slice(1, 2)))
+    assert result.to_dict(False) == {
         "struct_col": [{"a": 2, "b": "bar"}, {"a": 3, "b": "baz"}]
     }
-    assert pl.from_arrow(tbl.slice(1, 1)).to_dict(False) == {
-        "struct_col": [{"a": 2, "b": "bar"}]
-    }
+
+    result = cast(pl.DataFrame, pl.from_arrow(tbl.slice(1, 1)))
+    assert result.to_dict(False) == {"struct_col": [{"a": 2, "b": "bar"}]}
+
+
+def test_from_arrow_invalid_time_zone() -> None:
+    arr = pa.array(
+        [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="+01:00")
+    )
+    with pytest.raises(ComputeError, match=r"unable to parse time zone: '\+01:00'"):
+        pl.from_arrow(arr)

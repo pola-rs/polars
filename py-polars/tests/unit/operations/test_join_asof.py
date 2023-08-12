@@ -2,6 +2,7 @@ from datetime import date, datetime
 from typing import Any
 
 import numpy as np
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -112,6 +113,42 @@ def test_asof_join_schema_5684() -> None:
         == projected_result.schema
         == {"id": pl.Int64, "a": pl.Int64, "b_right": pl.Int64}
     )
+
+
+def test_join_asof_mismatched_dtypes() -> None:
+    # test 'on' dtype mismatch
+    df1 = pl.DataFrame(
+        {"a": pl.Series([1, 2, 3], dtype=pl.Int64), "b": ["a", "b", "c"]}
+    )
+    df2 = pl.DataFrame(
+        {"a": pl.Series([1, 2, 3], dtype=pl.Int32), "c": ["d", "e", "f"]}
+    )
+
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="datatypes of join keys don't match"
+    ):
+        df1.join_asof(df2, on="a", strategy="forward")
+
+    # test 'by' dtype mismatch
+    df1 = pl.DataFrame(
+        {
+            "time": pl.date_range(date(2018, 1, 1), date(2018, 1, 8), eager=True),
+            "group": pl.Series([1, 1, 1, 1, 2, 2, 2, 2], dtype=pl.Int32),
+            "value": [0, 0, None, None, 2, None, 1, None],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "time": pl.date_range(date(2018, 1, 1), date(2018, 1, 8), eager=True),
+            "group": pl.Series([1, 1, 1, 1, 2, 2, 2, 2], dtype=pl.Int64),
+            "value": [0, 0, None, None, 2, None, 1, None],
+        }
+    )
+
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="mismatching dtypes in 'by' parameter"
+    ):
+        df1.join_asof(df2, on="time", by="group", strategy="forward")
 
 
 def test_join_asof_floats() -> None:
@@ -440,6 +477,31 @@ def test_asof_join_nearest_by() -> None:
     out = df1.join_asof(df2, on="asof_key", by="group", strategy="nearest")
     assert_frame_equal(out, expected)
 
+    a = pl.DataFrame(
+        {
+            "code": [676, 35, 676, 676, 676],
+            "time": [364360, 364370, 364380, 365400, 367440],
+        }
+    )
+    b = pl.DataFrame(
+        {
+            "code": [676, 676, 35, 676, 676],
+            "time": [364000, 365000, 365000, 366000, 367000],
+            "price": [1.0, 2.0, 50, 3.0, None],
+        }
+    )
+
+    expected = pl.DataFrame(
+        {
+            "code": [676, 35, 676, 676, 676],
+            "time": [364360, 364370, 364380, 365400, 367440],
+            "price": [1.0, 50.0, 1.0, 2.0, None],
+        }
+    )
+
+    out = a.join_asof(b, by="code", on="time", strategy="nearest")
+    assert_frame_equal(out, expected)
+
 
 def test_asof_join_nearest_by_date() -> None:
     df1 = pl.DataFrame(
@@ -486,3 +548,12 @@ def test_asof_join_nearest_by_date() -> None:
 
     out = df1.join_asof(df2, on="asof_key", by="group", strategy="nearest")
     assert_frame_equal(out, expected)
+
+
+def test_asof_join_string_err() -> None:
+    left = pl.DataFrame({"date_str": ["2023/02/15"]}).sort("date_str")
+    right = pl.DataFrame(
+        {"date_str": ["2023/01/31", "2023/02/28"], "value": [0, 1]}
+    ).sort("date_str")
+    with pytest.raises(pl.InvalidOperationError):
+        left.join_asof(right, on="date_str")

@@ -4,15 +4,18 @@ import os
 with contextlib.suppress(ImportError):  # Module not available when building docs
     # ensure the object constructor is known by polars
     # we set this once on import
-    from polars.polars import register_object_builder
 
-    register_object_builder()
+    # we also set other function pointers needed
+    # on the rust side. This function is highly
+    # unsafe and should only be called once.
+    from polars.polars import __register_startup_deps
+
+    __register_startup_deps()
 
 from polars import api
 from polars.config import Config
 from polars.convert import (
     from_arrow,
-    from_dataframe,
     from_dict,
     from_dicts,
     from_numpy,
@@ -74,10 +77,14 @@ from polars.expr import Expr
 from polars.functions import (
     align_frames,
     all,
+    all_horizontal,
     any,
+    any_horizontal,
     apply,
-    approx_unique,
+    approx_n_unique,
     arange,
+    arctan2,
+    arctan2d,
     arg_sort_by,
     arg_where,
     avg,
@@ -93,8 +100,10 @@ from polars.functions import (
     cumfold,
     cumreduce,
     cumsum,
+    cumsum_horizontal,
     date,
     date_range,
+    date_ranges,
     datetime,
     duration,
     element,
@@ -106,13 +115,17 @@ from polars.functions import (
     groups,
     head,
     implode,
+    int_range,
+    int_ranges,
     last,
     lit,
     map,
     max,
+    max_horizontal,
     mean,
     median,
     min,
+    min_horizontal,
     n_unique,
     ones,
     quantile,
@@ -121,16 +134,20 @@ from polars.functions import (
     rolling_corr,
     rolling_cov,
     select,
+    sql_expr,
     std,
     struct,
     sum,
+    sum_horizontal,
     tail,
     time,
     time_range,
+    time_ranges,
     var,
     when,
     zeros,
 )
+from polars.interchange.from_dataframe import from_dataframe
 from polars.io import (
     read_avro,
     read_csv,
@@ -269,16 +286,32 @@ __all__ = [
     "arg_where",
     "concat",
     "date_range",
+    "date_ranges",
     "element",
     "ones",
     "repeat",
     "time_range",
+    "time_ranges",
     "zeros",
-    # polars.functions.lazy
+    # polars.functions.aggregation
     "all",
     "any",
+    "cumsum",
+    "max",
+    "min",
+    "sum",
+    "all_horizontal",
+    "any_horizontal",
+    "cumsum_horizontal",
+    "max_horizontal",
+    "min_horizontal",
+    "sum_horizontal",
+    # polars.functions.lazy
     "apply",
+    "approx_n_unique",
     "arange",
+    "arctan2",
+    "arctan2d",
     "arg_sort_by",
     "avg",
     "coalesce",
@@ -291,7 +324,6 @@ __all__ = [
     "cov",
     "cumfold",
     "cumreduce",
-    "cumsum",
     "date",  # named date_, see import above
     "datetime",  # named datetime_, see import above
     "duration",
@@ -303,15 +335,14 @@ __all__ = [
     "groups",
     "head",
     "implode",
+    "int_range",
+    "int_ranges",
     "last",
     "lit",
     "map",
-    "max",
     "mean",
     "median",
-    "min",
     "n_unique",
-    "approx_unique",
     "quantile",
     "reduce",
     "rolling_corr",
@@ -319,7 +350,6 @@ __all__ = [
     "select",
     "std",
     "struct",
-    "sum",
     "tail",
     "time",  # named time_, see import above
     "var",
@@ -340,6 +370,9 @@ __all__ = [
     "get_index_type",
     "show_versions",
     "threadpool_size",
+    # selectors
+    "selectors",
+    "sql_expr",
 ]
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"

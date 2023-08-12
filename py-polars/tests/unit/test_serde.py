@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import io
 import pickle
 from datetime import datetime, timedelta
+
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -13,12 +16,27 @@ def test_pickling_simple_expression() -> None:
     assert str(pickle.loads(buf)) == str(e)
 
 
-def test_serde_lazy_frame_lp() -> None:
+def test_lazyframe_serde() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
-    json = lf.write_json()
 
-    result = pl.LazyFrame.from_json(json).collect().to_series()
-    assert_series_equal(result, pl.Series("a", [1, 2, 3]))
+    json = lf.serialize()
+    result = pl.LazyFrame.deserialize(io.StringIO(json))
+
+    assert_series_equal(result.collect().to_series(), pl.Series("a", [1, 2, 3]))
+
+
+def test_lazyframe_deprecated_serde() -> None:
+    lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
+
+    with pytest.deprecated_call():
+        json = lf.write_json()  # type: ignore[attr-defined]
+    with pytest.deprecated_call():
+        result_from = pl.LazyFrame.from_json(json)
+    with pytest.deprecated_call():
+        result_read = pl.LazyFrame.read_json(io.StringIO(json))
+
+    assert_series_equal(result_from.collect().to_series(), pl.Series("a", [1, 2, 3]))
+    assert_series_equal(result_read.collect().to_series(), pl.Series("a", [1, 2, 3]))
 
 
 def test_serde_time_unit() -> None:
@@ -90,3 +108,77 @@ def test_deser_empty_list() -> None:
     s = pickle.loads(pickle.dumps(pl.Series([[[42.0]], []])))
     assert s.dtype == pl.List(pl.List(pl.Float64))
     assert s.to_list() == [[[42.0]], []]
+
+
+def test_expression_json() -> None:
+    e = pl.col("foo").sum().over("bar")
+    json = e.meta.write_json()
+
+    round_tripped = pl.Expr.from_json(json)
+    assert round_tripped.meta == e
+
+
+def times2(x: pl.Series) -> pl.Series:
+    return x * 2
+
+
+def test_pickle_udf_expression() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    e = pl.col("a").map(times2)
+    b = pickle.dumps(e)
+    e = pickle.loads(b)
+
+    assert df.select(e).to_dict(False) == {"a": [2, 4, 6]}
+
+    e = pl.col("a").map(times2, return_dtype=pl.Utf8)
+    b = pickle.dumps(e)
+    e = pickle.loads(b)
+
+    # tests that 'GetOutput' is also deserialized
+    with pytest.raises(
+        pl.SchemaError,
+        match=r"expected output type 'Utf8', got 'Int64'; set `return_dtype` to the proper datatype",
+    ):
+        df.select(e)
+
+
+def test_pickle_small_integers() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series([1, 2], dtype=pl.Int16),
+            pl.Series([3, 2], dtype=pl.Int8),
+            pl.Series([32, 2], dtype=pl.UInt8),
+            pl.Series([3, 3], dtype=pl.UInt16),
+        ]
+    )
+    b = pickle.dumps(df)
+    assert_frame_equal(pickle.loads(b), df)
+
+
+def df_times2(df: pl.DataFrame) -> pl.DataFrame:
+    return df.select(pl.all() * 2)
+
+
+def test_pickle_lazyframe_udf() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    q = df.lazy().map(df_times2)
+    b = pickle.dumps(q)
+
+    q = pickle.loads(b)
+    assert q.collect()["a"].to_list() == [2, 4, 6]
+
+
+def test_pickle_lazyframe_nested_function_udf() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    # NOTE: This is only possible when we're using cloudpickle.
+    def inner_df_times2(df: pl.DataFrame) -> pl.DataFrame:
+        return df.select(pl.all() * 2)
+
+    q = df.lazy().map(inner_df_times2)
+    b = pickle.dumps(q)
+
+    q = pickle.loads(b)
+    assert q.collect()["a"].to_list() == [2, 4, 6]

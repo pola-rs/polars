@@ -1,0 +1,14 @@
+[package]
+name = "polars-error"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Error definitions for the Polars DataFrame library"
+
+[dependencies]
+arrow = { workspace = true }
+regex = { workspace = true, optional = true }
+thiserror = { workspace = true }

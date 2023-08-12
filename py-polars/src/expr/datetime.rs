@@ -50,14 +50,16 @@ impl PyExpr {
             .into()
     }
 
-    #[cfg(feature = "timezones")]
-    #[allow(deprecated)]
-    fn dt_tz_localize(&self, time_zone: String) -> Self {
-        self.inner.clone().dt().tz_localize(time_zone).into()
-    }
-
-    fn dt_truncate(&self, every: &str, offset: &str) -> Self {
-        self.inner.clone().dt().truncate(every, offset).into()
+    fn dt_truncate(&self, every: String, offset: String, use_earliest: Option<bool>) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .truncate(TruncateOptions {
+                every,
+                offset,
+                use_earliest,
+            })
+            .into()
     }
 
     fn dt_month_start(&self) -> Self {
@@ -66,6 +68,15 @@ impl PyExpr {
 
     fn dt_month_end(&self) -> Self {
         self.inner.clone().dt().month_end().into()
+    }
+
+    #[cfg(feature = "timezones")]
+    fn dt_base_utc_offset(&self) -> Self {
+        self.inner.clone().dt().base_utc_offset().into()
+    }
+    #[cfg(feature = "timezones")]
+    fn dt_dst_offset(&self) -> Self {
+        self.inner.clone().dt().dst_offset().into()
     }
 
     fn dt_round(&self, every: &str, offset: &str) -> Self {

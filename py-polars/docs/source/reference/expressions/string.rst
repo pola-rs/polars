@@ -18,6 +18,7 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.explode
     Expr.str.extract
     Expr.str.extract_all
+    Expr.str.extract_groups
     Expr.str.json_extract
     Expr.str.json_path_match
     Expr.str.lengths
@@ -37,7 +38,9 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.strptime
     Expr.str.to_date
     Expr.str.to_datetime
+    Expr.str.to_decimal
     Expr.str.to_lowercase
+    Expr.str.to_titlecase
     Expr.str.to_time
     Expr.str.to_uppercase
     Expr.str.zfill

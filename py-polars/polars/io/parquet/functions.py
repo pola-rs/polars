@@ -41,17 +41,21 @@ def read_parquet(
 
     Notes
     -----
-    This operation defaults to a `rechunk` operation at the end, meaning that
-    all data will be stored continuously in memory.
-    Set `rechunk=False` if you are benchmarking the parquet-reader. A `rechunk` is
-    an expensive operation.
+    * Partitioned files:
+        If you have a directory-nested (hive-style) partitioned dataset, you should
+        use the :func:`scan_pyarrow_dataset` method instead.
+    * When benchmarking:
+        This operation defaults to a `rechunk` operation at the end, meaning that all
+        data will be stored continuously in memory. Set `rechunk=False` if you are
+        benchmarking the parquet-reader as `rechunk` can be an expensive operation
+        that should not contribute to the timings.
 
     Parameters
     ----------
     source
-        Path to a file, or a file-like object. If the path is a directory, that
-        directory will be used as partition aware scan.
-        If ``fsspec`` is installed, it will be used to open remote files.
+        Path to a file, or a file-like object. If the path is a directory, files in that
+        directory will all be read. If ``fsspec`` is installed, it will be used to open
+        remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -86,6 +90,11 @@ def read_parquet(
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
+
+    See Also
+    --------
+    scan_parquet
+    scan_pyarrow_dataset
 
     Returns
     -------
@@ -146,7 +155,8 @@ def read_parquet_schema(
 
     Returns
     -------
-    Dictionary mapping column names to datatypes
+    dict
+        Dictionary mapping column names to datatypes
 
     """
     if isinstance(source, (str, Path)):
@@ -173,6 +183,12 @@ def scan_parquet(
 
     This allows the query optimizer to push down predicates and projections to the scan
     level, thereby potentially reducing memory overhead.
+
+    Notes
+    -----
+    * Partitioned files:
+        If you have a directory-nested (hive-style) partitioned dataset, you should
+        use the :func:`scan_pyarrow_dataset` method to read that data instead.
 
     Parameters
     ----------
@@ -202,6 +218,11 @@ def scan_parquet(
     use_statistics
         Use statistics in the parquet to determine if pages
         can be skipped from reading.
+
+    See Also
+    --------
+    read_parquet
+    scan_pyarrow_dataset
 
     """
     if isinstance(source, (str, Path)):

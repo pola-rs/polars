@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import io
-import typing
 from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
+
+if TYPE_CHECKING:
+    from polars.type_aliases import ConcatMethod
 
 
 def test_error_on_empty_groupby() -> None:
@@ -41,7 +44,7 @@ def test_error_on_reducing_map() -> None:
     ):
         df.select(
             pl.col("x")
-            .map(lambda x: x.cut(bins=[1, 2, 3], maintain_order=True))
+            .map(lambda x: x.cut(breaks=[1, 2, 3], series=False))
             .over("group")
         )
 
@@ -102,7 +105,6 @@ def test_panic_error() -> None:
         pl.Series("a", [1, 2, 3]).reshape(())
 
 
-@typing.no_type_check
 def test_join_lazy_on_df() -> None:
     df_left = pl.DataFrame(
         {
@@ -116,13 +118,13 @@ def test_join_lazy_on_df() -> None:
         TypeError,
         match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
     ):
-        df_left.lazy().join(df_right, on="Id")
+        df_left.lazy().join(df_right, on="Id")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
         match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
     ):
-        df_left.lazy().join_asof(df_right, on="Id")
+        df_left.lazy().join_asof(df_right, on="Id")  # type: ignore[arg-type]
 
 
 def test_projection_update_schema_missing_column() -> None:
@@ -150,7 +152,6 @@ def test_not_found_on_rename() -> None:
         df.select(pl.col("does_not_exist").alias("new_name"))
 
 
-@typing.no_type_check
 def test_getitem_errs() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -159,7 +160,7 @@ def test_getitem_errs() -> None:
         match=r"Cannot __getitem__ on DataFrame with item: "
         r"'{'some'}' of type: '<class 'set'>'.",
     ):
-        df[{"some"}]
+        df[{"some"}]  # type: ignore[call-overload]
 
     with pytest.raises(
         ValueError,
@@ -167,7 +168,7 @@ def test_getitem_errs() -> None:
         r"'Int64' with argument: "
         r"'{'strange'}' of type: '<class 'set'>'.",
     ):
-        df["a"][{"strange"}]
+        df["a"][{"strange"}]  # type: ignore[call-overload]
 
     with pytest.raises(
         ValueError,
@@ -176,7 +177,7 @@ def test_getitem_errs() -> None:
         r"type: '<class 'set'>' and value: "
         r"'foo' of type: '<class 'str'>'",
     ):
-        df[{"some"}] = "foo"
+        df[{"some"}] = "foo"  # type: ignore[index]
 
 
 def test_err_bubbling_up_to_lit() -> None:
@@ -262,8 +263,6 @@ def test_err_asof_join_null_values() -> None:
 
 def test_is_nan_on_non_boolean() -> None:
     with pytest.raises(pl.InvalidOperationError):
-        pl.Series([1, 2, 3]).fill_nan(0)
-    with pytest.raises(pl.InvalidOperationError):
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
 
 
@@ -282,7 +281,6 @@ def test_window_expression_different_group_length() -> None:
         assert "output: 'shape:" in msg
 
 
-@typing.no_type_check
 def test_lazy_concat_err() -> None:
     df1 = pl.DataFrame(
         {
@@ -300,20 +298,19 @@ def test_lazy_concat_err() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="'LazyFrame' only allows {'vertical','diagonal','align'} concat strategies.",
+        match="'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies.",
     ):
         pl.concat([df1.lazy(), df2.lazy()], how="horizontal").collect()
 
 
-@typing.no_type_check
-def test_series_concat_err() -> None:
+@pytest.mark.parametrize("how", ["horizontal", "diagonal"])
+def test_series_concat_err(how: ConcatMethod) -> None:
     s = pl.Series([1, 2, 3])
-    for how in ("horizontal", "diagonal"):
-        with pytest.raises(
-            ValueError,
-            match="'Series' only allows {'vertical'} concat strategy.",
-        ):
-            pl.concat([s, s], how=how)
+    with pytest.raises(
+        ValueError,
+        match="'Series' only allows {'vertical'} concat strategy.",
+    ):
+        pl.concat([s, s], how=how)
 
 
 def test_invalid_sort_by() -> None:
@@ -356,13 +353,12 @@ def test_datetime_time_add_err() -> None:
         pl.Series([datetime(1970, 1, 1, 0, 0, 1)]) + pl.Series([time(0, 0, 2)])
 
 
-@typing.no_type_check
 def test_invalid_dtype() -> None:
     with pytest.raises(
         ValueError,
         match=r"Given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",
     ):
-        pl.Series([1, 2], dtype="mayonnaise")
+        pl.Series([1, 2], dtype="mayonnaise")  # type: ignore[arg-type]
 
 
 def test_arr_eval_named_cols() -> None:
@@ -427,7 +423,14 @@ def test_err_filter_no_expansion() -> None:
         df.filter(pl.col(pl.Int16).min() < 0.1)
 
 
-def test_date_string_comparison() -> None:
+@pytest.mark.parametrize(
+    ("e"),
+    [
+        pl.col("date") > "2021-11-10",
+        pl.col("date") < "2021-11-10",
+    ],
+)
+def test_date_string_comparison(e: pl.Expr) -> None:
     df = pl.DataFrame(
         {
             "date": [
@@ -441,7 +444,7 @@ def test_date_string_comparison() -> None:
     with pytest.raises(
         pl.ComputeError, match=r"cannot compare 'date/datetime/time' to a string value"
     ):
-        df.select(pl.col("date") > "2021-11-10")
+        df.select(e)
 
 
 def test_err_on_multiple_column_expansion() -> None:
@@ -529,6 +532,12 @@ def test_err_on_time_datetime_cast() -> None:
         s.cast(pl.Datetime)
 
 
+def test_err_on_invalid_time_zone_cast() -> None:
+    s = pl.Series([datetime(2021, 1, 1)])
+    with pytest.raises(pl.ComputeError, match=r"unable to parse time zone: 'qwerty'"):
+        s.cast(pl.Datetime("us", "qwerty"))
+
+
 def test_invalid_inner_type_cast_list() -> None:
     s = pl.Series([[-1, 1]])
     with pytest.raises(
@@ -574,19 +583,17 @@ def test_window_size_validation() -> None:
         df.with_columns(trailing_min=pl.col("x").rolling_min(window_size=-3))
 
 
-@typing.no_type_check
 def test_invalid_getitem_key_err() -> None:
     df = pl.DataFrame({"x": [1.0], "y": [1.0]})
 
     with pytest.raises(KeyError, match=r"('x', 'y')"):
-        df["x", "y"]
+        df["x", "y"]  # type: ignore[index]
 
 
 def test_invalid_groupby_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(
-        ValueError,
-        match=r"'aggs' argument should be one or multiple expressions, got: '{'a': 'sum'}'",
+        ValueError, match="specifying aggregations as a dictionary is not supported"
     ):
         df.groupby(1).agg({"a": "sum"})
 
@@ -651,3 +658,14 @@ def test_overflow_msg() -> None:
         match=r"could not append value: 2147483648 of type: i64 to the builder",
     ):
         pl.DataFrame([[2**31]], [("a", pl.Int32)], orient="row")
+
+
+def test_sort_by_err_9259() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 1, 1], "b": [3, 2, 1], "c": [1, 1, 2]},
+        schema={"a": pl.Float32, "b": pl.Float32, "c": pl.Float32},
+    )
+    with pytest.raises(pl.ComputeError):
+        df.lazy().groupby("c").agg(
+            [pl.col("a").sort_by(pl.col("b").filter(pl.col("b") > 100)).sum()]
+        ).collect()

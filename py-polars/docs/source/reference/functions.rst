@@ -17,24 +17,13 @@ Conversion
     from_records
     from_repr
 
-Eager/Lazy functions
-~~~~~~~~~~~~~~~~~~~~
-.. autosummary::
-   :toctree: api/
-
-    arg_where
-    concat
-    date_range
-    ones
-    time_range
-    zeros
-
 Miscellaneous
 ~~~~~~~~~~~~~~~~~~~~
 .. autosummary::
    :toctree: api/
 
     align_frames
+    concat
 
 Parallelization
 ~~~~~~~~~~~~~~~
@@ -45,8 +34,13 @@ Parallelization
 
 StringCache
 ~~~~~~~~~~~
+
+Note that the `StringCache` can be used as both a context manager
+and a decorator, in order to explicitly scope cache lifetime.
+
 .. autosummary::
    :toctree: api/
 
-    enable_string_cache
     StringCache
+    enable_string_cache
+    using_string_cache

@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 import sys
-import typing
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
-from polars.exceptions import TimeZoneAwareConstructorWarning
+from polars.exceptions import ShapeError, TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
@@ -178,6 +178,17 @@ def test_init_dict() -> None:
         assert df.to_dict(False)["field"][0] == test[0]["field"]
 
 
+def test_error_string_dtypes() -> None:
+    with pytest.raises(ValueError, match="Cannot infer dtype"):
+        pl.DataFrame(
+            data={"x": [1, 2], "y": [3, 4], "z": [5, 6]},
+            schema={"x": "i16", "y": "i32", "z": "f32"},  # type: ignore[dict-item]
+        )
+
+    with pytest.raises(ValueError, match="not a valid Polars data type"):
+        pl.Series("n", [1, 2, 3], dtype="f32")  # type: ignore[arg-type]
+
+
 def test_init_structured_objects(monkeypatch: Any) -> None:
     # validate init from dataclass, namedtuple, and pydantic model objects
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
@@ -216,7 +227,7 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
                 "ticker": pl.Utf8,
-                "price": pl.Decimal(None, 1),
+                "price": pl.Decimal(1),
                 "size": pl.Int64,
             }
             assert df.rows() == raw_data
@@ -229,7 +240,7 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
             assert df.schema == {
                 "timestamp": pl.Datetime("ms"),
                 "ticker": pl.Utf8,
-                "price": pl.Decimal(None, 1),
+                "price": pl.Decimal(1),
                 "size": pl.Int32,
             }
 
@@ -239,20 +250,54 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
             schema=[
                 ("ts", pl.Datetime("ms")),
                 ("tk", pl.Categorical),
-                ("pc", pl.Decimal(None, 1)),
+                ("pc", pl.Decimal(1)),
                 ("sz", pl.UInt16),
             ],
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
             "tk": pl.Categorical,
-            "pc": pl.Decimal(None, 1),
+            "pc": pl.Decimal(1),
             "sz": pl.UInt16,
         }
         assert df.rows() == raw_data
 
         # cover a miscellaneous edge-case when detecting the annotations
         assert type_hints(obj=type(None)) == {}
+
+
+def test_init_pydantic_2x() -> None:
+    class PageView(BaseModel):
+        user_id: str
+        ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, arg-type]
+        path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, arg-type]
+        referer: str = Field("?", alias="referer")
+        event: Literal["leave", "enter"] = Field("enter")
+        time_on_page: int = Field(0, serialization_alias="top")
+
+    data_json = """
+    [{
+        "user_id": "x",
+        "ts": {"$date": "2021-01-01T00:00:00.000Z"},
+        "url": "/latest/foobar",
+        "referer": "https://google.com",
+        "event": "enter",
+        "top": 123
+    }]
+    """
+    adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
+    models = adapter.validate_json(data_json)
+
+    result = pl.DataFrame(models)
+
+    assert result.to_dict(False) == {
+        "user_id": ["x"],
+        "ts": [datetime(2021, 1, 1, 0, 0)],
+        "path": ["?"],
+        "referer": ["https://google.com"],
+        "event": ["enter"],
+        "time_on_page": [0],
+    }
 
 
 def test_init_structured_objects_unhashable() -> None:
@@ -708,7 +753,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
     # subclassed pandas object, with/without data & overrides
-    class XSeries(pd.Series):
+    class XSeries(pd.Series):  # type: ignore[type-arg]
         @property
         def _constructor(self) -> type:
             return XSeries
@@ -895,15 +940,22 @@ def test_u64_lit_5031() -> None:
 
 
 def test_from_dicts_missing_columns() -> None:
+    # missing columns from some of the data dicts
     data = [
         {"a": 1},
         {"b": 2},
     ]
-
     assert pl.from_dicts(data).to_dict(False) == {"a": [1, None], "b": [None, 2]}
 
+    # missing columns in the schema; only load the declared keys
+    data = [{"a": 1, "b": 2}]
+    assert pl.from_dicts(data, schema=["a"]).to_dict(False) == {"a": [1]}
 
-@typing.no_type_check
+    # invalid
+    with pytest.raises(ShapeError):
+        pl.from_dicts([{"a": 1, "b": 2}], schema=["xyz"])
+
+
 def test_from_rows_dtype() -> None:
     # 50 is the default inference length
     # 5182
@@ -961,6 +1013,14 @@ def test_from_dicts_schema() -> None:
             "b": [4, 5, 6],
             "c": [None, None, None],
         }
+
+    # provide data that resolves to an empty frame (ref: scalar
+    # expansion shortcut), with schema/override hints
+    schema = {"colx": pl.Utf8, "coly": pl.Int32}
+
+    for param in ("schema", "schema_overrides"):
+        df = pl.DataFrame({"colx": [], "coly": 0}, **{param: schema})  # type: ignore[arg-type]
+        assert df.schema == schema
 
 
 def test_nested_read_dict_4143() -> None:
@@ -1033,14 +1093,13 @@ def test_nested_read_dict_4143() -> None:
     }
 
 
-@typing.no_type_check
 def test_from_records_nullable_structs() -> None:
     records = [
         {"id": 1, "items": [{"item_id": 100, "description": None}]},
         {"id": 1, "items": [{"item_id": 100, "description": "hi"}]},
     ]
 
-    schema = [
+    schema: list[tuple[str, pl.PolarsDataType]] = [
         ("id", pl.UInt16),
         (
             "items",
@@ -1052,8 +1111,10 @@ def test_from_records_nullable_structs() -> None:
         ),
     ]
 
-    for s in [schema, None]:
-        assert pl.DataFrame(records, schema=s, orient="row").to_dict(False) == {
+    schema_options: list[list[tuple[str, pl.PolarsDataType]] | None] = [schema, None]
+    for s in schema_options:
+        result = pl.DataFrame(records, schema=s, orient="row")
+        assert result.to_dict(False) == {
             "id": [1, 1],
             "items": [
                 [{"item_id": 100, "description": None}],
@@ -1068,10 +1129,11 @@ def test_from_records_nullable_structs() -> None:
     assert df.to_dict(False) == {"id": [], "items": []}
     assert df.schema == dict_schema
 
-    s = pl.Series("items", dtype=dict_schema["items"])
-    assert s.to_frame().to_dict(False) == {"items": []}
-    assert s.dtype == dict_schema["items"]
-    assert s.to_list() == []
+    dtype: pl.PolarsDataType = dict_schema["items"]
+    series = pl.Series("items", dtype=dtype)
+    assert series.to_frame().to_dict(False) == {"items": []}
+    assert series.dtype == dict_schema["items"]
+    assert series.to_list() == []
 
 
 def test_from_categorical_in_struct_defined_by_schema() -> None:
@@ -1176,7 +1238,7 @@ def test_arrow_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
     original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
     pyseries = arrow_to_pyseries("", original_array)
     assert (
-        pyseries.get_chunks()[0]._get_ptr()
+        pyseries.get_chunks()[0]._get_ptr()[2]
         == original_array.chunks[0].buffers()[1].address
     )
 

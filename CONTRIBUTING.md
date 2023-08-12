@@ -16,7 +16,7 @@ If you're unclear on how to proceed after reading this guide, please contact us 
 
 We use [GitHub issues](https://github.com/pola-rs/polars/issues) to track bugs and suggested enhancements.
 You can report a bug by opening a [new issue](https://github.com/pola-rs/polars/issues/new/choose).
-Use the appropriate issue type for the language you are using ([Rust](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_rust.yml) / [Python](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_python.yml) / [Node.js](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_nodejs.yml)).
+Use the appropriate issue type for the language you are using ([Rust](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_rust.yml) / [Python](https://github.com/pola-rs/polars/issues/new?labels=bug&template=bug_report_python.yml)).
 
 Before creating a bug report, please check that your bug has not already been reported, and that your bug exists on the latest version of Polars.
 If you find a closed issue that seems to report the same bug you're experiencing, open a new issue and include a link to the original issue in your issue description.
@@ -36,7 +36,7 @@ Please describe the behavior you want and why, and provide examples of how Polar
 ### Picking an issue
 
 Pick an issue by going through the [issue tracker](https://github.com/pola-rs/polars/issues) and finding an issue you would like to work on.
-Feel free to pick any issue that is not already assigned.
+Feel free to pick any issue with an [accepted](https://github.com/pola-rs/polars/issues?q=is%3Aopen+is%3Aissue+label%3Aaccepted) label that is not already assigned.
 We use the [help wanted](https://github.com/pola-rs/polars/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22) label to indicate issues that are high on our wishlist.
 
 If you are a first time contributor, you might want to look for issues labeled [good first issue](https://github.com/pola-rs/polars/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22).
@@ -114,7 +114,7 @@ If this all runs correctly, you're ready to start contributing to the Polars cod
 
 Create a new git branch from the `main` branch in your local repository, and start coding!
 
-The Rust codebase is located in the `polars` directory, while the Python codebase is located in the `py-polars` directory.
+The Rust code is located in the `crates` directory, while the Python codebase is located in the `py-polars` directory.
 Both directories contain a `Makefile` with helpful commands. Most notably:
 
 - `make test` to run the test suite (see the [test suite docs](/py-polars/tests/README.md) for more info)
@@ -138,7 +138,7 @@ Please adhere to the following guidelines:
 - In the pull request description, [link](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) to the issue you were working on.
 - Add any relevant information to the description that you think may help the maintainers review your code.
 - Make sure your branch is [rebased](https://docs.github.com/en/get-started/using-git/about-git-rebase) against the latest version of the `main` branch.
-- Make sure all GitHub Actions checks pass.
+- Make sure all [GitHub Actions checks](/.github/workflows/README.md) pass.
 
 After you have opened your pull request, a maintainer will review it and possibly leave some comments.
 Once all issues are resolved, the maintainer will merge your pull request, and your work will be part of the next Polars release!
@@ -226,7 +226,7 @@ Start by bumping the version number in the source code:
 Directly after merging your pull request, release the new version:
 
 8. Go back to the [releases page](https://github.com/pola-rs/polars/releases) and click _Edit_ on the appropriate draft release.
-9. On the draft release page, click _Publish release_. This will create a new release and a new tag, which will trigger the GitHub Actions release workflow ([Python](https://github.com/pola-rs/polars/actions/workflows/create-python-release.yml) / [Rust](https://github.com/pola-rs/polars/actions/workflows/release-rust.yml)).
+9. On the draft release page, click _Publish release_. This will create a new release and a new tag, which will trigger the GitHub Actions release workflow ([Python](https://github.com/pola-rs/polars/actions/workflows/release-python.yml) / [Rust](https://github.com/pola-rs/polars/actions/workflows/release-rust.yml)).
 10. Wait for all release jobs to finish, then check [crates.io](https://crates.io/crates/polars)/[PyPI](https://pypi.org/project/polars/) to verify that the new Polars release is now available.
 
 ### Troubleshooting

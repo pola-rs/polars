@@ -10,6 +10,7 @@ try:
         SchemaError,
         SchemaFieldNotFoundError,
         ShapeError,
+        StringCacheMismatchError,
         StructFieldNotFoundError,
     )
 except ImportError:
@@ -42,6 +43,9 @@ except ImportError:
 
     class ShapeError(Exception):  # type: ignore[no-redef]
         """Exception raised when trying to combine data structures with incompatible shapes."""  # noqa: W505
+
+    class StringCacheMismatchError(Exception):  # type: ignore[no-redef]
+        """Exception raised when string caches come from different sources."""
 
     class StructFieldNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified schema field is not found."""
@@ -82,6 +86,14 @@ class ChronoFormatWarning(Warning):
     """
 
 
+class PolarsInefficientApplyWarning(Warning):
+    """
+    Warning raised when a potentially slow `apply` operation is performed.
+
+    Suggestion of what to replace slow pattern with will also be shown.
+    """
+
+
 __all__ = [
     "ArrowError",
     "ColumnNotFoundError",
@@ -91,11 +103,13 @@ __all__ = [
     "InvalidOperationError",
     "NoDataError",
     "NoRowsReturnedError",
+    "PolarsInefficientApplyWarning",
     "PolarsPanicError",
     "RowsError",
     "SchemaError",
     "SchemaFieldNotFoundError",
     "ShapeError",
+    "StringCacheMismatchError",
     "StructFieldNotFoundError",
     "TooManyRowsReturnedError",
 ]

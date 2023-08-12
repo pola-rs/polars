@@ -24,6 +24,7 @@ Feather/ IPC
    scan_ipc
    read_ipc_schema
    DataFrame.write_ipc
+   LazyFrame.sink_ipc
 
 Parquet
 ~~~~~~~
@@ -34,6 +35,7 @@ Parquet
    scan_parquet
    read_parquet_schema
    DataFrame.write_parquet
+   LazyFrame.sink_parquet
 
 Database
 ~~~~~~~~

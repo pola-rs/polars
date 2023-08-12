@@ -2,14 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from polars.dependencies import pickle
-
 if TYPE_CHECKING:
     from polars import DataFrame
 
 
-def _deserialize_and_execute(
-    buf: bytes, with_columns: list[str] | None, *args: Any
+def _execute_from_rust(
+    function: Any, with_columns: list[str] | None, *args: Any
 ) -> DataFrame:
     """
     Deserialize and execute the given function for the projected columns.
@@ -19,13 +17,12 @@ def _deserialize_and_execute(
 
     Parameters
     ----------
-    buf
-        Pickled function
+    function
+        function object
     with_columns
         Columns that are projected
     *args
         Additional function arguments.
 
     """
-    func = pickle.loads(buf)
-    return func(with_columns, *args)
+    return function(with_columns, *args)

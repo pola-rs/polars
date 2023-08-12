@@ -4,9 +4,11 @@ import inspect
 import os
 import re
 import sys
+import warnings
 from collections.abc import MappingView, Sized
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, TypeVar
 
 import polars as pl
 from polars import functions as F
@@ -18,20 +20,15 @@ from polars.datatypes import (
     Int64,
     Time,
     Utf8,
-    is_polars_dtype,
+    unpack_dtypes,
 )
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
+from polars.dependencies import _PYARROW_AVAILABLE
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
-    from pathlib import Path
 
     from polars import DataFrame, Series
-    from polars.type_aliases import PolarsDataType, SizeUnit
+    from polars.type_aliases import PolarsDataType, PolarsIntegerType, SizeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec, TypeGuard
@@ -74,11 +71,6 @@ def is_bool_sequence(val: object) -> TypeGuard[Sequence[bool]]:
     return isinstance(val, Sequence) and _is_iterable_of(val, bool)
 
 
-def is_dtype_sequence(val: object) -> TypeGuard[Sequence[PolarsDataType]]:
-    """Check whether the given object is a sequence of polars DataTypes."""
-    return isinstance(val, Sequence) and all(is_polars_dtype(x) for x in val)
-
-
 def is_int_sequence(val: object) -> TypeGuard[Sequence[int]]:
     """Check whether the given sequence is a sequence of integers."""
     return isinstance(val, Sequence) and _is_iterable_of(val, int)
@@ -99,10 +91,11 @@ def is_str_sequence(
 
 
 def range_to_series(
-    name: str, rng: range, dtype: PolarsDataType | None = None
+    name: str, rng: range, dtype: PolarsIntegerType | None = None
 ) -> Series:
     """Fast conversion of the given range to a Series."""
-    return F.arange(
+    dtype = dtype or Int64
+    return F.int_range(
         start=rng.start,
         end=rng.stop,
         step=rng.step,
@@ -176,10 +169,27 @@ def arrlen(obj: Any) -> int | None:
         return None
 
 
+def can_create_dicts_with_pyarrow(dtypes: Sequence[PolarsDataType]) -> bool:
+    """Check if the given dtypes can be used to create dicts with pyarrow fast path."""
+    # TODO: have our own fast-path for dict iteration in Rust
+    return (
+        _PYARROW_AVAILABLE
+        # note: 'ns' precision instantiates values as pandas types - avoid
+        and not any(
+            (getattr(tp, "time_unit", None) == "ns") for tp in unpack_dtypes(*dtypes)
+        )
+    )
+
+
 def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> str:
     """Create a string path, expanding the home directory if present."""
-    path = os.path.expanduser(path)
-    if check_not_directory and os.path.exists(path) and os.path.isdir(path):
+    # don't use pathlib here as it modifies slashes (s3:// -> s3:/)
+    path = os.path.expanduser(path)  # noqa: PTH111
+    if (
+        check_not_directory
+        and os.path.exists(path)  # noqa: PTH110
+        and os.path.isdir(path)  # noqa: PTH112
+    ):
         raise IsADirectoryError(f"Expected a file path; {path!r} is a directory")
     return path
 
@@ -316,7 +326,7 @@ def _cast_repr_strings_with_schema(
 NS = TypeVar("NS")
 
 
-class sphinx_accessor(property):
+class sphinx_accessor(property):  # noqa: D101
     def __get__(  # type: ignore[override]
         self,
         instance: Any,
@@ -348,20 +358,19 @@ NoDefault = Literal[_NoDefault.no_default]
 
 def find_stacklevel() -> int:
     """
-    Find the first place in the stack that is not inside polars (tests notwithstanding).
+    Find the first place in the stack that is not inside polars.
 
     Taken from:
     https://github.com/pandas-dev/pandas/blob/ab89c53f48df67709a533b6a95ce3d911871a0a8/pandas/util/_exceptions.py#L30-L51
     """
-    pkg_dir = os.path.dirname(pl.__file__)
-    test_dir = os.path.join(pkg_dir, "tests")
+    pkg_dir = Path(pl.__file__).parent
 
     # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
     frame = inspect.currentframe()
     n = 0
     while frame:
         fname = inspect.getfile(frame)
-        if fname.startswith(pkg_dir) and not fname.startswith(test_dir):
+        if fname.startswith(str(pkg_dir)):
             frame = frame.f_back
             n += 1
         else:
@@ -370,10 +379,13 @@ def find_stacklevel() -> int:
 
 
 def _get_stack_locals(
-    of_type: type | tuple[type, ...] | None = None, n_objects: int | None = None
+    of_type: type | tuple[type, ...] | None = None,
+    n_objects: int | None = None,
+    n_frames: int | None = None,
+    named: str | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """
-    Retrieve f_locals from all stack frames (starting from the current frame).
+    Retrieve f_locals from all (or the last 'n') stack frames from the calling location.
 
     Parameters
     ----------
@@ -381,16 +393,86 @@ def _get_stack_locals(
         Only return objects of this type.
     n_objects
         If specified, return only the most recent ``n`` matching objects.
+    n_frames
+        If specified, look at objects in the last ``n`` stack frames only.
+    named
+        If specified, only return objects matching the given name(s).
 
     """
+    if isinstance(named, str):
+        named = (named,)
+
     objects = {}
+    examined_frames = 0
+    if n_frames is None:
+        n_frames = sys.maxsize
     stack_frame = getattr(inspect.currentframe(), "f_back", None)
-    while stack_frame:
+
+    while stack_frame and examined_frames < n_frames:
         local_items = list(stack_frame.f_locals.items())
         for nm, obj in reversed(local_items):
-            if nm not in objects and (not of_type or isinstance(obj, of_type)):
+            if (
+                nm not in objects
+                and (named is None or (nm in named))
+                and (of_type is None or isinstance(obj, of_type))
+            ):
                 objects[nm] = obj
                 if n_objects is not None and len(objects) >= n_objects:
                     return objects
+
         stack_frame = stack_frame.f_back
+        examined_frames += 1
+
     return objects
+
+
+# this is called from rust
+def _polars_warn(msg: str) -> None:
+    warnings.warn(
+        msg,
+        stacklevel=find_stacklevel(),
+    )
+
+
+def in_terminal_that_supports_colour() -> bool:
+    """
+    Determine (within reason) if we are in an interactive terminal that supports color.
+
+    Note: this is not exhaustive, but it covers a lot (most?) of the common cases.
+    """
+    if hasattr(sys.stdout, "isatty"):
+        # can enhance as necessary, but this is a reasonable start
+        return (
+            sys.stdout.isatty()
+            and (
+                sys.platform != "win32"
+                or "ANSICON" in os.environ
+                or "WT_SESSION" in os.environ
+                or os.environ.get("TERM_PROGRAM") == "vscode"
+                or os.environ.get("TERM") == "xterm-256color"
+            )
+        ) or os.environ.get("PYCHARM_HOSTED") == "1"
+    return False
+
+
+def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[float]:
+    """
+    Transforms raw percentiles into our preferred format, adding the 50th percentile.
+
+    Raises a ValueError if the percentile sequence is invalid
+    (e.g. outside the range [0, 1])
+    """
+    if isinstance(percentiles, float):
+        percentiles = [percentiles]
+    elif percentiles is None:
+        percentiles = []
+    if not all((0 <= p <= 1) for p in percentiles):
+        raise ValueError("Percentiles must all be in the range [0, 1].")
+
+    sub_50_percentiles = sorted(p for p in percentiles if p < 0.5)
+    at_or_above_50_percentiles = sorted(p for p in percentiles if p >= 0.5)
+
+    if not at_or_above_50_percentiles or at_or_above_50_percentiles[0] != 0.5:
+        at_or_above_50_percentiles = [0.5, *at_or_above_50_percentiles]
+
+    return [*sub_50_percentiles, *at_or_above_50_percentiles]

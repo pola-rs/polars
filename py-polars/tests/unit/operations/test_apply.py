@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timedelta
 from functools import reduce
-from typing import Sequence, no_type_check
+from typing import Any, Sequence
 
 import numpy as np
+import pytest
 
 import polars as pl
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal
 
 
@@ -57,7 +59,6 @@ def test_apply_return_py_object() -> None:
     assert out.rows() == [(6, 15)]
 
 
-@no_type_check
 def test_agg_objects() -> None:
     df = pl.DataFrame(
         {
@@ -68,7 +69,7 @@ def test_agg_objects() -> None:
     )
 
     class Foo:
-        def __init__(self, payload):
+        def __init__(self, payload: Any):
             self.payload = payload
 
     out = df.groupby("groups").agg(
@@ -94,9 +95,12 @@ def test_apply_infer_list() -> None:
 
 def test_apply_arithmetic_consistency() -> None:
     df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
-    assert df.groupby("A").agg(pl.col("B").apply(lambda x: x + 1.0))["B"].to_list() == [
-        [3.0, 4.0]
-    ]
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
+        assert df.groupby("A").agg(pl.col("B").apply(lambda x: x + 1.0))[
+            "B"
+        ].to_list() == [[3.0, 4.0]]
 
 
 def test_apply_struct() -> None:
@@ -168,18 +172,28 @@ def test_datelike_identity() -> None:
 def test_apply_list_anyvalue_fallback() -> None:
     import json
 
-    df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
-    assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
-        "text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]
-    }
+    with pytest.warns(
+        PolarsInefficientApplyWarning,
+        match=r'(?s)replace your `apply` with.*pl.col\("text"\).str.json_extract()',
+    ):
+        df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
+        assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
+            "text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]
+        }
 
-    # starts with empty list '[]'
-    df = pl.DataFrame(
-        {"text": ["[]", '[{"x": 1, "y": 2}, {"x": 3, "y": 4}]', '[{"x": 1, "y": 2}]']}
-    )
-    assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
-        "text": [[], [{"x": 1, "y": 2}, {"x": 3, "y": 4}], [{"x": 1, "y": 2}]]
-    }
+        # starts with empty list '[]'
+        df = pl.DataFrame(
+            {
+                "text": [
+                    "[]",
+                    '[{"x": 1, "y": 2}, {"x": 3, "y": 4}]',
+                    '[{"x": 1, "y": 2}]',
+                ]
+            }
+        )
+        assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
+            "text": [[], [{"x": 1, "y": 2}, {"x": 3, "y": 4}], [{"x": 1, "y": 2}]]
+        }
 
 
 def test_apply_all_types() -> None:
@@ -241,25 +255,29 @@ def test_apply_skip_nulls() -> None:
 
 
 def test_apply_object_dtypes() -> None:
-    assert pl.DataFrame(
-        {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
-    ).with_columns(
-        [
-            pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Object),
-            pl.col("a")
-            .apply(lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean)
-            .alias("is_numeric1"),
-            pl.col("a")
-            .apply(lambda x: isinstance(x, (int, float)))
-            .alias("is_numeric_infer"),
-        ]
-    ).to_dict(
-        False
-    ) == {
-        "a": [2, 4, "aa", 8, 10],
-        "is_numeric1": [True, True, False, True, True],
-        "is_numeric_infer": [True, True, False, True, True],
-    }
+    with pytest.warns(
+        PolarsInefficientApplyWarning,
+        match=r"(?s)replace your `apply` with.*lambda x:",
+    ):
+        assert pl.DataFrame(
+            {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
+        ).with_columns(
+            [
+                pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Object),
+                pl.col("a")
+                .apply(lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean)
+                .alias("is_numeric1"),
+                pl.col("a")
+                .apply(lambda x: isinstance(x, (int, float)))
+                .alias("is_numeric_infer"),
+            ]
+        ).to_dict(
+            False
+        ) == {
+            "a": [2, 4, "aa", 8, 10],
+            "is_numeric1": [True, True, False, True, True],
+            "is_numeric_infer": [True, True, False, True, True],
+        }
 
 
 def test_apply_explicit_list_output_type() -> None:
@@ -276,15 +294,19 @@ def test_apply_explicit_list_output_type() -> None:
 
 
 def test_apply_dict() -> None:
-    df = pl.DataFrame({"Col": ['{"A":"Value1"}', '{"B":"Value2"}']})
-    assert df.select(pl.col("Col").apply(json.loads)).to_dict(False) == {
-        "Col": [{"A": "Value1", "B": None}, {"A": None, "B": "Value2"}]
-    }
-    assert pl.DataFrame(
-        {"Col": ['{"A":"Value1", "B":"Value2"}', '{"B":"Value3"}']}
-    ).select(pl.col("Col").apply(json.loads)).to_dict(False) == {
-        "Col": [{"A": "Value1", "B": "Value2"}, {"A": None, "B": "Value3"}]
-    }
+    with pytest.warns(
+        PolarsInefficientApplyWarning,
+        match=r'(?s)replace your `apply` with.*pl.col\("abc"\).str.json_extract()',
+    ):
+        df = pl.DataFrame({"abc": ['{"A":"Value1"}', '{"B":"Value2"}']})
+        assert df.select(pl.col("abc").apply(json.loads)).to_dict(False) == {
+            "abc": [{"A": "Value1", "B": None}, {"A": None, "B": "Value2"}]
+        }
+        assert pl.DataFrame(
+            {"abc": ['{"A":"Value1", "B":"Value2"}', '{"B":"Value3"}']}
+        ).select(pl.col("abc").apply(json.loads)).to_dict(False) == {
+            "abc": [{"A": "Value1", "B": "Value2"}, {"A": None, "B": "Value3"}]
+        }
 
 
 def test_apply_pass_name() -> None:
@@ -338,3 +360,34 @@ def test_apply_set_datetime_output_8984() -> None:
     )[
         "a"
     ].to_list() == [payload]
+
+
+def test_err_df_apply_return_type() -> None:
+    df = pl.DataFrame({"a": [[1, 2], [2, 3]], "b": [[4, 5], [6, 7]]})
+
+    def cmb(row: tuple[Any, ...]) -> list[Any]:
+        res = [x + y for x, y in zip(row[0], row[1])]
+        return [res]
+
+    with pytest.raises(pl.ComputeError, match="expected tuple, got list"):
+        df.apply(cmb)
+
+
+def test_apply_shifted_chunks() -> None:
+    df = pl.DataFrame(pl.Series("texts", ["test", "test123", "tests"]))
+    assert df.select(
+        pl.col("texts"), pl.col("texts").shift(1).alias("texts_shifted")
+    ).apply(lambda x: x).to_dict(False) == {
+        "column_0": ["test", "test123", "tests"],
+        "column_1": [None, "test", "test123"],
+    }
+
+
+def test_apply_dict_order_10128() -> None:
+    df = pl.select(pl.lit("").apply(lambda x: {"c": 1, "b": 2, "a": 3}))
+    assert df.to_dict(False) == {"literal": [{"c": 1, "b": 2, "a": 3}]}
+
+
+def test_apply_10237() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    assert df.select(pl.all().apply(lambda x: x > 50))["a"].to_list() == [False] * 3

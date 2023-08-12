@@ -123,13 +123,21 @@ def test_groupby_args() -> None:
     # With keyword argument
     assert df.groupby("a", "b", maintain_order=True).agg("c").columns == expected
     # Mixed
-    assert df.groupby(["a"], "b", maintain_order=True).agg("c").columns == expected
+    with pytest.deprecated_call():
+        assert df.groupby(["a"], "b", maintain_order=True).agg("c").columns == expected
     # Multiple aggregations as list
     assert df.groupby("a").agg(["b", "c"]).columns == expected
     # Multiple aggregations as positional arguments
     assert df.groupby("a").agg("b", "c").columns == expected
     # Multiple aggregations as keyword arguments
     assert df.groupby("a").agg(q="b", r="c").columns == ["a", "q", "r"]
+
+
+def test_groupby_empty() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2]})
+    result = df.groupby("a").agg()
+    expected = pl.DataFrame({"a": [1, 2]})
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_groupby_iteration() -> None:
@@ -363,23 +371,30 @@ def test_groupby_dynamic_flat_agg_4814() -> None:
 def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
     every: str | timedelta, period: str | timedelta, time_zone: str | None
 ) -> None:
-    assert (
-        pl.DataFrame(
-            {
-                "a": [
-                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(10)
-                ],
-                "b": [float(i) for i in range(10)],
-            }
+    res = (
+        (
+            pl.DataFrame(
+                {
+                    "a": [
+                        datetime(2021, 1, 1) + timedelta(seconds=2**i)
+                        for i in range(10)
+                    ],
+                    "b": [float(i) for i in range(10)],
+                }
+            )
+            .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
+            .lazy()
+            .set_sorted("a")
+            .groupby_dynamic("a", every=every, period=period)
+            .agg([pl.col("b").var().sqrt().alias("corr")])
         )
-        .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
-        .lazy()
-        .set_sorted("a")
-        .groupby_dynamic("a", every=every, period=period)
-        .agg([pl.col("b").var().sqrt().alias("corr")])
-    ).collect().sum().to_dict(False) == pytest.approx(
-        {"a": [None], "corr": [6.988674024215477]}
+        .collect()
+        .sum()
+        .to_dict(False)
     )
+
+    assert res["corr"] == pytest.approx([6.988674024215477])
+    assert res["a"] == [None]
 
 
 def test_take_in_groupby() -> None:
@@ -836,3 +851,21 @@ def test_perfect_hash_table_null_values_8663() -> None:
             [None, None, None],
         ],
     }
+
+
+def test_groupby_agg_deprecation_aggs_keyword() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [3, 4, 5]})
+
+    with pytest.deprecated_call():
+        result = df.groupby("a", maintain_order=True).agg(aggs="b")
+
+    expected = pl.DataFrame({"a": [1, 2], "b": [[3, 4], [5]]})
+    assert_frame_equal(result, expected)
+
+
+def test_groupby_partitioned_ending_cast(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
+    df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
+    out = df.groupby(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))
+    expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
+    assert_frame_equal(out, expected)

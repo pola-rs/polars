@@ -3,11 +3,9 @@ name = "read_csv"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+polars = { path = "../../crates/polars", features = ["lazy", "csv", "ipc"] }
 
 [features]
 write_output = ["polars/ipc", "polars/parquet"]
 default = ["write_output"]
-
-[dependencies]
-polars = { path = "../../polars", features = ["lazy", "csv", "ipc"] }

@@ -21,7 +21,7 @@ from polars.dependencies import json
 from polars.exceptions import DuplicateError
 
 if TYPE_CHECKING:
-    import sys
+    from typing import Literal
 
     from xlsxwriter import Workbook
     from xlsxwriter.format import Format
@@ -35,11 +35,6 @@ if TYPE_CHECKING:
         PolarsDataType,
         RowTotalsDefinition,
     )
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:
@@ -117,7 +112,7 @@ def _xl_apply_conditional_formats(
 
     for cols, formats in conditional_formats.items():
         if not isinstance(cols, str) and len(cols) == 1:
-            cols = list(cols)[0]
+            cols = next(iter(cols))
         if isinstance(formats, (str, dict)):
             formats = [formats]
 
@@ -129,7 +124,7 @@ def _xl_apply_conditional_formats(
             else:
                 col_range = _xl_column_multi_range(df, table_start, cols, has_header)
                 if " " in col_range:
-                    col = list(cols)[0]
+                    col = next(iter(cols))
                     fmt["multi_range"] = col_range
                     col_range = _xl_column_range(df, table_start, col, has_header)
 

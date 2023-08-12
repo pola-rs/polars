@@ -5,14 +5,15 @@ from functools import reduce
 from inspect import signature
 from operator import add
 from string import ascii_letters
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, cast
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars import lit, when
-from polars.datatypes import FLOAT_DTYPES, NUMERIC_DTYPES
+from polars.datatypes import FLOAT_DTYPES
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -40,19 +41,19 @@ def test_lazy() -> None:
     eager = ldf.groupby("a").agg(pl.implode("b")).collect()
     assert sorted(eager.rows()) == [(1, [[1.0]]), (2, [[2.0]]), (3, [[3.0]])]
 
-    # profile lazyframe operation/plan
-    lazy = ldf.groupby("a").agg(pl.implode("b"))
-    profiling_info = lazy.profile()
-    # ┌──────────────┬───────┬─────┐
-    # │ node         ┆ start ┆ end │
-    # │ ---          ┆ ---   ┆ --- │
-    # │ str          ┆ u64   ┆ u64 │
-    # ╞══════════════╪═══════╪═════╡
-    # │ optimization ┆ 0     ┆ 69  │
-    # │ groupby(a)   ┆ 69    ┆ 342 │
-    # └──────────────┴───────┴─────┘
-    assert len(profiling_info) == 2
-    assert profiling_info[1].columns == ["node", "start", "end"]
+
+@pytest.mark.parametrize(
+    ("data", "repr_"),
+    [
+        ({}, "0 cols, {}"),
+        ({"a": [1]}, '1 col, {"a": Int64}'),
+        ({"a": [1], "b": ["B"]}, '2 cols, {"a": Int64, "b": Utf8}'),
+        ({"a": [1], "b": ["B"], "c": [0.0]}, '3 cols, {"a": Int64 … "c": Float64}'),
+    ],
+)
+def test_repr(data: dict[str, list[Any]], repr_: str) -> None:
+    ldf = pl.LazyFrame(data)
+    assert repr(ldf).startswith(f"<LazyFrame [{repr_}] at ")
 
 
 def test_lazyframe_membership_operator() -> None:
@@ -67,20 +68,22 @@ def test_lazyframe_membership_operator() -> None:
 
 def test_apply() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    new = ldf.with_columns(pl.col("a").map(lambda s: s * 2).alias("foo"))
+    new = ldf.with_columns_seq(pl.col("a").map(lambda s: s * 2).alias("foo"))
 
     expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
 
-    for strategy in ["thread_local", "threading"]:
-        ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
-        new = ldf.with_columns(
-            pl.col("a").apply(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
-        )
-
-        expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
-        assert_frame_equal(new.collect(), expected.collect())
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
+        for strategy in ["thread_local", "threading"]:
+            ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
+            new = ldf.with_columns(
+                pl.col("a").apply(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
+            )
+            expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
+            assert_frame_equal(new.collect(), expected.collect())
 
 
 def test_add_eager_column() -> None:
@@ -169,7 +172,7 @@ def test_filter_str() -> None:
     )
 
     # last row based on a filter
-    result = ldf.filter(pl.col("bools")).select(pl.last("*")).collect()
+    result = ldf.filter(pl.col("bools")).select_seq(pl.last("*")).collect()
     expected = pl.DataFrame({"time": ["11:13:00"], "bools": [True]})
     assert_frame_equal(result, expected)
 
@@ -362,20 +365,6 @@ def test_fetch(fruits_cars: pl.DataFrame) -> None:
     assert_frame_equal(res, res[:2])
 
 
-def test_concat_str() -> None:
-    ldf = pl.LazyFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
-
-    out = ldf.select([pl.concat_str(["a", "b"], separator="-")])
-    assert out.collect()["a"].to_list() == ["a-1", "b-2", "c-3"]
-
-    out = ldf.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
-    assert out.collect()["fmt"].to_list() == [
-        "foo_a_bar_1",
-        "foo_b_bar_2",
-        "foo_c_bar_3",
-    ]
-
-
 def test_fold_filter() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
 
@@ -566,23 +555,6 @@ def test_sort() -> None:
     assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 2, 2, 3]))
 
 
-def test_all_expr() -> None:
-    ldf = pl.LazyFrame({"nrs": [1, 2, 3, 4, 5, None]})
-    assert_frame_equal(ldf.select([pl.all()]), ldf)
-
-
-def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert (
-        fruits_cars.lazy()
-        .with_columns(pl.col("A").cast(bool))
-        .select(pl.any("A"))
-        .collect()[0, 0]
-    ) is True
-    assert (
-        fruits_cars.lazy().select(pl.any([pl.col("A"), pl.col("B")])).collect()[0, 0]
-    ) is True
-
-
 def test_custom_groupby() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = (
@@ -602,27 +574,6 @@ def test_lazy_columns() -> None:
         }
     )
     assert ldf.select(["a", "c"]).columns == ["a", "c"]
-
-
-def test_regex_selection() -> None:
-    ldf = pl.LazyFrame(
-        {
-            "foo": [1],
-            "fooey": [1],
-            "foobar": [1],
-            "bar": [1],
-        }
-    )
-    assert ldf.select([pl.col("^foo.*$")]).columns == ["foo", "fooey", "foobar"]
-
-
-def test_exclude_selection() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [1], "c": [True]})
-
-    assert ldf.select([pl.exclude("a")]).columns == ["b", "c"]
-    assert ldf.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
-    assert ldf.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
-    assert ldf.select(pl.all().exclude(NUMERIC_DTYPES)).columns == ["c"]
 
 
 def test_col_series_selection() -> None:
@@ -676,41 +627,6 @@ def test_backward_fill() -> None:
     ldf = pl.LazyFrame({"a": [1.0, None, 3.0]})
     col_a_backward_fill = ldf.select([pl.col("a").backward_fill()]).collect()["a"]
     assert_series_equal(col_a_backward_fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
-
-
-def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:
-    ldf = fruits_cars.lazy()
-    result = ldf.select(pl.col(["A", "B"]).sum())
-    expected = pl.LazyFrame({"A": 15, "B": 15})
-    assert_frame_equal(result, expected)
-
-
-def test_select_args_kwargs() -> None:
-    ldf = pl.LazyFrame({"foo": [1, 2], "bar": [3, 4], "ham": ["a", "b"]})
-
-    # Single column name
-    result = ldf.select("foo")
-    expected = pl.LazyFrame({"foo": [1, 2]})
-    assert_frame_equal(result, expected)
-
-    # Column names as list
-    result = ldf.select(["foo", "bar"])
-    expected = pl.LazyFrame({"foo": [1, 2], "bar": [3, 4]})
-    assert_frame_equal(result, expected)
-
-    # Column names as positional arguments
-    result, expected = ldf.select("foo", "bar", "ham"), ldf
-    assert_frame_equal(result, expected)
-
-    # Keyword arguments
-    result = ldf.select(oof="foo")
-    expected = pl.LazyFrame({"oof": [1, 2]})
-    assert_frame_equal(result, expected)
-
-    # Mixed
-    result = ldf.select(["bar"], "foo", oof="foo")
-    expected = pl.LazyFrame({"bar": [3, 4], "foo": [1, 2], "oof": [1, 2]})
-    assert_frame_equal(result, expected)
 
 
 def test_rolling(fruits_cars: pl.DataFrame) -> None:
@@ -941,14 +857,6 @@ def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
     assert res.columns[0] == "C"
 
 
-def test_with_columns_single_series() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2]})
-    result = ldf.with_columns(pl.Series("b", [3, 4]))
-
-    expected = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    assert_frame_equal(result.collect(), expected)
-
-
 def test_reverse() -> None:
     out = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).reverse()
     expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
@@ -1034,6 +942,25 @@ def test_spearman_corr() -> None:
     ).collect()["c"]
     assert np.isclose(out[0], 0.5)
     assert np.isclose(out[1], -1.0)
+
+
+def test_spearman_corr_ties() -> None:
+    """In Spearman correlation, ranks are computed using the average method ."""
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 3, 7, 4], "b": [4, 3, 2, 2, 4, 3, 1]})
+
+    result = df.select(
+        pl.corr("a", "b", method="spearman").alias("a1"),
+        pl.corr(pl.col("a").rank("min"), pl.col("b").rank("min")).alias("a2"),
+        pl.corr(pl.col("a").rank(), pl.col("b").rank()).alias("a3"),
+    )
+    expected = pl.DataFrame(
+        [
+            pl.Series("a1", [-0.19048483669757843], dtype=pl.Float32),
+            pl.Series("a2", [-0.17223653586587362], dtype=pl.Float64),
+            pl.Series("a3", [-0.19048483669757843], dtype=pl.Float32),
+        ]
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_pearson_corr() -> None:
@@ -1139,7 +1066,7 @@ def test_lazy_concat(df: pl.DataFrame) -> None:
 
     out = pl.concat([df.lazy(), df.lazy()]).collect()
     assert out.shape == shape
-    assert_frame_equal(out, df.vstack(df.clone()))
+    assert_frame_equal(out, df.vstack(df))
 
 
 def test_self_join() -> None:
@@ -1155,7 +1082,7 @@ def test_self_join() -> None:
     out = (
         ldf.join(other=ldf, left_on="manager_id", right_on="employee_id", how="left")
         .select(
-            exprs=[
+            [
                 pl.col("employee_id"),
                 pl.col("employee_name"),
                 pl.col("employee_name_right").alias("manager_name"),
@@ -1293,24 +1220,6 @@ def test_type_coercion_unknown_4190() -> None:
     ).collect()
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 1), (2, 2), (3, 3)]
-
-
-def test_all_any_accept_expr() -> None:
-    ldf = pl.LazyFrame(
-        {
-            "a": [1, None, 2],
-            "b": [1, 2, None],
-        }
-    )
-    assert ldf.select(
-        [
-            pl.any(pl.all().is_null()).alias("null_in_row"),
-            pl.all(pl.all().is_null()).alias("all_null_in_row"),
-        ]
-    ).collect().to_dict(False) == {
-        "null_in_row": [False, True, True],
-        "all_null_in_row": [False, False, False],
-    }
 
 
 def test_lazy_cache_same_key() -> None:
@@ -1550,3 +1459,25 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     dtype_eager = result_eager["x"].dtype
     result_lazy = df.lazy().select(func.over("y")).select(pl.col(dtype_eager)).collect()
     assert result_eager.frame_equal(result_lazy)
+
+
+@pytest.mark.parametrize(
+    "comparators",
+    [
+        ("==", pl.LazyFrame.__eq__),
+        ("!=", pl.LazyFrame.__ne__),
+        (">", pl.LazyFrame.__gt__),
+        ("<", pl.LazyFrame.__lt__),
+        (">=", pl.LazyFrame.__ge__),
+        ("<=", pl.LazyFrame.__le__),
+    ],
+)
+def test_lazy_comparison_operators(
+    comparators: tuple[str, Callable[[pl.LazyFrame, Any], NoReturn]]
+) -> None:
+    # we cannot compare lazy frames, so all should raise a TypeError
+    with pytest.raises(
+        TypeError,
+        match=f'"{comparators[0]}" comparison not supported for LazyFrame objects',
+    ):
+        comparators[1](pl.LazyFrame(), pl.LazyFrame())

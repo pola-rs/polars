@@ -8,26 +8,15 @@ from typing import TYPE_CHECKING, Iterable, List, Sequence, cast
 import polars._reexport as pl
 from polars import functions as F
 from polars.type_aliases import FrameType
-from polars.utils._wrap import wrap_df, wrap_ldf, wrap_s
+from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.utils.various import ordered_unique
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    import sys
-
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars.type_aliases import (
-        ConcatMethod,
-        JoinStrategy,
-        PolarsType,
-    )
-
-    if sys.version_info >= (3, 8):
-        pass
-    else:
-        pass
+    from polars.type_aliases import ConcatMethod, JoinStrategy, PolarsType
 
 
 def concat(
@@ -49,6 +38,8 @@ def concat(
         LazyFrames do not support the `horizontal` strategy.
 
         * vertical: Applies multiple `vstack` operations.
+        * vertical_relaxed: Applies multiple `vstack` operations and coerces column
+          dtypes that are not equal to their supertypes.
         * diagonal: Finds a union between the column schemas and fills missing column
           values with ``null``.
         * horizontal: Stacks Series from DataFrames horizontally and fills with ``null``
@@ -162,23 +153,29 @@ def concat(
     if isinstance(first, pl.DataFrame):
         if how == "vertical":
             out = wrap_df(plr.concat_df(elems))
+        elif how == "vertical_relaxed":
+            out = wrap_ldf(
+                plr.concat_lf([df.lazy() for df in elems], rechunk, parallel, True)
+            ).collect(no_optimization=True)
         elif how == "diagonal":
             out = wrap_df(plr.diag_concat_df(elems))
         elif how == "horizontal":
             out = wrap_df(plr.hor_concat_df(elems))
         else:
             raise ValueError(
-                f"`how` must be one of {{'vertical','diagonal','horizontal','align'}}, "
+                f"`how` must be one of {{'vertical','vertical_relaxed','diagonal','horizontal','align'}}, "
                 f"got {how!r}"
             )
     elif isinstance(first, pl.LazyFrame):
         if how == "vertical":
-            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel))
+            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel, False))
+        if how == "vertical_relaxed":
+            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel, True))
         if how == "diagonal":
             return wrap_ldf(plr.diag_concat_lf(elems, rechunk, parallel))
         else:
             raise ValueError(
-                "'LazyFrame' only allows {'vertical','diagonal','align'} concat strategies."
+                "'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies."
             )
     elif isinstance(first, pl.Series):
         if how == "vertical":
@@ -187,9 +184,7 @@ def concat(
             raise ValueError("'Series' only allows {'vertical'} concat strategy.")
 
     elif isinstance(first, pl.Expr):
-        out = first
-        for e in elems[1:]:
-            out = out.append(e)
+        return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
     else:
         raise ValueError(f"did not expect type: {type(first)} in 'pl.concat'.")
 
@@ -324,7 +319,7 @@ def align_frames(
 
     Now data is aligned, and you can easily calculate the row-wise dot product:
 
-    >>> (af1 * af2 * af3).fill_null(0).select(pl.sum(pl.col("*")).alias("dot"))
+    >>> (af1 * af2 * af3).fill_null(0).select(pl.sum_horizontal("*").alias("dot"))
     shape: (3, 1)
     ┌───────┐
     │ dot   │
@@ -352,17 +347,34 @@ def align_frames(
     # create aligned master frame (this is the most expensive part; afterwards
     # we just subselect out the columns representing the component frames)
     eager = isinstance(frames[0], pl.DataFrame)
-    alignment_frame: LazyFrame = (
-        reduce(  # type: ignore[attr-defined]
-            lambda x, y: x.lazy().join(  # type: ignore[arg-type, return-value]
-                y.lazy(), how=how, on=align_on, suffix=str(id(y))
-            ),
-            frames,
+
+    # we stackoverflow on many frames
+    # so we branch on an arbitrary chosen large number of frames
+    if len(frames) < 250:
+        # lazy variant
+        # this can SO
+        alignment_frame: LazyFrame = (
+            reduce(  # type: ignore[attr-defined]
+                lambda x, y: x.lazy().join(  # type: ignore[arg-type, return-value]
+                    y.lazy(), how=how, on=align_on, suffix=str(id(y))
+                ),
+                frames,
+            )
+            .sort(by=align_on, descending=descending)
+            .collect(no_optimization=True)
+            .lazy()
         )
-        .sort(by=align_on, descending=descending)
-        .collect()
-        .lazy()
-    )
+    else:
+        # eager variant
+        # this doesn't SO
+        alignment_frame = (
+            reduce(
+                lambda x, y: x.join(y, how=how, on=align_on, suffix=str(id(y))),
+                frames,
+            )
+            .sort(by=align_on, descending=descending)
+            .lazy()
+        )
 
     # select-out aligned components from the master frame
     aligned_cols = set(alignment_frame.columns)

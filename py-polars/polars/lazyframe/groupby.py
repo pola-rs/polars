@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Iterable
 
 from polars import functions as F
-from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
+from polars.utils._parse_expr_input import parse_as_list_of_expressions
 from polars.utils._wrap import wrap_ldf
+from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
@@ -24,8 +25,7 @@ class LazyGroupBy:
 
     def agg(
         self,
-        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
-        *more_aggs: IntoExpr,
+        *aggs: IntoExpr | Iterable[IntoExpr],
         **named_aggs: IntoExpr,
     ) -> LazyFrame:
         """
@@ -33,18 +33,17 @@ class LazyGroupBy:
 
         Parameters
         ----------
-        aggs
-            Aggregations to compute for each group of the groupby operation.
+        *aggs
+            Aggregations to compute for each group of the groupby operation,
+            specified as positional arguments.
             Accepts expression input. Strings are parsed as column names.
-        *more_aggs
-            Additional aggregations, specified as positional arguments.
         **named_aggs
-            Additional aggregations, specified as keyword arguments. The resulting
-            columns will be renamed to the keyword used.
+            Additional aggregations, specified as keyword arguments.
+            The resulting columns will be renamed to the keyword used.
 
         Examples
         --------
-        Compute the sum of a column for each group.
+        Compute the aggregation of the columns for each group.
 
         >>> ldf = pl.DataFrame(
         ...     {
@@ -53,6 +52,24 @@ class LazyGroupBy:
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... ).lazy()
+        >>> ldf.groupby("a").agg(
+        ...     [pl.col("b"), pl.col("c")]
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (3, 3)
+        ┌─────┬───────────┬───────────┐
+        │ a   ┆ b         ┆ c         │
+        │ --- ┆ ---       ┆ ---       │
+        │ str ┆ list[i64] ┆ list[i64] │
+        ╞═════╪═══════════╪═══════════╡
+        │ a   ┆ [1, 1]    ┆ [5, 3]    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b   ┆ [2, 3]    ┆ [4, 2]    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ c   ┆ [3]       ┆ [1]       │
+        └─────┴───────────┴───────────┘
+
+        Compute the sum of a column for each group.
+
         >>> ldf.groupby("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
@@ -116,23 +133,25 @@ class LazyGroupBy:
         └─────┴───────┴────────────────┘
 
         """
-        if isinstance(aggs, dict):
+        if aggs and isinstance(aggs[0], dict):
             raise ValueError(
-                f"'aggs' argument should be one or multiple expressions, got: '{aggs}'."
-            )
-        if aggs is None and not named_aggs:
-            raise ValueError("Expected at least one of 'aggs' or '**named_aggs'")
-
-        exprs = selection_to_pyexpr_list(aggs)
-        if more_aggs:
-            exprs.extend(selection_to_pyexpr_list(more_aggs))
-        if named_aggs:
-            exprs.extend(
-                expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
-                for name, expr in named_aggs.items()
+                "specifying aggregations as a dictionary is not supported."
+                " Try unpacking the dictionary to take advantage of the keyword syntax"
+                " of the `agg` method."
             )
 
-        return wrap_ldf(self.lgb.agg(exprs))
+        if "aggs" in named_aggs:
+            issue_deprecation_warning(
+                "passing expressions to `agg` using the keyword argument `aggs` is"
+                " deprecated. Use positional syntax instead.",
+                version="0.18.1",
+            )
+            first_input = named_aggs.pop("aggs")
+            pyexprs = parse_as_list_of_expressions(first_input, *aggs, **named_aggs)
+        else:
+            pyexprs = parse_as_list_of_expressions(*aggs, **named_aggs)
+
+        return wrap_ldf(self.lgb.agg(pyexprs))
 
     def apply(
         self,
@@ -141,6 +160,10 @@ class LazyGroupBy:
     ) -> LazyFrame:
         """
         Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
+
+        .. warning::
+            This method is much slower than the native expressions API.
+            Only use it if you cannot implement your logic otherwise.
 
         Using this is considered an anti-pattern. This will be very slow because:
 
@@ -210,7 +233,7 @@ class LazyGroupBy:
 
         >>> (
         ...     df.lazy()
-        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .filter(pl.int_range(0, pl.count()).shuffle().over("color") < 2)
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 

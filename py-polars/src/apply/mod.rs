@@ -42,7 +42,7 @@ fn iterator_to_struct<'a>(
             return Err(crate::error::ComputeError::new_err(format!(
                 "expected struct got {first_value:?}",
             )))
-        }
+        },
     };
 
     // every item in the struct is kept as its own buffer of anyvalues
@@ -54,6 +54,10 @@ fn iterator_to_struct<'a>(
     // ]
     let mut struct_fields: BTreeMap<&str, Vec<AnyValue>> = BTreeMap::new();
 
+    // as a BTreeMap sorts its keys, we also need to track the original
+    // order of the field names
+    let mut field_names_ordered = Vec::with_capacity(flds.len());
+
     // use the first value and the known null count to initialize the buffers
     // if we find a new key later on, we make a new entry in the BTree
     for (value, fld) in vals.into_iter().zip(flds) {
@@ -62,6 +66,7 @@ fn iterator_to_struct<'a>(
             buf.push(AnyValue::Null);
         }
         buf.push(value);
+        field_names_ordered.push(fld.name() as &str);
         struct_fields.insert(fld.name(), buf);
     }
 
@@ -71,7 +76,7 @@ fn iterator_to_struct<'a>(
                 for field_items in struct_fields.values_mut() {
                     field_items.push(AnyValue::Null);
                 }
-            }
+            },
             Some(dict) => {
                 let dict = dict.downcast::<PyDict>()?;
 
@@ -86,6 +91,7 @@ fn iterator_to_struct<'a>(
                 for (key, val) in dict.iter() {
                     let key = key.str().unwrap().to_str().unwrap();
                     let buf = struct_fields.entry(key).or_insert_with(|| {
+                        field_names_ordered.push(key);
                         let mut buf = Vec::with_capacity(capacity);
                         for _ in 0..(init_null_count + current_len) {
                             buf.push(AnyValue::Null);
@@ -105,14 +111,14 @@ fn iterator_to_struct<'a>(
                         }
                     }
                 }
-            }
+            },
         }
     }
 
     let fields = POOL.install(|| {
-        struct_fields
+        field_names_ordered
             .par_iter()
-            .map(|(name, avs)| Series::new(name, avs))
+            .map(|name| Series::new(name, struct_fields.get(name).unwrap()))
             .collect::<Vec<_>>()
     });
 
@@ -259,17 +265,21 @@ fn iterator_to_list(
     for _ in 0..init_null_count {
         builder.append_null()
     }
-    builder.append_opt_series(first_value);
+    builder
+        .append_opt_series(first_value)
+        .map_err(PyPolarsErr::from)?;
     for opt_val in it {
         match opt_val {
             None => builder.append_null(),
             Some(s) => {
                 if s.len() == 0 && s.dtype() != dt {
-                    builder.append_series(&Series::full_null("", 0, dt))
+                    builder
+                        .append_series(&Series::full_null("", 0, dt))
+                        .unwrap()
                 } else {
-                    builder.append_series(&s)
+                    builder.append_series(&s).map_err(PyPolarsErr::from)?
                 }
-            }
+            },
         }
     }
     Ok(builder.finish())
