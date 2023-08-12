@@ -42,7 +42,7 @@ fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> LeftRight<bool> {
             } else {
                 join_produces_null(how)
             }
-        }
+        },
         _ => LeftRight(false, false),
     }
 }
