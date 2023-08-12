@@ -1,6 +1,6 @@
 use super::*;
 
-// Enable information about individual sides of a join
+// information concerning individual sides of a join
 #[derive(PartialEq, Eq)]
 struct LeftRight<T>(T, T);
 
@@ -50,21 +50,18 @@ fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> LeftRight<bool> {
 fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
     #[cfg(feature = "asof_join")]
     {
-        if matches!(
-            how,
-            JoinType::Left | JoinType::Outer | JoinType::Cross | JoinType::AsOf(_)
-        ) {
-            LeftRight(true, true)
-        } else {
-            LeftRight(false, false)
+        match how {
+            JoinType::Left => LeftRight(false, true),
+            JoinType::Outer | JoinType::Cross | JoinType::AsOf(_) => LeftRight(true, true),
+            _ => LeftRight(false, false),
         }
     }
     #[cfg(not(feature = "asof_join"))]
     {
-        if matches!(how, JoinType::Left | JoinType::Outer | JoinType::Cross) {
-            LeftRight(true, true)
-        } else {
-            LeftRight(false, false)
+        match how {
+            JoinType::Left => LeftRight(false, true),
+            JoinType::Outer | JoinType::Cross => LeftRight(true, true),
+            _ => LeftRight(false, false),
         }
     }
 }
