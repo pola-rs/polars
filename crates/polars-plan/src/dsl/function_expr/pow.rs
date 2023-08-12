@@ -76,25 +76,24 @@ where
     }
 }
 
-fn pow_on_uints<T>(base: &ChunkedArray<T>, exponent: &Series) -> PolarsResult<Option<Series>>
+fn pow_on_uints<T, F>(base: &ChunkedArray<T>, exponent: &ChunkedArray<F>) -> PolarsResult<Option<Series>>
 where
-    T: PolarsUnsignedIntegerType,
-    T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive,
+    T: PolarsIntegerType,
+    F: PolarsUnsignedIntegerType,
+    T::Native: num::pow::Pow<F::Native, Output = T::Native> + ToPrimitive,
+    F::Native: num::pow::Pow<F::Native, Output = F::Native> + ToPrimitive,
     ChunkedArray<T>: IntoSeries,
+    ChunkedArray<F>: IntoSeries,
 {
     let dtype = T::get_dtype();
-    let exponent = exponent.strict_cast(&dtype)?;
-    let exponent = base.unpack_series_matching_type(&exponent).unwrap();
 
     if exponent.len() == 1 {
         let Some(exponent_value) = exponent.get(0) else {
             return Ok(Some(Series::full_null(base.name(), base.len(), &dtype)));
         };
-        let s = match exponent_value.to_f64().unwrap() {
-            a if a == 1.0 => base.clone().into_series(),
-            // specialized sqrt will ensure (-inf)^0.5 = NaN
-            // and will likely be faster as well.
-            a if a.fract() == 0.0 && a < 10.0 && a > 1.0 => {
+        let s = match exponent_value.to_u64().unwrap() {
+            a if a == 1 => base.clone().into_series(),
+            a if a < 10 && a > 1 => {
                 let mut out = base.clone();
 
                 for _ in 1..exponent_value.to_u8().unwrap() {
@@ -107,11 +106,17 @@ where
         Ok(Some(s))
     } else if (base.len() == 1) && (exponent.len() != 1) {
         let base = base
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
+            .get(0).unwrap();
+            // .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
 
+        // how to fix this?
+        // need to be able to return something of type T?
+        // which, surely, isn't always the case?
         Ok(Some(
-            exponent.apply(|exp| Pow::pow(base, exp)).into_series(),
+            exponent.into_iter()
+            .map(|exp| Some(Pow::pow(base, exp.unwrap())))
+            .collect_trusted::<ChunkedArray<T>>()
+            .into_series(),
         ))
     } else {
         Ok(Some(
@@ -130,9 +135,25 @@ where
 fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series>> {
     use DataType::*;
     match (base.dtype(), exponent.dtype()) {
-        (UInt32, _) => {
+        (UInt32, UInt8| UInt16| UInt32) => {
             let ca = base.u32().unwrap();
-            pow_on_uints(ca, exponent)
+            let exponent = exponent.strict_cast(&base.dtype())?;
+            pow_on_uints(ca, exponent.u32().unwrap())
+        },
+        (Int32, UInt8| UInt16| UInt32) => {
+            let ca = base.i32().unwrap();
+            let exponent = exponent.strict_cast(&DataType::UInt32)?;
+            pow_on_uints(ca, exponent.u32().unwrap())
+        },
+        (UInt64, UInt8| UInt16| UInt32) => {
+            let ca = base.u64().unwrap();
+            let exponent = exponent.strict_cast(&DataType::UInt32)?;
+            pow_on_uints(ca, exponent.u32().unwrap())
+        },
+        (Int64, UInt8| UInt16| UInt32) => {
+            let ca = base.i64().unwrap();
+            let exponent = exponent.strict_cast(&DataType::UInt32)?;
+            pow_on_uints(ca, exponent.u32().unwrap())
         },
         (Float32,_) => {
             let ca = base.f32().unwrap();
