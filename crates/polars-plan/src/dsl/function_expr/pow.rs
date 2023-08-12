@@ -76,9 +76,64 @@ where
     }
 }
 
+fn pow_on_uints<T>(base: &ChunkedArray<T>, exponent: &Series) -> PolarsResult<Option<Series>>
+where
+    T: PolarsUnsignedIntegerType,
+    T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive,
+    ChunkedArray<T>: IntoSeries,
+{
+    let dtype = T::get_dtype();
+    let exponent = exponent.strict_cast(&dtype)?;
+    let exponent = base.unpack_series_matching_type(&exponent).unwrap();
+
+    if exponent.len() == 1 {
+        let Some(exponent_value) = exponent.get(0) else {
+            return Ok(Some(Series::full_null(base.name(), base.len(), &dtype)));
+        };
+        let s = match exponent_value.to_f64().unwrap() {
+            a if a == 1.0 => base.clone().into_series(),
+            // specialized sqrt will ensure (-inf)^0.5 = NaN
+            // and will likely be faster as well.
+            a if a.fract() == 0.0 && a < 10.0 && a > 1.0 => {
+                let mut out = base.clone();
+
+                for _ in 1..exponent_value.to_u8().unwrap() {
+                    out = out * base.clone()
+                }
+                out.into_series()
+            },
+            _ => base.apply(|v| Pow::pow(v, exponent_value)).into_series(),
+        };
+        Ok(Some(s))
+    } else if (base.len() == 1) && (exponent.len() != 1) {
+        let base = base
+            .get(0)
+            .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
+
+        Ok(Some(
+            exponent.apply(|exp| Pow::pow(base, exp)).into_series(),
+        ))
+    } else {
+        Ok(Some(
+            base.into_iter()
+                .zip(exponent)
+                .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
+                    (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
+                    _ => None,
+                })
+                .collect_trusted::<ChunkedArray<T>>()
+                .into_series(),
+        ))
+    }
+}
+
 fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series>> {
     use DataType::*;
     match base.dtype() {
+        UInt32 => {
+            let ca = base.u32().unwrap();
+            pow_on_uints(ca, exponent)
+        },
         Float32 => {
             let ca = base.f32().unwrap();
             pow_on_floats(ca, exponent)

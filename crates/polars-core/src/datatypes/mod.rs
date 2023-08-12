@@ -277,6 +277,12 @@ impl PolarsNumericType for Float64Type {
     type Native = f64;
 }
 
+pub trait PolarsUnsignedIntegerType: PolarsNumericType {}
+impl PolarsUnsignedIntegerType for UInt8Type {}
+impl PolarsUnsignedIntegerType for UInt16Type {}
+impl PolarsUnsignedIntegerType for UInt32Type {}
+impl PolarsUnsignedIntegerType for UInt64Type {}
+
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
 impl PolarsIntegerType for UInt16Type {}
