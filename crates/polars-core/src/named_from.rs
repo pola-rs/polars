@@ -96,6 +96,7 @@ impl_named_from!([Option<i32>], Int32Type, from_slice_options);
 impl_named_from!([Option<i64>], Int64Type, from_slice_options);
 impl_named_from!([Option<f32>], Float32Type, from_slice_options);
 impl_named_from!([Option<f64>], Float64Type, from_slice_options);
+impl_named_from!([Option<i128>], Int128Type, from_slice_options);
 
 macro_rules! impl_named_from_range {
     ($range:ty, $polars_type:ident) => {

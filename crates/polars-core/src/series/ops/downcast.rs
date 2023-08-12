@@ -122,6 +122,9 @@ impl Series {
     pub fn decimal(&self) -> PolarsResult<&DecimalChunked> {
         unpack_chunked!(self, DataType::Decimal(_, _) => DecimalChunked, "Decimal")
     }
+    pub fn null(&self) -> PolarsResult<&NullChunked> {
+        unpack_chunked!(self, DataType::Null => NullChunked, "Null")
+    }
 
     /// Unpack to [`ChunkedArray`] of dtype list
     pub fn list(&self) -> PolarsResult<&ListChunked> {

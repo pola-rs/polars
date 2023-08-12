@@ -7,6 +7,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use crate::chunked_array::builder::AnonymousListBuilder;
 use crate::chunked_array::Settings;
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 
 impl Serialize for Series {
     fn serialize<S>(
@@ -61,6 +62,15 @@ impl Serialize for Series {
             #[cfg(feature = "dtype-time")]
             DataType::Time => {
                 let ca = self.time().unwrap();
+                ca.serialize(serializer)
+            },
+            DataType::Null => {
+                let ca = self.null().unwrap();
+                ca.serialize(serializer)
+            },
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                let ca = self.decimal().unwrap();
                 ca.serialize(serializer)
             },
             dt => {
@@ -216,6 +226,19 @@ impl<'de> Deserialize<'de> for Series {
                     DataType::Binary => {
                         let values: Vec<Option<Cow<[u8]>>> = map.next_value()?;
                         Ok(Series::new(&name, values))
+                    },
+                    DataType::Null => {
+                        let length: usize = map.next_value()?;
+                        Ok(NullChunked::new(Arc::from(name), length).into_series())
+                    },
+                    #[cfg(feature = "dtype-decimal")]
+                    DataType::Decimal(precision, scale) => {
+                        let values: Vec<Option<i128>> = map.next_value()?;
+                        let scale_u8 = scale.unwrap();
+                        let s = Int128Chunked::from_slice_options(&name, values.as_ref())
+                            .into_decimal(precision, scale_u8)
+                            .unwrap();
+                        Ok(s.into_series())
                     },
                     #[cfg(feature = "dtype-struct")]
                     DataType::Struct(_) => {

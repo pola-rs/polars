@@ -6,6 +6,7 @@ pub mod series;
 mod test {
     use crate::chunked_array::Settings;
     use crate::prelude::*;
+    use crate::series::implementations::null::NullChunked;
     use crate::series::IsSorted;
 
     #[test]
@@ -77,6 +78,14 @@ mod test {
         assert!(df.frame_equal_missing(&out));
     }
 
+    #[test]
+    fn test_serde_null_series_owned() {
+        let s = NullChunked::new(Arc::from("new"), 3).into_series();
+        let json = serde_json::to_string(&s).unwrap();
+        let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
+        assert_eq!(out, s);
+    }
+
     /// test using the `DeserializedOwned` trait
     #[test]
     fn test_serde_df_owned_json() {
@@ -101,6 +110,20 @@ mod test {
         let bytes = bincode::serialize(&df).unwrap();
         let out = bincode::deserialize_from::<_, DataFrame>(bytes.as_slice()).unwrap();
         assert!(df.frame_equal_missing(&out));
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-decimal")]
+    fn test_serde_decimal_series_owned_json() {
+        let s = Series::new("decimal", &["4.2", "4.4", "4.7"])
+            .cast(&DataType::Decimal(Some(38), Some(1)))
+            .unwrap();
+        let json = serde_json::to_string(&s).unwrap();
+        let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
+        let sc = out.decimal().unwrap().scale();
+        let p = out.decimal().unwrap().precision();
+        println!("{:?}", out);
+        assert_eq!(out, s);
     }
 
     #[test]

@@ -5,6 +5,7 @@ use serde::{Serialize, Serializer};
 
 use crate::chunked_array::Settings;
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 
 pub struct IterSer<I>
 where
@@ -133,6 +134,18 @@ impl_serialize!(Utf8Chunked);
 impl_serialize!(BooleanChunked);
 impl_serialize!(ListChunked);
 impl_serialize!(BinaryChunked);
+impl Serialize for NullChunked {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_map(Some(3))?;
+        state.serialize_entry("name", self.name())?;
+        state.serialize_entry("datatype", self.dtype())?;
+        state.serialize_entry("values", &self.len())?;
+        state.end()
+    }
+}
 
 #[cfg(feature = "dtype-categorical")]
 impl Serialize for CategoricalChunked {
