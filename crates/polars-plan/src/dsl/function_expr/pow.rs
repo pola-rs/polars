@@ -129,16 +129,16 @@ where
 
 fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series>> {
     use DataType::*;
-    match base.dtype() {
-        UInt32 => {
+    match (base.dtype(), exponent.dtype()) {
+        (UInt32, _) => {
             let ca = base.u32().unwrap();
             pow_on_uints(ca, exponent)
         },
-        Float32 => {
+        (Float32,_) => {
             let ca = base.f32().unwrap();
             pow_on_floats(ca, exponent)
         },
-        Float64 => {
+        (Float64, _) => {
             let ca = base.f64().unwrap();
             pow_on_floats(ca, exponent)
         },
