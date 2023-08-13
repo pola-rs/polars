@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 use ahash::RandomState;
 
@@ -35,10 +35,10 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _get_flags(&self) -> u8 {
+    fn _get_flags(&self) -> Settings {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+    fn _set_flags(&mut self, flags: Settings) {
         self.0.set_flags(flags)
     }
 
@@ -63,10 +63,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .cummin(reverse)
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
-    }
-
-    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
-        self.0.deref_mut().set_sorted_flag(is_sorted)
     }
 
     #[cfg(feature = "zip_with")]
@@ -174,16 +170,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DatetimeChunked> {
-    fn is_sorted_flag(&self) -> IsSorted {
-        if self.0.is_sorted_ascending_flag() {
-            IsSorted::Ascending
-        } else if self.0.is_sorted_descending_flag() {
-            IsSorted::Descending
-        } else {
-            IsSorted::Not
-        }
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }

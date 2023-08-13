@@ -11,6 +11,7 @@ pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
 use polars_utils::sync::SyncPtr;
 
 use super::*;
+use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 bitflags! {
@@ -83,19 +84,13 @@ impl CategoricalChunked {
         out
     }
 
-    pub(crate) fn get_flags(&self) -> u8 {
-        self.bit_settings.bits()
+    pub(crate) fn get_flags(&self) -> Settings {
+        self.logical().get_flags()
     }
 
     /// Set flags for the Chunked Array
-    pub(crate) fn set_flags(&mut self, flags: u8) -> PolarsResult<()> {
-        BitSettings::from_bits(flags)
-            .ok_or_else(
-                || polars_err!(ComputeError: "corrupt flags {} for {}", flags, self.dtype()),
-            )
-            .map(|settings| {
-                self.bit_settings = settings;
-            })
+    pub(crate) fn set_flags(&mut self, flags: Settings) {
+        self.logical_mut().set_flags(flags)
     }
 
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.

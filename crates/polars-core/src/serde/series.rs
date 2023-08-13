@@ -4,6 +4,7 @@ use std::fmt::Formatter;
 use serde::de::{MapAccess, Visitor};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 impl Serialize for Series {
@@ -94,7 +95,7 @@ impl<'de> Deserialize<'de> for Series {
             {
                 let mut name: Option<Cow<'de, str>> = None;
                 let mut dtype = None;
-                let mut bit_settings: Option<u8> = None;
+                let mut bit_settings: Option<Settings> = None;
                 let mut values_set = false;
                 while let Some(key) = map.next_key::<Cow<str>>().unwrap() {
                     match key.as_ref() {
@@ -231,7 +232,6 @@ impl<'de> Deserialize<'de> for Series {
 
                 if let Some(f) = bit_settings {
                     s.set_flags(f)
-                        .map_err(|_| de::Error::custom("bit flags are corrupt"))?
                 }
                 Ok(s)
             }
