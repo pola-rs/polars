@@ -14,7 +14,7 @@ impl FunctionExpr {
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
-            Pow(_) => mapper.map_to_float_dtype(),
+            Pow(_) => mapper.map_to_pow_dtype(),
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
             Hash(..) => mapper.with_dtype(DataType::UInt64),
@@ -321,6 +321,41 @@ impl<'a> FieldsMapper<'a> {
             DataType::Float32 => DataType::Float32,
             _ => DataType::Float64,
         })
+    }
+
+    /// Map to a float supertype.
+    pub(super) fn map_to_pow_dtype(&self) -> PolarsResult<Field> {
+        // base, exponent
+        match (self.fields[0].data_type(), self.fields[1].data_type()) {
+            (UInt32, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
+                Ok(Field::new(self.fields[0].name(), DataType::UInt32))
+            },
+            (Int32, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
+                Ok(Field::new(self.fields[0].name(), DataType::Int32))
+            },
+            (UInt64, UInt8 | UInt16 | UInt32) => {
+                let ca = base.u64().unwrap();
+                let exponent = exponent.strict_cast(&DataType::UInt32)?;
+                pow_on_ints(ca, exponent.u32().unwrap())
+            },
+            (Int64, UInt8 | UInt16 | UInt32) => {
+                let ca = base.i64().unwrap();
+                let exponent = exponent.strict_cast(&DataType::UInt32)?;
+                pow_on_ints(ca, exponent.u32().unwrap())
+            },
+            (Float32, _) => {
+                let ca = base.f32().unwrap();
+                pow_on_floats(ca, exponent)
+            },
+            (Float64, _) => {
+                let ca = base.f64().unwrap();
+                pow_on_floats(ca, exponent)
+            },
+            // self.map_dtype(|dtype| match dtype {
+            //     DataType::Float32 => DataType::Float32,
+            //     _ => DataType::Float64,
+            // })
+        }
     }
 
     /// Map to a physical type.
