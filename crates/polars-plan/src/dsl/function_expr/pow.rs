@@ -96,7 +96,7 @@ where
     }
 }
 
-fn pow_on_ints<T, F>(
+fn pow_on_integral_dtypes<T, F>(
     base: &ChunkedArray<T>,
     exponent: &ChunkedArray<F>,
 ) -> PolarsResult<Option<Series>>
@@ -136,22 +136,22 @@ fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series
         (UInt32, UInt8 | UInt16 | UInt32) => {
             let ca = base.u32().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_on_ints(ca, exponent.u32().unwrap())
+            pow_on_integral_dtypes(ca, exponent.u32().unwrap())
         },
         (Int32, UInt8 | UInt16 | UInt32) => {
             let ca = base.i32().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_on_ints(ca, exponent.u32().unwrap())
+            pow_on_integral_dtypes(ca, exponent.u32().unwrap())
         },
         (UInt64, UInt8 | UInt16 | UInt32) => {
             let ca = base.u64().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_on_ints(ca, exponent.u32().unwrap())
+            pow_on_integral_dtypes(ca, exponent.u32().unwrap())
         },
         (Int64, UInt8 | UInt16 | UInt32) => {
             let ca = base.i64().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_on_ints(ca, exponent.u32().unwrap())
+            pow_on_integral_dtypes(ca, exponent.u32().unwrap())
         },
         (Float32, _) => {
             let ca = base.f32().unwrap();
