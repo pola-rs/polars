@@ -15,7 +15,7 @@ impl FunctionExpr {
             Abs => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
-                PowFunction::Generic => mapper.map_to_pow_dtype(),
+                PowFunction::Generic => mapper.pow_dtype(),
                 _ => mapper.map_to_float_dtype(),
             },
             Coalesce => mapper.map_to_supertype(),
@@ -326,27 +326,6 @@ impl<'a> FieldsMapper<'a> {
         })
     }
 
-    /// Map to a float supertype.
-    pub(super) fn map_to_pow_dtype(&self) -> PolarsResult<Field> {
-        // base, exponent
-        match (self.fields[0].data_type(), self.fields[1].data_type()) {
-            (DataType::UInt32, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
-                Ok(Field::new(self.fields[0].name(), DataType::UInt32))
-            },
-            (DataType::Int32, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
-                Ok(Field::new(self.fields[0].name(), DataType::Int32))
-            },
-            (DataType::UInt64, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
-                Ok(Field::new(self.fields[0].name(), DataType::UInt64))
-            },
-            (DataType::Int64, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
-                Ok(Field::new(self.fields[0].name(), DataType::Int64))
-            },
-            (DataType::Float32, _) => Ok(Field::new(self.fields[0].name(), DataType::Float32)),
-            (_, _) => Ok(Field::new(self.fields[0].name(), DataType::Float64)),
-        }
-    }
-
     /// Map to a physical type.
     pub(super) fn to_physical_type(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| dtype.to_physical())
@@ -509,6 +488,27 @@ impl<'a> FieldsMapper<'a> {
         }
         Ok(first)
     }
+
+    pub(super) fn pow_dtype(&self) -> PolarsResult<Field> {
+        // base, exponent
+        match (self.fields[0].data_type(), self.fields[1].data_type()) {
+            (DataType::UInt32, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
+                Ok(Field::new(self.fields[0].name(), DataType::UInt32))
+            },
+            (DataType::Int32, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
+                Ok(Field::new(self.fields[0].name(), DataType::Int32))
+            },
+            (DataType::UInt64, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
+                Ok(Field::new(self.fields[0].name(), DataType::UInt64))
+            },
+            (DataType::Int64, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
+                Ok(Field::new(self.fields[0].name(), DataType::Int64))
+            },
+            (DataType::Float32, _) => Ok(Field::new(self.fields[0].name(), DataType::Float32)),
+            (_, _) => Ok(Field::new(self.fields[0].name(), DataType::Float64)),
+        }
+    }
+
 
     #[cfg(feature = "extract_jsonpath")]
     pub(super) fn with_opt_dtype(&self, dtype: Option<DataType>) -> PolarsResult<Field> {
