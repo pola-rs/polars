@@ -24,6 +24,42 @@ impl Display for PowFunction {
     }
 }
 
+fn pow_on_chunked_arrays<T, F>(
+    base: &ChunkedArray<T>,
+    exponent: &ChunkedArray<F>,
+) -> PolarsResult<Option<Series>>
+where
+    T: PolarsNumericType,
+    F: PolarsNumericType,
+    T::Native: num::pow::Pow<F::Native, Output = T::Native> + ToPrimitive,
+    ChunkedArray<T>: IntoSeries,
+{
+    if (base.len() == 1) && (exponent.len() != 1) {
+        let base = base
+            .get(0)
+            .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
+
+        Ok(Some(
+            exponent
+                .into_iter()
+                .map(|exp| exp.map(|exp| Pow::pow(base, exp)))
+                .collect_trusted::<ChunkedArray<T>>()
+                .into_series(),
+        ))
+    } else {
+        Ok(Some(
+            base.into_iter()
+                .zip(exponent)
+                .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
+                    (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
+                    _ => None,
+                })
+                .collect_trusted::<ChunkedArray<T>>()
+                .into_series(),
+        ))
+    }
+}
+
 fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &Series) -> PolarsResult<Option<Series>>
 where
     T: PolarsFloatType,
@@ -54,25 +90,8 @@ where
             _ => base.apply(|v| Pow::pow(v, exponent_value)).into_series(),
         };
         Ok(Some(s))
-    } else if (base.len() == 1) && (exponent.len() != 1) {
-        let base = base
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
-
-        Ok(Some(
-            exponent.apply(|exp| Pow::pow(base, exp)).into_series(),
-        ))
     } else {
-        Ok(Some(
-            base.into_iter()
-                .zip(exponent)
-                .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
-                    (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
-                    _ => None,
-                })
-                .collect_trusted::<ChunkedArray<T>>()
-                .into_series(),
-        ))
+        pow_on_chunked_arrays(base, exponent)
     }
 }
 
@@ -107,29 +126,8 @@ where
             _ => base.apply(|v| Pow::pow(v, exponent_value)).into_series(),
         };
         Ok(Some(s))
-    } else if (base.len() == 1) && (exponent.len() != 1) {
-        let base = base
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
-
-        Ok(Some(
-            exponent
-                .into_iter()
-                .map(|exp| exp.map(|exp| Pow::pow(base, exp)))
-                .collect_trusted::<ChunkedArray<T>>()
-                .into_series(),
-        ))
     } else {
-        Ok(Some(
-            base.into_iter()
-                .zip(exponent)
-                .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
-                    (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
-                    _ => None,
-                })
-                .collect_trusted::<ChunkedArray<T>>()
-                .into_series(),
-        ))
+        pow_on_chunked_arrays(base, exponent)
     }
 }
 
