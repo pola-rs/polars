@@ -1,7 +1,10 @@
+use arrow::array::PrimitiveArray;
+use arrow::types::NativeType;
 use num::pow::Pow;
-use polars_arrow::utils::CustomIterTools;
+use polars_core::export::arrow::compute::arity::binary;
 use polars_core::export::num;
 use polars_core::export::num::{Float, ToPrimitive};
+use polars_core::utils::align_chunks_binary;
 
 use super::*;
 
@@ -22,6 +25,14 @@ impl Display for PowFunction {
             PowFunction::Cbrt => write!(f, "cbrt"),
         }
     }
+}
+
+fn compute_kernel<T, F>(arr_1: &PrimitiveArray<T>, arr_2: &PrimitiveArray<F>) -> PrimitiveArray<T>
+where
+    T: num::pow::Pow<F, Output = T> + NativeType,
+    F: NativeType,
+{
+    binary(arr_1, arr_2, arr_1.data_type().clone(), |a, b| a.pow(b))
 }
 
 fn pow_on_chunked_arrays<T, F>(
@@ -45,15 +56,13 @@ where
                 .into_series(),
         ))
     } else {
+        let (ca_1, ca_2) = align_chunks_binary(base, exponent);
+        let chunks = ca_1
+            .downcast_iter()
+            .zip(ca_2.downcast_iter())
+            .map(|(arr_1, arr_2)| compute_kernel(arr_1, arr_2));
         Ok(Some(
-            base.into_iter()
-                .zip(exponent)
-                .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
-                    (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
-                    _ => None,
-                })
-                .collect_trusted::<ChunkedArray<T>>()
-                .into_series(),
+            ChunkedArray::from_chunk_iter(ca_1.name(), chunks).into_series(),
         ))
     }
 }
