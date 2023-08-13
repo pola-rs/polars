@@ -14,9 +14,9 @@ impl TreeWalker for Expr {
 
         for child in scratch {
             match op(child)? {
-                VisitRecursion::Continue => {},
+                // let the recursion continue
+                VisitRecursion::Continue | VisitRecursion::Skip => {},
                 // early stop
-                VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
                 VisitRecursion::Stop => return Ok(VisitRecursion::Stop),
             }
         }
@@ -233,9 +233,9 @@ impl TreeWalker for AexprNode {
                 arena: self.arena,
             };
             match op(&aenode)? {
-                VisitRecursion::Continue => {},
+                // let the recursion continue
+                VisitRecursion::Continue | VisitRecursion::Skip => {},
                 // early stop
-                VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
                 VisitRecursion::Stop => return Ok(VisitRecursion::Stop),
             }
         }
