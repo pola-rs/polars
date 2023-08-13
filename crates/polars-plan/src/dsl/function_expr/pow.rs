@@ -60,15 +60,13 @@ where
     }
 }
 
-fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &Series) -> PolarsResult<Option<Series>>
+fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &ChunkedArray<T>) -> PolarsResult<Option<Series>>
 where
     T: PolarsFloatType,
     T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
     ChunkedArray<T>: IntoSeries,
 {
     let dtype = T::get_dtype();
-    let exponent = exponent.strict_cast(&dtype)?;
-    let exponent = base.unpack_series_matching_type(&exponent).unwrap();
 
     if exponent.len() == 1 {
         let Some(exponent_value) = exponent.get(0) else {
@@ -156,11 +154,13 @@ fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series
         },
         (Float32, _) => {
             let ca = base.f32().unwrap();
-            pow_on_floats(ca, exponent)
+            let exponent = exponent.strict_cast(&DataType::Float32)?;
+            pow_on_floats(ca, exponent.f32().unwrap())
         },
         (Float64, _) => {
             let ca = base.f64().unwrap();
-            pow_on_floats(ca, exponent)
+            let exponent = exponent.strict_cast(&DataType::Float64)?;
+            pow_on_floats(ca, exponent.f64().unwrap())
         },
         _ => {
             let base = base.cast(&DataType::Float64)?;
