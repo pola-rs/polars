@@ -45,16 +45,44 @@ def test_pow_dtype() -> None:
     df = pl.DataFrame(
         {
             "foo": [1, 2, 3, 4, 5],
-        }
+            "a": [1, 2, 3, 4, 5],
+            "b": [1, 2, 3, 4, 5],
+            "c": [1, 2, 3, 4, 5],
+        },
+        schema_overrides={
+            "a": pl.Int64,
+            "b": pl.UInt64,
+            "c": pl.UInt32,
+        },
     ).lazy()
 
-    df = df.with_columns([pl.col("foo").cast(pl.UInt32)]).with_columns(
-        [
-            (pl.col("foo") * 2**2).alias("scaled_foo"),
-            (pl.col("foo") * 2**2.1).alias("scaled_foo2"),
-        ]
+    df = (
+        df.with_columns([pl.col("foo").cast(pl.UInt32)])
+        .with_columns(
+            [
+                (pl.col("foo") * 2**2).alias("scaled_foo"),
+                (pl.col("foo") * 2**2.1).alias("scaled_foo2"),
+                (pl.col("a") ** pl.col("c")).alias("a_pow_c"),
+                (pl.col("b") ** pl.col("c")).alias("b_pow_c"),
+            ]
+        )
+        .drop(["a", "b", "c"])
     )
-    assert df.collect().dtypes == [pl.UInt32, pl.UInt32, pl.Float64]
+    assert df.collect().dtypes == [
+        pl.UInt32,
+        pl.UInt32,
+        pl.Float64,
+        pl.Int64,
+        pl.UInt64,
+    ]
+    # `scaled_foo2` currently is UInt32 (in the lazy plan) but should be Float64
+    assert df.dtypes == [
+        pl.UInt32,
+        pl.UInt32,
+        pl.UInt32,
+        pl.Int64,
+        pl.UInt64,
+    ]
 
 
 def test_bool_numeric_supertype() -> None:
