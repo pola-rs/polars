@@ -352,3 +352,9 @@ def test_cse_10401() -> None:
     q = df.lazy().with_columns(pl.all().fill_null(0).fill_nan(0))
     assert r"""col("clicks").fill_null([0]).alias("__POLARS_CSER""" in q.explain()
     assert q.collect().to_dict(False) == {"clicks": [1.0, 0.0, 0.0]}
+
+
+def test_cse_10441() -> None:
+    assert pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1]}).select(
+        pl.col("a").sum() + pl.col("a").sum() + pl.col("b").sum()
+    ).collect(comm_subexpr_elim=True).to_dict(False) == {"a": [18]}

@@ -661,7 +661,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                     schema,
                     options,
                 } => {
-                    let input_schema = alp.schema(lp_arena);
+                    let input_schema = lp_arena.get(*input).schema(lp_arena);
                     if let Some(expr) = self.find_cse(
                         expr,
                         &mut expr_arena,
@@ -684,7 +684,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                     schema,
                     options,
                 } => {
-                    let input_schema = alp.schema(lp_arena);
+                    let input_schema = lp_arena.get(*input).schema(lp_arena);
                     if let Some(exprs) = self.find_cse(
                         exprs,
                         &mut expr_arena,
@@ -710,7 +710,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                     apply,
                     schema,
                 } => {
-                    let input_schema = alp.schema(lp_arena);
+                    let input_schema = lp_arena.get(*input).schema(lp_arena);
                     if let Some(aggs) = self.find_cse(
                         aggs,
                         &mut expr_arena,
