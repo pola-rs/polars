@@ -596,6 +596,19 @@ def test_assert_series_equal_uint_overflow() -> None:
         assert_series_equal(s1, s2, atol=0)
     assert_series_equal(s1, s2, atol=1)
 
+    # confirm no OverflowError in the below test case:
+    # as "(left-right).abs()" > max(Int64)
+    left = pl.Series(
+        values=[2810428175213635359],
+        dtype=pl.UInt64,
+    )
+    right = pl.Series(
+        values=[15807433754238349345],
+        dtype=pl.UInt64,
+    )
+    with pytest.raises(AssertionError):
+        assert_series_equal(left, right)
+
 
 @pytest.mark.parametrize(
     ("data1", "data2"),
