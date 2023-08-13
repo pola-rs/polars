@@ -133,12 +133,14 @@ where
 fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series>> {
     use DataType::*;
     match (base.dtype(), exponent.dtype()) {
-        (UInt32, UInt8 | UInt16 | UInt32) => {
+        (UInt8 | UInt16 | UInt32, UInt8 | UInt16 | UInt32) => {
+            let base = base.strict_cast(&DataType::UInt32)?;
             let ca = base.u32().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
             pow_on_integral_dtypes(ca, exponent.u32().unwrap())
         },
-        (Int32, UInt8 | UInt16 | UInt32) => {
+        (Int8 | Int16 | Int32, UInt8 | UInt16 | UInt32) => {
+            let base = base.strict_cast(&DataType::Int32)?;
             let ca = base.i32().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
             pow_on_integral_dtypes(ca, exponent.u32().unwrap())

@@ -17,9 +17,13 @@ from polars.datatypes import (
     Datetime,
     Field,
     Float64,
+    Int8,
+    Int16,
     Int32,
     Int64,
     Time,
+    UInt8,
+    UInt16,
     UInt32,
     UInt64,
     Unknown,
@@ -377,10 +381,14 @@ def test_power() -> None:
     a = pl.Series([1, 2], dtype=Int64)
     b = pl.Series([None, 2.0], dtype=Float64)
     c = pl.Series([date(2020, 2, 28), date(2020, 3, 1)], dtype=Date)
-    d = pl.Series([1, 2], dtype=UInt32)
-    e = pl.Series([1, 2], dtype=Int32)
-    f = pl.Series([1, 2], dtype=UInt64)
-    g = pl.Series([1, 2], dtype=Int64)
+    d = pl.Series([1, 2], dtype=UInt8)
+    e = pl.Series([1, 2], dtype=Int8)
+    f = pl.Series([1, 2], dtype=UInt16)
+    g = pl.Series([1, 2], dtype=Int16)
+    h = pl.Series([1, 2], dtype=UInt32)
+    i = pl.Series([1, 2], dtype=Int32)
+    j = pl.Series([1, 2], dtype=UInt64)
+    k = pl.Series([1, 2], dtype=Int64)
 
     # pow
     assert_series_equal(a**2, pl.Series([1.0, 4.0], dtype=Float64))
@@ -389,10 +397,14 @@ def test_power() -> None:
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))
-    assert_series_equal(e**d, pl.Series([1, 4], dtype=Int32))
     assert_series_equal(d**d, pl.Series([1, 4], dtype=UInt32))
-    assert_series_equal(f**d, pl.Series([1, 4], dtype=UInt64))
-    assert_series_equal(g**d, pl.Series([1, 4], dtype=Int64))
+    assert_series_equal(e**d, pl.Series([1, 4], dtype=Int32))
+    assert_series_equal(f**d, pl.Series([1, 4], dtype=UInt32))
+    assert_series_equal(g**d, pl.Series([1, 4], dtype=Int32))
+    assert_series_equal(h**d, pl.Series([1, 4], dtype=UInt32))
+    assert_series_equal(i**d, pl.Series([1, 4], dtype=Int32))
+    assert_series_equal(j**d, pl.Series([1, 4], dtype=UInt64))
+    assert_series_equal(k**d, pl.Series([1, 4], dtype=Int64))
     with pytest.raises(ValueError):
         c**2
     with pytest.raises(pl.ColumnNotFoundError):
