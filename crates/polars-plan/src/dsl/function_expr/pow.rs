@@ -60,7 +60,10 @@ where
     }
 }
 
-fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &ChunkedArray<T>) -> PolarsResult<Option<Series>>
+fn pow_on_floats<T>(
+    base: &ChunkedArray<T>,
+    exponent: &ChunkedArray<T>,
+) -> PolarsResult<Option<Series>>
 where
     T: PolarsFloatType,
     T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
@@ -101,9 +104,7 @@ where
     T: PolarsIntegerType,
     F: PolarsIntegerType,
     T::Native: num::pow::Pow<F::Native, Output = T::Native> + ToPrimitive,
-    F::Native: num::pow::Pow<F::Native, Output = F::Native> + ToPrimitive,
     ChunkedArray<T>: IntoSeries,
-    ChunkedArray<F>: IntoSeries,
 {
     let dtype = T::get_dtype();
 
