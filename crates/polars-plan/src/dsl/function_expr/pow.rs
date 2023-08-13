@@ -41,9 +41,8 @@ where
 
         Ok(Some(
             exponent
-            .apply_cast_numeric(|exp|
-                Pow::pow(base, exp)
-            ).into_series()
+                .apply_cast_numeric(|exp| Pow::pow(base, exp))
+                .into_series(),
         ))
     } else {
         Ok(Some(
@@ -112,8 +111,8 @@ where
             return Ok(Some(Series::full_null(base.name(), base.len(), &dtype)));
         };
         let s = match exponent_value.to_u64().unwrap() {
-            a if a == 1 => base.clone().into_series(),
-            a if a < 10 && a > 1 => {
+            1 => base.clone().into_series(),
+            2..=10 => {
                 let mut out = base.clone();
 
                 for _ in 1..exponent_value.to_u8().unwrap() {
