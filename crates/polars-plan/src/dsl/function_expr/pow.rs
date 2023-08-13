@@ -76,10 +76,13 @@ where
     }
 }
 
-fn pow_on_uints<T, F>(base: &ChunkedArray<T>, exponent: &ChunkedArray<F>) -> PolarsResult<Option<Series>>
+fn pow_on_ints<T, F>(
+    base: &ChunkedArray<T>,
+    exponent: &ChunkedArray<F>,
+) -> PolarsResult<Option<Series>>
 where
     T: PolarsIntegerType,
-    F: PolarsUnsignedIntegerType,
+    F: PolarsIntegerType,
     T::Native: num::pow::Pow<F::Native, Output = T::Native> + ToPrimitive,
     F::Native: num::pow::Pow<F::Native, Output = F::Native> + ToPrimitive,
     ChunkedArray<T>: IntoSeries,
@@ -106,17 +109,15 @@ where
         Ok(Some(s))
     } else if (base.len() == 1) && (exponent.len() != 1) {
         let base = base
-            .get(0).unwrap();
-            // .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
+            .get(0)
+            .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
 
-        // how to fix this?
-        // need to be able to return something of type T?
-        // which, surely, isn't always the case?
         Ok(Some(
-            exponent.into_iter()
-            .map(|exp| Some(Pow::pow(base, exp.unwrap())))
-            .collect_trusted::<ChunkedArray<T>>()
-            .into_series(),
+            exponent
+                .into_iter()
+                .map(|exp| exp.map(|exp| Pow::pow(base, exp)))
+                .collect_trusted::<ChunkedArray<T>>()
+                .into_series(),
         ))
     } else {
         Ok(Some(
@@ -135,27 +136,27 @@ where
 fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series>> {
     use DataType::*;
     match (base.dtype(), exponent.dtype()) {
-        (UInt32, UInt8| UInt16| UInt32) => {
+        (UInt32, UInt8 | UInt16 | UInt32) => {
             let ca = base.u32().unwrap();
-            let exponent = exponent.strict_cast(&base.dtype())?;
-            pow_on_uints(ca, exponent.u32().unwrap())
+            let exponent = exponent.strict_cast(&DataType::UInt32)?;
+            pow_on_ints(ca, exponent.u32().unwrap())
         },
-        (Int32, UInt8| UInt16| UInt32) => {
+        (Int32, UInt8 | UInt16 | UInt32) => {
             let ca = base.i32().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_on_uints(ca, exponent.u32().unwrap())
+            pow_on_ints(ca, exponent.u32().unwrap())
         },
-        (UInt64, UInt8| UInt16| UInt32) => {
+        (UInt64, UInt8 | UInt16 | UInt32) => {
             let ca = base.u64().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_on_uints(ca, exponent.u32().unwrap())
+            pow_on_ints(ca, exponent.u32().unwrap())
         },
-        (Int64, UInt8| UInt16| UInt32) => {
+        (Int64, UInt8 | UInt16 | UInt32) => {
             let ca = base.i64().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
-            pow_on_uints(ca, exponent.u32().unwrap())
+            pow_on_ints(ca, exponent.u32().unwrap())
         },
-        (Float32,_) => {
+        (Float32, _) => {
             let ca = base.f32().unwrap();
             pow_on_floats(ca, exponent)
         },
