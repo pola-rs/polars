@@ -41,10 +41,9 @@ where
 
         Ok(Some(
             exponent
-                .into_iter()
-                .map(|exp| exp.map(|exp| Pow::pow(base, exp)))
-                .collect_trusted::<ChunkedArray<T>>()
-                .into_series(),
+            .apply_cast_numeric(|exp|
+                Pow::pow(base, exp)
+            ).into_series()
         ))
     } else {
         Ok(Some(
