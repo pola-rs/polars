@@ -3004,18 +3004,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if left_on is None or right_on is None:
             raise ValueError("You should pass the column to join on as an argument.")
 
-        by_left_: Sequence[str] | None
-        by_left_ = [by_left] if isinstance(by_left, str) else by_left
-
-        by_right_: Sequence[str] | None
-        by_right_ = [by_right] if isinstance(by_right, (str, pl.Expr)) else by_right
-
-        if isinstance(by, str):
-            by_left_ = [by]
-            by_right_ = [by]
-        elif isinstance(by, list):
-            by_left_ = by
-            by_right_ = by
+        if by is not None:
+            by_left_ = [by] if isinstance(by, str) else by
+            by_right_ = by_left_
+        elif (by_left is not None) and (by_right is not None):
+            by_left_ = [by_left] if isinstance(by_left, str) else by_left
+            by_right_ = [by_right] if isinstance(by_right, str) else by_right
+        else:
+            # no by
+            by_left_ = None
+            by_right_ = None
 
         tolerance_str: str | None = None
         tolerance_num: float | int | None = None

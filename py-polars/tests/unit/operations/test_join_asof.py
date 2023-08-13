@@ -557,3 +557,38 @@ def test_asof_join_string_err() -> None:
     ).sort("date_str")
     with pytest.raises(pl.InvalidOperationError):
         left.join_asof(right, on="date_str")
+
+
+def test_join_asof_by_argument_parsing() -> None:
+    df1 = pl.DataFrame(
+        {
+            "n": [10, 20, 30, 40, 50, 60],
+            "id1": [0, 0, 3, 3, 5, 5],
+            "id2": [1, 2, 1, 2, 1, 2],
+            "x": ["a", "b", "c", "d", "e", "f"],
+        }
+    ).sort(by="n")
+
+    df2 = pl.DataFrame(
+        {
+            "n": [25, 8, 5, 23, 15, 35],
+            "id1": [0, 0, 3, 3, 5, 5],
+            "id2": [1, 2, 1, 2, 1, 2],
+            "y": ["A", "B", "C", "D", "E", "F"],
+        }
+    ).sort(by="n")
+
+    # any sequency for by argument is allowed, so we should see the same results here
+    by_list = df1.join_asof(df2, on="n", by=["id1", "id2"])
+    by_tuple = df1.join_asof(df2, on="n", by=("id1", "id2"))
+    assert_frame_equal(by_list, by_tuple)
+
+    # same for using the by_left and by_right kwargs
+    by_list2 = df1.join_asof(
+        df2, on="n", by_left=["id1", "id2"], by_right=["id1", "id2"]
+    )
+    by_tuple2 = df1.join_asof(
+        df2, on="n", by_left=("id1", "id2"), by_right=("id1", "id2")
+    )
+    assert_frame_equal(by_list2, by_list)
+    assert_frame_equal(by_tuple2, by_list)
