@@ -48,7 +48,6 @@ from polars.functions.lazy import (
     head,
     implode,
     last,
-    lit,
     map,
     mean,
     median,
@@ -63,6 +62,7 @@ from polars.functions.lazy import (
     tail,
     var,
 )
+from polars.functions.lit import lit
 from polars.functions.range import (
     arange,
     date_range,
