@@ -39,14 +39,21 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
-python = ["pyo3", "ciborium"]
+python = ["dep:pyo3", "ciborium"]
 # make sure we don't compile unneeded things even though
 # this dependency gets activated
 compile = []
+serde = [
+  "dep:serde",
+  "polars-core/serde-lazy",
+  "polars-time/serde",
+  "polars-io/serde",
+  "polars-ops/serde",
+]
 default = ["compile"]
 streaming = []
 parquet = ["polars-core/parquet", "polars-io/parquet"]
-async = []
+async = ["polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json"]
 csv = ["polars-io/csv"]
@@ -64,7 +71,7 @@ dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-core/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
 dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "temporal"]
 dtype-time = ["polars-core/dtype-time", "polars-time/dtype-time"]
-dtype-array = ["polars-core/dtype-array"]
+dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
@@ -77,7 +84,7 @@ timezones = ["chrono-tz", "polars-time/timezones", "polars-core/timezones", "reg
 binary_encoding = ["polars-ops/binary_encoding"]
 true_div = []
 nightly = ["polars-utils/nightly", "polars-ops/nightly"]
-extract_jsonpath = []
+extract_jsonpath = ["polars-ops/extract_jsonpath"]
 
 # operations
 approx_unique = ["polars-ops/approx_unique"]
@@ -102,7 +109,7 @@ rolling_window = [
 rank = ["polars-core/rank"]
 diff = ["polars-core/diff", "polars-ops/diff"]
 pct_change = ["polars-core/pct_change"]
-moment = ["polars-core/moment"]
+moment = ["polars-core/moment", "polars-ops/moment"]
 abs = ["polars-core/abs"]
 random = ["polars-core/random"]
 dynamic_groupby = ["polars-core/dynamic_groupby"]
@@ -125,7 +132,7 @@ semi_anti_join = ["polars-core/semi_anti_join", "polars-ops/semi_anti_join"]
 cse = []
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
-fused = []
+fused = ["polars-ops/fused"]
 list_sets = ["polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all"]
 cutqcut = ["polars-ops/cutqcut"]

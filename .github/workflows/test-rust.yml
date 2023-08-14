@@ -46,6 +46,7 @@ jobs:
         run: >
           cargo test --all-features --no-run
           -p polars-lazy
+          -p polars-plan
           -p polars-io
           -p polars-core
           -p polars-arrow
@@ -59,6 +60,7 @@ jobs:
         run: >
           cargo test --all-features
           -p polars-lazy
+          -p polars-plan
           -p polars-io
           -p polars-core
           -p polars-arrow
