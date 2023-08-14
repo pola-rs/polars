@@ -2,6 +2,7 @@ use std::any::Any;
 use std::fmt::{Debug, Formatter};
 
 use polars_core::prelude::*;
+
 pub use super::options::AnonymousScanOptions;
 
 pub trait AnonymousScan: Send + Sync {
@@ -36,7 +37,6 @@ pub trait AnonymousScan: Send + Sync {
         false
     }
 }
-
 
 impl<F> AnonymousScan for F
 where

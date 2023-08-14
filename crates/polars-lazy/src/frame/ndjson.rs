@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
 use polars_io::RowCount;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

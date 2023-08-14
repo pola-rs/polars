@@ -101,8 +101,8 @@ mod test {
             .unwrap();
         let mut deserializer = serde_json::Deserializer::from_slice(&buf);
 
-
-        let deserialized = LogicalPlan::try_deserialize(&mut deserializer, &JsonEncodedRegistry).unwrap();
+        let deserialized =
+            LogicalPlan::try_deserialize(&mut deserializer, &JsonEncodedRegistry).unwrap();
         println!("{:?}", deserialized);
         let lf: LazyFrame = deserialized.into();
         let df = lf.collect().unwrap();

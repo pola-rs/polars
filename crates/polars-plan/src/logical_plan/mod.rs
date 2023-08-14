@@ -7,7 +7,7 @@ use polars_arrow::error::to_compute_err;
 use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
-use serde::{Serializer, Deserializer};
+use serde::{Deserializer, Serializer};
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::prelude::*;
