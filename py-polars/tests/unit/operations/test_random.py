@@ -85,13 +85,12 @@ def test_rank_random_series() -> None:
 def test_shuffle_expr() -> None:
     # setting 'random.seed' should lead to reproducible results
     s = pl.Series("a", range(20))
-    s_list = s.to_list()
 
     random.seed(1)
     result1 = pl.select(pl.lit(s).shuffle()).to_series()
 
     random.seed(1)
-    result2 = pl.select(a=pl.lit(s_list).shuffle()).to_series()
+    result2 = pl.select(pl.lit(s).shuffle()).to_series()
     assert_series_equal(result1, result2)
 
 
