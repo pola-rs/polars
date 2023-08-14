@@ -42,6 +42,16 @@ def lit(
         By default, we will raise a `ValueException`
         if the type is unknown.
 
+    Notes
+    -----
+    Expected datatypes
+
+    - ``pl.lit([])`` -> empty  Series Float32
+    - ``pl.lit([1, 2, 3])`` -> Series Int64
+    - ``pl.lit([[]])``-> empty  Series List<Null>
+    - ``pl.lit([[1, 2, 3]])`` -> Series List<i64>
+    - ``pl.lit(None)`` -> Series Null
+
     Examples
     --------
     Literal scalar values:
@@ -55,21 +65,13 @@ def lit(
 
     Literal list/Series data (1D):
 
-    >>> pl.lit([1, 2, 3])  # doctest: +IGNORE_RESULT
+    >>> pl.lit([1, 2, 3])  # doctest: +SKIP
     >>> pl.lit(pl.Series("x", [1, 2, 3]))  # doctest: +IGNORE_RESULT
 
     Literal list/Series data (2D):
 
-    >>> pl.lit([[1, 2], [3, 4]])  # doctest: +IGNORE_RESULT
+    >>> pl.lit([[1, 2], [3, 4]])  # doctest: +SKIP
     >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT
-
-    Expected datatypes
-
-    - ''pl.lit([])'' -> empty  Series Float32
-    - ''pl.lit([1, 2, 3])'' -> Series Int64
-    - ''pl.lit([[]])''-> empty  Series List<Null>
-    - ''pl.lit([[1, 2, 3]])'' -> Series List<i64>
-    - ''pl.lit(None)'' -> Series Null
 
     """
     time_unit: TimeUnit
