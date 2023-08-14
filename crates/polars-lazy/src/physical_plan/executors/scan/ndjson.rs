@@ -90,7 +90,7 @@ mod test {
     }
     #[test]
     fn test_serialize_plan() {
-        let path = "data/bikeshare_stations.ndjson";
+        let path = "path/to/some/file.json";
         let lf = LazyJsonLineReader::new(path).finish().unwrap().limit(1);
 
         let plan = lf.logical_plan;
