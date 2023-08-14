@@ -520,7 +520,7 @@ def sequence_to_pyseries(
 
 
 def _pandas_series_to_arrow(
-    values: pd.Series[Any] | pd.Index,
+    values: pd.Series[Any] | pd.Index[Any],
     nan_to_null: bool = True,
     length: int | None = None,
 ) -> pa.Array:
