@@ -1735,14 +1735,18 @@ class Series:
         -------
         Series or DataFrame
 
+        See Also
+        --------
+        qcut
+
         Examples
         --------
-        Divide the series into three categories.
+        Divide the column into three categories.
 
-        >>> s = pl.Series("int", [-2, -1, 0, 1, 2])
+        >>> s = pl.Series("foo", [-2, -1, 0, 1, 2])
         >>> s.cut([-1, 1], labels=["a", "b", "c"])
         shape: (5,)
-        Series: 'int' [cat]
+        Series: 'foo' [cat]
         [
                 "a"
                 "a"
@@ -1757,7 +1761,7 @@ class Series:
         >>> s.to_frame().with_columns(cut).unnest("cut")
         shape: (5, 3)
         ┌─────┬─────────────┬────────────┐
-        │ int ┆ break_point ┆ category   │
+        │ foo ┆ break_point ┆ category   │
         │ --- ┆ ---         ┆ ---        │
         │ i64 ┆ f64         ┆ cat        │
         ╞═════╪═════════════╪════════════╡
@@ -1830,11 +1834,11 @@ class Series:
         quantiles: Sequence[float] | int,
         *,
         labels: Sequence[str] | None = ...,
-        break_point_label: str = ...,
-        category_label: str = ...,
         left_closed: bool = ...,
         allow_duplicates: bool = ...,
         include_breaks: bool = ...,
+        break_point_label: str = ...,
+        category_label: str = ...,
         as_series: Literal[True] = ...,
     ) -> Series:
         ...
@@ -1845,11 +1849,11 @@ class Series:
         quantiles: Sequence[float] | int,
         *,
         labels: Sequence[str] | None = ...,
-        break_point_label: str = ...,
-        category_label: str = ...,
         left_closed: bool = ...,
         allow_duplicates: bool = ...,
         include_breaks: bool = ...,
+        break_point_label: str = ...,
+        category_label: str = ...,
         as_series: Literal[False],
     ) -> DataFrame:
         ...
@@ -1935,64 +1939,55 @@ class Series:
         This functionality is experimental and may change without it being considered a
         breaking change.
 
+        See Also
+        --------
+        cut
+
         Examples
         --------
-        >>> a = pl.Series("a", range(-2, 3))
-        >>> a.qcut(2, series=True)
-        shape: (8,)
-        Series: 'a' [cat]
+        Divide the column into three pre-defined quantiles.
+
+        >>> s = pl.Series("foo", [-2, -1, 0, 1, 2])
+        >>> s.qcut([0.25, 0.75], labels=["a", "b", "c"])
+        shape: (5,)
+        Series: 'foo' [cat]
         [
-                "(-inf, -1.5]"
-                "(-inf, -1.5]"
-                "(-inf, -1.5]"
-                "(-inf, -1.5]"
-                "(-1.5, inf]"
-                "(-1.5, inf]"
-                "(-1.5, inf]"
-                "(-1.5, inf]"
+                "a"
+                "a"
+                "b"
+                "b"
+                "c"
         ]
-        >>> a.qcut([0.0, 0.25, 0.75], series=False)
-        shape: (8, 3)
-        ┌─────┬─────────────┬───────────────┐
-        │ a   ┆ break_point ┆ category      │
-        │ --- ┆ ---         ┆ ---           │
-        │ i64 ┆ f64         ┆ cat           │
-        ╞═════╪═════════════╪═══════════════╡
-        │ -5  ┆ -5.0        ┆ (-inf, -5]    │
-        │ -4  ┆ -3.25       ┆ (-5, -3.25]   │
-        │ -3  ┆ 0.25        ┆ (-3.25, 0.25] │
-        │ -2  ┆ 0.25        ┆ (-3.25, 0.25] │
-        │ -1  ┆ 0.25        ┆ (-3.25, 0.25] │
-        │ 0   ┆ 0.25        ┆ (-3.25, 0.25] │
-        │ 1   ┆ inf         ┆ (0.25, inf]   │
-        │ 2   ┆ inf         ┆ (0.25, inf]   │
-        └─────┴─────────────┴───────────────┘
-        >>> a.qcut([0.0, 0.25, 0.75], series=True)
-        shape: (8,)
-        Series: 'a' [cat]
+
+        Divide the column into two uniform quantiles.
+
+        >>> s.qcut(2, labels=["low", "high"], left_closed=True)
+        shape: (5,)
+        Series: 'foo' [cat]
         [
-            "(-inf, -5]"
-            "(-5, -3.25]"
-            "(-3.25, 0.25]"
-            "(-3.25, 0.25]"
-            "(-3.25, 0.25]"
-            "(-3.25, 0.25]"
-            "(0.25, inf]"
-            "(0.25, inf]"
+                "low"
+                "low"
+                "high"
+                "high"
+                "high"
         ]
-        >>> a.qcut([0.0, 0.25, 0.75], series=True, left_closed=True)
-        shape: (8,)
-        Series: 'a' [cat]
-        [
-            "[-5, -3.25)"
-            "[-5, -3.25)"
-            "[-3.25, 0.25)"
-            "[-3.25, 0.25)"
-            "[-3.25, 0.25)"
-            "[-3.25, 0.25)"
-            "[0.25, inf)"
-            "[0.25, inf)"
-        ]
+
+        Create a DataFrame with the breakpoint and category for each value.
+
+        >>> cut = s.qcut([0.25, 0.75], include_breaks=True).alias("cut")
+        >>> s.to_frame().with_columns(cut).unnest("cut")
+        shape: (5, 3)
+        ┌─────┬─────────────┬────────────┐
+        │ foo ┆ break_point ┆ category   │
+        │ --- ┆ ---         ┆ ---        │
+        │ i64 ┆ f64         ┆ cat        │
+        ╞═════╪═════════════╪════════════╡
+        │ -2  ┆ -1.0        ┆ (-inf, -1] │
+        │ -1  ┆ -1.0        ┆ (-inf, -1] │
+        │ 0   ┆ 1.0         ┆ (-1, 1]    │
+        │ 1   ┆ 1.0         ┆ (-1, 1]    │
+        │ 2   ┆ inf         ┆ (1, inf]   │
+        └─────┴─────────────┴────────────┘
 
         """
         if break_point_label != "break_point":

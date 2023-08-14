@@ -3314,12 +3314,18 @@ class Expr:
             Include the the right endpoint of the bin each observation falls in.
             If set to ``True``, the resulting column will be a :class:`Struct`.
 
+        See Also
+        --------
+        qcut
+
         Examples
         --------
         Divide a column into three categories.
 
         >>> df = pl.DataFrame({"foo": [-2, -1, 0, 1, 2]})
-        >>> df.with_columns(pl.col("foo").cut([-1, 1], labels=["a", "b", "c"]).alias("cut"))
+        >>> df.with_columns(
+        ...     pl.col("foo").cut([-1, 1], labels=["a", "b", "c"]).alias("cut")
+        ... )
         shape: (5, 2)
         ┌─────┬─────┐
         │ foo ┆ cut │
@@ -3335,7 +3341,9 @@ class Expr:
 
         Add both the category and the breakpoint.
 
-        >>> df.with_columns(pl.col("foo").cut([-1, 1], include_breaks=True).alias("cut")).unnest("cut")
+        >>> df.with_columns(
+        ...     pl.col("foo").cut([-1, 1], include_breaks=True).alias("cut")
+        ... ).unnest("cut")
         shape: (5, 3)
         ┌─────┬──────┬────────────┐
         │ foo ┆ brk  ┆ foo_bin    │
@@ -3386,105 +3394,81 @@ class Expr:
             Include the the right endpoint of the bin each observation falls in.
             If True, the resulting column will be a Struct.
 
+        See Also
+        --------
+        cut
+
         Examples
         --------
-        >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
-        >>> df = pl.DataFrame(dict(g=g, x=range(10)))
-        >>> df.with_columns(q=pl.col("x").qcut([0.5]))
-        shape: (10, 3)
-        ┌─────┬─────┬─────────────┐
-        │ g   ┆ x   ┆ q           │
-        │ --- ┆ --- ┆ ---         │
-        │ str ┆ i64 ┆ cat         │
-        ╞═════╪═════╪═════════════╡
-        │ a   ┆ 0   ┆ (-inf, 4.5] │
-        │ a   ┆ 1   ┆ (-inf, 4.5] │
-        │ a   ┆ 2   ┆ (-inf, 4.5] │
-        │ a   ┆ 3   ┆ (-inf, 4.5] │
-        │ …   ┆ …   ┆ …           │
-        │ b   ┆ 6   ┆ (4.5, inf]  │
-        │ b   ┆ 7   ┆ (4.5, inf]  │
-        │ b   ┆ 8   ┆ (4.5, inf]  │
-        │ b   ┆ 9   ┆ (4.5, inf]  │
-        └─────┴─────┴─────────────┘
-        >>> df.with_columns(q=pl.col("x").qcut(2))
-        shape: (10, 3)
-        ┌─────┬─────┬─────────────┐
-        │ g   ┆ x   ┆ q           │
-        │ --- ┆ --- ┆ ---         │
-        │ str ┆ i64 ┆ cat         │
-        ╞═════╪═════╪═════════════╡
-        │ a   ┆ 0   ┆ (-inf, 4.5] │
-        │ a   ┆ 1   ┆ (-inf, 4.5] │
-        │ a   ┆ 2   ┆ (-inf, 4.5] │
-        │ a   ┆ 3   ┆ (-inf, 4.5] │
-        │ …   ┆ …   ┆ …           │
-        │ b   ┆ 6   ┆ (4.5, inf]  │
-        │ b   ┆ 7   ┆ (4.5, inf]  │
-        │ b   ┆ 8   ┆ (4.5, inf]  │
-        │ b   ┆ 9   ┆ (4.5, inf]  │
-        └─────┴─────┴─────────────┘
-        >>> df.with_columns(q=pl.col("x").qcut([0.5], ["lo", "hi"]).over("g"))
-        shape: (10, 3)
-        ┌─────┬─────┬─────┐
-        │ g   ┆ x   ┆ q   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ cat │
-        ╞═════╪═════╪═════╡
-        │ a   ┆ 0   ┆ lo  │
-        │ a   ┆ 1   ┆ lo  │
-        │ a   ┆ 2   ┆ lo  │
-        │ a   ┆ 3   ┆ hi  │
-        │ …   ┆ …   ┆ …   │
-        │ b   ┆ 6   ┆ lo  │
-        │ b   ┆ 7   ┆ lo  │
-        │ b   ┆ 8   ┆ hi  │
-        │ b   ┆ 9   ┆ hi  │
-        └─────┴─────┴─────┘
-        >>> df.with_columns(q=pl.col("x").qcut([0.5], ["lo", "hi"], True).over("g"))
-        shape: (10, 3)
-        ┌─────┬─────┬─────┐
-        │ g   ┆ x   ┆ q   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ cat │
-        ╞═════╪═════╪═════╡
-        │ a   ┆ 0   ┆ lo  │
-        │ a   ┆ 1   ┆ lo  │
-        │ a   ┆ 2   ┆ hi  │
-        │ a   ┆ 3   ┆ hi  │
-        │ …   ┆ …   ┆ …   │
-        │ b   ┆ 6   ┆ lo  │
-        │ b   ┆ 7   ┆ hi  │
-        │ b   ┆ 8   ┆ hi  │
-        │ b   ┆ 9   ┆ hi  │
-        └─────┴─────┴─────┘
-        >>> df.with_columns(q=pl.col("x").qcut([0.25, 0.5], include_breaks=True))
-        shape: (10, 3)
-        ┌─────┬─────┬───────────────────────┐
-        │ g   ┆ x   ┆ q                     │
-        │ --- ┆ --- ┆ ---                   │
-        │ str ┆ i64 ┆ struct[2]             │
-        ╞═════╪═════╪═══════════════════════╡
-        │ a   ┆ 0   ┆ {2.25,"(-inf, 2.25]"} │
-        │ a   ┆ 1   ┆ {2.25,"(-inf, 2.25]"} │
-        │ a   ┆ 2   ┆ {2.25,"(-inf, 2.25]"} │
-        │ a   ┆ 3   ┆ {4.5,"(2.25, 4.5]"}   │
-        │ …   ┆ …   ┆ …                     │
-        │ b   ┆ 6   ┆ {inf,"(4.5, inf]"}    │
-        │ b   ┆ 7   ┆ {inf,"(4.5, inf]"}    │
-        │ b   ┆ 8   ┆ {inf,"(4.5, inf]"}    │
-        │ b   ┆ 9   ┆ {inf,"(4.5, inf]"}    │
-        └─────┴─────┴───────────────────────┘
+        Divide a column into three groups according to pre-defined quantile
+        probabilities.
+
+        >>> df = pl.DataFrame({"foo": [-2, -1, 0, 1, 2]})
+        >>> df.with_columns(
+        ...     pl.col("foo").qcut([0.25, 0.75], labels=["a", "b", "c"]).alias("qcut")
+        ... )
+        shape: (5, 2)
+        ┌─────┬──────┐
+        │ foo ┆ qcut │
+        │ --- ┆ ---  │
+        │ i64 ┆ cat  │
+        ╞═════╪══════╡
+        │ -2  ┆ a    │
+        │ -1  ┆ a    │
+        │ 0   ┆ b    │
+        │ 1   ┆ b    │
+        │ 2   ┆ c    │
+        └─────┴──────┘
+
+        Divide the column uniformly into two categories.
+
+        >>> df.with_columns(
+        ...     pl.col("foo")
+        ...     .qcut(2, labels=["low", "high"], left_closed=True)
+        ...     .alias("qcut")
+        ... )
+        shape: (5, 2)
+        ┌─────┬──────┐
+        │ foo ┆ qcut │
+        │ --- ┆ ---  │
+        │ i64 ┆ cat  │
+        ╞═════╪══════╡
+        │ -2  ┆ low  │
+        │ -1  ┆ low  │
+        │ 0   ┆ high │
+        │ 1   ┆ high │
+        │ 2   ┆ high │
+        └─────┴──────┘
+
+        Add both the category and the breakpoint.
+
+        >>> df.with_columns(
+        ...     pl.col("foo").qcut([0.25, 0.75], include_breaks=True).alias("qcut")
+        ... ).unnest("qcut")
+        shape: (5, 3)
+        ┌─────┬──────┬────────────┐
+        │ foo ┆ brk  ┆ foo_bin    │
+        │ --- ┆ ---  ┆ ---        │
+        │ i64 ┆ f64  ┆ cat        │
+        ╞═════╪══════╪════════════╡
+        │ -2  ┆ -1.0 ┆ (-inf, -1] │
+        │ -1  ┆ -1.0 ┆ (-inf, -1] │
+        │ 0   ┆ 1.0  ┆ (-1, 1]    │
+        │ 1   ┆ 1.0  ┆ (-1, 1]    │
+        │ 2   ┆ inf  ┆ (1, inf]   │
+        └─────┴──────┴────────────┘
 
         """
-        expr_f = (
-            self._pyexpr.qcut_uniform
-            if isinstance(quantiles, int)
-            else self._pyexpr.qcut
-        )
-        return self._from_pyexpr(
-            expr_f(quantiles, labels, left_closed, allow_duplicates, include_breaks)
-        )
+        if isinstance(quantiles, int):
+            pyexpr = self._pyexpr.qcut_uniform(
+                quantiles, labels, left_closed, allow_duplicates, include_breaks
+            )
+        else:
+            pyexpr = self._pyexpr.qcut(
+                quantiles, labels, left_closed, allow_duplicates, include_breaks
+            )
+
+        return self._from_pyexpr(pyexpr)
 
     def rle(self) -> Self:
         """
