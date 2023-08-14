@@ -91,6 +91,7 @@ from polars.utils.convert import (
     _time_to_pl_time,
 )
 from polars.utils.deprecation import (
+    deprecate_nonkeyword_arguments,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -1639,57 +1640,59 @@ class Series:
     @overload
     def cut(
         self,
-        breaks: list[float],
-        labels: list[str] | None = ...,
+        breaks: Sequence[float],
+        labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
         *,
         left_closed: bool = ...,
         include_breaks: bool = ...,
-        series: Literal[True] = ...,
+        as_series: Literal[True] = ...,
     ) -> Series:
         ...
 
     @overload
     def cut(
         self,
-        breaks: list[float],
-        labels: list[str] | None = ...,
+        breaks: Sequence[float],
+        labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
         *,
         left_closed: bool = ...,
         include_breaks: bool = ...,
-        series: Literal[False],
+        as_series: Literal[False],
     ) -> DataFrame:
         ...
 
     @overload
     def cut(
         self,
-        breaks: list[float],
-        labels: list[str] | None = ...,
+        breaks: Sequence[float],
+        labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
         *,
         left_closed: bool = ...,
         include_breaks: bool = ...,
-        series: bool,
+        as_series: bool,
     ) -> Series | DataFrame:
         ...
 
+    @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.18.14")
     @deprecate_renamed_parameter("bins", "breaks", version="0.18.8")
+    @deprecate_renamed_parameter("series", "as_series", version="0.18.14")
     def cut(
         self,
-        breaks: list[float],
-        labels: list[str] | None = None,
+        breaks: Sequence[float],
+        labels: Sequence[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
         *,
         left_closed: bool = False,
         include_breaks: bool = False,
-        series: bool = True,
-    ) -> DataFrame | Series:
+        as_series: bool = True,
+    ) -> Series | DataFrame:
         """
         Bin continuous values into discrete categories.
 
@@ -1698,11 +1701,11 @@ class Series:
         breaks
             A list of unique cut points.
         labels
-            Labels to assign to the bins. If given the length of labels must be
-            len(breaks) + 1.
+            Labels to assign to the bins. If given, the number of labels must be
+            equal to the number of breaks plus one.
         break_point_label
-            Name given to the breakpoint column/field. Only used if ``series == False``
-            or ``include_breaks == True``.
+            Name given to the breakpoint column/field. Only used if
+            ``include_breaks == True`` or ``as_series == False``.
         category_label
             Name given to the category column. Only used if series == False
         left_closed
@@ -1711,8 +1714,13 @@ class Series:
             Include the the right endpoint of the bin each observation falls in.
             If returning a DataFrame, it will be a column, and if returning a Series
             it will be a field in a Struct.
-        series
+        as_series
             If True, return a categorical Series in the data's original order.
+
+            .. deprecated:: 0.18.14
+                This parameter will be removed. The same behavior can be achieved by
+                setting ``include_breaks=True`, unnesting the resulting struct Series,
+                and adding the result to the original Series.
 
         Returns
         -------
@@ -1720,138 +1728,139 @@ class Series:
 
         Examples
         --------
-        >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-        >>> a.cut([-1, 1], series=False)
-        shape: (12, 3)
-        ┌──────┬─────────────┬────────────┐
-        │ a    ┆ break_point ┆ category   │
-        │ ---  ┆ ---         ┆ ---        │
-        │ f64  ┆ f64         ┆ cat        │
-        ╞══════╪═════════════╪════════════╡
-        │ -3.0 ┆ -1.0        ┆ (-inf, -1] │
-        │ -2.5 ┆ -1.0        ┆ (-inf, -1] │
-        │ -2.0 ┆ -1.0        ┆ (-inf, -1] │
-        │ -1.5 ┆ -1.0        ┆ (-inf, -1] │
-        │ …    ┆ …           ┆ …          │
-        │ 1.0  ┆ 1.0         ┆ (-1, 1]    │
-        │ 1.5  ┆ inf         ┆ (1, inf]   │
-        │ 2.0  ┆ inf         ┆ (1, inf]   │
-        │ 2.5  ┆ inf         ┆ (1, inf]   │
-        └──────┴─────────────┴────────────┘
-        >>> a.cut([-1, 1], series=True)
-        shape: (12,)
-        Series: 'a' [cat]
-        [
-            "(-inf, -1]"
-            "(-inf, -1]"
-            "(-inf, -1]"
-            "(-inf, -1]"
-            "(-inf, -1]"
-            "(-1, 1]"
-            "(-1, 1]"
-            "(-1, 1]"
-            "(-1, 1]"
-            "(1, inf]"
-            "(1, inf]"
-            "(1, inf]"
-        ]
-        >>> a.cut([-1, 1], series=True, left_closed=True)
-        shape: (12,)
-        Series: 'a' [cat]
-        [
-            "[-inf, -1)"
-            "[-inf, -1)"
-            "[-inf, -1)"
-            "[-inf, -1)"
-            "[-1, 1)"
-            "[-1, 1)"
-            "[-1, 1)"
-            "[-1, 1)"
-            "[1, inf)"
-            "[1, inf)"
-            "[1, inf)"
-            "[1, inf)"
-        ]
-        """
-        n = self._s.name()
+        Divide the series into three categories.
 
-        if not series:
-            # "Old style" always includes breaks
+        >>> s = pl.int_range(-2, 3, eager=True)
+        >>> s.cut([-1, 1], labels=["a", "b", "c"])
+        shape: (5,)
+        Series: 'int' [cat]
+        [
+                "a"
+                "a"
+                "b"
+                "b"
+                "c"
+        ]
+
+        Create a DataFrame with the break point and category for each value.
+
+        >>> cut = s.cut([-1, 1], include_breaks=True).alias("cut")
+        >>> s.to_frame().with_columns(cut).unnest("cut")
+        shape: (5, 3)
+        ┌─────┬─────────────┬────────────┐
+        │ int ┆ break_point ┆ category   │
+        │ --- ┆ ---         ┆ ---        │
+        │ i64 ┆ f64         ┆ cat        │
+        ╞═════╪═════════════╪════════════╡
+        │ -2  ┆ -1.0        ┆ (-inf, -1] │
+        │ -1  ┆ -1.0        ┆ (-inf, -1] │
+        │ 0   ┆ 1.0         ┆ (-1, 1]    │
+        │ 1   ┆ 1.0         ┆ (-1, 1]    │
+        │ 2   ┆ inf         ┆ (1, inf]   │
+        └─────┴─────────────┴────────────┘
+
+        """
+        name = self._s.name()
+
+        if not as_series:
+            issue_deprecation_warning(
+                "the `as_series` parameter for `Series.cut` will be removed."
+                " The same behavior can be achieved by setting ``include_breaks=True`,"
+                " unnesting the resulting struct Series,"
+                " and adding the result to the original Series."
+            )
             return (
                 self.to_frame()
                 .with_columns(
-                    F.col(n).cut(breaks, labels, left_closed, True).alias(n + "_bin")
+                    F.col(name)
+                    .cut(
+                        breaks,
+                        labels=labels,
+                        left_closed=left_closed,
+                        include_breaks=True,  # always include breaks
+                    )
+                    .alias(name + "_bin")
                 )
-                .unnest(n + "_bin")
-                .rename({"brk": break_point_label, n + "_bin": category_label})
+                .unnest(name + "_bin")
+                .rename({"brk": break_point_label, name + "_bin": category_label})
             )
-        res = (
+
+        result = (
             self.to_frame()
-            .select(F.col(n).cut(breaks, labels, left_closed, include_breaks))
+            .select(
+                F.col(name).cut(
+                    breaks,
+                    labels=labels,
+                    left_closed=left_closed,
+                    include_breaks=include_breaks,
+                )
+            )
             .to_series()
         )
         if include_breaks:
-            return res.struct.rename_fields([break_point_label, category_label])
-        return res
+            result = result.struct.rename_fields([break_point_label, category_label])
+
+        return result
 
     @overload
     def qcut(
         self,
-        quantiles: list[float] | int,
+        quantiles: Sequence[float] | int,
         *,
-        labels: list[str] | None = ...,
+        labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
         left_closed: bool = ...,
         allow_duplicates: bool = ...,
         include_breaks: bool = ...,
-        series: Literal[True] = ...,
+        as_series: Literal[True] = ...,
     ) -> Series:
         ...
 
     @overload
     def qcut(
         self,
-        quantiles: list[float] | int,
+        quantiles: Sequence[float] | int,
         *,
-        labels: list[str] | None = ...,
+        labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
         left_closed: bool = ...,
         allow_duplicates: bool = ...,
         include_breaks: bool = ...,
-        series: Literal[False],
+        as_series: Literal[False],
     ) -> DataFrame:
         ...
 
     @overload
     def qcut(
         self,
-        quantiles: list[float] | int,
+        quantiles: Sequence[float] | int,
         *,
-        labels: list[str] | None = ...,
+        labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
         left_closed: bool = ...,
         allow_duplicates: bool = ...,
         include_breaks: bool = ...,
-        series: bool,
+        as_series: bool,
     ) -> Series | DataFrame:
         ...
 
+    @deprecate_renamed_parameter("series", "as_series", version="0.18.14")
     @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
-        quantiles: list[float] | int,
+        quantiles: Sequence[float] | int,
         *,
-        labels: list[str] | None = None,
+        labels: Sequence[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
-        series: bool = True,
-    ) -> DataFrame | Series:
+        as_series: bool = True,
+    ) -> Series | DataFrame:
         """
         Discretize continuous values into discrete categories based on their quantiles.
 
@@ -1861,29 +1870,34 @@ class Series:
             Either a list of quantile probabilities between 0 and 1 or a positive
             integer determining the number of evenly spaced probabilities to use.
         labels
-            Labels to assign to the quantiles. If given the length of labels must be
-            len(breaks) + 1.
+            Labels to assign to the quantiles. If given, the length of labels must be
+            ``len(breaks) + 1``.
         break_point_label
-            Name given to the breakpoint column/field. Only used if series == False or
-            include_breaks == True
+            Name given to the breakpoint column/field. Only used if ``series == False``
+            or ``include_breaks == True``.
         category_label
-            Name given to the category column. Only used if series == False.
-        series
-            If True, return a categorical Series in the data's original order
+            Name given to the category column. Only used if ``series == False``.
         left_closed
-            Whether intervals should be [) instead of (]
+            Whether intervals should be ``[)`` instead of ``(]``.
         allow_duplicates
-            If True, the resulting quantile breaks don't have to be unique. This can
+            If ``True``, the resulting quantile breaks don't have to be unique. This can
             happen even with unique probs depending on the data. Duplicates will be
             dropped, resulting in fewer bins.
         include_breaks
             Include the the right endpoint of the bin each observation falls in.
             If returning a DataFrame, it will be a column, and if returning a Series
-            it will be a field in a Struct
+            it will be a field in a Struct.
+        as_series
+            If ``True``, return a categorical Series in the data's original order.
+
+            .. deprecated:: 0.18.14
+                This parameter will be removed. The same behavior can be achieved by
+                setting ``include_breaks=True`, unnesting the resulting struct Series,
+                and adding the result to the original Series.
 
         Returns
         -------
-        DataFrame or Series
+        Series or DataFrame
 
         Warnings
         --------
@@ -1892,7 +1906,7 @@ class Series:
 
         Examples
         --------
-        >>> a = pl.Series("a", range(-5, 3))
+        >>> a = pl.Series("a", range(-2, 3))
         >>> a.qcut(2, series=True)
         shape: (8,)
         Series: 'a' [cat]
@@ -1948,15 +1962,22 @@ class Series:
             "[0.25, inf)"
             "[0.25, inf)"
         ]
+
         """
         n = self._s.name()
-        if not series:
+        if not as_series:
             # "Old style" always includes breaks
             return (
                 self.to_frame()
                 .with_columns(
                     F.col(n)
-                    .qcut(quantiles, labels, left_closed, allow_duplicates, True)
+                    .qcut(
+                        quantiles,
+                        labels,
+                        left_closed=left_closed,
+                        allow_duplicates=allow_duplicates,
+                        include_breaks=True,
+                    )
                     .alias(n + "_bin")
                 )
                 .unnest(n + "_bin")
@@ -1966,7 +1987,11 @@ class Series:
             self.to_frame()
             .select(
                 F.col(n).qcut(
-                    quantiles, labels, left_closed, allow_duplicates, include_breaks
+                    quantiles,
+                    labels,
+                    left_closed=left_closed,
+                    allow_duplicates=allow_duplicates,
+                    include_breaks=include_breaks,
                 )
             )
             .to_series()

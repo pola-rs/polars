@@ -52,6 +52,7 @@ from polars.utils._parse_expr_input import (
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
+    deprecate_nonkeyword_arguments,
     deprecate_renamed_parameter,
     warn_closed_future_change,
 )
@@ -3290,10 +3291,11 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
+    @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.18.14")
     def cut(
         self,
-        breaks: list[float],
-        labels: list[str] | None = None,
+        breaks: Sequence[float],
+        labels: Sequence[str] | None = None,
         left_closed: bool = False,
         include_breaks: bool = False,
     ) -> Self:
@@ -3350,17 +3352,19 @@ class Expr:
         │ b   ┆ 8   ┆ [5, inf)  │
         │ b   ┆ 9   ┆ [5, inf)  │
         └─────┴─────┴───────────┘
+
         """
         return self._from_pyexpr(
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
+    @deprecate_nonkeyword_arguments(["self", "quantiles"], version="0.18.14")
     @deprecate_renamed_parameter("probs", "quantiles", version="0.18.8")
     @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
-        quantiles: list[float] | int,
-        labels: list[str] | None = None,
+        quantiles: Sequence[float] | int,
+        labels: Sequence[str] | None = None,
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
@@ -3475,6 +3479,7 @@ class Expr:
         │ b   ┆ 8   ┆ {inf,"(4.5, inf]"}    │
         │ b   ┆ 9   ┆ {inf,"(4.5, inf]"}    │
         └─────┴─────┴───────────────────────┘
+
         """
         expr_f = (
             self._pyexpr.qcut_uniform
