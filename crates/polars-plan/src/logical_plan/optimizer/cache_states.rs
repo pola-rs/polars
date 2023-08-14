@@ -19,7 +19,7 @@ fn get_upper_projections(
                 out.extend(aexpr_to_leaf_names_iter(*node, expr_arena));
             }
             Some(out)
-        }
+        },
         // other
         _ => None,
     }
@@ -77,14 +77,14 @@ pub(super) fn set_cache_states(
                         let options = Arc::make_mut(options);
                         options.allow_parallel = false;
                     }
-                }
+                },
                 // don't allow parallelism as caches need each others work
                 // also self-referencing plans can deadlock on the files they lock
                 Union { options, .. } if has_caches && options.parallel => {
                     if let Union { options, .. } = lp_arena.get_mut(current_node) {
                         options.parallel = false;
                     }
-                }
+                },
                 Cache { input, id, .. } => {
                     caches_seen += 1;
 
@@ -124,8 +124,8 @@ pub(super) fn set_cache_states(
                         }
                     }
                     cache_id = Some(*id);
-                }
-                _ => {}
+                },
+                _ => {},
             }
 
             parent = Some(current_node);

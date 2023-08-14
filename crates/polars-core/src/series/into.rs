@@ -55,7 +55,7 @@ impl Series {
                     arr.validity().cloned(),
                 );
                 Box::new(arr)
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 let ca = self.categorical().unwrap();
@@ -73,17 +73,17 @@ impl Series {
 
                 let arr: DictionaryArray<u32> = (&new).into();
                 Box::new(arr) as ArrayRef
-            }
+            },
             #[cfg(feature = "dtype-date")]
             DataType::Date => cast(&*self.chunks()[chunk_idx], &DataType::Date.to_arrow()).unwrap(),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
                 cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap()
-            }
+            },
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => {
                 cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap()
-            }
+            },
             #[cfg(feature = "dtype-time")]
             DataType::Time => cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow()).unwrap(),
             #[cfg(feature = "object")]
@@ -101,7 +101,7 @@ impl Series {
                     let s = self.slice(offset, len);
                     object_series_to_arrow_array(&s)
                 }
-            }
+            },
             _ => self.array_ref(chunk_idx).clone(),
         }
     }

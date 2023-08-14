@@ -110,11 +110,11 @@ impl<'a> AnonymousBuilder<'a> {
                 None => {
                     let values = NullArray::new(DataType::Null, len).boxed();
                     (DataType::Null, values)
-                }
+                },
                 Some(inner_dtype) => {
                     let values = new_null_array(inner_dtype.clone(), len);
                     (inner_dtype.clone(), values)
-                }
+                },
             }
         } else {
             let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
@@ -187,7 +187,7 @@ pub fn convert_inner_type(array: &dyn Array, dtype: &DataType) -> Box<dyn Array>
                 array.validity().cloned(),
             )
             .boxed()
-        }
+        },
         DataType::Struct(fields) => {
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             let inner = array.values();
@@ -197,7 +197,7 @@ pub fn convert_inner_type(array: &dyn Array, dtype: &DataType) -> Box<dyn Array>
                 .map(|(arr, field)| convert_inner_type(arr.as_ref(), field.data_type()))
                 .collect::<Vec<_>>();
             StructArray::new(dtype.clone(), new_values, array.validity().cloned()).boxed()
-        }
+        },
         _ => new_null_array(dtype.clone(), array.len()),
     }
 }

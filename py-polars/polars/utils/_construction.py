@@ -1236,8 +1236,10 @@ def numpy_to_pydf(
                 orient = "row"
 
             elif orient is None and schema is not None:
-                # infer orientation from 'schema' param
-                if len(schema) == shape[0]:
+                # infer orientation from 'schema' param; if square array
+                # we maintain the default convention where first axis = rows
+                n_schema_cols = len(schema)
+                if n_schema_cols == shape[0] and n_schema_cols != shape[1]:
                     orient = "col"
                     n_columns = shape[0]
                 else:

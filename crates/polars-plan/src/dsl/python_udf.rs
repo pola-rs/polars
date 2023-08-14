@@ -195,7 +195,7 @@ impl SeriesUdf for PythonUdfExpression {
                 let mut fld = fld.clone();
                 fld.coerce(DataType::Unknown);
                 fld
-            }
+            },
         }))
     }
 }
@@ -215,7 +215,7 @@ impl Expr {
                 let mut fld = fld.clone();
                 fld.coerce(DataType::Unknown);
                 fld
-            }
+            },
         });
 
         Expr::AnonymousFunction {

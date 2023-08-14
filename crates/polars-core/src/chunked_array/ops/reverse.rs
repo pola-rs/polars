@@ -20,7 +20,7 @@ where
         match self.is_sorted_flag() {
             IsSorted::Ascending => out.set_sorted_flag(IsSorted::Descending),
             IsSorted::Descending => out.set_sorted_flag(IsSorted::Ascending),
-            _ => {}
+            _ => {},
         }
 
         out

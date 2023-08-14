@@ -10,7 +10,7 @@ fn fmt_and_write<T: Display>(value: Option<T>, buf: &mut String) {
         None => buf.push_str("null"),
         Some(v) => {
             write!(buf, "{v}").unwrap();
-        }
+        },
     }
 }
 

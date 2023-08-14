@@ -5,7 +5,9 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
+
+pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_streaming_sort_multiple_columns_logical_types() -> None:
@@ -31,6 +33,7 @@ def test_streaming_sort_multiple_columns_logical_types() -> None:
     }
 
 
+@pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_ooc_sort(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
@@ -117,3 +120,21 @@ def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
             2124,
         ],
     }
+
+
+@pytest.mark.write_disk()
+@pytest.mark.slow()
+def test_streaming_sort_multiple_columns(
+    str_ints_df: pl.DataFrame, monkeypatch: Any, capfd: Any
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    df = str_ints_df
+
+    out = df.lazy().sort(["strs", "vals"]).collect(streaming=True)
+    assert_frame_equal(out, out.sort(["strs", "vals"]))
+    err = capfd.readouterr().err
+    assert "OOC sort forced" in err
+    assert "RUN STREAMING PIPELINE" in err
+    assert "df -> sort_multiple" in err
+    assert out.columns == ["vals", "strs"]

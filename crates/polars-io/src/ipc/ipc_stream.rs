@@ -114,7 +114,7 @@ impl<R: Read> IpcStreamReader<R> {
                 let metadata = read::read_stream_metadata(&mut self.reader)?;
                 self.metadata = Option::from(metadata.clone());
                 Ok(metadata)
-            }
+            },
             Some(md) => Ok(md.clone()),
         }
     }

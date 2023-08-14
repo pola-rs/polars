@@ -47,7 +47,7 @@ where
             Some(items) => self.append_slice(items),
             None => {
                 self.builder.push_null();
-            }
+            },
         }
     }
     /// Appends from an iterator over values

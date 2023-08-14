@@ -9,6 +9,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -94,11 +95,15 @@ def test_csv_null_values() -> None:
 
     # note: after reading, the buffer position in StringIO will have been
     # advanced; reading again will raise NoDataError, so we provide a hint
-    # in the error string about this, suggesting "seek(0)" as a possible fix
+    # in the error string about this, suggesting "seek(0)" as a possible fix...
     with pytest.raises(
         NoDataError, match=r"empty CSV data .* position = 20; try seek\(0\)"
     ):
         pl.read_csv(f)
+
+    # ... unless we explicitly tell read_csv not to raise an
+    # exception, in which case we expect an empty dataframe
+    assert_frame_equal(pl.read_csv(f, raise_if_empty=False), pl.DataFrame())
 
     out = io.BytesIO()
     df.write_csv(out, null_value="na")
@@ -493,8 +498,11 @@ def test_partial_decompression(foods_file_path: Path) -> None:
 
 def test_empty_bytes() -> None:
     b = b""
-    with pytest.raises(ValueError):
+    with pytest.raises(NoDataError):
         pl.read_csv(b)
+
+    df = pl.read_csv(b, raise_if_empty=False)
+    assert_frame_equal(df, pl.DataFrame())
 
 
 def test_csv_quote_char() -> None:
@@ -1185,6 +1193,15 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
 
 
+def test_batched_csv_reader_empty(io_files_path: Path) -> None:
+    empty_csv = io_files_path / "empty.csv"
+    with pytest.raises(NoDataError, match="empty CSV"):
+        pl.read_csv_batched(source=empty_csv)
+
+    reader = pl.read_csv_batched(source=empty_csv, raise_if_empty=False)
+    assert reader.next_batches(1) is None
+
+
 def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:
     for new_columns in [None, ["Category", "Calories", "Fats_g", "Sugars_g"]]:
         out = pl.read_csv(foods_file_path, new_columns=new_columns)
@@ -1293,6 +1310,24 @@ def test_read_csv_chunked() -> None:
 
     # The next value should always be higher if monotonically increasing.
     assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()
+
+
+def test_read_empty_csv(io_files_path: Path) -> None:
+    with pytest.raises(NoDataError) as err:
+        pl.read_csv(io_files_path / "empty.csv")
+    assert "empty CSV" in str(err.value)
+
+    df = pl.read_csv(io_files_path / "empty.csv", raise_if_empty=False)
+    assert_frame_equal(df, pl.DataFrame())
+
+    with pytest.raises(pa.ArrowInvalid) as err:
+        pl.read_csv(io_files_path / "empty.csv", use_pyarrow=True)
+    assert "Empty CSV" in str(err.value)
+
+    df = pl.read_csv(
+        io_files_path / "empty.csv", raise_if_empty=False, use_pyarrow=True
+    )
+    assert_frame_equal(df, pl.DataFrame())
 
 
 @pytest.mark.slow()

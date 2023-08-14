@@ -1175,7 +1175,7 @@ impl LazyFrame {
                         .collect::<Vec<_>>(),
                 );
                 self.filter(predicate)
-            }
+            },
         }
     }
 
@@ -1290,7 +1290,7 @@ impl LazyFrame {
                         .unwrap(),
                 );
                 false
-            }
+            },
             _ => true,
         };
 

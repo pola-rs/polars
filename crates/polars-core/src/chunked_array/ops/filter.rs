@@ -177,7 +177,7 @@ where
                         false => {
                             let v = arr.value(idx);
                             builder.append_value(v.clone())
-                        }
+                        },
                     }
                 }
             }

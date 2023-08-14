@@ -364,6 +364,7 @@ class LazyFrame:
         row_count_offset: int = 0,
         try_parse_dates: bool = False,
         eol_char: str = "\n",
+        raise_if_empty: bool = True,
     ) -> Self:
         """
         Lazily read from a CSV file or multiple files via glob patterns.
@@ -405,6 +406,7 @@ class LazyFrame:
             _prepare_row_count_args(row_count_name, row_count_offset),
             try_parse_dates,
             eol_char=eol_char,
+            raise_if_empty=raise_if_empty,
         )
         return self
 
@@ -593,7 +595,9 @@ class LazyFrame:
         Parameters
         ----------
         source
-            Path to a file or a file-like object.
+            Path to a file or a file-like object (by file-like object, we refer to
+            objects that have a ``read()`` method, such as a file handler (e.g.
+            via builtin ``open`` function) or ``BytesIO``).
 
         See Also
         --------
@@ -610,7 +614,9 @@ class LazyFrame:
         Parameters
         ----------
         source
-            Path to a file or a file-like object.
+            Path to a file or a file-like object (by file-like object, we refer to
+            objects that have a ``read()`` method, such as a file handler (e.g.
+            via builtin ``open`` function) or ``BytesIO``).
 
         See Also
         --------
@@ -846,7 +852,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
         >>> json = lf.serialize()
         >>> json
-        '{"LocalProjection":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":0,"values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}}}}'
+        '{"LocalProjection":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}}}}'
 
         The logical plan can later be deserialized back into a LazyFrame.
 
@@ -3004,18 +3010,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if left_on is None or right_on is None:
             raise ValueError("You should pass the column to join on as an argument.")
 
-        by_left_: Sequence[str] | None
-        by_left_ = [by_left] if isinstance(by_left, str) else by_left
-
-        by_right_: Sequence[str] | None
-        by_right_ = [by_right] if isinstance(by_right, (str, pl.Expr)) else by_right
-
-        if isinstance(by, str):
-            by_left_ = [by]
-            by_right_ = [by]
-        elif isinstance(by, list):
-            by_left_ = by
-            by_right_ = by
+        if by is not None:
+            by_left_ = [by] if isinstance(by, str) else by
+            by_right_ = by_left_
+        elif (by_left is not None) and (by_right is not None):
+            by_left_ = [by_left] if isinstance(by_left, str) else by_left
+            by_right_ = [by_right] if isinstance(by_right, str) else by_right
+        else:
+            # no by
+            by_left_ = None
+            by_right_ = None
 
         tolerance_str: str | None = None
         tolerance_num: float | int | None = None

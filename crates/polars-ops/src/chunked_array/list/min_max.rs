@@ -82,7 +82,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> Series {
                     .map(|s| s.and_then(|s| s.as_ref().bool().unwrap().min()))
                     .collect_trusted();
                 out.into_series()
-            }
+            },
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                     let out: ChunkedArray<$T> = ca
@@ -97,7 +97,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> Series {
                             .collect_trusted();
                         out.into_series()
                 })
-            }
+            },
             _ => ca
                 .apply_amortized(|s| s.as_ref().min_as_series())
                 .explode()
@@ -188,7 +188,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> Series {
                     .map(|s| s.and_then(|s| s.as_ref().bool().unwrap().max()))
                     .collect_trusted();
                 out.into_series()
-            }
+            },
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                     let out: ChunkedArray<$T> = ca
@@ -203,7 +203,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> Series {
                             .collect_trusted();
                         out.into_series()
                 })
-            }
+            },
             _ => ca
                 .apply_amortized(|s| s.as_ref().max_as_series())
                 .explode()

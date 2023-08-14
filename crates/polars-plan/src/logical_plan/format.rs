@@ -65,7 +65,7 @@ impl LogicalPlan {
                     &options.predicate,
                     options.n_rows,
                 )
-            }
+            },
             AnonymousScan {
                 file_info,
                 predicate,
@@ -87,7 +87,7 @@ impl LogicalPlan {
                     predicate,
                     options.n_rows,
                 )
-            }
+            },
             Union { inputs, options } => {
                 let mut name = String::new();
                 let name = if let Some(slice) = options.slice {
@@ -107,11 +107,11 @@ impl LogicalPlan {
                     plan._format(f, sub_sub_indent)?;
                 }
                 write!(f, "\n{:indent$}END {}", "", name)
-            }
+            },
             Cache { input, id, count } => {
                 write!(f, "{:indent$}CACHE[id: {:x}, count: {}]", "", *id, *count)?;
                 input._format(f, sub_indent)
-            }
+            },
             Scan {
                 path,
                 file_info,
@@ -135,12 +135,12 @@ impl LogicalPlan {
                     predicate,
                     file_options.n_rows,
                 )
-            }
+            },
             Selection { predicate, input } => {
                 // this one is writeln because we don't increase indent (which inserts a line)
                 writeln!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
                 input._format(f, indent)
-            }
+            },
             DataFrameScan {
                 schema,
                 projection,
@@ -165,28 +165,28 @@ impl LogicalPlan {
                     total_columns,
                     selection,
                 )
-            }
+            },
             Projection { expr, input, .. } => {
                 write!(f, "{:indent$} SELECT {expr:?} FROM", "")?;
                 input._format(f, sub_indent)
-            }
+            },
             LocalProjection { expr, input, .. } => {
                 write!(f, "{:indent$} LOCAL SELECT {expr:?} FROM", "")?;
                 input._format(f, sub_indent)
-            }
+            },
             Sort {
                 input, by_column, ..
             } => {
                 write!(f, "{:indent$}SORT BY {by_column:?}", "")?;
                 input._format(f, sub_indent)
-            }
+            },
             Aggregate {
                 input, keys, aggs, ..
             } => {
                 write!(f, "{:indent$}AGGREGATE", "")?;
                 write!(f, "\n{:indent$}\t{aggs:?} BY {keys:?} FROM", "")?;
                 input._format(f, sub_indent)
-            }
+            },
             Join {
                 input_left,
                 input_right,
@@ -202,36 +202,36 @@ impl LogicalPlan {
                 write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on:?}", "")?;
                 input_right._format(f, sub_indent)?;
                 write!(f, "\n{:indent$}END {} JOIN", "", how)
-            }
+            },
             HStack { input, exprs, .. } => {
                 write!(f, "{:indent$} WITH_COLUMNS:", "",)?;
                 write!(f, "\n{:indent$} {exprs:?}", "")?;
                 input._format(f, sub_indent)
-            }
+            },
             Distinct { input, options } => {
                 write!(f, "{:indent$}UNIQUE BY {:?}", "", options.subset)?;
                 input._format(f, sub_indent)
-            }
+            },
             Slice { input, offset, len } => {
                 write!(f, "{:indent$}SLICE[offset: {offset}, len: {len}]", "")?;
                 input._format(f, sub_indent)
-            }
+            },
             MapFunction {
                 input, function, ..
             } => {
                 let function_fmt = format!("{function}");
                 write!(f, "{:indent$}{function_fmt}", "")?;
                 input._format(f, sub_indent)
-            }
+            },
             Error { input, err } => write!(f, "{err:?}\n{input:?}"),
             ExtContext { input, .. } => {
                 write!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
                 input._format(f, sub_indent)
-            }
+            },
             FileSink { input, .. } => {
                 write!(f, "{:indent$}FILE_SINK", "")?;
                 input._format(f, sub_indent)
-            }
+            },
         }
     }
 }
@@ -267,12 +267,12 @@ impl Debug for Expr {
                     LiteralValue::Utf8(v) => {
                         // dot breaks with debug fmt due to \"
                         write!(f, "Utf8({v})")
-                    }
+                    },
                     _ => {
                         write!(f, "{v:?}")
-                    }
+                    },
                 }
-            }
+            },
             BinaryExpr { left, op, right } => write!(f, "[({left:?}) {op:?} ({right:?})]"),
             Sort { expr, options } => match options.descending {
                 true => write!(f, "{expr:?}.sort(desc)"),
@@ -284,13 +284,13 @@ impl Debug for Expr {
                 descending,
             } => {
                 write!(f, "{expr:?}.sort_by(by={by:?}, descending={descending:?})",)
-            }
+            },
             Filter { input, by } => {
                 write!(f, "{input:?}.filter({by:?})")
-            }
+            },
             Take { expr, idx } => {
                 write!(f, "{expr:?}.take({idx:?})")
-            }
+            },
             Agg(agg) => {
                 use AggExpr::*;
                 match agg {
@@ -303,7 +303,7 @@ impl Debug for Expr {
                         } else {
                             write!(f, "{input:?}.min()")
                         }
-                    }
+                    },
                     Max {
                         input,
                         propagate_nans,
@@ -313,7 +313,7 @@ impl Debug for Expr {
                         } else {
                             write!(f, "{input:?}.max()")
                         }
-                    }
+                    },
                     Median(expr) => write!(f, "{expr:?}.median()"),
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),
@@ -327,7 +327,7 @@ impl Debug for Expr {
                     Std(expr, _) => write!(f, "{expr:?}.var()"),
                     Quantile { expr, .. } => write!(f, "{expr:?}.quantile()"),
                 }
-            }
+            },
             Cast {
                 expr,
                 data_type,
@@ -338,7 +338,7 @@ impl Debug for Expr {
                 } else {
                     write!(f, "{expr:?}.cast({data_type:?})")
                 }
-            }
+            },
             Ternary {
                 predicate,
                 truthy,
@@ -355,14 +355,14 @@ impl Debug for Expr {
                 } else {
                     write!(f, "{:?}.{function}()", input[0])
                 }
-            }
+            },
             AnonymousFunction { input, options, .. } => {
                 if input.len() >= 2 {
                     write!(f, "{:?}.{}({:?})", input[0], options.fmt_str, &input[1..])
                 } else {
                     write!(f, "{:?}.{}()", input[0], options.fmt_str)
                 }
-            }
+            },
             Slice {
                 input,
                 offset,
@@ -399,11 +399,11 @@ impl Debug for LiteralValue {
                 } else {
                     write!(f, "Series[{name}]")
                 }
-            }
+            },
             _ => {
                 let av = self.to_anyvalue().unwrap();
                 write!(f, "{av}")
-            }
+            },
         }
     }
 }

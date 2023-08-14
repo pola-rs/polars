@@ -16,7 +16,7 @@ where
                 *state = v
             }
             Some(Some(*state))
-        }
+        },
         None => Some(None),
     }
 }
@@ -31,7 +31,7 @@ where
                 *state = v
             }
             Some(Some(*state))
-        }
+        },
         None => Some(None),
     }
 }
@@ -44,11 +44,11 @@ where
         (Some(state_inner), Some(v)) => {
             *state = Some(state_inner + v);
             Some(*state)
-        }
+        },
         (None, Some(v)) => {
             *state = Some(v);
             Some(*state)
-        }
+        },
         (_, None) => Some(None),
     }
 }
@@ -61,11 +61,11 @@ where
         (Some(state_inner), Some(v)) => {
             *state = Some(state_inner * v);
             Some(*state)
-        }
+        },
         (None, Some(v)) => {
             *state = Some(v);
             Some(*state)
-        }
+        },
         (_, None) => Some(None),
     }
 }

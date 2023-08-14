@@ -176,6 +176,22 @@ fn test_predicate_pushdown_blocked_by_outer_join() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_binaryexpr_pushdown_left_join_9506() -> PolarsResult<()> {
+    let df1 = df! {
+        "a" => ["a1"],
+        "b" => ["b1"]
+    }?;
+    let df2 = df! {
+        "b" => ["b1"],
+        "c" => ["c1"]
+    }?;
+    let df = df1.lazy().left_join(df2.lazy(), col("b"), col("b"));
+    let out = df.filter(col("c").eq(lit("c2"))).collect()?;
+    assert!(out.height() == 0);
+    Ok(())
+}
+
+#[test]
 fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
     let lf1 = df![
         "k" => ["x", "x", "y"],

@@ -20,7 +20,7 @@ impl DataFrame {
                 let mut tmp = Vec::<Series>::with_capacity(new_width + 1);
                 tmp.push(Utf8Chunked::new(name, self.get_column_names()).into());
                 tmp
-            }
+            },
         };
 
         let cols = &self.columns;
@@ -43,7 +43,7 @@ impl DataFrame {
             DataType::Object(_) => {
                 // this requires to support `Object` in Series::iter which we don't yet
                 polars_bail!(InvalidOperation: "Object dtype not supported in 'transpose'")
-            }
+            },
             _ => {
                 let phys_dtype = dtype.to_physical();
                 let mut buffers = (0..new_width)
@@ -76,7 +76,7 @@ impl DataFrame {
                     s.rename(name);
                     s
                 }));
-            }
+            },
         };
         Ok(DataFrame::new_no_checks(cols_t))
     }
@@ -99,11 +99,11 @@ impl DataFrame {
                         .into_no_null_iter()
                         .map(|s| s.to_owned())
                         .collect()
-                }
+                },
                 Either::Right(names) => {
                     polars_ensure!(names.len() == self.height(), ShapeMismatch: "Length of new column names must be the same as the row count");
                     names
-                }
+                },
             },
         };
         if let Some(cn) = keep_names_as {
@@ -132,13 +132,13 @@ impl DataFrame {
                                     }
                                 }
                                 cache_id = Some(*id);
-                            }
+                            },
                         }
                     }
                 }
                 polars_ensure!(valid, ComputeError: "'transpose' of categorical can only be done if all are from the same global string cache")
-            }
-            _ => {}
+            },
+            _ => {},
         }
         df.transpose_from_dtype(&dtype, keep_names_as, &names_out)
     }

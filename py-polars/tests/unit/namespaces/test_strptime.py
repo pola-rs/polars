@@ -6,7 +6,6 @@ This method gets its own module due to its complexity.
 from __future__ import annotations
 
 import contextlib
-import sys
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -16,15 +15,12 @@ import polars as pl
 from polars.exceptions import ArrowError, ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import assert_series_equal
 
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
-
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.type_aliases import PolarsTemporalType, TimeUnit
+else:
+    from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 
 def test_str_strptime() -> None:
@@ -629,3 +625,53 @@ def test_to_time_format_warning() -> None:
     with pytest.warns(pl.ChronoFormatWarning, match=".%f"):
         result = s.str.to_time("%H:%M:%S.%f").item()
     assert result == time(5, 10, 10, 74)
+
+
+@pytest.mark.parametrize("exact", [True, False])
+def test_to_datetime_use_earliest(exact: bool) -> None:
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.to_datetime(time_zone="Europe/London", use_earliest=True, exact=exact)
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=0, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.to_datetime(time_zone="Europe/London", use_earliest=False, exact=exact)
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    with pytest.raises(ArrowError):
+        pl.Series(["2020-10-25 01:00"]).str.to_datetime(
+            time_zone="Europe/London",
+            exact=exact,
+        ).item()
+
+
+@pytest.mark.parametrize("exact", [True, False])
+def test_strptime_use_earliest(exact: bool) -> None:
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.strptime(
+            pl.Datetime("us", "Europe/London"), use_earliest=True, exact=exact
+        )
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=0, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.strptime(
+            pl.Datetime("us", "Europe/London"), use_earliest=False, exact=exact
+        )
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    with pytest.raises(ArrowError):
+        pl.Series(["2020-10-25 01:00"]).str.strptime(
+            pl.Datetime("us", "Europe/London"),
+            exact=exact,
+        ).item()

@@ -73,7 +73,7 @@ impl OptimizationRule for FastProjectionAndCollapse {
                 } else {
                     None
                 }
-            }
+            },
             LocalProjection { input, expr, .. } => impl_fast_projection(*input, expr, expr_arena),
             MapFunction {
                 input,
@@ -103,10 +103,10 @@ impl OptimizationRule for FastProjectionAndCollapse {
                         } else {
                             None
                         }
-                    }
+                    },
                     _ => None,
                 }
-            }
+            },
             // if there are 2 subsequent caches, flatten them and only take the inner
             Cache {
                 input,
@@ -128,7 +128,7 @@ impl OptimizationRule for FastProjectionAndCollapse {
                 } else {
                     None
                 }
-            }
+            },
             _ => None,
         }
     }

@@ -52,17 +52,17 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
                         flattened_columns.push(arr.clone() as ArrayRef);
                         flattened_fields.push(field.clone())
                     }
-                }
+                },
                 DataType::LargeUtf8 => {
                     flattened_columns.push(
                         cast(arr.as_ref(), &DataType::LargeBinary, Default::default()).unwrap(),
                     );
                     flattened_fields.push(field.clone());
-                }
+                },
                 _ => {
                     flattened_columns.push(arr.clone());
                     flattened_fields.push(field.clone());
-                }
+                },
             }
         }
         let values_size =
@@ -109,14 +109,14 @@ unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncod
         DataType::Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             crate::fixed::encode_iter(array.into_iter(), out, field);
-        }
+        },
         DataType::LargeBinary => {
             let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
             crate::variable::encode_iter(array.into_iter(), out, field)
-        }
+        },
         DataType::LargeUtf8 => {
             panic!("should be cast to binary")
-        }
+        },
         DataType::Dictionary(_, _, _) => {
             let array = array
                 .as_any()
@@ -127,13 +127,13 @@ unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncod
                 .unwrap()
                 .map(|opt_s| opt_s.map(|s| s.as_bytes()));
             crate::variable::encode_iter(iter, out, field)
-        }
+        },
         dt => {
             with_match_arrow_primitive_type!(dt, |$T| {
                 let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
                 encode_primitive(array, field, out);
             })
-        }
+        },
     };
 }
 
@@ -213,7 +213,7 @@ pub fn allocate_rows_buf(
                         }
                     }
                     processed_count += 1;
-                }
+                },
                 ArrowDataType::Dictionary(_, _, _) => {
                     let array = array
                         .as_any()
@@ -237,10 +237,10 @@ pub fn allocate_rows_buf(
                         }
                     }
                     processed_count += 1;
-                }
+                },
                 _ => {
                     // the rest is fixed
-                }
+                },
             }
         }
         // now we use the lengths and the same buffer to determine the offsets

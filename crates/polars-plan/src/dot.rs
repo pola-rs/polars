@@ -57,7 +57,7 @@ impl Expr {
                     branch += 1;
                 }
                 Ok(())
-            }
+            },
             _ => self.write_dot(acc_str, prev_node, &format!("{branch}{id}"), id),
         }
     }
@@ -157,7 +157,7 @@ impl LogicalPlan {
                     branch += 1;
                 }
                 Ok(())
-            }
+            },
             Cache {
                 input,
                 id: cache_id,
@@ -176,7 +176,7 @@ impl LogicalPlan {
                 // here we take the cache id, to ensure the same cached subplans get the same ids
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (*cache_id, cache_id + 1), current_node, id_map)
-            }
+            },
             Selection { predicate, input } => {
                 let pred = fmt_predicate(Some(predicate));
                 let fmt = format!("FILTER BY {pred}");
@@ -189,7 +189,7 @@ impl LogicalPlan {
 
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
+            },
             #[cfg(feature = "python")]
             PythonScan { options } => self.write_scan(
                 acc_str,
@@ -218,7 +218,7 @@ impl LogicalPlan {
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
+            },
             Sort {
                 input, by_column, ..
             } => {
@@ -230,7 +230,7 @@ impl LogicalPlan {
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
+            },
             LocalProjection { expr, input, .. } => {
                 let schema = input.schema().map_err(|_| {
                     eprintln!("could not determine schema");
@@ -245,7 +245,7 @@ impl LogicalPlan {
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
+            },
             Aggregate {
                 input, keys, aggs, ..
             } => {
@@ -264,7 +264,7 @@ impl LogicalPlan {
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
+            },
             HStack { input, exprs, .. } => {
                 let mut fmt = String::with_capacity(128);
                 fmt.push_str("WITH COLUMNS [");
@@ -286,7 +286,7 @@ impl LogicalPlan {
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
+            },
             Slice { input, offset, len } => {
                 let fmt = format!("SLICE offset: {offset}; len: {len}");
                 let current_node = DotNode {
@@ -296,7 +296,7 @@ impl LogicalPlan {
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
+            },
             Distinct { input, options, .. } => {
                 let mut fmt = String::with_capacity(128);
                 fmt.push_str("DISTINCT");
@@ -314,7 +314,7 @@ impl LogicalPlan {
 
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
+            },
             DataFrameScan {
                 schema,
                 projection,
@@ -339,7 +339,7 @@ impl LogicalPlan {
                 } else {
                     self.write_dot(acc_str, prev_node, current_node, id_map)
                 }
-            }
+            },
             Scan {
                 path,
                 file_info,
@@ -361,7 +361,7 @@ impl LogicalPlan {
                     id,
                     id_map,
                 )
-            }
+            },
             Join {
                 input_left,
                 input_right,
@@ -384,7 +384,7 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input_left.dot(acc_str, (branch + 100, id + 1), current_node, id_map)?;
                 input_right.dot(acc_str, (branch + 200, id + 1), current_node, id_map)
-            }
+            },
             MapFunction {
                 input, function, ..
             } => {
@@ -396,7 +396,7 @@ impl LogicalPlan {
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
+            },
             ExtContext { input, .. } => {
                 let current_node = DotNode {
                     branch,
@@ -405,7 +405,7 @@ impl LogicalPlan {
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
+            },
             FileSink { input, .. } => {
                 let current_node = DotNode {
                     branch,
@@ -414,7 +414,7 @@ impl LogicalPlan {
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
+            },
             Error { err, .. } => {
                 let fmt = format!("{:?}", &**err);
                 let current_node = DotNode {
@@ -423,7 +423,7 @@ impl LogicalPlan {
                     fmt: &fmt,
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)
-            }
+            },
         }
     }
 

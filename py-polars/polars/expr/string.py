@@ -87,6 +87,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         utc: bool | None = None,
+        use_earliest: bool | None = None,
     ) -> Expr:
         """
         Convert a Utf8 column into a Datetime column.
@@ -125,6 +126,12 @@ class ExprStringNameSpace:
                 Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
                 and offset-aware strings are converted to
                 ``pl.Datetime(time_unit, "UTC")``.
+        use_earliest
+            Determine how to deal with ambiguous datetimes:
+
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Examples
         --------
@@ -155,6 +162,7 @@ class ExprStringNameSpace:
                 strict,
                 exact,
                 cache,
+                use_earliest,
             )
         )
 
@@ -207,6 +215,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         utc: bool | None = None,
+        use_earliest: bool | None = None,
     ) -> Expr:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -240,6 +249,12 @@ class ExprStringNameSpace:
                 Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
                 and offset-aware strings are converted to
                 ``pl.Datetime(time_unit, "UTC")``.
+        use_earliest
+            Determine how to deal with ambiguous datetimes:
+
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Notes
         -----
@@ -303,6 +318,7 @@ class ExprStringNameSpace:
                 exact=exact,
                 cache=cache,
                 utc=utc,
+                use_earliest=use_earliest,
             )
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)

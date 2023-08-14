@@ -54,7 +54,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
-from polars.functions.lazy import col, lit
+from polars.functions import col, lit
 from polars.io._utils import _is_glob_pattern, _is_local_file
 from polars.io.excel._write_utils import (
     _unpack_multi_column_dict,
@@ -676,6 +676,7 @@ class DataFrame:
         row_count_offset: int = 0,
         sample_size: int = 1024,
         eol_char: str = "\n",
+        raise_if_empty: bool = True,
     ) -> DataFrame:
         """
         Read a CSV file into a DataFrame.
@@ -745,6 +746,7 @@ class DataFrame:
                 row_count_name=row_count_name,
                 row_count_offset=row_count_offset,
                 eol_char=eol_char,
+                raise_if_empty=raise_if_empty,
             )
             if columns is None:
                 return scan.collect()
@@ -785,6 +787,7 @@ class DataFrame:
             _prepare_row_count_args(row_count_name, row_count_offset),
             sample_size=sample_size,
             eol_char=eol_char,
+            raise_if_empty=raise_if_empty,
         )
         return self
 
@@ -873,7 +876,9 @@ class DataFrame:
         Parameters
         ----------
         source
-            Path to a file or a file-like object.
+            Path to a file or a file-like object (by file-like object, we refer to
+            objects that have a ``read()`` method, such as a file handler (e.g.
+            via builtin ``open`` function) or ``BytesIO``).
         columns
             Columns.
         n_rows
@@ -907,7 +912,9 @@ class DataFrame:
         Parameters
         ----------
         source
-            Path to a file or a file-like object.
+            Path to a file or a file-like object (by file-like object, we refer to
+            objects that have a ``read()`` method, such as a file handler (e.g.
+            via builtin ``open`` function) or ``BytesIO``).
         columns
             Columns to select. Accepts a list of column indices (starting at zero) or a
             list of column names.
@@ -1570,9 +1577,7 @@ class DataFrame:
                 if (col_selection >= 0 and col_selection >= self.width) or (
                     col_selection < 0 and col_selection < -self.width
                 ):
-                    raise ValueError(
-                        f'Column index "{col_selection}" is out of bounds.'
-                    )
+                    raise ValueError(f"column index {col_selection!r} is out of bounds")
                 series = self.to_series(col_selection)
                 return series[row_selection]
 
@@ -1787,13 +1792,16 @@ class DataFrame:
             return self._df.select_at_idx(0).get_idx(0)
 
         elif row is None or column is None:
-            raise ValueError("Cannot call '.item()' with only one of 'row' or 'column'")
+            raise ValueError("cannot call `.item()` with only one of `row` or `column`")
 
-        return (
+        s = (
             self._df.select_at_idx(column)
             if isinstance(column, int)
             else self._df.column(column)
-        ).get_idx(row)
+        )
+        if s is None:
+            raise ValueError(f"column index {column!r} is out of bounds")
+        return s.get_idx(row)
 
     def to_arrow(self) -> pa.Table:
         """
@@ -2293,7 +2301,7 @@ class DataFrame:
         ...     }
         ... )
         >>> df.write_json()
-        '{"columns":[{"name":"foo","datatype":"Int64","bit_settings":0,"values":[1,2,3]},{"name":"bar","datatype":"Int64","bit_settings":0,"values":[6,7,8]}]}'
+        '{"columns":[{"name":"foo","datatype":"Int64","bit_settings":"","values":[1,2,3]},{"name":"bar","datatype":"Int64","bit_settings":"","values":[6,7,8]}]}'
         >>> df.write_json(row_oriented=True)
         '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
 
@@ -2566,6 +2574,7 @@ class DataFrame:
         column_formats: dict[str | tuple[str, ...], str | dict[str, str]] | None = None,
         dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
         conditional_formats: ConditionalFormatDict | None = None,
+        header_format: dict[str, Any] | None = None,
         column_totals: ColumnTotalsDefinition | None = None,
         column_widths: dict[str | tuple[str, ...], int] | int | None = None,
         row_totals: RowTotalsDefinition | None = None,
@@ -2632,6 +2641,9 @@ class DataFrame:
               min/max values will be determined across the entire range, not per-column.
             * Finally, you can also supply a list made up from the above options
               in order to apply *more* than one conditional format to the same range.
+        header_format : dict
+            A ``{key:value,}`` dictionary of ``xlsxwriter`` format options to apply
+            to the table header row, such as ``{"bold":True, "font_color":"#702963"}``.
         column_totals : {bool, list, dict}
             Add a column-total row to the exported table.
 
@@ -2720,6 +2732,9 @@ class DataFrame:
 
         Notes
         -----
+        * A list of compatible ``xlsxwriter`` format property names can be found here:
+          https://xlsxwriter.readthedocs.io/format.html#format-methods-and-format-properties
+
         * Conditional formatting dictionaries should provide xlsxwriter-compatible
           definitions; polars will take care of how they are applied on the worksheet
           with respect to the relative sheet/column position. For supported options,
@@ -2757,12 +2772,13 @@ class DataFrame:
         ... )
 
         Export to "dataframe.xlsx" (the default workbook name, if not specified) in the
-        working directory, add column totals ("sum") on all numeric columns, autofit:
+        working directory, add column totals ("sum" by default) on all numeric columns,
+        then autofit:
 
         >>> df.write_excel(column_totals=True, autofit=True)  # doctest: +SKIP
 
         Write frame to a specific location on the sheet, set a named table style,
-        apply US-style date formatting, increase default float precision, apply
+        apply US-style date formatting, increase default float precision, apply a
         non-default total function to a single column, autofit:
 
         >>> df.write_excel(  # doctest: +SKIP
@@ -2930,6 +2946,7 @@ class DataFrame:
             column_formats=column_formats,
             column_totals=column_totals,
             dtype_formats=dtype_formats,
+            header_format=header_format,
             float_precision=float_precision,
             row_totals=row_totals,
             sparklines=sparklines,

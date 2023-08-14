@@ -48,14 +48,14 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
                 Average => Series::new(s.name(), &[1.0f32]),
                 _ => Series::new(s.name(), &[1 as IdxSize]),
             };
-        }
+        },
         0 => {
             return match method {
                 Average => Float32Chunked::from_slice(s.name(), &[]).into_series(),
                 _ => IdxCa::from_slice(s.name(), &[]).into_series(),
             };
-        }
-        _ => {}
+        },
+        _ => {},
     }
 
     if s.null_count() > 0 {
@@ -128,7 +128,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
         Ordinal => {
             let inv_ca = IdxCa::from_vec(s.name(), inv);
             inv_ca.into_series()
-        }
+        },
         #[cfg(feature = "random")]
         Random => {
             // Safety:
@@ -181,7 +181,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
 
             let inv_ca = IdxCa::from_vec(s.name(), inv);
             inv_ca.into_series()
-        }
+        },
         _ => {
             let inv_ca = IdxCa::from_vec(s.name(), inv);
             // Safety:
@@ -285,12 +285,12 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
                     // Safety:
                     // within bounds
                     unsafe { count.take_unchecked((&dense).into()).into_series() }
-                }
+                },
                 Min => {
                     // Safety:
                     // within bounds
                     unsafe { (count.take_unchecked((&dense).into()) + 1).into_series() }
-                }
+                },
                 Average => {
                     // Safety:
                     // in bounds
@@ -302,13 +302,13 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
                         .unwrap()
                         + 1.0;
                     (&a + &b) * 0.5
-                }
+                },
                 #[cfg(feature = "random")]
                 Dense | Ordinal | Random => unimplemented!(),
                 #[cfg(not(feature = "random"))]
                 Dense | Ordinal => unimplemented!(),
             }
-        }
+        },
     }
 }
 

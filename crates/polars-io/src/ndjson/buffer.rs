@@ -43,7 +43,7 @@ impl Buffer<'_> {
                     _ => buf.append_null(),
                 }
                 Ok(())
-            }
+            },
             Int32(buf) => {
                 let n = deserialize_number::<i32>(value);
                 match n {
@@ -51,7 +51,7 @@ impl Buffer<'_> {
                     None => buf.append_null(),
                 }
                 Ok(())
-            }
+            },
             Int64(buf) => {
                 let n = deserialize_number::<i64>(value);
                 match n {
@@ -59,7 +59,7 @@ impl Buffer<'_> {
                     None => buf.append_null(),
                 }
                 Ok(())
-            }
+            },
             UInt64(buf) => {
                 let n = deserialize_number::<u64>(value);
                 match n {
@@ -67,7 +67,7 @@ impl Buffer<'_> {
                     None => buf.append_null(),
                 }
                 Ok(())
-            }
+            },
             UInt32(buf) => {
                 let n = deserialize_number::<u32>(value);
                 match n {
@@ -75,7 +75,7 @@ impl Buffer<'_> {
                     None => buf.append_null(),
                 }
                 Ok(())
-            }
+            },
             Float32(buf) => {
                 let n = deserialize_number::<f32>(value);
                 match n {
@@ -83,7 +83,7 @@ impl Buffer<'_> {
                     None => buf.append_null(),
                 }
                 Ok(())
-            }
+            },
             Float64(buf) => {
                 let n = deserialize_number::<f64>(value);
                 match n {
@@ -91,7 +91,7 @@ impl Buffer<'_> {
                     None => buf.append_null(),
                 }
                 Ok(())
-            }
+            },
 
             Utf8(buf) => {
                 match value {
@@ -99,24 +99,24 @@ impl Buffer<'_> {
                     _ => buf.append_null(),
                 }
                 Ok(())
-            }
+            },
             #[cfg(feature = "dtype-datetime")]
             Datetime(buf, _, _) => {
                 let v = deserialize_datetime::<Int64Type>(value);
                 buf.append_option(v);
                 Ok(())
-            }
+            },
             #[cfg(feature = "dtype-date")]
             Date(buf) => {
                 let v = deserialize_datetime::<Int32Type>(value);
                 buf.append_option(v);
                 Ok(())
-            }
+            },
             All(dtype, buf) => {
                 let av = deserialize_all(value, dtype, self.ignore_errors)?;
                 buf.push(av);
                 Ok(())
-            }
+            },
             _ => panic!("unexpected dtype when deserializing ndjson"),
         }
     }
@@ -199,7 +199,7 @@ fn deserialize_all<'a>(
                 .collect::<PolarsResult<_>>()?;
             let s = Series::from_any_values_and_dtype("", &vals, inner_dtype, false)?;
             AnyValue::List(s)
-        }
+        },
         #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
             if let DataType::Struct(fields) = dtype {
@@ -224,7 +224,7 @@ fn deserialize_all<'a>(
                     ComputeError: "expected {} in json value, got object", dtype,
                 );
             }
-        }
+        },
         #[cfg(not(feature = "dtype-struct"))]
         val => AnyValue::Utf8Owned(format!("{:#?}", val).into()),
     };

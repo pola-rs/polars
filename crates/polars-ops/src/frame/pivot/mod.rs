@@ -35,38 +35,38 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.clone())
                     .into_series()
             }
-        }
+        },
         (DataType::Float32, DataType::UInt32) => {
             let ca = s.u32().unwrap();
             ca._reinterpret_float().into_series()
-        }
+        },
         (DataType::Float64, DataType::UInt64) => {
             let ca = s.u64().unwrap();
             ca._reinterpret_float().into_series()
-        }
+        },
         (DataType::Int32, DataType::UInt32) => {
             let ca = s.u32().unwrap();
             ca.reinterpret_signed()
-        }
+        },
         (DataType::Int64, DataType::UInt64) => {
             let ca = s.u64().unwrap();
             ca.reinterpret_signed()
-        }
+        },
         #[cfg(feature = "dtype-duration")]
         (DataType::Duration(_), DataType::UInt64) => {
             let ca = s.u64().unwrap();
             ca.reinterpret_signed().cast(logical_type).unwrap()
-        }
+        },
         #[cfg(feature = "dtype-datetime")]
         (DataType::Datetime(_, _), DataType::UInt64) => {
             let ca = s.u64().unwrap();
             ca.reinterpret_signed().cast(logical_type).unwrap()
-        }
+        },
         #[cfg(feature = "dtype-date")]
         (DataType::Date, DataType::UInt32) => {
             let ca = s.u32().unwrap();
             ca.reinterpret_signed().cast(logical_type).unwrap()
-        }
+        },
         _ => s.cast(logical_type).unwrap(),
     }
 }

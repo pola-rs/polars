@@ -698,7 +698,7 @@ impl SqlFunctionVisitor<'_> {
         match self.func.over.as_ref() {
             Some(WindowType::WindowSpec(spec)) => {
                 self.apply_cumulative_window(f, cumulative_f, spec)
-            }
+            },
             Some(WindowType::NamedWindow(named_window)) => polars_bail!(
                 InvalidOperation: "Named windows are not supported yet. Got {:?}",
                 named_window
@@ -746,7 +746,7 @@ impl SqlFunctionVisitor<'_> {
                 let expr = parse_sql_expr(sql_expr, self.ctx)?;
                 // apply the function on the inner expr -- e.g. SUM(a) -> SUM
                 Ok(f(expr))
-            }
+            },
             _ => self.not_supported_error(),
         }
     }
@@ -766,7 +766,7 @@ impl SqlFunctionVisitor<'_> {
                 let expr1 = parse_sql_expr(sql_expr1, self.ctx)?;
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 f(expr1, expr2)
-            }
+            },
             _ => self.not_supported_error(),
         }
     }
@@ -791,7 +791,7 @@ impl SqlFunctionVisitor<'_> {
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 let expr3 = Arg::from_sql_expr(sql_expr3, self.ctx)?;
                 f(expr1, expr2, expr3)
-            }
+            },
             _ => self.not_supported_error(),
         }
     }
@@ -814,7 +814,7 @@ impl SqlFunctionVisitor<'_> {
                 let expr =
                     self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
                 Ok(expr.count())
-            }
+            },
             // count(*)
             (false, [FunctionArgExpr::Wildcard]) => Ok(count()),
             // count(distinct column_name)
@@ -822,7 +822,7 @@ impl SqlFunctionVisitor<'_> {
                 let expr =
                     self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
                 Ok(expr.n_unique())
-            }
+            },
             _ => self.not_supported_error(),
         }
     }
@@ -856,7 +856,7 @@ impl SqlFunctionVisitor<'_> {
                         .collect::<PolarsResult<Vec<_>>>()?;
                     expr.over(partition_by)
                 }
-            }
+            },
             Some(WindowType::NamedWindow(named_window)) => polars_bail!(
                 InvalidOperation: "Named windows are not supported yet. Got: {:?}",
                 named_window

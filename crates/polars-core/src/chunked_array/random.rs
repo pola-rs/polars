@@ -85,13 +85,13 @@ impl Series {
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { self.take_unchecked(&idx) }
-            }
+            },
             false => {
                 let idx = create_rand_index_no_replacement(n, len, seed, shuffle);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { self.take_unchecked(&idx) }
-            }
+            },
         }
     }
 
@@ -139,13 +139,13 @@ where
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { Ok(self.take_unchecked((&idx).into())) }
-            }
+            },
             false => {
                 let idx = create_rand_index_no_replacement(n, len, seed, shuffle);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { Ok(self.take_unchecked((&idx).into())) }
-            }
+            },
         }
     }
 

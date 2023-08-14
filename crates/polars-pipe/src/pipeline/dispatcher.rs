@@ -247,8 +247,8 @@ impl PipeLine {
                         Ok(SinkResult::Finished) | Err(_) => {
                             let mut lock = sink_results.lock().unwrap();
                             *lock = Some(out)
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                 })
             }
@@ -293,7 +293,7 @@ impl PipeLine {
                     if let SinkResult::Finished = sink.sink(ec, chunk)? {
                         return Ok(SinkResult::Finished);
                     }
-                }
+                },
                 Some(op) => {
                     match op.execute(ec, &chunk)? {
                         OperatorResult::Finished(chunk) => in_process.push((op_i + 1, chunk)),
@@ -307,12 +307,12 @@ impl PipeLine {
                             // or sink into a slice so that we get sink::finished
                             // before we grow the stack with ever more coming chunks
                             in_process.push((op_i + 1, output_chunk));
-                        }
+                        },
                         OperatorResult::NeedsNewData => {
                             // done, take another chunk from the stack
-                        }
+                        },
                     }
-                }
+                },
             }
         }
         Ok(SinkResult::CanHaveMoreInput)
@@ -404,7 +404,7 @@ impl PipeLine {
                     // should not happen
                     FinalizedSink::Operator(_) => {
                         unreachable!()
-                    }
+                    },
                 }
             } else {
                 out = Some((shared_sink_count, reduced_sink))
@@ -446,7 +446,7 @@ impl PipeLine {
                     let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
                     sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
                     sink_nodes = std::mem::take(&mut pipeline.sink_nodes);
-                }
+                },
                 Some(FinalizedSink::Finished(df)) => return Ok(std::mem::take(df)),
                 Some(FinalizedSink::Source(src)) => return consume_source(&mut **src, &ec),
 
@@ -474,7 +474,7 @@ impl PipeLine {
                     }
                     sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
                     sink_nodes = std::mem::take(&mut pipeline.sink_nodes);
-                }
+                },
             }
         }
     }

@@ -50,7 +50,7 @@ where
                     // we allocated enough
                     unsafe { nulls_idx.push_unchecked(i) };
                     None
-                }
+                },
             }
         });
         vals.extend(iter);

@@ -70,7 +70,7 @@ where
             match arr.into_mut() {
                 Left(immutable) => {
                     extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-                }
+                },
                 Right(mut mutable) => {
                     for arr in other.downcast_iter() {
                         match arr.null_count() {
@@ -80,7 +80,7 @@ where
                     }
                     let arr: PrimitiveArray<T::Native> = mutable.into();
                     self.chunks.push(Box::new(arr) as ArrayRef)
-                }
+                },
             }
         }
         self.compute_len();
@@ -112,14 +112,14 @@ impl Utf8Chunked {
         match arr.into_mut() {
             Left(immutable) => {
                 extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            }
+            },
             Right(mut mutable) => {
                 for arr in other.downcast_iter() {
                     mutable.extend_trusted_len(arr.into_iter())
                 }
                 let arr: Utf8Array<i64> = mutable.into();
                 self.chunks.push(Box::new(arr) as ArrayRef)
-            }
+            },
         }
         self.compute_len();
         self.set_sorted_flag(IsSorted::Not);
@@ -151,14 +151,14 @@ impl BinaryChunked {
         match arr.into_mut() {
             Left(immutable) => {
                 extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            }
+            },
             Right(mut mutable) => {
                 for arr in other.downcast_iter() {
                     mutable.extend_trusted_len(arr.into_iter())
                 }
                 let arr: BinaryArray<i64> = mutable.into();
                 self.chunks.push(Box::new(arr) as ArrayRef)
-            }
+            },
         }
         self.compute_len();
     }
@@ -190,14 +190,14 @@ impl BooleanChunked {
         match arr.into_mut() {
             Left(immutable) => {
                 extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            }
+            },
             Right(mut mutable) => {
                 for arr in other.downcast_iter() {
                     mutable.extend_trusted_len(arr.into_iter())
                 }
                 let arr: BooleanArray = mutable.into();
                 self.chunks.push(Box::new(arr) as ArrayRef)
-            }
+            },
         }
         self.compute_len();
         self.set_sorted_flag(IsSorted::Not);

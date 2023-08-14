@@ -60,11 +60,11 @@ where
                 match opt_item {
                     Some(item) => {
                         std::ptr::write(ptr, item);
-                    }
+                    },
                     None => {
                         std::ptr::write(ptr, T::Native::default());
                         unset_bit_raw(validity_ptr, offset)
-                    }
+                    },
                 }
             });
             vals.set_len(size)
@@ -99,11 +99,11 @@ impl FromIteratorReversed<Option<bool>> for BooleanChunked {
                             // validity bit is already true
                             set_bit_raw(vals_ptr, offset);
                         }
-                    }
+                    },
                     None => {
                         // unset validity bit
                         unset_bit_raw(validity_ptr, offset)
-                    }
+                    },
                 }
             });
         }

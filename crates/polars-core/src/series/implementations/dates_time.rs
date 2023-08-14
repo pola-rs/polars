@@ -8,7 +8,7 @@
 //! (depending on the result) cast back to the original type
 //!
 use std::borrow::Cow;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 use ahash::RandomState;
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -39,10 +39,10 @@ macro_rules! impl_dyn_series {
             fn _dtype(&self) -> &DataType {
                 self.0.dtype()
             }
-            fn _get_flags(&self) -> u8{
+            fn _get_flags(&self) -> Settings{
                 self.0.get_flags()
             }
-            fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+            fn _set_flags(&mut self, flags: Settings){
                 self.0.set_flags(flags)
             }
 
@@ -63,9 +63,6 @@ macro_rules! impl_dyn_series {
                 self.0.cummin(reverse).$into_logical().into_series()
             }
 
-            fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
-                self.0.deref_mut().set_sorted_flag(is_sorted)
-            }
 
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(
@@ -166,9 +163,6 @@ macro_rules! impl_dyn_series {
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
-            fn is_sorted_flag(&self) -> IsSorted {
-                self.0.is_sorted_flag()
-            }
 
             fn rename(&mut self, name: &str) {
                 self.0.rename(name);

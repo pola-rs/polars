@@ -28,7 +28,7 @@ impl<'a> AnonymousListBuilder<'a> {
             Some(s) => return self.append_series(s),
             None => {
                 self.append_null();
-            }
+            },
         }
         Ok(())
     }
@@ -38,7 +38,7 @@ impl<'a> AnonymousListBuilder<'a> {
             Some(s) => self.append_array(s),
             None => {
                 self.append_null();
-            }
+            },
         }
     }
 
@@ -68,7 +68,7 @@ impl<'a> AnonymousListBuilder<'a> {
                 let arr = &**s.array_ref(0);
                 self.builder.push(arr);
                 return Ok(());
-            }
+            },
             dt => self.inner_dtype.update(dt)?,
         }
         self.builder.push_multiple(s.chunks());
@@ -130,12 +130,12 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
                     #[cfg(feature = "dtype-struct")]
                     DataType::Struct(_) => {
                         self.builder.push(&*(&**s.array_ref(0) as *const dyn Array));
-                    }
+                    },
                     dt => {
                         self.inner_dtype.update(dt)?;
                         self.builder
                             .push_multiple(&*(s.chunks().as_ref() as *const [ArrayRef]));
-                    }
+                    },
                 }
             }
             // this make sure that the underlying ArrayRef's are not dropped

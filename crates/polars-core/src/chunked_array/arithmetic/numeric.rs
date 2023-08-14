@@ -20,7 +20,7 @@ where
                 .map(|(lhs, rhs)| Box::new(kernel(lhs, rhs)) as ArrayRef)
                 .collect();
             unsafe { lhs.copy_with_chunks(chunks, false, false) }
-        }
+        },
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);
@@ -28,14 +28,14 @@ where
                 None => ChunkedArray::full_null(lhs.name(), lhs.len()),
                 Some(rhs) => lhs.apply(|lhs| operation(lhs, rhs)),
             }
-        }
+        },
         (1, _) => {
             let opt_lhs = lhs.get(0);
             match opt_lhs {
                 None => ChunkedArray::full_null(lhs.name(), rhs.len()),
                 Some(lhs) => rhs.apply(|rhs| operation(lhs, rhs)),
             }
-        }
+        },
         _ => panic!("Cannot apply operation on arrays of different lengths"),
     };
     ca.rename(lhs.name());
@@ -65,7 +65,7 @@ where
             }
             lhs.set_sorted_flag(IsSorted::Not);
             lhs
-        }
+        },
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);
@@ -74,9 +74,9 @@ where
                 Some(rhs) => {
                     lhs.apply_mut(|lhs| operation(lhs, rhs));
                     lhs
-                }
+                },
             }
-        }
+        },
         (1, _) => {
             let opt_lhs = lhs.get(0);
             match opt_lhs {
@@ -85,9 +85,9 @@ where
                     rhs.apply_mut(|rhs| operation(lhs_val, rhs));
                     rhs.rename(lhs.name());
                     rhs
-                }
+                },
             }
-        }
+        },
         _ => panic!("Cannot apply operation on arrays of different lengths"),
     };
     ca

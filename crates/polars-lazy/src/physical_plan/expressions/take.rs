@@ -88,7 +88,7 @@ impl PhysicalExpr for TakeExpr {
                             .zip(groups.first().iter())
                             .map(|(idx, first)| idx.map(|idx| idx + first))
                             .collect_trusted()
-                    }
+                    },
                     GroupsProxy::Slice { groups, .. } => {
                         if groups.iter().zip(idx).any(|(g, idx)| match idx {
                             None => true,
@@ -101,18 +101,18 @@ impl PhysicalExpr for TakeExpr {
                             .zip(groups.iter())
                             .map(|(idx, g)| idx.map(|idx| idx + g[0]))
                             .collect_trusted()
-                    }
+                    },
                 };
                 let taken = ac.flat_naive().take(&idx)?;
                 ac.with_series(taken, true, Some(&self.expr))?;
                 return Ok(ac);
-            }
+            },
             AggState::AggregatedList(s) => s.list().unwrap().clone(),
             // Maybe a literal as well, this needs a different path
             AggState::NotAggregated(_) => {
                 let s = idx.aggregated();
                 s.list().unwrap().clone()
-            }
+            },
             AggState::Literal(s) => {
                 let idx = s.cast(&IDX_DTYPE)?;
                 let idx = idx.idx().unwrap();
@@ -137,20 +137,20 @@ impl PhysicalExpr for TakeExpr {
                                     }
 
                                     groups.first().iter().map(|f| *f + idx).collect_trusted()
-                                }
+                                },
                                 GroupsProxy::Slice { groups, .. } => {
                                     if groups.iter().any(|g| idx >= g[1]) {
                                         self.oob_err()?;
                                     }
 
                                     groups.iter().map(|g| g[0] + idx).collect_trusted()
-                                }
+                                },
                             };
                             let taken = ac.flat_naive().take(&idx.into_inner())?;
                             ac.with_series(taken, true, Some(&self.expr))?;
                             ac.with_update_groups(UpdateGroups::WithGroupsLen);
                             Ok(ac)
-                        }
+                        },
                     }
                 } else {
                     let out = ac
@@ -163,7 +163,7 @@ impl PhysicalExpr for TakeExpr {
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
                     Ok(ac)
                 };
-            }
+            },
         };
 
         let s = idx.cast(&DataType::List(Box::new(IDX_DTYPE)))?;

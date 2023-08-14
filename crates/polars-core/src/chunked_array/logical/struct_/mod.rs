@@ -53,7 +53,7 @@ fn fields_to_struct_array(fields: &[Series], physical: bool) -> (ArrayRef, Vec<S
                     } else {
                         s.to_arrow(0)
                     }
-                }
+                },
             }
         })
         .collect::<Vec<_>>();
@@ -154,7 +154,7 @@ impl StructChunked {
                 Some(a) => *a = arr,
                 None => {
                     self.chunks.push(arr);
-                }
+                },
             }
         }
         self.chunks.truncate(n_chunks);
@@ -219,7 +219,7 @@ impl StructChunked {
                             validity_agg.map_or_else(|| Some(v.clone()), |agg| Some(v.bitor(&agg)));
                         // n.b. This is "free" since any bitops trigger a count.
                         n_nulls = validity_agg.as_ref().map(|v| v.unset_bits());
-                    }
+                    },
                 }
             }
             // If it's none, every array was either Null-type or all null
@@ -318,7 +318,7 @@ impl StructChunked {
                             } else {
                                 s.cast(&new_field.dtype)
                             }
-                        }
+                        },
                         None => Ok(Series::full_null(
                             new_field.name(),
                             struct_len,
@@ -327,7 +327,7 @@ impl StructChunked {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
                 StructChunked::new(self.name(), &new_fields).map(|ca| ca.into_series())
-            }
+            },
             DataType::Utf8 => {
                 let mut ca = self.clone();
                 ca.rechunk();
@@ -381,7 +381,7 @@ impl StructChunked {
                     )) as ArrayRef;
                     Series::try_from((ca.name().as_str(), array))
                 }
-            }
+            },
             _ => {
                 let fields = self
                     .fields
@@ -395,7 +395,7 @@ impl StructChunked {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(Self::new_unchecked(self.field.name(), &fields).into_series())
-            }
+            },
         }
     }
 
@@ -456,7 +456,7 @@ impl Drop for StructChunked {
                         ArrowDataType::Extension(name, _, _) if name == EXTENSION_NAME => unsafe {
                             drop_object_array(arr.as_ref())
                         },
-                        _ => {}
+                        _ => {},
                     }
                 }
             }

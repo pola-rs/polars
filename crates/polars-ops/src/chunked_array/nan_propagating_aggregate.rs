@@ -66,11 +66,11 @@ pub fn nan_min_s(s: &Series, name: &str) -> Series {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_min)])
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_min)])
-        }
+        },
         _ => panic!("expected float"),
     }
 }
@@ -79,11 +79,11 @@ pub fn nan_max_s(s: &Series, name: &str) -> Series {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_max)])
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_max)])
-        }
+        },
         _ => panic!("expected float"),
     }
 }
@@ -120,7 +120,7 @@ where
                     _ => {
                         let take = { ca.take_unchecked(idx.into()) };
                         ca_nan_agg(&take, nan_max)
-                    }
+                    },
                 }
             }
         }),
@@ -154,11 +154,11 @@ where
                         _ => {
                             let arr_group = _slice_from_offsets(ca, first, len);
                             ca_nan_agg(&arr_group, nan_max)
-                        }
+                        },
                     }
                 })
             }
-        }
+        },
     }
 }
 
@@ -192,7 +192,7 @@ where
                     _ => {
                         let take = { ca.take_unchecked(idx.into()) };
                         ca_nan_agg(&take, nan_min)
-                    }
+                    },
                 }
             }
         }),
@@ -226,11 +226,11 @@ where
                         _ => {
                             let arr_group = _slice_from_offsets(ca, first, len);
                             ca_nan_agg(&arr_group, nan_min)
-                        }
+                        },
                     }
                 })
             }
-        }
+        },
     }
 }
 
@@ -241,11 +241,11 @@ pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsProxy) -> Series {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             group_nan_min(ca, groups)
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             group_nan_min(ca, groups)
-        }
+        },
         _ => panic!("expected float"),
     }
 }
@@ -257,11 +257,11 @@ pub unsafe fn group_agg_nan_max_s(s: &Series, groups: &GroupsProxy) -> Series {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             group_nan_max(ca, groups)
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             group_nan_max(ca, groups)
-        }
+        },
         _ => panic!("expected float"),
     }
 }

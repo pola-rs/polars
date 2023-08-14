@@ -29,7 +29,7 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
             let s = s.cast(&Binary).unwrap();
             let ca = s.binary().unwrap();
             approx_n_unique_ca(ca)
-        }
+        },
         Float32 => approx_n_unique_ca(&s.bit_repr_small()),
         Float64 => approx_n_unique_ca(&s.bit_repr_large()),
         dt if dt.is_numeric() => {
@@ -37,7 +37,7 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 approx_n_unique_ca(ca)
             })
-        }
+        },
         dt => polars_bail!(opq = approx_n_unique, dt),
     }
 }

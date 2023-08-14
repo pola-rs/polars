@@ -53,7 +53,7 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::Eq => ChunkCompare::<&Series>::equal(left, right).map(|ca| ca.into_series()),
         Operator::NotEq => {
             ChunkCompare::<&Series>::not_equal(left, right).map(|ca| ca.into_series())
-        }
+        },
         Operator::Plus => Ok(left + right),
         Operator::Minus => Ok(left - right),
         Operator::Multiply => Ok(left * right),
@@ -73,7 +73,7 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
             {
                 panic!("activate 'round_series' feature")
             }
-        }
+        },
         Operator::And => left.bitand(right),
         Operator::Or => left.bitor(right),
         Operator::Xor => left.bitxor(right),
@@ -121,7 +121,7 @@ impl BinaryExpr {
                         let l = l.as_ref();
                         let r = r.as_ref();
                         Some(apply_operator(l, r, self.op))
-                    }
+                    },
                     _ => None,
                 }
                 .transpose()
@@ -133,15 +133,15 @@ impl BinaryExpr {
         use AggState::*;
         match (ac_l.agg_state(), ac_r.agg_state()) {
             // no need to change update groups
-            (AggregatedList(_), _) => {}
+            (AggregatedList(_), _) => {},
             // we can take the groups of the rhs
             (_, AggregatedList(_)) if matches!(ac_r.update_groups, UpdateGroups::No) => {
                 ac_l.groups = ac_r.groups
-            }
+            },
             // we must update the groups
             _ => {
                 ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-            }
+            },
         }
 
         ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
@@ -229,7 +229,7 @@ impl PhysicalExpr for BinaryExpr {
             (AggState::AggregatedFlat(_), AggState::NotAggregated(_))
             | (AggState::NotAggregated(_), AggState::AggregatedFlat(_)) => {
                 self.apply_group_aware(ac_l, ac_r)
-            }
+            },
             (AggState::AggregatedList(lhs), AggState::AggregatedList(rhs)) => {
                 let lhs = lhs.list().unwrap();
                 let rhs = rhs.list().unwrap();
@@ -237,7 +237,7 @@ impl PhysicalExpr for BinaryExpr {
                     lhs.apply_to_inner(&|lhs| apply_operator(&lhs, &rhs.get_inner(), self.op))?;
                 ac_l.with_series(out.into_series(), true, Some(&self.expr))?;
                 Ok(ac_l)
-            }
+            },
             _ => self.apply_group_aware(ac_l, ac_r),
         }
     }
@@ -314,7 +314,7 @@ mod stats {
                     .ok()
                     .map(|s| s.any())
                     == Some(true)
-            }
+            },
             // col >= lit
             Operator::GtEq => {
                 // literal is bigger than max value
@@ -323,7 +323,7 @@ mod stats {
                     .ok()
                     .map(|ca| ca.any())
                     == Some(true)
-            }
+            },
             // col < lit
             Operator::Lt => {
                 // literal is smaller than min value
@@ -332,7 +332,7 @@ mod stats {
                     .ok()
                     .map(|ca| ca.any())
                     == Some(true)
-            }
+            },
             // col <= lit
             Operator::LtEq => {
                 // literal is smaller than min value
@@ -341,7 +341,7 @@ mod stats {
                     .ok()
                     .map(|ca| ca.any())
                     == Some(true)
-            }
+            },
             // default: read the file
             _ => true,
         }
@@ -357,7 +357,7 @@ mod stats {
                     .ok()
                     .map(|ca| ca.any())
                     == Some(true)
-            }
+            },
             Operator::GtEq => {
                 // literal is bigger than max value
                 // selection needs all rows
@@ -365,7 +365,7 @@ mod stats {
                     .ok()
                     .map(|ca| ca.any())
                     == Some(true)
-            }
+            },
             Operator::Lt => {
                 // literal is smaller than min value
                 // selection needs all rows
@@ -373,7 +373,7 @@ mod stats {
                     .ok()
                     .map(|ca| ca.any())
                     == Some(true)
-            }
+            },
             Operator::LtEq => {
                 // literal is smaller than min value
                 // selection needs all rows
@@ -381,7 +381,7 @@ mod stats {
                     .ok()
                     .map(|ca| ca.any())
                     == Some(true)
-            }
+            },
             // default: read the file
             _ => true,
         }
@@ -411,11 +411,11 @@ mod stats {
             {
                 match (fld_l.data_type(), fld_r.data_type()) {
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Utf8, DataType::Categorical(_)) => {}
+                    (DataType::Utf8, DataType::Categorical(_)) => {},
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_), DataType::Utf8) => {}
+                    (DataType::Categorical(_), DataType::Utf8) => {},
                     (l, r) if l != r => panic!("implementation error: {l:?}, {r:?}"),
-                    _ => {}
+                    _ => {},
                 }
             }
 
@@ -432,9 +432,9 @@ mod stats {
                             debug_assert_eq!(min_max_s.null_count(), 0);
                             let lit_s = self.right.evaluate(&dummy, &state).unwrap();
                             Ok(apply_operator_stats_rhs_lit(&min_max_s, &lit_s, self.op))
-                        }
+                        },
                     }
-                }
+                },
                 (true, false) => {
                     let r = stats.get_stats(fld_r.name())?;
                     match r.to_min_max() {
@@ -444,9 +444,9 @@ mod stats {
                             debug_assert_eq!(min_max_s.null_count(), 0);
                             let lit_s = self.left.evaluate(&dummy, &state).unwrap();
                             Ok(apply_operator_stats_lhs_lit(&lit_s, &min_max_s, self.op))
-                        }
+                        },
                     }
-                }
+                },
                 // default: read the file
                 _ => Ok(true),
             };

@@ -23,7 +23,7 @@ impl From<&CategoricalChunked> for DictionaryArray<u32> {
                     DictionaryArray::try_new_unchecked(dtype, keys.clone(), Box::new(arr.clone()))
                         .unwrap()
                 }
-            }
+            },
             RevMapping::Global(reverse_map, values, _uuid) => {
                 let iter = keys
                     .into_iter()
@@ -36,7 +36,7 @@ impl From<&CategoricalChunked> for DictionaryArray<u32> {
                     DictionaryArray::try_new_unchecked(dtype, keys, Box::new(values.clone()))
                         .unwrap()
                 }
-            }
+            },
         }
     }
 }
@@ -78,7 +78,7 @@ impl From<&CategoricalChunked> for DictionaryArray<i64> {
                     DictionaryArray::try_new_unchecked(dtype, keys, Box::new(values.clone()))
                         .unwrap()
                 }
-            }
+            },
         }
     }
 }

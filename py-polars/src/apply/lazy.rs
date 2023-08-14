@@ -38,9 +38,9 @@ impl ToSeries for PyObject {
                             "expected a something that could convert to a `Series` but got: {}",
                             self.as_ref(py).get_type()
                         )
-                    }
+                    },
                 }
-            }
+            },
         };
         let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
         // Finally get the actual Series

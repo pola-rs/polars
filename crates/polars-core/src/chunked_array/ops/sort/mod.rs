@@ -484,7 +484,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                     BinaryArray::from_data_unchecked_default(offsets.into(), values.into(), None)
                 };
                 (self.name(), ar).into()
-            }
+            },
             (_, true) => {
                 for val in v {
                     values.extend_from_slice(val);
@@ -506,7 +506,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                     )
                 };
                 (self.name(), ar).into()
-            }
+            },
             (_, false) => {
                 let mut validity = MutableBitmap::with_capacity(len);
                 validity.extend_constant(null_count, false);
@@ -529,7 +529,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                     )
                 };
                 (self.name(), ar).into()
-            }
+            },
         };
 
         let s = if options.descending {
@@ -682,7 +682,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
                 .map(convert_sort_column_multi_sort)
                 .collect::<PolarsResult<Vec<_>>>()?;
             return StructChunked::new(ca.name(), &new_fields).map(|ca| ca.into_series());
-        }
+        },
         _ => {
             let phys = s.to_physical_repr().into_owned();
             polars_ensure!(
@@ -690,7 +690,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
                 ComputeError: "cannot sort column of dtype `{}`", s.dtype()
             );
             phys
-        }
+        },
     };
     Ok(out)
 }

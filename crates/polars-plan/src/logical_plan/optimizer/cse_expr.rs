@@ -9,7 +9,7 @@ use crate::prelude::visitor::{ALogicalPlanNode, AexprNode, RewritingVisitor, Tre
 // We use hashes to get an Identifier
 // but this is very hard to debug, so we also have a version that
 // uses a string trail.
-#[cfg(feature = "debug_cse")]
+#[cfg(test)]
 mod identifier_impl {
     use super::*;
     /// Identifier that shows the sub-expression path.
@@ -33,23 +33,23 @@ mod identifier_impl {
             !self.inner.is_empty()
         }
 
-        pub fn materialize(&self) -> &str {
-            format!("{}{}", CSE_REPLACED, self.inner.as_ref())
+        pub fn materialize(&self) -> String {
+            format!("{}{}", CSE_REPLACED, self.inner)
         }
 
         pub fn combine(&mut self, other: &Identifier) {
             self.inner.push('!');
-            self.inner.push_str(other.materialize());
+            self.inner.push_str(&other.inner);
         }
 
         pub fn add_ae_node(&self, ae: &AExpr) -> Self {
-            let inner = format!("{:E}{}", ae_node, self.inner);
+            let inner = format!("{:E}{}", ae, self.inner);
             Self { inner }
         }
     }
 }
 
-#[cfg(not(feature = "debug_cse"))]
+#[cfg(not(test))]
 mod identifier_impl {
     use std::hash::{Hash, Hasher};
 
@@ -248,7 +248,7 @@ impl ExprIdentifierVisitor<'_> {
                 VisitRecord::SubExprId(s, valid) => {
                     id.combine(&s);
                     is_valid_accumulated &= valid
-                }
+                },
             }
         }
         unreachable!()
@@ -264,7 +264,7 @@ impl ExprIdentifierVisitor<'_> {
             // skip window functions for now until we properly implemented the physical side
             AExpr::Column(_) | AExpr::Count | AExpr::Literal(_) | AExpr::Alias(_, _) => {
                 Some((VisitRecursion::Continue, true))
-            }
+            },
             #[cfg(feature = "random")]
             AExpr::Function {
                 function: FunctionExpr::Random { .. },
@@ -278,20 +278,20 @@ impl ExprIdentifierVisitor<'_> {
                     match ae {
                         AExpr::Agg(_) | AExpr::AnonymousFunction { .. } => {
                             Some((VisitRecursion::Continue, false))
-                        }
+                        },
                         AExpr::Function { options, .. } => {
                             if options.is_groups_sensitive() {
                                 Some((VisitRecursion::Continue, false))
                             } else {
                                 None
                             }
-                        }
+                        },
                         _ => None,
                     }
                 } else {
                     None
                 }
-            }
+            },
         }
     }
 }
@@ -635,7 +635,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
         Ok(match node.to_alp() {
             Projection { .. } | HStack { .. } | Aggregate { .. } => {
                 RewriteRecursion::MutateAndContinue
-            }
+            },
             _ => RewriteRecursion::NoMutateAndContinue,
         })
     }
@@ -661,7 +661,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                     schema,
                     options,
                 } => {
-                    let input_schema = alp.schema(lp_arena);
+                    let input_schema = lp_arena.get(*input).schema(lp_arena);
                     if let Some(expr) = self.find_cse(
                         expr,
                         &mut expr_arena,
@@ -677,14 +677,14 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         };
                         lp_arena.replace(arena_idx, lp);
                     }
-                }
+                },
                 ALogicalPlan::HStack {
                     input,
                     exprs,
                     schema,
                     options,
                 } => {
-                    let input_schema = alp.schema(lp_arena);
+                    let input_schema = lp_arena.get(*input).schema(lp_arena);
                     if let Some(exprs) = self.find_cse(
                         exprs,
                         &mut expr_arena,
@@ -700,7 +700,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         };
                         lp_arena.replace(arena_idx, lp);
                     }
-                }
+                },
                 ALogicalPlan::Aggregate {
                     input,
                     keys,
@@ -710,7 +710,7 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                     apply,
                     schema,
                 } => {
-                    let input_schema = alp.schema(lp_arena);
+                    let input_schema = lp_arena.get(*input).schema(lp_arena);
                     if let Some(aggs) = self.find_cse(
                         aggs,
                         &mut expr_arena,
@@ -741,8 +741,8 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         };
                         lp_arena.replace(arena_idx, lp);
                     }
-                }
-                _ => {}
+                },
+                _ => {},
             }
             PolarsResult::Ok(())
         })?;
@@ -759,7 +759,7 @@ mod test {
 
     #[test]
     fn test_cse_replacer() {
-        let e = (col("f00").sum() * col("bar")).sum() + col("f00").sum();
+        let e = (col("foo").sum() * col("bar")).sum() + col("foo").sum();
 
         let mut arena = Arena::new();
         let node = to_aexpr(e, &mut arena);
@@ -775,10 +775,6 @@ mod test {
 
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
 
-        let mut schema = Schema::new();
-        schema.with_column("f00".into(), DataType::Int32);
-        schema.with_column("bar".into(), DataType::Int32);
-
         let mut replaced_ids = Default::default();
         let mut rewriter =
             CommonSubExprRewriter::new(&se_count, &id_array, &mut replaced_ids, id_array_offset);
@@ -789,7 +785,7 @@ mod test {
         let e = node_to_expr(ae_node.node(), &arena);
         assert_eq!(
             format!("{}", e),
-            r#"[(col("__POLARS_CSER_sum!col(f00)")) + ([(col("bar")) * (col("__POLARS_CSER_sum!col(f00)"))].sum())]"#
+            r#"[([(col("__POLARS_CSER_sum!col(foo)")) * (col("bar"))].sum()) + (col("__POLARS_CSER_sum!col(foo)"))]"#
         );
     }
 
@@ -826,11 +822,11 @@ mod test {
         assert_eq!(default.len(), 3);
         assert_eq!(
             format!("{}", node_to_expr(default[0], &expr_arena)),
-            r#"[(col("b")) * (col("__POLARS_CSER_sum!col(a)"))]"#
+            r#"col("__POLARS_CSER_binary: *!sum!col(a)!col(b)").alias("a")"#
         );
         assert_eq!(
             format!("{}", node_to_expr(default[1], &expr_arena)),
-            r#"[(col("__POLARS_CSER_sum!col(a)")) + ([(col("b")) * (col("__POLARS_CSER_sum!col(a)"))])]"#
+            r#"[(col("__POLARS_CSER_binary: *!sum!col(a)!col(b)")) + (col("__POLARS_CSER_sum!col(a)"))].alias("a")"#
         );
         assert_eq!(
             format!("{}", node_to_expr(default[2], &expr_arena)),
@@ -838,9 +834,20 @@ mod test {
         );
 
         let cse = expr.cse_exprs();
-        assert_eq!(cse.len(), 1);
+        assert_eq!(cse.len(), 2);
+
+        // Hashmap can change the order of the cse's.
+        let mut cse = cse
+            .iter()
+            .map(|node| format!("{}", node_to_expr(*node, &expr_arena)))
+            .collect::<Vec<_>>();
+        cse.sort();
         assert_eq!(
-            format!("{}", node_to_expr(cse[0], &expr_arena)),
+            cse[0],
+            r#"[(col("a").sum()) * (col("b"))].alias("__POLARS_CSER_binary: *!sum!col(a)!col(b)")"#
+        );
+        assert_eq!(
+            cse[1],
             r#"col("a").sum().alias("__POLARS_CSER_sum!col(a)")"#
         );
     }

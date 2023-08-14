@@ -18,7 +18,7 @@ impl Series {
                 let n = n as usize;
                 let len = s.len() - n;
                 Ok(&self.slice(n as i64, len) - &s.slice(0, len))
-            }
+            },
         }
     }
 }

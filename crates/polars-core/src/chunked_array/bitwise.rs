@@ -51,7 +51,7 @@ impl BitOr for &BooleanChunked {
         match (self.len(), rhs.len()) {
             // make sure that we fall through if both are equal unit lengths
             // otherwise we stackoverflow
-            (1, 1) => {}
+            (1, 1) => {},
             (1, _) => {
                 return match self.get(0) {
                     Some(true) => BooleanChunked::full(self.name(), true, rhs.len()),
@@ -59,18 +59,18 @@ impl BitOr for &BooleanChunked {
                         let mut rhs = rhs.clone();
                         rhs.rename(self.name());
                         rhs
-                    }
+                    },
                     None => &self.new_from_index(0, rhs.len()) | rhs,
                 };
-            }
+            },
             (_, 1) => {
                 return match rhs.get(0) {
                     Some(true) => BooleanChunked::full(self.name(), true, self.len()),
                     Some(false) => self.clone(),
                     None => &rhs.new_from_index(0, self.len()) | self,
                 };
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         let (lhs, rhs) = align_chunks_binary(self, rhs);
@@ -97,30 +97,30 @@ impl BitXor for &BooleanChunked {
         match (self.len(), rhs.len()) {
             // make sure that we fall through if both are equal unit lengths
             // otherwise we stackoverflow
-            (1, 1) => {}
+            (1, 1) => {},
             (1, _) => {
                 return match self.get(0) {
                     Some(true) => {
                         let mut rhs = rhs.not();
                         rhs.rename(self.name());
                         rhs
-                    }
+                    },
                     Some(false) => {
                         let mut rhs = rhs.clone();
                         rhs.rename(self.name());
                         rhs
-                    }
+                    },
                     None => &self.new_from_index(0, rhs.len()) | rhs,
                 };
-            }
+            },
             (_, 1) => {
                 return match rhs.get(0) {
                     Some(true) => self.not(),
                     Some(false) => self.clone(),
                     None => &rhs.new_from_index(0, self.len()) | self,
                 };
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         let (l, r) = align_chunks_binary(self, rhs);
@@ -151,22 +151,22 @@ impl BitAnd for &BooleanChunked {
         match (self.len(), rhs.len()) {
             // make sure that we fall through if both are equal unit lengths
             // otherwise we stackoverflow
-            (1, 1) => {}
+            (1, 1) => {},
             (1, _) => {
                 return match self.get(0) {
                     Some(true) => rhs.clone(),
                     Some(false) => BooleanChunked::full(self.name(), false, rhs.len()),
                     None => &self.new_from_index(0, rhs.len()) & rhs,
                 };
-            }
+            },
             (_, 1) => {
                 return match rhs.get(0) {
                     Some(true) => self.clone(),
                     Some(false) => BooleanChunked::full(self.name(), false, self.len()),
                     None => self & &rhs.new_from_index(0, self.len()),
                 };
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         let (lhs, rhs) = align_chunks_binary(self, rhs);

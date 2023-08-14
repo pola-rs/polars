@@ -82,7 +82,7 @@ impl PartialEq for DataType {
                 #[cfg(feature = "dtype-array")]
                 (Array(left_inner, left_width), Array(right_inner, right_width)) => {
                     left_width == right_width && left_inner == right_inner
-                }
+                },
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
         }
@@ -139,7 +139,7 @@ impl DataType {
                     .map(|s| Field::new(s.name(), s.data_type().to_physical()))
                     .collect();
                 Struct(new_fields)
-            }
+            },
             _ => self.clone(),
         }
     }
@@ -263,7 +263,7 @@ impl DataType {
             Struct(fields) => {
                 let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
                 ArrowDataType::Struct(fields)
-            }
+            },
             Unknown => unreachable!(),
         }
     }
@@ -309,9 +309,9 @@ impl Display for DataType {
                     (None, Some(scale)) => f.write_str(&format!("decimal[{scale}]")),
                     (Some(precision), Some(scale)) => {
                         f.write_str(&format!("decimal[{precision},{scale}]"))
-                    }
+                    },
                 };
-            }
+            },
             DataType::Utf8 => "str",
             DataType::Binary => "binary",
             DataType::Date => "date",
@@ -321,7 +321,7 @@ impl Display for DataType {
                     Some(tz) => format!("datetime[{tu}, {tz}]"),
                 };
                 return f.write_str(&s);
-            }
+            },
             DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
@@ -347,17 +347,17 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
         (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r))) => {
             let rev_map = merge_rev_map(rev_map_l, rev_map_r)?;
             Categorical(Some(rev_map))
-        }
+        },
         (List(inner_l), List(inner_r)) => {
             let merged = merge_dtypes(inner_l, inner_r)?;
             List(Box::new(merged))
-        }
+        },
         #[cfg(feature = "dtype-array")]
         (Array(inner_l, width_l), Array(inner_r, width_r)) => {
             polars_ensure!(width_l == width_r, ComputeError: "widths of FixedSizeWidth Series are not equal");
             let merged = merge_dtypes(inner_l, inner_r)?;
             Array(Box::new(merged), *width_l)
-        }
+        },
         (left, right) if left == right => left.clone(),
         _ => polars_bail!(ComputeError: "unable to merge datatypes"),
     })

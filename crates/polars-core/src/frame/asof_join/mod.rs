@@ -90,7 +90,7 @@ where
                         other.cont_slice().unwrap(),
                         tolerance,
                     )
-                }
+                },
             },
             AsofStrategy::Backward => match tolerance {
                 None => join_asof_backward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
@@ -101,11 +101,11 @@ where
                         other.cont_slice().unwrap(),
                         tolerance,
                     )
-                }
+                },
             },
             AsofStrategy::Nearest => {
                 join_asof_nearest(ca.cont_slice().unwrap(), other.cont_slice().unwrap())
-            }
+            },
         };
         Ok(out)
     }
@@ -163,7 +163,7 @@ impl DataFrame {
                     .i32()
                     .unwrap()
                     .join_asof(&right_key, strategy, tolerance)
-            }
+            },
         }?;
 
         // take_idx are sorted so this is a bound check for all

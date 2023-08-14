@@ -3253,22 +3253,24 @@ def test_item() -> None:
     assert df.item() == 1
 
     df = pl.DataFrame({"a": [1, 2]})
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r".* frame has shape \(2, 1\)"):
         df.item()
 
     assert df.item(0, 0) == 1
     assert df.item(1, "a") == 2
 
     df = pl.DataFrame({"a": [1], "b": [2]})
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r".* frame has shape \(1, 2\)"):
         df.item()
 
     assert df.item(0, "a") == 1
     assert df.item(0, "b") == 2
 
     df = pl.DataFrame({})
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r".* frame has shape \(0, 0\)"):
         df.item()
+    with pytest.raises(ValueError, match="column index 10 is out of bounds"):
+        df.item(0, 10)
 
 
 @pytest.mark.parametrize(

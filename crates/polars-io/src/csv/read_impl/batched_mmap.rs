@@ -34,7 +34,7 @@ pub(crate) fn get_file_chunks_iterator(
             Some(pos) => search_pos + pos,
             None => {
                 break;
-            }
+            },
         };
         offsets.push_back((*last_pos, end_pos));
         *last_pos = end_pos;
@@ -95,9 +95,9 @@ impl<'a> Iterator for ChunkOffsetIter<'a> {
                         let out = Some((self.last_offset, self.bytes.len()));
                         self.last_offset = self.bytes.len();
                         out
-                    }
+                    },
                 }
-            }
+            },
         }
     }
 }

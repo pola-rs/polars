@@ -8,7 +8,7 @@ pub fn cast(array: &dyn Array, to_type: &DataType) -> Result<Box<dyn Array>> {
         DataType::Decimal(precision, scale) if matches!(array.data_type(), DataType::LargeUtf8) => {
             let array = array.as_any().downcast_ref::<LargeStringArray>().unwrap();
             Ok(cast_utf8_to_decimal(array, Some(*precision), *scale))
-        }
+        },
         _ => arrow::compute::cast::cast(array, to_type, Default::default()),
     }
 }
