@@ -1427,6 +1427,22 @@ impl FromPyObject<'_> for Wrap<JoinValidation> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<QuoteStyle> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "always" => QuoteStyle::Always,
+            "necessary" => QuoteStyle::Necessary,
+            "non_numeric" => QuoteStyle::NonNumeric,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "validate must be one of {{'always', 'necessary', 'non_numeric'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 #[cfg(feature = "list_sets")]
 impl FromPyObject<'_> for Wrap<SetOperation> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
