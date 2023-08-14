@@ -358,3 +358,11 @@ def test_cse_10441() -> None:
     assert pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1]}).select(
         pl.col("a").sum() + pl.col("a").sum() + pl.col("b").sum()
     ).collect(comm_subexpr_elim=True).to_dict(False) == {"a": [18]}
+
+
+def test_cse_10452() -> None:
+    q = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1]}).select(
+        pl.col("b").sum() + pl.col("a").sum().over([pl.col("b")]) + pl.col("b").sum()
+    )
+    assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
+    assert q.collect(comm_subexpr_elim=True).to_dict(False) == {"b": [13, 14, 15]}
