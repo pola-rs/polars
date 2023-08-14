@@ -403,7 +403,7 @@ class DataFrame:
             )
         else:
             raise ValueError(
-                f"dataFrame constructor called with unsupported type; got {type(data).__name__!r}"
+                f"DataFrame constructor called with unsupported type; got {type(data).__name__!r}"
             )
 
     @classmethod
@@ -723,7 +723,7 @@ class DataFrame:
             if dtype_slice is not None:
                 raise ValueError(
                     "cannot use glob patterns and unnamed dtypes as `dtypes` argument;"
-                    "\n\nUse dtypes: Mapping[str, Type[DataType]"
+                    " Use dtypes: Mapping[str, Type[DataType]"
                 )
             from polars import scan_csv
 
@@ -755,7 +755,7 @@ class DataFrame:
             else:
                 raise ValueError(
                     "cannot use glob patterns and integer based projection as `columns`"
-                    "\n\nargument; Use columns: List[str]"
+                    " argument; Use columns: List[str]"
                 )
 
         projection, columns = handle_projection_columns(columns)
@@ -844,7 +844,7 @@ class DataFrame:
             else:
                 raise ValueError(
                     "cannot use glob patterns and integer based projection as `columns`"
-                    "\n\nargument; Use columns: List[str]"
+                    " argument; Use columns: List[str]"
                 )
 
         projection, columns = handle_projection_columns(columns)
@@ -957,7 +957,7 @@ class DataFrame:
             else:
                 raise ValueError(
                     "cannot use glob patterns and integer based projection as `columns`"
-                    "\n\nargument; Use columns: List[str]"
+                    " argument; Use columns: List[str]"
                 )
             return cls._from_pydf(df._df)
 
@@ -1247,7 +1247,7 @@ class DataFrame:
         if nan_as_null:
             raise NotImplementedError(
                 "functionality for `nan_as_null` has not been implemented and the"
-                "\n\nparameter will be removed in a future version."
+                " parameter will be removed in a future version."
                 "\n\nUse the default `nan_as_null=False`"
             )
 
@@ -1546,7 +1546,7 @@ class DataFrame:
                     if len(col_selection) != self.width:
                         raise ValueError(
                             f"expected {self.width} values when selecting columns by"
-                            f"\n\nboolean mask. Got {len(col_selection)}"
+                            f" boolean mask. Got {len(col_selection)}"
                         )
                     series_list = []
                     for i, val in enumerate(col_selection):
@@ -1641,8 +1641,8 @@ class DataFrame:
 
         # if no data has been returned, the operation is not supported
         raise ValueError(
-            f"cannot __getitem__ on DataFrame with item: '{item!r}'"
-            f"\n\nof type: '{type(item).__name__!r}'"
+            f"cannot __getitem__ on DataFrame with item: {item!r}"
+            f" of type: {type(item).__name__!r}"
         )
 
     def __setitem__(
@@ -1654,7 +1654,7 @@ class DataFrame:
         if isinstance(key, str):
             raise TypeError(
                 "'DataFrame' object does not support 'Series' assignment by index."
-                "\n\nUse 'DataFrame.with_columns'"
+                " Use 'DataFrame.with_columns'"
             )
 
         # df[["C", "D"]]
@@ -1666,7 +1666,7 @@ class DataFrame:
             if value.shape[1] != len(key):
                 raise ValueError(
                     "matrix columns should be equal to list use to determine column"
-                    "\n\nnames"
+                    " names"
                 )
 
             # todo! we can parallelize this by calling from_numpy
@@ -1684,7 +1684,7 @@ class DataFrame:
             ) or is_bool_sequence(row_selection):
                 raise ValueError(
                     "not allowed to set 'DataFrame' by boolean mask in the"
-                    "\n\nrow position. Consider using 'DataFrame.with_columns'"
+                    " row position. Consider using 'DataFrame.with_columns'"
                 )
 
             # get series column selection
@@ -1707,9 +1707,9 @@ class DataFrame:
                 self.replace(col_selection, s)
         else:
             raise ValueError(
-                f"cannot __setitem__ on DataFrame with key: '{key!r}'"
-                f"\n\nof type: '{type(key).__name__!r}' and value: '{value!r}'"
-                f"\n\nof type: '{type(value).__name__!r}'."
+                f"cannot __setitem__ on DataFrame with key: {key!r}"
+                f" of type: {type(key).__name__!r} and value: {value!r}"
+                f" of type: {type(value).__name__!r}."
             )
 
     def __len__(self) -> int:
@@ -1787,7 +1787,7 @@ class DataFrame:
             if self.shape != (1, 1):
                 raise ValueError(
                     f"can only call '.item()' if the dataframe is of shape (1,1), or if"
-                    f"\n\nexplicit row/col values are provided; frame has shape {self.shape!r}"
+                    f" explicit row/col values are provided; frame has shape {self.shape!r}"
                 )
             return self._df.select_at_idx(0).get_idx(0)
 
@@ -3288,7 +3288,7 @@ class DataFrame:
             else:
                 raise ValueError(
                     f"value for 'if_exists'={if_exists} was unexpected."
-                    f"\n\nChoose one of: {'fail', 'replace', 'append'}"
+                    f" Choose one of: {'fail', 'replace', 'append'}"
                 )
             with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
                 cursor.adbc_ingest(table_name, self.to_arrow(), mode)
@@ -7713,7 +7713,7 @@ class DataFrame:
         else:
             raise ValueError(
                 f"strategy: '{strategy}' not understood."
-                f"\n\nChoose one of {{'first',  'all'}}"
+                f" Choose one of {{'first',  'all'}}"
             )
 
     @overload
@@ -8666,7 +8666,7 @@ class DataFrame:
             if not isinstance(by_predicate, pl.Expr):
                 raise TypeError(
                     f"expected 'by_predicate to be an expression;"
-                    f"\n\nfound {type(by_predicate).__name__!r}"
+                    f" found {type(by_predicate).__name__!r}"
                 )
             rows = self.filter(by_predicate).rows()
             n_rows = len(rows)

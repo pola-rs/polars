@@ -1478,6 +1478,6 @@ def test_lazy_comparison_operators(
     # we cannot compare lazy frames, so all should raise a TypeError
     with pytest.raises(
         TypeError,
-        match=f'"{comparators[0]}" comparison not supported for LazyFrame objects',
+        match=f'"{comparators[0]!r}" comparison not supported for LazyFrame objects',
     ):
         comparators[1](pl.LazyFrame(), pl.LazyFrame())

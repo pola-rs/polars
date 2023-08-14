@@ -465,7 +465,7 @@ def sequence_to_pyseries(
                 if dtype_tz is not None and tz != dtype_tz:
                     raise ValueError(
                         "given time_zone is different from that of timezone aware datetimes."
-                        f"\n\nGiven: '{dtype_tz!r}', got: '{tz!r}'"
+                        f" Given: '{dtype_tz!r}', got: '{tz!r}'"
                     )
                 if tz != "UTC":
                     warnings.warn(
@@ -557,7 +557,7 @@ def _pandas_series_to_arrow(
         # contains duplicated columns and a duplicated column is requested with df["a"].
         raise ValueError(
             "duplicate column names found: ",
-            f"{values.columns.tolist()!s}"  # type: ignore[union-attr]
+            f"{values.columns.tolist()!s}",  # type: ignore[union-attr]
         )
 
 

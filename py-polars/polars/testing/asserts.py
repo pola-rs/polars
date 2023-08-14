@@ -125,7 +125,7 @@ def assert_frame_equal(
                 categorical_as_str=categorical_as_str,
             )
         except AssertionError as exc:
-            msg = f"Values for column {c!r} are different."
+            msg = f"values for column {c!r} are different."
             raise AssertionError(msg) from exc
 
 

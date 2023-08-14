@@ -431,7 +431,7 @@ def py_type_to_dtype(
         if not raise_unmatched:
             return None
         raise ValueError(
-            f"cannot infer dtype from '{data_type!r}' (type: {type(data_type).__name__!r})"
+            f"cannot infer dtype from {data_type!r} (type: {type(data_type).__name__!r})"
         ) from None
 
 

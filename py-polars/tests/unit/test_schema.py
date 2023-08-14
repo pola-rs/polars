@@ -338,7 +338,7 @@ def test_from_dicts_all_cols_6716() -> None:
 
 
 def test_from_dicts_empty() -> None:
-    with pytest.raises(pl.NoDataError, match="No rows. Cannot infer schema."):
+    with pytest.raises(pl.NoDataError, match="no rows. Cannot infer schema"):
         pl.from_dicts([])
 
 

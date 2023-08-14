@@ -203,7 +203,7 @@ def col(
         else:
             raise TypeError(
                 "invalid input for `col`. Expected iterable of type `str` or `DataType`,"
-                f"\n\ngot iterable of type {type(item).__name__!r}"
+                f" got iterable of type {type(item).__name__!r}"
             )
     else:
         raise TypeError(

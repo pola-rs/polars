@@ -724,4 +724,6 @@ def from_pandas(
             include_index=include_index,
         )
     else:
-        raise ValueError(f"expected pandas DataFrame or Series, got {type(data).__name__!r}")
+        raise ValueError(
+            f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
+        )

@@ -744,11 +744,13 @@ class LazyFrame:
     def __bool__(self) -> NoReturn:
         raise ValueError(
             "the truth value of a LazyFrame is ambiguous; consequently it"
-            "\n\ncannot be used in boolean context with and/or/not operators"
+            " cannot be used in boolean context with and/or/not operators"
         )
 
     def _comparison_error(self, operator: str) -> NoReturn:
-        raise TypeError(f'"{operator!r}" comparison not supported for LazyFrame objects')
+        raise TypeError(
+            f'"{operator!r}" comparison not supported for LazyFrame objects'
+        )
 
     def __eq__(self, other: Any) -> NoReturn:
         self._comparison_error("==")

@@ -184,7 +184,7 @@ def _open_adbc_connection(connection_uri: str) -> Any:
     except ImportError:
         raise ImportError(
             f"ADBC {driver_name} driver not detected; if ADBC supports this database,"
-            f"\n\nplease run `pip install adbc-driver-{driver_name} pyarrow`"
+            f" please run `pip install adbc-driver-{driver_name} pyarrow`"
         ) from None
 
     # some backends require the driver name to be stripped from the URI

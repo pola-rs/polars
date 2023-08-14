@@ -78,7 +78,7 @@ def read_ipc(
     if use_pyarrow and n_rows and not memory_map:
         raise ValueError(
             "``n_rows`` cannot be used with ``use_pyarrow=True`"
-            "\n\nand memory_map=False`"
+            " and memory_map=False`"
         )
 
     storage_options = storage_options or {}

@@ -2338,7 +2338,7 @@ def test_arithmetic() -> None:
     assert_frame_equal(out, expected)
 
     # cannot do arithmetic with a sequence
-    with pytest.raises(ValueError, match="Operation not supported"):
+    with pytest.raises(ValueError, match="operation not supported"):
         _ = df + [1]  # type: ignore[operator]
 
 
@@ -3022,14 +3022,14 @@ def test_set() -> None:
 
     with pytest.raises(
         ValueError,
-        match=r"Not allowed to set 'DataFrame' by "
+        match=r"not allowed to set 'DataFrame' by "
         r"boolean mask in the row position. "
         r"Consider using 'DataFrame.with_columns'",
     ):
         df[df["ham"] > 0.5, "ham"] = "a"
     with pytest.raises(
         ValueError,
-        match=r"Not allowed to set 'DataFrame' by "
+        match=r"not allowed to set 'DataFrame' by "
         r"boolean mask in the row position. "
         r"Consider using 'DataFrame.with_columns'",
     ):
@@ -3109,7 +3109,7 @@ def test_init_datetimes_with_timezone() -> None:
         ):
             with pytest.raises(
                 ValueError,
-                match="Given time_zone is different from that of timezone aware datetimes",
+                match="given time_zone is different from that of timezone aware datetimes",
             ):
                 pl.DataFrame(  # type: ignore[arg-type]
                     data={"d1": [dtm], "d2": [dtm]},

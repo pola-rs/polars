@@ -137,7 +137,7 @@ class LazyGroupBy:
             raise ValueError(
                 "specifying aggregations as a dictionary is not supported."
                 "\n\nTry unpacking the dictionary to take advantage of the keyword syntax"
-                "\n\nof the `agg` method"
+                " of the `agg` method"
             )
 
         if "aggs" in named_aggs:

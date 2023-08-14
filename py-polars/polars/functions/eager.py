@@ -177,7 +177,7 @@ def concat(
         else:
             raise ValueError(
                 f"`how` must be one of {{'vertical','vertical_relaxed','diagonal','horizontal','align'}},"
-                f"\n\ngot {how!r}"
+                f" ngot {how!r}"
             )
     elif isinstance(first, pl.LazyFrame):
         if how == "vertical":
@@ -194,12 +194,14 @@ def concat(
         if how == "vertical":
             out = wrap_s(plr.concat_series(elems))
         else:
-            raise ValueError("'Series' only allows 'vertical' concat strategy")
+            raise ValueError("'Series' only allows {'vertical'} concat strategy")
 
     elif isinstance(first, pl.Expr):
         return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
     else:
-        raise ValueError(f"did not expect type: {type(first).__name__!r} in 'pl.concat'")
+        raise ValueError(
+            f"did not expect type: {type(first).__name__!r} in 'pl.concat'"
+        )
 
     if rechunk:
         return out.rechunk()

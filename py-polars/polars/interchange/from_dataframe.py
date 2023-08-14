@@ -74,7 +74,7 @@ def _df_to_pyarrow_table(df: Any, *, allow_copy: bool = False) -> pa.Table:
     if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version("11"):
         raise ImportError(
             "pyarrow>=11.0.0 is required for converting a dataframe interchange object"
-            "\n\nto a Polars dataframe"
+            " to a Polars dataframe"
         )
 
     import pyarrow.interchange  # noqa: F401
@@ -90,8 +90,8 @@ def _df_to_pyarrow_table_zero_copy(df: Any) -> pa.Table:
     if _dfi_contains_categorical_data(dfi):
         raise TypeError(
             "Polars can not currently guarantee zero-copy conversion from Arrow for"
-            "\n\ncategorical columns. Set `allow_copy=True` or cast categorical columns to"
-            "\n\nstring first"
+            " categorical columns. Set `allow_copy=True` or cast categorical columns to"
+            " string first"
         )
 
     if isinstance(df, pa.Table):

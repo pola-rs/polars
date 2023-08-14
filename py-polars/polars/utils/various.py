@@ -123,7 +123,7 @@ def handle_projection_columns(
         elif not is_str_sequence(columns):
             raise ValueError(
                 "'columns' arg should contain a list of all integers or all strings"
-                "\n\nvalues"
+                " values"
             )
         else:
             new_columns = columns

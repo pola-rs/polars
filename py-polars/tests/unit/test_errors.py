@@ -68,7 +68,7 @@ def test_error_on_invalid_series_init() -> None:
         py_type = dtype_to_py_type(dtype)
         with pytest.raises(
             TypeError,
-            match=f"'float' object cannot be interpreted as a {py_type.__name__}",
+            match=f"'float' object cannot be interpreted as a {py_type.__name__!r}",
         ):
             pl.Series([1.5, 2.0, 3.75], dtype=dtype)
 
@@ -116,13 +116,13 @@ def test_join_lazy_on_df() -> None:
 
     with pytest.raises(
         TypeError,
-        match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
+        match="expected 'other' .* to be a LazyFrame.* not a 'DataFrame'",
     ):
         df_left.lazy().join(df_right, on="Id")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
+        match="expected 'other' .* to be a LazyFrame.* not a 'DataFrame'",
     ):
         df_left.lazy().join_asof(df_right, on="Id")  # type: ignore[arg-type]
 
@@ -157,25 +157,24 @@ def test_getitem_errs() -> None:
 
     with pytest.raises(
         ValueError,
-        match=r"Cannot __getitem__ on DataFrame with item: "
-        r"'{'some'}' of type: '<class 'set'>'.",
+        match=r"cannot __getitem__ on DataFrame with item: " r"{'some'} of type: 'set'",
     ):
         df[{"some"}]  # type: ignore[call-overload]
 
     with pytest.raises(
         ValueError,
-        match=r"Cannot __getitem__ on Series of dtype: "
+        match=r"cannot __getitem__ on Series of dtype: "
         r"'Int64' with argument: "
-        r"'{'strange'}' of type: '<class 'set'>'.",
+        r"{'strange'} of type: 'set'",
     ):
         df["a"][{"strange"}]  # type: ignore[call-overload]
 
     with pytest.raises(
         ValueError,
-        match=r"Cannot __setitem__ on "
-        r"DataFrame with key: '{'some'}' of "
-        r"type: '<class 'set'>' and value: "
-        r"'foo' of type: '<class 'str'>'",
+        match=r"cannot __setitem__ on "
+        r"DataFrame with key: {'some'} of "
+        r"type: 'set' and value: "
+        r"'foo' of type: 'str'",
     ):
         df[{"some"}] = "foo"  # type: ignore[index]
 
@@ -298,7 +297,7 @@ def test_lazy_concat_err() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies.",
+        match="'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies",
     ):
         pl.concat([df1.lazy(), df2.lazy()], how="horizontal").collect()
 
@@ -308,7 +307,7 @@ def test_series_concat_err(how: ConcatMethod) -> None:
     s = pl.Series([1, 2, 3])
     with pytest.raises(
         ValueError,
-        match="'Series' only allows {'vertical'} concat strategy.",
+        match="'Series' only allows {'vertical'} concat strategy",
     ):
         pl.concat([s, s], how=how)
 
@@ -356,7 +355,7 @@ def test_datetime_time_add_err() -> None:
 def test_invalid_dtype() -> None:
     with pytest.raises(
         ValueError,
-        match=r"Given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",
+        match=r"given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",
     ):
         pl.Series([1, 2], dtype="mayonnaise")  # type: ignore[arg-type]
 
