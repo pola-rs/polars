@@ -16,7 +16,7 @@ polars-utils = { version = "0.31.1", path = "../polars-utils" }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
-bitflags = { workspace = true, features = ["serde"] }
+bitflags = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 comfy-table = { version = "7.0.1", default_features = false, optional = true }
@@ -136,7 +136,7 @@ parquet = ["arrow/io_parquet"]
 bigidx = ["polars-arrow/bigidx"]
 python = []
 
-serde = ["dep:serde", "smartstring/serde"]
+serde = ["dep:serde", "smartstring/serde", "bitflags/serde"]
 serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
 
 docs-selection = [
