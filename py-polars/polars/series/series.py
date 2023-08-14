@@ -1679,9 +1679,9 @@ class Series:
     ) -> Series | DataFrame:
         ...
 
-    @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.18.14")
+    @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.19.0")
     @deprecate_renamed_parameter("bins", "breaks", version="0.18.8")
-    @deprecate_renamed_parameter("series", "as_series", version="0.18.14")
+    @deprecate_renamed_parameter("series", "as_series", version="0.19.0")
     def cut(
         self,
         breaks: Sequence[float],
@@ -1707,14 +1707,14 @@ class Series:
             Name of the breakpoint column. Only used if ``include_breaks`` is set to
             ``True``.
 
-            .. deprecated:: 0.18.14
+            .. deprecated:: 0.19.0
                 This parameter will be removed. Use `Series.struct.rename_fields` to
                 rename the field instead.
         category_label
             Name of the category column. Only used if ``include_breaks`` is set to
             ``True``.
 
-            .. deprecated:: 0.18.14
+            .. deprecated:: 0.19.0
                 This parameter will be removed. Use `Series.struct.rename_fields` to
                 rename the field instead.
         left_closed
@@ -1726,7 +1726,7 @@ class Series:
         as_series
             If True, return a categorical Series in the data's original order.
 
-            .. deprecated:: 0.18.14
+            .. deprecated:: 0.19.0
                 This parameter will be removed. The same behavior can be achieved by
                 setting ``include_breaks=True`, unnesting the resulting struct Series,
                 and adding the result to the original Series.
@@ -1739,7 +1739,7 @@ class Series:
         --------
         Divide the series into three categories.
 
-        >>> s = pl.int_range(-2, 3, eager=True)
+        >>> s = pl.Series("int", [-2, -1, 0, 1, 2])
         >>> s.cut([-1, 1], labels=["a", "b", "c"])
         shape: (5,)
         Series: 'int' [cat]
@@ -1773,13 +1773,13 @@ class Series:
             issue_deprecation_warning(
                 "The `break_point_label` parameter for `Series.cut` will be removed."
                 " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.18.14",
+                version="0.19.0",
             )
         if category_label != "category":
             issue_deprecation_warning(
                 "The `category_label` parameter for `Series.cut` will be removed."
                 " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.18.14",
+                version="0.19.0",
             )
         if not as_series:
             issue_deprecation_warning(
@@ -1787,7 +1787,7 @@ class Series:
                 " The same behavior can be achieved by setting ``include_breaks=True`,"
                 " unnesting the resulting struct Series,"
                 " and adding the result to the original Series.",
-                version="0.18.14",
+                version="0.19.0",
             )
             temp_name = self.name + "_bin"
             return (

@@ -3309,49 +3309,45 @@ class Expr:
         labels
             Labels to assign to bins. If given, the length must be len(breaks) + 1.
         left_closed
-            Whether intervals should be [) instead of the default of (]
+            Set the intervals to be closed left instead of closed right.
         include_breaks
             Include the the right endpoint of the bin each observation falls in.
-            If True, the resulting column will be a Struct.
+            If set to ``True``, the resulting column will be a :class:`Struct`.
 
         Examples
         --------
-        >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
-        >>> df = pl.DataFrame(dict(g=g, x=range(10)))
-        >>> df.with_columns(q=pl.col("x").cut([2, 5]))
-        shape: (10, 3)
-        ┌─────┬─────┬───────────┐
-        │ g   ┆ x   ┆ q         │
-        │ --- ┆ --- ┆ ---       │
-        │ str ┆ i64 ┆ cat       │
-        ╞═════╪═════╪═══════════╡
-        │ a   ┆ 0   ┆ (-inf, 2] │
-        │ a   ┆ 1   ┆ (-inf, 2] │
-        │ a   ┆ 2   ┆ (-inf, 2] │
-        │ a   ┆ 3   ┆ (2, 5]    │
-        │ …   ┆ …   ┆ …         │
-        │ b   ┆ 6   ┆ (5, inf]  │
-        │ b   ┆ 7   ┆ (5, inf]  │
-        │ b   ┆ 8   ┆ (5, inf]  │
-        │ b   ┆ 9   ┆ (5, inf]  │
-        └─────┴─────┴───────────┘
-        >>> df.with_columns(q=pl.col("x").cut([2, 5], left_closed=True))
-        shape: (10, 3)
-        ┌─────┬─────┬───────────┐
-        │ g   ┆ x   ┆ q         │
-        │ --- ┆ --- ┆ ---       │
-        │ str ┆ i64 ┆ cat       │
-        ╞═════╪═════╪═══════════╡
-        │ a   ┆ 0   ┆ [-inf, 2) │
-        │ a   ┆ 1   ┆ [-inf, 2) │
-        │ a   ┆ 2   ┆ [2, 5)    │
-        │ a   ┆ 3   ┆ [2, 5)    │
-        │ …   ┆ …   ┆ …         │
-        │ b   ┆ 6   ┆ [5, inf)  │
-        │ b   ┆ 7   ┆ [5, inf)  │
-        │ b   ┆ 8   ┆ [5, inf)  │
-        │ b   ┆ 9   ┆ [5, inf)  │
-        └─────┴─────┴───────────┘
+        Divide a column into three categories.
+
+        >>> df = pl.DataFrame({"foo": [-2, -1, 0, 1, 2]})
+        >>> df.with_columns(pl.col("foo").cut([-1, 1], labels=["a", "b", "c"]).alias("cut"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ foo ┆ cut │
+        │ --- ┆ --- │
+        │ i64 ┆ cat │
+        ╞═════╪═════╡
+        │ -2  ┆ a   │
+        │ -1  ┆ a   │
+        │ 0   ┆ b   │
+        │ 1   ┆ b   │
+        │ 2   ┆ c   │
+        └─────┴─────┘
+
+        Add both the category and the breakpoint.
+
+        >>> df.with_columns(pl.col("foo").cut([-1, 1], include_breaks=True).alias("cut")).unnest("cut")
+        shape: (5, 3)
+        ┌─────┬──────┬────────────┐
+        │ foo ┆ brk  ┆ foo_bin    │
+        │ --- ┆ ---  ┆ ---        │
+        │ i64 ┆ f64  ┆ cat        │
+        ╞═════╪══════╪════════════╡
+        │ -2  ┆ -1.0 ┆ (-inf, -1] │
+        │ -1  ┆ -1.0 ┆ (-inf, -1] │
+        │ 0   ┆ 1.0  ┆ (-1, 1]    │
+        │ 1   ┆ 1.0  ┆ (-1, 1]    │
+        │ 2   ┆ inf  ┆ (1, inf]   │
+        └─────┴──────┴────────────┘
 
         """
         return self._from_pyexpr(
