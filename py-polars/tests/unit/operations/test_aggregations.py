@@ -280,3 +280,11 @@ def test_sum_empty_and_null_set() -> None:
     df = pl.DataFrame({"a": [None, None, None], "b": [1, 1, 1]})
     assert df.select(pl.sum("a")).item() == 0.0
     assert df.groupby("b").agg(pl.sum("a"))["a"].item() == 0.0
+
+
+def test_10455() -> None:
+    df = pl.DataFrame({
+        "x": [1] * 1000,
+        "y": [None] * 1000,
+    })
+    assert df.groupby("x").sum().to_dict(False) == {"x": [1], "y": [0.0]}
