@@ -790,8 +790,8 @@ def test_lit_dtypes() -> None:
             "f32": lit_series(0, pl.Float32),
             "u16": lit_series(0, pl.UInt16),
             "i16": lit_series(0, pl.Int16),
-            "i64": lit_series([8], None),
-            "list_i64": lit_series([[1, 2, 3]], None),
+            "i64": lit_series(pl.Series([8]), None),
+            "list_i64": lit_series(pl.Series([[1, 2, 3]]), None),
         }
     )
     assert df.dtypes == [

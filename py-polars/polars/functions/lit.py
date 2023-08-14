@@ -14,6 +14,7 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
+from polars.utils.deprecation import issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -114,12 +115,19 @@ def lit(
             return e
         return e.alias(name)
 
-    elif (_check_for_numpy(value) and isinstance(value, np.ndarray)) or isinstance(
-        value, (list, tuple)
-    ):
+    elif _check_for_numpy(value) and isinstance(value, np.ndarray):
         return lit(pl.Series("", value))
 
-    elif dtype:
+    elif isinstance(value, (list, tuple)):
+        issue_deprecation_warning(
+            "Behavior for `lit` will change for sequence inputs."
+            " The result will change to be a literal of type List."
+            " To retain the old behavior, pass a Series instead, e.g. `Series(sequence)`.",
+            version="0.18.14",
+        )
+        return lit(pl.Series("", value))
+
+    if dtype:
         return wrap_expr(plr.lit(value, allow_object)).cast(dtype)
 
     try:
@@ -143,4 +151,5 @@ def lit(
 
     except AttributeError:
         item = value
+
     return wrap_expr(plr.lit(item, allow_object))
