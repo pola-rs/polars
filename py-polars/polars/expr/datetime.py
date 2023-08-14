@@ -1322,7 +1322,7 @@ class ExprDateTimeNameSpace:
             return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
         else:
             raise ValueError(
-                f"time_unit must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit}"
+                f"time_unit must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
             )
 
     def timestamp(self, time_unit: TimeUnit = "us") -> Expr:

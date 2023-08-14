@@ -316,7 +316,7 @@ def _get_delta_lake_table(
 def _check_if_delta_available() -> None:
     if not _DELTALAKE_AVAILABLE:
         raise ImportError(
-            "deltalake is not installed. Please run `pip install deltalake>=0.9.0`."
+            "deltalake is not installed. Please run `pip install deltalake>=0.9.0`"
         )
 
 
@@ -326,7 +326,7 @@ def _check_for_unsupported_types(dtypes: list[PolarsDataType]) -> None:
     overlap = schema_dtypes & unsupported_types
 
     if overlap:
-        raise TypeError(f"dataframe contains unsupported data types: {overlap}")
+        raise TypeError(f"dataframe contains unsupported data types: {overlap!r}")
 
 
 def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:

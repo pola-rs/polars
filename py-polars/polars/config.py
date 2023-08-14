@@ -125,7 +125,7 @@ class Config(contextlib.ContextDecorator):
             if not hasattr(self, opt) and not opt.startswith("set_"):
                 opt = f"set_{opt}"
             if not hasattr(self, opt):
-                raise AttributeError(f"Config has no {opt!r} option")
+                raise AttributeError(f"config has no {opt!r} option")
             getattr(self, opt)(value)
 
     def __enter__(self) -> Config:

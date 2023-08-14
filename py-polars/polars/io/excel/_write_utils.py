@@ -212,7 +212,7 @@ def _xl_inject_dummy_table_columns(
 
     for col, definition in options.items():
         if col in df_original_columns:
-            raise DuplicateError(f"Cannot create a second {col!r} column")
+            raise DuplicateError(f"cannot create a second {col!r} column")
         elif not isinstance(definition, dict):
             df_select_cols.append(col)
         else:
@@ -263,7 +263,7 @@ def _xl_inject_sparklines(
     m: dict[str, Any] = {}
     data_cols = params.get("columns") if isinstance(params, dict) else params
     if not data_cols:
-        raise ValueError("Supplying 'columns' param value is mandatory for sparklines")
+        raise ValueError("supplying 'columns' param value is mandatory for sparklines")
     elif not _adjacent_cols(df, data_cols, min_max=m):
         raise RuntimeError("sparkline data range/cols must all be adjacent")
 
@@ -377,7 +377,7 @@ def _xl_setup_table_columns(
     for fmt in dtype_formats.values():
         if not isinstance(fmt, str):
             raise TypeError(
-                f"Invalid dtype_format value: {fmt!r} (expected format string, got {type(fmt)})"
+                f"invalid dtype_format value: {fmt!r} (expected format string, got {type(fmt).__name__!r})"
             )
 
     # inject sparkline/row-total placeholder(s)
@@ -474,7 +474,7 @@ def _xl_setup_table_options(
         )
         for key in table_style:
             if key not in valid_options:
-                raise ValueError(f"Invalid table style key:{key}")
+                raise ValueError(f"invalid table style key:{key!r}")
 
         table_options = table_style.copy()
         table_style = table_options.pop("style", None)

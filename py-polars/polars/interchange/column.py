@@ -35,7 +35,7 @@ class PolarsColumn:
             if not allow_copy:
                 raise RuntimeError(
                     f"column {column.name!r} must be converted to a local categorical,"
-                    " which is not zero-copy"
+                    "\n\nwhich is not zero-copy"
                 )
             column = column.cat.to_local()
 

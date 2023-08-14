@@ -417,10 +417,10 @@ def by_dtype(
         elif isinstance(tp, Collection):
             for t in tp:
                 if not is_polars_dtype(t):
-                    raise TypeError(f"Invalid dtype: {t!r}")
+                    raise TypeError(f"invalid dtype: {t!r}")
                 all_dtypes.append(t)
         else:
-            raise TypeError(f"Invalid dtype: {tp!r}")
+            raise TypeError(f"invalid dtype: {tp!r}")
 
     return _selector_proxy_(
         F.col(*all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
@@ -486,7 +486,7 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
         elif isinstance(nm, Collection):
             for n in nm:
                 if not isinstance(n, str):
-                    raise TypeError(f"Invalid name: {n!r}")
+                    raise TypeError(f"invalid name: {n!r}")
                 all_names.append(n)
         else:
             TypeError(f"Invalid name: {nm!r}")
