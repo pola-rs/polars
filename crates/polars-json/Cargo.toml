@@ -9,9 +9,9 @@ repository = { workspace = true }
 description = "JSON related logic for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { version = "0.31.1", path = "../polars-arrow", default-features = false }
-polars-error = { version = "0.31.1", path = "../polars-error" }
-polars-utils = { version = "0.31.1", path = "../polars-utils" }
+polars-arrow = { version = "0.32.0", path = "../polars-arrow", default-features = false }
+polars-error = { version = "0.32.0", path = "../polars-error" }
+polars-utils = { version = "0.32.0", path = "../polars-utils" }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
