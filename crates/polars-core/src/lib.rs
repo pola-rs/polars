@@ -5,6 +5,7 @@
     feature = "nightly",
     allow(clippy::incorrect_partial_ord_impl_on_ord_type)
 )] // remove once stable
+#![cfg_attr(feature = "nightly", allow(invalid_reference_casting))]
 extern crate core;
 
 #[macro_use]

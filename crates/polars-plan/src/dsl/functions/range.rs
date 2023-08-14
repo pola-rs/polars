@@ -67,6 +67,7 @@ pub fn range<T: Range<T>>(low: T, high: T) -> Expr {
 
 /// Create a date range from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
+#[allow(dead_code)] // Remove (invalid hit on nightly 2023-08-14).
 pub fn date_range(
     start: Expr,
     end: Expr,
@@ -125,6 +126,7 @@ pub fn date_ranges(
 
 /// Generate a time range.
 #[cfg(feature = "temporal")]
+#[allow(dead_code)] // Remove (invalid hit on nightly 2023-08-14).
 pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
     let input = vec![start, end];
 
