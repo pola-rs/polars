@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import random
-import string
 from datetime import date, datetime
 from typing import Any
 
-import numpy as np
 import pytest
 
 import polars as pl
@@ -509,28 +506,12 @@ def test_sort_type_coercion_6892() -> None:
     }
 
 
-def get_str_ints_df(n: int) -> pl.DataFrame:
-    strs = pl.Series("strs", random.choices(string.ascii_lowercase, k=n))
-    strs = pl.select(
-        pl.when(strs == "a")
-        .then(pl.lit(""))
-        .when(strs == "b")
-        .then(None)
-        .otherwise(strs)
-        .alias("strs")
-    ).to_series()
-
-    vals = pl.Series("vals", np.random.rand(n))
-
-    return pl.DataFrame([vals, strs])
-
-
 @pytest.mark.slow()
-def test_sort_row_fmt() -> None:
+def test_sort_row_fmt(str_ints_df: pl.DataFrame) -> None:
     # we sort nulls_last as this will always dispatch
     # to row_fmt and is the default in pandas
 
-    df = get_str_ints_df(1000)
+    df = str_ints_df
     df_pd = df.to_pandas()
 
     for descending in [True, False]:
@@ -543,10 +524,12 @@ def test_sort_row_fmt() -> None:
 
 
 @pytest.mark.slow()
-def test_streaming_sort_multiple_columns(monkeypatch: Any, capfd: Any) -> None:
+def test_streaming_sort_multiple_columns(
+    str_ints_df: pl.DataFrame, monkeypatch: Any, capfd: Any
+) -> None:
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
-    df = get_str_ints_df(1000)
+    df = str_ints_df
 
     out = df.lazy().sort(["strs", "vals"]).collect(streaming=True)
     assert_frame_equal(out, out.sort(["strs", "vals"]))
