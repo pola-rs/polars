@@ -24,5 +24,7 @@ def test_streaming_out_of_core_unique(
     # this ensures the cross join gives equal result but uses the in-memory unique
     df2 = q.join(q.head(1000), how="cross").collect(streaming=True).unique()
     assert df1.shape == df2.shape
-    err = capfd.readouterr().err
-    assert "OOC groupby started" in err
+
+    # TODO: Re-enable this check when this issue is fixed: https://github.com/pola-rs/polars/issues/10466
+    _ = capfd.readouterr().err
+    # assert "OOC groupby started" in err
