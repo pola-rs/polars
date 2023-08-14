@@ -211,17 +211,6 @@ def test_glob_parquet(df: pl.DataFrame, tmp_path: Path) -> None:
     assert pl.scan_parquet(path_glob).collect().shape == (3, 16)
 
 
-@pytest.mark.write_disk()
-def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    file_path = tmp_path / "small.parquet"
-    df.write_parquet(file_path)
-
-    path_glob = tmp_path / "small*.parquet"
-    result = pl.scan_parquet(path_glob).select(pl.all().first()).collect(streaming=True)
-    assert result.shape == (1, 16)
-
-
 def test_chunked_round_trip() -> None:
     df1 = pl.DataFrame(
         {

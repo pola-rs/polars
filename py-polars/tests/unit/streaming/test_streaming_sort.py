@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any
 
@@ -138,3 +140,16 @@ def test_streaming_sort_multiple_columns(
     assert "RUN STREAMING PIPELINE" in err
     assert "df -> sort_multiple" in err
     assert out.columns == ["vals", "strs"]
+
+
+def test_streaming_sort_sorted_flag() -> None:
+    # empty
+    q = pl.LazyFrame(
+        schema={
+            "store_id": pl.UInt16,
+            "item_id": pl.UInt32,
+            "timestamp": pl.Datetime,
+        }
+    ).sort("timestamp")
+
+    assert q.collect(streaming=True)["timestamp"].flags["SORTED_ASC"]

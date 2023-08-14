@@ -280,3 +280,62 @@ def test_stream_empty_file(tmp_path: Path) -> None:
     )
     df.write_parquet(p)
     assert pl.scan_parquet(p).collect(streaming=True).schema == schema
+
+
+def test_streaming_empty_df() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", ["a", "b", "c", "b", "a", "a"], dtype=pl.Categorical()),
+            pl.Series("b", ["b", "c", "c", "b", "a", "c"], dtype=pl.Categorical()),
+        ]
+    )
+
+    result = (
+        df.lazy()
+        .join(df.lazy(), on="a", how="inner")
+        .filter(False)
+        .collect(streaming=True)
+    )
+
+    assert result.to_dict(False) == {"a": [], "b": [], "b_right": []}
+
+
+def test_streaming_duplicate_cols_5537() -> None:
+    assert pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).lazy().with_columns(
+        [(pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)]
+    ).collect(streaming=True).to_dict(False) == {
+        "a": [3, 6, 9],
+        "b": [1, 2, 3],
+        "foo": [2, 4, 6],
+    }
+
+
+def test_null_sum_streaming_10455() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1] * 10,
+            "y": [None] * 10,
+        }
+    )
+    assert df.lazy().groupby("x").sum().collect(streaming=True).to_dict(False) == {
+        "x": [1],
+        "y": [0.0],
+    }
+
+
+def test_boolean_agg_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 1, 1],
+            "y": [False, True, False],
+        }
+    ).lazy()
+
+    agg_df = df.groupby("x").agg(pl.col("y").max().alias("max_y"))
+
+    for streaming in [True, False]:
+        assert (
+            agg_df.collect(streaming=streaming).schema
+            == agg_df.schema
+            == {"x": pl.Int64, "max_y": pl.Boolean}
+        )
