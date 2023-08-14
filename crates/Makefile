@@ -112,94 +112,36 @@ help:  ## Display this help screen
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' | sort
 
 .PHONY: check-wasm
-check-wasm:  ## Check wasm build with supported features
-	cargo check --target wasm32-unknown-unknown -p polars --no-default-features \
-		-F abs                   \
-		-F algo                  \
-		-F approx_unique         \
-		-F arg_where             \
-		-F asof_join             \
-		-F avro                  \
-		-F avx512                \
-		-F bigidx                \
-		-F binary_encoding       \
-		-F checked_arithmetic    \
-		-F chunked_ids           \
-		-F coalesce              \
-		-F concat_str            \
-		-F cse                   \
-		-F cum_agg               \
-		-F cumulative_eval       \
-		-F dataframe_arithmetic  \
-		-F date_offset           \
-		-F decompress            \
-		-F describe              \
-		-F diagonal_concat       \
-		-F diff                  \
-		-F docs                  \
-		-F dot_diagram           \
-		-F dot_product           \
-		-F dtype-date            \
-		-F dtype-datetime        \
-		-F dtype-duration        \
-		-F dtype-slim            \
-		-F dtype-struct          \
-		-F dtype-time            \
-		-F dynamic_groupby       \
-		-F ewma                  \
-		-F fmt_no_tty            \
-		-F fused                 \
-		-F groupby_list          \
-		-F horizontal_concat     \
-		-F interpolate           \
-		-F is_first              \
-		-F is_in                 \
-		-F is_last               \
-		-F is_unique             \
-		-F lazy                  \
-		-F lazy_regex            \
-		-F list_count            \
-		-F list_eval             \
-		-F list_take             \
-		-F list_to_struct        \
-		-F log                   \
-		-F merge_sorted          \
-		-F meta                  \
-		-F mode                  \
-		-F moment                \
-		-F ndarray               \
-		-F object                \
-		-F partition_by          \
-		-F pct_change            \
-		-F pivot                 \
-		-F product               \
-		-F propagate_nans        \
-		-F random                \
-		-F range                 \
-		-F rank                  \
-		-F reinterpret           \
-		-F repeat_by             \
-		-F rolling_window        \
-		-F round_series          \
-		-F row_hash              \
-		-F rows                  \
-		-F search_sorted         \
-		-F semi_anti_join        \
-		-F serde                 \
-		-F serde-lazy            \
-		-F sign                  \
-		-F simd                  \
-		-F sort_multiple         \
-		-F string_encoding       \
-		-F string_from_radix     \
-		-F string_justify        \
-		-F strings               \
-		-F take_opt_iter         \
-		-F temporal              \
-		-F timezones             \
-		-F to_dummies            \
-		-F top_k                 \
-		-F trigonometry          \
-		-F true_div              \
-		-F unique_counts         \
-		-F zip_with
+check-wasm:  ## Check wasm build without supported features
+	cargo hack check --target wasm32-unknown-unknown -p polars --no-dev-deps  \
+		--each-feature                        \
+		--exclude-features async              \
+		--exclude-features aws                \
+		--exclude-features azure              \
+		--exclude-features cross_join         \
+		--exclude-features csv                \
+		--exclude-features decompress-fast    \
+		--exclude-features default            \
+		--exclude-features docs-selection     \
+		--exclude-features dtype-array        \
+		--exclude-features dtype-categorical  \
+		--exclude-features dtype-decimal      \
+		--exclude-features dtype-full         \
+		--exclude-features dtype-i16          \
+		--exclude-features dtype-i8           \
+		--exclude-features dtype-u16          \
+		--exclude-features dtype-u8           \
+		--exclude-features extract_jsonpath   \
+		--exclude-features fmt                \
+		--exclude-features gcp                \
+		--exclude-features ipc                \
+		--exclude-features ipc_streaming      \
+		--exclude-features json               \
+		--exclude-features nightly            \
+		--exclude-features parquet            \
+		--exclude-features performant         \
+		--exclude-features sql                \
+		--exclude-features streaming          \
+		--exclude-features test
+
+
