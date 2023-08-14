@@ -47,22 +47,6 @@ mod test {
 
     struct JsonEncodedRegistry;
     impl FunctionRegistry for JsonEncodedRegistry {
-        fn try_encode_udf(
-            &self,
-            _udf: &dyn polars_plan::prelude::DataFrameUdf,
-            _buf: &mut Vec<u8>,
-        ) -> PolarsResult<()> {
-            todo!()
-        }
-
-        fn try_decode_udf(
-            &self,
-            _name: &str,
-            _bytes: &[u8],
-        ) -> PolarsResult<Option<Arc<dyn polars_plan::prelude::DataFrameUdf>>> {
-            Ok(None)
-        }
-
         fn try_encode_scan(
             &self,
             scan: &dyn AnonymousScan,
@@ -91,7 +75,22 @@ mod test {
                 Ok(None)
             }
         }
+
+        fn try_encode_udf(
+            &self,
+            _udf: &dyn polars_plan::prelude::DataFrameUdf,
+        ) -> PolarsResult<polars_plan::prelude::UserDefinedNode> {
+            todo!()
+        }
+
+        fn try_decode_udf(
+            &self,
+            _node: &polars_plan::prelude::UserDefinedNode,
+        ) -> PolarsResult<Option<Arc<dyn polars_plan::prelude::DataFrameUdf>>> {
+            todo!()
+        }
     }
+
     #[test]
     fn test_serialize_plan() {
         let path = "path/to/some/file.json";
