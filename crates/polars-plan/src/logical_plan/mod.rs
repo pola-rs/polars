@@ -486,7 +486,7 @@ impl SerializableLogicalPlan {
             },
             #[cfg(feature = "python")]
             LogicalPlan::PythonScan { options } => {
-                Ok(SerializableLogicalPlan::PythonScan { options: options })
+                Ok(SerializableLogicalPlan::PythonScan { options })
             },
             LogicalPlan::Selection { input, predicate } => {
                 let input = Self::from_logical_plan(*input, registry)?;
@@ -678,7 +678,7 @@ impl SerializableLogicalPlan {
                 if let Some(f) = f {
                     Ok(LogicalPlan::AnonymousScan {
                         function: f,
-                        file_info: file_info,
+                        file_info,
                         options,
                         predicate,
                     })
