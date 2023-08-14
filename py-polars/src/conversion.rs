@@ -1437,7 +1437,7 @@ impl FromPyObject<'_> for Wrap<QuoteStyle> {
                 return Err(PyValueError::new_err(format!(
                     "validate must be one of {{'always', 'necessary', 'non_numeric'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(Wrap(parsed))
     }

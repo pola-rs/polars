@@ -2475,6 +2475,7 @@ class DataFrame:
             Namely, when writing a field that does not parse as a valid float or integer
             , then quotes will be used even if they aren`t strictly necessary.
 
+
         Examples
         --------
         >>> import pathlib
