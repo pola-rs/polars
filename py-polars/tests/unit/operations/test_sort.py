@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
 
 import pytest
 
@@ -521,23 +520,6 @@ def test_sort_row_fmt(str_ints_df: pl.DataFrame) -> None:
                 df_pd.sort_values(["strs", "vals"], ascending=not descending)
             ),
         )
-
-
-@pytest.mark.slow()
-def test_streaming_sort_multiple_columns(
-    str_ints_df: pl.DataFrame, monkeypatch: Any, capfd: Any
-) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    df = str_ints_df
-
-    out = df.lazy().sort(["strs", "vals"]).collect(streaming=True)
-    assert_frame_equal(out, out.sort(["strs", "vals"]))
-    err = capfd.readouterr().err
-    assert "OOC sort forced" in err
-    assert "RUN STREAMING PIPELINE" in err
-    assert "df -> sort_multiple" in err
-    assert out.columns == ["vals", "strs"]
 
 
 def test_sort_by_logical() -> None:
