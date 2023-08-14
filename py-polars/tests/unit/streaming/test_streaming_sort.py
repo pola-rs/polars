@@ -31,6 +31,7 @@ def test_streaming_sort_multiple_columns_logical_types() -> None:
     }
 
 
+@pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_ooc_sort(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
@@ -119,6 +120,7 @@ def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
     }
 
 
+@pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_streaming_sort_multiple_columns(
     str_ints_df: pl.DataFrame, monkeypatch: Any, capfd: Any

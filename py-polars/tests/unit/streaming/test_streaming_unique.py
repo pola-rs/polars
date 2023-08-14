@@ -6,6 +6,7 @@ import pytest
 import polars as pl
 
 
+@pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_streaming_out_of_core_unique(
     io_files_path: Path, monkeypatch: Any, capfd: Any
