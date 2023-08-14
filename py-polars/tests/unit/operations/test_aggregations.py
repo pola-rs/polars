@@ -282,12 +282,14 @@ def test_sum_empty_and_null_set() -> None:
     assert df.groupby("b").agg(pl.sum("a"))["a"].item() == 0.0
 
 
-def test_10455(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
+def test_null_sum_streaming_10455() -> None:
     df = pl.DataFrame(
         {
-            "x": [1] * 100,
-            "y": [None] * 100,
+            "x": [1] * 10,
+            "y": [None] * 10,
         }
     )
-    assert df.groupby("x").sum().to_dict(False) == {"x": [1], "y": [0.0]}
+    assert df.lazy().groupby("x").sum().collect(streaming=True).to_dict(False) == {
+        "x": [1],
+        "y": [0.0],
+    }

@@ -9,6 +9,8 @@ use polars_arrow::is_valid::IsValid;
 use polars_arrow::kernels::sort_partition::partition_to_groups_amortized;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
+use polars_core::hashing::integer_hash;
+use polars_core::hashing::partition::AsU64;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_set_partition_size;
@@ -82,7 +84,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
 where
     ChunkedArray<K>: IntoSeries,
-    K::Native: Hash,
+    K::Native: Hash + AsU64,
 {
     pub(crate) fn new(
         key: Arc<dyn PhysicalPipedExpr>,
@@ -229,7 +231,8 @@ where
             let [offset, length] = group;
             let (opt_v, h) = if unsafe { arr.is_valid_unchecked(*offset as usize) } {
                 let first_g_value = unsafe { *values.get_unchecked_release(*offset as usize) };
-                let h = self.hb.hash_one(first_g_value);
+                // Ensure that this hash is equal to the default non-sorted sink.
+                let h = integer_hash(first_g_value);
                 (Some(first_g_value), h)
             } else {
                 (null, null_hash)
@@ -347,7 +350,7 @@ where
 
 impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
 where
-    K::Native: Hash + Eq + Debug + Hash,
+    K::Native: Hash + Eq + Debug + Hash + AsU64,
     ChunkedArray<K>: IntoSeries,
 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
@@ -409,7 +412,7 @@ where
     }
 
     fn combine(&mut self, other: &mut dyn Sink) {
-        // don't parallel this as this is already done in parallel.
+        // Don't parallelize this as `combine` is called in parallel.
         let other = other.as_any().downcast_ref::<Self>().unwrap();
 
         self.pre_agg_partitions

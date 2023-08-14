@@ -67,6 +67,11 @@ fn insert_null_hash(chunks: &[ArrayRef], random_state: RandomState, buf: &mut Ve
     });
 }
 
+#[inline(always)]
+pub fn integer_hash<T: AsU64>(v: T) -> u64 {
+    folded_multiply(v.as_u64(), MULTIPLE)
+}
+
 fn integer_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
 where
     T: PolarsIntegerType,
@@ -86,7 +91,7 @@ where
     ca.downcast_iter().for_each(|arr| {
         buf.extend(arr.values().as_slice().iter().copied().map(|v| {
             // we save an xor because we don't have initial state
-            folded_multiply(v.as_u64(), MULTIPLE)
+            integer_hash(v)
         }));
     });
     insert_null_hash(&ca.chunks, random_state, buf)
