@@ -526,6 +526,15 @@ def test_init_ndarray(monkeypatch: Any) -> None:
             orient="row",
         )
 
+    # 2D square array; ensure that we maintain convention
+    # (first axis = rows) with/without an explicit schema
+    arr = np.arange(4).reshape(2, 2)
+    assert (
+        [(0, 1), (2, 3)]
+        == pl.DataFrame(arr).rows()
+        == pl.DataFrame(arr, schema=["a", "b"]).rows()
+    )
+
     # 3D array
     with pytest.raises(ValueError):
         _ = pl.DataFrame(np.random.randn(2, 2, 2))
