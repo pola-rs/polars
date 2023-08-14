@@ -12,12 +12,12 @@ description = "Lazy query engine for the Polars DataFrame library"
 doctest = false
 
 [dependencies]
-polars-arrow = { version = "0.31.1", path = "../polars-arrow" }
-polars-core = { version = "0.31.1", path = "../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.31.1", path = "../polars-io", features = ["lazy", "csv"], default-features = false }
-polars-ops = { version = "0.31.1", path = "../polars-ops", default-features = false }
-polars-time = { version = "0.31.1", path = "../polars-time", optional = true }
-polars-utils = { version = "0.31.1", path = "../polars-utils" }
+polars-arrow = { version = "0.32.0", path = "../polars-arrow" }
+polars-core = { version = "0.32.0", path = "../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.32.0", path = "../polars-io", features = ["lazy", "csv"], default-features = false }
+polars-ops = { version = "0.32.0", path = "../polars-ops", default-features = false }
+polars-time = { version = "0.32.0", path = "../polars-time", optional = true }
+polars-utils = { version = "0.32.0", path = "../polars-utils" }
 
 ahash = { workspace = true }
 arrow = { workspace = true }

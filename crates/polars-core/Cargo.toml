@@ -9,10 +9,10 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { version = "0.31.1", path = "../polars-arrow", features = ["compute"] }
-polars-error = { version = "0.31.1", path = "../polars-error" }
-polars-row = { version = "0.31.1", path = "../polars-row" }
-polars-utils = { version = "0.31.1", path = "../polars-utils" }
+polars-arrow = { version = "0.32.0", path = "../polars-arrow", features = ["compute"] }
+polars-error = { version = "0.32.0", path = "../polars-error" }
+polars-row = { version = "0.32.0", path = "../polars-row" }
+polars-utils = { version = "0.32.0", path = "../polars-utils" }
 
 ahash = { workspace = true }
 arrow = { workspace = true }

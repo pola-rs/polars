@@ -107,8 +107,9 @@ dependencies = [
 
 [[package]]
 name = "arrow2"
-version = "0.17.3"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=9beabec8cfb5502582d31ab898fdd36e7af0873c#9beabec8cfb5502582d31ab898fdd36e7af0873c"
+version = "0.17.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59c468daea140b747d781a1da9f7db5f0a8e6636d4af20cc539e43d05b0604fa"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -1146,9 +1147,9 @@ dependencies = [
 
 [[package]]
 name = "multiversion"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cda45dade5144c2c929bf2ed6c24bebbba784e9198df049ec87d722b9462bd1"
+checksum = "b2c7b9d7fe61760ce5ea19532ead98541f6b4c495d87247aff9826445cf6872a"
 dependencies = [
  "multiversion-macros",
  "target-features",
@@ -1156,9 +1157,9 @@ dependencies = [
 
 [[package]]
 name = "multiversion-macros"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04bffdccbd4798b61dce08c97ce8c66a68976f95541aaf284a6e90c1d1c306e1"
+checksum = "26a83d8500ed06d68877e9de1dde76c1dbb83885dcdbda4ef44ccbc3fbda2ac8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1399,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "getrandom",
  "polars-core",
@@ -1413,7 +1414,7 @@ dependencies = [
 
 [[package]]
 name = "polars-algo"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "polars-core",
  "polars-lazy",
@@ -1422,7 +1423,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "arrow2",
  "atoi",
@@ -1440,7 +1441,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1473,7 +1474,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "arrow2",
  "regex",
@@ -1482,7 +1483,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1517,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1533,7 +1534,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "ahash",
  "bitflags 2.3.3",
@@ -1556,7 +1557,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "argminmax",
  "arrow2",
@@ -1580,7 +1581,7 @@ dependencies = [
 
 [[package]]
 name = "polars-pipe"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
@@ -1601,7 +1602,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1626,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "arrow2",
  "polars-error",
@@ -1635,7 +1636,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1648,7 +1649,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "arrow2",
  "atoi",
@@ -1667,7 +1668,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.31.1"
+version = "0.32.0"
 dependencies = [
  "ahash",
  "hashbrown 0.14.0",
@@ -1697,7 +1698,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.18.13"
+version = "0.18.14"
 dependencies = [
  "ahash",
  "built",
