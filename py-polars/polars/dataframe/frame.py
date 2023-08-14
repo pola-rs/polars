@@ -2465,16 +2465,16 @@ class DataFrame:
             Determines the quoting strategy used.
 
             - necessary (default): This puts quotes around fields only when necessary.
-            They are necessary when fields contain a quote,
-            delimiter or record terminator.
-            Quotes are also necessary when writing an empty record
-             (which is indistinguishable from a record with one empty field).
-            This is the default.
+              They are necessary when fields contain a quote,
+              delimiter or record terminator.
+              Quotes are also necessary when writing an empty record
+              (which is indistinguishable from a record with one empty field).
+              This is the default.
             - always: This puts quotes around every field. Always.
             - non_numeric: This puts quotes around all fields that are non-numeric.
-            Namely, when writing a field that does not parse as a valid float or integer
-            , then quotes will be used even if they aren`t strictly necessary.
-
+              Namely, when writing a field that does not parse as a valid float
+               or integer, then quotes will be used even if they aren`t strictly
+              necessary.
 
         Examples
         --------

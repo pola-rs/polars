@@ -70,11 +70,15 @@ unsafe fn write_anyvalue(
 ) -> PolarsResult<()> {
     match value {
         // First do the string-like types as they know how to deal with quoting.
-        AnyValue::Utf8(v) => fmt_and_escape_str(f, v, options),
+        AnyValue::Utf8(v) => {
+            fmt_and_escape_str(f, v, options)?;
+            Ok(())
+        },
         #[cfg(feature = "dtype-categorical")]
         AnyValue::Categorical(idx, rev_map, _) => {
             let v = rev_map.get(idx);
-            fmt_and_escape_str(f, v, options)
+            fmt_and_escape_str(f, v, options)?;
+            Ok(())
         },
         _ => {
             // Then we deal with the numeric types
@@ -123,7 +127,7 @@ unsafe fn write_anyvalue(
                             }
                         },
                         #[cfg(feature = "dtype-datetime")]
-                        AnyValue::Datetime(v, tu, _) => {
+                        AnyValue::Datetime(v, tu, tz) => {
                             let datetime_format = { *datetime_formats.get_unchecked(i) };
                             let time_zone = { time_zones.get_unchecked(i) };
                             let ndt = match tu {
@@ -148,7 +152,18 @@ unsafe fn write_anyvalue(
                                 },
                                 _ => ndt.format(datetime_format),
                             };
-                            write!(f, "{formatted}")
+                            return write!(f, "{formatted}").map_err(|_|{
+
+                                let datetime_format = unsafe { *datetime_formats.get_unchecked(i) };
+                                let type_name = if tz.is_some() {
+                                    "DateTime"
+                                } else {
+                                    "NaiveDateTime"
+                                };
+                                polars_err!(
+                ComputeError: "cannot format {} with format '{}'", type_name, datetime_format,
+            )
+                            });
                         },
                         #[cfg(feature = "dtype-time")]
                         AnyValue::Time(v) => {
@@ -163,7 +178,8 @@ unsafe fn write_anyvalue(
                         },
                     }
                 },
-            }?;
+            }
+            .map_err(|err| polars_err!(ComputeError: "error writing value {}: {}", value, err))?;
 
             if end_with_quote {
                 write!(f, "{quote}")?
@@ -171,21 +187,6 @@ unsafe fn write_anyvalue(
             Ok(())
         },
     }
-    .map_err(|err| match value {
-        #[cfg(feature = "dtype-datetime")]
-        AnyValue::Datetime(_, _, tz) => {
-            let datetime_format = unsafe { *datetime_formats.get_unchecked(i) };
-            let type_name = if tz.is_some() {
-                "DateTime"
-            } else {
-                "NaiveDateTime"
-            };
-            polars_err!(
-                ComputeError: "cannot format {} with format '{}'", type_name, datetime_format,
-            )
-        },
-        _ => polars_err!(ComputeError: "error writing value {}: {}", value, err),
-    })
 }
 
 /// Options to serialize logical types to CSV.
