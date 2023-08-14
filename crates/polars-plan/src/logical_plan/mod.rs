@@ -555,15 +555,7 @@ impl SerializableLogicalPlan {
                     options,
                 })
             },
-            LogicalPlan::Aggregate {
-                input,
-                keys,
-                aggs,
-                schema,
-                apply,
-                maintain_order,
-                options,
-            } => {
+            LogicalPlan::Aggregate { .. } => {
                 todo!()
             },
             LogicalPlan::Join {
