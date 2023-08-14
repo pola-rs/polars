@@ -494,6 +494,7 @@ pub(crate) fn to_datetime(
     ca: &Utf8Chunked,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
+    _use_earliest: Option<bool>,
 ) -> PolarsResult<DatetimeChunked> {
     match ca.first_non_null() {
         None => Ok(Int64Chunked::full_null(ca.name(), ca.len()).into_datetime(tu, tz.cloned())),
@@ -517,14 +518,16 @@ pub(crate) fn to_datetime(
                 Pattern::DatetimeYMDZ => infer.coerce_utf8(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
                     ca.set_time_unit(tu);
-                    polars_ops::prelude::replace_time_zone(&ca, Some("UTC"), None)
+                    polars_ops::prelude::replace_time_zone(&ca, Some("UTC"), _use_earliest)
                 })?,
                 _ => infer.coerce_utf8(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
                     ca.set_time_unit(tu);
                     match tz {
                         #[cfg(feature = "timezones")]
-                        Some(tz) => polars_ops::prelude::replace_time_zone(&ca, Some(tz), None),
+                        Some(tz) => {
+                            polars_ops::prelude::replace_time_zone(&ca, Some(tz), _use_earliest)
+                        },
                         _ => Ok(ca),
                     }
                 })?,

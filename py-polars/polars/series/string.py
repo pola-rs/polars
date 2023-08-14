@@ -84,6 +84,7 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         utc: bool | None = None,
+        use_earliest: bool | None = None,
     ) -> Series:
         """
         Convert a Utf8 column into a Datetime column.
@@ -122,6 +123,12 @@ class StringNameSpace:
                 Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
                 and offset-aware strings are converted to
                 ``pl.Datetime(time_unit, "UTC")``.
+        use_earliest
+            Determine how to deal with ambiguous datetimes:
+
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Examples
         --------
@@ -182,6 +189,7 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         utc: bool | None = None,
+        use_earliest: bool | None = None,
     ) -> Series:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -215,6 +223,12 @@ class StringNameSpace:
                 Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
                 and offset-aware strings are converted to
                 ``pl.Datetime(time_unit, "UTC")``.
+        use_earliest
+            Determine how to deal with ambiguous datetimes:
+
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Notes
         -----
@@ -282,6 +296,7 @@ class StringNameSpace:
                     strict=strict,
                     exact=exact,
                     cache=cache,
+                    use_earliest=use_earliest,
                 )
             )
             .to_series()

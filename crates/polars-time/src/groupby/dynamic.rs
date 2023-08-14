@@ -682,7 +682,7 @@ mod test {
                     "2020-01-08 23:16:43",
                 ],
             )
-            .as_datetime(None, tu, false, false, None)?
+            .as_datetime(None, tu, false, false, None, None)?
             .into_series();
             date.set_sorted_flag(IsSorted::Ascending);
             let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
@@ -722,7 +722,7 @@ mod test {
                 "2020-01-08 23:16:43",
             ],
         )
-        .as_datetime(None, TimeUnit::Milliseconds, false, false, None)?
+        .as_datetime(None, TimeUnit::Milliseconds, false, false, None, None)?
         .into_series();
         date.set_sorted_flag(IsSorted::Ascending);
 

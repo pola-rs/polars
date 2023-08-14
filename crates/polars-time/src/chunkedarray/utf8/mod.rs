@@ -235,6 +235,7 @@ pub trait Utf8Methods: AsUtf8 {
         tu: TimeUnit,
         tz_aware: bool,
         tz: Option<&TimeZone>,
+        _use_earliest: Option<bool>,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
@@ -285,9 +286,11 @@ pub trait Utf8Methods: AsUtf8 {
         ca.rename(utf8_ca.name());
         match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
-            (false, Some(tz)) => {
-                polars_ops::prelude::replace_time_zone(&ca.into_datetime(tu, None), Some(tz), None)
-            },
+            (false, Some(tz)) => polars_ops::prelude::replace_time_zone(
+                &ca.into_datetime(tu, None),
+                Some(tz),
+                _use_earliest,
+            ),
             #[cfg(feature = "timezones")]
             (true, _) => Ok(ca.into_datetime(tu, Some("UTC".to_string()))),
             _ => Ok(ca.into_datetime(tu, None)),
@@ -379,11 +382,12 @@ pub trait Utf8Methods: AsUtf8 {
         cache: bool,
         tz_aware: bool,
         tz: Option<&TimeZone>,
+        use_earliest: Option<bool>,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
             Some(fmt) => fmt,
-            None => return infer::to_datetime(utf8_ca, tu, tz),
+            None => return infer::to_datetime(utf8_ca, tu, tz, use_earliest),
         };
         let fmt = strptime::compile_fmt(fmt)?;
         let cache = cache && utf8_ca.len() > 50;
@@ -503,7 +507,7 @@ pub trait Utf8Methods: AsUtf8 {
                 Some(tz) => polars_ops::prelude::replace_time_zone(
                     &ca.into_datetime(tu, None),
                     Some(tz),
-                    None,
+                    use_earliest,
                 ),
                 _ => Ok(ca.into_datetime(tu, None)),
             }
