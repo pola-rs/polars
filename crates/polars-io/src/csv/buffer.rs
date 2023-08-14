@@ -627,7 +627,7 @@ impl<'a> Buffer<'a> {
 
                         let first = v.data.get(start);
 
-                        // A valid code-point iff it does not start with 0b10xxxxxx
+                        // A valid code-point if it does not start with 0b10xxxxxx
                         // Bit-magic taken from `std::str::is_char_boundary`
                         if let Some(&b) = first {
                             if (b as i8) < -0x40 {

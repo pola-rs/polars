@@ -79,7 +79,7 @@ if __name__ == "__main__":
         """Python doctest output checker with support for IGNORE_RESULT."""
 
         def check_output(self, want: str, got: str, optionflags: Any) -> bool:
-            """Return True iff the actual output from an example matches the output."""
+            """Return True if the actual output from an example matches the output."""
             if IGNORE_RESULT_ALL:
                 return True
             if IGNORE_RESULT & optionflags:

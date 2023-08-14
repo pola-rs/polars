@@ -10,7 +10,7 @@ use super::*;
 /// This function is CPU-bounded.
 /// This function is guaranteed to return an array of length equal to the length
 /// # Errors
-/// This function errors iff any of the rows is not a valid JSON (i.e. the format is not valid NDJSON).
+/// This function errors if any of the rows is not a valid JSON (i.e. the format is not valid NDJSON).
 pub fn deserialize_iter<'a>(
     rows: impl Iterator<Item = &'a str>,
     data_type: DataType,

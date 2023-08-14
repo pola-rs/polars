@@ -7,7 +7,7 @@ pub trait SlicedArray {
     /// # Implementation
     /// This operation is `O(1)` over `len`.
     /// # Panic
-    /// This function panics iff `offset + length > self.len()`.
+    /// This function panics if `offset + length > self.len()`.
     fn slice_typed(&self, offset: usize, length: usize) -> Self
     where
         Self: Sized;

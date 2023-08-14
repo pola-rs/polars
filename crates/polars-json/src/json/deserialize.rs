@@ -423,7 +423,7 @@ fn allocate_array(f: &Field) -> Box<dyn MutableArray> {
 ///
 /// # Errors
 ///
-/// This function errors iff either:
+/// This function errors if either:
 ///
 /// * `json` is not an [`Array`]
 /// * `data_type` contains any incompatible types:

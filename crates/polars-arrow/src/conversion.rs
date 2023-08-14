@@ -12,7 +12,7 @@ pub fn chunk_to_struct(chunk: Chunk<ArrayRef>, fields: Vec<Field>) -> StructArra
 
 /// Returns its underlying [`Vec`], if possible.
 ///
-/// This operation returns [`Some`] iff this [`PrimitiveArray`]:
+/// This operation returns [`Some`] if this [`PrimitiveArray`]:
 /// * has not been sliced with an offset
 /// * has not been cloned (i.e. [`Arc::get_mut`][Arc::get_mut] yields [`Some`])
 /// * has not been imported from the c data interface (FFI)

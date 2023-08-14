@@ -43,7 +43,7 @@ fn read_rows<R: BufRead>(reader: &mut R, rows: &mut [String], limit: usize) -> P
 /// # Implementantion
 /// Advancing this iterator is IO-bounded, but does require parsing each byte to find end of lines.
 /// # Error
-/// Advancing this iterator errors iff the reader errors.
+/// Advancing this iterator errors if the reader errors.
 pub struct FileReader<R: BufRead> {
     reader: R,
     rows: Vec<String>,

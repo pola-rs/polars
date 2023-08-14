@@ -71,7 +71,7 @@ pub trait SeriesMethods: SeriesSealed {
         if nc > 0 {
             let nulls = s.chunks().iter().flat_map(|c| c.validity().unwrap());
             let mut npairs = nulls.clone().zip(nulls.skip(1));
-            // A null never precedes (follows) a non-null iff all nulls are at the end (beginning)
+            // A null never precedes (follows) a non-null if all nulls are at the end (beginning)
             if (options.nulls_last && npairs.any(|(a, b)| !a && b)) || npairs.any(|(a, b)| a && !b)
             {
                 return Ok(false);
