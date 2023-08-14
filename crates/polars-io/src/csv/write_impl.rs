@@ -37,7 +37,6 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
         }
         let surround_with_quotes = match options.quote_style {
             QuoteStyle::Always | QuoteStyle::NonNumeric => true,
-            QuoteStyle::Never => false,
             QuoteStyle::Necessary => memchr2(options.delimiter, b'\n', v.as_bytes()).is_some(),
         };
 
@@ -108,6 +107,8 @@ unsafe fn write_anyvalue(
                 _ => {
                     // And hre we deal with the non-numeric types (excluding strings)
                     if !end_with_quote && matches!(options.quote_style, QuoteStyle::NonNumeric) {
+                        // start the quote
+                        write!(f, "{quote}")?;
                         end_with_quote = true
                     }
 
