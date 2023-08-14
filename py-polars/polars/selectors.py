@@ -191,6 +191,9 @@ class _selector_proxy_(Expr):
             "name": name,
         }
 
+    def __hash__(self) -> int:
+        return hash(repr(self))
+
     def __invert__(self) -> Self:
         """Invert the selector."""
         if hasattr(self, "_attrs"):

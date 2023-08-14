@@ -12,6 +12,7 @@ from typing import (
     ClassVar,
     Collection,
     Iterable,
+    Mapping,
     NoReturn,
     Sequence,
     TypeVar,
@@ -1993,6 +1994,80 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def cache(self) -> Self:
         """Cache the result once the execution of the physical plan hits this node."""
         return self._from_pyldf(self._ldf.cache())
+
+    def cast(
+        self, dtypes: Mapping[ColumnNameOrSelector, PolarsDataType] | PolarsDataType
+    ) -> Self:
+        """
+        Cast LazyFrame column(s) to the specified dtype(s).
+
+        Parameters
+        ----------
+        dtypes
+            Mapping of column names (or selector) to dtypes, or a single dtype
+            to which all columns will be cast.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": [date(2020, 1, 2), date(2021, 3, 4), date(2022, 5, 6)],
+        ...     }
+        ... )
+
+        Cast specific frame columns to the specified dtypes:
+
+        >>> lf.cast({"foo": pl.Float32, "bar": pl.UInt8}).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬────────────┐
+        │ foo ┆ bar ┆ ham        │
+        │ --- ┆ --- ┆ ---        │
+        │ f32 ┆ u8  ┆ date       │
+        ╞═════╪═════╪════════════╡
+        │ 1.0 ┆ 6   ┆ 2020-01-02 │
+        │ 2.0 ┆ 7   ┆ 2021-03-04 │
+        │ 3.0 ┆ 8   ┆ 2022-05-06 │
+        └─────┴─────┴────────────┘
+
+        Cast all frame columns to the specified dtype:
+
+        >>> lf.cast(pl.Utf8).collect().to_dict(False)
+        {'foo': ['1', '2', '3'],
+         'bar': ['6.0', '7.0', '8.0'],
+         'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
+
+        Use selectors to define the columns being cast:
+
+        >>> import polars.selectors as cs
+        >>> lf.cast({cs.numeric(): pl.UInt32, cs.temporal(): pl.Utf8}).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬────────────┐
+        │ foo ┆ bar ┆ ham        │
+        │ --- ┆ --- ┆ ---        │
+        │ u32 ┆ u32 ┆ str        │
+        ╞═════╪═════╪════════════╡
+        │ 1   ┆ 6   ┆ 2020-01-02 │
+        │ 2   ┆ 7   ┆ 2021-03-04 │
+        │ 3   ┆ 8   ┆ 2022-05-06 │
+        └─────┴─────┴────────────┘
+
+        """
+        cast_map: dict[str, Expr] = {}
+        if not isinstance(dtypes, Mapping):
+            return self.select(F.all().cast(dtypes))
+        else:
+            from polars.selectors import expand_selector
+
+            for c, dtype in dtypes.items():
+                cast_map.update(
+                    {c: F.col(c).cast(dtype)}
+                    if isinstance(c, str)
+                    else {x: F.col(x).cast(dtype) for x in expand_selector(self, c)}
+                )
+
+        return self.with_columns(**cast_map)
 
     def clear(self, n: int = 0) -> LazyFrame:
         """

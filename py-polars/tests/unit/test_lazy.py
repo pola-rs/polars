@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars import lit, when
 from polars.datatypes import FLOAT_DTYPES
 from polars.exceptions import PolarsInefficientApplyWarning
@@ -574,6 +575,50 @@ def test_lazy_columns() -> None:
         }
     )
     assert ldf.select(["a", "c"]).columns == ["a", "c"]
+
+
+def test_cast_frame() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1.0, 2.5, 3.0],
+            "b": [4, 5, None],
+            "c": [True, False, True],
+            "d": [date(2020, 1, 2), date(2021, 3, 4), date(2022, 5, 6)],
+        }
+    )
+
+    # cast via col:dtype map
+    assert lf.cast(
+        dtypes={"b": pl.Float32, "c": pl.Utf8, "d": pl.Datetime("ms")}
+    ).schema == {
+        "a": pl.Float64,
+        "b": pl.Float32,
+        "c": pl.Utf8,
+        "d": pl.Datetime("ms"),
+    }
+
+    # cast via selector:dtype map
+    lfc = lf.cast(
+        {
+            cs.float(): pl.UInt8,
+            cs.integer(): pl.Int32,
+            cs.temporal(): pl.Utf8,
+        }
+    )
+    assert lfc.schema == {"a": pl.UInt8, "b": pl.Int32, "c": pl.Boolean, "d": pl.Utf8}
+    assert lfc.collect().rows() == [
+        (1, 4, True, "2020-01-02"),
+        (2, 5, False, "2021-03-04"),
+        (3, None, True, "2022-05-06"),
+    ]
+
+    # cast all fields to a single type
+    assert lf.cast(pl.Utf8).collect().to_dict(False) == {
+        "a": ["1.0", "2.5", "3.0"],
+        "b": ["4", "5", None],
+        "c": ["true", "false", "true"],
+        "d": ["2020-01-02", "2021-03-04", "2022-05-06"],
+    }
 
 
 def test_col_series_selection() -> None:
