@@ -12,7 +12,7 @@ impl CategoricalChunked {
                 // to make sure the indexes still make sense we need to offset the right hand side
                 self.logical()
                     .zip_with(mask, &(other.logical() + rev_map.len() as u32))?
-            }
+            },
             _ => self.logical().zip_with(mask, other.logical())?,
         };
         let new_state = self.merge_categorical_map(other)?;

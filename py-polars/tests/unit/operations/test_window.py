@@ -420,3 +420,14 @@ def test_window_and_cse_10152() -> None:
     )
 
     assert q.collect().columns == ["a", "b", "c"]
+
+
+def test_window_10417() -> None:
+    df = pl.DataFrame({"a": [1], "b": [1.2], "c": [2.1]})
+
+    assert df.lazy().with_columns(
+        [
+            pl.col("b") - pl.col("b").mean().over("a"),
+            pl.col("c") - pl.col("c").mean().over("a"),
+        ]
+    ).collect().to_dict(False) == {"a": [1], "b": [0.0], "c": [0.0]}

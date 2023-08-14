@@ -36,7 +36,8 @@ impl ListChunked {
         }
     }
 
-    pub fn to_physical(&mut self, inner_dtype: DataType) {
+    /// Set the logical type of the ListChunked.
+    pub fn to_logical(&mut self, inner_dtype: DataType) {
         debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype());
         let fld = Arc::make_mut(&mut self.field);
         fld.coerce(DataType::List(Box::new(inner_dtype)))
@@ -67,7 +68,14 @@ impl ListChunked {
         let inner_dtype = self.inner_dtype().to_arrow();
 
         let chunks = ca.downcast_iter().map(|arr| {
-            let elements = unsafe { Series::try_from_arrow_unchecked(self.name(), vec![(*arr.values()).clone()], &inner_dtype).unwrap() } ;
+            let elements = unsafe {
+                Series::try_from_arrow_unchecked(
+                    self.name(),
+                    vec![(*arr.values()).clone()],
+                    &inner_dtype,
+                )
+                .unwrap()
+            };
 
             let expected_len = elements.len();
             let out: Series = func(elements)?;
@@ -85,9 +93,9 @@ impl ListChunked {
                 values,
                 arr.validity().cloned(),
             );
-            Ok(Box::new(arr) as ArrayRef)
-        }).collect::<PolarsResult<Vec<_>>>()?;
+            Ok(arr)
+        });
 
-        unsafe { Ok(ListChunked::from_chunks(self.name(), chunks)) }
+        ListChunked::try_from_chunk_iter(self.name(), chunks)
     }
 }

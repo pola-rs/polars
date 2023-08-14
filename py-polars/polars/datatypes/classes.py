@@ -45,7 +45,7 @@ class DataTypeClass(type):
     def _string_repr(cls) -> str:
         return _dtype_str_repr(cls)
 
-    def base_type(cls) -> PolarsDataType:
+    def base_type(cls) -> DataTypeClass:
         """Return the base type."""
         return cls
 

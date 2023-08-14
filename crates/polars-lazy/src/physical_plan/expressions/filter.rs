@@ -111,7 +111,7 @@ impl PhysicalExpr for FilterExpr {
                                 .collect();
 
                             GroupsProxy::Idx(groups)
-                        }
+                        },
                         GroupsProxy::Slice { groups, .. } => {
                             let groups = groups
                                 .par_iter()
@@ -129,7 +129,7 @@ impl PhysicalExpr for FilterExpr {
                                 })
                                 .collect();
                             GroupsProxy::Idx(groups)
-                        }
+                        },
                     }
                 })
             };

@@ -51,7 +51,7 @@ where
     ) -> PolarsResult<Self> {
         if !self.has_validity() {
             if let Some(value) = value {
-                // fast path uses kernel
+                // Fast path uses kernel.
                 if self.chunks.len() == 1 {
                     let arr = set_at_idx_no_null(
                         self.downcast_iter().next().unwrap(),
@@ -59,9 +59,9 @@ where
                         value,
                         T::get_dtype().to_arrow(),
                     )?;
-                    return unsafe { Ok(Self::from_chunks(self.name(), vec![Box::new(arr)])) };
+                    return Ok(Self::from_chunk_iter(self.name(), [arr]));
                 }
-                // Other fast path. Slightly slower as it does not do a memcpy
+                // Other fast path. Slightly slower as it does not do a memcpy.
                 else {
                     let mut av = self.into_no_null_iter().collect::<Vec<_>>();
                     let data = av.as_mut_slice();
@@ -95,20 +95,16 @@ where
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> PolarsResult<Self> {
         check_bounds!(self, mask);
 
-        // Fast path uses the kernel in polars-arrow
+        // Fast path uses the kernel in polars-arrow.
         if let (Some(value), false) = (value, mask.has_validity()) {
             let (left, mask) = align_chunks_binary(self, mask);
 
-            // apply binary kernel.
+            // Apply binary kernel.
             let chunks = left
                 .downcast_iter()
                 .zip(mask.downcast_iter())
-                .map(|(arr, mask)| {
-                    let a = set_with_mask(arr, mask, value, T::get_dtype().to_arrow());
-                    Box::new(a) as ArrayRef
-                })
-                .collect();
-            Ok(unsafe { ChunkedArray::from_chunks(self.name(), chunks) })
+                .map(|(arr, mask)| set_with_mask(arr, mask, value, T::get_dtype().to_arrow()));
+            Ok(ChunkedArray::from_chunk_iter(self.name(), chunks))
         } else {
             // slow path, could be optimized.
             let ca = mask
@@ -158,8 +154,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
             validity.set(i, f(input).unwrap_or(false));
         }
         let arr = BooleanArray::from_data_default(values.into(), Some(validity.into()));
-
-        Ok(unsafe { BooleanChunked::from_chunks(self.name(), vec![Box::new(arr)]) })
+        Ok(BooleanChunked::from_chunk_iter(self.name(), [arr]))
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> PolarsResult<Self> {

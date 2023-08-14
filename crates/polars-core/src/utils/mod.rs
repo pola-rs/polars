@@ -642,7 +642,7 @@ where
                 Cow::Owned(left.match_chunks(right.chunk_id())),
                 Cow::Borrowed(right),
             )
-        }
+        },
     }
 }
 
@@ -714,7 +714,7 @@ where
                 Cow::Owned(b.match_chunks(c.chunk_id())),
                 Cow::Borrowed(c),
             )
-        }
+        },
         (_, 1, _) => {
             let a = a.rechunk();
             (
@@ -722,7 +722,7 @@ where
                 Cow::Owned(b.match_chunks(c.chunk_id())),
                 Cow::Borrowed(c),
             )
-        }
+        },
         (_, _, 1) => {
             let b = b.rechunk();
             (
@@ -730,7 +730,7 @@ where
                 Cow::Owned(b.match_chunks(a.chunk_id())),
                 Cow::Owned(c.match_chunks(a.chunk_id())),
             )
-        }
+        },
         _ => {
             // could optimize to choose to rechunk a primitive and not a string or list type
             let a = a.rechunk();
@@ -740,7 +740,7 @@ where
                 Cow::Owned(b.match_chunks(c.chunk_id())),
                 Cow::Borrowed(c),
             )
-        }
+        },
     }
 }
 

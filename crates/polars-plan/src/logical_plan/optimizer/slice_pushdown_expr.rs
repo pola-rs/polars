@@ -34,7 +34,7 @@ impl OptimizationRule for SlicePushDown {
                     let input = self.scratch[0];
                     let new_input = pushdown(input, offset, length, expr_arena);
                     Some(ae.replace_inputs(&[new_input]))
-                }
+                },
                 Literal(lv) => {
                     match lv {
                         LiteralValue::Series(_) => None,
@@ -42,7 +42,7 @@ impl OptimizationRule for SlicePushDown {
                         // no need to slice a literal value of unit length
                         lv => Some(Literal(lv.clone())),
                     }
-                }
+                },
                 BinaryExpr { left, right, op } => {
                     let left = *left;
                     let right = *right;
@@ -51,7 +51,7 @@ impl OptimizationRule for SlicePushDown {
                     let left = pushdown(left, offset, length, expr_arena);
                     let right = pushdown(right, offset, length, expr_arena);
                     Some(BinaryExpr { left, op, right })
-                }
+                },
                 Ternary {
                     truthy,
                     falsy,
@@ -69,7 +69,7 @@ impl OptimizationRule for SlicePushDown {
                         falsy,
                         predicate,
                     })
-                }
+                },
                 m @ AnonymousFunction { options, .. }
                     if matches!(options.collect_groups, ApplyOptions::ApplyFlat) =>
                 {
@@ -94,7 +94,7 @@ impl OptimizationRule for SlicePushDown {
                     } else {
                         unreachable!()
                     }
-                }
+                },
                 _ => None,
             };
             Ok(out)

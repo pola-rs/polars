@@ -48,7 +48,7 @@ pub(crate) fn get_file_chunks(
             Some(pos) => search_pos + pos,
             None => {
                 break;
-            }
+            },
         };
         offsets.push((last_pos, end_pos));
         last_pos = end_pos;
@@ -113,11 +113,11 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                     Some(pattern_with_offset) => match pattern_with_offset {
                         Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
                             DataType::Datetime(TimeUnit::Microseconds, None)
-                        }
+                        },
                         Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
                         Pattern::DatetimeYMDZ => {
                             DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
-                        }
+                        },
                     },
                     None => DataType::Utf8,
                 }
@@ -144,11 +144,11 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                 Some(pattern_with_offset) => match pattern_with_offset {
                     Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
                         DataType::Datetime(TimeUnit::Microseconds, None)
-                    }
+                    },
                     Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
                     Pattern::DatetimeYMDZ => {
                         DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
-                    }
+                    },
                 },
                 None => DataType::Utf8,
             }
@@ -192,6 +192,7 @@ pub fn infer_file_schema_inner(
     null_values: Option<&NullValues>,
     try_parse_dates: bool,
     recursion_count: u8,
+    raise_if_empty: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -201,7 +202,9 @@ pub fn infer_file_schema_inner(
     let encoding = CsvEncoding::LossyUtf8;
 
     let bytes = skip_line_ending(skip_bom(reader_bytes), eol_char);
-    polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
+    if raise_if_empty {
+        polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
+    };
     let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
     // it can be that we have a single line without eol char
     let has_eol = bytes.contains(&eol_char);
@@ -301,7 +304,10 @@ pub fn infer_file_schema_inner(
             null_values,
             try_parse_dates,
             recursion_count + 1,
+            raise_if_empty,
         );
+    } else if !raise_if_empty {
+        return Ok((Schema::new(), 0, 0));
     } else {
         polars_bail!(NoData: "empty CSV");
     };
@@ -335,7 +341,7 @@ pub fn infer_file_schema_inner(
                 } else {
                     max_read_rows
                 }
-            }
+            },
             None => usize::MAX,
         })
         .skip(skip_rows_after_header)
@@ -376,17 +382,17 @@ pub fn infer_file_schema_inner(
                     match &null_values {
                         None => {
                             column_types[i].insert(infer_field_schema(&s, try_parse_dates));
-                        }
+                        },
                         Some(NullValues::AllColumns(names)) => {
                             if !names.iter().any(|nv| nv == s.as_ref()) {
                                 column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
-                        }
+                        },
                         Some(NullValues::AllColumnsSingle(name)) => {
                             if s.as_ref() != name {
                                 column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
-                        }
+                        },
                         Some(NullValues::Named(names)) => {
                             let current_name = &headers[i];
                             let null_name = &names.iter().find(|name| &name.0 == current_name);
@@ -398,7 +404,7 @@ pub fn infer_file_schema_inner(
                             } else {
                                 column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
-                        }
+                        },
                     }
                 }
             }
@@ -433,7 +439,7 @@ pub fn infer_file_schema_inner(
                 for dtype in possibilities.iter() {
                     fields.push(Field::new(field_name, dtype.clone()));
                 }
-            }
+            },
             2 => {
                 if possibilities.contains(&DataType::Int64)
                     && possibilities.contains(&DataType::Float64)
@@ -459,7 +465,7 @@ pub fn infer_file_schema_inner(
                     // default to Utf8 for conflicting datatypes (e.g bool and int)
                     fields.push(Field::new(field_name, DataType::Utf8));
                 }
-            }
+            },
             _ => fields.push(Field::new(field_name, DataType::Utf8)),
         }
     }
@@ -484,6 +490,7 @@ pub fn infer_file_schema_inner(
             null_values,
             try_parse_dates,
             recursion_count + 1,
+            raise_if_empty,
         );
     }
 
@@ -515,6 +522,7 @@ pub fn infer_file_schema(
     eol_char: u8,
     null_values: Option<&NullValues>,
     try_parse_dates: bool,
+    raise_if_empty: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     infer_file_schema_inner(
         reader_bytes,
@@ -530,6 +538,7 @@ pub fn infer_file_schema(
         null_values,
         try_parse_dates,
         0,
+        raise_if_empty,
     )
 }
 
@@ -563,7 +572,7 @@ fn decompress_impl<R: Read>(
             let mut out = Vec::new();
             decoder.read_to_end(&mut out).ok()?;
             out
-        }
+        },
         Some(n_rows) => {
             // we take the first rows first '\n\
             let mut out = vec![];
@@ -603,7 +612,7 @@ fn decompress_impl<R: Read>(
                     Some(pos) => {
                         line_count += 1;
                         buf_pos += pos;
-                    }
+                    },
                     None => {
                         // take more bytes so that we might find a new line the next iteration
                         let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
@@ -612,11 +621,11 @@ fn decompress_impl<R: Read>(
                             break;
                         }
                         continue;
-                    }
+                    },
                 };
             }
             out
-        }
+        },
     })
 }
 

@@ -63,6 +63,21 @@ def test_array_in_groupby() -> None:
         [1, 2]
     ]
 
+    df = pl.DataFrame(
+        {"a": [[1, 2], [2, 2], [1, 4]], "g": [1, 1, 2]},
+        schema={"a": pl.Array(inner=pl.Int64, width=2), "g": pl.Int64},
+    )
+
+    out0 = df.groupby("g").agg(pl.col("a")).sort("g")
+    out1 = df.set_sorted("g").groupby("g").agg(pl.col("a"))
+
+    for out in [out0, out1]:
+        assert out.schema == {
+            "g": pl.Int64,
+            "a": pl.List(pl.Array(inner=pl.Int64, width=2)),
+        }
+        assert out.to_dict(False) == {"g": [1, 2], "a": [[[1, 2], [2, 2]], [[1, 4]]]}
+
 
 def test_array_concat() -> None:
     a_df = pl.DataFrame({"a": [[0, 1], [1, 0]]}).select(

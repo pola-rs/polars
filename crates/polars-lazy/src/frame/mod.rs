@@ -701,11 +701,23 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
+        let exprs = exprs.as_ref().to_vec();
+        self.select_impl(exprs, ProjectionOptions { run_parallel: true })
+    }
+
+    pub fn select_seq<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
+        let exprs = exprs.as_ref().to_vec();
+        self.select_impl(
+            exprs,
+            ProjectionOptions {
+                run_parallel: false,
+            },
+        )
+    }
+
+    fn select_impl(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
         let opt_state = self.get_opt_state();
-        let lp = self
-            .get_plan_builder()
-            .project(exprs.as_ref().to_vec())
-            .build();
+        let lp = self.get_plan_builder().project(exprs, options).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -730,8 +742,8 @@ impl LazyFrame {
     ///       df.lazy()
     ///        .groupby([col("date")])
     ///        .agg([
-    ///            col("rain").min(),
-    ///            col("rain").sum(),
+    ///            col("rain").min().alias("min_rain"),
+    ///            col("rain").sum().alias("sum_rain"),
     ///            col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
     /// }
@@ -999,7 +1011,15 @@ impl LazyFrame {
     /// ```
     pub fn with_column(self, expr: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().with_columns(vec![expr]).build();
+        let lp = self
+            .get_plan_builder()
+            .with_columns(
+                vec![expr],
+                ProjectionOptions {
+                    run_parallel: false,
+                },
+            )
+            .build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -1019,8 +1039,23 @@ impl LazyFrame {
     /// ```
     pub fn with_columns<E: AsRef<[Expr]>>(self, exprs: E) -> LazyFrame {
         let exprs = exprs.as_ref().to_vec();
+        self.with_columns_impl(exprs, ProjectionOptions { run_parallel: true })
+    }
+
+    /// Add multiple columns to a DataFrame, but evaluate them sequentially.
+    pub fn with_columns_seq<E: AsRef<[Expr]>>(self, exprs: E) -> LazyFrame {
+        let exprs = exprs.as_ref().to_vec();
+        self.with_columns_impl(
+            exprs,
+            ProjectionOptions {
+                run_parallel: false,
+            },
+        )
+    }
+
+    fn with_columns_impl(self, exprs: Vec<Expr>, options: ProjectionOptions) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().with_columns(exprs).build();
+        let lp = self.get_plan_builder().with_columns(exprs, options).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -1140,7 +1175,7 @@ impl LazyFrame {
                         .collect::<Vec<_>>(),
                 );
                 self.filter(predicate)
-            }
+            },
         }
     }
 
@@ -1255,7 +1290,7 @@ impl LazyFrame {
                         .unwrap(),
                 );
                 false
-            }
+            },
             _ => true,
         };
 
@@ -1335,8 +1370,8 @@ impl LazyGroupBy {
     ///       df.lazy()
     ///        .groupby_stable([col("date")])
     ///        .agg([
-    ///            col("rain").min(),
-    ///            col("rain").sum(),
+    ///            col("rain").min().alias("min_rain"),
+    ///            col("rain").sum().alias("sum_rain"),
     ///            col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
     /// }

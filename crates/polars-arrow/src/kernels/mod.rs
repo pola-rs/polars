@@ -152,10 +152,10 @@ impl<'a> Iterator for MaskedSlicesIterator<'a> {
                         // iterating over chunks does not yield any new slice => continue to the next
                         self.current_bit = 0;
                         self.next()
-                    }
+                    },
                     other => other,
                 }
-            }
+            },
             State::Bits(mask) => {
                 match self.iterate_bits(mask, 64) {
                     None => {
@@ -163,10 +163,10 @@ impl<'a> Iterator for MaskedSlicesIterator<'a> {
                         // to chunks and continue to the next
                         self.state = State::Chunks;
                         self.next()
-                    }
+                    },
                     other => other,
                 }
-            }
+            },
             State::Remainder => match self.iterate_bits(self.remainder_mask, self.remainder_len) {
                 None => {
                     self.state = State::Finish;
@@ -175,7 +175,7 @@ impl<'a> Iterator for MaskedSlicesIterator<'a> {
                     } else {
                         None
                     }
-                }
+                },
                 other => other,
             },
             State::Finish => None,
@@ -236,23 +236,23 @@ impl<'a> Iterator for BinaryMaskedSliceIterator<'a> {
                                 self.filled = high;
                                 Some((low, high, true))
                             }
-                        }
+                        },
                         None => {
                             self.state = Finish;
                             Some((self.filled, self.slice_iter.total_len, false))
-                        }
+                        },
                     }
                 } else {
                     self.filled = self.high;
                     self.state = LastTrue;
                     Some((self.low, self.high, true))
                 }
-            }
+            },
             LastFalse => {
                 self.state = LastTrue;
                 self.filled = self.high;
                 Some((self.low, self.high, true))
-            }
+            },
             LastTrue => match self.slice_iter.next() {
                 Some((low, high)) => {
                     self.low = low;
@@ -261,7 +261,7 @@ impl<'a> Iterator for BinaryMaskedSliceIterator<'a> {
                     let last_filled = self.filled;
                     self.filled = low;
                     Some((last_filled, low, false))
-                }
+                },
                 None => {
                     self.state = Finish;
                     if self.filled != self.slice_iter.total_len {
@@ -269,7 +269,7 @@ impl<'a> Iterator for BinaryMaskedSliceIterator<'a> {
                     } else {
                         None
                     }
-                }
+                },
             },
             Finish => None,
         }

@@ -293,3 +293,20 @@ impl PolarsFloatType for Float64Type {}
 
 // Provide options to cloud providers (credentials, region).
 pub type CloudOptions = PlHashMap<String, String>;
+
+/// Used to safely match the underlying type of Polars data structures.
+///
+/// # Safety
+///
+/// The underlying physical type of the data structure on which this
+/// is implemented must always match the given PolarsDataType.
+pub unsafe trait StaticallyMatchesPolarsType<T: PolarsDataType> {}
+
+unsafe impl<T: PolarsNumericType> StaticallyMatchesPolarsType<T> for PrimitiveArray<T::Native> {}
+unsafe impl StaticallyMatchesPolarsType<CategoricalType> for PrimitiveArray<u32> {}
+unsafe impl StaticallyMatchesPolarsType<Utf8Type> for Utf8Array<i64> {}
+unsafe impl StaticallyMatchesPolarsType<BinaryType> for BinaryArray<i64> {}
+unsafe impl StaticallyMatchesPolarsType<BooleanType> for BooleanArray {}
+unsafe impl StaticallyMatchesPolarsType<ListType> for ListArray<i64> {}
+#[cfg(feature = "dtype-array")]
+unsafe impl StaticallyMatchesPolarsType<FixedSizeListType> for FixedSizeListArray {}

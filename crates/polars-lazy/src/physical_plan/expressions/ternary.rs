@@ -13,6 +13,8 @@ pub struct TernaryExpr {
     truthy: Arc<dyn PhysicalExpr>,
     falsy: Arc<dyn PhysicalExpr>,
     expr: Expr,
+    // can expensive on small data to run literals in parallel
+    run_par: bool,
 }
 
 impl TernaryExpr {
@@ -21,12 +23,14 @@ impl TernaryExpr {
         truthy: Arc<dyn PhysicalExpr>,
         falsy: Arc<dyn PhysicalExpr>,
         expr: Expr,
+        run_par: bool,
     ) -> Self {
         Self {
             predicate,
             truthy,
             falsy,
             expr,
+            run_par,
         }
     }
 }
@@ -99,7 +103,11 @@ impl PhysicalExpr for TernaryExpr {
         let op_truthy = || self.truthy.evaluate(df, &state);
         let op_falsy = || self.falsy.evaluate(df, &state);
 
-        let (truthy, falsy) = POOL.install(|| rayon::join(op_truthy, op_falsy));
+        let (truthy, falsy) = if self.run_par {
+            POOL.install(|| rayon::join(op_truthy, op_falsy))
+        } else {
+            (op_truthy(), op_falsy())
+        };
         let mut truthy = truthy?;
         let mut falsy = falsy?;
 
@@ -139,8 +147,11 @@ impl PhysicalExpr for TernaryExpr {
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
         let op_falsy = || self.falsy.evaluate_on_groups(df, groups, state);
 
-        let (ac_mask, (ac_truthy, ac_falsy)) =
-            POOL.install(|| rayon::join(op_mask, || rayon::join(op_truthy, op_falsy)));
+        let (ac_mask, (ac_truthy, ac_falsy)) = if self.run_par {
+            POOL.install(|| rayon::join(op_mask, || rayon::join(op_truthy, op_falsy)))
+        } else {
+            (op_mask(), (op_truthy(), op_falsy()))
+        };
 
         let ac_mask = ac_mask?;
         let mut ac_truthy = ac_truthy?;
@@ -168,12 +179,12 @@ impl PhysicalExpr for TernaryExpr {
                 out.rename(truthy.name());
                 ac_truthy.with_series(out, true, Some(&self.expr))?;
                 Ok(ac_truthy)
-            }
+            },
 
             // we cannot flatten a list because that changes the order, so we apply over groups
             (AggregatedList(_), NotAggregated(_)) | (NotAggregated(_), AggregatedList(_)) => {
                 finish_as_iters(ac_truthy, ac_falsy, ac_mask)
-            }
+            },
             // then:
             //     col().shift()
             // otherwise:
@@ -267,7 +278,7 @@ impl PhysicalExpr for TernaryExpr {
                     ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 }
-            }
+            },
             // Both are or a flat series or aggregated into a list
             // so we can flatten the Series an apply the operators
             _ => {
@@ -288,8 +299,8 @@ impl PhysicalExpr for TernaryExpr {
                                 if options.is_groups_sensitive() =>
                             {
                                 has_agg = true
-                            }
-                            _ => {}
+                            },
+                            _ => {},
                         }
                     }
                     if has_arity && has_agg {
@@ -315,7 +326,7 @@ impl PhysicalExpr for TernaryExpr {
                 ac_truthy.with_series(out, false, None)?;
 
                 Ok(ac_truthy)
-            }
+            },
         }
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {

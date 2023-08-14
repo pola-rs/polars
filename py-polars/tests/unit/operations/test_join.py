@@ -359,16 +359,6 @@ def test_sorted_flag_after_joins() -> None:
     joined = dfb.join(dfa, on="b", how="anti")
     assert not joined["a"].flags["SORTED_ASC"]
 
-    # streaming left join
-    df1 = pl.DataFrame({"x": [1, 2, 3, 4], "y": [2, 4, 6, 6]}).set_sorted("x")
-    df2 = pl.DataFrame({"x": [4, 2, 3, 1], "z": [1, 4, 9, 1]})
-    assert (
-        df1.lazy()
-        .join(df2.lazy(), on="x", how="left")
-        .collect(streaming=True)["x"]
-        .flags["SORTED_ASC"]
-    )
-
 
 def test_jit_sort_joins() -> None:
     n = 200
@@ -410,54 +400,6 @@ def test_jit_sort_joins() -> None:
         a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
         assert_frame_equal(a, pl_result)
         assert pl_result["a"].flags["SORTED_ASC"]
-
-
-def test_streaming_joins() -> None:
-    n = 100
-    dfa = pd.DataFrame(
-        {
-            "a": np.random.randint(0, 40, n),
-            "b": np.arange(0, n),
-        }
-    )
-
-    n = 100
-    dfb = pd.DataFrame(
-        {
-            "a": np.random.randint(0, 40, n),
-            "b": np.arange(0, n),
-        }
-    )
-    dfa_pl = pl.from_pandas(dfa).sort("a")
-    dfb_pl = pl.from_pandas(dfb)
-
-    join_strategies: list[Literal["inner", "left"]] = ["inner", "left"]
-    for how in join_strategies:
-        pd_result = dfa.merge(dfb, on="a", how=how)
-        pd_result.columns = pd.Index(["a", "b", "b_right"])
-
-        pl_result = (
-            dfa_pl.lazy()
-            .join(dfb_pl.lazy(), on="a", how=how)
-            .sort(["a", "b"])
-            .collect(streaming=True)
-        )
-
-        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
-        pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
-
-        pd_result = dfa.merge(dfb, on=["a", "b"], how=how)
-
-        pl_result = (
-            dfa_pl.lazy()
-            .join(dfb_pl.lazy(), on=["a", "b"], how=how)
-            .sort(["a", "b"])
-            .collect(streaming=True)
-        )
-
-        # we cast to integer because pandas joins creates floats
-        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
-        pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
 
 
 def test_join_panic_on_binary_expr_5915() -> None:
@@ -579,43 +521,67 @@ def test_outer_join_list_() -> None:
 
 
 def test_join_validation() -> None:
-    a = pl.DataFrame({"a": [1, 1, 1, 2]})
+    def test_each_join_validation(
+        unique: pl.DataFrame, duplicate: pl.DataFrame, how: JoinStrategy
+    ) -> None:
+        # one_to_many
+        _one_to_many_success_inner = unique.join(
+            duplicate, on="id", how=how, validate="1:m"
+        )
 
-    b = pl.DataFrame({"a": [2]})
+        with pytest.raises(pl.ComputeError):
+            _one_to_many_fail_inner = duplicate.join(
+                unique, on="id", how=how, validate="1:m"
+            )
 
-    assert a.join(b, on="a", validate="m:m")["a"].to_list() == [2]
-    assert a.join(b, on="a", validate="m:1")["a"].to_list() == [2]
-    # swap the tables
-    assert b.join(a, on="a", validate="1:m")["a"].to_list() == [2]
+        # one to one
+        with pytest.raises(pl.ComputeError):
+            _one_to_one_fail_1_inner = unique.join(
+                duplicate, on="id", how=how, validate="1:1"
+            )
 
-    with pytest.raises(pl.ComputeError):
-        a.join(b, on="a", validate="1:m")
-    with pytest.raises(pl.ComputeError):
-        a.join(b, on="a", validate="1:1")
-    with pytest.raises(pl.ComputeError):
-        b.join(a, on="a", validate="m:1")
-    with pytest.raises(pl.ComputeError):
-        b.join(a, on="a", validate="1:1")
+        with pytest.raises(pl.ComputeError):
+            _one_to_one_fail_2_inner = duplicate.join(
+                unique, on="id", how=how, validate="1:1"
+            )
 
-    df = pl.DataFrame(
-        {
-            "foo": [1, 2],
-            "ham": ["a", "a"],
-        }
+        # many to one
+        with pytest.raises(pl.ComputeError):
+            _many_to_one_fail_inner = unique.join(
+                duplicate, on="id", how=how, validate="m:1"
+            )
+
+        _many_to_one_success_inner = duplicate.join(
+            unique, on="id", how=how, validate="m:1"
+        )
+
+        # many to many
+        _many_to_many_success_1_inner = duplicate.join(
+            unique, on="id", how=how, validate="m:m"
+        )
+
+        _many_to_many_success_2_inner = unique.join(
+            duplicate, on="id", how=how, validate="m:m"
+        )
+
+    # test data
+    short_unique = pl.DataFrame(
+        {"id": [1, 2, 3, 4], "name": ["hello", "world", "rust", "polars"]}
     )
-
-    other_df = pl.DataFrame(
-        {
-            "apple": ["x", "y", "z"],
-            "ham": ["a", "b", "z"],
-        }
+    short_duplicate = pl.DataFrame({"id": [1, 2, 3, 1], "cnt": [2, 4, 6, 1]})
+    long_unique = pl.DataFrame(
+        {"id": [1, 2, 3, 4, 5], "name": ["hello", "world", "rust", "polars", "meow"]}
     )
+    long_duplicate = pl.DataFrame({"id": [1, 2, 3, 1, 5], "cnt": [2, 4, 6, 1, 8]})
 
-    with pytest.raises(pl.ComputeError):
-        df.join(other_df, on="ham", validate="1:m")
+    join_strategies: list[JoinStrategy] = ["inner", "outer", "left"]
 
-    assert df.join(other_df, on="ham", validate="m:1")["foo"].to_list() == [1, 2]
-    assert other_df.join(df, on="ham", validate="1:m")["foo"].to_list() == [1, 2]
+    for how in join_strategies:
+        # same size
+        test_each_join_validation(long_unique, long_duplicate, how)
 
-    with pytest.raises(pl.ComputeError):
-        other_df.join(df, on="ham", validate="m:1")
+        # left longer
+        test_each_join_validation(long_unique, short_duplicate, how)
+
+        # right longer
+        test_each_join_validation(short_unique, long_duplicate, how)

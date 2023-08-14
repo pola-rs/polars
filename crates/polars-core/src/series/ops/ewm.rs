@@ -24,7 +24,7 @@ impl Series {
                     options.ignore_nulls,
                 );
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
-            }
+            },
             DataType::Float64 => {
                 let xs = self.f64().unwrap();
                 let result = ewm_mean(
@@ -35,7 +35,7 @@ impl Series {
                     options.ignore_nulls,
                 );
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
-            }
+            },
             _ => self.cast(&DataType::Float64)?.ewm_mean(options),
         }
     }
@@ -54,7 +54,7 @@ impl Series {
                     options.ignore_nulls,
                 );
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
-            }
+            },
             DataType::Float64 => {
                 let xs = self.f64().unwrap();
                 let result = ewm_std(
@@ -66,7 +66,7 @@ impl Series {
                     options.ignore_nulls,
                 );
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
-            }
+            },
             _ => self.cast(&DataType::Float64)?.ewm_std(options),
         }
     }
@@ -85,7 +85,7 @@ impl Series {
                     options.ignore_nulls,
                 );
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
-            }
+            },
             DataType::Float64 => {
                 let xs = self.f64().unwrap();
                 let result = ewm_var(
@@ -97,7 +97,7 @@ impl Series {
                     options.ignore_nulls,
                 );
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
-            }
+            },
             _ => self.cast(&DataType::Float64)?.ewm_var(options),
         }
     }

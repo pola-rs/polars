@@ -790,8 +790,8 @@ def test_lit_dtypes() -> None:
             "f32": lit_series(0, pl.Float32),
             "u16": lit_series(0, pl.UInt16),
             "i16": lit_series(0, pl.Int16),
-            "i64": lit_series([8], None),
-            "list_i64": lit_series([[1, 2, 3]], None),
+            "i64": lit_series(pl.Series([8]), None),
+            "list_i64": lit_series(pl.Series([[1, 2, 3]]), None),
         }
     )
     assert df.dtypes == [
@@ -870,7 +870,7 @@ def test_exclude(input: tuple[Any, ...], expected: list[str]) -> None:
     assert df.select(pl.all().exclude(*input)).columns == expected
 
 
-@pytest.mark.parametrize("input", [(5,), (["a"], "b"), (pl.Int64, "a")])
+@pytest.mark.parametrize("input", [(5,), (["a"], date.today()), (pl.Int64, "a")])
 def test_exclude_invalid_input(input: tuple[Any, ...]) -> None:
     df = pl.DataFrame(schema=["a", "b", "c"])
     with pytest.raises(TypeError):

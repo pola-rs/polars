@@ -56,15 +56,15 @@ pub(super) fn apply_trigonometric_function(
         Float32 => {
             let ca = s.f32().unwrap();
             apply_trigonometric_function_to_float(ca, trig_function)
-        }
+        },
         Float64 => {
             let ca = s.f64().unwrap();
             apply_trigonometric_function_to_float(ca, trig_function)
-        }
+        },
         dt if dt.is_numeric() => {
             let s = s.cast(&Float64)?;
             apply_trigonometric_function(&s, trig_function)
-        }
+        },
         dt => polars_bail!(op = "trigonometry", dt),
     }
 }
@@ -93,15 +93,15 @@ fn arctan2_on_series(y: &Series, x: &Series) -> PolarsResult<Option<Series>> {
         Float32 => {
             let y_ca: &ChunkedArray<Float32Type> = y.f32().unwrap();
             arctan2_on_floats(y_ca, x)
-        }
+        },
         Float64 => {
             let y_ca: &ChunkedArray<Float64Type> = y.f64().unwrap();
             arctan2_on_floats(y_ca, x)
-        }
+        },
         _ => {
             let y = y.cast(&DataType::Float64)?;
             arctan2_on_series(&y, x)
-        }
+        },
     }
 }
 

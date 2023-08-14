@@ -39,7 +39,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             chunks.clear();
             chunks.push(Box::new(new_array));
             DataType::List(Box::new(cat.dtype().clone()))
-        }
+        },
         #[cfg(all(feature = "dtype-array", feature = "dtype-categorical"))]
         DataType::Array(inner, width) if *inner == DataType::Categorical(None) => {
             let array = concatenate_owned_unchecked(chunks).unwrap();
@@ -65,7 +65,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             chunks.clear();
             chunks.push(Box::new(new_array));
             DataType::Array(Box::new(cat.dtype().clone()), width)
-        }
+        },
         _ => dtype,
     }
 }
@@ -74,6 +74,30 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
+    pub fn from_chunk_iter<I>(name: &str, iter: I) -> Self
+    where
+        I: IntoIterator,
+        <I as IntoIterator>::Item: StaticallyMatchesPolarsType<T> + Array,
+    {
+        let chunks = iter
+            .into_iter()
+            .map(|x| Box::new(x) as Box<dyn Array>)
+            .collect();
+        unsafe { Self::from_chunks(name, chunks) }
+    }
+
+    pub fn try_from_chunk_iter<I, A, E>(name: &str, iter: I) -> Result<Self, E>
+    where
+        I: IntoIterator<Item = Result<A, E>>,
+        A: StaticallyMatchesPolarsType<T> + Array,
+    {
+        let chunks: Result<_, _> = iter
+            .into_iter()
+            .map(|x| Ok(Box::new(x?) as Box<dyn Array>))
+            .collect();
+        unsafe { Ok(Self::from_chunks(name, chunks?)) }
+    }
+
     /// Create a new ChunkedArray from existing chunks.
     ///
     /// # Safety

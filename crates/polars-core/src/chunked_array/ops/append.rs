@@ -43,13 +43,13 @@ pub(super) fn update_sorted_flag_before_append<'a, T>(
                 if end > start {
                     ca.set_sorted_flag(IsSorted::Not)
                 }
-            }
+            },
             (IsSorted::Descending, IsSorted::Descending) => {
                 let (start, end) = get_start_end();
                 if end < start {
                     ca.set_sorted_flag(IsSorted::Not)
                 }
-            }
+            },
             _ => ca.set_sorted_flag(IsSorted::Not),
         }
     } else if ca.is_empty() {

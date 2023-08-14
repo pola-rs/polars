@@ -162,7 +162,7 @@ impl GenericJoinProbe {
                 let out = _finish_join(left_df, right_df, Some(self.suffix.as_ref()))?;
                 self.output_names = Some(out.get_column_names_owned());
                 out
-            }
+            },
             Some(names) => unsafe {
                 // safety:
                 // if we have duplicate names, we overwrite
@@ -217,11 +217,11 @@ impl GenericJoinProbe {
                         .extend(indexes_right.iter().copied().map(Some));
                     self.join_tuples_b
                         .extend(std::iter::repeat(df_idx_left).take(indexes_right.len()));
-                }
+                },
                 None => {
                     self.join_tuples_b.push(df_idx_left);
                     self.join_tuples_a_left_join.push(None);
-                }
+                },
             }
         }
         let right_df = self.df_a.as_ref();

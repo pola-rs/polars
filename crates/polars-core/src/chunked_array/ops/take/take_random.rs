@@ -241,7 +241,7 @@ impl<'a> IntoTakeRandom<'a> for &'a Utf8Chunked {
                 let arr = self.downcast_iter().next().unwrap();
                 let t = Utf8TakeRandomSingleChunk { arr };
                 TakeRandBranch2::Single(t)
-            }
+            },
             _ => {
                 let chunks = self.downcast_chunks();
                 let t = Utf8TakeRandom {
@@ -249,7 +249,7 @@ impl<'a> IntoTakeRandom<'a> for &'a Utf8Chunked {
                     chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };
                 TakeRandBranch2::Multi(t)
-            }
+            },
         }
     }
 }
@@ -313,7 +313,7 @@ impl<'a> IntoTakeRandom<'a> for &'a BinaryChunked {
                 let arr = self.downcast_iter().next().unwrap();
                 let t = BinaryTakeRandomSingleChunk { arr };
                 TakeRandBranch2::Single(t)
-            }
+            },
             _ => {
                 let chunks = self.downcast_chunks();
                 let t = BinaryTakeRandom {
@@ -321,7 +321,7 @@ impl<'a> IntoTakeRandom<'a> for &'a BinaryChunked {
                     chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };
                 TakeRandBranch2::Multi(t)
-            }
+            },
         }
     }
 }
@@ -336,7 +336,7 @@ impl<'a> IntoTakeRandom<'a> for &'a BooleanChunked {
                 let arr = self.downcast_iter().next().unwrap();
                 let t = BoolTakeRandomSingleChunk { arr };
                 TakeRandBranch2::Single(t)
-            }
+            },
             _ => {
                 let chunks = self.downcast_chunks();
                 let t = BoolTakeRandom {
@@ -344,7 +344,7 @@ impl<'a> IntoTakeRandom<'a> for &'a BooleanChunked {
                     chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };
                 TakeRandBranch2::Multi(t)
-            }
+            },
         }
     }
 }

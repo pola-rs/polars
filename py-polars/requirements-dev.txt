@@ -23,7 +23,7 @@ fsspec
 
 # Tooling
 hypothesis==6.82.0
-maturin==1.1.0
+maturin==1.2.1
 patchelf; platform_system == 'Linux'  # Extra dependency for maturin, only for Linux
 pytest==7.4.0
 pytest-cov==4.1.0

@@ -6,6 +6,8 @@ use std::sync::Arc;
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use polars_arrow::prelude::ValueSize;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
@@ -145,6 +147,13 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// multiple append operations.
 ///
 /// See also [`ChunkedArray::extend`] for appends within a chunk.
+///
+/// # Invariants
+/// - A `ChunkedArray` should always have at least a single `ArrayRef`.
+/// - The [`PolarsDataType`] `T` should always map to the correct [`ArrowDataType`] in the `ArrayRef`
+///   chunks.
+/// - Nested datatypes such as `List` and `Array` store the physical types instead of the
+///   logical type given by the datatype.
 pub struct ChunkedArray<T: PolarsDataType> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,
@@ -154,12 +163,42 @@ pub struct ChunkedArray<T: PolarsDataType> {
 }
 
 bitflags! {
-    #[derive(Default)]
-    pub(crate) struct Settings: u8 {
-    const SORTED_ASC = 0x01;
-    const SORTED_DSC = 0x02;
-    const FAST_EXPLODE_LIST = 0x04;
-}}
+    #[derive(Default, Debug, Clone, Copy,PartialEq)]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
+    pub struct Settings: u8 {
+        const SORTED_ASC = 0x01;
+        const SORTED_DSC = 0x02;
+        const FAST_EXPLODE_LIST = 0x04;
+    }
+}
+
+impl Settings {
+    pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
+        match sorted {
+            IsSorted::Not => {
+                self.remove(Settings::SORTED_ASC | Settings::SORTED_DSC);
+            },
+            IsSorted::Ascending => {
+                self.remove(Settings::SORTED_DSC);
+                self.insert(Settings::SORTED_ASC)
+            },
+            IsSorted::Descending => {
+                self.remove(Settings::SORTED_ASC);
+                self.insert(Settings::SORTED_DSC)
+            },
+        }
+    }
+
+    pub fn get_sorted_flag(&self) -> IsSorted {
+        if self.contains(Settings::SORTED_ASC) {
+            IsSorted::Ascending
+        } else if self.contains(Settings::SORTED_DSC) {
+            IsSorted::Descending
+        } else {
+            IsSorted::Not
+        }
+    }
+}
 
 impl<T: PolarsDataType> ChunkedArray<T> {
     pub(crate) fn is_sorted_ascending_flag(&self) -> bool {
@@ -174,40 +213,22 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
     }
 
-    pub(crate) fn clear_settings(&mut self) {
-        self.bit_settings.bits = 0;
+    pub fn get_flags(&self) -> Settings {
+        self.bit_settings
+    }
+
+    /// Set flags for the Chunked Array
+    pub(crate) fn set_flags(&mut self, flags: Settings) {
+        self.bit_settings = flags;
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
-        if self.is_sorted_ascending_flag() {
-            IsSorted::Ascending
-        } else if self.is_sorted_descending_flag() {
-            IsSorted::Descending
-        } else {
-            IsSorted::Not
-        }
+        self.bit_settings.get_sorted_flag()
     }
 
     /// Set the 'sorted' bit meta info.
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
-        match sorted {
-            IsSorted::Not => {
-                self.bit_settings
-                    .remove(Settings::SORTED_ASC | Settings::SORTED_DSC);
-            }
-            IsSorted::Ascending => {
-                // // unset descending sorted
-                self.bit_settings.remove(Settings::SORTED_DSC);
-                // set ascending sorted
-                self.bit_settings.insert(Settings::SORTED_ASC)
-            }
-            IsSorted::Descending => {
-                // unset ascending sorted
-                self.bit_settings.remove(Settings::SORTED_ASC);
-                // set descending sorted
-                self.bit_settings.insert(Settings::SORTED_DSC)
-            }
-        }
+        self.bit_settings.set_sorted_flag(sorted)
     }
 
     /// Get the index of the first non null value in this ChunkedArray.
@@ -264,7 +285,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             match (self.dtype(), series.dtype()) {
                 (Int64, Datetime(_, _)) | (Int64, Duration(_)) | (Int32, Date) => {
                     &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>)
-                }
+                },
                 _ => panic!(
                     "cannot unpack series {:?} into matching type {:?}",
                     series,
@@ -590,7 +611,7 @@ pub(crate) mod test {
         let a = &Int32Chunked::new("a", &[1, 100, 6, 40]);
         let b = &Int32Chunked::new("b", &[-1, 2, 3, 4]);
 
-        // Not really asserting anything here but shill making sure the code is exercised
+        // Not really asserting anything here but still making sure the code is exercised
         // This (and more) is properly tested from the integration test suite and Python bindings.
         println!("{:?}", a + b);
         println!("{:?}", a - b);

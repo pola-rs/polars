@@ -10,6 +10,7 @@ import polars as pl
 from polars.exceptions import InvalidAssert
 from polars.testing import (
     assert_frame_equal,
+    assert_frame_equal_local_categoricals,
     assert_frame_not_equal,
     assert_series_equal,
     assert_series_not_equal,
@@ -595,6 +596,19 @@ def test_assert_series_equal_uint_overflow() -> None:
         assert_series_equal(s1, s2, atol=0)
     assert_series_equal(s1, s2, atol=1)
 
+    # confirm no OverflowError in the below test case:
+    # as "(left-right).abs()" > max(Int64)
+    left = pl.Series(
+        values=[2810428175213635359],
+        dtype=pl.UInt64,
+    )
+    right = pl.Series(
+        values=[15807433754238349345],
+        dtype=pl.UInt64,
+    )
+    with pytest.raises(AssertionError):
+        assert_series_equal(left, right)
+
 
 @pytest.mark.parametrize(
     ("data1", "data2"),
@@ -998,3 +1012,27 @@ def test_assert_series_equal_raises_assertion_error(
     with pytest.raises(AssertionError):
         assert_series_equal(s1, s2, **kwargs)
     assert_series_not_equal(s1, s2, **kwargs)
+
+
+def test_assert_series_equal_categorical() -> None:
+    s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
+    s2 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
+    with pytest.raises(pl.ComputeError, match="cannot compare categoricals"):
+        assert_series_equal(s1, s2)
+
+    assert_series_equal(s1, s2, categorical_as_str=True)
+
+
+def test_assert_series_equal_categorical_vs_str() -> None:
+    s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
+    s2 = pl.Series(["a", "b", "a"], dtype=pl.Utf8)
+
+    with pytest.raises(AssertionError, match="Dtype mismatch"):
+        assert_series_equal(s1, s2, categorical_as_str=True)
+
+
+def test_assert_frame_equal_local_categoricals_deprecated() -> None:
+    df = pl.Series(["a", "b", "a"], dtype=pl.Categorical).to_frame()
+
+    with pytest.deprecated_call():
+        assert_frame_equal_local_categoricals(df, df)

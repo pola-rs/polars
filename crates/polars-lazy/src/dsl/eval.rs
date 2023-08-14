@@ -32,7 +32,7 @@ pub(crate) fn eval_field_to_dtype(f: &Field, expr: &Expr, list: bool) -> Field {
             } else {
                 Field::new(f.name(), dtype.clone())
             }
-        }
+        },
         Err(_) => Field::new(f.name(), DataType::Null),
     }
 }

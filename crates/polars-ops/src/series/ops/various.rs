@@ -32,12 +32,12 @@ pub trait SeriesMethods: SeriesSealed {
             DataType::List(_) => {
                 let mut ca = s.list().unwrap().clone();
                 crate::chunked_array::hash::hash(&mut ca, build_hasher)
-            }
+            },
             _ => {
                 let mut h = vec![];
                 s.0.vec_hash(build_hasher, &mut h).unwrap();
                 UInt64Chunked::from_vec(s.name(), h)
-            }
+            },
         }
     }
 

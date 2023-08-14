@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Sequence
 
 import pytest
 
@@ -14,7 +14,7 @@ from polars.utils.convert import (
     _timedelta_to_pl_timedelta,
 )
 from polars.utils.meta import get_idx_type
-from polars.utils.various import _in_notebook, parse_version
+from polars.utils.various import _in_notebook, parse_percentiles, parse_version
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
@@ -124,3 +124,27 @@ def test_get_idx_type_deprecation() -> None:
 def test_in_notebook() -> None:
     # private function, but easier to test this separately and mock it in the callers
     assert not _in_notebook()
+
+
+@pytest.mark.parametrize(
+    ("percentiles", "expected"),
+    [
+        (None, [0.5]),
+        (0.2, [0.2, 0.5]),
+        (0.5, [0.5]),
+        ((0.25, 0.75), [0.25, 0.5, 0.75]),
+        # Undocumented effect - percentiles get sorted.
+        # Can be changed, this serves as documentation of current behaviour.
+        ((0.6, 0.3), [0.3, 0.5, 0.6]),
+    ],
+)
+def test_parse_percentiles(
+    percentiles: Sequence[float] | float | None, expected: Sequence[float]
+) -> None:
+    assert parse_percentiles(percentiles) == expected
+
+
+@pytest.mark.parametrize(("percentiles"), [(1.1), ([-0.1])])
+def test_parse_percentiles_errors(percentiles: Sequence[float] | float | None) -> None:
+    with pytest.raises(ValueError):
+        parse_percentiles(percentiles)

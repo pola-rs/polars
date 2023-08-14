@@ -33,7 +33,7 @@ def concat(
     ----------
     items
         DataFrames, LazyFrames, or Series to concatenate.
-    how : {'vertical', 'diagonal', 'horizontal', 'align'}
+    how : {'vertical', 'vertical_relaxed', 'diagonal', 'horizontal', 'align'}
         Series only support the `vertical` strategy.
         LazyFrames do not support the `horizontal` strategy.
 
@@ -67,6 +67,19 @@ def concat(
     ╞═════╪═════╡
     │ 1   ┆ 3   │
     │ 2   ┆ 4   │
+    └─────┴─────┘
+
+    >>> df1 = pl.DataFrame({"a": [1], "b": [3]})
+    >>> df2 = pl.DataFrame({"a": [2.5], "b": [4]})
+    >>> pl.concat([df1, df2], how="vertical_relaxed")  # 'a' coerced into f64
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ f64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1.0 ┆ 3   │
+    │ 2.5 ┆ 4   │
     └─────┴─────┘
 
     >>> df_h1 = pl.DataFrame({"l1": [1, 2], "l2": [3, 4]})

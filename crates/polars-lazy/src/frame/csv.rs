@@ -32,6 +32,7 @@ pub struct LazyCsvReader<'a> {
     encoding: CsvEncoding,
     row_count: Option<RowCount>,
     try_parse_dates: bool,
+    raise_if_empty: bool,
 }
 
 #[cfg(feature = "csv")]
@@ -59,6 +60,7 @@ impl<'a> LazyCsvReader<'a> {
             encoding: CsvEncoding::Utf8,
             row_count: None,
             try_parse_dates: false,
+            raise_if_empty: true,
         }
     }
 
@@ -191,10 +193,18 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
-    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::Utf8]`.
+    /// Automatically try to parse dates/datetimes and time.
+    /// If parsing fails, columns remain of dtype `[DataType::Utf8]`.
     #[cfg(feature = "temporal")]
     pub fn with_try_parse_dates(mut self, toggle: bool) -> Self {
         self.try_parse_dates = toggle;
+        self
+    }
+
+    /// Raise an error if CSV is empty (otherwise return an empty frame)
+    #[must_use]
+    pub fn raise_if_empty(mut self, toggle: bool) -> Self {
+        self.raise_if_empty = toggle;
         self
     }
 
@@ -231,6 +241,7 @@ impl<'a> LazyCsvReader<'a> {
             self.eol_char,
             None,
             self.try_parse_dates,
+            self.raise_if_empty,
         )?;
         let mut schema = f(schema)?;
 
@@ -268,6 +279,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
             self.encoding,
             self.row_count,
             self.try_parse_dates,
+            self.raise_if_empty,
         )?
         .build()
         .into();

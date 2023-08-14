@@ -2,7 +2,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.selectors import selector_column_names
+from polars.selectors import expand_selector
 from polars.testing import assert_frame_equal
 
 
@@ -166,10 +166,15 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
     )
 
 
+def test_selector_drop(df: pl.DataFrame) -> None:
+    dfd = df.drop(cs.numeric(), cs.temporal())
+    assert dfd.columns == ["eee", "fgg", "qqR"]
+
+
 def test_selector_duration(df: pl.DataFrame) -> None:
     assert df.select(cs.duration("ms")).columns == []
     assert df.select(cs.duration(["ms", "ns"])).columns == []
-    assert selector_column_names(df, cs.duration()) == ("Lmn",)
+    assert expand_selector(df, cs.duration()) == ("Lmn",)
 
     df = pl.DataFrame(
         schema={
@@ -178,9 +183,9 @@ def test_selector_duration(df: pl.DataFrame) -> None:
             "d3": pl.Duration("ms"),
         },
     )
-    assert selector_column_names(df, cs.duration()) == ("d1", "d2", "d3")
-    assert selector_column_names(df, cs.duration("us")) == ("d2",)
-    assert selector_column_names(df, cs.duration(["ms", "ns"])) == ("d1", "d3")
+    assert expand_selector(df, cs.duration()) == ("d1", "d2", "d3")
+    assert expand_selector(df, cs.duration("us")) == ("d2",)
+    assert expand_selector(df, cs.duration(["ms", "ns"])) == ("d1", "d3")
 
 
 def test_selector_ends_with(df: pl.DataFrame) -> None:
@@ -326,11 +331,12 @@ def test_selector_expansion() -> None:
 
 
 def test_selector_repr() -> None:
-    assert repr(cs.all() - cs.first()) == "cs.all() - cs.first()"
+    assert repr(cs.all() - cs.first()) == "(cs.all() - cs.first())"
     assert repr(~cs.starts_with("a", "b")) == "~cs.starts_with('a', 'b')"
-    assert repr(cs.float() | cs.by_name("x")) == "cs.float() | cs.by_name('x')"
+    assert repr(cs.float() | cs.by_name("x")) == "(cs.float() | cs.by_name('x'))"
     assert (
-        repr(cs.integer() & cs.matches("z")) == "cs.integer() & cs.matches(pattern='z')"
+        repr(cs.integer() & cs.matches("z"))
+        == "(cs.integer() & cs.matches(pattern='z'))"
     )
 
 

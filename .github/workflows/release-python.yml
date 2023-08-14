@@ -8,7 +8,7 @@ on:
 env:
   RUST_TOOLCHAIN: nightly-2023-07-27
   PYTHON_VERSION: '3.8'
-  MATURIN_VERSION: '1.1.0'
+  MATURIN_VERSION: '1.2.1'
   MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
 
 defaults:

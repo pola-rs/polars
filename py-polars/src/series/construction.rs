@@ -96,7 +96,7 @@ impl PySeries {
                             return Err(e);
                         }
                         builder.append_null()
-                    }
+                    },
                 }
             }
         }
@@ -129,7 +129,7 @@ where
                         return Err(e);
                     }
                     builder.append_null()
-                }
+                },
             }
         }
     }
@@ -247,7 +247,7 @@ impl PySeries {
                         ))
                         .map_err(PyPolarsErr::from)?;
                     Ok(series.into())
-                }
+                },
                 _ => Err(PyValueError::new_err("could not create Array from input")),
             }
         }
@@ -281,17 +281,19 @@ impl PySeries {
                     }
                     previous = o;
                 }
+
+                // SAFETY: we checked the type in the downcast.
                 let mut out = unsafe { ListChunked::from_chunks(name, vec![arr]) };
                 if fast_explode {
                     out.set_fast_explode()
                 }
                 Ok(out.into_series().into())
-            }
+            },
             _ => {
                 let series: Series =
                     std::convert::TryFrom::try_from((name, arr)).map_err(PyPolarsErr::from)?;
                 Ok(series.into())
-            }
+            },
         }
     }
 }

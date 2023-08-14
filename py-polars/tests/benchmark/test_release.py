@@ -16,7 +16,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 # Mark all tests in this module as benchmark tests
-pytestmark = pytest.mark.benchmark
+pytestmark = pytest.mark.benchmark()
 
 
 @pytest.mark.skipif(

@@ -44,7 +44,8 @@ impl PartialEq for PythonFunction {
             eq.call1(py, (other.0.clone(),))
                 .unwrap()
                 .extract::<bool>(py)
-                .unwrap()
+                // equality can be not implemented, so default to false
+                .unwrap_or(false)
         })
     }
 }
@@ -194,7 +195,7 @@ impl SeriesUdf for PythonUdfExpression {
                 let mut fld = fld.clone();
                 fld.coerce(DataType::Unknown);
                 fld
-            }
+            },
         }))
     }
 }
@@ -214,7 +215,7 @@ impl Expr {
                 let mut fld = fld.clone();
                 fld.coerce(DataType::Unknown);
                 fld
-            }
+            },
         });
 
         Expr::AnonymousFunction {

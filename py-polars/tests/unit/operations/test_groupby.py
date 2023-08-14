@@ -430,23 +430,6 @@ def test_groupby_all_masked_out() -> None:
     assert_frame_equal(parts[0], df)
 
 
-def test_groupby_min_max_string_type() -> None:
-    table = pl.from_dict({"a": [1, 1, 2, 2, 2], "b": ["a", "b", "c", "d", None]})
-
-    expected = {"a": [1, 2], "min": ["a", "c"], "max": ["b", "d"]}
-
-    for streaming in [True, False]:
-        assert (
-            table.lazy()
-            .groupby("a")
-            .agg([pl.min("b").alias("min"), pl.max("b").alias("max")])
-            .collect(streaming=streaming)
-            .sort("a")
-            .to_dict(False)
-            == expected
-        )
-
-
 def test_groupby_null_propagation_6185() -> None:
     df_1 = pl.DataFrame({"A": [0, 0], "B": [1, 2]})
 
@@ -861,3 +844,11 @@ def test_groupby_agg_deprecation_aggs_keyword() -> None:
 
     expected = pl.DataFrame({"a": [1, 2], "b": [[3, 4], [5]]})
     assert_frame_equal(result, expected)
+
+
+def test_groupby_partitioned_ending_cast(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
+    df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
+    out = df.groupby(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))
+    expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
+    assert_frame_equal(out, expected)

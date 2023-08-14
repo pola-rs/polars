@@ -11,14 +11,16 @@ pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
 use polars_utils::sync::SyncPtr;
 
 use super::*;
+use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     struct BitSettings: u8 {
-    const ORIGINAL = 0x01;
-    const LEXICAL_SORT = 0x02;
-}}
+        const ORIGINAL = 0x01;
+        const LEXICAL_ORDERING = 0x02;
+    }
+}
 
 #[derive(Clone)]
 pub struct CategoricalChunked {
@@ -47,14 +49,48 @@ impl CategoricalChunked {
         self.logical.name()
     }
 
-    /// Get a reference to the logical array (the categories).
+    // TODO: Rename this
+    /// Get a reference to the physical array (the categories).
     pub fn logical(&self) -> &UInt32Chunked {
         &self.logical
     }
 
-    /// Get a reference to the logical array (the categories).
+    /// Get a mutable reference to the physical array (the categories).
     pub(crate) fn logical_mut(&mut self) -> &mut UInt32Chunked {
         &mut self.logical
+    }
+
+    /// Convert a categorical column to its local representation.
+    pub fn to_local(&self) -> Self {
+        let rev_map = self.get_rev_map();
+        let (physical_map, categories) = match rev_map.as_ref() {
+            RevMapping::Global(m, c, _) => (m, c),
+            RevMapping::Local(_) => return self.clone(),
+        };
+
+        let local_rev_map = RevMapping::Local(categories.clone());
+        // TODO: A fast path can possibly be implemented here:
+        // if all physical map keys are equal to their values,
+        // we can skip the apply and only update the rev_map
+        let local_ca = self
+            .logical()
+            .apply_on_opt(|opt_v| opt_v.map(|v| *physical_map.get(&v).unwrap()));
+
+        let mut out =
+            unsafe { Self::from_cats_and_rev_map_unchecked(local_ca, local_rev_map.into()) };
+        out.set_fast_unique(self.can_fast_unique());
+        out.set_lexical_ordering(self.uses_lexical_ordering());
+
+        out
+    }
+
+    pub(crate) fn get_flags(&self) -> Settings {
+        self.logical().get_flags()
+    }
+
+    /// Set flags for the Chunked Array
+    pub(crate) fn set_flags(&mut self, flags: Settings) {
+        self.logical_mut().set_flags(flags)
     }
 
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
@@ -75,22 +111,24 @@ impl CategoricalChunked {
         }
     }
 
-    pub fn set_lexical_sorted(&mut self, toggle: bool) {
+    pub fn set_lexical_ordering(&mut self, toggle: bool) {
         if toggle {
-            self.bit_settings.insert(BitSettings::LEXICAL_SORT);
+            self.bit_settings.insert(BitSettings::LEXICAL_ORDERING);
         } else {
-            self.bit_settings.remove(BitSettings::LEXICAL_SORT);
+            self.bit_settings.remove(BitSettings::LEXICAL_ORDERING);
         }
     }
 
-    pub(crate) fn use_lexical_sort(&self) -> bool {
-        self.bit_settings.contains(BitSettings::LEXICAL_SORT)
+    /// Return whether or not the [`CategoricalChunked`] uses the lexical order
+    /// of the string values when sorting.
+    pub fn uses_lexical_ordering(&self) -> bool {
+        self.bit_settings.contains(BitSettings::LEXICAL_ORDERING)
     }
 
     /// Create a [`CategoricalChunked`] from an array of `idx` and an existing [`RevMapping`]:  `rev_map`.
     ///
     /// # Safety
-    /// Invariant in `v < rev_map.len() for v in idx` must be hold.
+    /// Invariant in `v < rev_map.len() for v in idx` must hold.
     pub unsafe fn from_cats_and_rev_map_unchecked(
         idx: UInt32Chunked,
         rev_map: Arc<RevMapping>,
@@ -116,8 +154,8 @@ impl CategoricalChunked {
         self.bit_settings.contains(BitSettings::ORIGINAL) && self.logical.chunks.len() == 1
     }
 
-    pub(crate) fn set_fast_unique(&mut self, can: bool) {
-        if can {
+    pub(crate) fn set_fast_unique(&mut self, toggle: bool) {
+        if toggle {
             self.bit_settings.insert(BitSettings::ORIGINAL);
         } else {
             self.bit_settings.remove(BitSettings::ORIGINAL);
@@ -182,13 +220,13 @@ impl LogicalType for CategoricalChunked {
 
                 let ca = builder.finish();
                 Ok(ca.into_series())
-            }
+            },
             DataType::UInt32 => {
                 let ca = unsafe {
                     UInt32Chunked::from_chunks(self.logical.name(), self.logical.chunks.clone())
                 };
                 Ok(ca.into_series())
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => Ok(self.clone().into_series()),
             _ => self.logical.cast(dtype),
@@ -315,7 +353,7 @@ mod test {
                 let str_s = s.cast(&DataType::Utf8).unwrap();
                 assert_eq!(str_s.get(0)?, AnyValue::Utf8("a"));
                 assert_eq!(s.len(), 1);
-            }
+            },
             _ => panic!(),
         }
         let flat = aggregated.explode()?;

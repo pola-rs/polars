@@ -37,6 +37,12 @@ def scan_pyarrow_dataset(
     This API is experimental and may change without it being considered a breaking
     change.
 
+    Notes
+    -----
+    When using partitioning, the appropriate ``partitioning`` option must be set on
+    ``pyarrow.dataset.dataset`` before passing to Polars or the partitioned-on column(s)
+    may not get passed to Polars.
+
     Examples
     --------
     >>> import pyarrow.dataset as ds

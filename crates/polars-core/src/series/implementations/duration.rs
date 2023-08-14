@@ -36,9 +36,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _clear_settings(&mut self) {
-        self.0.clear_settings()
-    }
 
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0
@@ -63,8 +60,11 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
-        self.0.deref_mut().set_sorted_flag(is_sorted)
+    fn _set_flags(&mut self, flags: Settings) {
+        self.0.deref_mut().set_flags(flags)
+    }
+    fn _get_flags(&self) -> Settings {
+        self.0.deref().get_flags()
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -156,7 +156,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
-            }
+            },
             (dtl, dtr) => polars_bail!(opq = sub, dtl, dtr),
         }
     }
@@ -167,7 +167,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.add_to(&rhs)?.into_duration(*tu).into_series())
-            }
+            },
             (DataType::Duration(tu), DataType::Datetime(tur, tz)) => {
                 polars_ensure!(tu == tur, InvalidOperation: "units are different");
                 let lhs = self.cast(&DataType::Int64).unwrap();
@@ -176,7 +176,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                     .add_to(&rhs)?
                     .into_datetime(*tu, tz.clone())
                     .into_series())
-            }
+            },
             (dtl, dtr) => polars_bail!(opq = add, dtl, dtr),
         }
     }
@@ -207,16 +207,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DurationChunked> {
-    fn is_sorted_flag(&self) -> IsSorted {
-        if self.0.is_sorted_ascending_flag() {
-            IsSorted::Ascending
-        } else if self.0.is_sorted_descending_flag() {
-            IsSorted::Descending
-        } else {
-            IsSorted::Not
-        }
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }

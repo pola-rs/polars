@@ -52,7 +52,7 @@ pub(crate) fn arg_sort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
                             idx_b,
                         )
                     }
-                }
+                },
                 (true, Ordering::Less) => Ordering::Greater,
                 (true, Ordering::Greater) => Ordering::Less,
                 (_, ord) => ord,
@@ -72,12 +72,12 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_) => {
             let ca = by.categorical().unwrap();
-            if ca.use_lexical_sort() {
+            if ca.uses_lexical_ordering() {
                 by.to_arrow(0)
             } else {
                 ca.logical().chunks[0].clone()
             }
-        }
+        },
         _ => by.to_arrow(0),
     };
     Ok(out)
@@ -128,11 +128,11 @@ pub fn _get_rows_encoded(
                     cols.push(arr.clone() as ArrayRef);
                     fields.push(sort_field.clone())
                 }
-            }
+            },
             _ => {
                 cols.push(arr);
                 fields.push(sort_field)
-            }
+            },
         }
     }
     Ok(convert_columns(&cols, &fields))

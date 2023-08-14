@@ -50,7 +50,7 @@ where
                         opt_mean_x = opt_x;
                         opt_mean_y = opt_y;
                     }
-                }
+                },
                 (_, Some(mean_x), Some(mean_y)) => {
                     if is_observation || !ignore_nulls {
                         sum_wt *= old_wt_factor;
@@ -92,13 +92,13 @@ where
                             }
                         }
                     }
-                }
+                },
                 _ => {
                     if is_observation {
                         opt_mean_x = opt_x;
                         opt_mean_y = opt_y;
                     }
-                }
+                },
             }
             match (non_na_cnt >= min_periods_fixed, bias) {
                 (false, _) => None,
@@ -114,7 +114,7 @@ where
                             None
                         }
                     }
-                }
+                },
                 (true, true) => Some(cov),
             }
         });

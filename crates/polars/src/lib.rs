@@ -251,10 +251,11 @@
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
 //!     - `arg_where` - Get indices where condition holds.
 //!     - `search_sorted` - Find indices where elements should be inserted to maintain order.
-//!     - `date_offset` Add an offset to dates that take months and leap years into account.
-//!     - `trigonometry` Trigonometric functions.
-//!     - `sign` Compute the element-wise sign of a Series.
-//!     - `propagate_nans` NaN propagating min/max aggregations.
+//!     - `date_offset` - Add an offset to dates that take months and leap years into account.
+//!     - `trigonometry` - Trigonometric functions.
+//!     - `sign` - Compute the element-wise sign of a Series.
+//!     - `propagate_nans` - NaN propagating min/max aggregations.
+//!     - `extract_groups` - Extract multiple regex groups from strings.
 //! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!
@@ -316,7 +317,7 @@
 //!
 //! #### Notes
 //! [Benchmarks](https://github.com/pola-rs/polars/pull/3108) have shown that on Linux JeMalloc
-//! outperforms Mimalloc on all tasks and is therefor the default Linux allocator used for the Python bindings.
+//! outperforms Mimalloc on all tasks and is therefore the default Linux allocator used for the Python bindings.
 //!
 //! #### Cargo.toml
 //! ```toml

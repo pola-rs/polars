@@ -60,13 +60,13 @@ where
         Either::Left(mut v) => {
             let values = arg_partition(&mut v, k, descending);
             ChunkedArray::from_slice(ca.name(), values)
-        }
+        },
         Either::Right(mut v) => {
             let values = arg_partition(&mut v, k, descending);
             let mut out = ChunkedArray::from_iter(values.iter().copied());
             out.rename(ca.name());
             out
-        }
+        },
     }
 }
 

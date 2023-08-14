@@ -23,7 +23,7 @@ impl<'a> AggregationContext<'a> {
                         name,
                     ))
                 }
-            }
+            },
             AggState::AggregatedFlat(_) => {
                 self.groups();
                 let s = self.series();
@@ -37,13 +37,13 @@ impl<'a> AggregationContext<'a> {
                         name,
                     ))
                 }
-            }
+            },
             AggState::AggregatedList(_) => {
                 let s = self.series();
                 let list = s.list().unwrap();
                 let name = if keep_names { s.name() } else { "" };
                 Box::new(list.amortized_iter_with_name(name))
-            }
+            },
             AggState::NotAggregated(_) => {
                 // we don't take the owned series as we want a reference
                 let _ = self.aggregated();
@@ -51,7 +51,7 @@ impl<'a> AggregationContext<'a> {
                 let list = s.list().unwrap();
                 let name = if keep_names { s.name() } else { "" };
                 Box::new(list.amortized_iter_with_name(name))
-            }
+            },
         }
     }
 }

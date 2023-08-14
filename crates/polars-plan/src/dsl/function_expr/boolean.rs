@@ -1,9 +1,10 @@
-use std::ops::Not;
+use std::ops::{BitAnd, BitOr, Not};
+
+use polars_core::POOL;
+use rayon::prelude::*;
 
 use super::*;
-use crate::map;
-#[cfg(feature = "is_in")]
-use crate::wrap;
+use crate::{map, wrap};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -29,11 +30,18 @@ pub enum BooleanFunction {
     IsDuplicated,
     #[cfg(feature = "is_in")]
     IsIn,
+    AllHorizontal,
+    AnyHorizontal,
 }
 
 impl BooleanFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
-        mapper.with_dtype(DataType::Boolean)
+        use BooleanFunction::*;
+        match self {
+            AllHorizontal => Ok(Field::new("all", DataType::Boolean)),
+            AnyHorizontal => Ok(Field::new("any", DataType::Boolean)),
+            _ => mapper.with_dtype(DataType::Boolean),
+        }
     }
 }
 
@@ -58,6 +66,8 @@ impl Display for BooleanFunction {
             IsDuplicated => "is_duplicated",
             #[cfg(feature = "is_in")]
             IsIn => "is_in",
+            AnyHorizontal => "any_horizontal",
+            AllHorizontal => "any_horizontal",
         };
         write!(f, "{s}")
     }
@@ -84,6 +94,8 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsDuplicated => map!(is_duplicated),
             #[cfg(feature = "is_in")]
             IsIn => wrap!(is_in),
+            AllHorizontal => wrap!(all_horizontal),
+            AnyHorizontal => wrap!(any_horizontal),
         }
     }
 }
@@ -152,4 +164,38 @@ fn is_in(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let left = &s[0];
     let other = &s[1];
     left.is_in(other).map(|ca| Some(ca.into_series()))
+}
+
+fn any_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+    let mut out = POOL.install(|| {
+        s.par_iter()
+            .try_fold(
+                || BooleanChunked::new("", &[false]),
+                |acc, b| {
+                    let b = b.cast(&DataType::Boolean)?;
+                    let b = b.bool()?;
+                    PolarsResult::Ok((&acc).bitor(b))
+                },
+            )
+            .try_reduce(|| BooleanChunked::new("", [false]), |a, b| Ok(a.bitor(b)))
+    })?;
+    out.rename("any");
+    Ok(Some(out.into_series()))
+}
+
+fn all_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+    let mut out = POOL.install(|| {
+        s.par_iter()
+            .try_fold(
+                || BooleanChunked::new("", &[true]),
+                |acc, b| {
+                    let b = b.cast(&DataType::Boolean)?;
+                    let b = b.bool()?;
+                    PolarsResult::Ok((&acc).bitand(b))
+                },
+            )
+            .try_reduce(|| BooleanChunked::new("", [true]), |a, b| Ok(a.bitand(b)))
+    })?;
+    out.rename("all");
+    Ok(Some(out.into_series()))
 }

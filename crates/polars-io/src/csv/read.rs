@@ -56,7 +56,7 @@ impl NullValuesCompiled {
             Columns(v) => {
                 debug_assert!(index < v.len());
                 v.get_unchecked(index).as_bytes() == field
-            }
+            },
         }
     }
 }
@@ -73,7 +73,7 @@ impl NullValues {
                     null_values[i] = null_value;
                 }
                 NullValuesCompiled::Columns(null_values)
-            }
+            },
         })
     }
 }
@@ -132,6 +132,7 @@ where
     skip_rows_after_header: usize,
     try_parse_dates: bool,
     row_count: Option<RowCount>,
+    raise_if_empty: bool,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -295,6 +296,12 @@ where
         self
     }
 
+    /// Raise an error if CSV is empty (otherwise return an empty frame)
+    pub fn raise_if_empty(mut self, toggle: bool) -> Self {
+        self.raise_if_empty = toggle;
+        self
+    }
+
     /// Reduce memory consumption at the expense of performance
     pub fn low_memory(mut self, toggle: bool) -> Self {
         self.low_memory = toggle;
@@ -366,6 +373,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.skip_rows_after_header,
             std::mem::take(&mut self.row_count),
             self.try_parse_dates,
+            self.raise_if_empty,
         )
     }
 
@@ -389,31 +397,31 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                         to_cast.push(fld);
                         // let inference decide the column type
                         None
-                    }
+                    },
                     Int8 | Int16 | UInt8 | UInt16 => {
                         // We have not compiled these buffers, so we cast them later.
                         to_cast.push(fld.clone());
                         fld.coerce(DataType::Int32);
                         Some(fld)
-                    }
+                    },
                     #[cfg(feature = "dtype-categorical")]
                     Categorical(_) => {
                         _has_categorical = true;
                         Some(fld)
-                    }
+                    },
                     #[cfg(feature = "dtype-decimal")]
                     Decimal(precision, scale) => match (precision, scale) {
                         (_, Some(_)) => {
                             to_cast.push(fld.clone());
                             fld.coerce(Utf8);
                             Some(fld)
-                        }
+                        },
                         _ => {
                             _err = Some(PolarsError::ComputeError(
                                 "'scale' must be set when reading csv column as Decimal".into(),
                             ));
                             None
-                        }
+                        },
                     },
                     _ => Some(fld),
                 }
@@ -476,10 +484,11 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.eol_char,
                     self.null_values.as_ref(),
                     self.try_parse_dates,
+                    self.raise_if_empty,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_mmap(self, schema))
-            }
+            },
         }
     }
     pub fn batched_read(
@@ -504,10 +513,11 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.eol_char,
                     self.null_values.as_ref(),
                     self.try_parse_dates,
+                    self.raise_if_empty,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_read(self, schema))
-            }
+            },
         }
     }
 }
@@ -547,6 +557,7 @@ where
             skip_rows_after_header: 0,
             try_parse_dates: false,
             row_count: None,
+            raise_if_empty: true,
         }
     }
 
@@ -613,7 +624,7 @@ where
                         .collect::<Schema>();
 
                     Arc::new(schema)
-                }
+                },
                 _ => Arc::default(),
             };
             df = parse_dates(df, &fixed_schema)
@@ -640,7 +651,7 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
                         return ca.into_series();
                     }
                     s
-                }
+                },
                 _ => s,
             }
         })

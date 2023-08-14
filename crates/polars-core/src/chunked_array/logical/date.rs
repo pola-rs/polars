@@ -42,7 +42,7 @@ impl LogicalType for DateChunked {
                 Ok((casted.deref() * conversion)
                     .into_datetime(*tu, tz.clone())
                     .into_series())
-            }
+            },
             (Date, Time) => Ok(Int64Chunked::full(self.name(), 0i64, self.len())
                 .into_time()
                 .into_series()),

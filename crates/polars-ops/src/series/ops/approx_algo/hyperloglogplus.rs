@@ -1,7 +1,7 @@
 //! # HyperLogLogPlus
 //!
 //! `hyperloglogplus` module contains implementation of HyperLogLogPlus
-//! algorithm for cardinality estimation so that [`crate::series::approx_unique`] function can
+//! algorithm for cardinality estimation so that [`crate::series::approx_n_unique`] function can
 //! be efficiently implemented.
 //!
 //! This module borrows code from [arrow-datafusion](https://github.com/apache/arrow-datafusion/blob/93771052c5ac31f2cf22b8c25bf938656afe1047/datafusion/physical-expr/src/aggregate/hyperloglog.rs).

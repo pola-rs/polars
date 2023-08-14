@@ -28,13 +28,13 @@ impl Display for TimeUnit {
         match self {
             TimeUnit::Nanoseconds => {
                 write!(f, "ns")
-            }
+            },
             TimeUnit::Microseconds => {
                 write!(f, "μs")
-            }
+            },
             TimeUnit::Milliseconds => {
                 write!(f, "ms")
-            }
+            },
         }
     }
 }

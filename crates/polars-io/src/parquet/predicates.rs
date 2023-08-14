@@ -29,7 +29,7 @@ impl ColumnStats {
                 Series::try_from(("", self.0.null_count.clone()))
                     .unwrap()
                     .sum()
-            }
+            },
         }
     }
 

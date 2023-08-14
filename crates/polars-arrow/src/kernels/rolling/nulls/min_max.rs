@@ -12,20 +12,20 @@ pub fn is_reverse_sorted_max_nulls<T: NativeType + PartialOrd + IsFloat>(
     for opt_v in ZipValidityIter::new(values.iter(), validity.iter()) {
         match (current_max, opt_v) {
             // do nothing
-            (None, None) => {}
+            (None, None) => {},
             (None, Some(v)) => current_max = Some(*v),
             (Some(current), Some(val)) => {
                 match compare_fn_nan_min(&current, val) {
                     Ordering::Greater => {
                         current_max = Some(*val);
-                    }
+                    },
                     // allowed
-                    Ordering::Equal => {}
+                    Ordering::Equal => {},
                     // not sorted
                     Ordering::Less => return false,
                 }
-            }
-            (Some(_current), None) => {}
+            },
+            (Some(_current), None) => {},
         }
     }
 
@@ -131,7 +131,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
                     None => extremum_in_between = Some(*value),
                     Some(current) => {
                         extremum_in_between = Some((self.take_extremum)(*value, current))
-                    }
+                    },
                 }
             }
         }
@@ -230,7 +230,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
 
         match (self.extremum, entering_extremum) {
             // all remains `None`
-            (None, None) => {}
+            (None, None) => {},
             (None, Some(new_min)) => self.extremum = Some(new_min),
             // entering min is `None` and the `min` is leaving, so the `in_between` min is the new
             // minimum.
@@ -239,12 +239,12 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
                 if recompute_extremum {
                     self.extremum = self.compute_extremum_in_between_leaving_and_entering(start);
                 }
-            }
+            },
             (Some(current_extremum), Some(entering_extremum)) => {
                 if recompute_extremum {
                     match (self.compare_fn_nan)(&current_extremum, &entering_extremum) {
                         // do nothing
-                        Ordering::Equal => {}
+                        Ordering::Equal => {},
                         // leaving < entering
                         ord if ord == self.agg_ordering => {
                             // leaving value could be the smallest, we might need to recompute
@@ -263,9 +263,9 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
                                     } else {
                                         self.extremum = Some(entering_extremum)
                                     }
-                                }
+                                },
                             }
-                        }
+                        },
                         // leaving > entering
                         _ => {
                             if (self.compare_fn_nan)(&entering_extremum, &current_extremum)
@@ -273,14 +273,14 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
                             {
                                 self.extremum = Some(entering_extremum)
                             }
-                        }
+                        },
                     }
                 } else if (self.compare_fn_nan)(&entering_extremum, &current_extremum)
                     == self.agg_ordering
                 {
                     self.extremum = Some(entering_extremum)
                 }
-            }
+            },
         }
         self.last_start = start;
         self.last_end = end;

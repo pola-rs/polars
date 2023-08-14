@@ -180,19 +180,19 @@ pub trait DataFrameJoinOps: IntoDf {
             return match args.how {
                 JoinType::Inner => {
                     left_df._inner_join_from_series(other, s_left, s_right, args, _verbose)
-                }
+                },
                 JoinType::Left => {
                     left_df._left_join_from_series(other, s_left, s_right, args, _verbose)
-                }
+                },
                 JoinType::Outer => left_df._outer_join_from_series(other, s_left, s_right, args),
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Anti => {
                     left_df._semi_anti_join_from_series(s_left, s_right, args.slice, true)
-                }
+                },
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Semi => {
                     left_df._semi_anti_join_from_series(s_left, s_right, args.slice, false)
-                }
+                },
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(options) => {
                     let left_on = selected_left[0].name();
@@ -221,12 +221,12 @@ pub trait DataFrameJoinOps: IntoDf {
                         ),
                         _ => {
                             panic!("expected by arguments on both sides")
-                        }
+                        },
                     }
-                }
+                },
                 JoinType::Cross => {
                     unreachable!()
-                }
+                },
             };
         }
 
@@ -271,14 +271,14 @@ pub trait DataFrameJoinOps: IntoDf {
                     },
                 );
                 _finish_join(df_left, df_right, args.suffix.as_deref())
-            }
+            },
             JoinType::Left => {
                 let mut left = DataFrame::new_no_checks(selected_left_physical);
                 let mut right = DataFrame::new_no_checks(selected_right_physical);
                 let ids = _left_join_multiple_keys(&mut left, &mut right, None, None);
 
                 left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
-            }
+            },
             JoinType::Outer => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
@@ -319,7 +319,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 keys.extend_from_slice(df_left.get_columns());
                 let df_left = DataFrame::new_no_checks(keys);
                 _finish_join(df_left, df_right, args.suffix.as_deref())
-            }
+            },
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(_) => polars_bail!(
                 ComputeError: "asof join not supported for join on multiple keys"
@@ -337,10 +337,10 @@ pub trait DataFrameJoinOps: IntoDf {
                 // Safety:
                 // indices are in bounds
                 Ok(unsafe { left_df._finish_anti_semi_join(&idx, args.slice) })
-            }
+            },
             JoinType::Cross => {
                 unreachable!()
-            }
+            },
         }
     }
 

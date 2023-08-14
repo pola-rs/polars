@@ -45,6 +45,7 @@ impl CsvExec {
             .with_rechunk(self.file_options.rechunk)
             .with_row_count(std::mem::take(&mut self.file_options.row_count))
             .with_try_parse_dates(self.options.try_parse_dates)
+            .raise_if_empty(self.options.raise_if_empty)
             .finish()
     }
 }

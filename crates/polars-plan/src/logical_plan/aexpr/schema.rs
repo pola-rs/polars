@@ -21,7 +21,7 @@ impl AExpr {
             Window { function, .. } => {
                 let e = arena.get(*function);
                 e.to_field(schema, ctxt, arena)
-            }
+            },
             Explode(expr) => {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
 
@@ -30,7 +30,7 @@ impl AExpr {
                 } else {
                     Ok(field)
                 }
-            }
+            },
             Alias(expr, name) => Ok(Field::new(
                 name,
                 arena.get(*expr).get_type(schema, ctxt, arena)?,
@@ -48,7 +48,7 @@ impl AExpr {
                         field
                     }),
                 }
-            }
+            },
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
                 _ => Field::new("literal", sv.get_datatype()),
@@ -73,13 +73,13 @@ impl AExpr {
                             out_field.name().as_str()
                         };
                         Field::new(out_name, Boolean)
-                    }
+                    },
                     Operator::TrueDivide => return get_truediv_field(*left, arena, ctxt, schema),
                     _ => return get_arithmetic_field(*left, *right, arena, *op, ctxt, schema),
                 };
 
                 Ok(field)
-            }
+            },
             Sort { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Take { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             SortBy { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
@@ -93,7 +93,7 @@ impl AExpr {
                     | Last(expr) => {
                         // default context because `col()` would return a list in aggregation context
                         arena.get(*expr).to_field(schema, Context::Default, arena)
-                    }
+                    },
                     Sum(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
@@ -106,69 +106,69 @@ impl AExpr {
                             field.coerce(dt);
                         }
                         Ok(field)
-                    }
+                    },
                     Median(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         float_type(&mut field);
                         Ok(field)
-                    }
+                    },
                     Mean(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         float_type(&mut field);
                         Ok(field)
-                    }
+                    },
                     Implode(expr) => {
                         // default context because `col()` would return a list in aggregation context
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         field.coerce(DataType::List(field.data_type().clone().into()));
                         Ok(field)
-                    }
+                    },
                     Std(expr, _) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         float_type(&mut field);
                         Ok(field)
-                    }
+                    },
                     Var(expr, _) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         float_type(&mut field);
                         Ok(field)
-                    }
+                    },
                     NUnique(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         field.coerce(IDX_DTYPE);
                         Ok(field)
-                    }
+                    },
                     Count(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         field.coerce(IDX_DTYPE);
                         Ok(field)
-                    }
+                    },
                     AggGroups(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         field.coerce(List(IDX_DTYPE.into()));
                         Ok(field)
-                    }
+                    },
                     Quantile { expr, .. } => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         float_type(&mut field);
                         Ok(field)
-                    }
+                    },
                 }
-            }
+            },
             Cast {
                 expr, data_type, ..
             } => {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                 Ok(Field::new(field.name(), data_type.clone()))
-            }
+            },
             Ternary { truthy, falsy, .. } => {
                 let mut truthy = arena.get(*truthy).to_field(schema, ctxt, arena)?;
                 let falsy = arena.get(*falsy).to_field(schema, ctxt, arena)?;
@@ -180,7 +180,7 @@ impl AExpr {
                     truthy.coerce(st);
                     Ok(truthy)
                 }
-            }
+            },
             AnonymousFunction {
                 output_type,
                 input,
@@ -195,7 +195,7 @@ impl AExpr {
                     .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(output_type.get_field(schema, ctxt, &fields))
-            }
+            },
             Function {
                 function, input, ..
             } => {
@@ -205,7 +205,7 @@ impl AExpr {
                     .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
                     .collect::<PolarsResult<Vec<_>>>()?;
                 function.get_field(schema, ctxt, &fields)
-            }
+            },
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
             Nth(_) => panic!("should be no nth at this point"),
@@ -244,31 +244,31 @@ fn get_arithmetic_field(
                 (Date, Date) => Duration(TimeUnit::Milliseconds),
                 (left, right) => try_get_supertype(left, &right)?,
             }
-        }
+        },
         Operator::Plus
             if left_field.dtype == Boolean
                 && right_ae.get_type(schema, Context::Default, arena)? == Boolean =>
         {
             IDX_DTYPE
-        }
+        },
         _ => {
             match (left_ae, right_ae) {
-                (AExpr::Literal(_), AExpr::Literal(_)) => {}
+                (AExpr::Literal(_), AExpr::Literal(_)) => {},
                 (AExpr::Literal(_), _) => {
                     // literal will be coerced to match right type
                     let right_type = right_ae.get_type(schema, ctxt, arena)?;
                     left_field.coerce(right_type);
                     return Ok(left_field);
-                }
+                },
                 (_, AExpr::Literal(_)) => {
                     // literal will be coerced to match right type
                     return Ok(left_field);
-                }
-                _ => {}
+                },
+                _ => {},
             }
             let right_type = right_ae.get_type(schema, ctxt, arena)?;
             try_get_supertype(&left_field.dtype, &right_type)?
-        }
+        },
     };
 
     left_field.coerce(super_type);

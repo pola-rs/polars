@@ -3,7 +3,6 @@ name = "python_rust_compiled_function"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 name = "my_polars_functions"
 crate-type = ["cdylib"]
@@ -12,7 +11,7 @@ crate-type = ["cdylib"]
 polars = { path = "../../crates/polars" }
 polars-arrow = { path = "../../crates/polars-arrow" }
 
-pyo3 = { version = "0.19", features = ["extension-module"] }
+pyo3 = { workspace = true, features = ["extension-module"] }
 
 [build-dependencies]
 pyo3-build-config = "0.19"

@@ -9,8 +9,8 @@ pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "approx_unique")]
-pub(super) fn approx_unique(s: &Series) -> PolarsResult<Series> {
-    polars_ops::prelude::approx_unique(s)
+pub(super) fn approx_n_unique(s: &Series) -> PolarsResult<Series> {
+    polars_ops::prelude::approx_n_unique(s)
 }
 
 #[cfg(feature = "diff")]

@@ -58,10 +58,10 @@ where
                         mask.extend_constant(arr.len() - idx, !lower_part);
                         BooleanArray::from_data_default(mask.into(), None)
                     }
-                }
+                },
                 Ok(_) => {
                     unreachable!()
-                }
+                },
             };
             Box::new(mask) as ArrayRef
         })
@@ -103,7 +103,7 @@ where
                 let mut ca = binary_search(self, false, cmp_fn);
                 ca.set_sorted_flag(IsSorted::Ascending);
                 ca
-            }
+            },
             _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::gt_scalar(l, rhs)),
         }
     }
@@ -120,7 +120,7 @@ where
                 let mut ca = binary_search(self, false, cmp_fn);
                 ca.set_sorted_flag(IsSorted::Ascending);
                 ca
-            }
+            },
             _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::gt_eq_scalar(l, rhs)),
         }
     }
@@ -137,7 +137,7 @@ where
                 let mut ca = binary_search(self, true, cmp_fn);
                 ca.set_sorted_flag(IsSorted::Ascending);
                 ca
-            }
+            },
             _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::lt_scalar(l, rhs)),
         }
     }
@@ -154,7 +154,7 @@ where
                 let mut ca = binary_search(self, true, cmp_fn);
                 ca.set_sorted_flag(IsSorted::Ascending);
                 ca
-            }
+            },
             _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs)),
         }
     }

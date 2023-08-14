@@ -46,6 +46,7 @@ pub(crate) mod private {
 
     use super::*;
     use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
+    use crate::chunked_array::Settings;
     #[cfg(feature = "rows")]
     use crate::frame::groupby::GroupsProxy;
 
@@ -77,9 +78,11 @@ pub(crate) mod private {
 
         fn _dtype(&self) -> &DataType;
 
-        fn _clear_settings(&mut self);
-
         fn compute_len(&mut self);
+
+        fn _get_flags(&self) -> Settings;
+
+        fn _set_flags(&mut self, flags: Settings);
 
         fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
             invalid_operation_panic!(explode_by_offsets, self)
@@ -95,10 +98,6 @@ pub(crate) mod private {
         #[cfg(feature = "cum_agg")]
         fn _cummin(&self, _reverse: bool) -> Series {
             panic!("operation cummin not supported for this dtype")
-        }
-
-        fn _set_sorted_flag(&mut self, _is_sorted: IsSorted) {
-            // ignore
         }
 
         unsafe fn equal_element(
@@ -192,11 +191,6 @@ pub(crate) mod private {
 pub trait SeriesTrait:
     Send + Sync + private::PrivateSeries + private::PrivateSeriesNumeric
 {
-    /// Check if [`Series`] is sorted.
-    fn is_sorted_flag(&self) -> IsSorted {
-        IsSorted::Not
-    }
-
     /// Rename the Series.
     fn rename(&mut self, name: &str);
 

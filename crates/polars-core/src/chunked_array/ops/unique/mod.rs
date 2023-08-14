@@ -91,7 +91,7 @@ fn mode_indices(groups: GroupsProxy) -> Vec<IdxSize> {
                 .take_while(|v| v.1.len() == max_occur)
                 .map(|v| v.0)
                 .collect()
-        }
+        },
         GroupsProxy::Slice { groups, .. } => {
             let last = groups.last().unwrap();
             let max_occur = last[1];
@@ -105,7 +105,7 @@ fn mode_indices(groups: GroupsProxy) -> Vec<IdxSize> {
                 })
                 .map(|v| v[0])
                 .collect()
-        }
+        },
     }
 }
 
@@ -180,11 +180,11 @@ where
                     let mask = self.not_equal_and_validity(&self.shift(1));
                     self.filter(&mask)
                 }
-            }
+            },
             IsSorted::Not => {
                 let sorted = self.sort(false);
                 sorted.unique()
-            }
+            },
         }
     }
 
@@ -221,11 +221,11 @@ where
                     let mask = self.not_equal_and_validity(&self.shift(1));
                     Ok(mask.sum().unwrap() as usize)
                 }
-            }
+            },
             IsSorted::Not => {
                 let sorted = self.sort(false);
                 sorted.n_unique()
-            }
+            },
         }
     }
 
@@ -269,7 +269,7 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
                     self.name(),
                     set.iter().copied(),
                 ))
-            }
+            },
             _ => {
                 let mut set =
                     PlHashSet::with_capacity(std::cmp::min(HASHMAP_INIT_SIZE, self.len()));
@@ -280,7 +280,7 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
                     self.name(),
                     set.iter().copied(),
                 ))
-            }
+            },
         }
     }
 

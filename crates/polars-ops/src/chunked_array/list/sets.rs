@@ -60,19 +60,19 @@ where
             set.extend(a);
             set2.extend(b);
             out.extend_buf(set.intersection(set2).copied())
-        }
+        },
         SetOperation::Union => {
             set.extend(a);
             set.extend(b);
             out.extend_buf(set.drain(..))
-        }
+        },
         SetOperation::Difference => {
             set.extend(a);
             for v in b {
                 set.remove(&v);
             }
             out.extend_buf(set.drain(..))
-        }
+        },
         SetOperation::SymmetricDifference => {
             set2.clear();
             // We could speed this up, but implementing ourselves, but we need to have a clonable
@@ -80,7 +80,7 @@ where
             set.extend(a);
             set2.extend(b);
             out.extend_buf(set.symmetric_difference(set2).copied())
-        }
+        },
     }
 }
 
@@ -254,7 +254,7 @@ fn array_set_operation(
             let a = utf8_to_binary(a);
             let b = utf8_to_binary(b);
             binary(&a, &b, offsets_a, offsets_b, set_op, validity, true)
-        }
+        },
         ArrowDataType::LargeBinary => {
             let a = values_a
                 .as_any()
@@ -265,10 +265,10 @@ fn array_set_operation(
                 .downcast_ref::<BinaryArray<i64>>()
                 .unwrap();
             binary(a, b, offsets_a, offsets_b, set_op, validity, false)
-        }
+        },
         ArrowDataType::Boolean => {
             todo!("boolean type not yet supported in list union operations")
-        }
+        },
         _ => {
             with_match_physical_integer_type!(dtype.into(), |$T| {
                 let a = values_a.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
@@ -276,7 +276,7 @@ fn array_set_operation(
 
                 primitive(&a, &b, offsets_a, offsets_b, set_op, validity)
             })
-        }
+        },
     }
 }
 

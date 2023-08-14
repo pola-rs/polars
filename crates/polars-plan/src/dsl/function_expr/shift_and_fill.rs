@@ -63,7 +63,7 @@ pub(super) fn shift_and_fill(args: &mut [Series], periods: i64) -> PolarsResult<
             ca.shift_and_fill(periods, fill_value)
                 .into_series()
                 .cast(logical)
-        }
+        },
         Utf8 => {
             let ca = s.utf8().unwrap();
             let fill_value = match fill_value {
@@ -74,7 +74,7 @@ pub(super) fn shift_and_fill(args: &mut [Series], periods: i64) -> PolarsResult<
             ca.shift_and_fill(periods, fill_value)
                 .into_series()
                 .cast(logical)
-        }
+        },
         List(_) => {
             let ca = s.list().unwrap();
             let fill_value = match fill_value {
@@ -85,7 +85,7 @@ pub(super) fn shift_and_fill(args: &mut [Series], periods: i64) -> PolarsResult<
             ca.shift_and_fill(periods, fill_value.as_ref())
                 .into_series()
                 .cast(logical)
-        }
+        },
         #[cfg(feature = "object")]
         Object(_) => shift_and_fill_with_mask(s, periods, fill_value_s),
         #[cfg(feature = "dtype-struct")]
@@ -101,9 +101,9 @@ pub(super) fn shift_and_fill(args: &mut [Series], periods: i64) -> PolarsResult<
 
             let out = downcast_as_macro_arg_physical!(physical, dispatch, periods, fill_value);
             out.cast(logical)
-        }
+        },
         _ => {
             unimplemented!()
-        }
+        },
     }
 }

@@ -43,7 +43,7 @@ fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
                     } else {
                         s.clone()
                     }
-                }
+                },
             })
             .collect(),
     )
@@ -273,7 +273,7 @@ impl<'df> GroupBy<'df> {
                                 out.set_sorted_flag(s.is_sorted_flag());
                             };
                             out
-                        }
+                        },
                         GroupsProxy::Slice { groups, rolling } => {
                             if *rolling && !groups.is_empty() {
                                 // groups can be sliced
@@ -292,7 +292,7 @@ impl<'df> GroupBy<'df> {
                             // sliced groups are always in order of discovery
                             out.set_sorted_flag(s.is_sorted_flag());
                             out
-                        }
+                        },
                     }
                 })
                 .collect()
@@ -314,7 +314,7 @@ impl<'df> GroupBy<'df> {
                     .filter(|a| !by.contains(a))
                     .map(|s| s.to_string())
                     .collect()
-            }
+            },
         };
 
         let keys = self.keys();

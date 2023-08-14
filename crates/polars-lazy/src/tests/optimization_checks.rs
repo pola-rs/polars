@@ -420,7 +420,7 @@ fn test_groupby_ternary_literal_predicate() -> PolarsResult<()> {
                         assert!(!matches!(expr_arena.get(*node), AExpr::Ternary { .. }));
                     }
                     false
-                }
+                },
                 _ => false,
             }
         });
@@ -494,11 +494,11 @@ fn test_with_column_prune() -> PolarsResult<()> {
                 assert_eq!(projection.len(), 1);
                 let name = &projection[0];
                 assert_eq!(name, "c1");
-            }
+            },
             HStack { exprs, .. } => {
                 assert_eq!(exprs.len(), 1);
-            }
-            _ => {}
+            },
+            _ => {},
         };
     });
 
@@ -566,7 +566,7 @@ fn test_flatten_unions() -> PolarsResult<()> {
         ALogicalPlan::Union { inputs, .. } => {
             // we make sure that the nested unions are flattened into a single union
             assert_eq!(inputs.len(), 5);
-        }
+        },
         _ => panic!(),
     }
     Ok(())

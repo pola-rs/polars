@@ -16,7 +16,6 @@ from polars import api
 from polars.config import Config
 from polars.convert import (
     from_arrow,
-    from_dataframe,
     from_dict,
     from_dicts,
     from_numpy,
@@ -82,7 +81,7 @@ from polars.functions import (
     any,
     any_horizontal,
     apply,
-    approx_unique,
+    approx_n_unique,
     arange,
     arctan2,
     arctan2d,
@@ -148,6 +147,7 @@ from polars.functions import (
     when,
     zeros,
 )
+from polars.interchange.from_dataframe import from_dataframe
 from polars.io import (
     read_avro,
     read_csv,
@@ -308,6 +308,7 @@ __all__ = [
     "sum_horizontal",
     # polars.functions.lazy
     "apply",
+    "approx_n_unique",
     "arange",
     "arctan2",
     "arctan2d",
@@ -342,7 +343,6 @@ __all__ = [
     "mean",
     "median",
     "n_unique",
-    "approx_unique",
     "quantile",
     "reduce",
     "rolling_corr",

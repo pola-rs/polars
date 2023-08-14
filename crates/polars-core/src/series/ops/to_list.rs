@@ -11,7 +11,7 @@ fn reshape_fast_path(name: &str, s: &Series) -> Series {
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {
             vec![Box::new(array_to_unit_list(s.array_ref(0).clone())) as ArrayRef]
-        }
+        },
         _ => s
             .chunks()
             .iter()
@@ -52,7 +52,7 @@ impl Series {
         let name = self.name();
 
         let mut ca = unsafe { ListChunked::from_chunks(name, vec![Box::new(arr)]) };
-        ca.to_physical(inner_type.clone());
+        ca.to_logical(inner_type.clone());
         ca.set_fast_explode();
 
         Ok(ca)
@@ -123,10 +123,10 @@ impl Series {
                     offset += cols;
                 }
                 Ok(builder.finish().into_series())
-            }
+            },
             _ => {
                 panic!("more than two dimensions not yet supported");
-            }
+            },
         }
     }
 }

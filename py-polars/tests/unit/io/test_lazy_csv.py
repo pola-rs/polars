@@ -31,7 +31,10 @@ def test_scan_csv_no_cse_deadlock(io_files_path: Path) -> None:
 def test_scan_empty_csv(io_files_path: Path) -> None:
     with pytest.raises(Exception) as excinfo:
         pl.scan_csv(io_files_path / "empty.csv").collect()
-    assert "empty csv" in str(excinfo.value)
+    assert "empty CSV" in str(excinfo.value)
+
+    lf = pl.scan_csv(io_files_path / "empty.csv", raise_if_empty=False)
+    assert_frame_equal(lf, pl.LazyFrame())
 
 
 @pytest.mark.write_disk()
@@ -178,11 +181,6 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
         "fats_g": [0.0],
         "sugars_g": [11],
     }
-
-
-def test_scan_slice_streaming(foods_file_path: Path) -> None:
-    df = pl.scan_csv(foods_file_path).head(5).collect(streaming=True)
-    assert df.shape == (5, 4)
 
 
 @pytest.mark.write_disk()

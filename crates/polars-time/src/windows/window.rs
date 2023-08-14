@@ -171,7 +171,7 @@ impl<'a> BoundsIter<'a> {
                 };
                 boundary.stop = offset_fn(&window.period, boundary.start, tz)?;
                 boundary
-            }
+            },
             StartBy::WindowBound => match tu {
                 TimeUnit::Nanoseconds => window.get_earliest_bounds_ns(boundary.start, tz)?,
                 TimeUnit::Microseconds => window.get_earliest_bounds_us(boundary.start, tz)?,
@@ -222,7 +222,7 @@ impl<'a> BoundsIter<'a> {
                             // and compute the end of the window defined by the 'period'
                             let stop = offset(&window.period, start, Some(tz))?;
                             (start, stop)
-                        }
+                        },
                         _ => {
                             let tz = chrono::Utc;
                             let dt = dt.and_local_timezone(tz).unwrap();
@@ -241,11 +241,11 @@ impl<'a> BoundsIter<'a> {
                             // and compute the end of the window defined by the 'period'
                             let stop = offset(&window.period, start, None).unwrap();
                             (start, stop)
-                        }
+                        },
                     };
                     boundary
                 }
-            }
+            },
         };
         Ok(Self {
             window,
@@ -269,15 +269,15 @@ impl<'a> Iterator for BoundsIter<'a> {
                 TimeUnit::Nanoseconds => {
                     self.bi.start = self.window.every.add_ns(self.bi.start, self.tz).unwrap();
                     self.bi.stop = self.window.every.add_ns(self.bi.stop, self.tz).unwrap();
-                }
+                },
                 TimeUnit::Microseconds => {
                     self.bi.start = self.window.every.add_us(self.bi.start, self.tz).unwrap();
                     self.bi.stop = self.window.every.add_us(self.bi.stop, self.tz).unwrap();
-                }
+                },
                 TimeUnit::Milliseconds => {
                     self.bi.start = self.window.every.add_ms(self.bi.start, self.tz).unwrap();
                     self.bi.stop = self.window.every.add_ms(self.bi.stop, self.tz).unwrap();
-                }
+                },
             }
             Some(out)
         } else {

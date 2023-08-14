@@ -12,11 +12,7 @@ import pyarrow.dataset as ds
 import pytest
 
 import polars as pl
-from polars.testing import (
-    assert_frame_equal,
-    assert_frame_equal_local_categoricals,
-    assert_series_equal,
-)
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import ParquetCompression
@@ -49,9 +45,9 @@ def test_write_parquet_using_pyarrow_write_to_dataset_with_partitioning(
     tmp_path: Path,
     compression: ParquetCompression,
 ) -> None:
-    tmp_path.mkdir(exist_ok=True)
     df = pl.DataFrame({"a": [1, 2, 3], "partition_col": ["one", "two", "two"]})
-    path_to_write = tmp_path / "test.parquet"
+    path_to_write = tmp_path / "test_folder"
+    path_to_write.mkdir(exist_ok=True)
     df.write_parquet(
         file=path_to_write,
         statistics=True,
@@ -84,7 +80,7 @@ def test_to_from_buffer(
     df.write_parquet(buf, compression=compression, use_pyarrow=use_pyarrow)
     buf.seek(0)
     read_df = pl.read_parquet(buf, use_pyarrow=use_pyarrow)
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
@@ -117,7 +113,7 @@ def test_to_from_file(
     file_path = tmp_path / "small.avro"
     df.write_parquet(file_path, compression=compression)
     read_df = pl.read_parquet(file_path)
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 @pytest.mark.write_disk()
@@ -213,17 +209,6 @@ def test_glob_parquet(df: pl.DataFrame, tmp_path: Path) -> None:
     path_glob = tmp_path / "small*.parquet"
     assert pl.read_parquet(path_glob).shape == (3, 16)
     assert pl.scan_parquet(path_glob).collect().shape == (3, 16)
-
-
-@pytest.mark.write_disk()
-def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    file_path = tmp_path / "small.parquet"
-    df.write_parquet(file_path)
-
-    path_glob = tmp_path / "small*.parquet"
-    result = pl.scan_parquet(path_glob).select(pl.all().first()).collect(streaming=True)
-    assert result.shape == (1, 16)
 
 
 def test_chunked_round_trip() -> None:

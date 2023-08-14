@@ -35,12 +35,12 @@ fn column_idx_to_series(
     match field.data_type {
         ArrowDataType::Utf8 => {
             field.data_type = ArrowDataType::LargeUtf8;
-        }
+        },
         ArrowDataType::Binary => {
             field.data_type = ArrowDataType::LargeBinary;
-        }
+        },
         ArrowDataType::List(fld) => field.data_type = ArrowDataType::LargeList(fld),
-        _ => {}
+        _ => {},
     }
 
     let columns = mmap_columns(store, md.columns(), &field.name);
@@ -75,7 +75,7 @@ pub(super) fn array_iter_to_series(
                 }
             }
             out
-        }
+        },
     };
     if chunks.is_empty() {
         let arr = new_empty_array(field.data_type.clone());
@@ -442,7 +442,7 @@ impl BatchedParquetReader {
                     )?;
                     self.row_group_offset += n;
                     dfs
-                }
+                },
                 ParallelStrategy::RowGroups => {
                     let dfs = rg_to_dfs_par(
                         &store,
@@ -459,7 +459,7 @@ impl BatchedParquetReader {
                     )?;
                     self.row_group_offset += n;
                     dfs
-                }
+                },
                 _ => unimplemented!(),
             };
             // case where there is no data in the file
@@ -538,7 +538,7 @@ impl Iterator for BatchedParquetIter {
                     let batch = opt_batch?;
                     self.current_batch = batch.into_iter();
                     self.current_batch.next().map(Ok)
-                }
+                },
             },
         }
     }

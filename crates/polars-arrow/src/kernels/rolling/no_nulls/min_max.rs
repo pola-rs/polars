@@ -187,7 +187,7 @@ macro_rules! minmax_window {
                         } else {
                             self.update_m_and_m_idx(pm);
                         }
-                    }
+                    },
                     (Some(pm), None) => self.update_m_and_m_idx(pm),
                     (None, Some(em)) => self.update_m_and_m_idx(em),
                     // This would mean both the entering and previous windows are empty
@@ -275,7 +275,7 @@ macro_rules! rolling_minmax_func {
                         $wtd_f,
                         &weights,
                     )
-                }
+                },
             }
         }
     };

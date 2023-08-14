@@ -44,7 +44,7 @@ pub(super) fn physical_agg_to_logical(cols: &mut [Series], output_schema: &Schem
                         unreachable!()
                     }
                 }
-            }
+            },
             _ => {
                 let dtype_left = s.dtype();
                 if dtype_left != dtype
@@ -53,7 +53,7 @@ pub(super) fn physical_agg_to_logical(cols: &mut [Series], output_schema: &Schem
                 {
                     *s = s.cast(dtype).unwrap()
                 }
-            }
+            },
         }
     }
 }

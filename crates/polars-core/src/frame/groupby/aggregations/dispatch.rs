@@ -41,7 +41,7 @@ impl Series {
                         Some((take.len() - take.null_count()) as IdxSize)
                     }
                 })
-            }
+            },
         }
     }
 
@@ -59,7 +59,7 @@ impl Series {
                 // Safety:
                 // groups are always in bounds
                 self.take_opt_iter_unchecked(&mut iter)
-            }
+            },
             GroupsProxy::Slice { groups, .. } => {
                 let mut iter =
                     groups.iter().map(
@@ -74,7 +74,7 @@ impl Series {
                 // Safety:
                 // groups are always in bounds
                 self.take_opt_iter_unchecked(&mut iter)
-            }
+            },
         };
         if groups.is_sorted_flag() {
             out.set_sorted_flag(self.is_sorted_flag())
@@ -104,7 +104,7 @@ impl Series {
                         take.n_unique().ok().map(|v| v as IdxSize)
                     }
                 })
-            }
+            },
         }
     }
 
@@ -126,7 +126,7 @@ impl Series {
                 } else {
                     s
                 }
-            }
+            },
             _ => Series::full_null("", groups.len(), self.dtype()),
         }
     }
@@ -155,7 +155,7 @@ impl Series {
                 } else {
                     s
                 }
-            }
+            },
             _ => Series::full_null("", groups.len(), self.dtype()),
         }
     }
@@ -170,14 +170,14 @@ impl Series {
             Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
             dt if dt.is_numeric() => {
                 apply_method_physical_integer!(self, agg_mean, groups)
-            }
+            },
             dt @ Duration(_) => {
                 let s = self.to_physical_repr();
                 // agg_mean returns Float64
                 let out = s.agg_mean(groups);
                 // cast back to Int64 and then to logical duration type
                 out.cast(&Int64).unwrap().cast(dt).unwrap()
-            }
+            },
             _ => Series::full_null("", groups.len(), self.dtype()),
         }
     }
@@ -194,7 +194,7 @@ impl Series {
                     }
                 });
                 self.take_opt_iter_unchecked(&mut iter)
-            }
+            },
             GroupsProxy::Slice { groups, .. } => {
                 let mut iter = groups.iter().map(|&[first, len]| {
                     if len == 0 {
@@ -204,7 +204,7 @@ impl Series {
                     }
                 });
                 self.take_opt_iter_unchecked(&mut iter)
-            }
+            },
         };
         self.restore_logical(out)
     }

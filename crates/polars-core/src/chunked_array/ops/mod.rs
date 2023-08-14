@@ -656,9 +656,9 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ListChunked::full(self.name(), &val, length);
-                ca.to_physical(self.inner_dtype());
+                ca.to_logical(self.inner_dtype());
                 ca
-            }
+            },
             None => ListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype()),
         }
     }
@@ -673,7 +673,7 @@ impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
                 let mut ca = ArrayChunked::full(self.name(), &val, length);
                 ca.to_physical(self.inner_dtype());
                 ca
-            }
+            },
             None => ArrayChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype(), 0),
         }
     }

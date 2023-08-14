@@ -10,15 +10,15 @@ fmt:  ## Run rustfmt and dprint
 
 .PHONY: check
 check:  ## Run cargo check with all features
-	cargo check --all-targets --all-features
+	cargo check --workspace --all-targets --all-features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
-	cargo clippy --all-targets --all-features
+	cargo clippy --workspace --all-targets --all-features
 
 .PHONY: clippy-default
 clippy-default:  ## Run clippy with default features
-	cargo clippy --all-targets
+	cargo clippy --workspace --all-targets
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
@@ -68,11 +68,6 @@ test-doc:  ## Run doc examples
 	    -p polars-arrow \
 		-p polars-sql
 
-.PHONY: generate_test_files
-generate_test_files:  ## Generate some datasets
-	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o parquet > ../examples/datasets/foods1.parquet
-	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o arrow > ../examples/datasets/foods1.ipc
-
 .PHONY: bench-save
 bench-save:  ## Run benchmark and save
 	cargo bench --features=random --bench $(BENCH) -- --save-baseline $(SAVE)
@@ -83,15 +78,15 @@ bench-cmp:  ## Run benchmark and compare
 
 .PHONY: doctest
 doctest:  ## Check that documentation builds
-	cargo doc --all-features -p polars-arrow
-	cargo doc --all-features -p polars-utils
-	cargo doc --features=docs-selection -p polars-core
-	cargo doc -p polars-time
-	cargo doc -p polars-ops
-	cargo doc --all-features -p polars-io
-	cargo doc --all-features -p polars-lazy
-	cargo doc --features=docs-selection -p polars
-	cargo doc --all-features -p polars-sql
+	cargo doc --no-deps --all-features -p polars-arrow
+	cargo doc --no-deps --all-features -p polars-utils
+	cargo doc --no-deps --features=docs-selection -p polars-core
+	cargo doc --no-deps -p polars-time
+	cargo doc --no-deps -p polars-ops
+	cargo doc --no-deps --all-features -p polars-io
+	cargo doc --no-deps --all-features -p polars-lazy
+	cargo doc --no-deps --features=docs-selection -p polars
+	cargo doc --no-deps --all-features -p polars-sql
 
 .PHONY: publish
 publish:  ## Publish Polars crates
@@ -110,7 +105,6 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-algo
 	cargo publish --allow-dirty -p polars-sql
 	cargo publish --allow-dirty -p polars
-	cd .. && cargo publish --allow-dirty -p polars-cli
 
 .PHONY: help
 help:  ## Display this help screen

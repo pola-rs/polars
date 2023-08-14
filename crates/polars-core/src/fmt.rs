@@ -144,7 +144,7 @@ fn format_object_array(
             }
 
             write!(f, "]")
-        }
+        },
         _ => unreachable!(),
     }
 }
@@ -237,74 +237,74 @@ impl Debug for Series {
         match self.dtype() {
             DataType::Boolean => {
                 format_array!(f, self.bool().unwrap(), "bool", self.name(), "Series")
-            }
+            },
             DataType::Utf8 => {
                 format_array!(f, self.utf8().unwrap(), "str", self.name(), "Series")
-            }
+            },
             DataType::UInt8 => {
                 format_array!(f, self.u8().unwrap(), "u8", self.name(), "Series")
-            }
+            },
             DataType::UInt16 => {
                 format_array!(f, self.u16().unwrap(), "u16", self.name(), "Series")
-            }
+            },
             DataType::UInt32 => {
                 format_array!(f, self.u32().unwrap(), "u32", self.name(), "Series")
-            }
+            },
             DataType::UInt64 => {
                 format_array!(f, self.u64().unwrap(), "u64", self.name(), "Series")
-            }
+            },
             DataType::Int8 => {
                 format_array!(f, self.i8().unwrap(), "i8", self.name(), "Series")
-            }
+            },
             DataType::Int16 => {
                 format_array!(f, self.i16().unwrap(), "i16", self.name(), "Series")
-            }
+            },
             DataType::Int32 => {
                 format_array!(f, self.i32().unwrap(), "i32", self.name(), "Series")
-            }
+            },
             DataType::Int64 => {
                 format_array!(f, self.i64().unwrap(), "i64", self.name(), "Series")
-            }
+            },
             DataType::Float32 => {
                 format_array!(f, self.f32().unwrap(), "f32", self.name(), "Series")
-            }
+            },
             DataType::Float64 => {
                 format_array!(f, self.f64().unwrap(), "f64", self.name(), "Series")
-            }
+            },
             #[cfg(feature = "dtype-date")]
             DataType::Date => format_array!(f, self.date().unwrap(), "date", self.name(), "Series"),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.datetime().unwrap(), &dt, self.name(), "Series")
-            }
+            },
             #[cfg(feature = "dtype-time")]
             DataType::Time => format_array!(f, self.time().unwrap(), "time", self.name(), "Series"),
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.duration().unwrap(), &dt, self.name(), "Series")
-            }
+            },
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(_, _) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.decimal().unwrap(), &dt, self.name(), "Series")
-            }
+            },
             #[cfg(feature = "dtype-array")]
             DataType::Array(_, _) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.array().unwrap(), &dt, self.name(), "Series")
-            }
+            },
             DataType::List(_) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.list().unwrap(), &dt, self.name(), "Series")
-            }
+            },
             #[cfg(feature = "object")]
             DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 format_array!(f, self.categorical().unwrap(), "cat", self.name(), "Series")
-            }
+            },
             #[cfg(feature = "dtype-struct")]
             dt @ DataType::Struct(_) => format_array!(
                 f,
@@ -315,10 +315,10 @@ impl Debug for Series {
             ),
             DataType::Null => {
                 writeln!(f, "nullarray")
-            }
+            },
             DataType::Binary => {
                 format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")
-            }
+            },
             dt => panic!("{dt:?} not impl"),
         }
     }
@@ -851,9 +851,9 @@ impl Display for AnyValue<'_> {
                     None => write!(f, "{ndt}"),
                     Some(tz) => {
                         write!(f, "{}", PlTzAware::new(ndt, tz))
-                    }
+                    },
                 }
-            }
+            },
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(v, tu) => match tu {
                 TimeUnit::Nanoseconds => fmt_duration_ns(f, *v),
@@ -864,12 +864,12 @@ impl Display for AnyValue<'_> {
             AnyValue::Time(_) => {
                 let nt: chrono::NaiveTime = self.into();
                 write!(f, "{nt}")
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(_, _, _) => {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
-            }
+            },
             #[cfg(feature = "dtype-array")]
             AnyValue::Array(s, _size) => write!(f, "{}", s.fmt_list()),
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
@@ -882,7 +882,7 @@ impl Display for AnyValue<'_> {
                 let mut avs = vec![];
                 av._materialize_struct_av(&mut avs);
                 fmt_struct(f, &avs)
-            }
+            },
             #[cfg(feature = "dtype-struct")]
             AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
             #[cfg(feature = "dtype-decimal")]
@@ -915,7 +915,7 @@ impl Display for PlTzAware<'_> {
                 let dt_utc = chrono::Utc.from_local_datetime(&self.ndt).unwrap();
                 let dt_tz_aware = dt_utc.with_timezone(&tz);
                 write!(f, "{dt_tz_aware}")
-            }
+            },
             Err(_) => write!(f, "invalid timezone"),
         }
         #[cfg(not(feature = "timezones"))]

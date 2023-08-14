@@ -72,7 +72,7 @@ impl PhysicalExpr for SortExpr {
                 let ca = s.list().unwrap();
                 let out = ca.lst_sort(self.options);
                 ac.with_series(out.into_series(), true, Some(&self.expr))?;
-            }
+            },
             _ => {
                 let series = ac.flat_naive().into_owned();
 
@@ -97,7 +97,7 @@ impl PhysicalExpr for SortExpr {
                                     (new_idx.first().copied().unwrap_or(first), new_idx)
                                 })
                                 .collect()
-                        }
+                        },
                         GroupsProxy::Slice { groups, .. } => groups
                             .par_iter()
                             .map(|&[first, len]| {
@@ -111,7 +111,7 @@ impl PhysicalExpr for SortExpr {
                 });
                 let groups = GroupsProxy::Idx(groups);
                 ac.with_groups(groups);
-            }
+            },
         }
 
         Ok(ac)

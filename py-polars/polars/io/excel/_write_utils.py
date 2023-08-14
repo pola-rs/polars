@@ -63,12 +63,15 @@ class _XLFormatCache:
     def _key(fmt: dict[str, Any]) -> str:
         return json.dumps(fmt, sort_keys=True, default=str)
 
-    def get(self, fmt: dict[str, Any]) -> Format:
-        key = self._key(fmt)
-        wbfmt = self._cache.get(key)
-        if wbfmt is None:
-            wbfmt = self.wb.add_format(fmt)
-            self._cache[key] = wbfmt
+    def get(self, fmt: dict[str, Any] | Format) -> Format:
+        if not isinstance(fmt, dict):
+            wbfmt = fmt
+        else:
+            key = self._key(fmt)
+            wbfmt = self._cache.get(key)
+            if wbfmt is None:
+                wbfmt = self.wb.add_format(fmt)
+                self._cache[key] = wbfmt
         return wbfmt
 
 
@@ -304,6 +307,7 @@ def _xl_setup_table_columns(
     column_totals: ColumnTotalsDefinition | None = None,
     column_formats: dict[str | tuple[str, ...], str | dict[str, str]] | None = None,
     dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
+    header_format: dict[str, Any] | None = None,
     sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
     formulas: dict[str, str | dict[str, str]] | None = None,
     row_totals: RowTotalsDefinition | None = None,
@@ -366,6 +370,7 @@ def _xl_setup_table_columns(
     # normalise formats
     column_formats = (column_formats or {}).copy()
     dtype_formats = (dtype_formats or {}).copy()
+
     for tp in list(dtype_formats):
         if isinstance(tp, (tuple, frozenset)):
             dtype_formats.update(dict.fromkeys(tp, dtype_formats.pop(tp)))
@@ -431,6 +436,9 @@ def _xl_setup_table_columns(
                 fmt["valign"] = "vcenter"
             column_formats[col] = format_cache.get(fmt)
 
+    # optional custom header format
+    col_header_format = format_cache.get(header_format) if header_format else None
+
     # assemble table columns
     table_columns = [
         {
@@ -438,6 +446,7 @@ def _xl_setup_table_columns(
             for k, v in {
                 "header": col,
                 "format": column_formats[col],
+                "header_format": col_header_format,
                 "total_function": column_total_funcs.get(col),
                 "formula": (
                     row_total_funcs.get(col)

@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
+use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 pub struct IterSer<I>
@@ -46,6 +47,7 @@ fn serialize_impl<T, S>(
     serializer: S,
     name: &str,
     dtype: &DataType,
+    bit_settings: Settings,
     ca: &ChunkedArray<T>,
 ) -> std::result::Result<<S as Serializer>::Ok, <S as Serializer>::Error>
 where
@@ -53,9 +55,10 @@ where
     T::Native: Serialize,
     S: Serializer,
 {
-    let mut state = serializer.serialize_map(Some(3))?;
+    let mut state = serializer.serialize_map(Some(4))?;
     state.serialize_entry("name", name)?;
     state.serialize_entry("datatype", dtype)?;
+    state.serialize_entry("bit_settings", &bit_settings)?;
     state.serialize_entry("values", &IterSer::new(ca.into_iter()))?;
     state.end()
 }
@@ -72,7 +75,13 @@ where
     where
         S: Serializer,
     {
-        serialize_impl(serializer, self.name(), self.dtype(), self)
+        serialize_impl(
+            serializer,
+            self.name(),
+            self.dtype(),
+            self.get_flags(),
+            self,
+        )
     }
 }
 
@@ -89,7 +98,13 @@ where
     where
         S: Serializer,
     {
-        serialize_impl(serializer, self.name(), self.dtype(), self)
+        serialize_impl(
+            serializer,
+            self.name(),
+            self.dtype(),
+            self.get_flags(),
+            self,
+        )
     }
 }
 
@@ -103,9 +118,10 @@ macro_rules! impl_serialize {
             where
                 S: Serializer,
             {
-                let mut state = serializer.serialize_map(Some(3))?;
+                let mut state = serializer.serialize_map(Some(4))?;
                 state.serialize_entry("name", self.name())?;
                 state.serialize_entry("datatype", self.dtype())?;
+                state.serialize_entry("bit_settings", &self.get_flags())?;
                 state.serialize_entry("values", &IterSer::new(self.into_iter()))?;
                 state.end()
             }
@@ -131,6 +147,7 @@ impl Serialize for CategoricalChunked {
             let mut state = serializer.serialize_map(Some(3))?;
             state.serialize_entry("name", self.name())?;
             state.serialize_entry("datatype", self.dtype())?;
+            state.serialize_entry("bit_settings", &self.get_flags())?;
             state.serialize_entry("values", &IterSer::new(self.iter_str()))?;
             state.end()
         }

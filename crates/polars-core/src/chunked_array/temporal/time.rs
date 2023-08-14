@@ -37,7 +37,7 @@ impl TimeChunked {
                         let timefmt = time64ns_to_time(*v).format(format);
                         write!(buf, "{timefmt}").unwrap();
                         mutarr.push(Some(&buf))
-                    }
+                    },
                 }
             }
 

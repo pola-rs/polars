@@ -316,11 +316,11 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
                 } else {
                     Ok(dsl::lit(val).into())
                 }
-            }
+            },
             _ => {
                 let val = int.extract::<u64>().unwrap();
                 Ok(dsl::lit(val).into())
-            }
+            },
         }
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
