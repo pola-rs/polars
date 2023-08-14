@@ -69,7 +69,9 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8
                         Some((lhs, rhs))
                     }
                 })
-                .map(|(lhs, rhs)| lhs * 10i128.pow(scale as u32) + rhs)
+                .map(|(lhs, rhs)| {
+                    lhs * 10i128.pow(scale as u32) + (if lhs < 0 { -rhs } else { rhs })
+                })
         }),
         (None, Some(rhs)) => {
             if rhs.len() > precision as usize || rhs.len() != scale as usize {
@@ -111,6 +113,12 @@ mod test {
         assert_eq!(
             deserialize_decimal(val.as_bytes(), precision, scale),
             Some(14390)
+        );
+
+        let val = "-1.5";
+        assert_eq!(
+            deserialize_decimal(val.as_bytes(), precision, scale),
+            Some(-150)
         );
 
         let scale = 20;
