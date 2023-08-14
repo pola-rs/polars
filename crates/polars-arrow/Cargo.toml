@@ -10,7 +10,6 @@ description = "Arrow interfaces for Polars DataFrame library"
 
 [dependencies]
 polars-error = { version = "0.31.1", path = "../polars-error" }
-
 arrow = { workspace = true }
 atoi = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }

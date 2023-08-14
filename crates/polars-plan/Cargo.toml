@@ -18,7 +18,6 @@ polars-io = { version = "0.31.1", path = "../polars-io", features = ["lazy", "cs
 polars-ops = { version = "0.31.1", path = "../polars-ops", default-features = false }
 polars-time = { version = "0.31.1", path = "../polars-time", optional = true }
 polars-utils = { version = "0.31.1", path = "../polars-utils" }
-
 ahash = { workspace = true }
 arrow = { workspace = true }
 chrono = { workspace = true, optional = true }

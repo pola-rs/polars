@@ -13,7 +13,6 @@ polars-arrow = { version = "0.31.1", path = "../polars-arrow", features = ["comp
 polars-error = { version = "0.31.1", path = "../polars-error" }
 polars-row = { version = "0.31.1", path = "../polars-row" }
 polars-utils = { version = "0.31.1", path = "../polars-utils" }
-
 ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }

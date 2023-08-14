@@ -15,7 +15,6 @@ polars-error = { version = "0.31.1", path = "../polars-error", default-features 
 polars-json = { version = "0.31.1", optional = true, path = "../polars-json" }
 polars-time = { version = "0.31.1", path = "../polars-time", features = [], default-features = false, optional = true }
 polars-utils = { version = "0.31.1", path = "../polars-utils" }
-
 ahash = { workspace = true }
 arrow = { workspace = true }
 async-trait = { version = "0.1.59", optional = true }

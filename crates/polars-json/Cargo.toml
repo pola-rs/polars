@@ -12,7 +12,6 @@ description = "JSON related logic for the Polars DataFrame library"
 polars-arrow = { version = "0.31.1", path = "../polars-arrow", default-features = false }
 polars-error = { version = "0.31.1", path = "../polars-error" }
 polars-utils = { version = "0.31.1", path = "../polars-utils" }
-
 ahash = { workspace = true }
 arrow = { workspace = true }
 fallible-streaming-iterator = { version = "0.1" }
