@@ -302,8 +302,7 @@ pub struct UserDefinedNode {
 }
 
 pub trait FunctionRegistry {
-    fn try_encode_scan(&self, _scan: &dyn AnonymousScan)
-        -> PolarsResult<UserDefinedNode>;
+    fn try_encode_scan(&self, _scan: &dyn AnonymousScan) -> PolarsResult<UserDefinedNode>;
     fn try_encode_udf(&self, _udf: &dyn DataFrameUdf, _buf: &mut Vec<u8>) -> PolarsResult<()>;
     fn try_decode_scan(
         &self,
@@ -318,10 +317,7 @@ pub trait FunctionRegistry {
 struct DefaultFunctionRegistry;
 
 impl FunctionRegistry for DefaultFunctionRegistry {
-    fn try_encode_scan(
-        &self,
-        _scan: &dyn AnonymousScan,
-    ) -> PolarsResult<UserDefinedNode> {
+    fn try_encode_scan(&self, _scan: &dyn AnonymousScan) -> PolarsResult<UserDefinedNode> {
         polars_bail!(InvalidOperation: "no default implementation for encoding scans")
     }
 
