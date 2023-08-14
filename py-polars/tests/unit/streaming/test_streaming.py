@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
     from polars.type_aliases import JoinStrategy
 
+pytestmark = pytest.mark.xdist_group("streaming")
+
 
 def test_streaming_groupby_types() -> None:
     df = pl.DataFrame(

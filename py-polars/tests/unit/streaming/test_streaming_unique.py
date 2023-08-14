@@ -5,6 +5,8 @@ import pytest
 
 import polars as pl
 
+pytestmark = pytest.mark.xdist_group("streaming")
+
 
 @pytest.mark.write_disk()
 @pytest.mark.slow()

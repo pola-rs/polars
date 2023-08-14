@@ -2,6 +2,8 @@ import pytest
 
 import polars as pl
 
+pytestmark = pytest.mark.xdist_group("streaming")
+
 
 @pytest.mark.slow()
 def test_streaming_groupby_sorted_fast_path_nulls_10273() -> None:
