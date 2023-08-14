@@ -36,7 +36,6 @@ impl LazyFrame {
             args.infer_schema_length,
             args.skip_rows,
             args.n_rows,
-            args.name,
         )?
         .build()
         .into();

@@ -284,7 +284,6 @@ pub struct AnonymousScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<Vec<String>>>,
     pub predicate: Option<Expr>,
-    pub fmt_str: &'static str,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

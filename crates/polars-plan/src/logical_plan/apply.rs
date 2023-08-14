@@ -3,6 +3,9 @@ use std::fmt::{Debug, Formatter};
 use polars_core::prelude::*;
 
 pub trait DataFrameUdf: Send + Sync {
+    fn name(&self) -> String {
+        "udf".to_string()
+    }
     fn call_udf(&self, df: DataFrame) -> PolarsResult<DataFrame>;
 }
 

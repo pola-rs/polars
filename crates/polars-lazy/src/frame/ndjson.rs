@@ -3,9 +3,13 @@ use std::path::{Path, PathBuf};
 use polars_core::prelude::*;
 use polars_io::RowCount;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use super::{LazyFileListReader, LazyFrame, ScanArgsAnonymous};
 
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct LazyJsonLineReader {
     pub(crate) path: PathBuf,
     pub(crate) batch_size: Option<usize>,

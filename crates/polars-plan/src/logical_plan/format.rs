@@ -70,6 +70,7 @@ impl LogicalPlan {
                 file_info,
                 predicate,
                 options,
+                function,
                 ..
             } => {
                 let n_columns = options
@@ -79,7 +80,7 @@ impl LogicalPlan {
                     .unwrap_or(-1);
                 write_scan(
                     f,
-                    options.fmt_str,
+                    function.name(),
                     Path::new(""),
                     sub_indent,
                     n_columns,

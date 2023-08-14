@@ -88,7 +88,6 @@ impl LogicalPlanBuilder {
         infer_schema_length: Option<usize>,
         skip_rows: Option<usize>,
         n_rows: Option<usize>,
-        name: &'static str,
     ) -> PolarsResult<Self> {
         let schema = Arc::new(match schema {
             Some(s) => s,
@@ -104,7 +103,6 @@ impl LogicalPlanBuilder {
             file_info,
             predicate: None,
             options: Arc::new(AnonymousScanOptions {
-                fmt_str: name,
                 schema,
                 skip_rows,
                 n_rows,

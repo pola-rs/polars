@@ -2,10 +2,12 @@ use std::any::Any;
 use std::fmt::{Debug, Formatter};
 
 use polars_core::prelude::*;
-
 pub use super::options::AnonymousScanOptions;
 
 pub trait AnonymousScan: Send + Sync {
+    fn name(&self) -> &'static str {
+        "anonymous scan"
+    }
     fn as_any(&self) -> &dyn Any;
     /// Creates a dataframe from the supplied function & scan options.
     fn scan(&self, scan_opts: AnonymousScanOptions) -> PolarsResult<DataFrame>;
@@ -34,6 +36,7 @@ pub trait AnonymousScan: Send + Sync {
         false
     }
 }
+
 
 impl<F> AnonymousScan for F
 where
