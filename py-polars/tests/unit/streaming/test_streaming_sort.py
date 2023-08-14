@@ -7,6 +7,8 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
+pytestmark = pytest.mark.xdist_group("streaming")
+
 
 def test_streaming_sort_multiple_columns_logical_types() -> None:
     data = {
