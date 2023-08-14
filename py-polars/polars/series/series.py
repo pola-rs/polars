@@ -1704,10 +1704,19 @@ class Series:
             Labels to assign to the bins. If given, the number of labels must be
             equal to the number of breaks plus one.
         break_point_label
-            Name given to the breakpoint column/field. Only used if
-            ``include_breaks == True`` or ``as_series == False``.
+            Name of the breakpoint column. Only used if ``include_breaks`` is set to
+            ``True``.
+
+            .. deprecated:: 0.18.14
+                This parameter will be removed. Use `Series.struct.rename_fields` to
+                rename the field instead.
         category_label
-            Name given to the category column. Only used if series == False
+            Name of the category column. Only used if ``include_breaks`` is set to
+            ``True``.
+
+            .. deprecated:: 0.18.14
+                This parameter will be removed. Use `Series.struct.rename_fields` to
+                rename the field instead.
         left_closed
             Whether intervals should be ``[)`` instead of ``(]``.
         include_breaks
@@ -1742,7 +1751,7 @@ class Series:
                 "c"
         ]
 
-        Create a DataFrame with the break point and category for each value.
+        Create a DataFrame with the breakpoint and category for each value.
 
         >>> cut = s.cut([-1, 1], include_breaks=True).alias("cut")
         >>> s.to_frame().with_columns(cut).unnest("cut")
@@ -1760,35 +1769,47 @@ class Series:
         └─────┴─────────────┴────────────┘
 
         """
-        name = self._s.name()
-
+        if break_point_label != "break_point":
+            issue_deprecation_warning(
+                "The `break_point_label` parameter for `Series.cut` will be removed."
+                " Use `Series.struct.rename_fields` to rename the field instead.",
+                version="0.18.14",
+            )
+        if category_label != "category":
+            issue_deprecation_warning(
+                "The `category_label` parameter for `Series.cut` will be removed."
+                " Use `Series.struct.rename_fields` to rename the field instead.",
+                version="0.18.14",
+            )
         if not as_series:
             issue_deprecation_warning(
-                "the `as_series` parameter for `Series.cut` will be removed."
+                "The `as_series` parameter for `Series.cut` will be removed."
                 " The same behavior can be achieved by setting ``include_breaks=True`,"
                 " unnesting the resulting struct Series,"
-                " and adding the result to the original Series."
+                " and adding the result to the original Series.",
+                version="0.18.14",
             )
+            temp_name = self.name + "_bin"
             return (
                 self.to_frame()
                 .with_columns(
-                    F.col(name)
+                    F.col(self.name)
                     .cut(
                         breaks,
                         labels=labels,
                         left_closed=left_closed,
                         include_breaks=True,  # always include breaks
                     )
-                    .alias(name + "_bin")
+                    .alias(temp_name)
                 )
-                .unnest(name + "_bin")
-                .rename({"brk": break_point_label, name + "_bin": category_label})
+                .unnest(temp_name)
+                .rename({"brk": break_point_label, temp_name: category_label})
             )
 
         result = (
             self.to_frame()
             .select(
-                F.col(name).cut(
+                F.col(self.name).cut(
                     breaks,
                     labels=labels,
                     left_closed=left_closed,
@@ -1797,6 +1818,7 @@ class Series:
             )
             .to_series()
         )
+
         if include_breaks:
             result = result.struct.rename_fields([break_point_label, category_label])
 
@@ -1838,11 +1860,11 @@ class Series:
         quantiles: Sequence[float] | int,
         *,
         labels: Sequence[str] | None = ...,
-        break_point_label: str = ...,
-        category_label: str = ...,
         left_closed: bool = ...,
         allow_duplicates: bool = ...,
         include_breaks: bool = ...,
+        break_point_label: str = ...,
+        category_label: str = ...,
         as_series: bool,
     ) -> Series | DataFrame:
         ...
@@ -1854,11 +1876,11 @@ class Series:
         quantiles: Sequence[float] | int,
         *,
         labels: Sequence[str] | None = None,
-        break_point_label: str = "break_point",
-        category_label: str = "category",
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
+        break_point_label: str = "break_point",
+        category_label: str = "category",
         as_series: bool = True,
     ) -> Series | DataFrame:
         """
@@ -1872,11 +1894,6 @@ class Series:
         labels
             Labels to assign to the quantiles. If given, the length of labels must be
             ``len(breaks) + 1``.
-        break_point_label
-            Name given to the breakpoint column/field. Only used if ``series == False``
-            or ``include_breaks == True``.
-        category_label
-            Name given to the category column. Only used if ``series == False``.
         left_closed
             Whether intervals should be ``[)`` instead of ``(]``.
         allow_duplicates
@@ -1887,6 +1904,20 @@ class Series:
             Include the the right endpoint of the bin each observation falls in.
             If returning a DataFrame, it will be a column, and if returning a Series
             it will be a field in a Struct.
+        break_point_label
+            Name of the breakpoint column. Only used if ``include_breaks`` is set to
+            ``True``.
+
+            .. deprecated:: 0.18.14
+                This parameter will be removed. Use `Series.struct.rename_fields` to
+                rename the field instead.
+        category_label
+            Name of the category column. Only used if ``include_breaks`` is set to
+            ``True``.
+
+            .. deprecated:: 0.18.14
+                This parameter will be removed. Use `Series.struct.rename_fields` to
+                rename the field instead.
         as_series
             If ``True``, return a categorical Series in the data's original order.
 
@@ -1964,31 +1995,50 @@ class Series:
         ]
 
         """
-        n = self._s.name()
+        if break_point_label != "break_point":
+            issue_deprecation_warning(
+                "The `break_point_label` parameter for `Series.cut` will be removed."
+                " Use `Series.struct.rename_fields` to rename the field instead.",
+                version="0.18.14",
+            )
+        if category_label != "category":
+            issue_deprecation_warning(
+                "The `category_label` parameter for `Series.cut` will be removed."
+                " Use `Series.struct.rename_fields` to rename the field instead.",
+                version="0.18.14",
+            )
         if not as_series:
-            # "Old style" always includes breaks
+            issue_deprecation_warning(
+                "the `as_series` parameter for `Series.qcut` will be removed."
+                " The same behavior can be achieved by setting ``include_breaks=True`,"
+                " unnesting the resulting struct Series,"
+                " and adding the result to the original Series.",
+                version="0.18.14",
+            )
+            temp_name = self.name + "_bin"
             return (
                 self.to_frame()
                 .with_columns(
-                    F.col(n)
+                    F.col(self.name)
                     .qcut(
                         quantiles,
-                        labels,
+                        labels=labels,
                         left_closed=left_closed,
                         allow_duplicates=allow_duplicates,
-                        include_breaks=True,
+                        include_breaks=True,  # always include breaks
                     )
-                    .alias(n + "_bin")
+                    .alias(temp_name)
                 )
-                .unnest(n + "_bin")
-                .rename({"brk": break_point_label, n + "_bin": category_label})
+                .unnest(temp_name)
+                .rename({"brk": break_point_label, temp_name: category_label})
             )
-        res = (
+
+        result = (
             self.to_frame()
             .select(
-                F.col(n).qcut(
+                F.col(self.name).qcut(
                     quantiles,
-                    labels,
+                    labels=labels,
                     left_closed=left_closed,
                     allow_duplicates=allow_duplicates,
                     include_breaks=include_breaks,
@@ -1996,9 +2046,11 @@ class Series:
             )
             .to_series()
         )
+
         if include_breaks:
-            return res.struct.rename_fields([break_point_label, category_label])
-        return res
+            result = result.struct.rename_fields([break_point_label, category_label])
+
+        return result
 
     def rle(self) -> Series:
         """
