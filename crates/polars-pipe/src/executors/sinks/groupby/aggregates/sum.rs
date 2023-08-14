@@ -126,7 +126,7 @@ where
         if let Some(val) = self.sum {
             val.into()
         } else {
-            AnyValue::Null
+            K::zero().into()
         }
     }
     fn as_any(&self) -> &dyn Any {
