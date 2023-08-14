@@ -70,6 +70,7 @@ def test_read_excel_all_sheets_with_sheet_name(excel_file_path: Path) -> None:
                 "val": "#,##0.000;[White]-#,##0.000",
                 ("day", "month", "year"): {"align": "left", "num_format": "0"},
             },
+            "header_format": {"italic": True, "bg_color": "#d9d9d9"},
             "column_widths": {"val": 100},
             "row_heights": {0: 35},
             "formulas": {

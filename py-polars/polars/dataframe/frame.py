@@ -2549,6 +2549,7 @@ class DataFrame:
         column_formats: dict[str | tuple[str, ...], str | dict[str, str]] | None = None,
         dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
         conditional_formats: ConditionalFormatDict | None = None,
+        header_format: dict[str, Any] | None = None,
         column_totals: ColumnTotalsDefinition | None = None,
         column_widths: dict[str | tuple[str, ...], int] | int | None = None,
         row_totals: RowTotalsDefinition | None = None,
@@ -2615,6 +2616,9 @@ class DataFrame:
               min/max values will be determined across the entire range, not per-column.
             * Finally, you can also supply a list made up from the above options
               in order to apply *more* than one conditional format to the same range.
+        header_format : dict
+            A ``{key:value,}`` dictionary of ``xlsxwriter`` format options to apply
+            to the table header row, such as ``{"bold":True, "font_color":"#702963"}``.
         column_totals : {bool, list, dict}
             Add a column-total row to the exported table.
 
@@ -2703,6 +2707,9 @@ class DataFrame:
 
         Notes
         -----
+        * A list of compatible ``xlsxwriter`` format property names can be found here:
+          https://xlsxwriter.readthedocs.io/format.html#format-methods-and-format-properties
+
         * Conditional formatting dictionaries should provide xlsxwriter-compatible
           definitions; polars will take care of how they are applied on the worksheet
           with respect to the relative sheet/column position. For supported options,
@@ -2740,12 +2747,13 @@ class DataFrame:
         ... )
 
         Export to "dataframe.xlsx" (the default workbook name, if not specified) in the
-        working directory, add column totals ("sum") on all numeric columns, autofit:
+        working directory, add column totals ("sum" by default) on all numeric columns,
+        then autofit:
 
         >>> df.write_excel(column_totals=True, autofit=True)  # doctest: +SKIP
 
         Write frame to a specific location on the sheet, set a named table style,
-        apply US-style date formatting, increase default float precision, apply
+        apply US-style date formatting, increase default float precision, apply a
         non-default total function to a single column, autofit:
 
         >>> df.write_excel(  # doctest: +SKIP
@@ -2913,6 +2921,7 @@ class DataFrame:
             column_formats=column_formats,
             column_totals=column_totals,
             dtype_formats=dtype_formats,
+            header_format=header_format,
             float_precision=float_precision,
             row_totals=row_totals,
             sparklines=sparklines,
