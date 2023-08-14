@@ -3178,7 +3178,7 @@ class DataFrame:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
             if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
-                file = normalise_filepath(file, check_not_directory=True)
+                file = normalise_filepath(file, check_not_directory=False)
             else:
                 file = normalise_filepath(file)
 

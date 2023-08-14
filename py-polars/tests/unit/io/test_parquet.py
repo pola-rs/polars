@@ -45,9 +45,9 @@ def test_write_parquet_using_pyarrow_write_to_dataset_with_partitioning(
     tmp_path: Path,
     compression: ParquetCompression,
 ) -> None:
-    tmp_path.mkdir(exist_ok=True)
     df = pl.DataFrame({"a": [1, 2, 3], "partition_col": ["one", "two", "two"]})
-    path_to_write = tmp_path / "test.parquet"
+    path_to_write = tmp_path / "test_folder"
+    path_to_write.mkdir(exist_ok=True)
     df.write_parquet(
         file=path_to_write,
         statistics=True,
