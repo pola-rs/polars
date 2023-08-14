@@ -675,6 +675,7 @@ class DataFrame:
         row_count_offset: int = 0,
         sample_size: int = 1024,
         eol_char: str = "\n",
+        raise_if_empty: bool = True,
     ) -> DataFrame:
         """
         Read a CSV file into a DataFrame.
@@ -744,6 +745,7 @@ class DataFrame:
                 row_count_name=row_count_name,
                 row_count_offset=row_count_offset,
                 eol_char=eol_char,
+                raise_if_empty=raise_if_empty,
             )
             if columns is None:
                 return scan.collect()
@@ -784,6 +786,7 @@ class DataFrame:
             _prepare_row_count_args(row_count_name, row_count_offset),
             sample_size=sample_size,
             eol_char=eol_char,
+            raise_if_empty=raise_if_empty,
         )
         return self
 
@@ -872,7 +875,9 @@ class DataFrame:
         Parameters
         ----------
         source
-            Path to a file or a file-like object.
+            Path to a file or a file-like object (by file-like object, we refer to
+            objects that have a ``read()`` method, such as a file handler (e.g.
+            via builtin ``open`` function) or ``BytesIO``).
         columns
             Columns.
         n_rows
@@ -906,7 +911,9 @@ class DataFrame:
         Parameters
         ----------
         source
-            Path to a file or a file-like object.
+            Path to a file or a file-like object (by file-like object, we refer to
+            objects that have a ``read()`` method, such as a file handler (e.g.
+            via builtin ``open`` function) or ``BytesIO``).
         columns
             Columns to select. Accepts a list of column indices (starting at zero) or a
             list of column names.
