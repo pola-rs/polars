@@ -218,8 +218,8 @@ where
 {
     /// Create a new ChunkedArray by taking ownership of the Vec. This operation is zero copy.
     pub fn from_vec(name: &str, v: Vec<T::Native>) -> Self {
-        let arr = to_array::<T>(v, None);
-        unsafe { Self::from_chunks(name, vec![arr]) }
+        let arr = to_primitive::<T>(v, None);
+        Self::from_chunk_iter(name, [arr])
     }
 
     /// Nullify values in slice with an existing null bitmap
@@ -246,7 +246,7 @@ where
     /// This will not be checked by the borrowchecker.
     pub unsafe fn mmap_slice(name: &str, values: &[T::Native]) -> Self {
         let arr = arrow::ffi::mmap::slice(values);
-        Self::from_chunks(name, vec![Box::new(arr)])
+        Self::from_chunk_iter(name, [arr])
     }
 }
 
@@ -258,6 +258,6 @@ impl BooleanChunked {
     /// This will not be checked by the borrowchecker.
     pub unsafe fn mmap_slice(name: &str, values: &[u8], offset: usize, len: usize) -> Self {
         let arr = arrow::ffi::mmap::bitmap(values, offset, len).unwrap();
-        BooleanChunked::from_chunks(name, vec![Box::new(arr)])
+        Self::from_chunk_iter(name, [arr])
     }
 }
