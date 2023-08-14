@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date
 from typing import Any
 
@@ -382,3 +384,20 @@ def test_streaming_restart_non_streamable_groupby() -> None:
     )
 
     assert """--- PIPELINE""" in res.explain(streaming=True)
+
+
+def test_groupby_min_max_string_type() -> None:
+    table = pl.from_dict({"a": [1, 1, 2, 2, 2], "b": ["a", "b", "c", "d", None]})
+
+    expected = {"a": [1, 2], "min": ["a", "c"], "max": ["b", "d"]}
+
+    for streaming in [True, False]:
+        assert (
+            table.lazy()
+            .groupby("a")
+            .agg([pl.min("b").alias("min"), pl.max("b").alias("max")])
+            .collect(streaming=streaming)
+            .sort("a")
+            .to_dict(False)
+            == expected
+        )

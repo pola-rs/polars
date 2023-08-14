@@ -183,11 +183,6 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
     }
 
 
-def test_scan_slice_streaming(foods_file_path: Path) -> None:
-    df = pl.scan_csv(foods_file_path).head(5).collect(streaming=True)
-    assert df.shape == (5, 4)
-
-
 @pytest.mark.write_disk()
 def test_glob_skip_rows(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)

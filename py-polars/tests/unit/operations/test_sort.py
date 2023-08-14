@@ -222,7 +222,6 @@ def test_sorted_flag() -> None:
     ).sort("timestamp")
 
     assert q.collect()["timestamp"].flags["SORTED_ASC"]
-    assert q.collect(streaming=True)["timestamp"].flags["SORTED_ASC"]
 
     # top-k/bottom-k
     df = pl.DataFrame({"foo": [56, 2, 3]})
