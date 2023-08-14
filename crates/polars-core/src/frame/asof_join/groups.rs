@@ -91,6 +91,45 @@ pub(super) unsafe fn join_asof_forward_with_indirection_and_tolerance<
     (None, offsets.len())
 }
 
+pub(super) unsafe fn join_asof_nearest_with_indirection_and_tolerance<
+    T: PartialOrd + Copy + Debug + Sub<Output = T>,
+>(
+    val_l: T,
+    right: &[T],
+    offsets: &[IdxSize],
+    tolerance: T,
+) -> (Option<IdxSize>, usize) {
+    if offsets.is_empty() {
+        return (None, 0);
+    }
+    let max_possible_dist = tolerance;
+    let mut dist: T = max_possible_dist;
+    let mut prev_offset: IdxSize = 0;
+    for (idx, &offset) in offsets.iter().enumerate() {
+        let val_r = *right.get_unchecked(offset as usize);
+        // This is (val_r - val_l).abs(), but works on strings/dates
+        let dist_curr = if val_r > val_l {
+            val_r - val_l
+        } else {
+            val_l - val_r
+        };
+        if dist_curr <= dist {
+            // candidate for match
+            dist = dist_curr;
+        } else {
+            // note for a nearest-match, we can re-match on the same val_r next time,
+            // so we need to rewind the idx by 1
+            return (Some(prev_offset), idx - 1);
+        }
+        prev_offset = offset;
+    }
+
+    // if we've reached the end with nearest and haven't returned, it means that the last item was the closest
+    // note for a nearest-match, we can re-match on the same val_r next time,
+    // so we need to rewind the idx by 1
+    (Some(offsets[offsets.len() - 1]), offsets.len() - 1)
+}
+
 pub(super) unsafe fn join_asof_backward_with_indirection<T: PartialOrd + Copy + Debug>(
     val_l: T,
     right: &[T],
@@ -274,7 +313,11 @@ where
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
         },
-        (_, AsofStrategy::Nearest) => {
+        (Some(tolerance), AsofStrategy::Nearest) => {
+            let tol = tolerance.extract::<T::Native>().unwrap();
+            (join_asof_nearest_with_indirection_and_tolerance, tol, false)
+        },
+        (None, AsofStrategy::Nearest) => {
             (join_asof_nearest_with_indirection, T::Native::zero(), false)
         },
     };
@@ -408,7 +451,11 @@ where
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
         },
-        (_, AsofStrategy::Nearest) => {
+        (Some(tolerance), AsofStrategy::Nearest) => {
+            let tol = tolerance.extract::<T::Native>().unwrap();
+            (join_asof_nearest_with_indirection_and_tolerance, tol, false)
+        },
+        (None, AsofStrategy::Nearest) => {
             (join_asof_nearest_with_indirection, T::Native::zero(), false)
         },
     };
@@ -534,7 +581,11 @@ where
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
         },
-        (_, AsofStrategy::Nearest) => {
+        (Some(tolerance), AsofStrategy::Nearest) => {
+            let tol = tolerance.extract::<T::Native>().unwrap();
+            (join_asof_nearest_with_indirection_and_tolerance, tol, false)
+        },
+        (None, AsofStrategy::Nearest) => {
             (join_asof_nearest_with_indirection, T::Native::zero(), false)
         },
     };

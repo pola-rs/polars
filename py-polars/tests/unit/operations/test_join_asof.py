@@ -550,6 +550,34 @@ def test_asof_join_nearest_by_date() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_asof_nearest_with_tolerance() -> None:
+    df1 = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2023, 3, 3, 9, 16, 24, 960_000),
+                datetime(2023, 3, 3, 10, 40, 56, 230_000),
+                datetime(2023, 3, 3, 11, 17, 33, 720_000),
+            ],
+            "A": [10, 10, 11],
+        }
+    ).sort(by="ts")
+    df2 = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2023, 3, 3, 9, 20, 25, 110_000),
+                datetime(2023, 3, 3, 10, 40, 56, 75_000),
+                datetime(2023, 3, 3, 11, 14, 32, 10_000),
+            ],
+            "B": ["Y", "Y", "N"],
+        }
+    ).sort(by="ts")
+    df2 = df2.with_columns(pl.col("ts").alias("ts_copy")).sort(by="ts")
+
+    out = df1.join_asof(df2, on="ts", tolerance="1s", strategy="nearest")
+
+    m = 1
+
+
 def test_asof_join_string_err() -> None:
     left = pl.DataFrame({"date_str": ["2023/02/15"]}).sort("date_str")
     right = pl.DataFrame(
