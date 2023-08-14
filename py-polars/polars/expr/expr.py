@@ -3320,7 +3320,7 @@ class Expr:
         -------
         Expr
             Expression of data type :class:`Categorical` if ``include_breaks`` is set to
-            ``False`` (default), otherwise an expression of data type :class:`Struct.
+            ``False`` (default), otherwise an expression of data type :class:`Struct`.
 
         See Also
         --------
@@ -3407,7 +3407,7 @@ class Expr:
         -------
         Expr
             Expression of data type :class:`Categorical` if ``include_breaks`` is set to
-            ``False`` (default), otherwise an expression of data type :class:`Struct.
+            ``False`` (default), otherwise an expression of data type :class:`Struct`.
 
         See Also
         --------

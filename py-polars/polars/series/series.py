@@ -1708,14 +1708,14 @@ class Series:
             ``True``.
 
             .. deprecated:: 0.19.0
-                This parameter will be removed. Use `Series.struct.rename_fields` to
+                This parameter will be removed. Use ``Series.struct.rename_fields`` to
                 rename the field instead.
         category_label
             Name of the category column. Only used if ``include_breaks`` is set to
             ``True``.
 
             .. deprecated:: 0.19.0
-                This parameter will be removed. Use `Series.struct.rename_fields` to
+                This parameter will be removed. Use ``Series.struct.rename_fields`` to
                 rename the field instead.
         left_closed
             Set the intervals to be left-closed instead of right-closed.
@@ -1729,14 +1729,14 @@ class Series:
 
             .. deprecated:: 0.19.0
                 This parameter will be removed. The same behavior can be achieved by
-                setting ``include_breaks=True`, unnesting the resulting struct Series,
+                setting ``include_breaks=True``, unnesting the resulting struct Series,
                 and adding the result to the original Series.
 
         Returns
         -------
         Series
             Series of data type :class:`Categorical` if ``include_breaks`` is set to
-            ``False`` (default), otherwise a Series of data type :class:`Struct.
+            ``False`` (default), otherwise a Series of data type :class:`Struct`.
 
         See Also
         --------
@@ -1916,14 +1916,14 @@ class Series:
             ``True``.
 
             .. deprecated:: 0.19.0
-                This parameter will be removed. Use `Series.struct.rename_fields` to
+                This parameter will be removed. Use ``Series.struct.rename_fields`` to
                 rename the field instead.
         category_label
             Name of the category column. Only used if ``include_breaks`` is set to
             ``True``.
 
             .. deprecated:: 0.19.0
-                This parameter will be removed. Use `Series.struct.rename_fields` to
+                This parameter will be removed. Use ``Series.struct.rename_fields`` to
                 rename the field instead.
         as_series
             If set to ``False``, return a DataFrame containing the original values,
@@ -1931,14 +1931,14 @@ class Series:
 
             .. deprecated:: 0.19.0
                 This parameter will be removed. The same behavior can be achieved by
-                setting ``include_breaks=True`, unnesting the resulting struct Series,
+                setting ``include_breaks=True``, unnesting the resulting struct Series,
                 and adding the result to the original Series.
 
         Returns
         -------
         Series
             Series of data type :class:`Categorical` if ``include_breaks`` is set to
-            ``False`` (default), otherwise a Series of data type :class:`Struct.
+            ``False`` (default), otherwise a Series of data type :class:`Struct`.
 
         Warnings
         --------
