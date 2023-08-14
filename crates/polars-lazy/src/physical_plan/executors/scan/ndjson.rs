@@ -47,17 +47,6 @@ mod test {
 
     struct JsonEncodedRegistry;
     impl FunctionRegistry for JsonEncodedRegistry {
-        fn try_encode_scan(&self, scan: &dyn AnonymousScan, buf: &mut Vec<u8>) -> PolarsResult<()> {
-            if scan.name() == "LazyJsonLineReader" {
-                let lf = scan.as_any().downcast_ref::<LazyJsonLineReader>().unwrap();
-                let bytes = serde_json::to_vec(lf).unwrap();
-                buf.extend_from_slice(&bytes);
-                Ok(())
-            } else {
-                polars_bail!(InvalidOperation: "cannot serialize scan")
-            }
-        }
-
         fn try_encode_udf(
             &self,
             _udf: &dyn polars_plan::prelude::DataFrameUdf,
@@ -66,26 +55,41 @@ mod test {
             todo!()
         }
 
-        fn try_decode_scan(
-            &self,
-            name: &str,
-            bytes: &[u8],
-        ) -> PolarsResult<Option<Arc<dyn AnonymousScan>>> {
-            if name == "LazyJsonLineReader" {
-                let reader: LazyJsonLineReader = serde_json::from_slice(bytes).unwrap();
-                let scan = Arc::new(reader);
-                Ok(Some(scan))
-            } else {
-                Ok(None)
-            }
-        }
-
         fn try_decode_udf(
             &self,
             _name: &str,
             _bytes: &[u8],
         ) -> PolarsResult<Option<Arc<dyn polars_plan::prelude::DataFrameUdf>>> {
             Ok(None)
+        }
+
+        fn try_encode_scan(
+            &self,
+            scan: &dyn AnonymousScan,
+        ) -> PolarsResult<polars_plan::prelude::UserDefinedNode> {
+            if scan.name() == "LazyJsonLineReader" {
+                let lf = scan.as_any().downcast_ref::<LazyJsonLineReader>().unwrap();
+                let bytes = serde_json::to_vec(lf).unwrap();
+                Ok(polars_plan::prelude::UserDefinedNode {
+                    name: "LazyJsonLineReader".to_string(),
+                    bytes,
+                })
+            } else {
+                polars_bail!(InvalidOperation: "cannot serialize scan")
+            }
+        }
+
+        fn try_decode_scan(
+            &self,
+            node: &polars_plan::prelude::UserDefinedNode,
+        ) -> PolarsResult<Option<Arc<dyn AnonymousScan>>> {
+            if node.name == "LazyJsonLineReader" {
+                let reader: LazyJsonLineReader = serde_json::from_slice(&node.bytes).unwrap();
+                let scan = Arc::new(reader);
+                Ok(Some(scan))
+            } else {
+                Ok(None)
+            }
         }
     }
     #[test]

@@ -294,13 +294,20 @@ impl LogicalPlan {
         Ok((node, lp_arena, expr_arena))
     }
 }
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct UserDefinedNode {
+    pub name: String,
+    pub bytes: Vec<u8>,
+}
+
 pub trait FunctionRegistry {
-    fn try_encode_scan(&self, _scan: &dyn AnonymousScan, _buf: &mut Vec<u8>) -> PolarsResult<()>;
+    fn try_encode_scan(&self, _scan: &dyn AnonymousScan)
+        -> PolarsResult<UserDefinedNode>;
     fn try_encode_udf(&self, _udf: &dyn DataFrameUdf, _buf: &mut Vec<u8>) -> PolarsResult<()>;
     fn try_decode_scan(
         &self,
-        _name: &str,
-        _bytes: &[u8],
+        _node: &UserDefinedNode,
     ) -> PolarsResult<Option<Arc<dyn AnonymousScan>>>;
     fn try_decode_udf(
         &self,
@@ -311,7 +318,10 @@ pub trait FunctionRegistry {
 struct DefaultFunctionRegistry;
 
 impl FunctionRegistry for DefaultFunctionRegistry {
-    fn try_encode_scan(&self, _scan: &dyn AnonymousScan, _buf: &mut Vec<u8>) -> PolarsResult<()> {
+    fn try_encode_scan(
+        &self,
+        _scan: &dyn AnonymousScan,
+    ) -> PolarsResult<UserDefinedNode> {
         polars_bail!(InvalidOperation: "no default implementation for encoding scans")
     }
 
@@ -321,8 +331,7 @@ impl FunctionRegistry for DefaultFunctionRegistry {
 
     fn try_decode_scan(
         &self,
-        _name: &str,
-        _bytes: &[u8],
+        _node: &UserDefinedNode,
     ) -> PolarsResult<Option<Arc<dyn AnonymousScan>>> {
         polars_bail!(InvalidOperation: "no default implementation for decoding scans")
     }
@@ -351,8 +360,7 @@ pub struct SerializableAggregate {
 #[serde(tag = "type")]
 enum SerializableLogicalPlan {
     AnonymousScan {
-        name: String,
-        raw: Vec<u8>,
+        node: UserDefinedNode,
         file_info: FileInfo,
         predicate: Option<Expr>,
         options: Arc<AnonymousScanOptions>,
@@ -473,12 +481,11 @@ impl SerializableLogicalPlan {
                 options,
             } => {
                 // let name = function.name();
-                let mut raw = Vec::new();
-                registry.try_encode_scan(function.as_ref(), &mut raw)?;
+
+                let node = registry.try_encode_scan(function.as_ref())?;
 
                 Ok(SerializableLogicalPlan::AnonymousScan {
-                    name: function.name().to_string(),
-                    raw,
+                    node,
                     file_info,
                     options,
                     predicate,
@@ -668,13 +675,12 @@ impl SerializableLogicalPlan {
     fn try_into_logical_plan(self, registry: &dyn FunctionRegistry) -> PolarsResult<LogicalPlan> {
         match self {
             Self::AnonymousScan {
-                name,
-                raw,
+                node,
                 file_info,
                 predicate,
                 options,
             } => {
-                let f = registry.try_decode_scan(&name, &raw)?;
+                let f = registry.try_decode_scan(&node)?;
                 if let Some(f) = f {
                     Ok(LogicalPlan::AnonymousScan {
                         function: f,
@@ -684,7 +690,7 @@ impl SerializableLogicalPlan {
                     })
                 } else {
                     Err(PolarsError::ComputeError(
-                        format!("Could not find a scan function with name: {}", name).into(),
+                        format!("Could not find a scan function with name: {}", &node.name).into(),
                     ))
                 }
             },
@@ -696,6 +702,7 @@ impl SerializableLogicalPlan {
                     len,
                 })
             },
+            #[cfg(feature = "python")]
             SerializableLogicalPlan::PythonScan { options } => {
                 Ok(LogicalPlan::PythonScan { options })
             },
