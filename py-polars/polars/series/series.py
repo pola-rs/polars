@@ -12,6 +12,7 @@ from typing import (
     Collection,
     Generator,
     Iterable,
+    Literal,
     NoReturn,
     Sequence,
     Union,
@@ -1635,6 +1636,48 @@ class Series:
         """
         return wrap_df(self._s.to_dummies(separator))
 
+    @overload
+    def cut(
+        self,
+        breaks: list[float],
+        labels: list[str] | None = ...,
+        break_point_label: str = ...,
+        category_label: str = ...,
+        *,
+        left_closed: bool = ...,
+        include_breaks: bool = ...,
+        series: Literal[True] = ...,
+    ) -> Series:
+        ...
+
+    @overload
+    def cut(
+        self,
+        breaks: list[float],
+        labels: list[str] | None = ...,
+        break_point_label: str = ...,
+        category_label: str = ...,
+        *,
+        left_closed: bool = ...,
+        include_breaks: bool = ...,
+        series: Literal[False],
+    ) -> DataFrame:
+        ...
+
+    @overload
+    def cut(
+        self,
+        breaks: list[float],
+        labels: list[str] | None = ...,
+        break_point_label: str = ...,
+        category_label: str = ...,
+        *,
+        left_closed: bool = ...,
+        include_breaks: bool = ...,
+        series: bool,
+    ) -> Series | DataFrame:
+        ...
+
     @deprecate_renamed_parameter("bins", "breaks", version="0.18.8")
     def cut(
         self,
@@ -1643,9 +1686,9 @@ class Series:
         break_point_label: str = "break_point",
         category_label: str = "category",
         *,
-        series: bool = True,
         left_closed: bool = False,
         include_breaks: bool = False,
+        series: bool = True,
     ) -> DataFrame | Series:
         """
         Bin continuous values into discrete categories.
@@ -1658,22 +1701,22 @@ class Series:
             Labels to assign to the bins. If given the length of labels must be
             len(breaks) + 1.
         break_point_label
-            Name given to the breakpoint column/field. Only used if series == False or
-            include_breaks == True
+            Name given to the breakpoint column/field. Only used if ``series == False``
+            or ``include_breaks == True``.
         category_label
             Name given to the category column. Only used if series == False
-        series
-            If True, return a categorical Series in the data's original order.
         left_closed
-            Whether intervals should be [) instead of (]
+            Whether intervals should be ``[)`` instead of ``(]``.
         include_breaks
             Include the the right endpoint of the bin each observation falls in.
             If returning a DataFrame, it will be a column, and if returning a Series
-            it will be a field in a Struct
+            it will be a field in a Struct.
+        series
+            If True, return a categorical Series in the data's original order.
 
         Returns
         -------
-        DataFrame or Series
+        Series or DataFrame
 
         Examples
         --------
@@ -1751,6 +1794,51 @@ class Series:
             return res.struct.rename_fields([break_point_label, category_label])
         return res
 
+    @overload
+    def qcut(
+        self,
+        quantiles: list[float] | int,
+        *,
+        labels: list[str] | None = ...,
+        break_point_label: str = ...,
+        category_label: str = ...,
+        left_closed: bool = ...,
+        allow_duplicates: bool = ...,
+        include_breaks: bool = ...,
+        series: Literal[True] = ...,
+    ) -> Series:
+        ...
+
+    @overload
+    def qcut(
+        self,
+        quantiles: list[float] | int,
+        *,
+        labels: list[str] | None = ...,
+        break_point_label: str = ...,
+        category_label: str = ...,
+        left_closed: bool = ...,
+        allow_duplicates: bool = ...,
+        include_breaks: bool = ...,
+        series: Literal[False],
+    ) -> DataFrame:
+        ...
+
+    @overload
+    def qcut(
+        self,
+        quantiles: list[float] | int,
+        *,
+        labels: list[str] | None = ...,
+        break_point_label: str = ...,
+        category_label: str = ...,
+        left_closed: bool = ...,
+        allow_duplicates: bool = ...,
+        include_breaks: bool = ...,
+        series: bool,
+    ) -> Series | DataFrame:
+        ...
+
     @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
@@ -1759,10 +1847,10 @@ class Series:
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
-        series: bool = True,
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
+        series: bool = True,
     ) -> DataFrame | Series:
         """
         Discretize continuous values into discrete categories based on their quantiles.
