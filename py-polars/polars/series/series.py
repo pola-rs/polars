@@ -1699,10 +1699,10 @@ class Series:
         Parameters
         ----------
         breaks
-            A list of unique cut points.
+            List of unique cut points.
         labels
-            Labels to assign to the bins. If given, the number of labels must be
-            equal to the number of breaks plus one.
+            Names of the categories. The number of labels must be equal to the number
+            of cut points plus one.
         break_point_label
             Name of the breakpoint column. Only used if ``include_breaks`` is set to
             ``True``.
@@ -1718,13 +1718,14 @@ class Series:
                 This parameter will be removed. Use `Series.struct.rename_fields` to
                 rename the field instead.
         left_closed
-            Whether intervals should be ``[)`` instead of ``(]``.
+            Set the intervals to be left-closed instead of right-closed.
         include_breaks
-            Include the the right endpoint of the bin each observation falls in.
-            If returning a DataFrame, it will be a column, and if returning a Series
-            it will be a field in a Struct.
+            Include a column with the right endpoint of the bin each observation falls
+            in. This will change the data type of the output from a
+            :class:`Categorical` to a :class:`Struct`.
         as_series
-            If True, return a categorical Series in the data's original order.
+            If set to ``False``, return a DataFrame containing the original values,
+            the breakpoints, and the categories.
 
             .. deprecated:: 0.19.0
                 This parameter will be removed. The same behavior can be achieved by
@@ -1733,7 +1734,9 @@ class Series:
 
         Returns
         -------
-        Series or DataFrame
+        Series
+            Series of data type :class:`Categorical` if ``include_breaks`` is set to
+            ``False`` (default), otherwise a Series of data type :class:`Struct.
 
         See Also
         --------
@@ -1888,51 +1891,54 @@ class Series:
         as_series: bool = True,
     ) -> Series | DataFrame:
         """
-        Discretize continuous values into discrete categories based on their quantiles.
+        Bin continuous values into discrete categories based on their quantiles.
 
         Parameters
         ----------
         quantiles
             Either a list of quantile probabilities between 0 and 1 or a positive
-            integer determining the number of evenly spaced probabilities to use.
+            integer determining the number of bins with uniform probability.
         labels
-            Labels to assign to the quantiles. If given, the length of labels must be
-            ``len(breaks) + 1``.
+            Names of the categories. The number of labels must be equal to the number
+            of cut points plus one.
         left_closed
-            Whether intervals should be ``[)`` instead of ``(]``.
+            Set the intervals to be left-closed instead of right-closed.
         allow_duplicates
-            If ``True``, the resulting quantile breaks don't have to be unique. This can
-            happen even with unique probs depending on the data. Duplicates will be
-            dropped, resulting in fewer bins.
+            If set to ``True``, duplicates in the resulting quantiles are dropped,
+            rather than raising a `DuplicateError`. This can happen even with unique
+            probabilities, depending on the data.
         include_breaks
-            Include the the right endpoint of the bin each observation falls in.
-            If returning a DataFrame, it will be a column, and if returning a Series
-            it will be a field in a Struct.
+            Include a column with the right endpoint of the bin each observation falls
+            in. This will change the data type of the output from a
+            :class:`Categorical` to a :class:`Struct`.
         break_point_label
             Name of the breakpoint column. Only used if ``include_breaks`` is set to
             ``True``.
 
-            .. deprecated:: 0.18.14
+            .. deprecated:: 0.19.0
                 This parameter will be removed. Use `Series.struct.rename_fields` to
                 rename the field instead.
         category_label
             Name of the category column. Only used if ``include_breaks`` is set to
             ``True``.
 
-            .. deprecated:: 0.18.14
+            .. deprecated:: 0.19.0
                 This parameter will be removed. Use `Series.struct.rename_fields` to
                 rename the field instead.
         as_series
-            If ``True``, return a categorical Series in the data's original order.
+            If set to ``False``, return a DataFrame containing the original values,
+            the breakpoints, and the categories.
 
-            .. deprecated:: 0.18.14
+            .. deprecated:: 0.19.0
                 This parameter will be removed. The same behavior can be achieved by
                 setting ``include_breaks=True`, unnesting the resulting struct Series,
                 and adding the result to the original Series.
 
         Returns
         -------
-        Series or DataFrame
+        Series
+            Series of data type :class:`Categorical` if ``include_breaks`` is set to
+            ``False`` (default), otherwise a Series of data type :class:`Struct.
 
         Warnings
         --------

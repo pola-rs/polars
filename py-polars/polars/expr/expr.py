@@ -3305,14 +3305,22 @@ class Expr:
         Parameters
         ----------
         breaks
-            A list of unique cut points.
+            List of unique cut points.
         labels
-            Labels to assign to bins. If given, the length must be len(breaks) + 1.
+            Names of the categories. The number of labels must be equal to the number
+            of cut points plus one.
         left_closed
-            Set the intervals to be closed left instead of closed right.
+            Set the intervals to be left-closed instead of right-closed.
         include_breaks
-            Include the the right endpoint of the bin each observation falls in.
-            If set to ``True``, the resulting column will be a :class:`Struct`.
+            Include a column with the right endpoint of the bin each observation falls
+            in. This will change the data type of the output from a
+            :class:`Categorical` to a :class:`Struct`.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Categorical` if ``include_breaks`` is set to
+            ``False`` (default), otherwise an expression of data type :class:`Struct.
 
         See Also
         --------
@@ -3380,19 +3388,26 @@ class Expr:
         ----------
         quantiles
             Either a list of quantile probabilities between 0 and 1 or a positive
-            integer determining the number of evenly spaced probabilities to use.
+            integer determining the number of bins with uniform probability.
         labels
-            Labels to assign to bins. If given, the length must be len(probs) + 1.
-            If computing over groups this must be set for now.
+            Names of the categories. The number of labels must be equal to the number
+            of categories.
         left_closed
-            Whether intervals should be [) instead of the default of (]
+            Set the intervals to be left-closed instead of right-closed.
         allow_duplicates
-            If True, the resulting quantile breaks don't have to be unique. This can
-            happen even with unique probs depending on the data. Duplicates will be
-            dropped, resulting in fewer bins.
+            If set to ``True``, duplicates in the resulting quantiles are dropped,
+            rather than raising a `DuplicateError`. This can happen even with unique
+            probabilities, depending on the data.
         include_breaks
-            Include the the right endpoint of the bin each observation falls in.
-            If True, the resulting column will be a Struct.
+            Include a column with the right endpoint of the bin each observation falls
+            in. This will change the data type of the output from a
+            :class:`Categorical` to a :class:`Struct`.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Categorical` if ``include_breaks`` is set to
+            ``False`` (default), otherwise an expression of data type :class:`Struct.
 
         See Also
         --------

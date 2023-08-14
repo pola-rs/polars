@@ -58,6 +58,20 @@ def test_qcut_null_values() -> None:
     assert_series_equal(result, expected, categorical_as_str=True)
 
 
+def test_qcut_allow_duplicates() -> None:
+    s = pl.Series([1, 2, 2, 3])
+
+    with pytest.raises(pl.DuplicateError):
+        s.qcut([0.50, 0.51])
+
+    result = s.qcut([0.50, 0.51], allow_duplicates=True)
+
+    expected = pl.Series(
+        ["(-inf, 2]", "(-inf, 2]", "(-inf, 2]", "(2, inf]"], dtype=pl.Categorical
+    )
+    assert_series_equal(result, expected, categorical_as_str=True)
+
+
 def test_qcut_over() -> None:
     df = pl.DataFrame(
         {
