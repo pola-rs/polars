@@ -27,46 +27,44 @@ fn binary_search<T: PolarsNumericType, F>(
 where
     F: Fn(&T::Native) -> Ordering + Copy,
 {
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| {
-            let values = arr.values();
-            let mask = match values.binary_search_by(cmp_fn) {
-                Err(mut idx) => {
-                    if idx == 0 || idx == arr.len() {
-                        let mut mask = MutableBitmap::with_capacity(arr.len());
-                        let fill_value = if idx == 0 { !lower_part } else { lower_part };
-                        mask.extend_constant(arr.len(), fill_value);
-                        BooleanArray::from_data_default(mask.into(), None)
-                    } else {
-                        let found_ordering = cmp_fn(&values[idx]);
+    let chunks = ca.downcast_iter().map(|arr| {
+        let values = arr.values();
+        let mask = match values.binary_search_by(cmp_fn) {
+            Err(mut idx) => {
+                if idx == 0 || idx == arr.len() {
+                    let mut mask = MutableBitmap::with_capacity(arr.len());
+                    let fill_value = if idx == 0 { !lower_part } else { lower_part };
+                    mask.extend_constant(arr.len(), fill_value);
+                    BooleanArray::from_data_default(mask.into(), None)
+                } else {
+                    let found_ordering = cmp_fn(&values[idx]);
+
+                    idx = idx.saturating_sub(1);
+                    loop {
+                        let current_value = unsafe { values.get_unchecked(idx) };
+                        let current_output = cmp_fn(current_value);
+
+                        if current_output != found_ordering || idx == 0 {
+                            break;
+                        }
 
                         idx = idx.saturating_sub(1);
-                        loop {
-                            let current_value = unsafe { values.get_unchecked(idx) };
-                            let current_output = cmp_fn(current_value);
-
-                            if current_output != found_ordering || idx == 0 {
-                                break;
-                            }
-
-                            idx = idx.saturating_sub(1);
-                        }
-                        idx += 1;
-                        let mut mask = MutableBitmap::with_capacity(arr.len());
-                        mask.extend_constant(idx, lower_part);
-                        mask.extend_constant(arr.len() - idx, !lower_part);
-                        BooleanArray::from_data_default(mask.into(), None)
                     }
-                },
-                Ok(_) => {
-                    unreachable!()
-                },
-            };
-            Box::new(mask) as ArrayRef
-        })
-        .collect();
-    unsafe { BooleanChunked::from_chunks(ca.name(), chunks) }
+                    idx += 1;
+                    let mut mask = MutableBitmap::with_capacity(arr.len());
+                    mask.extend_constant(idx, lower_part);
+                    mask.extend_constant(arr.len() - idx, !lower_part);
+                    BooleanArray::from_data_default(mask.into(), None)
+                }
+            },
+            Ok(_) => {
+                unreachable!()
+            },
+        };
+        mask
+    });
+
+    BooleanChunked::from_chunk_iter(ca.name(), chunks)
 }
 
 impl<T, Rhs> ChunkCompare<Rhs> for ChunkedArray<T>

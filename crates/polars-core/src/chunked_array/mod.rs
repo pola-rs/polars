@@ -396,15 +396,14 @@ where
         I: Iterator<Item = usize>,
     {
         debug_assert!(self.chunks.len() == 1);
-        // Takes a ChunkedArray containing a single chunk
+        // Takes a ChunkedArray containing a single chunk.
         let slice = |ca: &Self| {
             let array = &ca.chunks[0];
 
             let mut offset = 0;
             let chunks = chunk_id
                 .map(|len| {
-                    // safety:
-                    // within bounds
+                    // SAFETY: within bounds.
                     debug_assert!((offset + len) <= array.len());
                     let out = unsafe { array.sliced_unchecked(offset, len) };
                     offset += len;
@@ -578,7 +577,7 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 
 impl<T: PolarsNumericType> From<PrimitiveArray<T::Native>> for ChunkedArray<T> {
     fn from(a: PrimitiveArray<T::Native>) -> Self {
-        unsafe { ChunkedArray::from_chunks("", vec![Box::new(a)]) }
+        ChunkedArray::from_chunk_iter("", [a])
     }
 }
 
