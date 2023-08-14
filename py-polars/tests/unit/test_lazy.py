@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-import warnings
 from datetime import date, datetime
 from functools import reduce
 from inspect import signature
 from operator import add
 from string import ascii_letters
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, cast
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars import lit, when
-from polars.datatypes import FLOAT_DTYPES, NUMERIC_DTYPES
+from polars.datatypes import FLOAT_DTYPES
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -40,20 +40,6 @@ def test_lazy() -> None:
     # test if pl.list is available, this is `to_list` re-exported as list
     eager = ldf.groupby("a").agg(pl.implode("b")).collect()
     assert sorted(eager.rows()) == [(1, [[1.0]]), (2, [[2.0]]), (3, [[3.0]])]
-
-    # profile lazyframe operation/plan
-    lazy = ldf.groupby("a").agg(pl.implode("b"))
-    profiling_info = lazy.profile()
-    # ┌──────────────┬───────┬─────┐
-    # │ node         ┆ start ┆ end │
-    # │ ---          ┆ ---   ┆ --- │
-    # │ str          ┆ u64   ┆ u64 │
-    # ╞══════════════╪═══════╪═════╡
-    # │ optimization ┆ 0     ┆ 69  │
-    # │ groupby(a)   ┆ 69    ┆ 342 │
-    # └──────────────┴───────┴─────┘
-    assert len(profiling_info) == 2
-    assert profiling_info[1].columns == ["node", "start", "end"]
 
 
 @pytest.mark.parametrize(
@@ -82,20 +68,22 @@ def test_lazyframe_membership_operator() -> None:
 
 def test_apply() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    new = ldf.with_columns(pl.col("a").map(lambda s: s * 2).alias("foo"))
+    new = ldf.with_columns_seq(pl.col("a").map(lambda s: s * 2).alias("foo"))
 
     expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
 
-    for strategy in ["thread_local", "threading"]:
-        ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
-        new = ldf.with_columns(
-            pl.col("a").apply(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
-        )
-
-        expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
-        assert_frame_equal(new.collect(), expected.collect())
+    with pytest.warns(
+        PolarsInefficientApplyWarning, match="In this case, you can replace"
+    ):
+        for strategy in ["thread_local", "threading"]:
+            ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
+            new = ldf.with_columns(
+                pl.col("a").apply(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
+            )
+            expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
+            assert_frame_equal(new.collect(), expected.collect())
 
 
 def test_add_eager_column() -> None:
@@ -184,7 +172,7 @@ def test_filter_str() -> None:
     )
 
     # last row based on a filter
-    result = ldf.filter(pl.col("bools")).select(pl.last("*")).collect()
+    result = ldf.filter(pl.col("bools")).select_seq(pl.last("*")).collect()
     expected = pl.DataFrame({"time": ["11:13:00"], "bools": [True]})
     assert_frame_equal(result, expected)
 
@@ -588,27 +576,6 @@ def test_lazy_columns() -> None:
     assert ldf.select(["a", "c"]).columns == ["a", "c"]
 
 
-def test_regex_selection() -> None:
-    ldf = pl.LazyFrame(
-        {
-            "foo": [1],
-            "fooey": [1],
-            "foobar": [1],
-            "bar": [1],
-        }
-    )
-    assert ldf.select([pl.col("^foo.*$")]).columns == ["foo", "fooey", "foobar"]
-
-
-def test_exclude_selection() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [1], "c": [True]})
-
-    assert ldf.select([pl.exclude("a")]).columns == ["b", "c"]
-    assert ldf.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
-    assert ldf.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
-    assert ldf.select(pl.all().exclude(NUMERIC_DTYPES)).columns == ["c"]
-
-
 def test_col_series_selection() -> None:
     ldf = pl.LazyFrame({"a": [1], "b": [1], "c": [1]})
     srs = pl.Series(["b", "c"])
@@ -707,27 +674,6 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
 
     assert cast(float, out_single_val_variance[0, "std"]) == 0.0
     assert cast(float, out_single_val_variance[0, "var"]) == 0.0
-
-
-def test_rolling_closed_decorator() -> None:
-    # no warning if we do not use by
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        _ = pl.col("a").rolling_min(2)
-
-    # if we pass in a by, but no closed, we expect a warning
-    with pytest.warns(FutureWarning):
-        _ = pl.col("a").rolling_min(2, by="b")
-
-    # if we pass in a by and a closed, we expect no warning
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        _ = pl.col("a").rolling_min(2, by="b", closed="left")
-
-    # regardless of the value
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        _ = pl.col("a").rolling_min(2, by="b", closed="right")
 
 
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
@@ -1120,7 +1066,7 @@ def test_lazy_concat(df: pl.DataFrame) -> None:
 
     out = pl.concat([df.lazy(), df.lazy()]).collect()
     assert out.shape == shape
-    assert_frame_equal(out, df.vstack(df.clone()))
+    assert_frame_equal(out, df.vstack(df))
 
 
 def test_self_join() -> None:
@@ -1513,3 +1459,25 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     dtype_eager = result_eager["x"].dtype
     result_lazy = df.lazy().select(func.over("y")).select(pl.col(dtype_eager)).collect()
     assert result_eager.frame_equal(result_lazy)
+
+
+@pytest.mark.parametrize(
+    "comparators",
+    [
+        ("==", pl.LazyFrame.__eq__),
+        ("!=", pl.LazyFrame.__ne__),
+        (">", pl.LazyFrame.__gt__),
+        ("<", pl.LazyFrame.__lt__),
+        (">=", pl.LazyFrame.__ge__),
+        ("<=", pl.LazyFrame.__le__),
+    ],
+)
+def test_lazy_comparison_operators(
+    comparators: tuple[str, Callable[[pl.LazyFrame, Any], NoReturn]]
+) -> None:
+    # we cannot compare lazy frames, so all should raise a TypeError
+    with pytest.raises(
+        TypeError,
+        match=f'"{comparators[0]}" comparison not supported for LazyFrame objects',
+    ):
+        comparators[1](pl.LazyFrame(), pl.LazyFrame())

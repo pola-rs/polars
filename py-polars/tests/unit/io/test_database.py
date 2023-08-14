@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import os
+import sqlite3
 import sys
 from datetime import date
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -11,8 +12,6 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars.type_aliases import (
         DbReadEngine,
         DbWriteEngine,
@@ -33,10 +32,7 @@ def sample_df() -> pl.DataFrame:
 
 
 def create_temp_sqlite_db(test_db: str) -> None:
-    import sqlite3
-
-    if os.path.exists(test_db):
-        os.unlink(test_db)
+    Path(test_db).unlink(missing_ok=True)
 
     # NOTE: at the time of writing adcb/connectorx have weak SQLite support (poor or
     # no bool/date/datetime dtypes, for example) and there is a bug in connectorx that
@@ -109,7 +105,7 @@ def test_read_database(
     create_temp_sqlite_db(test_db)
 
     df = pl.read_database(
-        connection_uri=f"sqlite:///{test_db}",
+        connection=f"sqlite:///{test_db}",
         query="SELECT * FROM test_data",
         engine=engine,
     )
@@ -145,19 +141,28 @@ def test_read_database(
             "ADBC mysql driver not detected",
             id="Unavailable adbc driver",
         ),
+        pytest.param(
+            "adbc",
+            "SELECT * FROM test_data",
+            sqlite3.connect(":memory:"),
+            TypeError,
+            "Expect connection to be a URI string",
+            id="Invalid connection URI",
+        ),
     ],
 )
 def test_read_database_exceptions(
     engine: DbReadEngine,
     query: str,
-    database: str,
+    database: Any,
     errclass: type,
     err: str,
     tmp_path: Path,
 ) -> None:
+    conn = f"{database}://test" if isinstance(database, str) else database
     with pytest.raises(errclass, match=err):
         pl.read_database(
-            connection_uri=f"{database}://test",
+            connection=conn,
             query=query,
             engine=engine,
         )
@@ -201,7 +206,6 @@ def test_write_database(
     engine: DbWriteEngine, mode: DbWriteMode, sample_df: pl.DataFrame, tmp_path: Path
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-
     tmp_db = f"test_{engine}.db"
     test_db = str(tmp_path / tmp_db)
 
@@ -211,22 +215,20 @@ def test_write_database(
 
     sample_df.write_database(
         table_name=f"main.{tbl_name}",
-        connection_uri=f"sqlite:///{test_db}",
+        connection=f"sqlite:///{test_db}",
         if_exists="replace",
         engine=engine,
     )
-
     if mode == "append":
         sample_df.write_database(
             table_name=f'"main".{tbl_name}',
-            connection_uri=f"sqlite:///{test_db}",
+            connection=f"sqlite:///{test_db}",
             if_exists="append",
             engine=engine,
         )
         sample_df = pl.concat([sample_df, sample_df])
 
     result = pl.read_database(f"SELECT * FROM {tbl_name}", f"sqlite:///{test_db}")
-
     sample_df = sample_df.with_columns(pl.col("date").cast(pl.Utf8))
     assert_frame_equal(sample_df, result)
 
@@ -237,7 +239,7 @@ def test_write_database(
     ):
         with pytest.raises(ValueError):
             sample_df.write_database(
-                connection_uri=f"sqlite:///{test_db}",
+                connection=f"sqlite:///{test_db}",
                 engine=engine,
                 **invalid_params,  # type: ignore[arg-type]
             )

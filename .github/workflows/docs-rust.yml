@@ -3,13 +3,13 @@ name: Build Rust documentation
 on:
   pull_request:
     paths:
-      - polars/**
+      - crates/**
       - .github/workflows/docs-rust.yml
   push:
     branches:
       - main
     paths:
-      - polars/**
+      - crates/**
       - .github/workflows/docs-rust.yml
 
 concurrency:
@@ -32,7 +32,8 @@ jobs:
       - name: Build Rust documentation
         env:
           RUSTDOCFLAGS: --cfg docsrs -D warnings
-        run: cargo doc --features=docs-selection --package polars
+        working-directory: crates
+        run: make doctest
 
       - name: Create redirect to Polars crate and set no-jekyll
         if: ${{ github.ref_name == 'main' }}
@@ -46,6 +47,7 @@ jobs:
         with:
           folder: target/doc
           clean-exclude: py-polars/**
+          single-commit: true
 
       # Make sure documentation artifacts are not cached
       - name: Clean up documentation artifacts

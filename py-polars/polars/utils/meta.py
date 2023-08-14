@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from typing import TYPE_CHECKING
 
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import deprecate_renamed_function
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import get_index_type as _get_index_type
@@ -21,20 +20,16 @@ def get_index_type() -> DataTypeClass:
 
     Returns
     -------
-    UInt32 in regular Polars, UInt64 in bigidx Polars.
+    DataType
+        :class:`UInt32` in regular Polars, :class:`UInt64` in bigidx Polars.
 
     """
     return _get_index_type()
 
 
+@deprecate_renamed_function(new_name="get_index_type", version="16.12")
 def get_idx_type() -> DataTypeClass:
     """Get the datatype used for Polars indexing."""
-    warnings.warn(
-        "`get_idx_type` has been renamed; this"
-        " redirect is temporary, please use `get_index_type` instead",
-        category=DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
     return get_index_type()
 
 

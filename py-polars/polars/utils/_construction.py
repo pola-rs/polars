@@ -154,8 +154,8 @@ def nt_unpack(obj: Any) -> Any:
 
 
 def series_to_pyseries(name: str, values: Series) -> PySeries:
-    """Construct a PySeries from a Polars Series."""
-    py_s = values._s
+    """Construct a new PySeries from a Polars Series."""
+    py_s = values._s.clone()
     py_s.rename(name)
     return py_s
 
@@ -288,7 +288,7 @@ def iterable_to_pyseries(
             series = schunk
             dtype = series.dtype
         else:
-            series.append(schunk, append_chunks=True)
+            series.append(schunk)
             n_chunks += 1
 
     if series is None:
@@ -1236,8 +1236,10 @@ def numpy_to_pydf(
                 orient = "row"
 
             elif orient is None and schema is not None:
-                # infer orientation from 'schema' param
-                if len(schema) == shape[0]:
+                # infer orientation from 'schema' param; if square array
+                # we maintain the default convention where first axis = rows
+                n_schema_cols = len(schema)
+                if n_schema_cols == shape[0] and n_schema_cols != shape[1]:
                     orient = "col"
                     n_columns = shape[0]
                 else:
@@ -1410,7 +1412,7 @@ def series_to_pydf(
         schema or series_name, schema_overrides=schema_overrides, n_expected=1
     )
     if schema_overrides:
-        new_dtype = list(schema_overrides.values())[0]
+        new_dtype = next(iter(schema_overrides.values()))
         if new_dtype != data.dtype:
             data_series[0] = data_series[0].cast(new_dtype, True)
 

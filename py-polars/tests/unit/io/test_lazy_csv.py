@@ -25,13 +25,16 @@ def test_scan_csv(io_files_path: Path) -> None:
 
 def test_scan_csv_no_cse_deadlock(io_files_path: Path) -> None:
     dfs = [pl.scan_csv(io_files_path / "small.csv")] * (pl.threadpool_size() + 1)
-    pl.concat(dfs, parallel=True).collect(common_subplan_elimination=False)
+    pl.concat(dfs, parallel=True).collect(comm_subplan_elim=False)
 
 
 def test_scan_empty_csv(io_files_path: Path) -> None:
     with pytest.raises(Exception) as excinfo:
         pl.scan_csv(io_files_path / "empty.csv").collect()
-    assert "empty csv" in str(excinfo.value)
+    assert "empty CSV" in str(excinfo.value)
+
+    lf = pl.scan_csv(io_files_path / "empty.csv", raise_if_empty=False)
+    assert_frame_equal(lf, pl.LazyFrame())
 
 
 @pytest.mark.write_disk()
@@ -42,8 +45,7 @@ def test_invalid_utf8(tmp_path: Path) -> None:
     bts = bytes(np.random.randint(0, 255, 200))
 
     file_path = tmp_path / "nonutf8.csv"
-    with open(file_path, "wb") as f:
-        f.write(bts)
+    file_path.write_bytes(bts)
 
     a = pl.read_csv(file_path, has_header=False, encoding="utf8-lossy")
     b = pl.scan_csv(file_path, has_header=False, encoding="utf8-lossy").collect()
@@ -192,9 +194,8 @@ def test_glob_skip_rows(tmp_path: Path) -> None:
 
     for i in range(2):
         file_path = tmp_path / f"test_{i}.csv"
-        with open(file_path, "w") as f:
-            f.write(
-                f"""
+        file_path.write_text(
+            f"""
 metadata goes here
 file number {i}
 foo,bar,baz
@@ -202,7 +203,7 @@ foo,bar,baz
 4,5,6
 7,8,9
     """
-            )
+        )
     file_path = tmp_path / "*.csv"
     assert pl.read_csv(file_path, skip_rows=2).to_dict(False) == {
         "foo": [1, 4, 7, 1, 4, 7],
@@ -227,7 +228,7 @@ def test_glob_n_rows(io_files_path: Path) -> None:
     }
 
 
-def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: str) -> None:
+def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> None:
     df = (
         pl.scan_csv(
             foods_file_path,

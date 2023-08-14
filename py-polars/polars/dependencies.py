@@ -8,6 +8,7 @@ from importlib.util import find_spec
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 
+_DATAFRAME_API_COMPAT_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
@@ -116,8 +117,9 @@ def _lazy_import(module_name: str) -> tuple[ModuleType, bool]:
 
     Returns
     -------
-    tuple[Module, bool]: a lazy-loading module and a boolean indicating if the
-    requested/underlying module exists (if not, the returned module is a proxy).
+    tuple of (Module, bool)
+        A lazy-loading module and a boolean indicating if the requested/underlying
+        module exists (if not, the returned module is a proxy).
 
     """
     # check if module is LOADED
@@ -149,6 +151,7 @@ if TYPE_CHECKING:
     import pickle
     import subprocess
 
+    import dataframe_api_compat
     import deltalake
     import fsspec
     import hypothesis
@@ -170,6 +173,9 @@ else:
     subprocess, _ = _lazy_import("subprocess")
 
     # heavy/optional third party libs
+    dataframe_api_compat, _DATAFRAME_API_COMPAT_AVAILABLE = _lazy_import(
+        "dataframe_api_compat"
+    )
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
@@ -218,6 +224,7 @@ __all__ = [
     "pickle",
     "subprocess",
     # lazy-load third party libs
+    "dataframe_api_compat",
     "deltalake",
     "fsspec",
     "numpy",

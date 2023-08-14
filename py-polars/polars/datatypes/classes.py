@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Mapping, Sequence
 
 import polars.datatypes
 
@@ -31,7 +31,7 @@ class classproperty:
     def __get__(self, instance: Any, cls: type | None = None) -> Any:
         return self.fget(cls)  # type: ignore[misc]
 
-    def getter(self, method: Callable[..., Any]) -> Any:
+    def getter(self, method: Callable[..., Any]) -> Any:  # noqa: D102
         self.fget = method
         return self
 
@@ -45,26 +45,30 @@ class DataTypeClass(type):
     def _string_repr(cls) -> str:
         return _dtype_str_repr(cls)
 
-    def base_type(cls) -> PolarsDataType:
+    def base_type(cls) -> DataTypeClass:
+        """Return the base type."""
         return cls
 
     @classproperty
     def is_nested(self) -> bool:
+        """Check if this data type is nested."""
         return False
 
     @classmethod
     def is_(cls, other: PolarsDataType) -> bool:
+        """Check if this DataType is the same as another DataType."""
         return cls == other and hash(cls) == hash(other)
 
     @classmethod
     def is_not(cls, other: PolarsDataType) -> bool:
+        """Check if this DataType is NOT the same as another DataType."""
         return not cls.is_(other)
 
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> PolarsDataType:  # type: ignore[misc]
+    def __new__(cls, *args: Any, **kwargs: Any) -> PolarsDataType:  # type: ignore[misc]  # noqa: D102
         # this formulation allows for equivalent use of "pl.Type" and "pl.Type()", while
         # still respecting types that take initialisation params (eg: Duration/Datetime)
         if args or kwargs:
@@ -95,6 +99,7 @@ class DataType(metaclass=DataTypeClass):
 
     @classproperty
     def is_nested(self) -> bool:
+        """Check if this data type is nested."""
         return False
 
     @classinstmethod  # type: ignore[arg-type]
@@ -158,15 +163,30 @@ def _custom_reconstruct(
 
 
 class DataTypeGroup(frozenset):  # type: ignore[type-arg]
+    """Group of data types."""
+
     _match_base_type: bool
 
-    def __new__(cls, items: Any, *, match_base_type: bool = True) -> DataTypeGroup:
+    def __new__(
+        cls, items: Iterable[DataType | DataTypeClass], *, match_base_type: bool = True
+    ) -> DataTypeGroup:
+        """
+        Construct a DataTypeGroup.
+
+        Parameters
+        ----------
+        items :
+            iterable of data types
+        match_base_type:
+            match the base type
+
+        """
         for it in items:
             if not isinstance(it, (DataType, DataTypeClass)):
                 raise TypeError(
                     f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
                 )
-        dtype_group = super().__new__(cls, items)
+        dtype_group = super().__new__(cls, items)  # type: ignore[arg-type]
         dtype_group._match_base_type = match_base_type
         return dtype_group
 
@@ -201,6 +221,7 @@ class NestedType(DataType):
 
     @classproperty
     def is_nested(self) -> bool:
+        """Check if this data type is nested."""
         return True
 
 
@@ -406,6 +427,8 @@ class Unknown(DataType):
 
 
 class List(NestedType):
+    """Nested list/array type with variable length of inner lists."""
+
     inner: PolarsDataType | None = None
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
@@ -466,6 +489,8 @@ class List(NestedType):
 
 
 class Array(NestedType):
+    """Nested list/array type with fixed length of inner arrays."""
+
     inner: PolarsDataType | None = None
     width: int
 
@@ -524,6 +549,8 @@ class Array(NestedType):
 
 
 class Field:
+    """Definition of a single field within a `Struct` DataType."""
+
     def __init__(self, name: str, dtype: PolarsDataType):
         """
         Definition of a single field within a `Struct` DataType.
@@ -551,6 +578,8 @@ class Field:
 
 
 class Struct(NestedType):
+    """Struct composite type."""
+
     def __init__(self, fields: Sequence[Field] | SchemaDict):
         """
         Struct composite type.

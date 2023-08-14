@@ -93,7 +93,7 @@ impl PyExpr {
                 self.inner = ciborium::de::from_reader(s.as_bytes())
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
-            }
+            },
             Err(e) => Err(e),
         }
     }
@@ -206,6 +206,36 @@ impl PyExpr {
             .clone()
             .qcut(probs, labels, left_closed, allow_duplicates, include_breaks)
             .into()
+    }
+    #[pyo3(signature = (n_bins, labels, left_closed, allow_duplicates, include_breaks))]
+    #[cfg(feature = "cutqcut")]
+    fn qcut_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .qcut_uniform(
+                n_bins,
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
+            )
+            .into()
+    }
+
+    #[cfg(feature = "rle")]
+    fn rle(&self) -> Self {
+        self.clone().inner.rle().into()
+    }
+    #[cfg(feature = "rle")]
+    fn rle_id(&self) -> Self {
+        self.clone().inner.rle_id().into()
     }
 
     fn agg_groups(&self) -> Self {
@@ -342,21 +372,25 @@ impl PyExpr {
     fn filter(&self, predicate: Self) -> Self {
         self.clone().inner.filter(predicate.inner).into()
     }
+
     fn reverse(&self) -> Self {
         self.clone().inner.reverse().into()
     }
+
     fn std(&self, ddof: u8) -> Self {
         self.clone().inner.std(ddof).into()
     }
+
     fn var(&self, ddof: u8) -> Self {
         self.clone().inner.var(ddof).into()
     }
+
     fn is_unique(&self) -> Self {
         self.clone().inner.is_unique().into()
     }
 
-    fn approx_unique(&self) -> Self {
-        self.clone().inner.approx_unique().into()
+    fn approx_n_unique(&self) -> Self {
+        self.clone().inner.approx_n_unique().into()
     }
 
     fn is_first(&self) -> Self {
@@ -371,7 +405,10 @@ impl PyExpr {
         self.clone()
             .inner
             .map(
-                move |s: Series| Ok(Some(s.take_every(n))),
+                move |s: Series| {
+                    polars_ensure!(n > 0, InvalidOperation: "take_every(n): n can't be zero");
+                    Ok(Some(s.take_every(n)))
+                },
                 GetOutput::same_type(),
             )
             .with_fmt("take_every")
@@ -463,6 +500,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "trigonometry")]
+    fn arctan2(&self, y: Self) -> Self {
+        self.clone().inner.arctan2(y.inner).into()
+    }
+
+    #[cfg(feature = "trigonometry")]
     fn sinh(&self) -> Self {
         self.clone().inner.sinh().into()
     }
@@ -547,6 +589,14 @@ impl PyExpr {
         self.clone().inner.pow(exponent.inner).into()
     }
 
+    fn sqrt(&self) -> Self {
+        self.clone().inner.sqrt().into()
+    }
+
+    fn cbrt(&self) -> Self {
+        self.clone().inner.cbrt().into()
+    }
+
     fn cumsum(&self, reverse: bool) -> Self {
         self.clone().inner.cumsum(reverse).into()
     }
@@ -593,7 +643,7 @@ impl PyExpr {
                     Ok(pyseries) => {
                         let pyseries = pyseries.extract::<PySeries>(py).unwrap();
                         pyseries.series
-                    }
+                    },
                     Err(_) => {
                         let obj = out;
                         let is_float = obj.as_ref(py).is_instance_of::<PyFloat>();
@@ -610,7 +660,7 @@ impl PyExpr {
                                     obj.extract::<u8>(py)
                                         .map(|v| UInt8Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             UInt16 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -619,7 +669,7 @@ impl PyExpr {
                                     obj.extract::<u16>(py)
                                         .map(|v| UInt16Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             UInt32 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -628,7 +678,7 @@ impl PyExpr {
                                     obj.extract::<u32>(py)
                                         .map(|v| UInt32Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             UInt64 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -637,7 +687,7 @@ impl PyExpr {
                                     obj.extract::<u64>(py)
                                         .map(|v| UInt64Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int8 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -646,7 +696,7 @@ impl PyExpr {
                                     obj.extract::<i8>(py)
                                         .map(|v| Int8Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int16 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -655,7 +705,7 @@ impl PyExpr {
                                     obj.extract::<i16>(py)
                                         .map(|v| Int16Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int32 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -664,7 +714,7 @@ impl PyExpr {
                                     obj.extract::<i32>(py)
                                         .map(|v| Int32Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int64 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -673,7 +723,7 @@ impl PyExpr {
                                     obj.extract::<i64>(py)
                                         .map(|v| Int64Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Float32 => obj
                                 .extract::<f32>(py)
                                 .map(|v| Float32Chunked::from_slice("", &[v]).into_series()),
@@ -687,9 +737,9 @@ impl PyExpr {
                             Ok(s) => s,
                             Err(e) => {
                                 panic!("{e:?}")
-                            }
+                            },
                         }
-                    }
+                    },
                 }
             })
         };
@@ -916,9 +966,12 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default()
+            fn_params: Some(Arc::new(RollingQuantileParams {
+                prob: 0.5,
+                interpol: QuantileInterpolOptions::Linear,
+            }) as Arc<dyn Any + Send + Sync>),
         };
-        self.inner.clone().rolling_median(options).into()
+        self.inner.clone().rolling_quantile(options).into()
     }
 
     #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center, by, closed))]
@@ -941,13 +994,13 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default()
+            fn_params: Some(Arc::new(RollingQuantileParams {
+                prob: quantile,
+                interpol: interpolation.0,
+            }) as Arc<dyn Any + Send + Sync>),
         };
 
-        self.inner
-            .clone()
-            .rolling_quantile(quantile, interpolation.0, options)
-            .into()
+        self.inner.clone().rolling_quantile(options).into()
     }
 
     fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
@@ -1100,12 +1153,12 @@ impl PyExpr {
             .with_fmt("extend")
             .into()
     }
-    fn any(&self) -> Self {
-        self.inner.clone().any().into()
+    fn any(&self, drop_nulls: bool) -> Self {
+        self.inner.clone().any(drop_nulls).into()
     }
 
-    fn all(&self) -> Self {
-        self.inner.clone().all().into()
+    fn all(&self, drop_nulls: bool) -> Self {
+        self.inner.clone().all(drop_nulls).into()
     }
 
     fn log(&self, base: f64) -> Self {
@@ -1133,9 +1186,5 @@ impl PyExpr {
             IsSorted::Ascending
         };
         self.inner.clone().set_sorted_flag(is_sorted).into()
-    }
-
-    fn cache(&self) -> Self {
-        self.inner.clone().cache().into()
     }
 }

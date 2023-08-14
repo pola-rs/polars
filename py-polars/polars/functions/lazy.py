@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
 import polars._reexport as pl
@@ -9,22 +8,18 @@ from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     Date,
     Datetime,
-    Duration,
     Int64,
-    Time,
     is_polars_dtype,
 )
-from polars.dependencies import _check_for_numpy
-from polars.dependencies import numpy as np
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_df, wrap_expr
-from polars.utils.convert import (
-    _datetime_to_pl_timestamp,
-    _time_to_pl_time,
-    _timedelta_to_pl_timedelta,
+from polars.utils.deprecation import (
+    deprecate_function,
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -32,7 +27,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    from typing import Literal
+    from typing import Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars.type_aliases import (
@@ -41,7 +36,6 @@ if TYPE_CHECKING:
         IntoExpr,
         PolarsDataType,
         RollingInterpolationMethod,
-        TimeUnit,
     )
 
 
@@ -320,6 +314,10 @@ def count(column: str | Series | None = None) -> Expr | int:
         return wrap_expr(plr.count())
 
     if isinstance(column, pl.Series):
+        issue_deprecation_warning(
+            "passing a Series to `count` is deprecated. Use `Series.len()` instead.",
+            version="0.18.8",
+        )
         return column.len()
     return col(column).count()
 
@@ -377,6 +375,10 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
+        issue_deprecation_warning(
+            "passing a Series to `std` is deprecated. Use `Series.std()` instead.",
+            version="0.18.8",
+        )
         return column.std(ddof)
     return col(column).std(ddof)
 
@@ -421,6 +423,10 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
     """
     if isinstance(column, pl.Series):
+        issue_deprecation_warning(
+            "passing a Series to `var` is deprecated. Use `Series.var()` instead.",
+            version="0.18.8",
+        )
         return column.var(ddof)
     return col(column).var(ddof)
 
@@ -451,11 +457,13 @@ def mean(column: str | Series) -> Expr | float | None:
     ╞═════╡
     │ 4.0 │
     └─────┘
-    >>> pl.mean(df["a"])
-    4.0
 
     """
     if isinstance(column, pl.Series):
+        issue_deprecation_warning(
+            "passing a Series to `mean` is deprecated. Use `Series.mean()` instead.",
+            version="0.18.8",
+        )
         return column.mean()
     return col(column).mean()
 
@@ -470,14 +478,20 @@ def avg(column: Series) -> float:
     ...
 
 
+@deprecate_function(
+    "Please use `mean` instead, for which `avg` is an alias.", version="0.18.12"
+)
 def avg(column: str | Series) -> Expr | float:
     """
     Alias for mean.
 
+    .. deprecated:: 0.18.12
+        Use ``mean`` instead.
+
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.avg("a"))
+    >>> df.select(pl.avg("a"))  # doctest: +SKIP
     shape: (1, 1)
     ┌─────┐
     │ a   │
@@ -486,8 +500,6 @@ def avg(column: str | Series) -> Expr | float:
     ╞═════╡
     │ 4.0 │
     └─────┘
-    >>> pl.avg(df["a"])
-    4.0
 
     """
     return mean(column)
@@ -519,11 +531,13 @@ def median(column: str | Series) -> Expr | float | int | None:
     ╞═════╡
     │ 3.0 │
     └─────┘
-    >>> pl.median(df["a"])
-    3.0
 
     """
     if isinstance(column, pl.Series):
+        issue_deprecation_warning(
+            "passing a Series to `median` is deprecated. Use `Series.median()` instead.",
+            version="0.18.8",
+        )
         return column.median()
     return col(column).median()
 
@@ -554,18 +568,20 @@ def n_unique(column: str | Series) -> Expr | int:
     ╞═════╡
     │ 2   │
     └─────┘
-    >>> pl.n_unique(df["a"])
-    2
 
     """
     if isinstance(column, pl.Series):
+        issue_deprecation_warning(
+            "passing a Series to `n_unique` is deprecated. Use `Series.n_unique()` instead.",
+            version="0.18.8",
+        )
         return column.n_unique()
     return col(column).n_unique()
 
 
-def approx_unique(column: str | Expr) -> Expr:
+def approx_n_unique(column: str | Expr) -> Expr:
     """
-    Approx count unique values.
+    Approximate count of unique values.
 
     This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
@@ -577,7 +593,7 @@ def approx_unique(column: str | Expr) -> Expr:
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 1], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.approx_unique("a"))
+    >>> df.select(pl.approx_n_unique("a"))
     shape: (1, 1)
     ┌─────┐
     │ a   │
@@ -589,8 +605,8 @@ def approx_unique(column: str | Expr) -> Expr:
 
     """
     if isinstance(column, pl.Expr):
-        return column.approx_unique()
-    return col(column).approx_unique()
+        return column.approx_n_unique()
+    return col(column).approx_n_unique()
 
 
 @overload
@@ -643,14 +659,16 @@ def first(column: str | Series | None = None) -> Expr | Any:
     ╞═════╡
     │ 1   │
     └─────┘
-    >>> pl.first(df["a"])
-    1
 
     """
     if column is None:
         return wrap_expr(plr.first())
 
     if isinstance(column, pl.Series):
+        issue_deprecation_warning(
+            "passing a Series to `first` is deprecated. Use `series[0]` instead.",
+            version="0.18.8",
+        )
         if column.len() > 0:
             return column[0]
         else:
@@ -706,18 +724,20 @@ def last(column: str | Series | None = None) -> Expr:
     ╞═════╡
     │ 3   │
     └─────┘
-    >>> pl.last(df["a"])
-    3
 
     """
     if column is None:
         return wrap_expr(plr.last())
 
     if isinstance(column, pl.Series):
+        issue_deprecation_warning(
+            "passing a Series to `last` is deprecated. Use `series[-1]` instead.",
+            version="0.18.8",
+        )
         if column.len() > 0:
             return column[-1]
         else:
-            raise IndexError("The series is empty, so no last value can be returned,")
+            raise IndexError("the series is empty, so no last value can be returned")
     return col(column).last()
 
 
@@ -766,16 +786,13 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
     │ 1   │
     │ 8   │
     └─────┘
-    >>> pl.head(df["a"], 2)
-    shape: (2,)
-    Series: 'a' [i64]
-    [
-        1
-        8
-    ]
 
     """
     if isinstance(column, pl.Series):
+        issue_deprecation_warning(
+            "passing a Series to `head` is deprecated. Use `Series.head()` instead.",
+            version="0.18.8",
+        )
         return column.head(n)
     return col(column).head(n)
 
@@ -825,140 +842,15 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
     │ 8   │
     │ 3   │
     └─────┘
-    >>> pl.tail(df["a"], 2)
-    shape: (2,)
-    Series: 'a' [i64]
-    [
-        8
-        3
-    ]
 
     """
     if isinstance(column, pl.Series):
+        issue_deprecation_warning(
+            "passing a Series to `tail` is deprecated. Use `Series.tail()` instead.",
+            version="0.18.8",
+        )
         return column.tail(n)
     return col(column).tail(n)
-
-
-def lit(
-    value: Any, dtype: PolarsDataType | None = None, *, allow_object: bool = False
-) -> Expr:
-    """
-    Return an expression representing a literal value.
-
-    Parameters
-    ----------
-    value
-        Value that should be used as a `literal`.
-    dtype
-        Optionally define a dtype.
-    allow_object
-        If type is unknown use an 'object' type.
-        By default, we will raise a `ValueException`
-        if the type is unknown.
-
-    Examples
-    --------
-    Literal scalar values:
-
-    >>> pl.lit(1)  # doctest: +IGNORE_RESULT
-    >>> pl.lit(5.5)  # doctest: +IGNORE_RESULT
-    >>> pl.lit(None)  # doctest: +IGNORE_RESULT
-    >>> pl.lit("foo_bar")  # doctest: +IGNORE_RESULT
-    >>> pl.lit(date(2021, 1, 20))  # doctest: +IGNORE_RESULT
-    >>> pl.lit(datetime(2023, 3, 31, 10, 30, 45))  # doctest: +IGNORE_RESULT
-
-    Literal list/Series data (1D):
-
-    >>> pl.lit([1, 2, 3])  # doctest: +IGNORE_RESULT
-    >>> pl.lit(pl.Series("x", [1, 2, 3]))  # doctest: +IGNORE_RESULT
-
-    Literal list/Series data (2D):
-
-    >>> pl.lit([[1, 2], [3, 4]])  # doctest: +IGNORE_RESULT
-    >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT
-
-    Expected datatypes
-
-    - ''pl.lit([])'' -> empty  Series Float32
-    - ''pl.lit([1, 2, 3])'' -> Series Int64
-    - ''pl.lit([[]])''-> empty  Series List<Null>
-    - ''pl.lit([[1, 2, 3]])'' -> Series List<i64>
-    - ''pl.lit(None)'' -> Series Null
-
-    """
-    time_unit: TimeUnit
-
-    if isinstance(value, datetime):
-        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
-        time_zone = (
-            value.tzinfo
-            if getattr(dtype, "time_zone", None) is None
-            else getattr(dtype, "time_zone", None)
-        )
-        if (
-            value.tzinfo is not None
-            and getattr(dtype, "time_zone", None) is not None
-            and dtype.time_zone != str(value.tzinfo)  # type: ignore[union-attr]
-        ):
-            raise TypeError(
-                f"Time zone of dtype ({dtype.time_zone}) differs from time zone of value ({value.tzinfo})."  # type: ignore[union-attr]
-            )
-        e = lit(_datetime_to_pl_timestamp(value, time_unit)).cast(Datetime(time_unit))
-        if time_zone is not None:
-            return e.dt.replace_time_zone(str(time_zone))
-        else:
-            return e
-
-    elif isinstance(value, timedelta):
-        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
-        return lit(_timedelta_to_pl_timedelta(value, time_unit)).cast(
-            Duration(time_unit)
-        )
-
-    elif isinstance(value, time):
-        return lit(_time_to_pl_time(value)).cast(Time)
-
-    elif isinstance(value, date):
-        return lit(datetime(value.year, value.month, value.day)).cast(Date)
-
-    elif isinstance(value, pl.Series):
-        name = value.name
-        value = value._s
-        e = wrap_expr(plr.lit(value, allow_object))
-        if name == "":
-            return e
-        return e.alias(name)
-
-    elif (_check_for_numpy(value) and isinstance(value, np.ndarray)) or isinstance(
-        value, (list, tuple)
-    ):
-        return lit(pl.Series("", value))
-
-    elif dtype:
-        return wrap_expr(plr.lit(value, allow_object)).cast(dtype)
-
-    try:
-        # numpy literals like np.float32(0) have item/dtype
-        item = value.item()
-
-        # numpy item() is py-native datetime/timedelta when units < 'ns'
-        if isinstance(item, (datetime, timedelta)):
-            return lit(item)
-
-        # handle 'ns' units
-        if isinstance(item, int) and hasattr(value, "dtype"):
-            dtype_name = value.dtype.name
-            if dtype_name.startswith(("datetime64[", "timedelta64[")):
-                time_unit = dtype_name[11:-1]
-                return lit(item).cast(
-                    Datetime(time_unit)
-                    if dtype_name.startswith("date")
-                    else Duration(time_unit)
-                )
-
-    except AttributeError:
-        item = value
-    return wrap_expr(plr.lit(item, allow_object))
 
 
 def corr(
@@ -1088,6 +980,7 @@ def map(
     Returns
     -------
     Expr
+        Expression with the data type given by ``return_dtype``.
 
     Examples
     --------
@@ -1138,6 +1031,10 @@ def apply(
     """
     Apply a custom/user-defined function (UDF) in a GroupBy context.
 
+    .. warning::
+        This method is much slower than the native expressions API.
+        Only use it if you cannot implement your logic otherwise.
+
     Depending on the context it has the following behavior:
 
     * Select
@@ -1160,6 +1057,7 @@ def apply(
     Returns
     -------
     Expr
+        Expression with the data type given by ``return_dtype``.
 
     Examples
     --------
@@ -1184,7 +1082,9 @@ def apply(
 
     Calculate product of ``a``.
 
-    >>> df.with_columns(pl.col("a").apply(lambda x: x * x).alias("product_a"))
+    >>> df.with_columns(  # doctest: +SKIP
+    ...     pl.col("a").apply(lambda x: x * x).alias("product_a")
+    ... )
     shape: (4, 3)
     ┌─────┬─────┬───────────┐
     │ a   ┆ b   ┆ product_a │
@@ -1520,8 +1420,102 @@ def cumreduce(
     return wrap_expr(plr.cumreduce(function, exprs))
 
 
+def arctan2(y: str | Expr, x: str | Expr) -> Expr:
+    """
+    Compute two argument arctan in radians.
+
+    Returns the angle (in radians) in the plane between the
+    positive x-axis and the ray from the origin to (x,y).
+
+    Parameters
+    ----------
+    y
+        Column name or Expression.
+    x
+        Column name or Expression.
+
+    Examples
+    --------
+    >>> import math
+    >>> twoRootTwo = math.sqrt(2) / 2
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "y": [twoRootTwo, -twoRootTwo, twoRootTwo, -twoRootTwo],
+    ...         "x": [twoRootTwo, twoRootTwo, -twoRootTwo, -twoRootTwo],
+    ...     }
+    ... )
+    >>> df.select(
+    ...     pl.arctan2d("y", "x").alias("atan2d"), pl.arctan2("y", "x").alias("atan2")
+    ... )
+    shape: (4, 2)
+    ┌────────┬───────────┐
+    │ atan2d ┆ atan2     │
+    │ ---    ┆ ---       │
+    │ f64    ┆ f64       │
+    ╞════════╪═══════════╡
+    │ 45.0   ┆ 0.785398  │
+    │ -45.0  ┆ -0.785398 │
+    │ 135.0  ┆ 2.356194  │
+    │ -135.0 ┆ -2.356194 │
+    └────────┴───────────┘
+
+    """
+    if isinstance(y, str):
+        y = col(y)
+    if isinstance(x, str):
+        x = col(x)
+    return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
+
+
+def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
+    """
+    Compute two argument arctan in degrees.
+
+    Returns the angle (in degrees) in the plane between the positive x-axis
+    and the ray from the origin to (x,y).
+
+    Parameters
+    ----------
+    y
+        Column name or Expression.
+    x
+        Column name or Expression.
+
+    Examples
+    --------
+    >>> import math
+    >>> twoRootTwo = math.sqrt(2) / 2
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "y": [twoRootTwo, -twoRootTwo, twoRootTwo, -twoRootTwo],
+    ...         "x": [twoRootTwo, twoRootTwo, -twoRootTwo, -twoRootTwo],
+    ...     }
+    ... )
+    >>> df.select(
+    ...     pl.arctan2d("y", "x").alias("atan2d"), pl.arctan2("y", "x").alias("atan2")
+    ... )
+    shape: (4, 2)
+    ┌────────┬───────────┐
+    │ atan2d ┆ atan2     │
+    │ ---    ┆ ---       │
+    │ f64    ┆ f64       │
+    ╞════════╪═══════════╡
+    │ 45.0   ┆ 0.785398  │
+    │ -45.0  ┆ -0.785398 │
+    │ 135.0  ┆ 2.356194  │
+    │ -135.0 ┆ -2.356194 │
+    └────────┴───────────┘
+
+    """
+    if isinstance(y, str):
+        y = col(y)
+    if isinstance(x, str):
+        x = col(x)
+    return wrap_expr(plr.arctan2d(y._pyexpr, x._pyexpr))
+
+
 def exclude(
-    columns: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+    columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
     *more_columns: str | PolarsDataType,
 ) -> Expr:
     """
@@ -1689,6 +1683,9 @@ def arg_sort_by(
     return wrap_expr(plr.arg_sort_by(exprs, descending))
 
 
+@deprecate_renamed_parameter(
+    "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
+)
 def collect_all(
     lazy_frames: Sequence[LazyFrame],
     *,
@@ -1698,13 +1695,14 @@ def collect_all(
     simplify_expression: bool = True,
     no_optimization: bool = False,
     slice_pushdown: bool = True,
-    common_subplan_elimination: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
     streaming: bool = False,
 ) -> list[DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
 
-    This runs all the computation graphs in parallel on Polars threadpool.
+    This runs all the computation graphs in parallel on the Polars threadpool.
 
     Parameters
     ----------
@@ -1722,21 +1720,25 @@ def collect_all(
         Turn off optimizations.
     slice_pushdown
         Slice pushdown optimization.
-    common_subplan_elimination
+    comm_subplan_elim
         Will try to cache branching subplans that occur on self-joins or unions.
+    comm_subexpr_elim
+        Common subexpressions will be cached and reused.
     streaming
         Run parts of the query in a streaming fashion (this is in an alpha state)
 
     Returns
     -------
-    List[DataFrame]
+    list of DataFrames
+        The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
     if no_optimization:
         predicate_pushdown = False
         projection_pushdown = False
         slice_pushdown = False
-        common_subplan_elimination = False
+        comm_subplan_elim = False
+        comm_subexpr_elim = False
 
     prepared = []
 
@@ -1747,7 +1749,8 @@ def collect_all(
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
-            common_subplan_elimination,
+            comm_subplan_elim,
+            comm_subexpr_elim,
             streaming,
         )
         prepared.append(ldf)
@@ -1929,6 +1932,7 @@ def from_epoch(
     Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
 
     Depending on the `time_unit` provided, this function will return a different dtype:
+
     - time_unit="d" returns pl.Date
     - time_unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
     - time_unit="ms" returns pl.Datetime["ms"]
@@ -2067,17 +2071,29 @@ def rolling_corr(
     )
 
 
-def sql_expr(sql: str) -> Expr:
+@overload
+def sql_expr(sql: str) -> Expr:  # type: ignore[misc]
+    ...
+
+
+@overload
+def sql_expr(sql: Sequence[str]) -> list[Expr]:
+    ...
+
+
+def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
     """
-    Parse a SQL expression to a polars expression.
+    Parse one or more SQL expressions to polars expression(s).
 
     Parameters
     ----------
     sql
-        SQL expression
+        One or more SQL expressions.
 
     Examples
     --------
+    Parse a single SQL expression:
+
     >>> df = pl.DataFrame({"a": [2, 1]})
     >>> expr = pl.sql_expr("MAX(a)")
     >>> df.select(expr)
@@ -2089,5 +2105,23 @@ def sql_expr(sql: str) -> Expr:
     ╞═════╡
     │ 2   │
     └─────┘
+
+    Parse multiple SQL expressions:
+
+    >>> df.with_columns(
+    ...     *pl.sql_expr(["POWER(a,a) AS a_a", "CAST(a AS TEXT) AS a_txt"]),
+    ... )
+    shape: (2, 3)
+    ┌─────┬─────┬───────┐
+    │ a   ┆ a_a ┆ a_txt │
+    │ --- ┆ --- ┆ ---   │
+    │ i64 ┆ f64 ┆ str   │
+    ╞═════╪═════╪═══════╡
+    │ 2   ┆ 4.0 ┆ 2     │
+    │ 1   ┆ 1.0 ┆ 1     │
+    └─────┴─────┴───────┘
     """
-    return wrap_expr(plr.sql_expr(sql))
+    if isinstance(sql, str):
+        return wrap_expr(plr.sql_expr(sql))
+    else:
+        return [wrap_expr(plr.sql_expr(q)) for q in sql]

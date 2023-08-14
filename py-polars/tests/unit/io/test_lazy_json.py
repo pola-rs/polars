@@ -57,8 +57,8 @@ def test_scan_with_projection(tmp_path: Path) -> None:
     json_bytes = bytes(json, "utf-8")
 
     file_path = tmp_path / "escape_chars.json"
-    with open(file_path, "wb") as f:
-        f.write(json_bytes)
+    file_path.write_bytes(json_bytes)
+
     actual = pl.scan_ndjson(file_path).select(["id", "text"]).collect()
 
     expected = pl.DataFrame(

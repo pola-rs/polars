@@ -25,7 +25,9 @@ from polars.functions.as_datatype import time_ as time
 from polars.functions.eager import align_frames, concat
 from polars.functions.lazy import (
     apply,
-    approx_unique,
+    approx_n_unique,
+    arctan2,
+    arctan2d,
     arg_sort_by,
     arg_where,
     avg,
@@ -46,7 +48,6 @@ from polars.functions.lazy import (
     head,
     implode,
     last,
-    lit,
     map,
     mean,
     median,
@@ -61,7 +62,16 @@ from polars.functions.lazy import (
     tail,
     var,
 )
-from polars.functions.range import arange, date_range, int_range, int_ranges, time_range
+from polars.functions.lit import lit
+from polars.functions.range import (
+    arange,
+    date_range,
+    date_ranges,
+    int_range,
+    int_ranges,
+    time_range,
+    time_ranges,
+)
 from polars.functions.repeat import ones, repeat, zeros
 from polars.functions.whenthen import when
 
@@ -81,18 +91,22 @@ __all__ = [
     "sum_horizontal",
     # polars.functions.eager
     "align_frames",
-    "approx_unique",
+    "approx_n_unique",
     "arg_where",
     "concat",
     "date_range",
+    "date_ranges",
     "element",
     "ones",
     "repeat",
     "time_range",
+    "time_ranges",
     "zeros",
     # polars.functions.lazy
     "apply",
     "arange",
+    "arctan2",
+    "arctan2d",
     "arg_sort_by",
     "avg",
     "coalesce",

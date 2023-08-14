@@ -51,8 +51,9 @@ pydantic = ["pydantic"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
 adbc = ["adbc_driver_sqlite"]
+cloudpickle = ["cloudpickle"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc,cloudpickle]",
 ]
 
 [tool.mypy]
@@ -119,6 +120,7 @@ select = [
   "UP", # pyupgrade
   "PT", # flake8-pytest-style
   "RUF", # Ruff-specific rules
+  "PTH", # flake8-use-pathlib
 ]
 
 ignore = [
@@ -142,12 +144,9 @@ ignore = [
   # pycodestyle
   # TODO: Remove errors below to further improve docstring linting
   # Ordered from most common to least common errors.
-  "D105",
-  "D100",
-  "D103",
-  "D102",
-  "D104",
-  "D101",
+  "D105", # Missing docstring in magic method
+  "D100", # Missing docstring in public module
+  "D104", # Missing docstring in public package
 ]
 
 [tool.ruff.pycodestyle]
@@ -160,9 +159,7 @@ ban-relative-imports = "all"
 strict = true
 
 [tool.ruff.per-file-ignores]
-"polars/datatypes.py" = ["B019"]
 "tests/**/*.py" = ["D100", "D103", "B018"]
-"polars/utils/show_versions.py" = ["D301"]
 
 [tool.pytest.ini_options]
 addopts = [

@@ -5,11 +5,15 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from polars.convert import from_arrow
+from polars.datatypes import Categorical, Null, Time
+from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
+from polars.dependencies import pyarrow as pa
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
+    from polars.type_aliases import PolarsDataType
 
 
 def read_delta(
@@ -126,7 +130,7 @@ def read_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    resolved_uri = resolve_delta_lake_uri(source)
+    resolved_uri = _resolve_delta_lake_uri(source)
 
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
@@ -227,6 +231,7 @@ def scan_delta(
     <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
 
     Following type of table paths are supported,
+
     * az://<container>/<path>
     * adl://<container>/<path>
     * abfs[s]://<container>/<path>
@@ -254,7 +259,7 @@ def scan_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    resolved_uri = resolve_delta_lake_uri(source)
+    resolved_uri = _resolve_delta_lake_uri(source)
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
         version=version,
@@ -266,7 +271,7 @@ def scan_delta(
     return scan_pyarrow_dataset(pa_ds)
 
 
-def resolve_delta_lake_uri(table_uri: str, strict: bool = True) -> str:
+def _resolve_delta_lake_uri(table_uri: str, strict: bool = True) -> str:
     parsed_result = urlparse(table_uri)
 
     resolved_uri = str(
@@ -285,19 +290,15 @@ def _get_delta_lake_table(
     delta_table_options: dict[str, Any] | None = None,
 ) -> deltalake.DeltaTable:
     """
-    Initialise a Delta lake table for use in read and scan operations.
+    Initialize a Delta lake table for use in read and scan operations.
 
     Notes
     -----
     Make sure to install deltalake>=0.8.0. Read the documentation
     `here <https://delta-io.github.io/delta-rs/python/installation.html>`_.
 
-    Returns
-    -------
-    DeltaTable
-
     """
-    check_if_delta_available()
+    _check_if_delta_available()
 
     if delta_table_options is None:
         delta_table_options = {}
@@ -312,8 +313,56 @@ def _get_delta_lake_table(
     return dl_tbl
 
 
-def check_if_delta_available() -> None:
+def _check_if_delta_available() -> None:
     if not _DELTALAKE_AVAILABLE:
         raise ImportError(
             "deltalake is not installed. Please run `pip install deltalake>=0.9.0`."
         )
+
+
+def _check_for_unsupported_types(dtypes: list[PolarsDataType]) -> None:
+    schema_dtypes = unpack_dtypes(*dtypes)
+    unsupported_types = {Time, Categorical, Null}
+    overlap = schema_dtypes & unsupported_types
+
+    if overlap:
+        raise TypeError(f"dataframe contains unsupported data types: {overlap}")
+
+
+def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
+    """Convert a PyArrow schema to a schema compatible with Delta Lake."""
+    # TODO: Add time zone support
+    dtype_map = {
+        pa.uint8(): pa.int8(),
+        pa.uint16(): pa.int16(),
+        pa.uint32(): pa.int32(),
+        pa.uint64(): pa.int64(),
+        pa.timestamp("ns"): pa.timestamp("us"),
+        pa.timestamp("ms"): pa.timestamp("us"),
+        pa.large_string(): pa.string(),
+        pa.large_binary(): pa.binary(),
+    }
+
+    def dtype_to_delta_dtype(dtype: pa.DataType) -> pa.DataType:
+        # Handle nested types
+        if isinstance(dtype, pa.LargeListType):
+            return list_to_delta_dtype(dtype)
+        elif isinstance(dtype, pa.StructType):
+            return struct_to_delta_dtype(dtype)
+
+        try:
+            return dtype_map[dtype]
+        except KeyError:
+            return dtype
+
+    def list_to_delta_dtype(dtype: pa.LargeListType) -> pa.ListType:
+        nested_dtype = dtype.value_type
+        nested_dtype_cast = dtype_to_delta_dtype(nested_dtype)
+        return pa.list_(nested_dtype_cast)
+
+    def struct_to_delta_dtype(dtype: pa.StructType) -> pa.StructType:
+        fields = [dtype.field(i) for i in range(dtype.num_fields)]
+        fields_cast = [pa.field(f.name, dtype_to_delta_dtype(f.type)) for f in fields]
+        return pa.struct(fields_cast)
+
+    return pa.schema([pa.field(f.name, dtype_to_delta_dtype(f.type)) for f in schema])

@@ -1,0 +1,38 @@
+[package]
+name = "polars-time"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Time related code for the Polars DataFrame library"
+
+[dependencies]
+polars-arrow = { version = "0.31.1", path = "../polars-arrow", features = ["compute", "temporal"] }
+polars-core = { version = "0.31.1", path = "../polars-core", default-features = false, features = ["dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
+polars-ops = { version = "0.31.1", path = "../polars-ops" }
+polars-utils = { version = "0.31.1", path = "../polars-utils" }
+
+arrow = { workspace = true }
+atoi = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true, optional = true }
+now = { version = "0.1" }
+once_cell = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+smartstring = { workspace = true }
+
+[features]
+dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]
+dtype-datetime = ["polars-core/dtype-date", "polars-core/temporal"]
+dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
+dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
+rolling_window = ["polars-core/rolling_window", "dtype-duration"]
+fmt = ["polars-core/fmt"]
+timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "polars-arrow/timezones", "polars-ops/timezones"]
+
+test = ["dtype-date", "dtype-datetime", "polars-core/fmt"]
+
+default = []

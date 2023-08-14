@@ -13,7 +13,10 @@ from polars.dataframe import DataFrame
 from polars.lazyframe import LazyFrame
 from polars.type_aliases import FrameType
 from polars.utils._wrap import wrap_ldf
-from polars.utils.decorators import deprecated_alias, redirect
+from polars.utils.deprecation import (
+    deprecate_renamed_methods,
+    deprecate_renamed_parameter,
+)
 from polars.utils.various import _get_stack_locals
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -30,7 +33,9 @@ if TYPE_CHECKING:
         from typing_extensions import Self
 
 
-@redirect({"query": ("execute", {"eager": True})})
+@deprecate_renamed_methods(
+    {"query": ("execute", {"eager": True})}, versions={"query": "0.17.13"}
+)
 class SQLContext(Generic[FrameType]):
     """
     Run SQL queries against DataFrame/LazyFrame data.
@@ -282,7 +287,7 @@ class SQLContext(Generic[FrameType]):
         res = wrap_ldf(self._ctxt.execute(query))
         return res.collect() if (eager or self._eager_execution) else res
 
-    @deprecated_alias(lf="frame")
+    @deprecate_renamed_parameter("lf", "frame", version="0.17.13")
     def register(self, name: str, frame: DataFrame | LazyFrame) -> Self:
         """
         Register a single frame as a table, using the given name.

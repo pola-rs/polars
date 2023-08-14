@@ -23,6 +23,7 @@ pub mod error;
 pub mod expr;
 pub mod file;
 pub mod functions;
+pub(crate) mod gil_once_cell;
 pub mod lazyframe;
 pub mod lazygroupby;
 #[cfg(feature = "object")]
@@ -87,8 +88,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::hor_concat_df))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager::time_range_eager))
-        .unwrap();
 
     // Functions - range
     m.add_wrapped(wrap_pyfunction!(functions::range::arange))
@@ -96,6 +95,14 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::range::int_range))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::range::int_ranges))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::range::date_range))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::range::date_ranges))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::range::time_range))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::range::time_ranges))
         .unwrap();
 
     // Functions - aggregation
@@ -139,7 +146,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cumreduce))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::date_range_lazy))
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2d))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::datetime))
         .unwrap();
@@ -172,8 +181,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lazy::repeat))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::spearman_rank_corr))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::time_range_lazy))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
         .unwrap();

@@ -338,24 +338,6 @@ def test_expression_appends() -> None:
     assert out.to_series().to_list() == [None, None, None, 1, 1, 2]
 
 
-def test_regex_in_filter() -> None:
-    df = pl.DataFrame(
-        {
-            "nrs": [1, 2, 3, None, 5],
-            "names": ["foo", "ham", "spam", "egg", None],
-            "flt": [1.0, None, 3.0, 1.0, None],
-        }
-    )
-
-    res = df.filter(
-        pl.fold(
-            acc=False, function=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3)
-        )
-    ).row(0)
-    expected = (1, "foo", 1.0)
-    assert res == expected
-
-
 def test_arr_contains() -> None:
     df_groups = pl.DataFrame(
         {
@@ -808,8 +790,8 @@ def test_lit_dtypes() -> None:
             "f32": lit_series(0, pl.Float32),
             "u16": lit_series(0, pl.UInt16),
             "i16": lit_series(0, pl.Int16),
-            "i64": lit_series([8], None),
-            "list_i64": lit_series([[1, 2, 3]], None),
+            "i64": lit_series(pl.Series([8]), None),
+            "list_i64": lit_series(pl.Series([[1, 2, 3]]), None),
         }
     )
     assert df.dtypes == [
@@ -888,7 +870,7 @@ def test_exclude(input: tuple[Any, ...], expected: list[str]) -> None:
     assert df.select(pl.all().exclude(*input)).columns == expected
 
 
-@pytest.mark.parametrize("input", [(5,), (["a"], "b"), (pl.Int64, "a")])
+@pytest.mark.parametrize("input", [(5,), (["a"], date.today()), (pl.Int64, "a")])
 def test_exclude_invalid_input(input: tuple[Any, ...]) -> None:
     df = pl.DataFrame(schema=["a", "b", "c"])
     with pytest.raises(TypeError):
@@ -992,23 +974,6 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(3)).to_dict(False) == {"a": [3, 4, 5]}
     assert df.select(pl.col("a").tail(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
     assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}
-
-
-def test_cache_expr(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    df = pl.DataFrame(
-        {
-            "x": [3, 3, 3, 5, 8],
-        }
-    )
-    x = (pl.col("x") * 10).cache()
-
-    assert (df.groupby(1).agg([x * x * x])).to_dict(False) == {
-        "literal": [1],
-        "x": [[27000, 27000, 27000, 125000, 512000]],
-    }
-    _, err = capfd.readouterr()
-    assert """cache hit: [(col("x")) * (10)].cache()""" in err
 
 
 @pytest.mark.parametrize(

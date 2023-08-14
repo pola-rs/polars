@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Iterable
 
 import polars._reexport as pl
 from polars import functions as F
 from polars.exceptions import ComputeError
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -55,12 +54,11 @@ def _parse_regular_inputs(
         and isinstance(inputs[0], Iterable)
         and not isinstance(inputs[0], (str, pl.Series))
     ):
-        warnings.warn(
+        issue_deprecation_warning(
             "In the next breaking release, combining list input and positional input will result in an error."
             " To silence this warning, either unpack the list , or append the positional inputs to the list first."
             " The resulting behavior will be identical",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.4",
         )
 
     input_list = _first_input_to_list(inputs[0])
@@ -72,13 +70,12 @@ def _first_input_to_list(
     inputs: IntoExpr | Iterable[IntoExpr],
 ) -> list[IntoExpr]:
     if inputs is None:
-        warnings.warn(
+        issue_deprecation_warning(
             "In the next breaking release, passing `None` as the first expression input will evaluate to `lit(None)`,"
             " rather than be ignored."
             " To silence this warning, either pass no arguments or an empty list to retain the current behavior,"
             " or pass `lit(None)` to opt into the new behavior.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
+            version="0.18.0",
         )
         return []
     elif not isinstance(inputs, Iterable) or isinstance(inputs, (str, pl.Series)):
@@ -132,8 +129,6 @@ def parse_as_expression(
     elif isinstance(input, list):
         expr = F.lit(pl.Series("", [input]))
         structify = False
-    elif isinstance(input, (F.whenthen.WhenThen, F.whenthen.WhenThenThen)):
-        expr = input.otherwise(None)  # implicitly add the null branch.
     else:
         raise TypeError(
             f"did not expect value {input!r} of type {type(input)}, maybe disambiguate with"

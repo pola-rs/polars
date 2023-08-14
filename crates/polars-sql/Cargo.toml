@@ -1,0 +1,27 @@
+[package]
+name = "polars-sql"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "SQL transpiler for Polars. Converts SQL to Polars logical plans"
+
+[dependencies]
+polars-arrow = { version = "0.31.1", path = "../polars-arrow", features = ["like"] }
+polars-core = { version = "0.31.1", path = "../polars-core", features = [] }
+polars-lazy = { version = "0.31.1", path = "../polars-lazy", features = ["compile", "strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg"] }
+polars-plan = { version = "0.31.1", path = "../polars-plan", features = ["compile"] }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlparser = { workspace = true }
+# sqlparser = { git = "https://github.com/sqlparser-rs/sqlparser-rs.git", rev = "ae3b5844c839072c235965fe0d1bddc473dced87" }
+
+[features]
+csv = ["polars-lazy/csv"]
+json = ["polars-lazy/json"]
+default = []
+ipc = ["polars-lazy/ipc"]
+parquet = ["polars-lazy/parquet"]

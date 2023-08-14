@@ -8,6 +8,7 @@ Attributes
 
     DataFrame.columns
     DataFrame.dtypes
+    DataFrame.flags
     DataFrame.height
     DataFrame.schema
     DataFrame.shape

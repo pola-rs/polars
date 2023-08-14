@@ -135,22 +135,21 @@ shape: (5, 8)
 ... ).collect())
 ```
 
-SQL commands can also be ran directly from your terminal.
+SQL commands can also be ran directly from your terminal using the Polars CLI:
 
 ```bash
-> cargo install polars-cli --locked
 # run an inline sql query
 > polars -c "SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM read_ipc('file.arrow') WHERE id1 = 'id016' LIMIT 10"
 
 # run interactively
 > polars
-Polars CLI v0.1.0
+Polars CLI v0.3.0
 Type .help for help.
 
 > SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM read_ipc('file.arrow') WHERE id1 = 'id016' LIMIT 10;
 ```
 
-Refer to [polars-cli](./polars-cli/README.md) for more information.
+Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for more information.
 
 ## Performance 🚀🚀
 
@@ -235,15 +234,14 @@ This can be done by going through the following steps in sequence:
 
 1. Install the latest [Rust compiler](https://www.rust-lang.org/tools/install)
 2. Install [maturin](https://maturin.rs/): `pip install maturin`
-3. Choose any of:
-   - Fastest binary, very long compile times:
-     ```sh
-     $ cd py-polars && maturin develop --release -- -C target-cpu=native
-     ```
-   - Fast binary, Shorter compile times:
-     ```sh
-     $ cd py-polars && maturin develop --release -- -C codegen-units=16 -C lto=thin -C target-cpu=native
-     ```
+3. `cd py-polars` and choose one of the following:
+   - `make build-release`, fastest binary, very long compile times
+   - `make build-opt`, fast binary with debug symbols, long compile times
+   - `make build-debug-opt`, medium-speed binary with debug assertions and symbols, medium compile times
+   - `make build`, slow binary with debug assertions and symbols, fast compile times
+
+   Append `-native` (e.g. `make build-release-native`) to enable further optimizations specific to
+   your CPU. This produces a non-portable binary/wheel however.
 
 Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you

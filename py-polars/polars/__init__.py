@@ -16,7 +16,6 @@ from polars import api
 from polars.config import Config
 from polars.convert import (
     from_arrow,
-    from_dataframe,
     from_dict,
     from_dicts,
     from_numpy,
@@ -82,8 +81,10 @@ from polars.functions import (
     any,
     any_horizontal,
     apply,
-    approx_unique,
+    approx_n_unique,
     arange,
+    arctan2,
+    arctan2d,
     arg_sort_by,
     arg_where,
     avg,
@@ -102,6 +103,7 @@ from polars.functions import (
     cumsum_horizontal,
     date,
     date_range,
+    date_ranges,
     datetime,
     duration,
     element,
@@ -140,10 +142,12 @@ from polars.functions import (
     tail,
     time,
     time_range,
+    time_ranges,
     var,
     when,
     zeros,
 )
+from polars.interchange.from_dataframe import from_dataframe
 from polars.io import (
     read_avro,
     read_csv,
@@ -282,10 +286,12 @@ __all__ = [
     "arg_where",
     "concat",
     "date_range",
+    "date_ranges",
     "element",
     "ones",
     "repeat",
     "time_range",
+    "time_ranges",
     "zeros",
     # polars.functions.aggregation
     "all",
@@ -302,7 +308,10 @@ __all__ = [
     "sum_horizontal",
     # polars.functions.lazy
     "apply",
+    "approx_n_unique",
     "arange",
+    "arctan2",
+    "arctan2d",
     "arg_sort_by",
     "avg",
     "coalesce",
@@ -334,7 +343,6 @@ __all__ = [
     "mean",
     "median",
     "n_unique",
-    "approx_unique",
     "quantile",
     "reduce",
     "rolling_corr",

@@ -537,6 +537,62 @@ def test_extract_all_many() -> None:
     assert df["foo"].str.extract_all(df["re"]).to_list() == [["a"], ["bc"], ["abc"]]
 
 
+def test_extract_groups() -> None:
+    def _named_groups_builder(pattern: str, groups: dict[str, str]) -> str:
+        return pattern.format(
+            **{name: f"(?<{name}>{value})" for name, value in groups.items()}
+        )
+
+    expected = {
+        "authority": ["ISO", "ISO/IEC/IEEE"],
+        "spec_num": ["80000", "29148"],
+        "part_num": ["1", None],
+        "revision_year": ["2009", "2018"],
+    }
+
+    pattern = _named_groups_builder(
+        r"{authority}\s{spec_num}(?:-{part_num})?(?::{revision_year})",
+        {
+            "authority": r"^ISO(?:/[A-Z]+)*",
+            "spec_num": r"\d+",
+            "part_num": r"\d+",
+            "revision_year": r"\d{4}",
+        },
+    )
+
+    df = pl.DataFrame({"iso_code": ["ISO 80000-1:2009", "ISO/IEC/IEEE 29148:2018"]})
+
+    assert (
+        df.select(pl.col("iso_code").str.extract_groups(pattern))
+        .unnest("iso_code")
+        .to_dict(False)
+        == expected
+    )
+
+    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(False) == {
+        "iso_code": [{"iso_code": None}, {"iso_code": None}]
+    }
+
+    assert df.select(
+        pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")
+    ).to_dict(False) == {
+        "iso_code": [{"1": "ISO", "2": "80000"}, {"1": "ISO/IEC/IEEE", "2": "29148"}]
+    }
+
+    assert df.select(
+        pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(?<year>\d+)\z")
+    ).to_dict(False) == {
+        "iso_code": [
+            {"1": "ISO", "year": "2009"},
+            {"1": "ISO/IEC/IEEE", "year": "2018"},
+        ]
+    }
+
+    assert pl.select(
+        pl.lit(r"foobar").str.extract_groups(r"(?<foo>.{3})|(?<bar>...)")
+    ).to_dict(False) == {"literal": [{"foo": "foo", "bar": None}]}
+
+
 def test_zfill() -> None:
     df = pl.DataFrame(
         {
@@ -723,3 +779,35 @@ def test_titlecase() -> None:
             "And\tA\t Tab",
         ]
     }
+
+
+def test_string_replace_with_nulls_10124() -> None:
+    df = pl.DataFrame({"col1": ["S", "S", "S", None, "S", "S", "S", "S"]})
+
+    assert df.select(
+        pl.col("col1"),
+        pl.col("col1").str.replace("S", "O", n=1).alias("n_1"),
+        pl.col("col1").str.replace("S", "O", n=3).alias("n_3"),
+    ).to_dict(False) == {
+        "col1": ["S", "S", "S", None, "S", "S", "S", "S"],
+        "n_1": ["O", "O", "O", None, "O", "O", "O", "O"],
+        "n_3": ["O", "O", "O", None, "O", "O", "O", "O"],
+    }
+
+
+def test_string_extract_groups_lazy_schema_10305() -> None:
+    df = pl.LazyFrame(
+        data={
+            "url": [
+                "http://vote.com/ballon_dor?candidate=messi&ref=python",
+                "http://vote.com/ballon_dor?candidate=weghorst&ref=polars",
+                "http://vote.com/ballon_dor?error=404&ref=rust",
+            ]
+        }
+    )
+    pattern = r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)"
+    df = df.select(captures=pl.col("url").str.extract_groups(pattern)).unnest(
+        "captures"
+    )
+
+    assert df.schema == {"candidate": pl.Utf8, "ref": pl.Utf8}

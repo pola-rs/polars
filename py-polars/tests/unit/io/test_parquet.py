@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import io
-import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -12,15 +12,9 @@ import pyarrow.dataset as ds
 import pytest
 
 import polars as pl
-from polars.testing import (
-    assert_frame_equal,
-    assert_frame_equal_local_categoricals,
-    assert_series_equal,
-)
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars.type_aliases import ParquetCompression
 
 
@@ -86,7 +80,7 @@ def test_to_from_buffer(
     df.write_parquet(buf, compression=compression, use_pyarrow=use_pyarrow)
     buf.seek(0)
     read_df = pl.read_parquet(buf, use_pyarrow=use_pyarrow)
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
@@ -119,7 +113,7 @@ def test_to_from_file(
     file_path = tmp_path / "small.avro"
     df.write_parquet(file_path, compression=compression)
     read_df = pl.read_parquet(file_path)
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 @pytest.mark.write_disk()
@@ -539,7 +533,7 @@ def test_parquet_string_cache() -> None:
 
 def test_tz_aware_parquet_9586() -> None:
     result = pl.read_parquet(
-        os.path.join("tests", "unit", "io", "files", "tz_aware.parquet")
+        Path("tests") / "unit" / "io" / "files" / "tz_aware.parquet"
     )
     expected = pl.DataFrame(
         {"UTC_DATETIME_ID": [datetime(2023, 6, 26, 14, 15, 0, tzinfo=timezone.utc)]}

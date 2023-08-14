@@ -3,8 +3,7 @@ name: Lint Rust
 on:
   pull_request:
     paths:
-      - polars/**
-      - polars-cli/**
+      - crates/**
       - examples/**
       - Cargo.toml
       - .github/workflows/lint-rust.yml
@@ -12,8 +11,7 @@ on:
     branches:
       - main
     paths:
-      - polars/**
-      - polars-cli/**
+      - crates/**
       - examples/**
       - Cargo.toml
       - .github/workflows/lint-rust.yml
@@ -39,8 +37,8 @@ jobs:
         with:
           save-if: ${{ github.ref_name == 'main' }}
 
-      - name: Run cargo clippy on all features
-        run: cargo clippy --all-features -- -D warnings
+      - name: Run cargo clippy with all features enabled
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   # Default feature set should compile on the stable toolchain
   clippy-stable:
@@ -60,7 +58,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   rustfmt:
     if: github.ref_name != 'main'
@@ -90,9 +88,9 @@ jobs:
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows
           POLARS_ALLOW_EXTENSION: '1'
-        run: |
-          cargo miri test \
-          --no-default-features \
-          --features object \
-          -p polars-core \
+        run: >
+          cargo miri test
+          --no-default-features
+          --features object
+          -p polars-core
           -p polars-arrow

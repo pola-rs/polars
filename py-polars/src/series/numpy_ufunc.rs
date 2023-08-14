@@ -92,11 +92,11 @@ macro_rules! impl_ufuncs {
                                 validity,
                             );
                             PySeries::new(ca.into_series())
-                        }
+                        },
                         Err(e) => {
                             // return error information
                             return Err(e);
-                        }
+                        },
                     };
 
                     Ok(s)

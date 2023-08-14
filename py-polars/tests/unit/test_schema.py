@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 import pytest
@@ -215,6 +216,9 @@ def test_shrink_dtype() -> None:
             "f": ["a", "b", "c"],
             "g": [0.1, 1.32, 0.12],
             "h": [True, None, False],
+            "i": pl.Series([None, None, None], dtype=pl.UInt64),
+            "j": pl.Series([None, None, None], dtype=pl.Int64),
+            "k": pl.Series([None, None, None], dtype=pl.Float64),
         }
     ).select(pl.all().shrink_dtype())
     assert out.dtypes == [
@@ -226,6 +230,9 @@ def test_shrink_dtype() -> None:
         pl.Utf8,
         pl.Float32,
         pl.Boolean,
+        pl.UInt8,
+        pl.Int8,
+        pl.Float32,
     ]
 
     assert out.to_dict(False) == {
@@ -237,6 +244,9 @@ def test_shrink_dtype() -> None:
         "f": ["a", "b", "c"],
         "g": [0.10000000149011612, 1.3200000524520874, 0.11999999731779099],
         "h": [True, None, False],
+        "i": [None, None, None],
+        "j": [None, None, None],
+        "k": [None, None, None],
     }
 
 
@@ -503,4 +513,25 @@ def test_concat_vertically_relaxed() -> None:
     assert out.to_dict(False) == {
         "a": [1.0, 0.2, 1.0, 2.0],
         "b": [None, 0.1, 2.0, 1.0],
+    }
+
+
+def test_lit_iter_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["A", "A", "A", "A"],
+            "dates": [
+                date(1970, 1, 1),
+                date(1970, 1, 1),
+                date(1970, 1, 2),
+                date(1970, 1, 3),
+            ],
+        }
+    )
+
+    assert df.groupby("key").agg(pl.col("dates").unique() + timedelta(days=1)).to_dict(
+        False
+    ) == {
+        "key": ["A"],
+        "dates": [[date(1970, 1, 2), date(1970, 1, 3), date(1970, 1, 4)]],
     }

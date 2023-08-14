@@ -526,6 +526,15 @@ def test_init_ndarray(monkeypatch: Any) -> None:
             orient="row",
         )
 
+    # 2D square array; ensure that we maintain convention
+    # (first axis = rows) with/without an explicit schema
+    arr = np.arange(4).reshape(2, 2)
+    assert (
+        [(0, 1), (2, 3)]
+        == pl.DataFrame(arr).rows()
+        == pl.DataFrame(arr, schema=["a", "b"]).rows()
+    )
+
     # 3D array
     with pytest.raises(ValueError):
         _ = pl.DataFrame(np.random.randn(2, 2, 2))
@@ -1238,7 +1247,7 @@ def test_arrow_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
     original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
     pyseries = arrow_to_pyseries("", original_array)
     assert (
-        pyseries.get_chunks()[0]._get_ptr()
+        pyseries.get_chunks()[0]._get_ptr()[2]
         == original_array.chunks[0].buffers()[1].address
     )
 
