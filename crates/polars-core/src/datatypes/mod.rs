@@ -310,3 +310,38 @@ unsafe impl StaticallyMatchesPolarsType<BooleanType> for BooleanArray {}
 unsafe impl StaticallyMatchesPolarsType<ListType> for ListArray<i64> {}
 #[cfg(feature = "dtype-array")]
 unsafe impl StaticallyMatchesPolarsType<FixedSizeListType> for FixedSizeListArray {}
+
+#[doc(hidden)]
+pub unsafe trait HasUnderlyingArray {
+    type ArrayT: Array;
+}
+
+unsafe impl<T: PolarsNumericType> HasUnderlyingArray for ChunkedArray<T> {
+    type ArrayT = PrimitiveArray<T::Native>;
+}
+
+unsafe impl HasUnderlyingArray for BooleanChunked {
+    type ArrayT = BooleanArray;
+}
+
+unsafe impl HasUnderlyingArray for Utf8Chunked {
+    type ArrayT = Utf8Array<i64>;
+}
+
+unsafe impl HasUnderlyingArray for BinaryChunked {
+    type ArrayT = BinaryArray<i64>;
+}
+
+unsafe impl HasUnderlyingArray for ListChunked {
+    type ArrayT = ListArray<i64>;
+}
+
+#[cfg(feature = "dtype-array")]
+unsafe impl HasUnderlyingArray for ArrayChunked {
+    type ArrayT = FixedSizeListArray;
+}
+
+#[cfg(feature = "object")]
+unsafe impl<T: PolarsObject> HasUnderlyingArray for ObjectChunked<T> {
+    type ArrayT = crate::chunked_array::object::ObjectArray<T>;
+}
