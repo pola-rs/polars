@@ -31,7 +31,7 @@ pub(crate) fn take_primitive_opt_iter_n_chunks<
         .collect()
 }
 
-/// This is faster because it does no bounds checks and allocates directly into aligned memory
+/// This is faster because it does no bounds checks and allocates directly into aligned memory.
 ///
 /// # Safety
 /// No bounds checks
@@ -39,20 +39,14 @@ pub(crate) unsafe fn take_list_unchecked(
     values: &ListArray<i64>,
     indices: &IdxArr,
 ) -> ListArray<i64> {
-    // taking the whole list or a contiguous sublist
+    // Taking the whole list or a contiguous sublist.
     let (list_indices, offsets) = take_value_indices_from_list(values, indices);
 
-    // tmp series so that we can take primitives from it
+    // Temporary series so that we can take primitives from it.
     let s = Series::try_from(("", values.values().clone() as ArrayRef)).unwrap();
-    let taken = s
-        .take_unchecked(&IdxCa::from_chunks(
-            "",
-            vec![Box::new(list_indices) as ArrayRef],
-        ))
-        .unwrap();
+    let taken = s.take_unchecked(&list_indices.into()).unwrap();
 
     let taken = taken.array_ref(0).clone();
-
     let validity = if let Some(validity) = values.validity() {
         let validity = take_bitmap_unchecked(validity, indices.values().as_slice());
         combine_validities_and(Some(&validity), indices.validity())
@@ -61,7 +55,6 @@ pub(crate) unsafe fn take_list_unchecked(
     };
 
     let dtype = ListArray::<i64>::default_datatype(taken.data_type().clone());
-    // Safety:
-    // offsets are monotonically increasing
+    // SAFETY: offsets are monotonically increasing.
     ListArray::new(dtype, offsets.into(), taken, validity)
 }
