@@ -286,7 +286,6 @@ impl ExprIdentifierVisitor<'_> {
                                 None
                             }
                         },
-                        AExpr::Literal(_) => Some((VisitRecursion::Skip, false)),
                         _ => None,
                     }
                 } else {
@@ -300,12 +299,7 @@ impl ExprIdentifierVisitor<'_> {
 impl Visitor for ExprIdentifierVisitor<'_> {
     type Node = AexprNode;
 
-    fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
-        // Branches can have different sizes if we run one on the `select` context.
-        if self.is_groupby && matches!(node.to_aexpr(), AExpr::Ternary { .. }) {
-            self.pre_visit_idx += 1;
-            return Ok(VisitRecursion::Skip);
-        }
+    fn pre_visit(&mut self, _node: &Self::Node) -> PolarsResult<VisitRecursion> {
         self.visit_stack
             .push(VisitRecord::Entered(self.pre_visit_idx));
         self.pre_visit_idx += 1;
