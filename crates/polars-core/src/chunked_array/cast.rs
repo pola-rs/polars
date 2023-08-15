@@ -184,19 +184,12 @@ impl ChunkCast for Utf8Chunked {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => match (precision, scale) {
                 (precision, Some(scale)) => {
-                    let chunks = self
-                        .downcast_iter()
-                        .map(|arr| {
-                            polars_arrow::compute::cast::cast_utf8_to_decimal(
-                                arr, *precision, *scale,
-                            )
-                        })
-                        .collect();
-                    unsafe {
-                        Ok(Int128Chunked::from_chunks(self.name(), chunks)
-                            .into_decimal_unchecked(*precision, *scale)
-                            .into_series())
-                    }
+                    let chunks = self.downcast_iter().map(|arr| {
+                        polars_arrow::compute::cast::cast_utf8_to_decimal(arr, *precision, *scale)
+                    });
+                    Ok(Int128Chunked::from_chunk_iter(self.name(), chunks)
+                        .into_decimal_unchecked(*precision, *scale)
+                        .into_series())
                 },
                 (None, None) => self.to_decimal(100),
                 _ => {
@@ -330,7 +323,7 @@ impl ChunkCast for ListChunked {
             },
             #[cfg(feature = "dtype-array")]
             Array(_, _) => {
-                // TODO! bubble up logical types
+                // TODO: bubble up logical types.
                 let chunks = cast_chunks(self.chunks(), data_type, true)?;
                 unsafe { Ok(ArrayChunked::from_chunks(self.name(), chunks).into_series()) }
             },
