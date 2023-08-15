@@ -3415,7 +3415,7 @@ class Expr:
 
         Examples
         --------
-        Divide a column into three groups according to pre-defined quantile
+        Divide a column into three categories according to pre-defined quantile
         probabilities.
 
         >>> df = pl.DataFrame({"foo": [-2, -1, 0, 1, 2]})
@@ -3435,7 +3435,7 @@ class Expr:
         │ 2   ┆ c    │
         └─────┴──────┘
 
-        Divide the column uniformly into two categories.
+        Divide a column into two categories using uniform quantile probabilities.
 
         >>> df.with_columns(
         ...     pl.col("foo")

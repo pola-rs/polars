@@ -1951,7 +1951,8 @@ class Series:
 
         Examples
         --------
-        Divide the column into three pre-defined quantiles.
+        Divide a column into three categories according to pre-defined quantile
+        probabilities.
 
         >>> s = pl.Series("foo", [-2, -1, 0, 1, 2])
         >>> s.qcut([0.25, 0.75], labels=["a", "b", "c"])
@@ -1965,7 +1966,7 @@ class Series:
                 "c"
         ]
 
-        Divide the column into two uniform quantiles.
+        Divide a column into two categories using uniform quantile probabilities.
 
         >>> s.qcut(2, labels=["low", "high"], left_closed=True)
         shape: (5,)
