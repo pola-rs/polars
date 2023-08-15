@@ -154,9 +154,9 @@ impl PySeries {
         }
     }
 
-    fn get_idx(&self, py: Python, idx: usize) -> PyResult<PyObject> {
+    fn get_idx(&self, py: Python, idx: usize, wrap_lists: bool) -> PyResult<PyObject> {
         let av = self.series.get(idx).map_err(PyPolarsErr::from)?;
-        if let AnyValue::List(s) = av {
+        if let (true, AnyValue::List(s)) = (wrap_lists, av) {
             let pyseries = PySeries::new(s);
             let out = POLARS
                 .getattr(py, "wrap_s")

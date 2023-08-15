@@ -890,7 +890,7 @@ class Series:
             #  make this path a lot slower (~10x) than it needs to be.
             get_idx = self._s.get_idx
             for idx in range(0, self.len()):
-                yield get_idx(idx)
+                yield get_idx(idx, True)
         else:
             buffer_size = 25_000
             for offset in range(0, self.len(), buffer_size):
@@ -976,7 +976,7 @@ class Series:
         elif isinstance(item, int):
             if item < 0:
                 item = self.len() + item
-            return self._s.get_idx(item)
+            return self._s.get_idx(item, True)
 
         # Slice.
         elif isinstance(item, slice):
