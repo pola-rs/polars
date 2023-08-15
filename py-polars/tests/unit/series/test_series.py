@@ -544,11 +544,9 @@ def test_cast() -> None:
             pl.DataFrame({"A": [1, 2, 3], "B": ["1", "2", "help"]}),
             pl.UInt32,
             re.escape(
-                (
-                    "strict conversion from `str` to `u32` failed for column: B, "
-                    'value(s) ["help"]; if you were trying to cast Utf8 to temporal '
-                    "dtypes, consider using `strptime`"
-                )
+                "strict conversion from `str` to `u32` failed for column: B, "
+                'value(s) ["help"]; if you were trying to cast Utf8 to temporal '
+                "dtypes, consider using `strptime`"
             ),
             id="Unsigned integer",
         )
