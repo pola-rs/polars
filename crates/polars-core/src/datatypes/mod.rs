@@ -12,6 +12,7 @@ mod aliases;
 mod any_value;
 mod dtype;
 mod field;
+mod static_array;
 mod time_unit;
 
 use std::cmp::Ordering;
@@ -38,6 +39,7 @@ use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
+pub use static_array::StaticArray;
 pub use time_unit::*;
 
 use crate::chunked_array::arithmetic::ArrayArithmetics;
@@ -313,7 +315,7 @@ unsafe impl StaticallyMatchesPolarsType<FixedSizeListType> for FixedSizeListArra
 
 #[doc(hidden)]
 pub unsafe trait HasUnderlyingArray {
-    type ArrayT: Array;
+    type ArrayT: StaticArray;
 }
 
 unsafe impl<T: PolarsNumericType> HasUnderlyingArray for ChunkedArray<T> {
