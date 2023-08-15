@@ -49,3 +49,15 @@ impl From<BinaryArray<i64>> for BinaryChunked {
         ChunkedArray::from_chunk_iter("", [arr])
     }
 }
+
+impl From<(&str, ListArray<i64>)> for ListChunked {
+    fn from(tpl: (&str, ListArray<i64>)) -> Self {
+        ChunkedArray::from_chunk_iter(tpl.0, [tpl.1])
+    }
+}
+
+impl From<ListArray<i64>> for ListChunked {
+    fn from(arr: ListArray<i64>) -> Self {
+        ChunkedArray::from_chunk_iter("", [arr])
+    }
+}
