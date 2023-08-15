@@ -7,6 +7,7 @@ use arrow::compute::cast::CastOptions;
 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
+use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
 
 pub(crate) fn cast_chunks(
@@ -194,6 +195,36 @@ impl ChunkCast for Utf8Chunked {
                 _ => {
                     polars_bail!(ComputeError: "expected 'precision' or 'scale' when casting to Decimal")
                 },
+            },
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => {
+                let result = cast_chunks(&self.chunks, &data_type, true)?;
+                let out = Series::try_from((self.name(), result))?;
+                Ok(out)
+            },
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(tu, tz) => {
+                let out = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => {
+                        validate_time_zone(tz)?;
+                        let result = cast_chunks(
+                            &self.chunks,
+                            &Datetime(TimeUnit::Nanoseconds, Some(tz.clone())),
+                            true,
+                        )?;
+                        Series::try_from((self.name(), result))
+                    },
+                    _ => {
+                        let result = cast_chunks(
+                            &self.chunks,
+                            &Datetime(TimeUnit::Nanoseconds, None),
+                            true,
+                        )?;
+                        Series::try_from((self.name(), result))
+                    },
+                };
+                out
             },
             _ => cast_impl(self.name(), &self.chunks, data_type),
         }
