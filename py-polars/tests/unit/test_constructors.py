@@ -554,7 +554,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
 
     # NumPy not available
     monkeypatch.setattr(pl.dataframe.frame, "_check_for_numpy", lambda x: False)
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
     # 2D numpy arrays
@@ -792,7 +792,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
 
     # pandas is not available
     monkeypatch.setattr(pl.dataframe.frame, "_check_for_pandas", lambda x: False)
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.DataFrame(pandas_df)
 
 
@@ -806,7 +806,7 @@ def test_init_errors() -> None:
         pl.DataFrame([[1, 2], [3, 4]], schema=["a", "b", "c"])
 
     # Unmatched input
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.DataFrame(0)
 
 

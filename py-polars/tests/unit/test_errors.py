@@ -156,25 +156,20 @@ def test_getitem_errs() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
     with pytest.raises(
-        ValueError,
-        match=r"cannot __getitem__ on DataFrame with item: " r"{'some'} of type: 'set'",
+        TypeError,
+        match=r"cannot use `__getitem__` on DataFrame with item {'some'} of type 'set'",
     ):
         df[{"some"}]  # type: ignore[call-overload]
 
     with pytest.raises(
-        ValueError,
-        match=r"cannot __getitem__ on Series of dtype: "
-        r"'Int64' with argument: "
-        r"{'strange'} of type: 'set'",
+        TypeError,
+        match=r"cannot use `__getitem__` on Series of dtype Int64 with argument {'strange'} of type 'set'",
     ):
         df["a"][{"strange"}]  # type: ignore[call-overload]
 
     with pytest.raises(
-        ValueError,
-        match=r"cannot __setitem__ on "
-        r"DataFrame with key: {'some'} of "
-        r"type: 'set' and value: "
-        r"'foo' of type: 'str'",
+        TypeError,
+        match=r"cannot use `__setitem__` on DataFrame with key {'some'} of type 'set' and value 'foo' of type 'str'",
     ):
         df[{"some"}] = "foo"  # type: ignore[index]
 

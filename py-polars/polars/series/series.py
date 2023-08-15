@@ -428,9 +428,9 @@ class Series:
 
     def __bool__(self) -> NoReturn:
         raise ValueError(
-            "the truth value of a Series is ambiguous. Hint: use '&' or '|' to chain"
-            " Series boolean results together, not and/or; to check if a Series"
-            " contains any values, use 'is_empty()'"
+            "the truth value of a Series is ambiguous"
+            "\n\nHint: use '&' or '|' to chain Series boolean results together, not and/or."
+            " To check if a Series contains any values, use `is_empty()`."
         )
 
     def __getstate__(self) -> Any:
@@ -993,13 +993,13 @@ class Series:
             idx_series = Series("", item, dtype=Int64)._pos_idxs(self.len())
             if idx_series.has_validity():
                 raise ValueError(
-                    "cannot __getitem__ with index values containing nulls"
+                    "cannot use `__getitem__` with index values containing nulls"
                 )
             return self._take_with_series(idx_series)
 
-        raise ValueError(
-            f"cannot __getitem__ on Series of dtype: '{self.dtype!r}'"
-            f" with argument: {item!r} of type: {type(item).__name__!r}"
+        raise TypeError(
+            f"cannot use `__getitem__` on Series of dtype {self.dtype!r}"
+            f" with argument {item!r} of type {type(item).__name__!r}"
         )
 
     def __setitem__(

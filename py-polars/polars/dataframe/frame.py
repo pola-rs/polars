@@ -402,8 +402,9 @@ class DataFrame:
                 infer_schema_length=infer_schema_length,
             )
         else:
-            raise ValueError(
-                f"DataFrame constructor called with unsupported type; got {type(data).__name__!r}"
+            raise TypeError(
+                f"DataFrame constructor received unsupported type {type(data).__name__!r}"
+                " for the `data` parameter"
             )
 
     @classmethod
@@ -1247,7 +1248,7 @@ class DataFrame:
         if nan_as_null:
             raise NotImplementedError(
                 "functionality for `nan_as_null` has not been implemented and the"
-                " parameter will be removed in a future version."
+                " parameter will be removed in a future version"
                 "\n\nUse the default `nan_as_null=False`"
             )
 
@@ -1303,7 +1304,7 @@ class DataFrame:
         elif op == "lt_eq":
             expr = [F.col(n) <= F.col(f"{n}{suffix}") for n in self.columns]
         else:
-            raise ValueError(f"got unexpected comparison operator: {op!r}")
+            raise ValueError(f"unexpected comparison operator {op!r}")
 
         return combined.select(expr)
 
@@ -1326,7 +1327,7 @@ class DataFrame:
         elif op == "lt_eq":
             return self.select(F.all() <= other)
         else:
-            raise ValueError(f"got unexpected comparison operator: {op!r}")
+            raise ValueError(f"unexpected comparison operator {op!r}")
 
     def _div(self, other: Any, floordiv: bool) -> DataFrame:
         if isinstance(other, pl.Series):
@@ -1371,8 +1372,8 @@ class DataFrame:
 
     def __bool__(self) -> NoReturn:
         raise ValueError(
-            "the truth value of a DataFrame is ambiguous."
-            "\n\nHint: to check if a DataFrame contains any values, use 'is_empty()'"
+            "the truth value of a DataFrame is ambiguous"
+            "\n\nHint: to check if a DataFrame contains any values, use `is_empty()`."
         )
 
     def __eq__(self, other: Any) -> DataFrame:  # type: ignore[override]
@@ -1546,7 +1547,7 @@ class DataFrame:
                     if len(col_selection) != self.width:
                         raise ValueError(
                             f"expected {self.width} values when selecting columns by"
-                            f" boolean mask. Got {len(col_selection)}"
+                            f" boolean mask, got {len(col_selection)}"
                         )
                     series_list = []
                     for i, val in enumerate(col_selection):
@@ -1577,7 +1578,7 @@ class DataFrame:
                 if (col_selection >= 0 and col_selection >= self.width) or (
                     col_selection < 0 and col_selection < -self.width
                 ):
-                    raise ValueError(f"column index {col_selection!r} is out of bounds")
+                    raise IndexError(f"column index {col_selection!r} is out of bounds")
                 series = self.to_series(col_selection)
                 return series[row_selection]
 
@@ -1586,8 +1587,8 @@ class DataFrame:
                 if is_int_sequence(col_selection):
                     for i in col_selection:
                         if (i >= 0 and i >= self.width) or (i < 0 and i < -self.width):
-                            raise ValueError(
-                                f'column index "{col_selection!r}" is out of bounds'
+                            raise IndexError(
+                                f"column index {col_selection!r} is out of bounds"
                             )
                     series_list = [self.to_series(i) for i in col_selection]
                     df = self.__class__(series_list)
@@ -1618,7 +1619,7 @@ class DataFrame:
         # df[np.array([True, False, True])]
         if _check_for_numpy(item) and isinstance(item, np.ndarray):
             if item.ndim != 1:
-                raise ValueError("only a 1D-Numpy array is supported as index")
+                raise TypeError("multi-dimensional NumPy arrays not supported as index")
             if item.dtype.kind in ("i", "u"):
                 # Numpy array with signed or unsigned integers.
                 return self._take_with_series(numpy_to_idxs(item, self.shape[0]))
@@ -1640,9 +1641,9 @@ class DataFrame:
                 return self._take_with_series(item._pos_idxs(self.shape[0]))
 
         # if no data has been returned, the operation is not supported
-        raise ValueError(
-            f"cannot __getitem__ on DataFrame with item: {item!r}"
-            f" of type: {type(item).__name__!r}"
+        raise TypeError(
+            f"cannot use `__getitem__` on DataFrame with item {item!r}"
+            f" of type {type(item).__name__!r}"
         )
 
     def __setitem__(
@@ -1653,8 +1654,8 @@ class DataFrame:
         # df["foo"] = series
         if isinstance(key, str):
             raise TypeError(
-                "'DataFrame' object does not support 'Series' assignment by index."
-                " Use 'DataFrame.with_columns'"
+                "DataFrame object does not support `Series` assignment by index."
+                "\n\nUse `DataFrame.with_columns`."
             )
 
         # df[["C", "D"]]
@@ -1665,8 +1666,7 @@ class DataFrame:
                 raise ValueError("can only set multiple columns with 2D matrix")
             if value.shape[1] != len(key):
                 raise ValueError(
-                    "matrix columns should be equal to list use to determine column"
-                    " names"
+                    "matrix columns should be equal to list use to determine column names"
                 )
 
             # todo! we can parallelize this by calling from_numpy
@@ -1683,8 +1683,8 @@ class DataFrame:
                 isinstance(row_selection, pl.Series) and row_selection.dtype == Boolean
             ) or is_bool_sequence(row_selection):
                 raise ValueError(
-                    "not allowed to set 'DataFrame' by boolean mask in the"
-                    " row position. Consider using 'DataFrame.with_columns'"
+                    "not allowed to set 'DataFrame' by boolean mask in the row position."
+                    "\n\nConsider using `DataFrame.with_columns`."
                 )
 
             # get series column selection
@@ -1693,7 +1693,7 @@ class DataFrame:
             elif isinstance(col_selection, int):
                 s = self[:, col_selection]
             else:
-                raise ValueError(f"column selection not understood: {col_selection!r}")
+                raise ValueError(f"unexpected column selection {col_selection!r}")
 
             # dispatch to __setitem__ of Series to do modification
             s[row_selection] = value
@@ -1706,10 +1706,10 @@ class DataFrame:
             elif isinstance(col_selection, str):
                 self.replace(col_selection, s)
         else:
-            raise ValueError(
-                f"cannot __setitem__ on DataFrame with key: {key!r}"
-                f" of type: {type(key).__name__!r} and value: {value!r}"
-                f" of type: {type(value).__name__!r}."
+            raise TypeError(
+                f"cannot use `__setitem__` on DataFrame"
+                f" with key {key!r} of type {type(key).__name__!r}"
+                f" and value {value!r} of type {type(value).__name__!r}"
             )
 
     def __len__(self) -> int:
@@ -1786,7 +1786,7 @@ class DataFrame:
         if row is None and column is None:
             if self.shape != (1, 1):
                 raise ValueError(
-                    f"can only call '.item()' if the dataframe is of shape (1,1), or if"
+                    f"can only call `.item()` if the dataframe is of shape (1, 1), or if"
                     f" explicit row/col values are provided; frame has shape {self.shape!r}"
                 )
             return self._df.select_at_idx(0).get_idx(0)
@@ -2129,12 +2129,10 @@ class DataFrame:
             if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
                 "8"
             ):
-                raise ModuleNotFoundError(
-                    f'pyarrow>=8.0.0 is required for `to_pandas("use_pyarrow_extension_array=True")`'
-                    f", found pyarrow {pa.__version__!r}."
-                    if _PYARROW_AVAILABLE
-                    else ""
-                )
+                msg = "pyarrow>=8.0.0 is required for `to_pandas(use_pyarrow_extension_array=True)`"
+                if _PYARROW_AVAILABLE:
+                    msg += f", found pyarrow {pa.__version__!r}."
+                raise ModuleNotFoundError(msg)
 
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
@@ -3046,7 +3044,7 @@ class DataFrame:
             xlv = xlsxwriter.__version__
             if parse_version(xlv) < parse_version("3.0.8"):
                 raise ModuleNotFoundError(
-                    f'"autofit=True" requires xlsxwriter 3.0.8 or higher; found {xlv!r}'
+                    f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
                 )
             ws.autofit()
 
