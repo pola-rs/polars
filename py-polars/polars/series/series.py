@@ -974,8 +974,12 @@ class Series:
 
         # Integer.
         elif isinstance(item, int):
+            if item > self.len() - 1:
+                raise IndexError(f"index {item} is out of bounds")
             if item < 0:
                 item = self.len() + item
+                if item < 0:
+                    raise IndexError(f"index {item} is out of bounds")
             return self._s.get_idx(item)
 
         # Slice.
