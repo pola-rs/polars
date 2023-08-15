@@ -197,7 +197,9 @@ def _to_python_datetime(
             )
         return _localize(dt, time_zone)
     else:
-        raise ImportError("Install polars[timezone] to handle datetimes with timezones")
+        raise ImportError(
+            "install polars[timezone] to handle datetimes with time zone information"
+        )
 
 
 def _localize(dt: datetime, time_zone: str) -> datetime:

@@ -337,7 +337,7 @@ def test_duplicate_columns_arg_csv() -> None:
     pl.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}).write_csv(f)
     f.seek(0)
     with pytest.raises(
-        ValueError, match=r"'columns' arg should only have unique values"
+        ValueError, match=r"`columns` arg should only have unique values"
     ):
         pl.read_csv(f, columns=["x", "x", "y"])
 

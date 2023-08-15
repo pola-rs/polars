@@ -1249,7 +1249,7 @@ class DataFrame:
             raise NotImplementedError(
                 "functionality for `nan_as_null` has not been implemented and the"
                 " parameter will be removed in a future version"
-                "\n\nUse the default `nan_as_null=False`"
+                "\n\nUse the default `nan_as_null=False`."
             )
 
         from polars.interchange.dataframe import PolarsDataFrame

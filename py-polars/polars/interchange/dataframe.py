@@ -54,7 +54,7 @@ class PolarsDataFrame:
         if nan_as_null:
             raise NotImplementedError(
                 "functionality for `nan_as_null` has not been implemented and the"
-                "\n\nparameter will be removed in a future version."
+                " parameter will be removed in a future version"
                 "\n\nUse the default `nan_as_null=False`."
             )
         return PolarsDataFrame(self._df, allow_copy=allow_copy)
@@ -188,7 +188,7 @@ class PolarsDataFrame:
         elif (n_chunks <= 0) or (n_chunks % total_n_chunks != 0):
             raise ValueError(
                 "`n_chunks` must be a multiple of the number of chunks of this"
-                f"\n\ndataframe ({total_n_chunks})"
+                f" dataframe ({total_n_chunks})"
             )
 
         else:

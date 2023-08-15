@@ -136,7 +136,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert pl.Series(pd.Series([1, 2])).dtype == pl.Int64
 
     # Bad inputs
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.Series([1, 2, 3], [1, 2, 3])
     with pytest.raises(ValueError):
         pl.Series({"a": [1, 2, 3]})

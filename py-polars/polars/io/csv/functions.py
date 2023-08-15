@@ -867,7 +867,7 @@ def scan_csv(
 
     """
     if not new_columns and isinstance(dtypes, Sequence):
-        raise TypeError(f"Expected 'dtypes' dict; found {type(dtypes).__name__!r}")
+        raise TypeError(f"expected 'dtypes' dict, found {type(dtypes).__name__!r}")
     elif new_columns:
         if with_column_names:
             raise ValueError(

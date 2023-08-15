@@ -177,7 +177,7 @@ def concat(
         else:
             raise ValueError(
                 f"`how` must be one of {{'vertical','vertical_relaxed','diagonal','horizontal','align'}},"
-                f" ngot {how!r}"
+                f" got {how!r}"
             )
     elif isinstance(first, pl.LazyFrame):
         if how == "vertical":

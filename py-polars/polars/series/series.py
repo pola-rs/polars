@@ -265,7 +265,7 @@ class Series:
                 values = name
                 name = ""
             else:
-                raise ValueError("series name must be a string")
+                raise TypeError("Series name must be a string")
 
         if values is None:
             self._s = sequence_to_pyseries(
@@ -322,7 +322,7 @@ class Series:
             )
         else:
             raise ValueError(
-                f"series constructor called with unsupported type; got {type(values).__name__!r}"
+                f"Series constructor called with unsupported type; got {type(values).__name__!r}"
             )
 
     @classmethod
@@ -1069,7 +1069,7 @@ class Series:
         if method == "__call__":
             if not ufunc.nout == 1:
                 raise NotImplementedError(
-                    "only ufuncs that return one 1D array, are supported"
+                    "only ufuncs that return one 1D array are supported"
                 )
 
             args: list[int | float | np.ndarray[Any, Any]] = []
@@ -1379,7 +1379,7 @@ class Series:
         stats: dict[str, PythonLiteral | None]
 
         if self.len() == 0:
-            raise ValueError("series must contain at least one value")
+            raise ValueError("Series must contain at least one value")
 
         elif self.is_numeric():
             s = self.cast(Float64)
@@ -4414,7 +4414,7 @@ class Series:
             other = Series(other)
         if len(self) != len(other):
             n, m = len(self), len(other)
-            raise ShapeError(f"series length mismatch: expected {n!r}, found {m!r}")
+            raise ShapeError(f"Series length mismatch: expected {n!r}, found {m!r}")
         return self._s.dot(other._s)
 
     def mode(self) -> Series:
