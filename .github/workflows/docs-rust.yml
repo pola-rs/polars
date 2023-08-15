@@ -46,7 +46,7 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: target/doc
-          clean-exclude: py-polars/**
+          target-folder: docs/rust/dev
           single-commit: true
 
       # Make sure documentation artifacts are not cached
