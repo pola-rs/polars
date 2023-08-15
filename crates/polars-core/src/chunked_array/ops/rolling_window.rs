@@ -246,7 +246,7 @@ mod inner_mod {
                 values.into(),
                 Some(validity.into()),
             );
-            Ok(Self::from_chunk_iter(self.name(), [arr]))
+            Ok(Self::with_chunk(self.name(), arr))
         }
     }
 }

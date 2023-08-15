@@ -391,7 +391,7 @@ where
                 };
                 // The rolling kernels works on the dtype, this is not yet the
                 // float output type we need.
-                ChunkedArray::from_chunk_iter("", [arr]).into_series()
+                ChunkedArray::from(arr).into_series()
             } else {
                 _agg_helper_slice::<K, _>(groups, |[first, len]| {
                     debug_assert!(first + len <= ca.len() as IdxSize);
@@ -518,7 +518,7 @@ where
                             values, validity, offset_iter, None
                         ),
                     };
-                    Self::from_chunk_iter("", [arr]).into_series()
+                    Self::from(arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -601,7 +601,7 @@ where
                             values, validity, offset_iter, None
                         ),
                     };
-                    Self::from_chunk_iter("", [arr]).into_series()
+                    Self::from(arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -669,7 +669,7 @@ where
                             values, validity, offset_iter, None
                         ),
                     };
-                    Self::from_chunk_iter("", [arr]).into_series()
+                    Self::from(arr).into_series()
                 } else {
                     _agg_helper_slice_no_null::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -763,7 +763,7 @@ where
                             values, validity, offset_iter, None
                         ),
                     };
-                    ChunkedArray::<T>::from_chunk_iter("", [arr]).into_series()
+                    ChunkedArray::from(arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -824,7 +824,7 @@ where
                             )
                         },
                     };
-                    ChunkedArray::<T>::from_chunk_iter("", [arr]).into_series()
+                    ChunkedArray::from(arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -884,7 +884,7 @@ where
                         },
                     };
 
-                    let mut ca = ChunkedArray::<T>::from_chunk_iter("", [arr]);
+                    let mut ca = ChunkedArray::<T>::from(arr);
                     ca.apply_mut(|v| v.powf(NumCast::from(0.5).unwrap()));
                     ca.into_series()
                 } else {

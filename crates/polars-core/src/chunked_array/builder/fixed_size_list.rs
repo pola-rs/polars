@@ -68,7 +68,7 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
 
     fn finish(&mut self) -> ArrayChunked {
         let arr: FixedSizeListArray = self.inner.take().unwrap().into();
-        ChunkedArray::from_chunk_iter(self.name.as_str(), [arr])
+        ChunkedArray::with_chunk(self.name.as_str(), arr)
     }
 }
 
@@ -110,7 +110,7 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
         let arr = std::mem::take(&mut self.inner)
             .finish(self.inner_dtype.as_ref().map(|dt| dt.to_arrow()).as_ref())
             .unwrap();
-        ChunkedArray::from_chunk_iter(self.name.as_str(), [arr])
+        ChunkedArray::with_chunk(self.name.as_str(), arr)
     }
 }
 

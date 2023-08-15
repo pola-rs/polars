@@ -452,7 +452,7 @@ impl PartitionedAggregation for AggregationExpr {
                     values,
                     None,
                 );
-                let mut ca = ListChunked::from_chunk_iter(&new_name, [arr]);
+                let mut ca = ListChunked::with_chunk(&new_name, arr);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }

@@ -83,7 +83,7 @@ where
                     None,
                 );
 
-                let mut ca = ListChunked::from_chunk_iter(self.name(), [arr]);
+                let mut ca = ListChunked::with_chunk(self.name(), arr);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -140,7 +140,7 @@ where
                     Box::new(array),
                     None,
                 );
-                let mut ca = ListChunked::from_chunk_iter(self.name(), [arr]);
+                let mut ca = ListChunked::with_chunk(self.name(), arr);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -264,7 +264,7 @@ fn agg_list_by_slicing<
         list_values,
         None,
     );
-    let mut listarr = ListChunked::from_chunk_iter(ca.name(), [arr]);
+    let mut listarr = ListChunked::with_chunk(ca.name(), arr);
     if can_fast_explode {
         listarr.set_fast_explode()
     }
@@ -461,7 +461,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
             extension_array,
             None,
         );
-        let mut listarr = ListChunked::from_chunk_iter(self.name(), [arr]);
+        let mut listarr = ListChunked::with_chunk(self.name(), arr);
         if can_fast_explode {
             listarr.set_fast_explode()
         }

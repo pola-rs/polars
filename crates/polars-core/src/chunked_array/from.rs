@@ -76,7 +76,7 @@ where
     A: StaticallyMatchesPolarsType<T> + Array,
 {
     fn from(arr: A) -> Self {
-        Self::from_chunk_iter("", [arr])
+        Self::with_chunk("", arr)
     }
 }
 

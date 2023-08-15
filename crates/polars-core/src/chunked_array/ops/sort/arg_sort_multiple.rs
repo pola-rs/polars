@@ -145,7 +145,7 @@ pub fn _get_rows_encoded_ca(
     nulls_last: bool,
 ) -> PolarsResult<BinaryChunked> {
     _get_rows_encoded(by, descending, nulls_last)
-        .map(|rows| BinaryChunked::from_chunk_iter(name, [rows.into_array()]))
+        .map(|rows| BinaryChunked::with_chunk(name, rows.into_array()))
 }
 
 pub(crate) fn argsort_multiple_row_fmt(

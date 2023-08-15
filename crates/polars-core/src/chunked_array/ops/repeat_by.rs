@@ -39,7 +39,7 @@ where
         let arr = unsafe {
             LargeListArray::from_iter_primitive_trusted_len(iter, T::get_dtype().to_arrow())
         };
-        Ok(ListChunked::from_chunk_iter(self.name(), [arr]))
+        Ok(ChunkedArray::with_chunk(self.name(), arr))
     }
 }
 impl RepeatBy for BooleanChunked {
@@ -62,7 +62,7 @@ impl RepeatBy for BooleanChunked {
 
         // SAFETY: length of iter is trusted.
         let arr = unsafe { LargeListArray::from_iter_bool_trusted_len(iter) };
-        Ok(ListChunked::from_chunk_iter(self.name(), [arr]))
+        Ok(ChunkedArray::with_chunk(self.name(), arr))
     }
 }
 impl RepeatBy for Utf8Chunked {
@@ -86,7 +86,7 @@ impl RepeatBy for Utf8Chunked {
 
         // SAFETY: length of iter is trusted.
         let arr = unsafe { LargeListArray::from_iter_utf8_trusted_len(iter, self.len()) };
-        Ok(ListChunked::from_chunk_iter(self.name(), [arr]))
+        Ok(ChunkedArray::with_chunk(self.name(), arr))
     }
 }
 
@@ -109,6 +109,6 @@ impl RepeatBy for BinaryChunked {
 
         // SAFETY: length of iter is trusted.
         let arr = unsafe { LargeListArray::from_iter_binary_trusted_len(iter, self.len()) };
-        Ok(ListChunked::from_chunk_iter(self.name(), [arr]))
+        Ok(ChunkedArray::with_chunk(self.name(), arr))
     }
 }

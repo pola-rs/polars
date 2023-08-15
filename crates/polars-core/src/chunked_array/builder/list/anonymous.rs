@@ -95,7 +95,7 @@ impl<'a> AnonymousListBuilder<'a> {
                 Some(dt) => DataType::List(Box::new(dt)),
             };
 
-            let mut ca = ListChunked::from_chunk_iter("", [arr]);
+            let mut ca = ListChunked::with_chunk("", arr);
             if slf.fast_explode {
                 ca.set_fast_explode();
             }
@@ -161,7 +161,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             Some(dt) => DataType::List(Box::new(dt)),
         };
 
-        let mut ca = ListChunked::from_chunk_iter("", [arr]);
+        let mut ca = ListChunked::with_chunk("", arr);
         if slf.fast_explode {
             ca.set_fast_explode();
         }
