@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Iterator, cast
 
@@ -534,6 +535,30 @@ def test_cast() -> None:
     # display failed values, GH#4706
     with pytest.raises(pl.ComputeError, match="foobar"):
         pl.Series(["1", "2", "3", "4", "foobar"]).cast(int)
+
+
+@pytest.mark.parametrize(
+    ("test_df", "type", "expected_message"),
+    [
+        pytest.param(
+            pl.DataFrame({"A": [1, 2, 3], "B": ["1", "2", "help"]}),
+            pl.UInt32,
+            re.escape(
+                (
+                    "strict conversion from `str` to `u32` failed for column: B, "
+                    'value(s) ["help"]; if you were trying to cast Utf8 to temporal '
+                    "dtypes, consider using `strptime`"
+                )
+            ),
+            id="Unsigned integer",
+        )
+    ],
+)
+def test_cast_exception(
+    test_df: pl.DataFrame, type: pl.DataType, expected_message: str
+) -> None:
+    with pytest.raises(pl.ComputeError, match=expected_message):
+        test_df.with_columns(pl.all().cast(type))
 
 
 def test_to_pandas() -> None:

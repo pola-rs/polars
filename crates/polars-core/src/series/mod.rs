@@ -794,9 +794,9 @@ impl Series {
             let failures = self.filter_threaded(&failure_mask, false)?.unique()?;
             polars_bail!(
                 ComputeError:
-                "strict conversion from `{}` to `{}` failed for value(s) {}; \
+                "strict conversion from `{}` to `{}` failed for column: {}, value(s) {}; \
                 if you were trying to cast Utf8 to temporal dtypes, consider using `strptime`",
-                self.dtype(), dtype, failures.fmt_list(),
+                self.dtype(), dtype, s.name(), failures.fmt_list(),
 
             );
         } else {
