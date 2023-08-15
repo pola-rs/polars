@@ -67,7 +67,7 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
-          target-folder: docs/python/${{ steps.version.outputs.version }}
+          target-folder: docs/python/version/${{ steps.version.outputs.version }}
           single-commit: true
 
       - name: Deploy Python docs for latest release version - stable
