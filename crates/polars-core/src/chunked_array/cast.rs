@@ -198,12 +198,12 @@ impl ChunkCast for Utf8Chunked {
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => {
-                let result = cast_chunks(&self.chunks, &data_type, true)?;
+                let result = cast_chunks(&self.chunks, data_type, true)?;
                 let out = Series::try_from((self.name(), result))?;
                 Ok(out)
             },
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(tu, tz) => {
+            DataType::Datetime(_tu, tz) => {
                 let out = match tz {
                     #[cfg(feature = "timezones")]
                     Some(tz) => {
