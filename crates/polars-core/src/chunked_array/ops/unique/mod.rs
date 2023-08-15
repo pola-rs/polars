@@ -169,7 +169,7 @@ where
 
                     arr.extend(to_extend);
                     let arr: PrimitiveArray<T::Native> = arr.into();
-                    Ok((self.name(), arr).into())
+                    Ok(ChunkedArray::with_chunk(self.name(), arr))
                 } else {
                     let mask = self.not_equal_and_validity(&self.shift(1));
                     self.filter(&mask)

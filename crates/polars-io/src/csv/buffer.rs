@@ -642,7 +642,7 @@ impl<'a> Buffer<'a> {
                         Some(v.validity.into()),
                     )
                 };
-                Utf8Chunked::from((v.name.as_str(), arr)).into_series()
+                Utf8Chunked::with_chunk(v.name.as_str(), arr).into_series()
             },
             #[allow(unused_variables)]
             Buffer::Categorical(buf) => {

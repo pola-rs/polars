@@ -11,7 +11,7 @@ use crate::prelude::ObjectValue;
 use crate::series::ToSeries;
 use crate::PySeries;
 
-// Init with numpy arrays
+// Init with numpy arrays.
 macro_rules! init_method {
     ($name:ident, $type:ty) => {
         #[pymethods]
@@ -282,7 +282,7 @@ impl PySeries {
                     previous = o;
                 }
 
-                let mut out = ListChunked::from((name, array.clone()));
+                let mut out = ListChunked::with_chunk(name, array.clone());
                 if fast_explode {
                     out.set_fast_explode()
                 }

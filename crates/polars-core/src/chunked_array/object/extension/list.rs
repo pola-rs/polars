@@ -80,7 +80,7 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
             None,
         );
 
-        let mut listarr = ListChunked::from_chunk_iter(ca.name(), [arr]);
+        let mut listarr = ListChunked::with_chunk(ca.name(), arr);
         if self.fast_explode {
             listarr.set_fast_explode()
         }

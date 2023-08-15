@@ -9,7 +9,9 @@ use crate::prelude::*;
 fn reshape_fast_path(name: &str, s: &Series) -> Series {
     let mut ca = match s.dtype() {
         #[cfg(feature = "dtype-struct")]
-        DataType::Struct(_) => (name, array_to_unit_list(s.array_ref(0).clone())).into(),
+        DataType::Struct(_) => {
+            ListChunked::with_chunk(name, array_to_unit_list(s.array_ref(0).clone()))
+        },
         _ => ListChunked::from_chunk_iter(
             name,
             s.chunks().iter().map(|arr| array_to_unit_list(arr.clone())),
@@ -42,7 +44,7 @@ impl Series {
             )
         };
 
-        let mut ca: ListChunked = (self.name(), arr).into();
+        let mut ca = ListChunked::with_chunk(self.name(), arr);
         ca.to_logical(inner_type.clone());
         ca.set_fast_explode();
         Ok(ca)

@@ -575,12 +575,6 @@ pub(crate) fn to_array<T: PolarsNumericType>(
     Box::new(to_primitive::<T>(values, validity))
 }
 
-impl<T: PolarsNumericType> From<PrimitiveArray<T::Native>> for ChunkedArray<T> {
-    fn from(a: PrimitiveArray<T::Native>) -> Self {
-        ChunkedArray::from_chunk_iter("", [a])
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;

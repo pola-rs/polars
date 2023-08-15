@@ -2,7 +2,6 @@ mod binary;
 mod boolean;
 #[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
-mod from;
 pub mod list;
 mod primitive;
 mod utf8;

@@ -65,7 +65,7 @@ where
                 .collect::<PrimitiveArray<T::Native>>()
                 .to(T::get_dtype().to_arrow()),
         };
-        Self::from_chunk_iter("", [arr])
+        arr.into()
     }
 }
 
@@ -85,16 +85,14 @@ where
 
 impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
     fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
-        let arr = BooleanArray::from_iter(iter);
-        Self::from_chunk_iter("", [arr])
+        BooleanArray::from_iter(iter).into()
     }
 }
 
 impl FromIterator<bool> for BooleanChunked {
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
         // 2021-02-07: this was ~70% faster than with the builder, even with the extra Option<T> added.
-        let arr = BooleanArray::from_iter(iter.into_iter().map(Some));
-        Self::from_chunk_iter("", [arr])
+        BooleanArray::from_iter(iter.into_iter().map(Some)).into()
     }
 }
 
@@ -112,8 +110,7 @@ where
     Ptr: AsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let arr = Utf8Array::<i64>::from_iter(iter);
-        Self::from_chunk_iter("", [arr])
+        Utf8Array::<i64>::from_iter(iter).into()
     }
 }
 
@@ -131,8 +128,7 @@ where
     Ptr: PolarsAsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = Utf8Array::<i64>::from_iter_values(iter.into_iter());
-        Self::from_chunk_iter("", [arr])
+        Utf8Array::<i64>::from_iter_values(iter.into_iter()).into()
     }
 }
 
@@ -142,8 +138,7 @@ where
     Ptr: AsRef<[u8]>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let arr = BinaryArray::<i64>::from_iter(iter);
-        Self::from_chunk_iter("", [arr])
+        BinaryArray::<i64>::from_iter(iter).into()
     }
 }
 
@@ -161,8 +156,7 @@ where
     Ptr: PolarsAsRef<[u8]>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = BinaryArray::<i64>::from_iter_values(iter.into_iter());
-        Self::from_chunk_iter("", [arr])
+        BinaryArray::<i64>::from_iter_values(iter.into_iter()).into()
     }
 }
 
@@ -502,7 +496,7 @@ where
         let validity = finish_validities(validities, capacity);
 
         let arr = PrimitiveArray::from_data_default(values_buf.into(), validity);
-        Self::from_chunk_iter("", [arr])
+        arr.into()
     }
 }
 
@@ -517,7 +511,7 @@ impl FromParallelIterator<bool> for BooleanChunked {
                 vectors.into_iter().flatten().trust_my_length(capacity),
             )
         };
-        Self::from_chunk_iter("", [arr])
+        arr.into()
     }
 }
 
@@ -548,7 +542,7 @@ where
             }
         }
         let arr: LargeStringArray = builder.into();
-        Self::from_chunk_iter("", [arr])
+        arr.into()
     }
 }
 
@@ -618,7 +612,7 @@ where
         let arr = unsafe {
             Utf8Array::<i64>::from_data_unchecked_default(offsets.into(), values.into(), validity)
         };
-        Self::from_chunk_iter("", [arr])
+        arr.into()
     }
 }
 

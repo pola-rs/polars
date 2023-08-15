@@ -1030,7 +1030,7 @@ impl Series {
             values,
             None,
         );
-        ListChunked::from_chunk_iter(s.name(), [new_arr])
+        ListChunked::with_chunk(s.name(), new_arr)
     }
 }
 

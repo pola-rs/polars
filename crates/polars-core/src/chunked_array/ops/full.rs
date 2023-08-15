@@ -30,8 +30,8 @@ impl ChunkFull<bool> for BooleanChunked {
     fn full(name: &str, value: bool, length: usize) -> Self {
         let mut bits = MutableBitmap::with_capacity(length);
         bits.extend_constant(length, value);
-        let mut out: BooleanChunked =
-            (name, BooleanArray::from_data_default(bits.into(), None)).into();
+        let arr = BooleanArray::from_data_default(bits.into(), None);
+        let mut out = BooleanChunked::with_chunk(name, arr);
         out.set_sorted_flag(IsSorted::Ascending);
         out
     }

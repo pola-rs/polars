@@ -77,6 +77,5 @@ where
         nulls_idx
     };
 
-    let arr = IdxArr::from_data_default(Buffer::from(idx), None);
-    (name, arr).into()
+    ChunkedArray::with_chunk(name, IdxArr::from_data_default(Buffer::from(idx), None))
 }
