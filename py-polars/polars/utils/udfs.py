@@ -1,6 +1,7 @@
 """Utilities related to user defined functions (such as those passed to `apply`)."""
 from __future__ import annotations
 
+import datetime
 import dis
 import inspect
 import re
@@ -14,6 +15,7 @@ from itertools import count, zip_longest
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    AbstractSet,
     Any,
     Callable,
     ClassVar,
@@ -115,6 +117,58 @@ _PYTHON_METHODS_MAP = {
     "title": "str.to_titlecase",
     "upper": "str.to_uppercase",
 }
+
+FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
+    # lambda x: module.func(CONSTANT)
+    {
+        "argument_1_opname": [{"LOAD_CONST"}],
+        "argument_2_opname": [],
+        "module_opname": [OpNames.LOAD_ATTR],
+        "attribute_opname": [],
+        "module_name": [_NUMPY_MODULE_ALIASES],
+        "attribute_name": [],
+        "function_name": [_NUMPY_FUNCTIONS],
+    },
+    # lambda x: module.func(x)
+    {
+        "argument_1_opname": [{"LOAD_FAST"}],
+        "argument_2_opname": [],
+        "module_opname": [OpNames.LOAD_ATTR],
+        "attribute_opname": [],
+        "module_name": [_NUMPY_MODULE_ALIASES],
+        "attribute_name": [],
+        "function_name": [_NUMPY_FUNCTIONS],
+    },
+    {
+        "argument_1_opname": [{"LOAD_FAST"}],
+        "argument_2_opname": [],
+        "module_opname": [OpNames.LOAD_ATTR],
+        "attribute_opname": [],
+        "module_name": [{"json"}],
+        "attribute_name": [],
+        "function_name": [{"loads"}],
+    },
+    # lambda x: module.func(x, CONSTANT)
+    {
+        "argument_1_opname": [{"LOAD_FAST"}],
+        "argument_2_opname": [{"LOAD_CONST"}],
+        "module_opname": [OpNames.LOAD_ATTR],
+        "attribute_opname": [],
+        "module_name": [{"datetime"}],
+        "attribute_name": [],
+        "function_name": [{"strptime"}],
+    },
+    # lambda x: module.attribute.func(x, CONSTANT)
+    {
+        "argument_1_opname": [{"LOAD_FAST"}],
+        "argument_2_opname": [{"LOAD_CONST"}],
+        "module_opname": [{"LOAD_ATTR"}],
+        "attribute_opname": [{"LOAD_METHOD"}],
+        "module_name": [{"datetime", "dt"}],
+        "attribute_name": [{"datetime"}],
+        "function_name": [{"strptime"}],
+    },
+]
 
 
 def _get_all_caller_variables() -> dict[str, Any]:
@@ -545,6 +599,7 @@ class RewrittenInstructions:
     _ignored_ops = frozenset(
         ["COPY_FREE_VARS", "PRECALL", "PUSH_NULL", "RESUME", "RETURN_VALUE"]
     )
+    _caller_variables: ClassVar[dict[str, Any]] = {}
 
     def __init__(self, instructions: Iterator[Instruction]):
         self._original_instructions = list(instructions)
@@ -567,8 +622,8 @@ class RewrittenInstructions:
         self,
         idx: int,
         *,
-        opnames: list[set[str]],
-        argvals: list[set[Any] | frozenset[Any] | dict[Any, Any]] | None,
+        opnames: list[AbstractSet[str]],
+        argvals: list[AbstractSet[Any] | dict[Any, Any]] | None,
     ) -> list[Instruction]:
         """
         Check if a sequence of Instructions matches the specified ops/argvals.
@@ -649,33 +704,55 @@ class RewrittenInstructions:
     def _rewrite_functions(
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
-        """Replace numpy/json function calls with a synthetic POLARS_EXPRESSION op."""
-        if matching_instructions := self._matches(
-            idx,
-            opnames=[
+        """Replace function calls with a synthetic POLARS_EXPRESSION op."""
+        for function_kind in FUNCTION_KINDS:
+            opnames: list[AbstractSet[str]] = [
                 {"LOAD_GLOBAL", "LOAD_DEREF"},
-                OpNames.LOAD_ATTR,
-                {"LOAD_FAST", "LOAD_CONST"},
+                *function_kind["module_opname"],
+                *function_kind["attribute_opname"],
+                *function_kind["argument_1_opname"],
+                *function_kind["argument_2_opname"],
                 OpNames.CALL,
-            ],
-            argvals=[
-                _NUMPY_MODULE_ALIASES | {"json"},
-                _NUMPY_FUNCTIONS | {"loads"},
-            ],
-        ):
-            inst1, inst2, inst3 = matching_instructions[:3]
-            expr_name = "str.json_extract" if inst1.argval == "json" else inst2.argval
-            synthetic_call = inst1._replace(
-                opname="POLARS_EXPRESSION",
-                argval=expr_name,
-                argrepr=expr_name,
-                offset=inst3.offset,
-            )
-            # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
-            operand = inst3._replace(offset=inst1.offset)
-            updated_instructions.extend((operand, synthetic_call))
+            ]
+            if matching_instructions := self._matches(
+                idx,
+                opnames=opnames,
+                argvals=[
+                    *function_kind["module_name"],
+                    *function_kind["attribute_name"],
+                    *function_kind["function_name"],
+                ],
+            ):
+                attribute_count = len(function_kind["attribute_name"])
+                inst1, inst2, *_, inst3 = matching_instructions[
+                    attribute_count : 3 + attribute_count
+                ]
+                if inst1.argval == "json":
+                    expr_name = "str.json_extract"
+                elif inst1.argval == "datetime":
+                    fmt = matching_instructions[attribute_count + 3].argval
+                    expr_name = f'str.to_datetime(format="{fmt}")'
+                    if not self._is_stdlib_datetime(
+                        inst1.argval,
+                        matching_instructions[0].argval,
+                        fmt,
+                        attribute_count,
+                    ):
+                        return 0
+                else:
+                    expr_name = inst2.argval
+                synthetic_call = inst1._replace(
+                    opname="POLARS_EXPRESSION",
+                    argval=expr_name,
+                    argrepr=expr_name,
+                    offset=inst3.offset,
+                )
+                # POLARS_EXPRESSION is mapped as a unary op, so switch instruction order
+                operand = inst3._replace(offset=inst1.offset)
+                updated_instructions.extend((operand, synthetic_call))
+                return len(matching_instructions)
 
-        return len(matching_instructions)
+        return 0
 
     def _rewrite_methods(
         self, idx: int, updated_instructions: list[Instruction]
@@ -704,6 +781,16 @@ class RewrittenInstructions:
                 opname="BINARY_OP",
             )
         return inst
+
+    def _is_stdlib_datetime(
+        self, function_name: str, module_name: str, fmt: str, attribute_count: int
+    ) -> bool:
+        if not self._caller_variables:
+            self._caller_variables.update(_get_all_caller_variables())
+        vars = self._caller_variables
+        return (
+            attribute_count == 0 and vars.get(function_name) is datetime.datetime
+        ) or (attribute_count == 1 and vars.get(module_name) is datetime)
 
 
 def _is_raw_function(function: Callable[[Any], Any]) -> tuple[str, str]:

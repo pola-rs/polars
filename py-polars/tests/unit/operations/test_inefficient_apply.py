@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
+from datetime import datetime
 from typing import Any, Callable
 
 import numpy
@@ -21,6 +23,8 @@ EVAL_ENVIRONMENT = {
     "MY_CONSTANT": MY_CONSTANT,
     "MY_DICT": MY_DICT,
     "MY_LIST": MY_LIST,
+    "dt": dt,
+    "datetime": datetime,
 }
 
 
@@ -52,6 +56,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
                 "a": [1, 2, 3],
                 "b": ["AB", "cd", "eF"],
                 "c": ['{"a": 1}', '{"b": 2}', '{"c": 3}'],
+                "d": ["2020-01-01", "2020-01-02", "2020-01-03"],
             }
         )
         result_frame = df.select(
