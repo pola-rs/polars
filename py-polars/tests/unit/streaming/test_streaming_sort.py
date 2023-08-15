@@ -124,6 +124,10 @@ def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
     }
 
 
+@pytest.mark.skip(
+    reason="This test is unreliable - it fails intermittently in our CI"
+    " with 'OSError: No such file or directory (os error 2)'."
+)
 @pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_streaming_sort_multiple_columns(
