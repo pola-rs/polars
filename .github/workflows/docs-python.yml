@@ -40,6 +40,7 @@ jobs:
         working-directory: py-polars/docs
         env:
           SPHINXOPTS: -W --jobs=auto
+          POLARS_VERSION: ${{ github.ref_name }}
         run: make html
 
       - name: Deploy Python docs for latest development version

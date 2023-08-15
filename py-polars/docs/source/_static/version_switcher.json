@@ -1,0 +1,12 @@
+[
+    {
+        "name": "dev",
+        "version": "dev",
+        "url": "https://pola-rs.github.io/polars/py-polars/dev/"
+    },
+    {
+        "name": "0.18 (stable)",
+        "version": "0.18",
+        "url": "https://pola-rs.github.io/polars/py-polars/html/"
+    }
+]
