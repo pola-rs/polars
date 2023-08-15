@@ -43,13 +43,3 @@ div.bd-sidebar-secondary {
 label.sidebar-toggle.secondary-toggle {
     display: none !important;
 }
-
-/* Style all version dropdown links with `stable` in the version name */
-.version-switcher__container a[data-version-name*="stable"] {
-    background-color: green;
-}
-
-/* Style all version dropdown links with `dev` in the version name */
-.version-switcher__container a[data-version-name*="dev"] {
-    background-color: orange;
-}
