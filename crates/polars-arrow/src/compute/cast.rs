@@ -23,7 +23,7 @@ use arrow::array::{PrimitiveArray, Utf8Array};
 #[cfg(feature = "dtype-decimal")]
 use super::decimal::*;
 #[cfg(feature = "dtype-decimal")]
-use crate::prelude::{ArrayRef, LargeStringArray};
+use crate::prelude::LargeStringArray;
 #[cfg(feature = "dtype-decimal")]
 pub fn cast_utf8_to_decimal(
     array: &Utf8Array<i64>,
