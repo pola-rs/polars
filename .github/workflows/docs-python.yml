@@ -40,22 +40,13 @@ jobs:
         working-directory: py-polars/docs
         env:
           SPHINXOPTS: -W --jobs=auto
-          POLARS_VERSION: ${{ github.ref_name }}
+          POLARS_VERSION: py-0.18.15
         run: make html
 
-      - name: Deploy Python docs for latest development version
-        if: ${{ github.ref_name == 'main' }}
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: py-polars/docs/build/html
-          target-folder: docs/python/dev
-          single-commit: true
-
       - name: Deploy Python docs for latest release version
-        if: ${{ github.ref_type == 'tag' }}
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
-          # Keeping this folder for backwards compatibility
-          target-folder: py-polars/html
+          # Keeping the html subfolder here for backwards compatibility
+          target-folder: docs/python/0.18
           single-commit: true
