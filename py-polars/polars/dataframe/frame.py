@@ -6221,6 +6221,7 @@ class DataFrame:
 
         Examples
         --------
+        >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],

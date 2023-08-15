@@ -338,6 +338,10 @@ def test_selector_repr() -> None:
         repr(cs.integer() & cs.matches("z"))
         == "(cs.integer() & cs.matches(pattern='z'))"
     )
+    assert (
+        cs.temporal() | cs.by_dtype(pl.Utf8) & cs.string(False)
+        == "(cs.temporal() | (cs.by_dtype(dtypes=[Utf8]) & cs.string(include_categorical=False)))"
+    )
 
 
 def test_selector_sets(df: pl.DataFrame) -> None:

@@ -2009,6 +2009,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
+        >>> from datetime import date
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "foo": [1, 2, 3],
