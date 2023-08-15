@@ -34,7 +34,7 @@ where
         ChunkedArray::from_chunk_iter("", chunks)
     }
 
-    // also includes validity  in comparison
+    // Also includes validity in comparison.
     pub fn not_equal_and_validity(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         let (lhs, rhs) = align_chunks_binary(self, rhs);
         lhs.comparison(&rhs, |x, y| comparison::neq_and_validity(x, y))
