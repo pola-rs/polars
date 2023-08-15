@@ -616,11 +616,7 @@ where
         }
 
         let arr = unsafe {
-            Utf8Array::<i64>::from_data_unchecked_default(
-                offsets.into(),
-                values.into(),
-                validity,
-            )
+            Utf8Array::<i64>::from_data_unchecked_default(offsets.into(), values.into(), validity)
         };
         Self::from_chunk_iter("", [arr])
     }
