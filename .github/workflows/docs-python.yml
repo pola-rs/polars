@@ -48,7 +48,7 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
-          target-folder: py-polars/dev
+          target-folder: docs/python/dev
           single-commit: true
 
       - name: Deploy Python docs for latest release version
@@ -56,6 +56,6 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
-          # Keeping the html subfolder here for backwards compatibility
+          # Keeping this folder for backwards compatibility
           target-folder: py-polars/html
           single-commit: true
