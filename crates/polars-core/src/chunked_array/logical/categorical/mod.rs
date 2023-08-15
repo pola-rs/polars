@@ -96,10 +96,10 @@ impl CategoricalChunked {
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
     pub(crate) fn from_chunks_original(
         name: &str,
-        chunks: Vec<ArrayRef>,
+        chunks: PrimitiveArray<u32>,
         rev_map: RevMapping,
     ) -> Self {
-        let ca = unsafe { UInt32Chunked::from_chunks(name, chunks) };
+        let ca = (name, chunks).into();
         let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(ca);
         logical.2 = Some(DataType::Categorical(Some(Arc::new(rev_map))));
 
