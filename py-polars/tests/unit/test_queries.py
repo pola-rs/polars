@@ -364,3 +364,30 @@ def test_datetime_supertype_5236() -> None:
     )
     assert out.shape == (0, 2)
     assert out.dtypes == [pl.Datetime("ns", "UTC")] * 2
+
+
+def test_utf8_date() -> None:
+    df = pl.DataFrame({"x1": ["2021-01-01"]}).with_columns(
+        **{"x1-date": pl.col("x1").cast(pl.Date)}
+    )
+    out = df.select(pl.col("x1-date"))
+    assert out.shape == (1, 1)
+    assert out.dtypes == [pl.Date]
+
+
+def test_utf8_datetime() -> None:
+    df = pl.DataFrame(
+        {"x1": ["2021-12-19T16:39:57-02:00", "2022-12-19T16:39:57"]}
+    ).with_columns(
+        **{
+            "x1-datetime-ns": pl.col("x1").cast(pl.Datetime(time_unit="ns")),
+            "x1-datetime-ms": pl.col("x1").cast(pl.Datetime(time_unit="ms")),
+            "x1-datetime-us": pl.col("x1").cast(pl.Datetime(time_unit="us")),
+        }
+    )
+
+    out = df.select(
+        pl.col("x1-datetime-ns"), pl.col("x1-datetime-ms"), pl.col("x1-datetime-us")
+    )
+    assert out.shape == (2, 3)
+    assert out.dtypes == [pl.Datetime, pl.Datetime, pl.Datetime]
