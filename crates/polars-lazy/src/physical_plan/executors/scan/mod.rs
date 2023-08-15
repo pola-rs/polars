@@ -84,6 +84,9 @@ impl Executor for DataFrameExec {
                 state.insert_has_window_function_flag()
             }
             let s = selection.evaluate(&df, state)?;
+            if state.cache_window() {
+                state.clear_window_expr_cache()
+            }
             let mask = s.bool().map_err(
                 |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),
             )?;
@@ -114,6 +117,9 @@ impl Executor for AnonymousScanExec {
                 (false, Some(predicate)) => {
                     let mut df = self.function.scan(self.options.clone())?;
                     let s = predicate.evaluate(&df, state)?;
+                    if state.cache_window() {
+                        state.clear_window_expr_cache()
+                    }
                     let mask = s.bool().map_err(
                         |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),
                     )?;

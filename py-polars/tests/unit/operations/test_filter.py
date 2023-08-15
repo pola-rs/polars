@@ -132,3 +132,16 @@ def test_categorical_string_comparison_6283() -> None:
         "funding": ["yes", "yes", "no"],
         "score": [78, 39, 76],
     }
+
+
+def test_clear_window_cache_after_filter_10499() -> None:
+    df = pl.from_dict(
+        {
+            "a": [None, None, 3, None, 5, 0, 0, 0, 9, 10],
+            "b": [1, 1, 2, 2, 3, 3, 4, 4, 5, 5],
+        }
+    )
+
+    assert df.lazy().filter((pl.col("a").null_count() < pl.count()).over("b")).filter(
+        ((pl.col("a") == 0).sum() < pl.count()).over("b")
+    ).collect().to_dict(False) == {"a": [3, None, 5, 0, 9, 10], "b": [2, 2, 3, 3, 5, 5]}
