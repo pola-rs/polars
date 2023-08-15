@@ -9,7 +9,7 @@ import pytest
 import polars as pl
 from polars.config import _get_float_fmt
 from polars.exceptions import StringCacheMismatchError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_repr_equals
 
 
 @pytest.fixture(autouse=True)
@@ -36,11 +36,12 @@ def test_ascii_tables() -> None:
     )
     # note: expect to render ascii only within the given scope
     with pl.Config(set_ascii_tables=True):
-        assert repr(df) == ascii_table_repr
+        assert_repr_equals(df, ascii_table_repr)
 
     # confirm back to utf8 default after scope-exit
-    assert (
-        repr(df) == "shape: (3, 3)\n"
+    assert_repr_equals(
+        df,
+        "shape: (3, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -49,7 +50,7 @@ def test_ascii_tables() -> None:
         "│ 1   ┆ 4   ┆ 7   │\n"
         "│ 2   ┆ 5   ┆ 8   │\n"
         "│ 3   ┆ 6   ┆ 9   │\n"
-        "└─────┴─────┴─────┘"
+        "└─────┴─────┴─────┘",
     )
 
     @pl.Config(set_ascii_tables=True)

@@ -13,6 +13,7 @@ from polars.datatypes import (
     DataTypeGroup,
     py_type_to_dtype,
 )
+from polars.testing import assert_repr_equals
 
 
 def test_dtype_init_equivalence() -> None:
@@ -116,7 +117,7 @@ def test_dtypes_hashable() -> None:
     ],
 )
 def test_repr(dtype: pl.PolarsDataType, representation: str) -> None:
-    assert repr(dtype) == representation
+    assert_repr_equals(dtype, representation)
 
 
 def test_conversion_dtype() -> None:
