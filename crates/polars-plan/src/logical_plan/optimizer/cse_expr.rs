@@ -701,47 +701,47 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         lp_arena.replace(arena_idx, lp);
                     }
                 },
-                ALogicalPlan::Aggregate {
-                    input,
-                    keys,
-                    aggs,
-                    options,
-                    maintain_order,
-                    apply,
-                    schema,
-                } => {
-                    let input_schema = lp_arena.get(*input).schema(lp_arena);
-                    if let Some(aggs) = self.find_cse(
-                        aggs,
-                        &mut expr_arena,
-                        &mut id_array_offsets,
-                        true,
-                        input_schema.as_ref().as_ref(),
-                    )? {
-                        let keys = keys.clone();
-                        let options = options.clone();
-                        let schema = schema.clone();
-                        let apply = apply.clone();
-                        let maintain_order = *maintain_order;
-                        let input = *input;
-
-                        let lp = ALogicalPlanBuilder::new(input, &mut expr_arena, lp_arena)
-                            .with_columns(aggs.cse_exprs().to_vec(), Default::default())
-                            .build();
-                        let input = lp_arena.add(lp);
-
-                        let lp = ALogicalPlan::Aggregate {
-                            input,
-                            keys,
-                            aggs: aggs.default_exprs().to_vec(),
-                            options,
-                            schema,
-                            maintain_order,
-                            apply,
-                        };
-                        lp_arena.replace(arena_idx, lp);
-                    }
-                },
+                // ALogicalPlan::Aggregate {
+                //     input,
+                //     keys,
+                //     aggs,
+                //     options,
+                //     maintain_order,
+                //     apply,
+                //     schema,
+                // } => {
+                //     let input_schema = lp_arena.get(*input).schema(lp_arena);
+                //     if let Some(aggs) = self.find_cse(
+                //         aggs,
+                //         &mut expr_arena,
+                //         &mut id_array_offsets,
+                //         true,
+                //         input_schema.as_ref().as_ref(),
+                //     )? {
+                //         let keys = keys.clone();
+                //         let options = options.clone();
+                //         let schema = schema.clone();
+                //         let apply = apply.clone();
+                //         let maintain_order = *maintain_order;
+                //         let input = *input;
+                //
+                //         let lp = ALogicalPlanBuilder::new(input, &mut expr_arena, lp_arena)
+                //             .with_columns(aggs.cse_exprs().to_vec(), Default::default())
+                //             .build();
+                //         let input = lp_arena.add(lp);
+                //
+                //         let lp = ALogicalPlan::Aggregate {
+                //             input,
+                //             keys,
+                //             aggs: aggs.default_exprs().to_vec(),
+                //             options,
+                //             schema,
+                //             maintain_order,
+                //             apply,
+                //         };
+                //         lp_arena.replace(arena_idx, lp);
+                //     }
+                // },
                 _ => {},
             }
             PolarsResult::Ok(())

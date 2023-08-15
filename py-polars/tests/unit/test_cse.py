@@ -198,6 +198,7 @@ def test_windows_cse_excluded() -> None:
     }
 
 
+@pytest.mark.skip()
 def test_cse_groupby_10215() -> None:
     q = (
         pl.DataFrame(
@@ -292,3 +293,43 @@ def test_cse_10452() -> None:
     )
     assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
     assert q.collect(comm_subexpr_elim=True).to_dict(False) == {"b": [13, 14, 15]}
+
+
+def test_cse_groupby_ternary_10490() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 2],
+            "b": [1, 2, 3, 4],
+            "c": [2, 3, 4, 5],
+        }
+    )
+
+    assert (
+        df.lazy()
+        .groupby("a")
+        .agg(
+            [
+                pl.when(pl.col(col).is_null().all()).then(None).otherwise(1).alias(col)
+                for col in ["b", "c"]
+            ]
+            + [
+                (pl.col("a").sum() * pl.col("a").sum()).alias("x"),
+                (pl.col("b").sum() * pl.col("b").sum()).alias("y"),
+                (pl.col("a").sum() * pl.col("a").sum()).alias("x2"),
+                ((pl.col("a") + 2).sum() * pl.col("a").sum()).alias("x3"),
+                ((pl.col("a") + 2).sum() * pl.col("b").sum()).alias("x4"),
+            ]
+        )
+        .collect(comm_subexpr_elim=True)
+        .sort("a")
+        .to_dict(False)
+    ) == {
+        "a": [1, 2],
+        "b": [1, 1],
+        "c": [1, 1],
+        "x": [4, 16],
+        "y": [9, 49],
+        "x2": [4, 16],
+        "x3": [12, 32],
+        "x4": [18, 56],
+    }
