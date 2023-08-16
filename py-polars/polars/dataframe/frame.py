@@ -1756,7 +1756,6 @@ class DataFrame:
         self,
         row: int | None = None,
         column: int | str | None = None,
-        lists_as_series: bool = True,
     ) -> Any:
         """
         Return the element at the given row/column, or the dataframe as a scalar.
@@ -1772,8 +1771,6 @@ class DataFrame:
             Optional row index.
         column
             Optional column index or name.
-        lists_as_series
-            When retrieving nested List items, return them as Series.
 
         Examples
         --------
@@ -1796,7 +1793,7 @@ class DataFrame:
                     f"Can only call '.item()' if the dataframe is of shape (1,1), or if "
                     f"explicit row/col values are provided; frame has shape {self.shape}"
                 )
-            return self._df.select_at_idx(0).get_idx(0, lists_as_series)
+            return self._df.select_at_idx(0).get_idx(0, False)
 
         elif row is None or column is None:
             raise ValueError("cannot call `.item()` with only one of `row` or `column`")
@@ -1808,7 +1805,7 @@ class DataFrame:
         )
         if s is None:
             raise ValueError(f"column index {column!r} is out of bounds")
-        return s.get_idx(row, lists_as_series)
+        return s.get_idx(row, False)
 
     def to_arrow(self) -> pa.Table:
         """

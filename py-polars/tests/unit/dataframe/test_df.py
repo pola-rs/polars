@@ -3272,15 +3272,23 @@ def test_item() -> None:
     with pytest.raises(ValueError, match="column index 10 is out of bounds"):
         df.item(0, 10)
 
-    # nested lists/series
+    # retrieving nested dtypes
     df = pl.DataFrame(
         {
-            "a": ["1", "2", "3"],
+            "a": [[123, 456], [789, 101], [112, 131]],
             "b": [["a", "b"], ["c", "d"], ["e", "f"]],
-        }
+            "c": [{"x": 444}, {"x": 555}, {"x": 666}],
+        },
+        schema_overrides={"a": pl.Array(2, pl.Int32)},
     )
-    assert_series_equal(df.item(1, "b"), pl.Series(["c", "d"]))
-    assert df.item(1, "b", lists_as_series=False), ["c", "d"]
+    assert df.schema == {
+        "a": pl.Array(2, pl.Int32),
+        "b": pl.List(pl.Utf8),
+        "c": pl.Struct([pl.Field("x", pl.Int64)]),
+    }
+    assert df.item(0, "a") == [123, 456]
+    assert df.item(1, "b") == ["c", "d"]
+    assert df.item(2, "c") == {"x": 666}
 
 
 @pytest.mark.parametrize(
