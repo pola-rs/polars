@@ -10,6 +10,7 @@ from typing import (
     List,
     Literal,
     Mapping,
+    Protocol,
     Sequence,
     Tuple,
     Type,
@@ -193,3 +194,32 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 # typevars for core polars types
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
+
+
+# minimal protocol objects that can reasonably represent
+# an executable connection, cursor, or equivalent object
+class BasicConnection(Protocol):
+    def close(self) -> None:
+        pass
+
+    def cursor(self, *args: Any, **kwargs: Any) -> Any:
+        pass
+
+
+class BasicCursor(Protocol):
+    def close(self) -> None:
+        pass
+
+    def execute(self, *args: Any, **kwargs: Any) -> Any:
+        pass
+
+
+class Cursor(BasicCursor):
+    def fetchall(self, *args: Any, **kwargs: Any) -> Any:
+        pass
+
+    def fetchmany(self, *args: Any, **kwargs: Any) -> Any:
+        pass
+
+
+ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor]

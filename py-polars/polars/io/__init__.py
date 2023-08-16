@@ -2,7 +2,7 @@
 
 from polars.io.avro import read_avro
 from polars.io.csv import read_csv, read_csv_batched, scan_csv
-from polars.io.database import read_database
+from polars.io.database import read_database, read_database_uri
 from polars.io.delta import read_delta, scan_delta
 from polars.io.excel import read_excel
 from polars.io.ipc import read_ipc, read_ipc_schema, read_ipc_stream, scan_ipc
@@ -16,6 +16,7 @@ __all__ = [
     "read_csv",
     "read_csv_batched",
     "read_database",
+    "read_database_uri",
     "read_delta",
     "read_excel",
     "read_ipc",
