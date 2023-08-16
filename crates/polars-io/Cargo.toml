@@ -25,6 +25,7 @@ chrono-tz = { workspace = true, optional = true }
 fast-float = { version = "0.2", optional = true }
 flate2 = { version = "1", features = ["zlib-ng"], optional = true, default-features = false }
 futures = { workspace = true, optional = true }
+home = { version = "0.5.4" }
 lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-integers"] }
 lexical-core = { version = "0.8", optional = true }
 memchr = { workspace = true }
@@ -40,9 +41,6 @@ simd-json = { workspace = true, optional = true }
 simdutf8 = { version = "0.1", optional = true }
 tokio = { version = "1.26", features = ["net"], optional = true }
 url = { workspace = true, optional = true }
-
-[target.'cfg(not(target_family = "wasm"))'.dependencies]
-home = "0.5.4"
 
 [dev-dependencies]
 tempdir = "0.3.7"
