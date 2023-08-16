@@ -2310,16 +2310,16 @@ class Series:
         s._s.rename(name)
         return s
 
-    def rename(self, name: str, *, in_place: bool | None = None) -> Series:
+    def rename(self, name: str) -> Series:
         """
         Rename this Series.
+
+        Alias for :func:`Series.alias`.
 
         Parameters
         ----------
         name
             New name.
-        in_place
-            Modify the Series in-place.
 
         Examples
         --------
@@ -2334,21 +2334,7 @@ class Series:
         ]
 
         """
-        if in_place is not None:
-            # if 'in_place' is not None, this indicates that the parameter was
-            # explicitly set by the caller, and we should warn against it (use
-            # of NoDefault only applies when one of the valid values is None).
-            issue_deprecation_warning(
-                "the `in_place` parameter is deprecated and will be removed in a future"
-                " version; note that renaming is a shallow-copy operation with"
-                " essentially zero cost.",
-                version="0.17.15",
-            )
-        if in_place:
-            self._s.rename(name)
-            return self
-        else:
-            return self.alias(name)
+        return self.alias(name)
 
     def chunk_lengths(self) -> list[int]:
         """
