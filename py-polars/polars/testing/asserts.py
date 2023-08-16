@@ -570,10 +570,3 @@ def assert_frame_equal_local_categoricals(df_a: DataFrame, df_b: DataFrame) -> N
     assert_frame_equal(df_a.with_columns(cat_to_str), df_b.with_columns(cat_to_str))
     cat_to_phys = F.col(Categorical).to_physical()
     assert_frame_equal(df_a.with_columns(cat_to_phys), df_b.with_columns(cat_to_phys))
-
-
-def assert_repr_equals(item: Any, expected: str) -> None:
-    """Assert that the repr of an item matches the expected string."""
-    if not isinstance(expected, str):
-        raise TypeError(f"'expected' must be a string; found {type(expected)}")
-    assert repr(item) == expected

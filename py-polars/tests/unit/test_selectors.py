@@ -1,9 +1,18 @@
+from typing import Any
+
 import pytest
 
 import polars as pl
 import polars.selectors as cs
 from polars.selectors import expand_selector
-from polars.testing import assert_frame_equal, assert_repr_equals
+from polars.testing import assert_frame_equal
+
+
+def assert_repr_equals(item: Any, expected: str) -> None:
+    """Assert that the repr of an item matches the expected string."""
+    if not isinstance(expected, str):
+        raise TypeError(f"'expected' must be a string; found {type(expected)}")
+    assert repr(item) == expected
 
 
 @pytest.fixture()
