@@ -6208,7 +6208,10 @@ class DataFrame:
         return wrap_s(self._df.drop_in_place(name))
 
     def cast(
-        self, dtypes: Mapping[ColumnNameOrSelector, PolarsDataType] | PolarsDataType
+        self,
+        dtypes: Mapping[ColumnNameOrSelector, PolarsDataType] | PolarsDataType,
+        *,
+        strict: bool = True,
     ) -> DataFrame:
         """
         Cast DataFrame column(s) to the specified dtype(s).
@@ -6218,6 +6221,9 @@ class DataFrame:
         dtypes
             Mapping of column names (or selector) to dtypes, or a single dtype
             to which all columns will be cast.
+        strict
+            Throw an error if a cast could not be done (for instance, due to an
+            overflow).
 
         Examples
         --------
@@ -6267,7 +6273,7 @@ class DataFrame:
         └─────┴─────┴────────────┘
 
         """
-        return self.lazy().cast(dtypes).collect()
+        return self.lazy().cast(dtypes, strict=strict).collect()
 
     def clear(self, n: int = 0) -> Self:
         """

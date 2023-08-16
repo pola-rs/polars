@@ -14,7 +14,7 @@ import polars as pl
 import polars.selectors as cs
 from polars import lit, when
 from polars.datatypes import FLOAT_DTYPES
-from polars.exceptions import PolarsInefficientApplyWarning
+from polars.exceptions import ComputeError, PolarsInefficientApplyWarning
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -619,6 +619,18 @@ def test_cast_frame() -> None:
         "c": ["true", "false", "true"],
         "d": ["2020-01-02", "2021-03-04", "2022-05-06"],
     }
+
+    # test 'strict' mode
+    lf = pl.LazyFrame({"a": [1000, 2000, 3000]})
+
+    with pytest.raises(ComputeError, match="conversion from `i64` to `u8` failed"):
+        lf.cast(pl.UInt8).collect()
+
+    assert lf.cast(pl.UInt8, strict=False).collect().rows() == [
+        (None,),
+        (None,),
+        (None,),
+    ]
 
 
 def test_col_series_selection() -> None:

@@ -1996,7 +1996,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.cache())
 
     def cast(
-        self, dtypes: Mapping[ColumnNameOrSelector, PolarsDataType] | PolarsDataType
+        self,
+        dtypes: Mapping[ColumnNameOrSelector, PolarsDataType] | PolarsDataType,
+        *,
+        strict: bool = True,
     ) -> Self:
         """
         Cast LazyFrame column(s) to the specified dtype(s).
@@ -2006,6 +2009,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         dtypes
             Mapping of column names (or selector) to dtypes, or a single dtype
             to which all columns will be cast.
+        strict
+            Throw an error if a cast could not be done (for instance, due to an
+            overflow).
 
         Examples
         --------
@@ -2056,7 +2062,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         if not isinstance(dtypes, Mapping):
-            return self.select(F.all().cast(dtypes))
+            return self.select(F.all().cast(dtypes, strict=strict))
         else:
             from polars.selectors import expand_selector
 
@@ -2069,7 +2075,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     else {x: dtype for x in expand_selector(self, c)}
                 )
 
-            return self._from_pyldf(self._ldf.cast(cast_map))
+            return self._from_pyldf(self._ldf.cast(cast_map, strict))
 
     def clear(self, n: int = 0) -> LazyFrame:
         """
