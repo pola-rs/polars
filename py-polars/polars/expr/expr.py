@@ -153,7 +153,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
 
     def __rand__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
+        return self._from_pyexpr(self._to_pyexpr(other)._and(self._pyexpr))
 
     def __eq__(self, other: Any) -> Self:  # type: ignore[override]
         return self._from_pyexpr(self._pyexpr.eq(self._to_expr(other)._pyexpr))
@@ -228,7 +228,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
 
     def __rxor__(self, other: Expr) -> Self:
-        return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
+        return self._from_pyexpr(self._to_pyexpr(other)._xor(self._pyexpr))
 
     # state
     def __getstate__(self) -> Any:
