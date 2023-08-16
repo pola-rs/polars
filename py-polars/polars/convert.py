@@ -173,7 +173,7 @@ def from_dicts(
 
     """
     if not data and not (schema or schema_overrides):
-        raise NoDataError("No rows. Cannot infer schema.")
+        raise NoDataError("no data, cannot infer schema")
 
     return pl.DataFrame(
         data,
@@ -448,7 +448,7 @@ def from_repr(tbl: str) -> DataFrame | Series:
     if m is not None:
         return _from_series_repr(m)
 
-    raise ValueError("No DataFrame or Series found in the given string")
+    raise ValueError("input string does not contain DataFrame or Series")
 
 
 def from_numpy(
@@ -620,7 +620,7 @@ def from_arrow(
         return pl.DataFrame(data=[], schema=schema, schema_overrides=schema_overrides)
     else:
         raise ValueError(
-            f"expected pyarrow Table, Array, or sequence of RecordBatches; got {type(data)}."
+            f"expected PyArrow Table, Array, or sequence of RecordBatches, got {type(data).__name__!r}"
         )
 
 
@@ -724,4 +724,6 @@ def from_pandas(
             include_index=include_index,
         )
     else:
-        raise ValueError(f"Expected pandas DataFrame or Series, got {type(data)}.")
+        raise ValueError(
+            f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
+        )

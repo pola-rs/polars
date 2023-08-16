@@ -54,8 +54,8 @@ class PolarsDataFrame:
         if nan_as_null:
             raise NotImplementedError(
                 "functionality for `nan_as_null` has not been implemented and the"
-                " parameter will be removed in a future version."
-                " Use the default `nan_as_null=False`."
+                " parameter will be removed in a future version"
+                "\n\nUse the default `nan_as_null=False`."
             )
         return PolarsDataFrame(self._df, allow_copy=allow_copy)
 

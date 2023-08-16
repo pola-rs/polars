@@ -503,9 +503,9 @@ class InstructionTranslator:
             return "map_dict"
         else:
             raise AssertionError(
-                "Unrecognised opname; please report a bug to https://github.com/pola-rs/polars/issues "
-                "with the content of function you were passing to `apply` and the "
-                f"following instruction object:\n{inst}"
+                "unrecognized opname; please report a bug to https://github.com/pola-rs/polars/issues"
+                " with the content of function you were passing to `apply` and the"
+                f" following instruction object:\n{inst!r}"
             )
 
     def _expr(self, value: StackEntry, col: str, param_name: str, depth: int) -> str:
@@ -540,7 +540,7 @@ class InstructionTranslator:
                     if not self._caller_variables:
                         self._caller_variables.update(_get_all_caller_variables())
                         if not isinstance(self._caller_variables.get(e1, None), dict):
-                            raise NotImplementedError("Require dict mapping")
+                            raise NotImplementedError("require dict mapping")
                     return f"{e2}.{op}({e1})"
                 else:
                     expr = f"{e1} {op} {e2}"

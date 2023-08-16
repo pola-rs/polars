@@ -183,7 +183,7 @@ def col(
             return wrap_expr(plr.dtype_cols(dtypes))
         else:
             raise TypeError(
-                f"Invalid input for `col`. Expected `str` or `DataType`, got {type(name)!r}"
+                f"invalid input for `col`. Expected `str` or `DataType`, got {type(name).__name__!r}"
             )
 
     if isinstance(name, str):
@@ -202,12 +202,12 @@ def col(
             return wrap_expr(plr.dtype_cols(names))
         else:
             raise TypeError(
-                "Invalid input for `col`. Expected iterable of type `str` or `DataType`,"
-                f" got iterable of type {type(item)!r}"
+                "invalid input for `col`. Expected iterable of type `str` or `DataType`,"
+                f" got iterable of type {type(item).__name__!r}"
             )
     else:
         raise TypeError(
-            f"Invalid input for `col`. Expected `str` or `DataType`, got {type(name)!r}"
+            f"invalid input for `col`. Expected `str` or `DataType`, got {type(name).__name__!r}"
         )
 
 
@@ -672,7 +672,7 @@ def first(column: str | Series | None = None) -> Expr | Any:
         if column.len() > 0:
             return column[0]
         else:
-            raise IndexError("The series is empty, so no first value can be returned.")
+            raise IndexError("the series is empty, so no first value can be returned")
     return col(column).first()
 
 
@@ -1854,7 +1854,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         if not isinstance(condition, pl.Series):
             raise ValueError(
                 "expected 'Series' in 'arg_where' if 'eager=True', got"
-                f" {type(condition)}"
+                f" {type(condition).__name__!r}"
             )
         return condition.to_frame().select(arg_where(col(condition.name))).to_series()
     else:
@@ -1985,7 +1985,7 @@ def from_epoch(
         return column.cast(Datetime(time_unit))
     else:
         raise ValueError(
-            f"'time_unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}."
+            f"'time_unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
         )
 
 

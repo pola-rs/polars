@@ -102,7 +102,7 @@ def read_parquet(
 
     """
     if use_pyarrow and n_rows:
-        raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
+        raise ValueError("`n_rows` cannot be used with `use_pyarrow=True`")
 
     storage_options = storage_options or {}
     pyarrow_options = pyarrow_options or {}
@@ -114,7 +114,7 @@ def read_parquet(
             if not _PYARROW_AVAILABLE:
                 raise ImportError(
                     "'pyarrow' is required when using"
-                    " 'read_parquet(..., use_pyarrow=True)'."
+                    " 'read_parquet(..., use_pyarrow=True)'"
                 )
 
             import pyarrow as pa

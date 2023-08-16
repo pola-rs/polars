@@ -743,12 +743,14 @@ class LazyFrame:
 
     def __bool__(self) -> NoReturn:
         raise ValueError(
-            "The truth value of a LazyFrame is ambiguous; consequently it "
-            "cannot be used in boolean context with and/or/not operators. "
+            "the truth value of a LazyFrame is ambiguous"
+            "\n\nLazyFrames cannot be used in boolean context with and/or/not operators"
         )
 
     def _comparison_error(self, operator: str) -> NoReturn:
-        raise TypeError(f'"{operator}" comparison not supported for LazyFrame objects.')
+        raise TypeError(
+            f'"{operator!r}" comparison not supported for LazyFrame objects'
+        )
 
     def __eq__(self, other: Any) -> NoReturn:
         self._comparison_error("==")
@@ -781,7 +783,7 @@ class LazyFrame:
         if not isinstance(item, slice):
             raise TypeError(
                 "'LazyFrame' object is not subscriptable (aside from slicing). Use"
-                " 'select()' or 'filter()' instead."
+                " 'select()' or 'filter()' instead"
             )
         return LazyPolarsSlice(self).apply(item)
 
@@ -1138,7 +1140,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 import matplotlib.pyplot as plt
             except ImportError:
                 raise ImportError(
-                    "matplotlib should be installed to show graph."
+                    "matplotlib should be installed to show graph"
                 ) from None
             plt.figure(figsize=figsize)
             img = mpimg.imread(BytesIO(graph))
@@ -1598,7 +1600,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             except ImportError:
                 raise ImportError(
-                    "matplotlib should be installed to show profiling plot."
+                    "matplotlib should be installed to show profiling plot"
                 ) from None
 
         return df, timings
@@ -3000,7 +3002,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if not isinstance(other, LazyFrame):
             raise TypeError(
-                f"Expected 'other' join table to be a LazyFrame, not a {type(other).__name__}"
+                f"expected 'other' join table to be a LazyFrame, not a {type(other).__name__!r}"
             )
 
         if isinstance(on, (str, pl.Expr)):
@@ -3008,7 +3010,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             right_on = on
 
         if left_on is None or right_on is None:
-            raise ValueError("You should pass the column to join on as an argument.")
+            raise ValueError("you should pass the column to join on as an argument")
 
         if by is not None:
             by_left_ = [by] if isinstance(by, str) else by
@@ -3178,7 +3180,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if not isinstance(other, LazyFrame):
             raise TypeError(
-                f"Expected 'other' join table to be a LazyFrame, not a {type(other).__name__}"
+                f"expected 'other' join table to be a LazyFrame, not a {type(other).__name__!r}"
             )
 
         if how == "cross":
@@ -3731,7 +3733,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if length and length < 0:
             raise ValueError(
-                f"Negative slice lengths ({length}) are invalid for LazyFrame"
+                f"negative slice lengths ({length!r}) are invalid for LazyFrame"
             )
         return self._from_pyldf(self._ldf.slice(offset, length))
 
@@ -5118,7 +5120,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         for name in on:
             if name not in union_names:
-                raise ValueError(f"Join column {name} not found.")
+                raise ValueError(f"join column {name!r} not found")
 
         right_added_names = union_names - set(on)
 

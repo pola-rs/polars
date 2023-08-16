@@ -254,7 +254,7 @@ class Series:
             and py_type_to_dtype(dtype, raise_unmatched=False) is None
         ):
             raise ValueError(
-                f"Given dtype: '{dtype}' is not a valid Polars data type and cannot be converted into one."
+                f"given dtype: {dtype!r} is not a valid Polars data type and cannot be converted into one"
             )
 
         # Handle case where values are passed as the first argument
@@ -265,7 +265,7 @@ class Series:
                 values = name
                 name = ""
             else:
-                raise ValueError("Series name must be a string.")
+                raise TypeError("Series name must be a string")
 
         if values is None:
             self._s = sequence_to_pyseries(
@@ -322,7 +322,7 @@ class Series:
             )
         else:
             raise ValueError(
-                f"Series constructor called with unsupported type; got {type(values)}"
+                f"Series constructor called with unsupported type; got {type(values).__name__!r}"
             )
 
     @classmethod
@@ -428,9 +428,9 @@ class Series:
 
     def __bool__(self) -> NoReturn:
         raise ValueError(
-            "The truth value of a Series is ambiguous. Hint: use '&' or '|' to chain "
-            "Series boolean results together, not and/or; to check if a Series "
-            "contains any values, use 'is_empty()'"
+            "the truth value of a Series is ambiguous"
+            "\n\nHint: use '&' or '|' to chain Series boolean results together, not and/or."
+            " To check if a Series contains any values, use `is_empty()`."
         )
 
     def __getstate__(self) -> Any:
@@ -680,7 +680,7 @@ class Series:
         if f is None:
             raise ValueError(
                 f"cannot do arithmetic with series of dtype: {self.dtype} and argument"
-                f" of type: {type(other)}"
+                f" of type: {type(other).__name__!r}"
             )
         return self._from_pyseries(f(other))
 
@@ -912,7 +912,7 @@ class Series:
             return self
 
         if self.dtype not in INTEGER_DTYPES:
-            raise NotImplementedError("Unsupported idxs datatype.")
+            raise NotImplementedError("unsupported idxs datatype.")
 
         if self.len() == 0:
             return Series(self.name, [], dtype=idx_type)
@@ -920,10 +920,10 @@ class Series:
         if idx_type == UInt32:
             if self.dtype in {Int64, UInt64}:
                 if self.max() >= 2**32:  # type: ignore[operator]
-                    raise ValueError("Index positions should be smaller than 2^32.")
+                    raise ValueError("index positions should be smaller than 2^32")
             if self.dtype == Int64:
                 if self.min() < -(2**32):  # type: ignore[operator]
-                    raise ValueError("Index positions should be bigger than -2^32 + 1.")
+                    raise ValueError("index positions should be bigger than -2^32 + 1")
 
         if self.dtype in SIGNED_INTEGER_DTYPES:
             if self.min() < 0:  # type: ignore[operator]
@@ -993,13 +993,13 @@ class Series:
             idx_series = Series("", item, dtype=Int64)._pos_idxs(self.len())
             if idx_series.has_validity():
                 raise ValueError(
-                    "Cannot __getitem__ with index values containing nulls"
+                    "cannot use `__getitem__` with index values containing nulls"
                 )
             return self._take_with_series(idx_series)
 
-        raise ValueError(
-            f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
-            f"with argument: '{item}' of type: '{type(item)}'."
+        raise TypeError(
+            f"cannot use `__getitem__` on Series of dtype {self.dtype!r}"
+            f" with argument {item!r} of type {type(item).__name__!r}"
         )
 
     def __setitem__(
@@ -1016,7 +1016,7 @@ class Series:
                 self.set_at_idx(key, value)  # type: ignore[arg-type]
                 return None
             raise ValueError(
-                f"cannot set Series of dtype: {self.dtype} with list/tuple as value;"
+                f"cannot set Series of dtype: {self.dtype!r} with list/tuple as value;"
                 " use a scalar value"
             )
         if isinstance(key, Series):
@@ -1041,7 +1041,7 @@ class Series:
             s = self._from_pyseries(sequence_to_pyseries("", key, dtype=UInt32))
             self.__setitem__(s, value)
         else:
-            raise ValueError(f'cannot use "{key}" for indexing')
+            raise ValueError(f'cannot use "{key!r}" for indexing')
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
         """
@@ -1069,7 +1069,7 @@ class Series:
         if method == "__call__":
             if not ufunc.nout == 1:
                 raise NotImplementedError(
-                    "Only ufuncs that return one 1D array, are supported."
+                    "only ufuncs that return one 1D array are supported"
                 )
 
             args: list[int | float | np.ndarray[Any, Any]] = []
@@ -1080,7 +1080,9 @@ class Series:
                 elif isinstance(arg, Series):
                     args.append(arg.view(ignore_nulls=True))
                 else:
-                    raise ValueError(f"Unsupported type {type(arg)} for {arg}.")
+                    raise ValueError(
+                        f"unsupported type {type(arg).__name__!r} for {arg!r}"
+                    )
 
             # Get minimum dtype needed to be able to cast all input arguments to the
             # same dtype.
@@ -1113,16 +1115,16 @@ class Series:
 
             if f is None:
                 raise NotImplementedError(
-                    "Could not find "
-                    f"`apply_ufunc_{numpy_char_code_to_dtype(dtype_char)}`."
+                    "could not find "
+                    f"`apply_ufunc_{numpy_char_code_to_dtype(dtype_char)}`"
                 )
 
             series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
             return self._from_pyseries(series)
         else:
             raise NotImplementedError(
-                "Only `__call__` is implemented for numpy ufuncs on a Series, got"
-                f" `{method}`."
+                "only `__call__` is implemented for numpy ufuncs on a Series, got "
+                f"`{method!r}`"
             )
 
     def __column_consortium_standard__(self, *, api_version: str | None = None) -> Any:
@@ -1161,8 +1163,8 @@ class Series:
         """
         if row is None and len(self) != 1:
             raise ValueError(
-                f"Can only call '.item()' if the series is of length 1, or an "
-                f"explicit row index is provided (series is of length {len(self)})"
+                f"can only call '.item()' if the series is of length 1, or an"
+                f" explicit row index is provided (series is of length {len(self)})"
             )
         return self[row or 0]
 
@@ -1415,7 +1417,7 @@ class Series:
                 "max": str(self.dt.max()),
             }
         else:
-            raise TypeError("This type is not supported")
+            raise TypeError("this type is not supported")
 
         return pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
 
@@ -3867,7 +3869,7 @@ class Series:
 
         def raise_no_zero_copy() -> None:
             if zero_copy_only:
-                raise ValueError("Cannot return a zero-copy array")
+                raise ValueError("cannot return a zero-copy array")
 
         if self.dtype == Array:
             np_array = self.explode().to_numpy(
@@ -3988,16 +3990,16 @@ class Series:
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleNotFoundError(
-                    f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__}.'
+                    f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__}'
                 )
             if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
                 "8"
             ):
                 raise ModuleNotFoundError(
                     f'pyarrow>=8.0.0 is required for `to_pandas("use_pyarrow_extension_array=True")`'
-                    f", found pyarrow {pa.__version__}."
+                    f", found pyarrow {pa.__version__!r}"
                     if _PYARROW_AVAILABLE
-                    else "."
+                    else ""
                 )
 
         pd_series = (
@@ -4412,7 +4414,7 @@ class Series:
             other = Series(other)
         if len(self) != len(other):
             n, m = len(self), len(other)
-            raise ShapeError(f"Series length mismatch: expected {n}, found {m}")
+            raise ShapeError(f"Series length mismatch: expected {n!r}, found {m!r}")
         return self._s.dot(other._s)
 
     def mode(self) -> Series:

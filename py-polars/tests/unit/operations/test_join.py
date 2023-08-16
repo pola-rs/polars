@@ -467,13 +467,13 @@ def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
     ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()
 
-    with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
+    with pytest.raises(TypeError, match="expected 'other'.* LazyFrame"):
         _ = ldf.join(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
+    with pytest.raises(TypeError, match="expected 'other'.* DataFrame"):
         _ = df.join(ldf, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
+    with pytest.raises(TypeError, match="expected 'other'.* LazyFrame"):
         _ = ldf.join_asof(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
+    with pytest.raises(TypeError, match="expected 'other'.* DataFrame"):
         _ = df.join_asof(ldf, on="A")  # type: ignore[arg-type]
 
 

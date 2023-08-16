@@ -720,13 +720,13 @@ def test_map_dict() -> None:
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
+        match="remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_dict))
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
+        match="remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_with_none_dict))
 
@@ -833,7 +833,7 @@ def test_lit_dtypes() -> None:
 def test_incompatible_lit_dtype() -> None:
     with pytest.raises(
         TypeError,
-        match=r"Time zone of dtype \(Asia/Kathmandu\) differs from time zone of value \(UTC\).",
+        match=r"time zone of dtype \('Asia/Kathmandu'\) differs from time zone of value \(datetime.timezone.utc\)",
     ):
         pl.lit(
             datetime(2020, 1, 1, tzinfo=timezone.utc),

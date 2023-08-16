@@ -23,7 +23,7 @@ class ExprStructNameSpace:
             return wrap_expr(self._pyexpr.struct_field_by_index(item))
         else:
             raise ValueError(
-                f"expected type 'int | str', got {type(item).__name__} ({item!r})"
+                f"expected type 'int | str', got {type(item).__name__!r} ({item!r})"
             )
 
     def field(self, name: str) -> Expr:

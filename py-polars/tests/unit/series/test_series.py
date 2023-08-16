@@ -136,7 +136,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert pl.Series(pd.Series([1, 2])).dtype == pl.Int64
 
     # Bad inputs
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.Series([1, 2, 3], [1, 2, 3])
     with pytest.raises(ValueError):
         pl.Series({"a": [1, 2, 3]})
@@ -1619,7 +1619,7 @@ def test_comparisons_bool_series_to_int() -> None:
     assert_series_equal(srs_bool / 1, pl.Series([True, False], dtype=Float64))
     match = (
         r"cannot do arithmetic with series of dtype: Boolean"
-        r" and argument of type: <class 'bool'>"
+        r" and argument of type: 'bool'"
     )
     with pytest.raises(ValueError, match=match):
         srs_bool - 1
@@ -1627,7 +1627,7 @@ def test_comparisons_bool_series_to_int() -> None:
         srs_bool + 1
     match = (
         r"cannot do arithmetic with series of dtype: Boolean"
-        r" and argument of type: <class 'bool'>"
+        r" and argument of type: 'bool'"
     )
     with pytest.raises(ValueError, match=match):
         srs_bool % 2
@@ -2162,17 +2162,17 @@ def test_ewm_param_validation() -> None:
     with pytest.raises(ValueError, match="mutually exclusive"):
         s.ewm_var(alpha=0.5, span=1.5)
 
-    with pytest.raises(ValueError, match="Require 'com' >= 0"):
+    with pytest.raises(ValueError, match="require 'com' >= 0"):
         s.ewm_std(com=-0.5)
 
-    with pytest.raises(ValueError, match="Require 'span' >= 1"):
+    with pytest.raises(ValueError, match="require 'span' >= 1"):
         s.ewm_mean(span=0.5)
 
-    with pytest.raises(ValueError, match="Require 'half_life' > 0"):
+    with pytest.raises(ValueError, match="require 'half_life' > 0"):
         s.ewm_var(half_life=0)
 
     for alpha in (-0.5, -0.0000001, 0.0, 1.0000001, 1.5):
-        with pytest.raises(ValueError, match="Require 0 < 'alpha' <= 1"):
+        with pytest.raises(ValueError, match="require 0 < 'alpha' <= 1"):
             s.ewm_std(alpha=alpha)
 
 

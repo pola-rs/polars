@@ -166,7 +166,7 @@ def read_excel(
         import xlsx2csv
     except ImportError:
         raise ImportError(
-            "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
+            "xlsx2csv is not installed. Please run `pip install xlsx2csv`"
         ) from None
 
     if sheet_id is not None and sheet_name is not None:

@@ -134,9 +134,9 @@ class Expr:
 
     def __bool__(self) -> NoReturn:
         raise ValueError(
-            "Since Expr are lazy, the truthiness of an Expr is ambiguous. "
-            "Hint: use '&' or '|' to logically combine Expr, not 'and'/'or', and "
-            "use 'x.is_in([y,z])' instead of 'x in [y,z]' to check membership."
+            "since Expr are lazy, the truthiness of an Expr is ambiguous."
+            "\n\nHint: use '&' or '|' to logically combine Expr, not 'and'/'or', and"
+            " use 'x.is_in([y,z])' instead of 'x in [y,z]' to check membership"
         )
 
     def __abs__(self) -> Self:
@@ -880,13 +880,13 @@ class Expr:
                 exclude_dtypes.append(item)
             else:
                 raise TypeError(
-                    "Invalid input for `exclude`. Expected one or more `str`, "
-                    f"`DataType`, or selector; found {type(item)!r} instead"
+                    "invalid input for `exclude`. Expected one or more `str`,"
+                    f"`DataType`, or selector; found {type(item).__name__!r} instead"
                 )
 
         if exclude_cols and exclude_dtypes:
             raise TypeError(
-                "Cannot exclude by both column name and dtype; use a selector instead"
+                "cannot exclude by both column name and dtype; use a selector instead"
             )
         elif exclude_dtypes:
             return self._from_pyexpr(self._pyexpr.exclude_dtype(exclude_dtypes))
@@ -2470,13 +2470,13 @@ class Expr:
 
         """
         if value is not None and strategy is not None:
-            raise ValueError("cannot specify both 'value' and 'strategy'.")
+            raise ValueError("cannot specify both 'value' and 'strategy'")
         elif value is None and strategy is None:
             raise ValueError("must specify either a fill 'value' or 'strategy'")
         elif strategy not in ("forward", "backward") and limit is not None:
             raise ValueError(
-                "can only specify 'limit' when strategy is set to"
-                " 'backward' or 'forward'"
+                "can only specify 'limit' when strategy is set to "
+                "'backward' or 'forward'"
             )
 
         if value is not None:
@@ -8810,7 +8810,7 @@ class Expr:
                             )
                             if dtype != s.dtype:
                                 raise ValueError(
-                                    f"Remapping values for map_dict could not be converted to {dtype}: found {s.dtype}"
+                                    f"remapping values for map_dict could not be converted to {dtype!r}: found {s.dtype!r}"
                                 )
                 else:
                     # dtype was set, which should always be the case when:
@@ -8826,17 +8826,17 @@ class Expr:
                     )
                     if dtype != s.dtype:
                         raise ValueError(
-                            f"Remapping {'keys' if is_keys else 'values'} for map_dict could not be converted to {dtype}: found {s.dtype}"
+                            f"remapping {'keys' if is_keys else 'values'} for map_dict could not be converted to {dtype!r}: found {s.dtype!r}"
                         )
 
             except OverflowError as exc:
                 if is_keys:
                     raise ValueError(
-                        f"Remapping keys for map_dict could not be converted to {dtype}: {str(exc)}"
+                        f"remapping keys for map_dict could not be converted to {dtype!r}: {str(exc)}"
                     ) from exc
                 else:
                     raise ValueError(
-                        f"Choose a more suitable output dtype for map_dict as remapping value could not be converted to {dtype}: {str(exc)}"
+                        f"choose a more suitable output dtype for map_dict as remapping value could not be converted to {dtype!r}: {str(exc)}"
                     ) from exc
 
             if is_keys:
@@ -8847,7 +8847,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"Remapping keys for map_dict could not be converted to {dtype} without losing values in the conversion."
+                        f"remapping keys for map_dict could not be converted to {dtype!r} without losing values in the conversion"
                     )
             else:
                 # values = remapping.values()
@@ -8857,7 +8857,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"Remapping values for map_dict could not be converted to {dtype} without losing values in the conversion."
+                        f"remapping values for map_dict could not be converted to {dtype!r} without losing values in the conversion"
                     )
 
             return s
@@ -9151,28 +9151,28 @@ def _prepare_alpha(
     """Normalise EWM decay specification in terms of smoothing factor 'alpha'."""
     if sum((param is not None) for param in (com, span, half_life, alpha)) > 1:
         raise ValueError(
-            "Parameters 'com', 'span', 'half_life', and 'alpha' are mutually exclusive"
+            "parameters 'com', 'span', 'half_life', and 'alpha' are mutually exclusive"
         )
     if com is not None:
         if com < 0.0:
-            raise ValueError(f"Require 'com' >= 0 (found {com})")
+            raise ValueError(f"require 'com' >= 0 (found {com!r})")
         alpha = 1.0 / (1.0 + com)
 
     elif span is not None:
         if span < 1.0:
-            raise ValueError(f"Require 'span' >= 1 (found {span})")
+            raise ValueError(f"require 'span' >= 1 (found {span!r})")
         alpha = 2.0 / (span + 1.0)
 
     elif half_life is not None:
         if half_life <= 0.0:
-            raise ValueError(f"Require 'half_life' > 0 (found {half_life})")
+            raise ValueError(f"require 'half_life' > 0 (found {half_life!r})")
         alpha = 1.0 - math.exp(-math.log(2.0) / half_life)
 
     elif alpha is None:
-        raise ValueError("One of 'com', 'span', 'half_life', or 'alpha' must be set")
+        raise ValueError("one of 'com', 'span', 'half_life', or 'alpha' must be set")
 
     elif not (0 < alpha <= 1):
-        raise ValueError(f"Require 0 < 'alpha' <= 1 (found {alpha})")
+        raise ValueError(f"require 0 < 'alpha' <= 1 (found {alpha!r})")
 
     return alpha
 

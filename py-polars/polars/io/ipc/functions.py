@@ -77,8 +77,7 @@ def read_ipc(
     """
     if use_pyarrow and n_rows and not memory_map:
         raise ValueError(
-            "``n_rows`` cannot be used with ``use_pyarrow=True` "
-            "and memory_map=False`."
+            "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
         )
 
     storage_options = storage_options or {}
@@ -87,7 +86,7 @@ def read_ipc(
             if not _PYARROW_AVAILABLE:
                 raise ImportError(
                     "'pyarrow' is required when using"
-                    " 'read_ipc(..., use_pyarrow=True)'."
+                    " 'read_ipc(..., use_pyarrow=True)'"
                 )
 
             import pyarrow as pa

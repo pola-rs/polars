@@ -123,17 +123,17 @@ def handle_projection_columns(
         elif not is_str_sequence(columns):
             raise ValueError(
                 "'columns' arg should contain a list of all integers or all strings"
-                " values."
+                " values"
             )
         else:
             new_columns = columns
         if columns and len(set(columns)) != len(columns):
             raise ValueError(
-                f"'columns' arg should only have unique values. Got '{columns}'."
+                f"`columns` arg should only have unique values. Got {columns!r}"
             )
         if projection and len(set(projection)) != len(projection):
             raise ValueError(
-                f"'columns' arg should only have unique values. Got '{projection}'."
+                f"`columns` arg should only have unique values. Got {projection!r}"
             )
     return projection, new_columns
 
@@ -190,7 +190,7 @@ def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> st
         and os.path.exists(path)  # noqa: PTH110
         and os.path.isdir(path)  # noqa: PTH112
     ):
-        raise IsADirectoryError(f"Expected a file path; {path!r} is a directory")
+        raise IsADirectoryError(f"expected a file path; {path!r} is a directory")
     return path
 
 
@@ -250,7 +250,7 @@ def _cast_repr_strings_with_schema(
         for tp in df.schema.values():
             if tp != Utf8:
                 raise TypeError(
-                    f"DataFrame should contain only Utf8 string repr data; found {tp}"
+                    f"DataFrame should contain only Utf8 string repr data; found {tp!r}"
                 )
 
     # duration string scaling
@@ -467,7 +467,7 @@ def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[f
     elif percentiles is None:
         percentiles = []
     if not all((0 <= p <= 1) for p in percentiles):
-        raise ValueError("Percentiles must all be in the range [0, 1].")
+        raise ValueError("percentiles must all be in the range [0, 1]")
 
     sub_50_percentiles = sorted(p for p in percentiles if p < 0.5)
     at_or_above_50_percentiles = sorted(p for p in percentiles if p >= 0.5)

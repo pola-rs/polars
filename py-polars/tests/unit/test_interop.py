@@ -190,7 +190,7 @@ def test_from_pandas_include_indexes() -> None:
 
 def test_from_pandas_duplicated_columns() -> None:
     df = pd.DataFrame([[1, 2, 3, 4], [5, 6, 7, 8]], columns=["a", "b", "c", "b"])
-    with pytest.raises(ValueError, match="Duplicate column names found: "):
+    with pytest.raises(ValueError, match="duplicate column names found: "):
         pl.from_pandas(df)
 
 
