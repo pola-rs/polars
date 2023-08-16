@@ -324,6 +324,7 @@ pub fn create_physical_plan(
             output_schema,
             ..
         } => {
+            let mut state = ExpressionConversionState::default();
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             let predicate = predicate
                 .map(|pred| {
@@ -332,7 +333,7 @@ pub fn create_physical_plan(
                         Context::Default,
                         expr_arena,
                         output_schema.as_ref(),
-                        &mut Default::default(),
+                        &mut state,
                     )
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
@@ -340,6 +341,7 @@ pub fn create_physical_plan(
                 function,
                 predicate,
                 options,
+                predicate_has_windows: state.has_windows,
             }))
         },
         Sort {

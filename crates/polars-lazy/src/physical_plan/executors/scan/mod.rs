@@ -84,7 +84,7 @@ impl Executor for DataFrameExec {
                 state.insert_has_window_function_flag()
             }
             let s = selection.evaluate(&df, state)?;
-            if state.cache_window() {
+            if self.predicate_has_windows && state.cache_window() {
                 state.clear_window_expr_cache()
             }
             let mask = s.bool().map_err(
@@ -104,32 +104,41 @@ pub(crate) struct AnonymousScanExec {
     pub(crate) function: Arc<dyn AnonymousScan>,
     pub(crate) options: AnonymousScanOptions,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub(crate) predicate_has_windows: bool,
 }
 
 impl Executor for AnonymousScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        state.record(
-            || match (self.function.allows_predicate_pushdown(), &self.predicate) {
-                (true, Some(predicate)) => {
+        match (self.function.allows_predicate_pushdown(), &self.predicate) {
+            (true, Some(predicate)) => state.record(
+                || {
                     self.options.predicate = predicate.as_expression().cloned();
                     self.function.scan(self.options.clone())
                 },
-                (false, Some(predicate)) => {
-                    let mut df = self.function.scan(self.options.clone())?;
-                    let s = predicate.evaluate(&df, state)?;
-                    if state.cache_window() {
-                        state.clear_window_expr_cache()
-                    }
-                    let mask = s.bool().map_err(
-                        |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),
-                    )?;
-                    df = df.filter(mask)?;
+                "anonymous_scan".into(),
+            ),
+            (false, Some(predicate)) => {
+                if self.predicate_has_windows {
+                    state.insert_has_window_function_flag()
+                }
+                state.record(|| {
+                        let mut df = self.function.scan(self.options.clone())?;
+                        let s = predicate.evaluate(&df, state)?;
+                        if self.predicate_has_windows && state.cache_window() {
+                            state.clear_window_expr_cache()
+                        }
+                        let mask = s.bool().map_err(
+                            |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),
+                        )?;
+                        df = df.filter(mask)?;
 
-                    Ok(df)
-                },
-                _ => self.function.scan(self.options.clone()),
+                        Ok(df)
+                    },"anonymous_scan".into())
             },
-            "anonymous_scan".into(),
-        )
+            _ => state.record(
+                || self.function.scan(self.options.clone()),
+                "anonymous_scan".into(),
+            ),
+        }
     }
 }
