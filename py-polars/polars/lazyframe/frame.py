@@ -48,7 +48,7 @@ from polars.io._utils import _is_local_file
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.groupby import LazyGroupBy
-from polars.selectors import _expand_selectors
+from polars.selectors import _expand_selectors, expand_selector
 from polars.slice import LazyPolarsSlice
 from polars.utils._parse_expr_input import (
     parse_as_expression,
@@ -2063,19 +2063,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if not isinstance(dtypes, Mapping):
             return self.select(F.all().cast(dtypes, strict=strict))
-        else:
-            from polars.selectors import expand_selector
 
-            cast_map = {}
-            for c, dtype in dtypes.items():
-                dtype = py_type_to_dtype(dtype)
-                cast_map.update(
-                    {c: dtype}
-                    if isinstance(c, str)
-                    else {x: dtype for x in expand_selector(self, c)}
-                )
+        cast_map = {}
+        for c, dtype in dtypes.items():
+            dtype = py_type_to_dtype(dtype)
+            cast_map.update(
+                {c: dtype}
+                if isinstance(c, str)
+                else {x: dtype for x in expand_selector(self, c)}
+            )
 
-            return self._from_pyldf(self._ldf.cast(cast_map, strict))
+        return self._from_pyldf(self._ldf.cast(cast_map, strict))
 
     def clear(self, n: int = 0) -> LazyFrame:
         """

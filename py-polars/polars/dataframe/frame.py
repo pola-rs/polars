@@ -6273,7 +6273,7 @@ class DataFrame:
         └─────┴─────┴────────────┘
 
         """
-        return self.lazy().cast(dtypes, strict=strict).collect()
+        return self.lazy().cast(dtypes, strict=strict).collect(no_optimization=True)
 
     def clear(self, n: int = 0) -> Self:
         """
