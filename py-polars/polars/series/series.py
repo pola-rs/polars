@@ -1812,7 +1812,7 @@ class Series:
                     .alias(temp_name)
                 )
                 .unnest(temp_name)
-                .rename({"brk": break_point_label, temp_name: category_label})
+                .rename({"break": break_point_label, "category": category_label})
             )
 
         result = (
@@ -2034,7 +2034,7 @@ class Series:
                     .alias(temp_name)
                 )
                 .unnest(temp_name)
-                .rename({"brk": break_point_label, temp_name: category_label})
+                .rename({"break": break_point_label, "category": category_label})
             )
 
         result = (

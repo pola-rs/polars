@@ -12,8 +12,8 @@ fn map_cats(
 ) -> PolarsResult<Series> {
     let cl: Vec<&str> = cutlabs.iter().map(String::as_str).collect();
 
-    let out_name = format!("{}_bin", s.name());
-    let mut bld = CategoricalChunkedBuilder::new(&out_name, s.len());
+    let out_name = "category";
+    let mut bld = CategoricalChunkedBuilder::new(out_name, s.len());
     let s2 = s.cast(&DataType::Float64)?;
     // It would be nice to parallelize this
     let s_iter = s2.f64()?.into_iter();
@@ -29,7 +29,7 @@ fn map_cats(
         // returned a dataframe. That included a column of the right endpoint of the interval. So we
         // return a struct series instead which can be turned into a dataframe later.
         let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
-        let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new("brk", s.len());
+        let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new("break", s.len());
         s_iter
             .map(|opt| {
                 opt.filter(|x| !x.is_nan())
@@ -47,7 +47,7 @@ fn map_cats(
             });
 
         let outvals = vec![brk_vals.finish().into_series(), bld.finish().into_series()];
-        Ok(StructChunked::new(&out_name, &outvals)?.into_series())
+        Ok(StructChunked::new(out_name, &outvals)?.into_series())
     } else {
         bld.drain_iter(s_iter.map(|opt| {
             opt.filter(|x| !x.is_nan())
