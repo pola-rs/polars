@@ -5429,7 +5429,6 @@ class Series:
 
         """
 
-    @deprecate_renamed_parameter("frac", "fraction", version="0.17.0")
     def sample(
         self,
         n: int | None = None,
