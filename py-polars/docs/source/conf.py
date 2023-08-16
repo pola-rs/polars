@@ -95,8 +95,8 @@ github_root = "https://github.com/pola-rs/polars"
 web_root = "https://pola-rs.github.io"
 
 # Specify version for version switcher dropdown menu
-switcher_version_env = os.environ.get("POLARS_VERSION", "main")
-version_match = re.fullmatch(r"py-(\d+\.\d+)\.\d+.*", switcher_version_env)
+git_ref = os.environ.get("POLARS_VERSION", "main")
+version_match = re.fullmatch(r"py-(\d+\.\d+)\.\d+.*", git_ref)
 switcher_version = version_match.group(1) if version_match is not None else "dev"
 
 html_theme_options = {
@@ -210,7 +210,7 @@ def linkcode_resolve(domain, info):
     polars_root = (conf_dir_path.parent.parent / "polars").absolute()
 
     fn = os.path.relpath(fn, start=polars_root)
-    return f"{github_root}/blob/main/py-polars/polars/{fn}{linespec}"
+    return f"{github_root}/blob/{git_ref}/py-polars/polars/{fn}{linespec}"
 
 
 def _minify_classpaths(s: str) -> str:
