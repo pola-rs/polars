@@ -1058,38 +1058,30 @@ impl PyExpr {
         self.inner.clone().to_physical().into()
     }
 
-    #[pyo3(signature = (seed, fixed_seed))]
-    fn shuffle(&self, seed: Option<u64>, fixed_seed: bool) -> Self {
-        self.inner.clone().shuffle(seed, fixed_seed).into()
+    #[pyo3(signature = (seed))]
+    fn shuffle(&self, seed: Option<u64>) -> Self {
+        self.inner.clone().shuffle(seed).into()
     }
 
-    #[pyo3(signature = (n, with_replacement, shuffle, seed, fixed_seed))]
-    fn sample_n(
-        &self,
-        n: usize,
-        with_replacement: bool,
-        shuffle: bool,
-        seed: Option<u64>,
-        fixed_seed: bool,
-    ) -> Self {
+    #[pyo3(signature = (n, with_replacement, shuffle, seed))]
+    fn sample_n(&self, n: usize, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
         self.inner
             .clone()
-            .sample_n(n, with_replacement, shuffle, seed, fixed_seed)
+            .sample_n(n, with_replacement, shuffle, seed)
             .into()
     }
 
-    #[pyo3(signature = (frac, with_replacement, shuffle, seed, fixed_seed))]
+    #[pyo3(signature = (frac, with_replacement, shuffle, seed))]
     fn sample_frac(
         &self,
         frac: f64,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-        fixed_seed: bool,
     ) -> Self {
         self.inner
             .clone()
-            .sample_frac(frac, with_replacement, shuffle, seed, fixed_seed)
+            .sample_frac(frac, with_replacement, shuffle, seed)
             .into()
     }
 

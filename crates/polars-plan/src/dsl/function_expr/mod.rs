@@ -54,8 +54,6 @@ mod unique;
 
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-#[cfg(feature = "random")]
-use std::sync::atomic::AtomicU64;
 
 #[cfg(feature = "dtype-array")]
 pub(super) use array::ArrayFunction;
@@ -229,10 +227,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "random")]
     Random {
         method: random::RandomMethod,
-        #[cfg_attr(feature = "serde", serde(skip))]
-        atomic_seed: Option<SpecialEq<Arc<AtomicU64>>>,
         seed: Option<u64>,
-        fixed_seed: bool,
     },
     SetSortedFlag(IsSorted),
 }
@@ -638,18 +633,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             RLEID => map!(rle_id),
             ToPhysical => map!(dispatch::to_physical),
             #[cfg(feature = "random")]
-            Random {
-                method,
-                seed,
-                atomic_seed,
-                fixed_seed,
-            } => map!(
-                random::random,
-                method,
-                atomic_seed.as_deref(),
-                seed,
-                fixed_seed
-            ),
+            Random { method, seed } => map!(random::random, method, seed),
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
         }
     }

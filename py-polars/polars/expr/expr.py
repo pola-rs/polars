@@ -4,7 +4,6 @@ import contextlib
 import math
 import operator
 import os
-import random
 import warnings
 from datetime import timedelta
 from functools import partial, reduce
@@ -7858,19 +7857,15 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
-    def shuffle(self, seed: int | None = None, fixed_seed: bool = False) -> Self:
+    def shuffle(self, seed: int | None = None) -> Self:
         """
         Shuffle the contents of this expression.
 
         Parameters
         ----------
         seed
-            Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
-        fixed_seed
-            If True, The seed will not be incremented between draws.
-            This can make output predictable because draw ordering can
-            change due to threads being scheduled in a different order.
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated each time the shuffle is called.
 
         Examples
         --------
@@ -7888,10 +7883,7 @@ class Expr:
         └─────┘
 
         """
-        # we seed from python so that we respect ``random.seed``
-        if seed is None:
-            seed = random.randint(0, 10000)
-        return self._from_pyexpr(self._pyexpr.shuffle(seed, fixed_seed))
+        return self._from_pyexpr(self._pyexpr.shuffle(seed))
 
     def sample(
         self,
@@ -7901,7 +7893,6 @@ class Expr:
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
-        fixed_seed: bool = False,
     ) -> Self:
         """
         Sample from this expression.
@@ -7918,12 +7909,8 @@ class Expr:
         shuffle
             Shuffle the order of sampled data points.
         seed
-            Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
-        fixed_seed
-            If True, The seed will not be incremented between draws.
-            This can make output predictable because draw ordering can
-            change due to threads being scheduled in a different order.
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated for each sample operation.
 
         Examples
         --------
@@ -7944,20 +7931,15 @@ class Expr:
         if n is not None and fraction is not None:
             raise ValueError("cannot specify both `n` and `fraction`")
 
-        if seed is None:
-            seed = random.randint(0, 10000)
-
         if fraction is not None:
             return self._from_pyexpr(
-                self._pyexpr.sample_frac(
-                    fraction, with_replacement, shuffle, seed, fixed_seed
-                )
+                self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
             )
 
         if n is None:
             n = 1
         return self._from_pyexpr(
-            self._pyexpr.sample_n(n, with_replacement, shuffle, seed, fixed_seed)
+            self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
         )
 
     def ewm_mean(

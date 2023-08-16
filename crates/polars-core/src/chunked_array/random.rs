@@ -5,16 +5,11 @@ use rand::prelude::*;
 use rand_distr::{Distribution, Normal, Standard, StandardNormal, Uniform};
 
 use crate::prelude::*;
+use crate::random::get_global_random_u64;
 use crate::utils::{CustomIterTools, NoNull};
 
-fn get_random_seed() -> u64 {
-    let mut rng = SmallRng::from_entropy();
-
-    rng.next_u64()
-}
-
 fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
-    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
+    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
     let dist = Uniform::new(0, len as IdxSize);
     (0..n as IdxSize)
         .map(move |_| dist.sample(&mut rng))
@@ -28,9 +23,14 @@ fn create_rand_index_no_replacement(
     seed: Option<u64>,
     shuffle: bool,
 ) -> IdxCa {
-    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
-    let mut buf = vec![0; n];
-    (0..len as IdxSize).choose_multiple_fill(&mut rng, &mut buf);
+    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
+    let mut buf;
+    if n == len {
+        buf = (0..len as IdxSize).collect();
+    } else {
+        buf = vec![0; n];
+        (0..len as IdxSize).choose_multiple_fill(&mut rng, &mut buf);
+    }
     if shuffle {
         buf.shuffle(&mut rng)
     }
@@ -43,7 +43,7 @@ where
     Standard: Distribution<T::Native>,
 {
     pub fn init_rand(size: usize, null_density: f32, seed: Option<u64>) -> Self {
-        let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
+        let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
         (0..size)
             .map(|_| {
                 if rng.gen::<f32>() < null_density {

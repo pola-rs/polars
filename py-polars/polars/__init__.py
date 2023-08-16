@@ -134,6 +134,7 @@ from polars.functions import (
     rolling_corr,
     rolling_cov,
     select,
+    set_random_seed,
     sql_expr,
     std,
     struct,
@@ -345,6 +346,8 @@ __all__ = [
     "tail",
     "time",  # named time_, see import above
     "var",
+    # polars.functions.random
+    "set_random_seed",
     # polars.convert
     "from_arrow",
     "from_dataframe",

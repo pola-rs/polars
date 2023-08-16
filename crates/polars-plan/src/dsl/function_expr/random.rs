@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -29,22 +27,7 @@ impl Hash for RandomMethod {
     }
 }
 
-pub(super) fn random(
-    s: &Series,
-    method: RandomMethod,
-    atomic_seed: Option<&Arc<AtomicU64>>,
-    seed: Option<u64>,
-    fixed_seed: bool,
-) -> PolarsResult<Series> {
-    let seed = if fixed_seed {
-        seed
-    } else {
-        // ensure seeds differ between groupby groups
-        // otherwise all groups would be sampled the same
-        atomic_seed
-            .as_ref()
-            .map(|atomic| atomic.fetch_add(1, Ordering::Relaxed))
-    };
+pub(super) fn random(s: &Series, method: RandomMethod, seed: Option<u64>) -> PolarsResult<Series> {
     match method {
         RandomMethod::Shuffle => Ok(s.shuffle(seed)),
         RandomMethod::SampleFrac {
