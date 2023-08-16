@@ -1,6 +1,6 @@
-=================
+=========
 Functions
-=================
+=========
 .. currentmodule:: polars
 
 Conversion
