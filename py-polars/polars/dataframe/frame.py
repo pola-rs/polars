@@ -3464,7 +3464,7 @@ class DataFrame:
 
         data = self.to_arrow()
 
-        schema = delta_write_options.get("schema")
+        schema = delta_write_options.pop("schema", None)
         if schema is None:
             schema = _convert_pa_schema_to_delta(data.schema)
 
