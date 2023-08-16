@@ -125,7 +125,8 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
             {
-                Some(expr_arena.get(*right).clone())
+                // We alias because of the left-hand naming rule.
+                Some(AExpr::Alias(*right, "literal".into()))
             },
             // x AND true => x
             AExpr::BinaryExpr {
@@ -186,7 +187,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
             {
-                Some(expr_arena.get(*right).clone())
+                let names = aexpr_to_leaf_names(*left, expr_arena);
+                let name = names.get(0).map(Arc::clone).unwrap_or_else(|| "".into());
+                Some(AExpr::Alias(*right, name))
             },
             // x or false => x
             AExpr::BinaryExpr {
