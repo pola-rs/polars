@@ -27,11 +27,11 @@ def test_arange() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_arange_decreasing() -> None:
-    assert pl.arange(10, 1, -2, eager=True).to_list() == list(range(10, 1, -2))
+def test_int_range_decreasing() -> None:
+    assert pl.int_range(10, 1, -2, eager=True).to_list() == list(range(10, 1, -2))
 
 
-def test_arange_expr() -> None:
+def test_int_range_expr() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
     out = df.select(pl.int_range(0, pl.col("a").count() * 10))
     assert out.shape == (20, 1)
@@ -40,54 +40,6 @@ def test_arange_expr() -> None:
     # eager arange
     out2 = pl.arange(0, 10, 2, eager=True)
     assert out2.to_list() == [0, 2, 4, 6, 8]
-
-
-def test_arange_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "start": [1, 2, 3, 5, 5, 5],
-            "stop": [8, 3, 12, 8, 8, 8],
-        }
-    )
-
-    with pytest.deprecated_call():
-        result = df.select(pl.arange(pl.lit(1), pl.col("stop") + 1).alias("test"))
-
-    expected = pl.DataFrame(
-        {
-            "test": [
-                [1, 2, 3, 4, 5, 6, 7, 8],
-                [1, 2, 3],
-                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-                [1, 2, 3, 4, 5, 6, 7, 8],
-                [1, 2, 3, 4, 5, 6, 7, 8],
-                [1, 2, 3, 4, 5, 6, 7, 8],
-            ]
-        }
-    )
-    assert_frame_equal(result, expected)
-
-    with pytest.deprecated_call():
-        result_s = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
-    assert result_s.dtype == pl.List
-    assert result_s[0].to_list() == [0, 2]
-
-
-def test_arange_name() -> None:
-    expected_name = "arange"
-    result_eager = pl.arange(0, 5, eager=True)
-    assert result_eager.name == expected_name
-
-    result_lazy = pl.select(pl.arange(0, 5)).to_series()
-    assert result_lazy.name == expected_name
-
-
-def test_arange_schema() -> None:
-    result = pl.LazyFrame().select(pl.arange(-3, 3))
-
-    expected_schema = {"arange": pl.Int64}
-    assert result.schema == expected_schema
-    assert result.collect().schema == expected_schema
 
 
 def test_int_range() -> None:
