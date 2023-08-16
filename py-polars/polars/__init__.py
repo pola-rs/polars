@@ -171,12 +171,7 @@ from polars.io import (
 from polars.lazyframe import LazyFrame
 from polars.series import Series
 from polars.sql import SQLContext
-from polars.string_cache import (
-    StringCache,
-    enable_string_cache,
-    toggle_string_cache,
-    using_string_cache,
-)
+from polars.string_cache import StringCache, enable_string_cache, using_string_cache
 from polars.type_aliases import PolarsDataType
 from polars.utils import (
     build_info,
@@ -273,7 +268,6 @@ __all__ = [
     # polars.stringcache
     "StringCache",
     "enable_string_cache",
-    "toggle_string_cache",
     "using_string_cache",
     # polars.config
     "Config",
