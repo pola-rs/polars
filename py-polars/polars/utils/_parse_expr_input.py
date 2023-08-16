@@ -107,8 +107,8 @@ def parse_as_expression(
     ):
         expr = F.lit(input)
         structify = False
-    elif isinstance(input, list):
-        expr = F.lit(pl.Series("", [input]))
+    elif isinstance(input, (list, tuple)):
+        expr = F.lit(pl.Series("literal", [input]))
         structify = False
     else:
         raise TypeError(
