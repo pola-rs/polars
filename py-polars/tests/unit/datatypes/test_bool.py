@@ -39,7 +39,17 @@ def test_bool_min_max() -> None:
     assert pl.Series([False, True]).max()
     assert pl.Series([True, True]).max()
     assert not pl.Series([False, False]).max()
-
+    
+def test_bool_opts() -> None:
+    df = pl.DataFrame({'x': [False, True]})
+    assert df.select(pl.col('x') & True).to_dict(as_series=False) == {'x': [False, True]}
+    assert df.select(pl.col('x') & False).to_dict(as_series=False) == {'x': [False, False]}
+    assert df.select(pl.col('x') | True).to_dict(as_series=False) == {'x': [True, True]}
+    assert df.select(pl.col('x') | False).to_dict(as_series=False) == {'x': [False, True]}
+    assert df.select(True  & pl.col('x')).to_dict(as_series=False) == {'x': [False, True]}
+    assert df.select(False & pl.col('x')).to_dict(as_series=False) == {'x': [False, False]}
+    assert df.select(True  | pl.col('x')).to_dict(as_series=False) == {'x': [True, True]}
+    assert df.select(False | pl.col('x')).to_dict(as_series=False) == {'x': [False, True]}
 
 def test_all_empty() -> None:
     s = pl.Series([], dtype=pl.Boolean)
