@@ -139,6 +139,7 @@ ignore = [
   "PT011", # pytest.raises({exception}) is too broad, set the match parameter or use a more specific exception
   # flake8-simplify
   "SIM102", # Use a single `if` statement instead of nested `if` statements
+  "SIM108", # Use ternary operator
   # ruff
   "RUF005", # unpack-instead-of-concatenating-to-collection-literal
   # pycodestyle
