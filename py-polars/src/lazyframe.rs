@@ -872,17 +872,9 @@ impl PyLazyFrame {
     }
 
     fn cast(&self, dtypes: HashMap<&str, Wrap<DataType>>, strict: bool) -> Self {
-        let cast_cols: Vec<Expr> = dtypes
-            .into_iter()
-            .map(|(name, dt)| {
-                if strict {
-                    col(name).strict_cast(dt.0)
-                } else {
-                    col(name).cast(dt.0)
-                }
-            })
-            .collect();
-        self.ldf.clone().with_columns(cast_cols).into()
+        let mut cast_map = PlHashMap::with_capacity(dtypes.len());
+        cast_map.extend(dtypes.iter().map(|(k, v)| (*k, v.0.clone())));
+        self.ldf.clone().cast(cast_map, strict).into()
     }
 
     fn clone(&self) -> Self {
