@@ -28,7 +28,7 @@ fn finish_is_unique_helper(
         unsafe { values.set_unchecked(idx as usize, setter) }
     }
     let arr = BooleanArray::from_data_default(values.into(), None);
-    unsafe { BooleanChunked::from_chunks("", vec![Box::new(arr)]) }
+    arr.into()
 }
 
 pub(crate) fn is_unique_helper(
@@ -169,13 +169,7 @@ where
 
                     arr.extend(to_extend);
                     let arr: PrimitiveArray<T::Native> = arr.into();
-
-                    unsafe {
-                        Ok(ChunkedArray::from_chunks(
-                            self.name(),
-                            vec![Box::new(arr) as ArrayRef],
-                        ))
-                    }
+                    Ok(ChunkedArray::with_chunk(self.name(), arr))
                 } else {
                     let mask = self.not_equal_and_validity(&self.shift(1));
                     self.filter(&mask)

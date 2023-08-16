@@ -144,7 +144,7 @@ where
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::from_chunk_iter("", [arr]).into_series()
+                ChunkedArray::from(arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
@@ -216,7 +216,7 @@ where
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::from_chunk_iter("", [arr]).into_series()
+                ChunkedArray::from(arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);

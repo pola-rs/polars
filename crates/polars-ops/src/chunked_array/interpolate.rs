@@ -155,7 +155,7 @@ where
 
         let array =
             PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), Some(validity.into()));
-        ChunkedArray::from_chunk_iter(chunked_arr.name(), [array])
+        ChunkedArray::with_chunk(chunked_arr.name(), array)
     } else {
         ChunkedArray::from_vec(chunked_arr.name(), av)
     }

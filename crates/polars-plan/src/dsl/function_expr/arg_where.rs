@@ -32,7 +32,7 @@ pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Option<Series>> {
 
             total_offset += arr.len();
         });
-        let ca = IdxCa::from_chunk_iter(predicate.name(), [IdxArr::from_vec(out)]);
+        let ca = IdxCa::with_chunk(predicate.name(), IdxArr::from_vec(out));
         Ok(Some(ca.into_series()))
     }
 }

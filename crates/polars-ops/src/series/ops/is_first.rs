@@ -45,7 +45,7 @@ fn is_first_boolean(ca: &BooleanChunked) -> BooleanChunked {
     }
 
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    BooleanChunked::from_chunk_iter(ca.name(), [arr])
+    BooleanChunked::with_chunk(ca.name(), arr)
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -61,7 +61,7 @@ fn is_first_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     }
 
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::from_chunk_iter(s.name(), [arr]))
+    Ok(BooleanChunked::with_chunk(s.name(), arr))
 }
 
 pub fn is_first(s: &Series) -> PolarsResult<BooleanChunked> {

@@ -605,26 +605,21 @@ impl<'a> Buffer<'a> {
                 .into_series()
                 .cast(&DataType::Date)
                 .unwrap(),
-            // Safety:
-            // We already checked utf8 validity during parsing
-            Buffer::Utf8(mut v) => unsafe {
+
+            Buffer::Utf8(mut v) => {
                 v.offsets.shrink_to_fit();
                 v.data.shrink_to_fit();
 
                 let mut valid_utf8 = true;
                 if delay_utf8_validation(v.encoding, v.ignore_errors) {
-                    // check whole buffer for utf8
-                    // this alone is not enough
-                    // we must also check byte starts
-                    // see: https://github.com/jorgecarleitao/arrow2/pull/823
+                    // Check if the whole buffer is utf8. This alone is not enough,
+                    // we must also check byte starts, see: https://github.com/jorgecarleitao/arrow2/pull/823
                     simdutf8::basic::from_utf8(&v.data)
                         .map_err(|_| polars_err!(ComputeError: "invalid utf-8 sequence in csv"))?;
 
                     for i in (0..v.offsets.len() - 1).step_by(2) {
-                        // Safety:
-                        // we iterate over offsets.len()
-                        let start = *v.offsets.get_unchecked(i) as usize;
-
+                        // SAFETY: we iterate over offsets.len().
+                        let start = unsafe { *v.offsets.get_unchecked(i) as usize };
                         let first = v.data.get(start);
 
                         // A valid code-point iff it does not start with 0b10xxxxxx
@@ -639,13 +634,15 @@ impl<'a> Buffer<'a> {
                     polars_ensure!(valid_utf8, ComputeError: "invalid utf-8 sequence in CSV");
                 }
 
-                let arr = Utf8Array::<i64>::from_data_unchecked_default(
-                    v.offsets.into(),
-                    v.data.into(),
-                    Some(v.validity.into()),
-                );
-                let ca = Utf8Chunked::from_chunks(&v.name, vec![Box::new(arr)]);
-                ca.into_series()
+                // SAFETY: we already checked utf8 validity during parsing, or just now.
+                let arr = unsafe {
+                    Utf8Array::<i64>::from_data_unchecked_default(
+                        v.offsets.into(),
+                        v.data.into(),
+                        Some(v.validity.into()),
+                    )
+                };
+                Utf8Chunked::with_chunk(v.name.as_str(), arr).into_series()
             },
             #[allow(unused_variables)]
             Buffer::Categorical(buf) => {

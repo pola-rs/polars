@@ -438,7 +438,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
 
         CategoricalChunked::from_chunks_original(
             &self.name,
-            vec![self.cat_builder.as_box()],
+            self.cat_builder.into(),
             self.reverse_mapping.finish(),
         )
     }

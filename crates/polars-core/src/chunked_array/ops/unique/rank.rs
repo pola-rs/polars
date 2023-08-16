@@ -184,8 +184,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
         },
         _ => {
             let inv_ca = IdxCa::from_vec(s.name(), inv);
-            // Safety:
-            // in bounds
+            // SAFETY: in bounds.
             let arr = unsafe { s.take_unchecked(&sort_idx_ca).unwrap() };
             let validity = arr.chunks()[0].validity().cloned();
             let not_consecutive_same = arr
@@ -193,12 +192,12 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
                 .not_equal(&arr.slice(0, len - 1))
                 .unwrap()
                 .rechunk();
-            // this obs is shorter than that of scipy stats, because we can just start the cumsum by 1
-            // instead of 0
+            // This obs is shorter than that of scipy stats, because we can just start the cumsum by 1
+            // instead of 0.
             let obs = not_consecutive_same.downcast_iter().next().unwrap();
             let mut dense = Vec::with_capacity(len);
 
-            // this offset save an offset on the whole column, what scipy does in:
+            // This offset save an offset on the whole column, what scipy does in:
             //
             // ```python
             //     if method == 'min':
@@ -209,8 +208,8 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
             let mut cumsum: IdxSize = if let RankMethod::Min = method {
                 0
             } else {
-                // nulls will be first, rank, but we will replace them (with null)
-                // so this ensures the second rank will be 1
+                // Nulls will be first, rank, but we will replace them (with null),
+                // this ensures the second rank will be 1.
                 if matches!(method, RankMethod::Dense) && s.null_count() > 0 {
                     0
                 } else {
@@ -226,17 +225,16 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
                 dense.push(cumsum)
             });
             let arr = IdxArr::from_data_default(dense.into(), validity);
-            let dense: IdxCa = (s.name(), arr).into();
-            // Safety:
-            // in bounds
+            let dense = IdxCa::with_chunk(s.name(), arr);
+
+            // SAFETY: in bounds.
             let dense = unsafe { dense.take_unchecked((&inv_ca).into()) };
 
             if let RankMethod::Dense = method {
                 return if s.null_count() == 0 {
                     dense.into_series()
                 } else {
-                    // null will be the first rank
-                    // we restore original nulls and shift all ranks by one
+                    // Null will be the first rank. We restore original nulls and shift all ranks by one.
                     let validity = s.is_null().rechunk();
                     let validity = validity.downcast_iter().next().unwrap();
                     let validity = validity.values().clone();
@@ -245,8 +243,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
                     let arr = arr.with_validity(Some(validity));
                     let dtype = arr.data_type().clone();
 
-                    // Safety:
-                    // given dtype is correct
+                    // SAFETY: given dtype is correct.
                     unsafe {
                         Series::try_from_arrow_unchecked(s.name(), vec![arr], &dtype).unwrap()
                     }
@@ -282,18 +279,15 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
 
             match method {
                 Max => {
-                    // Safety:
-                    // within bounds
+                    // SAFETY: in bounds.
                     unsafe { count.take_unchecked((&dense).into()).into_series() }
                 },
                 Min => {
-                    // Safety:
-                    // within bounds
+                    // SAFETY: in bounds.
                     unsafe { (count.take_unchecked((&dense).into()) + 1).into_series() }
                 },
                 Average => {
-                    // Safety:
-                    // in bounds
+                    // SAFETY: in bounds.
                     let a = unsafe { count.take_unchecked((&dense).into()) }
                         .cast(&DataType::Float32)
                         .unwrap();

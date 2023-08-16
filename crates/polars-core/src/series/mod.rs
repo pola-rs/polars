@@ -1017,7 +1017,7 @@ impl Series {
         size
     }
 
-    /// Packs every element into a list
+    /// Packs every element into a list.
     pub fn as_list(&self) -> ListChunked {
         let s = self.rechunk();
         let values = s.to_arrow(0);
@@ -1030,7 +1030,7 @@ impl Series {
             values,
             None,
         );
-        unsafe { ListChunked::from_chunks(s.name(), vec![Box::new(new_arr)]) }
+        ListChunked::with_chunk(s.name(), new_arr)
     }
 }
 
