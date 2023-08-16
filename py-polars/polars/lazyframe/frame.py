@@ -2055,20 +2055,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴────────────┘
 
         """
-        cast_map: dict[str, Expr] = {}
         if not isinstance(dtypes, Mapping):
             return self.select(F.all().cast(dtypes))
         else:
             from polars.selectors import expand_selector
 
+            cast_map = {}
             for c, dtype in dtypes.items():
+                dtype = py_type_to_dtype(dtype)
                 cast_map.update(
-                    {c: F.col(c).cast(dtype)}
+                    {c: dtype}
                     if isinstance(c, str)
-                    else {x: F.col(x).cast(dtype) for x in expand_selector(self, c)}
+                    else {x: dtype for x in expand_selector(self, c)}
                 )
 
-        return self.with_columns(**cast_map)
+            return self._from_pyldf(self._ldf.cast(cast_map))
 
     def clear(self, n: int = 0) -> LazyFrame:
         """

@@ -871,6 +871,14 @@ impl PyLazyFrame {
         ldf.drop_columns(columns).into()
     }
 
+    fn cast(&self, dtypes: HashMap<&str, Wrap<DataType>>) -> Self {
+        let cast_cols: Vec<Expr> = dtypes
+            .into_iter()
+            .map(|(name, dt)| col(name).cast(dt.0))
+            .collect();
+        self.ldf.clone().with_columns(cast_cols).into()
+    }
+
     fn clone(&self) -> Self {
         self.ldf.clone().into()
     }
