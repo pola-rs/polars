@@ -110,3 +110,37 @@ publish:  ## Publish Polars crates
 help:  ## Display this help screen
 	@echo -e "\033[1mAvailable commands:\033[0m"
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' | sort
+
+.PHONY: check-wasm
+check-wasm:  ## Check wasm build without supported features
+	cargo hack check --target wasm32-unknown-unknown -p polars --no-dev-deps  \
+		--each-feature                        \
+		--exclude-features async              \
+		--exclude-features aws                \
+		--exclude-features azure              \
+		--exclude-features cross_join         \
+		--exclude-features csv                \
+		--exclude-features decompress-fast    \
+		--exclude-features default            \
+		--exclude-features docs-selection     \
+		--exclude-features dtype-array        \
+		--exclude-features dtype-categorical  \
+		--exclude-features dtype-decimal      \
+		--exclude-features dtype-full         \
+		--exclude-features dtype-i16          \
+		--exclude-features dtype-i8           \
+		--exclude-features dtype-u16          \
+		--exclude-features dtype-u8           \
+		--exclude-features extract_jsonpath   \
+		--exclude-features fmt                \
+		--exclude-features gcp                \
+		--exclude-features ipc                \
+		--exclude-features ipc_streaming      \
+		--exclude-features json               \
+		--exclude-features nightly            \
+		--exclude-features parquet            \
+		--exclude-features performant         \
+		--exclude-features sql                \
+		--exclude-features streaming          \
+		--exclude-features test
+
