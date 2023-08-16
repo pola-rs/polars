@@ -58,7 +58,9 @@ def _parse_regular_inputs(
 
 
 def _is_iterable(input: IntoExpr | Iterable[IntoExpr]) -> bool:
-    return isinstance(input, Iterable) and not isinstance(input, (str, pl.Series))
+    return isinstance(input, Iterable) and not isinstance(
+        input, (str, bytes, pl.Series)
+    )
 
 
 def _parse_named_inputs(
@@ -98,7 +100,9 @@ def parse_as_expression(
         expr = F.col(input)
         structify = False
     elif (
-        isinstance(input, (int, float, str, pl.Series, datetime, date, time, timedelta))
+        isinstance(
+            input, (int, float, str, bytes, pl.Series, datetime, date, time, timedelta)
+        )
         or input is None
     ):
         expr = F.lit(input)

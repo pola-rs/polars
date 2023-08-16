@@ -22,7 +22,9 @@ def assert_expr_equal(result: pl.Expr, expected: pl.Expr) -> None:
     assert_frame_equal(df.select(result), df.select(expected))
 
 
-@pytest.mark.parametrize("input", [5, 2.0, pl.Series([1, 2, 3]), date(2022, 1, 1)])
+@pytest.mark.parametrize(
+    "input", [5, 2.0, pl.Series([1, 2, 3]), date(2022, 1, 1), b"hi"]
+)
 def test_parse_as_expression_lit(input: Any) -> None:
     result = wrap_expr(parse_as_expression(input))
     expected = pl.lit(input)
