@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use home::home_dir;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 
@@ -15,9 +16,7 @@ use crate::ArrowSchema;
 pub fn resolve_homedir(path: &Path) -> PathBuf {
     // replace "~" with home directory
     if path.starts_with("~") {
-        // home crate does not compile on wasm https://github.com/rust-lang/cargo/issues/12297
-        #[cfg(not(target_family = "wasm"))]
-        if let Some(homedir) = home::home_dir() {
+        if let Some(homedir) = home_dir() {
             return homedir.join(path.strip_prefix("~").unwrap());
         }
     }
