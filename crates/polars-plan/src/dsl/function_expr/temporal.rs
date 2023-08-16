@@ -282,6 +282,122 @@ pub(super) fn temporal_range_dispatch(
         _ => {},
     };
 
+    let start = start.get(0).unwrap().extract::<i64>().unwrap();
+    let stop = stop.get(0).unwrap().extract::<i64>().unwrap();
+
+    let out = match dtype {
+        DataType::Date => date_range_impl(
+            name,
+            start,
+            stop,
+            every,
+            closed,
+            TimeUnit::Milliseconds,
+            None,
+        )?,
+        DataType::Datetime(tu, ref tz) => {
+            date_range_impl(name, start, stop, every, closed, tu, tz.as_ref())?
+        },
+        DataType::Time => date_range_impl(
+            name,
+            start,
+            stop,
+            every,
+            closed,
+            TimeUnit::Nanoseconds,
+            None,
+        )?,
+        _ => unimplemented!(),
+    };
+    Ok(out.cast(&dtype).unwrap().into_series())
+}
+
+pub(super) fn temporal_ranges_dispatch(
+    s: &[Series],
+    name: &str,
+    every: Duration,
+    closed: ClosedWindow,
+    time_unit: Option<TimeUnit>,
+    time_zone: Option<TimeZone>,
+) -> PolarsResult<Series> {
+    let start = &s[0];
+    let stop = &s[1];
+
+    polars_ensure!(
+        start.len() == stop.len(),
+        ComputeError: "'start' and 'stop' should have the same length",
+    );
+    const TO_MS: i64 = SECONDS_IN_DAY * 1000;
+
+    // Note: `start` and `stop` have already been cast to their supertype,
+    // so only `start`'s dtype needs to be matched against.
+    #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
+    let mut dtype = match (start.dtype(), time_unit) {
+        (DataType::Date, time_unit) => {
+            let nsecs = every.nanoseconds();
+            if nsecs == 0 {
+                DataType::Date
+            } else if let Some(tu) = time_unit {
+                DataType::Datetime(tu, None)
+            } else if nsecs % 1_000 != 0 {
+                DataType::Datetime(TimeUnit::Nanoseconds, None)
+            } else {
+                DataType::Datetime(TimeUnit::Microseconds, None)
+            }
+        },
+        (DataType::Time, _) => DataType::Time,
+        // overwrite nothing, keep as-is
+        (DataType::Datetime(_, _), None) => start.dtype().clone(),
+        // overwrite time unit, keep timezone
+        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
+        _ => unreachable!(),
+    };
+
+    let (mut start, mut stop) = match dtype {
+        #[cfg(feature = "timezones")]
+        DataType::Datetime(_, Some(_)) => (
+            polars_ops::prelude::replace_time_zone(
+                start.cast(&dtype)?.datetime().unwrap(),
+                None,
+                None,
+            )?
+            .into_series()
+            .to_physical_repr()
+            .cast(&DataType::Int64)?,
+            polars_ops::prelude::replace_time_zone(
+                stop.cast(&dtype)?.datetime().unwrap(),
+                None,
+                None,
+            )?
+            .into_series()
+            .to_physical_repr()
+            .cast(&DataType::Int64)?,
+        ),
+        _ => (
+            start
+                .cast(&dtype)?
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
+            stop.cast(&dtype)?
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
+        ),
+    };
+
+    if dtype == DataType::Date {
+        start = &start * TO_MS;
+        stop = &stop * TO_MS;
+    }
+
+    // overwrite time zone, if specified
+    match (&dtype, &time_zone) {
+        #[cfg(feature = "timezones")]
+        (DataType::Datetime(tu, _), Some(tz)) => {
+            dtype = DataType::Datetime(*tu, Some(tz.clone()));
+        },
+        _ => {},
+    };
+
     let start = start.i64().unwrap();
     let stop = stop.i64().unwrap();
 

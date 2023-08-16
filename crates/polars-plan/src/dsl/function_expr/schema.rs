@@ -68,9 +68,8 @@ impl FunctionExpr {
                         time_zone,
                     } => {
                         // output dtype may change based on `every`, `time_unit`, and `time_zone`
-                        let inner_dtype =
-                            mapper.map_to_date_range_dtype(every, time_unit, time_zone)?;
-                        return Ok(Field::new("date", DataType::List(Box::new(inner_dtype))));
+                        let dtype = mapper.map_to_date_range_dtype(every, time_unit, time_zone)?;
+                        return Ok(Field::new("date", dtype));
                     },
                     DateRanges {
                         every,
@@ -88,7 +87,7 @@ impl FunctionExpr {
                     },
 
                     TimeRange { .. } => {
-                        return Ok(Field::new("time", DataType::List(Box::new(DataType::Time))));
+                        return Ok(Field::new("time", DataType::Time));
                     },
                     TimeRanges { .. } => {
                         return Ok(Field::new(
