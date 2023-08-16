@@ -112,8 +112,8 @@ def parse_as_expression(
         structify = False
     else:
         raise TypeError(
-            f"did not expect value {input!r} of type {type(input).__name__!r}, maybe disambiguate with"
-            " pl.lit or pl.col"
+            f"did not expect value {input!r} of type {type(input).__name__!r}"
+            "\n\nTry disambiguating with `lit` or `col`."
         )
 
     if structify:
