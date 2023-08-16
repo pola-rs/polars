@@ -129,7 +129,6 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         SearchSortedSide,
         SizeUnit,
-        TimeUnit,
     )
 
     if sys.version_info >= (3, 11):
@@ -416,16 +415,6 @@ class Series:
         """Shape of this Series."""
         return (self._s.len(),)
 
-    @property
-    def time_unit(self) -> TimeUnit | None:
-        """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
-        issue_deprecation_warning(
-            "`Series.time_unit` is deprecated and will be removed in a future version,"
-            " please use `Series.dtype.time_unit` instead",
-            version="0.17.5",
-        )
-        return self._s.time_unit()
-
     def __bool__(self) -> NoReturn:
         raise ValueError(
             "the truth value of a Series is ambiguous"
@@ -483,7 +472,7 @@ class Series:
                 return ~self
 
         if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other, self._s.time_unit())
+            ts = _datetime_to_pl_timestamp(other, self.dtype.time_unit)  # type: ignore[union-attr]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(ts))
@@ -506,7 +495,7 @@ class Series:
             return self._from_pyseries(getattr(self._s, op)(other._s))
 
         if other is not None:
-            other = maybe_cast(other, self.dtype, self._s.time_unit())
+            other = maybe_cast(other, self.dtype)
         f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -675,7 +664,7 @@ class Series:
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
         else:
-            other = maybe_cast(other, self.dtype, self._s.time_unit())
+            other = maybe_cast(other, self.dtype)
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             raise ValueError(
@@ -3848,9 +3837,9 @@ class Series:
             if self.dtype == Date:
                 tp = "datetime64[D]"
             elif self.dtype == Duration:
-                tp = f"timedelta64[{self._s.time_unit()}]"
+                tp = f"timedelta64[{self.dtype.time_unit}]"  # type: ignore[union-attr]
             else:
-                tp = f"datetime64[{self._s.time_unit()}]"
+                tp = f"datetime64[{self.dtype.time_unit}]"  # type: ignore[union-attr]
             return arr.astype(tp)
 
         def raise_no_zero_copy() -> None:

@@ -104,7 +104,7 @@ class DateTimeNameSpace:
             if s.dtype == Date:
                 return _to_python_date(int(out))
             else:
-                return _to_python_datetime(int(out), s._s.time_unit())
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
         return None
 
     def mean(self) -> dt.date | dt.datetime | None:
@@ -135,7 +135,7 @@ class DateTimeNameSpace:
             if s.dtype == Date:
                 return _to_python_date(int(out))
             else:
-                return _to_python_datetime(int(out), s._s.time_unit())
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
         return None
 
     def to_string(self, format: str) -> Series:

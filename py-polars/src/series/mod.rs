@@ -643,20 +643,6 @@ impl PySeries {
         Ok(out.into())
     }
 
-    fn time_unit(&self) -> Option<&str> {
-        if let DataType::Datetime(time_unit, _) | DataType::Duration(time_unit) =
-            self.series.dtype()
-        {
-            Some(match time_unit {
-                TimeUnit::Nanoseconds => "ns",
-                TimeUnit::Microseconds => "us",
-                TimeUnit::Milliseconds => "ms",
-            })
-        } else {
-            None
-        }
-    }
-
     fn get_chunks(&self) -> PyResult<Vec<PyObject>> {
         Python::with_gil(|py| {
             let wrap_s = py_modules::POLARS.getattr(py, "wrap_s").unwrap();
