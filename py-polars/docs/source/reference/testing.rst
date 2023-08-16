@@ -1,7 +1,6 @@
-
-============
+=======
 Testing
-============
+=======
 .. currentmodule:: polars
 
 

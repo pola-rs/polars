@@ -1,9 +1,7 @@
-
 ============
 Input/output
 ============
 .. currentmodule:: polars
-
 
 CSV
 ~~~
