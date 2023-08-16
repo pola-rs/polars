@@ -118,20 +118,10 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features async              \
 		--exclude-features aws                \
 		--exclude-features azure              \
-		--exclude-features cross_join         \
-		--exclude-features csv                \
 		--exclude-features decompress         \
 		--exclude-features decompress-fast    \
 		--exclude-features default            \
 		--exclude-features docs-selection     \
-		--exclude-features dtype-array        \
-		--exclude-features dtype-categorical  \
-		--exclude-features dtype-decimal      \
-		--exclude-features dtype-full         \
-		--exclude-features dtype-i16          \
-		--exclude-features dtype-i8           \
-		--exclude-features dtype-u16          \
-		--exclude-features dtype-u8           \
 		--exclude-features extract_jsonpath   \
 		--exclude-features fmt                \
 		--exclude-features gcp                \
@@ -141,7 +131,6 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features nightly            \
 		--exclude-features parquet            \
 		--exclude-features performant         \
-		--exclude-features sql                \
 		--exclude-features streaming          \
 		--exclude-features test
 
