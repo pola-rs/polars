@@ -7,10 +7,6 @@ from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import (
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
-)
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
@@ -86,7 +82,6 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool | None = None,
         use_earliest: bool | None = None,
     ) -> Expr:
         """
@@ -117,15 +112,6 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
-        utc
-            Parse time zone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
-
-            .. deprecated:: 0.18.0
-                This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
-                and offset-aware strings are converted to
-                ``pl.Datetime(time_unit, "UTC")``.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -145,15 +131,6 @@ class ExprStringNameSpace:
         ]
         """
         _validate_format_argument(format)
-        if utc is not None:
-            issue_deprecation_warning(
-                "The `utc` argument is now a no-op and has no effect. "
-                "You can safely remove it. "
-                "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
-                "and offset-aware strings are converted to "
-                '``pl.Datetime(time_unit, "UTC")``.',
-                version="0.17.15",
-            )
         return wrap_expr(
             self._pyexpr.str_to_datetime(
                 format,
@@ -204,8 +181,6 @@ class ExprStringNameSpace:
         _validate_format_argument(format)
         return wrap_expr(self._pyexpr.str_to_time(format, strict, cache))
 
-    @deprecate_renamed_parameter("datatype", "dtype", version="0.17.3")
-    @deprecate_renamed_parameter("fmt", "format", version="0.17.3")
     def strptime(
         self,
         dtype: PolarsTemporalType,
@@ -214,7 +189,6 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool | None = None,
         use_earliest: bool | None = None,
     ) -> Expr:
         """
@@ -240,15 +214,6 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-        utc
-            Parse time zone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
-
-            .. deprecated:: 0.18.0
-                This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
-                and offset-aware strings are converted to
-                ``pl.Datetime(time_unit, "UTC")``.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -303,8 +268,6 @@ class ExprStringNameSpace:
                 2001-07-08
         ]
         """
-        _validate_format_argument(format)
-
         if dtype == Date:
             return self.to_date(format, strict=strict, exact=exact, cache=cache)
         elif dtype == Datetime:
@@ -317,7 +280,6 @@ class ExprStringNameSpace:
                 strict=strict,
                 exact=exact,
                 cache=cache,
-                utc=utc,
                 use_earliest=use_earliest,
             )
         elif dtype == Time:
