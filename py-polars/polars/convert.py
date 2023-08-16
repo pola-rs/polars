@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import io
 import re
-from itertools import zip_longest
-from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
+from itertools import chain, zip_longest
+from typing import TYPE_CHECKING, Any, Generator, Mapping, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
@@ -524,6 +524,7 @@ def from_arrow(
         | pa.ChunkedArray
         | pa.RecordBatch
         | Sequence[pa.RecordBatch]
+        | Generator[pa.RecordBatch, None, None]
     ),
     schema: SchemaDefinition | None = None,
     *,
@@ -609,6 +610,7 @@ def from_arrow(
 
     if isinstance(data, pa.RecordBatch):
         data = [data]
+
     if isinstance(data, Sequence) and data and isinstance(data[0], pa.RecordBatch):
         return pl.DataFrame._from_arrow(
             data=pa.Table.from_batches(data),
@@ -617,11 +619,27 @@ def from_arrow(
             schema_overrides=schema_overrides,
         )
     elif isinstance(data, Sequence) and (schema or schema_overrides) and not data:
-        return pl.DataFrame(data=[], schema=schema, schema_overrides=schema_overrides)
-    else:
-        raise ValueError(
-            f"expected PyArrow Table, Array, or sequence of RecordBatches, got {type(data).__name__!r}"
+        return pl.DataFrame(
+            data=[],
+            schema=schema,
+            schema_overrides=schema_overrides,
         )
+
+    data_type = repr(type(data).__name__)
+
+    if isinstance(data, Generator):
+        if isinstance(first_batch := next(data), pa.RecordBatch):
+            return pl.DataFrame._from_arrow(
+                data=pa.Table.from_batches(chain((first_batch,), data)),
+                rechunk=rechunk,
+                schema=schema,
+                schema_overrides=schema_overrides,
+            )
+        data_type = f"generator of {type(first_batch).__name__!r}"
+
+    raise ValueError(
+        f"expected PyArrow Table, Array, or one or more RecordBatches; got {data_type}"
+    )
 
 
 @overload
