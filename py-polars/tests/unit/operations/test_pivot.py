@@ -312,8 +312,8 @@ def test_pivot_negative_duration() -> None:
 
 def test_aggregate_function_deprecation_warning() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["foo", "foo"], "c": ["x", "x"]})
-    with pytest.deprecated_call(
-        match="the default `aggregate_function` will change from `'first'` to `None`"
+    with pytest.raises(
+        pl.ComputeError, match="found multiple elements in the same group"
     ):
         df.pivot("a", "b", "c")
 
