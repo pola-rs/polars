@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+import pyarrow as pa
 import pyarrow.fs
 import pytest
 from deltalake import DeltaTable
@@ -335,3 +336,10 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
 
     tbl = DeltaTable(tmp_path)
     assert tbl.version() == 1
+
+
+def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    pa_schema = pa.schema([("a", pa.int64())])
+    df.write_delta(tmp_path, delta_write_options={"schema": pa_schema})
