@@ -877,6 +877,10 @@ impl PyLazyFrame {
         self.ldf.clone().cast(cast_map, strict).into()
     }
 
+    fn cast_all(&self, dtype: Wrap<DataType>, strict: bool) -> Self {
+        self.ldf.clone().cast_all(dtype.0, strict).into()
+    }
+
     fn clone(&self) -> Self {
         self.ldf.clone().into()
     }

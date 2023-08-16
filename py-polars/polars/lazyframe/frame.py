@@ -2062,7 +2062,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         if not isinstance(dtypes, Mapping):
-            return self.select(F.all().cast(dtypes, strict=strict))
+            return self._from_pyldf(self._ldf.cast_all(dtypes, strict))
 
         cast_map = {}
         for c, dtype in dtypes.items():
