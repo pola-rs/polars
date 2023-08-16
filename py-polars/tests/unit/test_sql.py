@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import warnings
 from pathlib import Path
 
 import pytest
@@ -761,19 +760,15 @@ def test_sql_substr() -> None:
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-
-        out = pl.SQLContext(foods1=pl.scan_ipc(foods_ipc_path)).query(  # type: ignore[attr-defined]
-            """
-            SELECT DISTINCT TRIM(LEADING 'vmf' FROM category)
-            FROM foods1
-            ORDER BY category DESC
-            """
-        )
-        assert out.to_dict(False) == {
-            "category": ["seafood", "ruit", "egetables", "eat"]
-        }
+    out = pl.SQLContext(foods1=pl.scan_ipc(foods_ipc_path)).execute(
+        """
+        SELECT DISTINCT TRIM(LEADING 'vmf' FROM category)
+        FROM foods1
+        ORDER BY category DESC
+        """,
+        eager=True,
+    )
+    assert out.to_dict(False) == {"category": ["seafood", "ruit", "egetables", "eat"]}
 
 
 def test_register_context() -> None:

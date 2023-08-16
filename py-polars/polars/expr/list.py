@@ -7,10 +7,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import (
-    deprecate_renamed_methods,
-    deprecate_renamed_parameter,
-)
+from polars.utils.deprecation import deprecate_renamed_methods
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -785,7 +782,6 @@ class ExprListNameSpace:
         element = parse_as_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_count_match(element))
 
-    @deprecate_renamed_parameter("name_generator", "fields", version="0.17.12")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
@@ -803,7 +799,6 @@ class ExprListNameSpace:
             * "first_non_null": set number of fields equal to the length of the
               first non zero-length sublist.
             * "max_width": set number of fields as max length of all sublists.
-
         fields
             If the name and number of the desired fields is known in advance
             a list of field names can be given, which will be assigned by index.

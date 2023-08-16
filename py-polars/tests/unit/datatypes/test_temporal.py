@@ -1956,21 +1956,6 @@ def test_strptime_with_invalid_tz() -> None:
         )
 
 
-def test_utc_deprecation() -> None:
-    with pytest.deprecated_call(
-        match="The `utc` argument is now a no-op and has no effect. You can safely remove it"
-    ):
-        pl.Series(["2020-01-01 03:00:00"]).str.strptime(
-            pl.Datetime("us"), "%Y-%m-%d %H:%M:%S", utc=True
-        )
-    with pytest.deprecated_call(
-        match="The `utc` argument is now a no-op and has no effect. You can safely remove it"
-    ):
-        pl.Series(["2020-01-01 03:00:00"]).str.to_datetime(
-            "%Y-%m-%d %H:%M:%S", utc=True
-        )
-
-
 def test_strptime_unguessable_format() -> None:
     with pytest.raises(
         ComputeError,

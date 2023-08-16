@@ -6,7 +6,6 @@ from polars.datatypes import Date
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_date, _to_python_datetime
-from polars.utils.deprecation import deprecate_renamed_parameter
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -105,7 +104,7 @@ class DateTimeNameSpace:
             if s.dtype == Date:
                 return _to_python_date(int(out))
             else:
-                return _to_python_datetime(int(out), s._s.time_unit())
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
         return None
 
     def mean(self) -> dt.date | dt.datetime | None:
@@ -136,7 +135,7 @@ class DateTimeNameSpace:
             if s.dtype == Date:
                 return _to_python_date(int(out))
             else:
-                return _to_python_datetime(int(out), s._s.time_unit())
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
         return None
 
     def to_string(self, format: str) -> Series:
@@ -171,7 +170,6 @@ class DateTimeNameSpace:
 
         """
 
-    @deprecate_renamed_parameter("fmt", "format", version="0.17.12")
     def strftime(self, format: str) -> Series:
         """
         Convert a Date/Time/Datetime column into a Utf8 column with the given format.

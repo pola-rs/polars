@@ -9,7 +9,6 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import deprecate_renamed_parameter
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -446,7 +445,6 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_to_string(format))
 
-    @deprecate_renamed_parameter("fmt", "format", version="0.17.3")
     def strftime(self, format: str) -> Expr:
         """
         Convert a Date/Time/Datetime column into a Utf8 column with the given format.

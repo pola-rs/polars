@@ -68,7 +68,6 @@ from polars.io.excel._write_utils import (
 )
 from polars.selectors import _expand_selectors
 from polars.slice import PolarsSlice
-from polars.utils import no_default
 from polars.utils._construction import (
     _post_apply_columns,
     arrow_to_pydf,
@@ -86,7 +85,6 @@ from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_renamed_methods,
     deprecate_renamed_parameter,
-    issue_deprecation_warning,
 )
 from polars.utils.various import (
     _prepare_row_count_args,
@@ -152,7 +150,6 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
         UnstackDirection,
     )
-    from polars.utils import NoDefault
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec, TypeAlias
@@ -6600,7 +6597,7 @@ class DataFrame:
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
-        aggregate_function: PivotAgg | Expr | None | NoDefault = no_default,
+        aggregate_function: PivotAgg | Expr | None = None,
         *,
         maintain_order: bool = True,
         sort_columns: bool = False,
@@ -6711,15 +6708,6 @@ class DataFrame:
         values = _expand_selectors(self, values)
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
-
-        if aggregate_function is no_default:
-            issue_deprecation_warning(
-                "In a future version of polars, the default `aggregate_function` "
-                "will change from `'first'` to `None`. Please pass `'first'` to keep the "
-                "current behaviour, or `None` to accept the new one.",
-                version="0.16.16",
-            )
-            aggregate_function = "first"
 
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":
@@ -8395,7 +8383,6 @@ class DataFrame:
         """
         return self._from_pydf(self._df.null_count())
 
-    @deprecate_renamed_parameter("frac", "fraction", version="0.17.0")
     def sample(
         self,
         n: int | None = None,

@@ -5,10 +5,6 @@ from typing import TYPE_CHECKING
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.deprecation import (
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
-)
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -178,8 +174,6 @@ class StringNameSpace:
 
         """
 
-    @deprecate_renamed_parameter("datatype", "dtype", version="0.17.3")
-    @deprecate_renamed_parameter("fmt", "format", version="0.17.3")
     def strptime(
         self,
         dtype: PolarsTemporalType,
@@ -188,7 +182,6 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool | None = None,
         use_earliest: bool | None = None,
     ) -> Series:
         """
@@ -214,15 +207,6 @@ class StringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-        utc
-            Parse time zone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
-
-            .. deprecated:: 0.18.0
-                This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
-                and offset-aware strings are converted to
-                ``pl.Datetime(time_unit, "UTC")``.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -277,30 +261,6 @@ class StringNameSpace:
                 2001-07-08
         ]
         """
-        if utc is not None:
-            issue_deprecation_warning(
-                "The `utc` argument is now a no-op and has no effect. "
-                "You can safely remove it. "
-                "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
-                "and offset-aware strings are converted to "
-                '``pl.Datetime(time_unit, "UTC")``.',
-                version="0.17.15",
-            )
-        s = wrap_s(self._s)
-        return (
-            s.to_frame()
-            .select(
-                F.col(s.name).str.strptime(
-                    dtype,
-                    format,
-                    strict=strict,
-                    exact=exact,
-                    cache=cache,
-                    use_earliest=use_earliest,
-                )
-            )
-            .to_series()
-        )
 
     def to_decimal(
         self,

@@ -163,7 +163,6 @@ from polars.io import (
     read_parquet_schema,
     scan_csv,
     scan_delta,
-    scan_ds,
     scan_ipc,
     scan_ndjson,
     scan_parquet,
@@ -172,12 +171,7 @@ from polars.io import (
 from polars.lazyframe import LazyFrame
 from polars.series import Series
 from polars.sql import SQLContext
-from polars.string_cache import (
-    StringCache,
-    enable_string_cache,
-    toggle_string_cache,
-    using_string_cache,
-)
+from polars.string_cache import StringCache, enable_string_cache, using_string_cache
 from polars.type_aliases import PolarsDataType
 from polars.utils import (
     build_info,
@@ -267,7 +261,6 @@ __all__ = [
     "read_parquet_schema",
     "scan_csv",
     "scan_delta",
-    "scan_ds",
     "scan_ipc",
     "scan_ndjson",
     "scan_parquet",
@@ -275,7 +268,6 @@ __all__ = [
     # polars.stringcache
     "StringCache",
     "enable_string_cache",
-    "toggle_string_cache",
     "using_string_cache",
     # polars.config
     "Config",
