@@ -148,13 +148,11 @@ impl OptimizationRule for SimplifyBooleanRule {
                 left,
                 op: Operator::And,
                 right,
-            } if matches!(
-                expr_arena.get(*left),
-                AExpr::Literal(_)
-            ) && matches!(
-                expr_arena.get(*right),
-                AExpr::Literal(LiteralValue::Boolean(false))
-            ) =>
+            } if matches!(expr_arena.get(*left), AExpr::Literal(_))
+                && matches!(
+                    expr_arena.get(*right),
+                    AExpr::Literal(LiteralValue::Boolean(false))
+                ) =>
             {
                 Some(AExpr::Literal(LiteralValue::Boolean(false)))
             },
@@ -165,14 +163,11 @@ impl OptimizationRule for SimplifyBooleanRule {
             AExpr::BinaryExpr {
                 left,
                 op: Operator::And,
-                right
+                right,
             } if matches!(
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(false))
-            ) && matches!(
-                expr_arena.get(*right),
-                AExpr::Literal(_)
-            ) =>
+            ) && matches!(expr_arena.get(*right), AExpr::Literal(_)) =>
             {
                 Some(AExpr::Literal(LiteralValue::Boolean(false)))
             },
@@ -187,9 +182,8 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
             {
-                let names = aexpr_to_leaf_names(*left, expr_arena);
-                let name = names.get(0).map(Arc::clone).unwrap_or_else(|| "".into());
-                Some(AExpr::Alias(*right, name))
+                // We alias because of the left-hand naming rule.
+                Some(AExpr::Alias(*right, "literal".into()))
             },
             // x or false => x
             AExpr::BinaryExpr {
@@ -212,13 +206,11 @@ impl OptimizationRule for SimplifyBooleanRule {
                 left,
                 op: Operator::Or,
                 right,
-            } if matches!(
-                expr_arena.get(*left),
-                AExpr::Literal(_)
-            ) && matches!(
-                expr_arena.get(*right),
-                AExpr::Literal(LiteralValue::Boolean(true))
-            ) =>
+            } if matches!(expr_arena.get(*left), AExpr::Literal(_))
+                && matches!(
+                    expr_arena.get(*right),
+                    AExpr::Literal(LiteralValue::Boolean(true))
+                ) =>
             {
                 Some(AExpr::Literal(LiteralValue::Boolean(true)))
             },
@@ -233,10 +225,7 @@ impl OptimizationRule for SimplifyBooleanRule {
             } if matches!(
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(true))
-            ) && matches!(
-                expr_arena.get(*right),
-                AExpr::Literal(_)
-            ) =>
+            ) && matches!(expr_arena.get(*right), AExpr::Literal(_)) =>
             {
                 Some(AExpr::Literal(LiteralValue::Boolean(true)))
             },

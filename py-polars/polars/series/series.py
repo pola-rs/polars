@@ -455,7 +455,7 @@ class Series:
             other = Series([other])
         return self._from_pyseries(self._s.bitand(other._s))
 
-    def __rand__(self, other: Series) -> Self:
+    def __rand__(self, other: Series) -> Series:
         if not isinstance(other, Series):
             other = Series([other])
         return other & self
@@ -465,7 +465,7 @@ class Series:
             other = Series([other])
         return self._from_pyseries(self._s.bitor(other._s))
 
-    def __ror__(self, other: Series) -> Self:
+    def __ror__(self, other: Series) -> Series:
         if not isinstance(other, Series):
             other = Series([other])
         return other | self
