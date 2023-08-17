@@ -190,7 +190,7 @@ pub(super) fn join_asof_nearest_with_tolerance<
     tolerance: T,
 ) -> Vec<Option<IdxSize>> {
     let n_left = left.len();
-    
+
     if left.is_empty() {
         return Vec::new();
     }
