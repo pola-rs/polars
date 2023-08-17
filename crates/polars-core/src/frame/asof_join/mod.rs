@@ -112,7 +112,7 @@ where
                         other.cont_slice().unwrap(),
                         tolerance,
                     )
-                }
+                },
             },
         };
         Ok(out)

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::ops::Sub;
+use std::ops::{Add, Sub};
 
 use ahash::RandomState;
 use arrow::types::NativeType;
@@ -92,7 +92,7 @@ pub(super) unsafe fn join_asof_forward_with_indirection_and_tolerance<
 }
 
 pub(super) unsafe fn join_asof_nearest_with_indirection_and_tolerance<
-    T: PartialOrd + Copy + Debug + Sub<Output = T>,
+    T: PartialOrd + Copy + Debug + Sub<Output = T> + Add<Output = T>,
 >(
     val_l: T,
     right: &[T],
@@ -102,32 +102,55 @@ pub(super) unsafe fn join_asof_nearest_with_indirection_and_tolerance<
     if offsets.is_empty() {
         return (None, 0);
     }
-    let max_possible_dist = tolerance;
-    let mut dist: T = max_possible_dist;
-    let mut prev_offset: IdxSize = 0;
-    for (idx, &offset) in offsets.iter().enumerate() {
-        let val_r = *right.get_unchecked(offset as usize);
-        // This is (val_r - val_l).abs(), but works on strings/dates
-        let dist_curr = if val_r > val_l {
-            val_r - val_l
-        } else {
-            val_l - val_r
-        };
-        if dist_curr <= dist {
-            // candidate for match
-            dist = dist_curr;
-        } else {
-            // note for a nearest-match, we can re-match on the same val_r next time,
-            // so we need to rewind the idx by 1
-            return (Some(prev_offset), idx - 1);
-        }
-        prev_offset = offset;
+
+    // allow for early escape
+    let n_right = offsets.len();
+    let r_upper_bound = right[offsets[n_right - 1] as usize] + tolerance;
+
+    // val_l can't match anything on the right, leave early
+    if val_l > r_upper_bound {
+        return (None, n_right - 1);
     }
 
-    // if we've reached the end with nearest and haven't returned, it means that the last item was the closest
-    // note for a nearest-match, we can re-match on the same val_r next time,
-    // so we need to rewind the idx by 1
-    (Some(offsets[offsets.len() - 1]), offsets.len() - 1)
+    let mut dist: T = tolerance;
+    let mut prev_offset: IdxSize = 0;
+    let mut found_window = false;
+    for (idx, &offset) in offsets.iter().enumerate() {
+        let val_r = *right.get_unchecked(offset as usize);
+
+        // haven't reached the window, keep looking
+        if val_l > val_r + tolerance {
+            prev_offset = offset;
+            continue;
+        }
+
+        // passed the window without a match, leave immediately
+        if !found_window && (val_r > val_l + tolerance) {
+            return (None, n_right - 1);
+        }
+
+        // we made it to the window. Start testing for distance
+        found_window = true;
+        let current_dist = if val_l > val_r {
+            val_l - val_r
+        } else {
+            val_r - val_l
+        };
+        if current_dist <= dist {
+            dist = current_dist;
+            if idx == (n_right - 1) {
+                // we're the last item, it's a match
+                return (Some(offset), idx);
+            }
+            prev_offset = offset;
+        } else {
+            // we'ved moved farther away. Last element was the match
+            return (Some(prev_offset), idx - 1);
+        }
+    }
+
+    // should be unreachable
+    (None, 0)
 }
 
 pub(super) unsafe fn join_asof_backward_with_indirection<T: PartialOrd + Copy + Debug>(
@@ -206,8 +229,6 @@ pub(super) unsafe fn join_asof_nearest_with_indirection<
             // candidate for match
             dist = dist_curr;
         } else {
-            // note for a nearest-match, we can re-match on the same val_r next time,
-            // so we need to rewind the idx by 1
             return (Some(prev_offset), idx - 1);
         }
         prev_offset = offset;

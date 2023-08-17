@@ -474,8 +474,12 @@ def test_asof_join_nearest() -> None:
     out = df1.join_asof(df2, on="asof_key", strategy="nearest")
     assert_frame_equal(out, expected)
 
-    # test with tolerance: edge cases
+
+def test_asof_join_nearest_with_tolerance() -> None:
     a = b = [1, 2, 3, 4, 5]
+
+    nones = pl.Series([None, None, None, None, None], dtype=pl.Int64)
+
     # Case 1: complete miss
     df1 = pl.DataFrame({"asof_key": [1, 2, 3, 4, 5], "a": a}).set_sorted("asof_key")
     df2 = pl.DataFrame(
@@ -484,7 +488,7 @@ def test_asof_join_nearest() -> None:
             "b": b,
         }
     ).set_sorted("asof_key")
-    expected = df1.with_columns(pl.Series([None, None, None, None, None]).alias("b"))
+    expected = df1.with_columns(nones.alias("b"))
     out = df1.join_asof(df2, on="asof_key", strategy="nearest", tolerance=1)
     assert_frame_equal(out, expected)
 
@@ -496,7 +500,7 @@ def test_asof_join_nearest() -> None:
             "b": b,
         }
     ).set_sorted("asof_key")
-    expected = df1.with_columns(pl.Series([None, None, None, None, None]).alias("b"))
+    expected = df1.with_columns(nones.alias("b"))
     out = df1.join_asof(df2, on="asof_key", strategy="nearest", tolerance=1)
     assert_frame_equal(out, expected)
 
@@ -509,7 +513,7 @@ def test_asof_join_nearest() -> None:
         }
     ).set_sorted("asof_key")
     out = df1.join_asof(df2, on="asof_key", strategy="nearest", tolerance=1)
-    expected = df1.with_columns(pl.Series([None, None, None, None, None]).alias("b"))
+    expected = df1.with_columns(pl.Series([None, None, None, None, 1]).alias("b"))
     assert_frame_equal(out, expected)
 
     # Case 4: match last item
@@ -521,7 +525,7 @@ def test_asof_join_nearest() -> None:
         }
     ).set_sorted("asof_key")
     out = df1.join_asof(df2, on="asof_key", strategy="nearest", tolerance=1)
-    expected = df1.with_columns(pl.Series([None, None, None, None, None]).alias("b"))
+    expected = df1.with_columns(pl.Series([5, None, None, None, None]).alias("b"))
     assert_frame_equal(out, expected)
 
     # Case 5: match multiples, pick closer
@@ -667,6 +671,261 @@ def test_asof_join_nearest_by() -> None:
     )
 
     out = a.join_asof(b, by="code", on="time", strategy="nearest")
+    assert_frame_equal(out, expected)
+
+
+def test_asof_join_nearest_by_with_tolerance() -> None:
+    df1 = pl.DataFrame(
+        {
+            "group": [
+                1,
+                1,
+                1,
+                1,
+                1,
+                2,
+                2,
+                2,
+                2,
+                2,
+                3,
+                3,
+                3,
+                3,
+                3,
+                4,
+                4,
+                4,
+                4,
+                4,
+                5,
+                5,
+                5,
+                5,
+                5,
+                6,
+                6,
+                6,
+                6,
+                6,
+            ],
+            "asof_key": pl.Series(
+                [
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                ],
+                dtype=pl.Float32,
+            ),
+            "a": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                1,
+                2,
+                3,
+                4,
+                5,
+                1,
+                2,
+                3,
+                4,
+                5,
+                1,
+                2,
+                3,
+                4,
+                5,
+                1,
+                2,
+                3,
+                4,
+                5,
+                1,
+                2,
+                3,
+                4,
+                5,
+            ],
+        }
+    )
+
+    df2 = pl.DataFrame(
+        {
+            "group": [
+                1,
+                1,
+                1,
+                1,
+                1,
+                2,
+                2,
+                2,
+                2,
+                2,
+                3,
+                3,
+                3,
+                3,
+                3,
+                4,
+                4,
+                4,
+                4,
+                4,
+                5,
+                5,
+                5,
+                5,
+                5,
+                6,
+                6,
+                6,
+                6,
+                6,
+            ],
+            "asof_key": pl.Series(
+                [
+                    7,
+                    8,
+                    9,
+                    10,
+                    11,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    5,
+                    -3,
+                    -2,
+                    -1,
+                    0,
+                    0,
+                    2,
+                    2.4,
+                    3.4,
+                    10,
+                    -3,
+                    3,
+                    8,
+                    9,
+                    10,
+                ],
+                dtype=pl.Float32,
+            ),
+            "b": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                1,
+                2,
+                3,
+                4,
+                5,
+                1,
+                2,
+                3,
+                4,
+                5,
+                1,
+                2,
+                3,
+                4,
+                5,
+                1,
+                2,
+                3,
+                4,
+                5,
+                1,
+                2,
+                3,
+                4,
+                5,
+            ],
+        }
+    )
+
+    expected = df1.with_columns(
+        pl.Series(
+            [
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                1,
+                5,
+                None,
+                None,
+                1,
+                1,
+                2,
+                2,
+                4,
+                4,
+                None,
+                None,
+                2,
+                2,
+                2,
+                None,
+            ]
+        ).alias("b")
+    )
+    df1 = df1.sort(by=["group", "asof_key"])
+    df2 = df2.sort(by=["group", "asof_key"])
+    expected = expected.sort(by=["group", "a"])
+
+    out = df1.join_asof(
+        df2, by="group", on="asof_key", strategy="nearest", tolerance=1.0
+    ).sort(by=["group", "a"])
     assert_frame_equal(out, expected)
 
 

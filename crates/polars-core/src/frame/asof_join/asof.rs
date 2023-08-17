@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::ops::Sub;
+use std::ops::{Add, Sub};
 
 use num_traits::Bounded;
 use polars_arrow::index::IdxSize;
@@ -182,56 +182,86 @@ pub(super) fn join_asof_backward<T: PartialOrd + Copy + Debug>(
     out
 }
 
-pub(super) fn join_asof_nearest_with_tolerance<T: PartialOrd + Copy + Debug + Sub<Output = T>>(
+pub(super) fn join_asof_nearest_with_tolerance<
+    T: PartialOrd + Copy + Debug + Sub<Output = T> + Add<Output = T> + Bounded,
+>(
     left: &[T],
     right: &[T],
     tolerance: T,
 ) -> Vec<Option<IdxSize>> {
-    let mut out = Vec::with_capacity(left.len());
-    let mut offset = 0 as IdxSize;
-    let max_value = tolerance;
-    let mut dist: T = max_value;
+    let n_left = left.len();
+    let mut out = Vec::with_capacity(n_left);
+
+    if left.is_empty() {
+        return out;
+    }
+    if right.is_empty() {
+        out.extend(std::iter::repeat(None).take(n_left));
+        return out;
+    }
+
+    // if we know the first/last values we can leave early in many cases
+    let n_right = right.len();
+    let first_left = left[0];
+    let last_left = left[n_left - 1];
+    let r_lower_bound = right[0] - tolerance;
+    let r_upper_bound = right[n_right - 1] + tolerance;
+
+    // fast exit: guaranteed no matches
+    if (r_lower_bound > last_left) || (r_upper_bound < first_left) {
+        out.extend(std::iter::repeat(None).take(n_left));
+        return out;
+    }
 
     for &val_l in left {
-        loop {
-            match right.get(offset as usize) {
-                Some(&val_r) => {
-                    // This is (val_r - val_l).abs(), but works on strings/dates
-                    let dist_curr = if val_r > val_l {
-                        val_r - val_l
-                    } else {
-                        val_l - val_r
-                    };
-                    if dist_curr <= dist {
-                        // candidate for match
-                        dist = dist_curr;
-                        offset += 1;
-                    } else {
-                        // distance has increased, we're now farther away, so previous element was closest
-                        out.push(Some(offset - 1));
+        // no match detection
+        if val_l < r_lower_bound {
+            // less than all values on right, move to next immediately
+            out.push(None);
+            continue;
+        } else if val_l > r_upper_bound {
+            // greater than all values on right, nothing else match; return early
+            out.extend(std::iter::repeat(None).take(n_left - out.len()));
+            return out;
+        }
 
-                        // reset distance
-                        dist = max_value;
-
-                        // The next left-item may match on the same item, so we need to rewind the offset
-                        offset -= 1;
-                        break;
-                    }
-                },
-
-                None => {
-                    if offset > 1 {
-                        // we've reached the end with no matches, so the last item is the nearest for all remaining
-                        out.extend(
-                            std::iter::repeat(Some(offset - 1)).take(left.len() - out.len()),
-                        );
-                    } else {
-                        // this is only hit when the right frame is empty
-                        out.extend(std::iter::repeat(None).take(left.len() - out.len()));
-                    }
-                    return out;
-                },
+        // we might have a match
+        let mut offset: IdxSize = 0;
+        let mut dist = tolerance;
+        let mut found_window = false;
+        for &val_r in right {
+            // haven't reached the window, keep looking
+            if val_l > val_r + tolerance {
+                offset += 1;
+                continue;
             }
+
+            // passed the window without a match, leave immediately
+            if !found_window && (val_r > val_l + tolerance) {
+                out.push(None);
+                break;
+            }
+
+            // we made it to the window. Start testing for distance
+            found_window = true;
+            let current_dist = if val_l > val_r {
+                val_l - val_r
+            } else {
+                val_r - val_l
+            };
+            if current_dist <= dist {
+                dist = current_dist;
+                if offset == (n_right - 1) as IdxSize {
+                    // we're the last item, it's a match
+                    out.push(Some(offset));
+                    break;
+                }
+            } else {
+                // we'ved moved farther away. Last element was the match
+                out.push(Some(offset - 1));
+                break;
+            }
+            offset += 1;
         }
     }
 
@@ -245,9 +275,9 @@ pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> +
     let mut out = Vec::with_capacity(left.len());
     let mut offset = 0 as IdxSize;
     let max_value = <T as num_traits::Bounded>::max_value();
-    let mut dist: T = max_value;
 
     for &val_l in left {
+        let mut dist: T = max_value;
         loop {
             match right.get(offset as usize) {
                 Some(&val_r) => {
@@ -264,9 +294,6 @@ pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> +
                     } else {
                         // distance has increased, we're now farther away, so previous element was closest
                         out.push(Some(offset - 1));
-
-                        // reset distance
-                        dist = max_value;
 
                         // The next left-item may match on the same item, so we need to rewind the offset
                         offset -= 1;
