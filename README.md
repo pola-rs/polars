@@ -220,7 +220,7 @@ point to the `main` branch of this repo.
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
 ```
 
-Required Rust version `>=1.62`
+Required Rust version `>=1.65`.
 
 ## Contributing
 
