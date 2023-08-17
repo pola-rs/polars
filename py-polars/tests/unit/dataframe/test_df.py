@@ -286,10 +286,10 @@ def test_from_arrow(monkeypatch: Any) -> None:
     assert df1.schema == {"x": pl.Utf8, "y": pl.Int32}
     assert df2.schema == {"x": pl.Utf8, "y": pl.Int32}
 
-    with pytest.raises(ValueError, match="got 'str'"):
+    with pytest.raises(TypeError, match="Cannot convert str"):
         pl.from_arrow(data="xyz")
 
-    with pytest.raises(ValueError, match="got generator of 'int'"):
+    with pytest.raises(TypeError, match="Cannot convert int"):
         pl.from_arrow(data=(x for x in (1, 2, 3)))
 
 
