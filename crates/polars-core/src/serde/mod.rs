@@ -4,6 +4,8 @@ pub mod series;
 
 #[cfg(test)]
 mod test {
+    #[cfg(feature = "dtype-array")]
+    use crate::chunked_array::builder::get_fixed_size_list_builder;
     use crate::chunked_array::Settings;
     use crate::prelude::*;
     use crate::series::implementations::null::NullChunked;
@@ -113,6 +115,20 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-array")]
+    fn test_serde_array_owned_json(){
+        let arrays = vec![UInt8Chunked::new("test",vec![1u8,2,3,4,5]),UInt8Chunked::new("test2",vec![2u8,3,4,5,6])];
+        let mut builder = get_fixed_size_list_builder(&DataType::UInt8, 2, 5, "array").unwrap();
+        for (i,ca) in arrays.iter().enumerate(){
+            unsafe { builder.push_unchecked(ca.chunks().get_unchecked(0).as_ref(), i); }
+        }
+        let s = builder.finish().into_series();
+        let json = serde_json::to_string(&s).unwrap();
+        let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
+        assert_eq!(out, s);
+    }
+
+    #[test]
     #[cfg(feature = "dtype-decimal")]
     fn test_serde_decimal_series_owned_json() {
         let s = Series::new("decimal", &["4.2", "4.4", "4.7"])
@@ -120,9 +136,6 @@ mod test {
             .unwrap();
         let json = serde_json::to_string(&s).unwrap();
         let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
-        let sc = out.decimal().unwrap().scale();
-        let p = out.decimal().unwrap().precision();
-        println!("{:?}", out);
         assert_eq!(out, s);
     }
 

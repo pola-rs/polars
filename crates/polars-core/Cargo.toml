@@ -118,6 +118,21 @@ timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
 
 # opt-in datatypes for Series
+dtype-full = [
+  "dtype-date",
+  "dtype-datetime",
+  "dtype-duration",
+  "dtype-time",
+  "dtype-array",
+  "dtype-i8",
+  "dtype-i16",
+  "dtype-decimal",
+  "dtype-u8",
+  "dtype-u16",
+  "dtype-categorical",
+  "dtype-struct",
+]
+
 dtype-date = ["temporal"]
 dtype-datetime = ["temporal"]
 dtype-duration = ["temporal"]

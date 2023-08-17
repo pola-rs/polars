@@ -134,6 +134,8 @@ impl_serialize!(Utf8Chunked);
 impl_serialize!(BooleanChunked);
 impl_serialize!(ListChunked);
 impl_serialize!(BinaryChunked);
+#[cfg(feature = "dtype-array")]
+impl_serialize!(ArrayChunked);
 impl Serialize for NullChunked {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

@@ -59,6 +59,8 @@ pub enum SerializableDataType {
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
+    #[cfg(feature = "dtype-array")]
+    Array(Box<SerializableDataType>, usize),
     #[cfg(feature = "dtype-decimal")]
     Decimal(Option<usize>, Option<usize>),
     #[cfg(feature = "dtype-categorical")]
@@ -97,6 +99,8 @@ impl From<&DataType> for SerializableDataType {
             Categorical(_) => Self::Categorical,
             #[cfg(feature = "object")]
             Object(name) => Self::Object(name.to_string()),
+            #[cfg(feature = "dtype-array")]
+            Array(dt,size) => Self::Array(Box::new(dt.as_ref().into()),*size),
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             dt => panic!("{dt:?} not supported"),
@@ -133,6 +137,8 @@ impl From<SerializableDataType> for DataType {
             Categorical => Self::Categorical(None),
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(precision, scale),
+            #[cfg(feature = "dtype-array")]
+            Array(dt, size) => Self::Array(Box::new((*dt).into()),size),
             #[cfg(feature = "object")]
             Object(_) => Self::Object("unknown"),
         }
