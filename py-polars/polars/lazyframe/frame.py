@@ -2877,7 +2877,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: str | Sequence[str] | None = None,
         strategy: AsofJoinStrategy = "backward",
         suffix: str = "_right",
-        tolerance: str | int | float | None = None,
+        tolerance: str | int | float | timedelta | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> Self:
@@ -2926,8 +2926,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tolerance
             Numeric tolerance. By setting this the join will only be done if the near
             keys are within this distance. If an asof join is done on columns of dtype
-            "Date", "Datetime", "Duration" or "Time" you use the following string
-            language:
+            "Date", "Datetime", "Duration" or "Time", use either a datetime.timedelta
+            object or the following string language:
 
                 - 1ns   (1 nanosecond)
                 - 1us   (1 microsecond)
@@ -3027,6 +3027,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tolerance_num: float | int | None = None
         if isinstance(tolerance, str):
             tolerance_str = tolerance
+        elif isinstance(tolerance, timedelta):
+            tolerance_str = _timedelta_to_pl_duration(tolerance)
         else:
             tolerance_num = tolerance
 

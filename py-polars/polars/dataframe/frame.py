@@ -5522,7 +5522,7 @@ class DataFrame:
         by: str | Sequence[str] | None = None,
         strategy: AsofJoinStrategy = "backward",
         suffix: str = "_right",
-        tolerance: str | int | float | None = None,
+        tolerance: str | int | float | timedelta | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> DataFrame:

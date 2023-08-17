@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -589,6 +589,12 @@ def test_asof_join_nearest_with_tolerance() -> None:
     ).set_sorted("asof_key")
     out = df1.join_asof(df2, on="asof_key", strategy="nearest", tolerance="1d4h")
     expected = df1.with_columns(pl.Series([None, 4, 4, 4, 5]).alias("b"))
+    assert_frame_equal(out, expected)
+
+    # Case 8: test using timedelta tolerance
+    out = df1.join_asof(
+        df2, on="asof_key", strategy="nearest", tolerance=timedelta(days=1, hours=4)
+    )
     assert_frame_equal(out, expected)
 
 
