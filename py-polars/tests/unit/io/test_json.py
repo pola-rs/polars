@@ -140,6 +140,13 @@ def test_json_sliced_list_serialization() -> None:
     assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
 
 
+def test_json_deserialize_empty_list_10458() -> None:
+    schema = {"LIST_OF_STRINGS": pl.List(pl.Utf8)}
+    serialized_schema = pl.DataFrame(schema=schema).write_json()
+    df = pl.read_json(io.StringIO(serialized_schema))
+    assert df.schema == schema
+
+
 def test_json_deserialize_9687() -> None:
     response = {
         "volume": [0.0, 0.0, 0.0],

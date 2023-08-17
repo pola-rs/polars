@@ -204,7 +204,11 @@ impl<'de> Deserialize<'de> for Series {
                     },
                     DataType::List(_) => {
                         let values: Vec<Option<Series>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        if values.is_empty() {
+                            Ok(Series::new_empty(&name, &dtype))
+                        } else {
+                            Ok(Series::new(&name, values))
+                        }
                     },
                     DataType::Binary => {
                         let values: Vec<Option<Cow<[u8]>>> = map.next_value()?;
