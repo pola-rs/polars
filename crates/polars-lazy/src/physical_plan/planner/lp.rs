@@ -165,10 +165,16 @@ pub fn create_physical_plan(
             Ok(Box::new(executors::SliceExec { input, offset, len }))
         },
         Selection { input, predicate } => {
+            let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             let mut state = ExpressionConversionState::default();
-            let predicate =
-                create_physical_expr(predicate, Context::Default, expr_arena, None, &mut state)?;
+            let predicate = create_physical_expr(
+                predicate,
+                Context::Default,
+                expr_arena,
+                Some(&input_schema),
+                &mut state,
+            )?;
             Ok(Box::new(executors::FilterExec::new(
                 predicate,
                 input,
