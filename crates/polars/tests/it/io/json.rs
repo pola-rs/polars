@@ -29,6 +29,33 @@ fn read_json() {
     assert_eq!((12, 4), df.shape());
 }
 #[test]
+fn read_json_explicit_no_schema() {
+    let basic_json = r#"{"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":-10, "b":-3.5, "c":true, "d":"4"}
+{"a":2, "b":0.6, "c":false, "d":"text"}
+{"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":7, "b":-3.5, "c":true, "d":"4"}
+{"a":1, "b":0.6, "c":false, "d":"text"}
+{"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":5, "b":-3.5, "c":true, "d":"4"}
+{"a":1, "b":0.6, "c":false, "d":"text"}
+{"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":1, "b":-3.5, "c":true, "d":"4"}
+{"a":100000000000000, "b":0.6, "c":false, "d":"text"}
+"#;
+
+    for fmt in [JsonFormat::Json, JsonFormat::JsonLines] {
+        let res = JsonReader::new(Cursor::new(basic_json))
+            .infer_schema_len(Some(0))
+            .with_json_format(fmt)
+            .finish();
+        assert!(
+            res.is_err(),
+            "failed to raise error for json_reader.infer_schema_len(Some(0))"
+        );
+    }
+}
+#[test]
 fn read_json_with_whitespace() {
     let basic_json = r#"{   "a":1, "b":2.0, "c"   :false  , "d":"4"}
 {"a":-10, "b":-3.5, "c":true, "d":"4"}

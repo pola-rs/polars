@@ -201,11 +201,13 @@ where
     /// incompatible types in the input. In the event that a column contains mixed dtypes, is it unspecified whether an
     /// error is returned or whether elements of incompatible dtypes are replaced with `null`.
     fn finish(self) -> PolarsResult<DataFrame> {
+        polars_ensure!(self.infer_schema_len != Some(0), InvalidOperation: "`infer_schema_len(Some(0))` is not allowed; see docs for more info");
+        
         let rb: ReaderBytes = (&self.reader).into();
 
         let out = match self.json_format {
             JsonFormat::Json => {
-                polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");
+                polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson (JsonFormat::JsonLines)");
                 let mut bytes = rb.deref().to_vec();
                 let json_value =
                     simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?;
@@ -314,14 +316,16 @@ where
         self
     }
 
-    /// Set the JSON reader to infer the schema of the file. Currently, this is only used when reading from
-    /// [`JsonFormat::JsonLines`], as [`JsonFormat::Json`] reads in the entire array anyway.
+    /// Set the number of records for the JSON reader to infer the schema of the file
+    /// from.
     ///
-    /// When using [`JsonFormat::JsonLines`], `max_records = None` will read the entire buffer in order to infer the
-    /// schema, `Some(1)` would look only at the first record, `Some(2)` the first two records, etc.
+    /// `max_records = None` will read the entire buffer in order to infer the schema,
+    /// `Some(1)` would look only at the first record, `Some(2)` the first two records,
+    /// etc.
     ///
-    /// It is an error to pass `max_records = Some(0)`, as a schema cannot be inferred from 0 records when deserializing
-    /// from JSON (unlike CSVs, there is no header row to inspect for column names).
+    /// It is an error to pass `max_records = Some(0)`, as a schema cannot be inferred
+    /// from 0 records when deserializing from JSON (unlike CSVs, there is no header row
+    /// to inspect for column names).
     pub fn infer_schema_len(mut self, max_records: Option<usize>) -> Self {
         self.infer_schema_len = max_records;
         self
