@@ -60,7 +60,6 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_methods,
     deprecate_renamed_parameter,
-    issue_deprecation_warning,
 )
 from polars.utils.various import (
     _in_notebook,
@@ -80,7 +79,6 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from polars import DataFrame, Expr
-    from polars.polars import PyExpr
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
@@ -113,29 +111,6 @@ if TYPE_CHECKING:
 
     T = TypeVar("T")
     P = ParamSpec("P")
-
-
-def _prepare_select(
-    *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
-) -> list[PyExpr]:
-    structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-    if "exprs" in named_exprs:
-        issue_deprecation_warning(
-            "passing expressions to `select` using the keyword argument `exprs` is"
-            " deprecated. Use positional syntax instead.",
-            version="0.18.1",
-        )
-        first_input = named_exprs.pop("exprs")
-        pyexprs = parse_as_list_of_expressions(
-            first_input, *exprs, **named_exprs, __structify=structify
-        )
-    else:
-        pyexprs = parse_as_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
-
-    return pyexprs
 
 
 @deprecate_renamed_methods(
@@ -2233,7 +2208,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └───────────┘
 
         """
-        pyexprs = _prepare_select(*exprs, **named_exprs)
+        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
+        pyexprs = parse_as_list_of_expressions(
+            *exprs, **named_exprs, __structify=structify
+        )
         return self._from_pyldf(self._ldf.select(pyexprs))
 
     def select_seq(
@@ -2260,7 +2239,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         select
 
         """
-        pyexprs = _prepare_select(*exprs, **named_exprs)
+        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
+        pyexprs = parse_as_list_of_expressions(
+            *exprs, **named_exprs, __structify=structify
+        )
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
     def groupby(
@@ -3368,7 +3351,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┴─────────────┘
 
         """
-        pyexprs = _prepare_select(*exprs, **named_exprs)
+        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
+        pyexprs = parse_as_list_of_expressions(
+            *exprs, **named_exprs, __structify=structify
+        )
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 
     def with_columns_seq(
@@ -3404,7 +3391,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         with_columns
 
         """
-        pyexprs = _prepare_select(*exprs, **named_exprs)
+        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
+        pyexprs = parse_as_list_of_expressions(
+            *exprs, **named_exprs, __structify=structify
+        )
         return self._from_pyldf(self._ldf.with_columns_seq(pyexprs))
 
     def with_context(self, other: Self | list[Self]) -> Self:

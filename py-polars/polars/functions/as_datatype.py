@@ -10,7 +10,6 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -392,17 +391,7 @@ def struct(
     {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
-    if "exprs" in named_exprs:
-        issue_deprecation_warning(
-            "passing expressions to `struct` using the keyword argument `exprs` is"
-            " deprecated. Use positional syntax instead.",
-            version="0.18.1",
-        )
-        first_input = named_exprs.pop("exprs")
-        pyexprs = parse_as_list_of_expressions(first_input, *exprs, **named_exprs)
-    else:
-        pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
-
+    pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
     expr = wrap_expr(plr.as_struct(pyexprs))
 
     if schema:
