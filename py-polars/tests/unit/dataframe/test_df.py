@@ -238,7 +238,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
             Decimal("2.0"),
         ),
     ]
-    for arrow_data in (tbl, record_batches):
+    for arrow_data in (tbl, record_batches, (rb for rb in record_batches)):
         df = cast(pl.DataFrame, pl.from_arrow(arrow_data))
         assert df.schema == expected_schema
         assert df.rows() == expected_data
@@ -285,6 +285,12 @@ def test_from_arrow(monkeypatch: Any) -> None:
     assert df0.schema == {"id": pl.Utf8, "points": pl.Int64}
     assert df1.schema == {"x": pl.Utf8, "y": pl.Int32}
     assert df2.schema == {"x": pl.Utf8, "y": pl.Int32}
+
+    with pytest.raises(TypeError, match="Cannot convert str"):
+        pl.from_arrow(data="xyz")
+
+    with pytest.raises(TypeError, match="Cannot convert int"):
+        pl.from_arrow(data=(x for x in (1, 2, 3)))
 
 
 def test_from_dict_with_column_order() -> None:
