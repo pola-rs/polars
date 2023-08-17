@@ -102,8 +102,7 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-array")]
             Array(dt, size) => Self::Array(Box::new(dt.as_ref().into()), *size),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(precision, scale) => Self::Decimal(*precision, *scale),
-            dt => panic!("{dt:?} not supported"),
+            Decimal(precision, scale) => Self::Decimal(*precision, *scale)
         }
     }
 }
