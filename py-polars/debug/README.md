@@ -10,7 +10,6 @@ configuration. It is **not** intended to be run via the command line.
 
 ## Setup
 
-
 ### 1. Install The [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension.
 
 You can install
@@ -75,7 +74,7 @@ information about the `launch.json` file.
 2. Set breakpoingt in any `.rs` or `.py` file.
 
 3. In the `Run and Debug` panel on the left, select `Python: Debug Rust` from the drop-down menu on top and click
-the `Start Debugging` button.
+   the `Start Debugging` button.
 
 At this point, your debugger should stop on breakpoints in any `.rs` file located within the codebase. To quickly
 re-start the debugger in the future, use the standard `F5` keyboard shortcut to re-launch the `Python: Debug Rust`
