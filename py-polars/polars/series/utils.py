@@ -42,6 +42,7 @@ def expr_dispatch(cls: type[T]) -> type[T]:
         if not name.startswith("_"):
             attr = getattr(cls, name)
             if callable(attr):
+                attr = _undo_decorators(attr)
                 # note: `co_varnames` starts with the function args, but needs to be
                 # constrained by `co_argcount` as it also includes function-level consts
                 args = attr.__code__.co_varnames[: attr.__code__.co_argcount]
@@ -72,9 +73,17 @@ def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str,
             if callable(m):
                 # add function signature (argument names only) to the lookup
                 # as a _possible_ candidate for expression-dispatch
+                m = _undo_decorators(m)
                 args = m.__code__.co_varnames[: m.__code__.co_argcount]
                 lookup.add((namespace, name, args))
     return lookup
+
+
+def _undo_decorators(function: Callable[P, T]) -> Callable[P, T]:
+    """Return the given function without any decorators."""
+    while hasattr(function, "__wrapped__"):
+        function = function.__wrapped__
+    return function
 
 
 def call_expr(func: SeriesMethod) -> SeriesMethod:
