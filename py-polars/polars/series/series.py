@@ -445,15 +445,19 @@ class Series:
         return self._from_pyseries(self._s.bitand(other._s))
 
     def __rand__(self, other: Series) -> Series:
-        return self.__and__(other)
+        if not isinstance(other, Series):
+            other = Series([other])
+        return other & self
 
     def __or__(self, other: Series) -> Self:
         if not isinstance(other, Series):
             other = Series([other])
         return self._from_pyseries(self._s.bitor(other._s))
 
-    def __ror__(self, other: Series) -> Self:
-        return self.__or__(other)
+    def __ror__(self, other: Series) -> Series:
+        if not isinstance(other, Series):
+            other = Series([other])
+        return other | self
 
     def __xor__(self, other: Series) -> Self:
         if not isinstance(other, Series):
@@ -461,7 +465,9 @@ class Series:
         return self._from_pyseries(self._s.bitxor(other._s))
 
     def __rxor__(self, other: Series) -> Series:
-        return self.__xor__(other)
+        if not isinstance(other, Series):
+            other = Series([other])
+        return other ^ self
 
     def _comp(self, other: Any, op: ComparisonOperator) -> Self:
         # special edge-case; boolean broadcast series (eq/neq) is its own result
