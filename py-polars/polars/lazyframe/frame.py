@@ -960,7 +960,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         optimized
-            Return an optimized query plan. Defaults to ``False``.
+            Return an optimized query plan. Defaults to ``True``.
             If this is set to ``True`` the subsequent
             optimization flags control which optimizations
             run.
