@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import functions as F
 from polars.series.utils import expr_dispatch
-from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -970,8 +968,6 @@ class StringNameSpace:
             Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(F.col(s.name).str.splitn(by, n)).to_series()
 
     def replace(
         self, pattern: str, value: str, *, literal: bool = False, n: int = 1

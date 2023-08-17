@@ -1233,7 +1233,12 @@ class Series:
             Series of data type :class:`Boolean`.
 
         """
-        return self.to_frame().select(F.col(self.name).any(drop_nulls)).to_series()[0]
+        return (
+            self.to_frame()
+            .select(F.col(self.name).any(drop_nulls=drop_nulls))
+            .to_series()
+            .item()
+        )
 
     def all(self, drop_nulls: bool = True) -> bool | None:
         """
@@ -1245,7 +1250,12 @@ class Series:
             Series of data type :class:`Boolean`.
 
         """
-        return self.to_frame().select(F.col(self.name).all(drop_nulls)).to_series()[0]
+        return (
+            self.to_frame()
+            .select(F.col(self.name).all(drop_nulls=drop_nulls))
+            .to_series()
+            .item()
+        )
 
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
@@ -1542,7 +1552,7 @@ class Series:
         """
         if not self.is_numeric():
             return None
-        return self.to_frame().select(F.col(self.name).std(ddof)).to_series()[0]
+        return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
 
     def var(self, ddof: int = 1) -> float | None:
         """
@@ -1564,7 +1574,7 @@ class Series:
         """
         if not self.is_numeric():
             return None
-        return self.to_frame().select(F.col(self.name).var(ddof)).to_series()[0]
+        return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
 
     def median(self) -> float | None:
         """
@@ -2072,7 +2082,6 @@ class Series:
         │ 2       ┆ 3      │
         └─────────┴────────┘
         """
-        return self.to_frame().select(F.col(self.name).rle()).to_series()
 
     def rle_id(self) -> Series:
         """
@@ -2107,7 +2116,6 @@ class Series:
             5
         ]
         """
-        return self.to_frame().select(F.col(self.name).rle_id()).to_series()
 
     def hist(
         self,
@@ -2229,7 +2237,8 @@ class Series:
         return (
             self.to_frame()
             .select(F.col(self.name).entropy(base, normalize=normalize))
-            .to_series()[0]
+            .to_series()
+            .item()
         )
 
     def cumulative_eval(
@@ -3063,7 +3072,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(F.col(self.name).take(indices)).to_series()
 
     def null_count(self) -> int:
         """Count the null values in this Series."""
@@ -5443,19 +5451,6 @@ class Series:
         ]
 
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).sample(
-                    n,
-                    fraction=fraction,
-                    with_replacement=with_replacement,
-                    shuffle=shuffle,
-                    seed=seed,
-                )
-            )
-            .to_series()
-        )
 
     def peak_max(self) -> Self:
         """
@@ -5677,15 +5672,6 @@ class Series:
         ]
 
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self._s.name()).rank(
-                    method=method, descending=descending, seed=seed
-                )
-            )
-            .to_series()
-        )
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
@@ -6105,15 +6091,6 @@ class Series:
         ]
 
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).shuffle(
-                    seed=seed,
-                )
-            )
-            .to_series()
-        )
 
     def ewm_mean(
         self,
