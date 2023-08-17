@@ -265,10 +265,11 @@ impl<'de> Deserialize<'de> for Series {
                     },
                     #[cfg(feature = "dtype-array")]
                     DataType::Array(dt, size) => unsafe {
-                        let values: Vec<Series> = map.next_value()?;
+                        let mut values: Vec<Series> = map.next_value()?;
                         let mut builder =
                             get_fixed_size_list_builder(&dt, values.len(), size, &name).unwrap();
-                        for (i, s) in values.iter().enumerate() {
+                        for (i, s) in values.iter_mut().enumerate() {
+                            let s = s.rechunk();
                             builder.push_unchecked(s.to_arrow(0).as_ref(), i)
                         }
                         Ok(builder.finish().into_series())
