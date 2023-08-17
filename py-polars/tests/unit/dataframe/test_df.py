@@ -1081,6 +1081,7 @@ def test_is_finite_is_infinite() -> None:
 def test_len() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3]})
     assert cast(int, df.select(pl.col("nrs").len()).item()) == 3
+    assert len(pl.DataFrame()) == 0
 
 
 def test_multiple_column_sort() -> None:
@@ -1104,6 +1105,47 @@ def test_multiple_column_sort() -> None:
         df.sort(["b", "a"], descending=[False, True]),
         pl.DataFrame({"a": [2, 1, 3], "b": ["a", "a", "b"]}),
     )
+
+
+def test_cast_frame() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1.0, 2.5, 3.0],
+            "b": [4, 5, None],
+            "c": [True, False, True],
+            "d": [date(2020, 1, 2), date(2021, 3, 4), date(2022, 5, 6)],
+        }
+    )
+
+    # cast via col:dtype map
+    assert df.cast(
+        dtypes={"b": pl.Float32, "c": pl.Utf8, "d": pl.Datetime("ms")}
+    ).schema == {
+        "a": pl.Float64,
+        "b": pl.Float32,
+        "c": pl.Utf8,
+        "d": pl.Datetime("ms"),
+    }
+
+    # cast via selector:dtype map
+    assert df.cast(
+        {
+            cs.numeric(): pl.UInt8,
+            cs.temporal(): pl.Utf8,
+        }
+    ).rows() == [
+        (1, 4, True, "2020-01-02"),
+        (2, 5, False, "2021-03-04"),
+        (3, None, True, "2022-05-06"),
+    ]
+
+    # cast all fields to a single type
+    assert df.cast(pl.Utf8).to_dict(False) == {
+        "a": ["1.0", "2.5", "3.0"],
+        "b": ["4", "5", None],
+        "c": ["true", "false", "true"],
+        "d": ["2020-01-02", "2021-03-04", "2022-05-06"],
+    }
 
 
 def test_describe() -> None:

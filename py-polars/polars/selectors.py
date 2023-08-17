@@ -191,6 +191,11 @@ class _selector_proxy_(Expr):
             "name": name,
         }
 
+    def __hash__(self) -> int:
+        # note: this is a suitable hash for selectors (but NOT expressions in general),
+        # as the repr is guaranteed to be unique across all selector/param permutations
+        return hash(repr(self))
+
     def __invert__(self) -> Self:
         """Invert the selector."""
         if hasattr(self, "_attrs"):
@@ -1531,6 +1536,7 @@ def string(include_categorical: bool = False) -> SelectorType:
     return _selector_proxy_(
         F.col(string_dtypes),
         name="string",
+        parameters={"include_categorical": include_categorical},
     )
 
 

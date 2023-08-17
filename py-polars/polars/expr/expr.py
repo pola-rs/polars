@@ -1799,8 +1799,8 @@ class Expr:
         dtype
             DataType to cast to.
         strict
-            Throw an error if a cast could not be done.
-            For instance, due to an overflow.
+            Throw an error if a cast could not be done (for instance, due to an
+            overflow).
 
         Examples
         --------

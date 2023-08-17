@@ -463,6 +463,30 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Cast named frame columns, resulting in a new LazyFrame with updated dtypes
+    pub fn cast(self, dtypes: PlHashMap<&str, DataType>, strict: bool) -> Self {
+        let cast_cols: Vec<Expr> = dtypes
+            .into_iter()
+            .map(|(name, dt)| {
+                if strict {
+                    col(name).strict_cast(dt)
+                } else {
+                    col(name).cast(dt)
+                }
+            })
+            .collect();
+        self.with_columns(cast_cols)
+    }
+
+    /// Cast all frame columns to the given dtype, resulting in a new LazyFrame
+    pub fn cast_all(self, dtype: DataType, strict: bool) -> Self {
+        self.with_columns(vec![if strict {
+            col("*").strict_cast(dtype)
+        } else {
+            col("*").cast(dtype)
+        }])
+    }
+
     /// Fetch is like a collect operation, but it overwrites the number of rows read by every scan
     /// operation. This is a utility that helps debug a query on a smaller number of rows.
     ///
