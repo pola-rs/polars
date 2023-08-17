@@ -11,7 +11,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 [dependencies]
 polars-arrow = { version = "0.32.0", path = "../polars-arrow", default-features = false }
 polars-core = { version = "0.32.0", path = "../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.32.0", path = "../polars-io", default-features = false, features = ["ipc", "async"] }
+polars-io = { version = "0.32.0", path = "../polars-io", default-features = false }
 polars-ops = { version = "0.32.0", path = "../polars-ops", features = ["search_sorted"] }
 polars-plan = { version = "0.32.0", path = "../polars-plan", default-features = false, features = ["compile"] }
 polars-row = { version = "0.32.0", path = "../polars-row" }
@@ -29,7 +29,7 @@ smartstring = { workspace = true }
 version_check = { workspace = true }
 
 [features]
-compile = ["crossbeam-channel", "crossbeam-queue"]
+compile = ["crossbeam-channel", "crossbeam-queue", "polars-io/ipc"]
 csv = ["polars-plan/csv", "polars-io/csv"]
 parquet = ["polars-plan/parquet", "polars-io/parquet"]
 ipc = ["polars-plan/ipc", "polars-io/ipc"]
