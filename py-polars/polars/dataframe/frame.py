@@ -5543,7 +5543,8 @@ class DataFrame:
             'on' key is greater than or equal to the left's key.
 
           - A "nearest" search selects the last row in the right DataFrame whose value
-            is nearest to the left's key.
+            is nearest to the left's key. String keys are not currently supported for a
+            nearest search.
 
         The default is "backward".
 
