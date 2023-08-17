@@ -174,13 +174,7 @@ from polars.series import Series
 from polars.sql import SQLContext
 from polars.string_cache import StringCache, enable_string_cache, using_string_cache
 from polars.type_aliases import PolarsDataType
-from polars.utils import (
-    build_info,
-    get_idx_type,
-    get_index_type,
-    show_versions,
-    threadpool_size,
-)
+from polars.utils import build_info, get_index_type, show_versions, threadpool_size
 
 # TODO: remove need for importing wrap utils at top level
 from polars.utils._wrap import wrap_df, wrap_s  # noqa: F401
@@ -361,7 +355,6 @@ __all__ = [
     "SQLContext",
     # polars.utils
     "build_info",
-    "get_idx_type",
     "get_index_type",
     "show_versions",
     "threadpool_size",
