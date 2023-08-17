@@ -3,10 +3,11 @@ use std::fmt::Formatter;
 
 use serde::de::{MapAccess, Visitor};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
-
 use crate::chunked_array::builder::AnonymousListBuilder;
+
 use crate::chunked_array::Settings;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
@@ -71,10 +72,10 @@ impl Serialize for Series {
                 ca.serialize(serializer)
             },
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_,_) => {
+            DataType::Array(_, _) => {
                 let ca = self.array().unwrap();
                 ca.serialize(serializer)
-            }
+            },
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(_, _) => {
                 let ca = self.decimal().unwrap();
@@ -263,14 +264,15 @@ impl<'de> Deserialize<'de> for Series {
                             .unwrap())
                     },
                     #[cfg(feature = "dtype-array")]
-                    DataType::Array(dt,size) => unsafe {
-                        let values : Vec<Series> = map.next_value()?;
-                        let mut builder = get_fixed_size_list_builder(&*dt, values.len(), size, &name).unwrap();
-                        for (i,s) in values.iter().enumerate(){
-                            builder.push_unchecked(s.to_arrow(0).as_ref(),i)
+                    DataType::Array(dt, size) => unsafe {
+                        let values: Vec<Series> = map.next_value()?;
+                        let mut builder =
+                            get_fixed_size_list_builder(&dt, values.len(), size, &name).unwrap();
+                        for (i, s) in values.iter().enumerate() {
+                            builder.push_unchecked(s.to_arrow(0).as_ref(), i)
                         }
                         Ok(builder.finish().into_series())
-                    }
+                    },
                     dt => {
                         panic!("{dt:?} dtype deserialization not yet implemented")
                     },

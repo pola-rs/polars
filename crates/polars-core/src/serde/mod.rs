@@ -116,11 +116,16 @@ mod test {
 
     #[test]
     #[cfg(feature = "dtype-array")]
-    fn test_serde_array_owned_json(){
-        let arrays = vec![UInt8Chunked::new("test",vec![1u8,2,3,4,5]),UInt8Chunked::new("test2",vec![2u8,3,4,5,6])];
+    fn test_serde_array_owned_json() {
+        let arrays = vec![
+            UInt8Chunked::new("test", vec![1u8, 2, 3, 4, 5]),
+            UInt8Chunked::new("test2", vec![2u8, 3, 4, 5, 6]),
+        ];
         let mut builder = get_fixed_size_list_builder(&DataType::UInt8, 2, 5, "array").unwrap();
-        for (i,ca) in arrays.iter().enumerate(){
-            unsafe { builder.push_unchecked(ca.chunks().get_unchecked(0).as_ref(), i); }
+        for (i, ca) in arrays.iter().enumerate() {
+            unsafe {
+                builder.push_unchecked(ca.chunks().get_unchecked(0).as_ref(), i);
+            }
         }
         let s = builder.finish().into_series();
         let json = serde_json::to_string(&s).unwrap();
