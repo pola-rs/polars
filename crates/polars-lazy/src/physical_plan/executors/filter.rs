@@ -35,7 +35,7 @@ impl Executor for FilterExec {
             state.insert_has_window_function_flag()
         }
         let s = self.predicate.evaluate(&df, state)?;
-        if self.has_window && state.cache_window() {
+        if self.has_window {
             state.clear_window_expr_cache()
         }
         let mask = s.bool().map_err(|_| {

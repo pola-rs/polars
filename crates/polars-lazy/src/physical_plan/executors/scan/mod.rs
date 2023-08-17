@@ -84,7 +84,7 @@ impl Executor for DataFrameExec {
                 state.insert_has_window_function_flag()
             }
             let s = selection.evaluate(&df, state)?;
-            if self.predicate_has_windows && state.cache_window() {
+            if self.predicate_has_windows {
                 state.clear_window_expr_cache()
             }
             let mask = s.bool().map_err(
@@ -124,7 +124,7 @@ impl Executor for AnonymousScanExec {
                 state.record(|| {
                         let mut df = self.function.scan(self.options.clone())?;
                         let s = predicate.evaluate(&df, state)?;
-                        if self.predicate_has_windows && state.cache_window() {
+                        if self.predicate_has_windows {
                             state.clear_window_expr_cache()
                         }
                         let mask = s.bool().map_err(
