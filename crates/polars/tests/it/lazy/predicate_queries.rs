@@ -269,3 +269,25 @@ fn test_predicate_pushdown_block_8847() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_push_key_predicates_to_both_join_sides_7247() -> PolarsResult<()> {
+    let df1 = df! {
+        "a" => ["a1", "a2"],
+    }?;
+    let df2 = df! {
+        "a" => ["a1", "a1", "a2"],
+        "b" => ["a1", "b", "a2"]
+    }?;
+    let df = df1.lazy().left_join(df2.lazy(), col("a"), col("a"));
+    let out = df
+        .filter(col("a").eq(lit("a1")))
+        .filter(col("a").eq(col("b")))
+        .collect()?;
+    let expected = df![
+        "a" => ["a1"],
+        "b" => ["a1"],
+    ]?;
+    assert_eq!(out, expected);
+    Ok(())
+}
