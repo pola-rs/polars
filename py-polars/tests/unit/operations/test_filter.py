@@ -145,3 +145,19 @@ def test_clear_window_cache_after_filter_10499() -> None:
     assert df.lazy().filter((pl.col("a").null_count() < pl.count()).over("b")).filter(
         ((pl.col("a") == 0).sum() < pl.count()).over("b")
     ).collect().to_dict(False) == {"a": [3, None, 5, 0, 9, 10], "b": [2, 2, 3, 3, 5, 5]}
+
+
+def test_agg_function_of_filter_10565() -> None:
+    df_int = pl.DataFrame(data={"a": []}, schema={"a": pl.Int16})
+    assert df_int.filter(pl.col("a").n_unique().over("a") == 1).to_dict(False) == {
+        "a": []
+    }
+
+    df_str = pl.DataFrame(data={"a": []}, schema={"a": pl.Utf8})
+    assert df_str.filter(pl.col("a").n_unique().over("a") == 1).to_dict(False) == {
+        "a": []
+    }
+
+    assert df_str.lazy().filter(pl.col("a").n_unique().over("a") == 1).collect(
+        predicate_pushdown=False
+    ).to_dict(False) == {"a": []}
