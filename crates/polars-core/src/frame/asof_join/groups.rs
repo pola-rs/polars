@@ -103,11 +103,12 @@ pub(super) unsafe fn join_asof_nearest_with_indirection_and_tolerance<
         return (None, 0);
     }
 
-    // allow for early escape
+    // If we know the first/last values, we can leave early in many cases.
     let n_right = offsets.len();
     let r_upper_bound = right[offsets[n_right - 1] as usize] + tolerance;
 
-    // val_l can't match anything on the right, leave early
+    // The left value is too high. Subsequent values are guaranteed to be too
+    // high as well, so we can early return.
     if val_l > r_upper_bound {
         return (None, n_right - 1);
     }
@@ -118,18 +119,18 @@ pub(super) unsafe fn join_asof_nearest_with_indirection_and_tolerance<
     for (idx, &offset) in offsets.iter().enumerate() {
         let val_r = *right.get_unchecked(offset as usize);
 
-        // haven't reached the window, keep looking
+        // We haven't reached the window yet; go to next RHS value.
         if val_l > val_r + tolerance {
             prev_offset = offset;
             continue;
         }
 
-        // passed the window without a match, leave immediately
+        // We passed the window without a match, so leave immediately.
         if !found_window && (val_r > val_l + tolerance) {
             return (None, n_right - 1);
         }
 
-        // we made it to the window. Start testing for distance
+        // We made it to the window: matches are now possible, start measuring distance.
         found_window = true;
         let current_dist = if val_l > val_r {
             val_l - val_r
@@ -139,17 +140,17 @@ pub(super) unsafe fn join_asof_nearest_with_indirection_and_tolerance<
         if current_dist <= dist {
             dist = current_dist;
             if idx == (n_right - 1) {
-                // we're the last item, it's a match
+                // We're the last item, it's a match.
                 return (Some(offset), idx);
             }
             prev_offset = offset;
         } else {
-            // we'ved moved farther away. Last element was the match
+            // We'ved moved farther away, so the last element was the match.
             return (Some(prev_offset), idx - 1);
         }
     }
 
-    // should be unreachable
+    // This should be unreachable.
     (None, 0)
 }
 
