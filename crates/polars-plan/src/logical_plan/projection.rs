@@ -170,25 +170,32 @@ fn replace_regex(
 }
 
 /// replace `columns(["A", "B"])..` with `col("A")..`, `col("B")..`
-fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) -> PolarsResult<()> {
+fn expand_columns(
+    expr: &Expr,
+    result: &mut Vec<Expr>,
+    names: &[String],
+    schema: &Schema,
+    exclude: &PlHashSet<Arc<str>>,
+) -> PolarsResult<()> {
     let mut is_valid = true;
     for name in names {
-        let mut new_expr = expr.clone();
-        new_expr.mutate().apply(|e| {
-            if let Expr::Columns(members) = &e {
-                // `col([a, b]) + col([c, d])`
-                if members == names {
-                    *e = Expr::Column(Arc::from(name.as_str()));
-                } else {
-                    is_valid = false;
-                }
+        if !exclude.contains(name.as_str()) {
+            let new_expr = expr.clone();
+            let (new_expr, new_expr_valid) =
+                replace_columns_with_column(new_expr, names, name.as_str());
+            is_valid &= new_expr_valid;
+            // we may have regex col in columns.
+            #[allow(clippy::collapsible_else_if)]
+            #[cfg(feature = "regex")]
+            {
+                replace_regex(&new_expr, result, schema, exclude)?;
             }
-            // always keep iterating all inputs
-            true
-        });
-
-        let new_expr = rewrite_special_aliases(new_expr)?;
-        result.push(new_expr)
+            #[cfg(not(feature = "regex"))]
+            {
+                let new_expr = rewrite_special_aliases(new_expr)?;
+                result.push(new_expr)
+            }
+        }
     }
     polars_ensure!(is_valid, ComputeError: "expanding more than one `col` is not allowed");
     Ok(())
@@ -211,6 +218,38 @@ pub(super) fn replace_dtype_with_column(mut expr: Expr, column_name: Arc<str>) -
         true
     });
     expr
+}
+
+/// This replaces the columns Expr with a Column Expr. It also removes the Exclude Expr from the
+/// expression chain.
+pub(super) fn replace_columns_with_column(
+    mut expr: Expr,
+    names: &[String],
+    column_name: &str,
+) -> (Expr, bool) {
+    let mut is_valid = true;
+    expr.mutate().apply(|e| {
+        match e {
+            Expr::Columns(members) => {
+                // `col([a, b]) + col([c, d])`
+                if members == names {
+                    *e = Expr::Column(Arc::from(column_name));
+                } else {
+                    is_valid = false;
+                }
+            },
+            Expr::Exclude(input, _) => {
+                let (new_expr, new_expr_valid) =
+                    replace_columns_with_column(std::mem::take(input), names, column_name);
+                *e = new_expr;
+                is_valid &= new_expr_valid;
+            },
+            _ => {},
+        }
+        // always keep iterating all inputs
+        true
+    });
+    (expr, is_valid)
 }
 
 fn dtypes_match(d1: &DataType, d2: &DataType) -> bool {
@@ -488,7 +527,10 @@ fn replace_and_add_to_results(
             .find(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
         {
             match &e {
-                Expr::Columns(names) => expand_columns(&expr, result, names)?,
+                Expr::Columns(names) => {
+                    let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
+                    expand_columns(&expr, result, names, schema, &exclude)?;
+                },
                 Expr::DtypeColumn(dtypes) => {
                     // keep track of column excluded from the dtypes
                     let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
