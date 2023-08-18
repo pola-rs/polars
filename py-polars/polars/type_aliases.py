@@ -163,8 +163,8 @@ FrameInitTypes: TypeAlias = Union[
 # Excel IO
 ColumnFormatDict: TypeAlias = Mapping[
     # dict of colname(s) or selector(s) to format string or dict
-    ColumnNameOrSelector | tuple[ColumnNameOrSelector, ...],
-    str | dict[str, str],
+    Union[ColumnNameOrSelector, Tuple[ColumnNameOrSelector, ...]],
+    Union[str, Mapping[str, str]],
 ]
 ConditionalFormatDict: TypeAlias = Mapping[
     # dict of colname(s) to str, dict, or sequence of str/dict
@@ -178,7 +178,7 @@ ColumnTotalsDefinition: TypeAlias = Union[
     bool,
 ]
 ColumnWidthsDefinition: TypeAlias = Union[
-    dict[ColumnNameOrSelector, Union[tuple[str, ...], int]], int
+    Mapping[ColumnNameOrSelector, Union[Tuple[str, ...], int]], int
 ]
 RowTotalsDefinition: TypeAlias = Union[
     # dict of colname to str(s), a collection of str, or a boolean
