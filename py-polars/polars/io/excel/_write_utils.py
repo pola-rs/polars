@@ -19,6 +19,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import json
 from polars.exceptions import DuplicateError
+from polars.selectors import _expand_selector_dicts, _expand_selectors
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, Series
     from polars.type_aliases import (
+        ColumnFormatDict,
         ColumnTotalsDefinition,
         ConditionalFormatDict,
         OneOrMoreDataTypes,
@@ -113,7 +115,9 @@ def _xl_apply_conditional_formats(
     """Take all conditional formatting options and apply them to the table/range."""
     from xlsxwriter.format import Format
 
-    for cols, formats in conditional_formats.items():
+    for cols, formats in _expand_selector_dicts(
+        df, conditional_formats, expand_keys=True, expand_values=False, tuple_keys=True
+    ).items():
         if not isinstance(cols, str) and len(cols) == 1:
             cols = next(iter(cols))
         if isinstance(formats, (str, dict)):
@@ -305,7 +309,7 @@ def _xl_setup_table_columns(
     df: DataFrame,
     format_cache: _XLFormatCache,
     column_totals: ColumnTotalsDefinition | None = None,
-    column_formats: dict[str | tuple[str, ...], str | dict[str, str]] | None = None,
+    column_formats: ColumnFormatDict | None = None,
     dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
     header_format: dict[str, Any] | None = None,
     sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
@@ -327,8 +331,16 @@ def _xl_setup_table_columns(
     if cast_cols:
         df = df.with_columns(cast_cols)
 
-    column_totals = _unpack_multi_column_dict(column_totals)  # type: ignore[assignment]
-    column_formats = _unpack_multi_column_dict(column_formats)  # type: ignore[assignment]
+    column_totals = _unpack_multi_column_dict(  # type: ignore[assignment]
+        _expand_selector_dicts(df, column_totals, expand_keys=True, expand_values=False)
+        if isinstance(column_totals, dict)
+        else _expand_selectors(df, column_totals)
+    )
+    column_formats = _unpack_multi_column_dict(  # type: ignore[assignment]
+        _expand_selector_dicts(
+            df, column_formats, expand_keys=True, expand_values=False, tuple_keys=True
+        )
+    )
 
     # normalise column totals
     column_total_funcs = (
@@ -348,12 +360,19 @@ def _xl_setup_table_columns(
             sum_cols = (
                 numeric_cols
                 if row_totals is True
-                else ({row_totals} if isinstance(row_totals, str) else set(row_totals))
+                else (
+                    {row_totals}
+                    if isinstance(row_totals, str)
+                    else set(_expand_selectors(df, row_totals))
+                )
             )
             n_ucase = sum((c[0] if c else "").isupper() for c in df.columns)
             total = f"{'T' if (n_ucase > len(df.columns) // 2) else 't'}otal"
             row_total_funcs = {total: _xl_table_formula(df, sum_cols, "sum")}
         else:
+            row_totals = _expand_selector_dicts(
+                df, row_totals, expand_keys=False, expand_values=True
+            )
             row_total_funcs = {
                 name: _xl_table_formula(
                     df, numeric_cols if cols is True else cols, "sum"
@@ -368,8 +387,8 @@ def _xl_setup_table_columns(
     }
 
     # normalise formats
-    column_formats = (column_formats or {}).copy()
-    dtype_formats = (dtype_formats or {}).copy()
+    column_formats = dict(column_formats or {})
+    dtype_formats = dict(dtype_formats or {})
 
     for tp in list(dtype_formats):
         if isinstance(tp, (tuple, frozenset)):

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import NoDataError
 from polars.testing import assert_frame_equal
 
@@ -219,7 +220,7 @@ def test_excel_sparklines() -> None:
             worksheet="frame_data",
             table_style="Table Style Light 2",
             dtype_formats={pl.INTEGER_DTYPES: "#,##0_);(#,##0)"},
-            column_formats={("h1", "h2"): "#,##0_);(#,##0)"},
+            column_formats={cs.starts_with("h"): "#,##0_);(#,##0)"},
             sparklines={
                 "trend": ["q1", "q2", "q3", "q4"],
                 "+/-": {
@@ -229,13 +230,13 @@ def test_excel_sparklines() -> None:
                 },
             },
             conditional_formats={
-                ("q1", "q2", "q3", "q4", "h1", "h2"): {
+                cs.starts_with("q", "h"): {
                     "type": "2_color_scale",
                     "min_color": "#95b3d7",
                     "max_color": "#ffffff",
                 }
             },
-            column_widths={("q1", "q2", "q3", "q4", "h1", "h2"): 40},
+            column_widths={cs.starts_with("q", "h"): 40},
             row_totals={
                 "h1": ("q1", "q2"),
                 "h2": ("q3", "q4"),
