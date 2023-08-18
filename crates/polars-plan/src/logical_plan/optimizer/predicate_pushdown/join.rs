@@ -108,11 +108,15 @@ pub(super) fn process_join(
                 insert_and_combine_predicate(&mut pushdown_left, predicate, expr_arena);
                 filter_left = true;
             }
+            // Change 'else if' to 'if filter_left == false || all_columns_in_left_key'
+            // Replace column names with key column names on the right
+
             // this is `else if` because if the predicate is in the left hand side
             // the right hand side should be renamed with the suffix.
             // in that case we should not push down as the user wants to filter on `x`
             // not on `x_rhs`.
-            else if check_input_node(predicate, &schema_right, expr_arena)
+            if filter_left == false
+                && check_input_node(predicate, &schema_right, expr_arena)
                 && !block_pushdown_right
             {
                 insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
@@ -134,6 +138,13 @@ pub(super) fn process_join(
             // business as usual
             _ => {}
         }
+
+        /*
+         * getLeftKeys
+         * if filter_left && allColumnsAreKeys
+         * replace predicate columns with right keys
+         * pushdown right
+         */
     }
 
     opt.pushdown_and_assign(input_left, pushdown_left, lp_arena, expr_arena)?;
