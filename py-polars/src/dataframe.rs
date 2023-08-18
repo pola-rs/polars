@@ -1030,9 +1030,9 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn insert_at_idx(&mut self, index: usize, new_col: PySeries) -> PyResult<()> {
+    pub fn insert_at_index(&mut self, index: usize, new_col: PySeries) -> PyResult<()> {
         self.df
-            .insert_at_idx(index, new_col.series)
+            .insert_at_index(index, new_col.series)
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }

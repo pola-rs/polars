@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import textwrap
+from polars.exceptions import DuplicateError
 import typing
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -527,13 +528,35 @@ def test_assignment() -> None:
 
 
 def test_insert_at_idx() -> None:
+    with pytest.deprecated_call():
+        df = (
+            pl.DataFrame({"z": [3, 4, 5]})
+            .insert_at_idx(0, pl.Series("x", [1, 2, 3]))
+            .insert_at_idx(-1, pl.Series("y", [2, 3, 4]))
+        )
+    expected_df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
+    assert_frame_equal(expected_df, df)
+
+
+def test_insert_at_index() -> None:
     df = (
         pl.DataFrame({"z": [3, 4, 5]})
-        .insert_at_idx(0, pl.Series("x", [1, 2, 3]))
-        .insert_at_idx(-1, pl.Series("y", [2, 3, 4]))
+        .insert_at_index(0, pl.Series("x", [1, 2, 3]))
+        .insert_at_index(-1, pl.Series("y", [2, 3, 4]))
     )
     expected_df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
     assert_frame_equal(expected_df, df)
+
+
+def test_insert_at_index_with_duplicate() -> None:
+    with pytest.raises(
+        DuplicateError, match='column with name "x" is already present in the dataframe'
+    ):
+        (
+            pl.DataFrame({"z": [3, 4, 5]})
+            .insert_at_index(0, pl.Series("x", [1, 2, 3]))
+            .insert_at_index(-1, pl.Series("x", [2, 3, 4]))
+        )
 
 
 def test_replace_at_idx() -> None:

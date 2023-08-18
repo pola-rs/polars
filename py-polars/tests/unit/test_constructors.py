@@ -881,7 +881,7 @@ def test_init_only_columns() -> None:
                 pl.col("c").cast(pl.Int8),
             ]
         )
-        expected.insert_at_idx(3, pl.Series("d", [], pl.List(pl.UInt8)))
+        expected = expected.insert_at_index(3, pl.Series("d", [], pl.List(pl.UInt8)))
 
         assert df.shape == (0, 4)
         assert_frame_equal(df, expected)

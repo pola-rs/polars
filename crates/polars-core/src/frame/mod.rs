@@ -1093,7 +1093,7 @@ impl DataFrame {
 
     /// Insert a new column at a given index without checking for duplicates.
     /// This can leave the DataFrame at an invalid state
-    fn insert_at_idx_no_name_check(
+    fn insert_at_index_no_name_check(
         &mut self,
         index: usize,
         series: Series,
@@ -1108,14 +1108,14 @@ impl DataFrame {
     }
 
     /// Insert a new column at a given index.
-    pub fn insert_at_idx<S: IntoSeries>(
+    pub fn insert_at_index<S: IntoSeries>(
         &mut self,
         index: usize,
         column: S,
     ) -> PolarsResult<&mut Self> {
         let series = column.into_series();
         self.check_already_present(series.name())?;
-        self.insert_at_idx_no_name_check(index, series)
+        self.insert_at_index_no_name_check(index, series)
     }
 
     fn add_column_by_search(&mut self, series: Series) -> PolarsResult<()> {
@@ -2613,7 +2613,7 @@ impl DataFrame {
 
         let mut summary = concat_df_unchecked(&tmp);
 
-        summary.insert_at_idx(0, Series::new("describe", headers))?;
+        summary.insert_at_index(0, Series::new("describe", headers))?;
 
         Ok(summary)
     }

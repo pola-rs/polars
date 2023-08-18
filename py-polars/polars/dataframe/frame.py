@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import os
 import random
+import warnings
 from collections import defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
@@ -90,6 +91,7 @@ from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
     can_create_dicts_with_pyarrow,
+    find_stacklevel,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
@@ -3712,7 +3714,7 @@ class DataFrame:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> s = pl.Series("baz", [97, 98, 99])
-        >>> df.insert_at_idx(1, s)
+        >>> df.insert_at_index(1, s)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ baz ┆ bar │
@@ -3732,7 +3734,69 @@ class DataFrame:
         ...     }
         ... )
         >>> s = pl.Series("d", [-2.5, 15, 20.5, 0])
-        >>> df.insert_at_idx(3, s)
+        >>> df.insert_at_index(3, s)
+        shape: (4, 4)
+        ┌─────┬──────┬───────┬──────┐
+        │ a   ┆ b    ┆ c     ┆ d    │
+        │ --- ┆ ---  ┆ ---   ┆ ---  │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  │
+        ╞═════╪══════╪═══════╪══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ -2.5 │
+        │ 2   ┆ 4.0  ┆ true  ┆ 15.0 │
+        │ 3   ┆ 10.0 ┆ false ┆ 20.5 │
+        │ 4   ┆ 13.0 ┆ true  ┆ 0.0  │
+        └─────┴──────┴───────┴──────┘
+
+        """
+        # Deprecation introduced in 0.19
+        warnings.warn(
+            "`DataFrame.insert_at_idx` is deprecated and will be removed in a future version of polars. "
+            "Please use `DataFrame.insert_at_index` instead - note that this new "
+            "function does not operate in place.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
+        if index < 0:
+            index = len(self.columns) + index
+        self._df.insert_at_index(index, series._s)
+        return self
+
+    def insert_at_index(self, index: int, series: Series) -> DataFrame:
+        """
+        Insert a Series at a certain column index.
+
+        Parameters
+        ----------
+        index
+            Column to insert the new `Series` column.
+        series
+            `Series` to insert.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        >>> s = pl.Series("baz", [97, 98, 99])
+        >>> df.insert_at_index(1, s)
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ baz ┆ bar │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 97  ┆ 4   │
+        │ 2   ┆ 98  ┆ 5   │
+        │ 3   ┆ 99  ┆ 6   │
+        └─────┴─────┴─────┘
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [0.5, 4, 10, 13],
+        ...         "c": [True, True, False, True],
+        ...     }
+        ... )
+        >>> s = pl.Series("d", [-2.5, 15, 20.5, 0])
+        >>> df.insert_at_index(3, s)
         shape: (4, 4)
         ┌─────┬──────┬───────┬──────┐
         │ a   ┆ b    ┆ c     ┆ d    │
@@ -3748,8 +3812,9 @@ class DataFrame:
         """
         if index < 0:
             index = len(self.columns) + index
-        self._df.insert_at_idx(index, series._s)
-        return self
+        df = self.clone()._df
+        df.insert_at_index(index, series._s)
+        return self._from_pydf(df)
 
     def filter(
         self,
@@ -3920,7 +3985,7 @@ class DataFrame:
 
     def describe(
         self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
-    ) -> Self:
+    ) -> DataFrame:
         """
         Summary statistics for a DataFrame.
 
@@ -4004,8 +4069,7 @@ class DataFrame:
 
         # return results as a frame
         df_summary = self.__class__(summary)
-        df_summary.insert_at_idx(0, pl.Series("describe", metrics))
-        return df_summary
+        return df_summary.insert_at_index(0, pl.Series("describe", metrics))
 
     def find_idx_by_name(self, name: str) -> int:
         """
