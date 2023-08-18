@@ -368,13 +368,20 @@ def find_stacklevel() -> int:
     # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
     frame = inspect.currentframe()
     n = 0
-    while frame:
-        fname = inspect.getfile(frame)
-        if fname.startswith(str(pkg_dir)):
-            frame = frame.f_back
-            n += 1
-        else:
-            break
+    try:
+        while frame:
+            fname = inspect.getfile(frame)
+            if fname.startswith(str(pkg_dir)):
+                frame = frame.f_back
+                n += 1
+            else:
+                break
+    finally:
+        # https://docs.python.org/3/library/inspect.html
+        # > Though the cycle detector will catch these, destruction of the frames
+        # > (and local variables) can be made deterministic by removing the cycle
+        # > in a finally clause.
+        del frame
     return n
 
 
@@ -406,22 +413,30 @@ def _get_stack_locals(
     examined_frames = 0
     if n_frames is None:
         n_frames = sys.maxsize
-    stack_frame = getattr(inspect.currentframe(), "f_back", None)
+    stack_frame = inspect.currentframe()
+    stack_frame = getattr(stack_frame, "f_back", None)
 
-    while stack_frame and examined_frames < n_frames:
-        local_items = list(stack_frame.f_locals.items())
-        for nm, obj in reversed(local_items):
-            if (
-                nm not in objects
-                and (named is None or (nm in named))
-                and (of_type is None or isinstance(obj, of_type))
-            ):
-                objects[nm] = obj
-                if n_objects is not None and len(objects) >= n_objects:
-                    return objects
+    try:
+        while stack_frame and examined_frames < n_frames:
+            local_items = list(stack_frame.f_locals.items())
+            for nm, obj in reversed(local_items):
+                if (
+                    nm not in objects
+                    and (named is None or (nm in named))
+                    and (of_type is None or isinstance(obj, of_type))
+                ):
+                    objects[nm] = obj
+                    if n_objects is not None and len(objects) >= n_objects:
+                        return objects
 
-        stack_frame = stack_frame.f_back
-        examined_frames += 1
+            stack_frame = stack_frame.f_back
+            examined_frames += 1
+    finally:
+        # https://docs.python.org/3/library/inspect.html
+        # > Though the cycle detector will catch these, destruction of the frames
+        # > (and local variables) can be made deterministic by removing the cycle
+        # > in a finally clause.
+        del stack_frame
 
     return objects
 
