@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import textwrap
-from polars.exceptions import DuplicateError
 import typing
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -18,6 +17,7 @@ from numpy.testing import assert_array_equal, assert_equal
 import polars as pl
 import polars.selectors as cs
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, FLOAT_DTYPES, INTEGER_DTYPES
+from polars.exceptions import DuplicateError
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
