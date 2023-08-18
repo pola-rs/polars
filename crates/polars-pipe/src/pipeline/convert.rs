@@ -141,16 +141,16 @@ where
                         FileType::Parquet(options) => {
                             Box::new(ParquetSink::new(path, *options, input_schema.as_ref())?)
                                 as Box<dyn SinkTrait>
-                        }
+                        },
                         #[cfg(feature = "ipc")]
                         FileType::Ipc(options) => {
                             Box::new(IpcSink::new(path, *options, input_schema.as_ref())?)
                                 as Box<dyn SinkTrait>
-                        }
+                        },
                         #[allow(unreachable_patterns)]
                         _ => unreachable!(),
                     }
-                }
+                },
                 #[cfg(feature = "cloud")]
                 SinkType::Cloud {
                     uri,
@@ -173,11 +173,11 @@ where
                         FileType::Ipc(_ipc_options) => {
                             // TODO: support Ipc as well
                             todo!("For now, only parquet cloud files are supported");
-                        }
+                        },
                         #[allow(unreachable_patterns)]
                         _ => unreachable!(),
                     }
-                }
+                },
             }
         },
         Join {

@@ -376,11 +376,11 @@ pub fn to_alp(
                 contexts,
                 schema,
             }
-        }
+        },
         LogicalPlan::Sink { input, payload } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Sink { input, payload }
-        }
+        },
     };
     Ok(lp_arena.add(v))
 }
@@ -815,11 +815,11 @@ impl ALogicalPlan {
                     contexts,
                     schema,
                 }
-            }
+            },
             ALogicalPlan::Sink { input, payload } => {
                 let input = Box::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::Sink { input, payload }
-            }
+            },
         }
     }
 }

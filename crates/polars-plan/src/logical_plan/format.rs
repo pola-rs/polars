@@ -227,7 +227,7 @@ impl LogicalPlan {
             ExtContext { input, .. } => {
                 write!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
                 input._format(f, sub_indent)
-            }
+            },
             Sink { input, payload, .. } => {
                 let name = match payload {
                     SinkType::Memory => "SINK (memory)",

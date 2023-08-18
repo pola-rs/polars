@@ -432,7 +432,7 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             },
-            ExtContext { .. } | Sink { .. } => {}
+            ExtContext { .. } | Sink { .. } => {},
         }
     }
 
