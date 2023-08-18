@@ -42,15 +42,15 @@ pub trait RollingSeries: SeriesSealed {
             DataType::Float64 => {
                 let ca = s.f64().unwrap();
                 rolling_skew(ca, window_size, bias).map(|ca| ca.into_series())
-            }
+            },
             DataType::Float32 => {
                 let ca = s.f32().unwrap();
                 rolling_skew(ca, window_size, bias).map(|ca| ca.into_series())
-            }
+            },
             dt if dt.is_numeric() => {
                 let s = s.cast(&DataType::Float64).unwrap();
                 s.rolling_skew(window_size, bias)
-            }
+            },
             dt => polars_bail!(opq = rolling_skew, dt),
         }
     }

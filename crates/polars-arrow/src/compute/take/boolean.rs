@@ -50,11 +50,11 @@ unsafe fn take_values_indices_validity(
             debug_assert!(index < values.len());
             validity.push(values_validity.get_bit_unchecked(index));
             values_values.get_bit_unchecked(index)
-        }
+        },
         None => {
             validity.push(false);
             false
-        }
+        },
     });
     let values = Bitmap::from_trusted_len_iter(values);
     (values, validity.into())

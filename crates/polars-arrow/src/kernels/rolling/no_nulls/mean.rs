@@ -65,6 +65,6 @@ where
                 no_nulls::compute_sum_weights,
                 &wts,
             )
-        }
+        },
     }
 }

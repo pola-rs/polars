@@ -4,7 +4,7 @@ use std::hash::Hash;
 
 use arrow::bitmap::Bitmap;
 
-pub use crate::prelude::*;
+use crate::prelude::*;
 
 pub mod builder;
 #[cfg(feature = "object")]
@@ -67,6 +67,14 @@ where
     /// Get a value at a certain index location
     pub fn value(&self, index: usize) -> &T {
         &self.values[self.offset + index]
+    }
+
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if self.is_valid(index) {
+            Some(unsafe { self.value_unchecked(index) })
+        } else {
+            None
+        }
     }
 
     /// Get a value at a certain index location

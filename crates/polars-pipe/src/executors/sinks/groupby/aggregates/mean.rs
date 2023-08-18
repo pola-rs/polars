@@ -30,12 +30,12 @@ impl<K: NumericNative> MeanAgg<K> {
             (Some(val), Some(sum)) => {
                 self.sum = Some(sum + val);
                 self.count += 1;
-            }
+            },
             (Some(val), None) => {
                 self.sum = Some(val);
                 self.count += 1;
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 }
@@ -86,12 +86,12 @@ where
             (Some(val), Some(sum)) => {
                 self.sum = Some(sum + val);
                 self.count += 1;
-            }
+            },
             (Some(val), None) => {
                 self.sum = Some(val);
                 self.count += 1;
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -118,12 +118,12 @@ where
             (Some(val), Some(sum)) => {
                 self.sum = Some(sum + val);
                 self.count += (arr.len() - arr.null_count()) as IdxSize;
-            }
+            },
             (Some(val), None) => {
                 self.sum = Some(val);
                 self.count += (arr.len() - arr.null_count()) as IdxSize;
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -137,12 +137,12 @@ where
             (Some(lhs), Some(rhs)) => {
                 self.sum = Some(lhs + rhs);
                 self.count += other.count;
-            }
+            },
             (None, Some(rhs)) => {
                 self.sum = Some(rhs);
                 self.count = other.count;
-            }
-            _ => {}
+            },
+            _ => {},
         };
     }
 

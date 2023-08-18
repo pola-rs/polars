@@ -25,8 +25,10 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
-    fn _clear_settings(&mut self) {
-        // no-op
+    #[allow(unused)]
+    fn _set_flags(&mut self, flags: Settings) {}
+    fn _get_flags(&self) -> Settings {
+        Settings::empty()
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0
@@ -301,7 +303,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
                 let main_thread = POOL.current_thread_index().is_none();
                 let groups = self.group_tuples(main_thread, false)?;
                 Ok(groups.len())
-            }
+            },
         }
     }
 

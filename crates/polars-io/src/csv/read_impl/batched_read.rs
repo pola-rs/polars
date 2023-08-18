@@ -36,7 +36,7 @@ pub(crate) fn get_offsets(
             Some(pos) => search_pos + pos,
             None => {
                 break;
-            }
+            },
         };
         offsets.push_back((start, end_pos));
         start = end_pos;

@@ -164,8 +164,8 @@ impl SpillPartitions {
     fn combine(&mut self, other: &mut Self) {
         match (self.spilled, other.spilled) {
             (false, true) => std::mem::swap(self, other),
-            (true, false) => {}
-            (false, false) => {}
+            (true, false) => {},
+            (false, false) => {},
             (true, true) => {
                 self.finish();
                 other.finish();
@@ -175,7 +175,7 @@ impl SpillPartitions {
                 {
                     part_self.extend(part_other)
                 }
-            }
+            },
         }
     }
 

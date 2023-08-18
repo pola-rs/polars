@@ -155,10 +155,10 @@ impl Duration {
                         Some((i, ch_)) => {
                             ch = ch_;
                             start = i
-                        }
+                        },
                         None => {
                             break;
-                        }
+                        },
                     }
                 }
                 if unit.is_empty() {
@@ -218,7 +218,7 @@ impl Duration {
 
             match (self.negative, interval.negative) {
                 (true, true) | (true, false) => months = -months + interval.months(),
-                _ => {}
+                _ => {},
             }
             Duration::from_months(months)
         } else if self.weeks_only() && interval.weeks_only() {
@@ -226,7 +226,7 @@ impl Duration {
 
             match (self.negative, interval.negative) {
                 (true, true) | (true, false) => weeks = -weeks + interval.weeks(),
-                _ => {}
+                _ => {},
             }
             Duration::from_weeks(weeks)
         } else if self.days_only() && interval.days_only() {
@@ -234,7 +234,7 @@ impl Duration {
 
             match (self.negative, interval.negative) {
                 (true, true) | (true, false) => days = -days + interval.days(),
-                _ => {}
+                _ => {},
             }
             Duration::from_days(days)
         } else {
@@ -453,7 +453,7 @@ impl Duration {
                     #[cfg(feature = "timezones")]
                     Some(tz) => {
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz))
-                    }
+                    },
                     _ => t,
                 };
                 let duration = nsecs_to_unit(self.nsecs);
@@ -470,7 +470,7 @@ impl Duration {
                     )?)),
                     _ => Ok(t - remainder),
                 }
-            }
+            },
             // truncate by weeks
             (0, _, 0, 0) => {
                 let dt = match tz {
@@ -492,14 +492,14 @@ impl Duration {
                         first_day_of_week.and_time(NaiveTime::default()),
                     )),
                 }
-            }
+            },
             // truncate by days
             (0, 0, _, 0) => {
                 let t = match tz {
                     #[cfg(feature = "timezones")]
                     Some(tz) => {
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz))
-                    }
+                    },
                     _ => t,
                 };
                 let duration = self.days * nsecs_to_unit(NS_DAY);
@@ -516,7 +516,7 @@ impl Duration {
                     )?)),
                     _ => Ok(t - remainder),
                 }
-            }
+            },
             // truncate by months
             (_, 0, 0, 0) => {
                 let ts = match tz {
@@ -547,10 +547,10 @@ impl Duration {
                     )?)),
                     _ => Ok(datetime_to_timestamp(dt)),
                 }
-            }
+            },
             _ => {
                 polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units")
-            }
+            },
         }
     }
 
@@ -651,7 +651,7 @@ impl Duration {
                         tz,
                         None,
                     )?);
-                }
+                },
                 _ => new_t += if d.negative { -t_weeks } else { t_weeks },
             };
         }
@@ -669,7 +669,7 @@ impl Duration {
                         tz,
                         None,
                     )?);
-                }
+                },
                 _ => new_t += if d.negative { -t_days } else { t_days },
             };
         }

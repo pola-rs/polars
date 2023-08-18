@@ -35,12 +35,12 @@ fn column_idx_to_series(
     match field.data_type {
         ArrowDataType::Utf8 => {
             field.data_type = ArrowDataType::LargeUtf8;
-        }
+        },
         ArrowDataType::Binary => {
             field.data_type = ArrowDataType::LargeBinary;
-        }
+        },
         ArrowDataType::List(fld) => field.data_type = ArrowDataType::LargeList(fld),
-        _ => {}
+        _ => {},
     }
 
     let columns = mmap_columns(store, md.columns(), &field.name);
@@ -75,7 +75,7 @@ pub(super) fn array_iter_to_series(
                 }
             }
             out
-        }
+        },
     };
     if chunks.is_empty() {
         let arr = new_empty_array(field.data_type.clone());
@@ -442,7 +442,7 @@ impl BatchedParquetReader {
                     )?;
                     self.row_group_offset += n;
                     dfs
-                }
+                },
                 ParallelStrategy::RowGroups => {
                     let dfs = rg_to_dfs_par(
                         &store,
@@ -459,9 +459,23 @@ impl BatchedParquetReader {
                     )?;
                     self.row_group_offset += n;
                     dfs
-                }
+                },
                 _ => unimplemented!(),
             };
+            // case where there is no data in the file
+            // the streaming engine needs at least a single chunk
+            if self.rows_read == 0 && dfs.is_empty() {
+                let columns = self
+                    .schema
+                    .fields
+                    .iter()
+                    .map(|field| {
+                        let dtype: DataType = (&field.data_type).into();
+                        Series::new_empty(&field.name, &dtype)
+                    })
+                    .collect::<Vec<_>>();
+                return Ok(Some(vec![DataFrame::new_no_checks(columns)]));
+            }
 
             // TODO! this is slower than it needs to be
             // we also need to parallelize over row groups here.
@@ -524,7 +538,7 @@ impl Iterator for BatchedParquetIter {
                     let batch = opt_batch?;
                     self.current_batch = batch.into_iter();
                     self.current_batch.next().map(Ok)
-                }
+                },
             },
         }
     }

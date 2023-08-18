@@ -90,8 +90,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
 
     // Functions - range
-    m.add_wrapped(wrap_pyfunction!(functions::range::arange))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::range::int_range))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::range::int_ranges))
@@ -218,6 +216,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     #[cfg(feature = "object")]
     m.add_wrapped(wrap_pyfunction!(__register_startup_deps))
+        .unwrap();
+
+    // Functions - random
+    m.add_wrapped(wrap_pyfunction!(functions::random::set_random_seed))
         .unwrap();
 
     // Exceptions

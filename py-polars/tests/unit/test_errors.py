@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
@@ -44,7 +45,7 @@ def test_error_on_reducing_map() -> None:
     ):
         df.select(
             pl.col("x")
-            .map(lambda x: x.cut(breaks=[1, 2, 3], series=False))
+            .map(lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest())
             .over("group")
         )
 
@@ -68,7 +69,7 @@ def test_error_on_invalid_series_init() -> None:
         py_type = dtype_to_py_type(dtype)
         with pytest.raises(
             TypeError,
-            match=f"'float' object cannot be interpreted as a {py_type.__name__}",
+            match=f"'float' object cannot be interpreted as a {py_type.__name__!r}",
         ):
             pl.Series([1.5, 2.0, 3.75], dtype=dtype)
 
@@ -116,13 +117,13 @@ def test_join_lazy_on_df() -> None:
 
     with pytest.raises(
         TypeError,
-        match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
+        match="expected 'other' .* to be a LazyFrame.* not a 'DataFrame'",
     ):
         df_left.lazy().join(df_right, on="Id")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
+        match="expected 'other' .* to be a LazyFrame.* not a 'DataFrame'",
     ):
         df_left.lazy().join_asof(df_right, on="Id")  # type: ignore[arg-type]
 
@@ -156,26 +157,20 @@ def test_getitem_errs() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
     with pytest.raises(
-        ValueError,
-        match=r"Cannot __getitem__ on DataFrame with item: "
-        r"'{'some'}' of type: '<class 'set'>'.",
+        TypeError,
+        match=r"cannot use `__getitem__` on DataFrame with item {'some'} of type 'set'",
     ):
         df[{"some"}]  # type: ignore[call-overload]
 
     with pytest.raises(
-        ValueError,
-        match=r"Cannot __getitem__ on Series of dtype: "
-        r"'Int64' with argument: "
-        r"'{'strange'}' of type: '<class 'set'>'.",
+        TypeError,
+        match=r"cannot use `__getitem__` on Series of dtype Int64 with argument {'strange'} of type 'set'",
     ):
         df["a"][{"strange"}]  # type: ignore[call-overload]
 
     with pytest.raises(
-        ValueError,
-        match=r"Cannot __setitem__ on "
-        r"DataFrame with key: '{'some'}' of "
-        r"type: '<class 'set'>' and value: "
-        r"'foo' of type: '<class 'str'>'",
+        TypeError,
+        match=r"cannot use `__setitem__` on DataFrame with key {'some'} of type 'set' and value 'foo' of type 'str'",
     ):
         df[{"some"}] = "foo"  # type: ignore[index]
 
@@ -298,7 +293,7 @@ def test_lazy_concat_err() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies.",
+        match="'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies",
     ):
         pl.concat([df1.lazy(), df2.lazy()], how="horizontal").collect()
 
@@ -308,7 +303,7 @@ def test_series_concat_err(how: ConcatMethod) -> None:
     s = pl.Series([1, 2, 3])
     with pytest.raises(
         ValueError,
-        match="'Series' only allows {'vertical'} concat strategy.",
+        match="'Series' only allows {'vertical'} concat strategy",
     ):
         pl.concat([s, s], how=how)
 
@@ -343,7 +338,7 @@ def test_duplicate_columns_arg_csv() -> None:
     pl.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}).write_csv(f)
     f.seek(0)
     with pytest.raises(
-        ValueError, match=r"'columns' arg should only have unique values"
+        ValueError, match=r"`columns` arg should only have unique values"
     ):
         pl.read_csv(f, columns=["x", "x", "y"])
 
@@ -356,7 +351,7 @@ def test_datetime_time_add_err() -> None:
 def test_invalid_dtype() -> None:
     with pytest.raises(
         ValueError,
-        match=r"Given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",
+        match=r"given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",
     ):
         pl.Series([1, 2], dtype="mayonnaise")  # type: ignore[arg-type]
 
@@ -524,6 +519,28 @@ def test_skip_nulls_err() -> None:
         pl.ComputeError, match=r"The output type of 'apply' function cannot determined"
     ):
         df.with_columns(pl.col("foo").apply(lambda x: x, skip_nulls=True))
+
+
+@pytest.mark.parametrize(
+    ("test_df", "type", "expected_message"),
+    [
+        pytest.param(
+            pl.DataFrame({"A": [1, 2, 3], "B": ["1", "2", "help"]}),
+            pl.UInt32,
+            re.escape(
+                "strict conversion from `str` to `u32` failed for column: B, "
+                'value(s) ["help"]; if you were trying to cast Utf8 to temporal '
+                "dtypes, consider using `strptime`"
+            ),
+            id="Unsigned integer",
+        )
+    ],
+)
+def test_cast_err_column_value_highlighting(
+    test_df: pl.DataFrame, type: pl.DataType, expected_message: str
+) -> None:
+    with pytest.raises(pl.ComputeError, match=expected_message):
+        test_df.with_columns(pl.all().cast(type))
 
 
 def test_err_on_time_datetime_cast() -> None:

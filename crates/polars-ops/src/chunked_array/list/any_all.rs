@@ -1,8 +1,9 @@
 use arrow::array::{BooleanArray, ListArray};
+use arrow::bitmap::MutableBitmap;
 
 use super::*;
 
-fn list_all_any<F>(arr: &ListArray<i64>, op: F, is_all: bool) -> PolarsResult<ArrayRef>
+fn list_all_any<F>(arr: &ListArray<i64>, op: F, is_all: bool) -> PolarsResult<BooleanArray>
 where
     F: Fn(&BooleanArray) -> bool,
 {
@@ -14,13 +15,12 @@ where
     let values = values.as_any().downcast_ref::<BooleanArray>().unwrap();
     let validity = arr.validity().cloned();
 
-    // fast path where all values set
-    // all is free
+    // Fast path where all values set (all is free).
     let all_set = arrow::compute::boolean::all(values);
     if all_set && is_all {
-        return Ok(BooleanChunked::full("", true, arr.len()).chunks()[0]
-            .clone()
-            .with_validity(validity));
+        let mut bits = MutableBitmap::with_capacity(arr.len());
+        bits.extend_constant(arr.len(), true);
+        return Ok(BooleanArray::from_data_default(bits.into(), None).with_validity(validity));
     }
 
     let mut start = offsets[0] as usize;
@@ -28,31 +28,26 @@ where
         let end = end as usize;
         let len = end - start;
         // TODO!
-        // we can speed this upp if the boolean array doesn't have nulls
+        // We can speed this upp if the boolean array doesn't have nulls
         // Then we can work directly on the byte slice.
         let val = unsafe { values.clone().sliced_unchecked(start, len) };
         start = end;
         op(&val)
     });
 
-    Ok(Box::new(
-        BooleanArray::from_trusted_len_values_iter(iter).with_validity(validity),
-    ))
+    Ok(BooleanArray::from_trusted_len_values_iter(iter).with_validity(validity))
 }
 
 pub(super) fn list_all(ca: &ListChunked) -> PolarsResult<Series> {
     let chunks = ca
         .downcast_iter()
-        .map(|arr| list_all_any(arr, arrow::compute::boolean::all, true))
-        .collect::<PolarsResult<Vec<_>>>()?;
-
-    unsafe { Ok(BooleanChunked::from_chunks(ca.name(), chunks).into_series()) }
+        .map(|arr| list_all_any(arr, arrow::compute::boolean::all, true));
+    Ok(BooleanChunked::try_from_chunk_iter(ca.name(), chunks)?.into_series())
 }
+
 pub(super) fn list_any(ca: &ListChunked) -> PolarsResult<Series> {
     let chunks = ca
         .downcast_iter()
-        .map(|arr| list_all_any(arr, arrow::compute::boolean::any, false))
-        .collect::<PolarsResult<Vec<_>>>()?;
-
-    unsafe { Ok(BooleanChunked::from_chunks(ca.name(), chunks).into_series()) }
+        .map(|arr| list_all_any(arr, arrow::compute::boolean::any, false));
+    Ok(BooleanChunked::try_from_chunk_iter(ca.name(), chunks)?.into_series())
 }

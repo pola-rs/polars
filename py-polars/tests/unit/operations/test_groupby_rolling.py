@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 def bad_agg_parameters() -> list[Any]:
     """Currently, IntoExpr and Iterable[IntoExpr] are supported."""
-    return [[("b", "sum")], [("b", ["sum"])], str, "b".join]
+    return [str, "b".join]
 
 
 def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:

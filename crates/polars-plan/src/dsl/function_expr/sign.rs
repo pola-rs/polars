@@ -8,15 +8,15 @@ pub(super) fn sign(s: &Series) -> PolarsResult<Series> {
         Float32 => {
             let ca = s.f32().unwrap();
             sign_float(ca)
-        }
+        },
         Float64 => {
             let ca = s.f64().unwrap();
             sign_float(ca)
-        }
+        },
         dt if dt.is_numeric() => {
             let s = s.cast(&Float64)?;
             sign(&s)
-        }
+        },
         dt => polars_bail!(opq = sign, dt),
     }
 }

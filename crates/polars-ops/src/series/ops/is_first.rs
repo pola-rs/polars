@@ -14,34 +14,24 @@ where
     T::Native: Hash + Eq,
 {
     let mut unique = PlHashSet::new();
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| {
-            let mask: BooleanArray = arr
-                .into_iter()
-                .map(|opt_v| unique.insert(opt_v))
-                .collect_trusted();
-            Box::new(mask) as ArrayRef
-        })
-        .collect();
+    let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
+        arr.into_iter()
+            .map(|opt_v| unique.insert(opt_v))
+            .collect_trusted()
+    });
 
-    unsafe { BooleanChunked::from_chunks(ca.name(), chunks) }
+    BooleanChunked::from_chunk_iter(ca.name(), chunks)
 }
 
 fn is_first_bin(ca: &BinaryChunked) -> BooleanChunked {
     let mut unique = PlHashSet::new();
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| {
-            let mask: BooleanArray = arr
-                .into_iter()
-                .map(|opt_v| unique.insert(opt_v))
-                .collect_trusted();
-            Box::new(mask) as ArrayRef
-        })
-        .collect();
+    let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
+        arr.into_iter()
+            .map(|opt_v| unique.insert(opt_v))
+            .collect_trusted()
+    });
 
-    unsafe { BooleanChunked::from_chunks(ca.name(), chunks) }
+    BooleanChunked::from_chunk_iter(ca.name(), chunks)
 }
 
 fn is_first_boolean(ca: &BooleanChunked) -> BooleanChunked {
@@ -54,9 +44,8 @@ fn is_first_boolean(ca: &BooleanChunked) -> BooleanChunked {
         out.set(index, true)
     }
 
-    let chunks =
-        vec![Box::new(BooleanArray::new(ArrowDataType::Boolean, out.into(), None)) as ArrayRef];
-    unsafe { BooleanChunked::from_chunks(ca.name(), chunks) }
+    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
+    BooleanChunked::with_chunk(ca.name(), arr)
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -70,9 +59,9 @@ fn is_first_struct(s: &Series) -> PolarsResult<BooleanChunked> {
         // Group tuples are always in bounds
         unsafe { out.set_unchecked(idx as usize, true) }
     }
-    let chunks =
-        vec![Box::new(BooleanArray::new(ArrowDataType::Boolean, out.into(), None)) as ArrayRef];
-    Ok(unsafe { BooleanChunked::from_chunks(s.name(), chunks) })
+
+    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
+    Ok(BooleanChunked::with_chunk(s.name(), arr))
 }
 
 pub fn is_first(s: &Series) -> PolarsResult<BooleanChunked> {
@@ -83,29 +72,29 @@ pub fn is_first(s: &Series) -> PolarsResult<BooleanChunked> {
         Boolean => {
             let ca = s.bool().unwrap();
             is_first_boolean(ca)
-        }
+        },
         Binary => {
             let ca = s.binary().unwrap();
             is_first_bin(ca)
-        }
+        },
         Utf8 => {
             let s = s.cast(&Binary).unwrap();
             return is_first(&s);
-        }
+        },
         Float32 => {
             let ca = s.bit_repr_small();
             is_first_numeric(&ca)
-        }
+        },
         Float64 => {
             let ca = s.bit_repr_large();
             is_first_numeric(&ca)
-        }
+        },
         dt if dt.is_numeric() => {
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_first_numeric(ca)
             })
-        }
+        },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_first_struct(&s),
         dt => polars_bail!(opq = is_first, dt),

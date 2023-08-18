@@ -61,6 +61,39 @@ impl StringNameSpace {
             .map_private(StringFunction::Extract { pat, group_index }.into())
     }
 
+    #[cfg(feature = "extract_groups")]
+    // Extract all captures groups from a regex pattern as a struct
+    pub fn extract_groups(self, pat: &str) -> PolarsResult<Expr> {
+        // regex will be compiled twice, because it doesn't support serde
+        // and we need to compile it here to determine the output datatype
+        let reg = regex::Regex::new(pat)?;
+        let names = reg
+            .capture_names()
+            .enumerate()
+            .skip(1)
+            .map(|(idx, opt_name)| {
+                opt_name
+                    .map(|name| name.to_string())
+                    .unwrap_or_else(|| format!("{idx}"))
+            })
+            .collect::<Vec<_>>();
+
+        let dtype = DataType::Struct(
+            names
+                .iter()
+                .map(|name| Field::new(name.as_str(), DataType::Utf8))
+                .collect(),
+        );
+
+        Ok(self.0.map_private(
+            StringFunction::ExtractGroups {
+                dtype,
+                pat: pat.to_string(),
+            }
+            .into(),
+        ))
+    }
+
     /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
     /// A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
     /// rather than before.
@@ -136,7 +169,7 @@ impl StringNameSpace {
                 } else {
                     TimeUnit::Microseconds
                 }
-            }
+            },
             (None, None) => TimeUnit::Microseconds,
         };
 
@@ -189,7 +222,7 @@ impl StringNameSpace {
                 Some(s) => {
                     let iter = s.split(&by);
                     builder.append_values_iter(iter);
-                }
+                },
             });
             Ok(Some(builder.finish().into_series()))
         };
@@ -214,7 +247,7 @@ impl StringNameSpace {
                 Some(s) => {
                     let iter = s.split_inclusive(&by);
                     builder.append_values_iter(iter);
-                }
+                },
             });
             Ok(Some(builder.finish().into_series()))
         };
@@ -243,7 +276,7 @@ impl StringNameSpace {
                     for arr in &mut arrs {
                         arr.push_null()
                     }
-                }
+                },
                 Some(s) => {
                     let mut arr_iter = arrs.iter_mut();
                     let split_iter = s.split(&by);
@@ -254,7 +287,7 @@ impl StringNameSpace {
                     for arr in arr_iter {
                         arr.push_null()
                     }
-                }
+                },
             });
             let fields = arrs
                 .into_iter()
@@ -297,7 +330,7 @@ impl StringNameSpace {
                     for arr in &mut arrs {
                         arr.push_null()
                     }
-                }
+                },
                 Some(s) => {
                     let mut arr_iter = arrs.iter_mut();
                     let split_iter = s.split_inclusive(&by);
@@ -308,7 +341,7 @@ impl StringNameSpace {
                     for arr in arr_iter {
                         arr.push_null()
                     }
-                }
+                },
             });
             let fields = arrs
                 .into_iter()
@@ -351,7 +384,7 @@ impl StringNameSpace {
                     for arr in &mut arrs {
                         arr.push_null()
                     }
-                }
+                },
                 Some(s) => {
                     let mut arr_iter = arrs.iter_mut();
                     let split_iter = s.splitn(n, &by);
@@ -362,7 +395,7 @@ impl StringNameSpace {
                     for arr in arr_iter {
                         arr.push_null()
                     }
-                }
+                },
             });
             let fields = arrs
                 .into_iter()

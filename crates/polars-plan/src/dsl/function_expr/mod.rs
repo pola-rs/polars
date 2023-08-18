@@ -53,8 +53,7 @@ mod trigonometry;
 mod unique;
 
 use std::fmt::{Display, Formatter};
-#[cfg(feature = "random")]
-use std::sync::atomic::AtomicU64;
+use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "dtype-array")]
 pub(super) use array::ArrayFunction;
@@ -165,7 +164,7 @@ pub enum FunctionExpr {
     Reverse,
     Boolean(BooleanFunction),
     #[cfg(feature = "approx_unique")]
-    ApproxUnique,
+    ApproxNUnique,
     #[cfg(feature = "dtype-categorical")]
     Categorical(CategoricalFunction),
     Coalesce,
@@ -228,12 +227,36 @@ pub enum FunctionExpr {
     #[cfg(feature = "random")]
     Random {
         method: random::RandomMethod,
-        #[cfg_attr(feature = "serde", serde(skip))]
-        atomic_seed: Option<SpecialEq<Arc<AtomicU64>>>,
         seed: Option<u64>,
-        fixed_seed: bool,
     },
     SetSortedFlag(IsSorted),
+}
+
+impl Hash for FunctionExpr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            FunctionExpr::BinaryExpr(f) => f.hash(state),
+            FunctionExpr::Boolean(f) => f.hash(state),
+            #[cfg(feature = "strings")]
+            FunctionExpr::StringExpr(f) => f.hash(state),
+            #[cfg(feature = "random")]
+            FunctionExpr::Random { method, .. } => method.hash(state),
+            #[cfg(feature = "range")]
+            FunctionExpr::Range(f) => f.hash(state),
+            #[cfg(feature = "temporal")]
+            FunctionExpr::TemporalExpr(f) => f.hash(state),
+            #[cfg(feature = "trigonometry")]
+            FunctionExpr::Trigonometry(f) => f.hash(state),
+            #[cfg(feature = "fused")]
+            FunctionExpr::Fused(f) => f.hash(state),
+            #[cfg(feature = "interpolate")]
+            FunctionExpr::Interpolate(f) => f.hash(state),
+            #[cfg(feature = "dtype-categorical")]
+            FunctionExpr::Categorical(f) => f.hash(state),
+            _ => {},
+        }
+    }
 }
 
 impl Display for FunctionExpr {
@@ -292,7 +315,7 @@ impl Display for FunctionExpr {
             Reverse => "reverse",
             Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "approx_unique")]
-            ApproxUnique => "approx_unique",
+            ApproxNUnique => "approx_n_unique",
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => return write!(f, "{func}"),
             Coalesce => "coalesce",
@@ -315,7 +338,7 @@ impl Display for FunctionExpr {
                 } else {
                     "unique"
                 }
-            }
+            },
             #[cfg(feature = "round_series")]
             Round { .. } => "round",
             #[cfg(feature = "round_series")]
@@ -432,7 +455,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Ok(Some(Series::new(s.name(), [s.null_count() as IdxSize])))
                 };
                 wrap!(f)
-            }
+            },
             Pow(func) => match func {
                 PowFunction::Generic => wrap!(pow::pow),
                 PowFunction::Sqrt => map!(pow::sqrt),
@@ -441,15 +464,15 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "row_hash")]
             Hash(k0, k1, k2, k3) => {
                 map!(row_hash::row_hash, k0, k1, k2, k3)
-            }
+            },
             #[cfg(feature = "arg_where")]
             ArgWhere => {
                 wrap!(arg_where::arg_where)
-            }
+            },
             #[cfg(feature = "search_sorted")]
             SearchSorted(side) => {
                 map_as_slice!(search_sorted::search_sorted_impl, side)
-            }
+            },
             #[cfg(feature = "strings")]
             StringExpr(s) => s.into(),
             BinaryExpr(s) => s.into(),
@@ -461,37 +484,37 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "date_offset")]
             DateOffset(offset) => {
                 map_owned!(temporal::date_offset, offset)
-            }
+            },
 
             #[cfg(feature = "trigonometry")]
             Trigonometry(trig_function) => {
                 map!(trigonometry::apply_trigonometric_function, trig_function)
-            }
+            },
             #[cfg(feature = "trigonometry")]
             Atan2 => {
                 wrap!(trigonometry::apply_arctan2)
-            }
+            },
 
             #[cfg(feature = "sign")]
             Sign => {
                 map!(sign::sign)
-            }
+            },
             FillNull { super_type } => {
                 map_as_slice!(fill_null::fill_null, &super_type)
-            }
+            },
 
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { window_size, bias } => {
                 map!(rolling::rolling_skew, window_size, bias)
-            }
+            },
             ShiftAndFill { periods } => {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)
-            }
+            },
             DropNans => map_owned!(nan::drop_nans),
             #[cfg(feature = "round_series")]
             Clip { min, max } => {
                 map_owned!(clip::clip, min.clone(), max.clone())
-            }
+            },
             ListExpr(lf) => {
                 use ListFunction::*;
                 match lf {
@@ -512,7 +535,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "list_any_all")]
                     All => map!(list::lst_all),
                 }
-            }
+            },
             #[cfg(feature = "dtype-array")]
             ArrayExpr(lf) => {
                 use ArrayFunction::*;
@@ -522,7 +545,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Sum => map!(array::sum),
                     Unique(stable) => map!(array::unique, stable),
                 }
-            }
+            },
             #[cfg(feature = "dtype-struct")]
             StructExpr(sf) => {
                 use StructFunction::*;
@@ -530,11 +553,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     FieldByIndex(index) => map!(struct_::get_by_index, index),
                     FieldByName(name) => map!(struct_::get_by_name, name.clone()),
                 }
-            }
+            },
             #[cfg(feature = "top_k")]
             TopK { k, descending } => {
                 map!(top_k, k, descending)
-            }
+            },
             Shift(periods) => map!(dispatch::shift, periods),
             Cumcount { reverse } => map!(cum::cumcount, reverse),
             Cumsum { reverse } => map!(cum::cumsum, reverse),
@@ -544,7 +567,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Reverse => map!(dispatch::reverse),
             Boolean(func) => func.into(),
             #[cfg(feature = "approx_unique")]
-            ApproxUnique => map!(dispatch::approx_unique),
+            ApproxNUnique => map!(dispatch::approx_n_unique),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => func.into(),
             Coalesce => map_as_slice!(fill_null::coalesce),
@@ -554,7 +577,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "interpolate")]
             Interpolate(method) => {
                 map!(dispatch::interpolate, method)
-            }
+            },
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
             #[cfg(feature = "log")]
@@ -610,18 +633,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             RLEID => map!(rle_id),
             ToPhysical => map!(dispatch::to_physical),
             #[cfg(feature = "random")]
-            Random {
-                method,
-                seed,
-                atomic_seed,
-                fixed_seed,
-            } => map!(
-                random::random,
-                method,
-                atomic_seed.as_deref(),
-                seed,
-                fixed_seed
-            ),
+            Random { method, seed } => map!(random::random, method, seed),
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
         }
     }
@@ -636,33 +648,37 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
             CountMatch(pat) => {
                 map!(strings::count_match, &pat)
-            }
+            },
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
             Extract { pat, group_index } => {
                 map!(strings::extract, &pat, group_index)
-            }
+            },
             ExtractAll => {
                 map_as_slice!(strings::extract_all)
-            }
+            },
+            #[cfg(feature = "extract_groups")]
+            ExtractGroups { pat, dtype } => {
+                map!(strings::extract_groups, &pat, &dtype)
+            },
             NChars => map!(strings::n_chars),
             Length => map!(strings::lengths),
             #[cfg(feature = "string_justify")]
             Zfill(alignment) => {
                 map!(strings::zfill, alignment)
-            }
+            },
             #[cfg(feature = "string_justify")]
             LJust { width, fillchar } => {
                 map!(strings::ljust, width, fillchar)
-            }
+            },
             #[cfg(feature = "string_justify")]
             RJust { width, fillchar } => {
                 map!(strings::rjust, width, fillchar)
-            }
+            },
             #[cfg(feature = "temporal")]
             Strptime(dtype, options) => {
                 map!(strings::strptime, dtype.clone(), &options)
-            }
+            },
             #[cfg(feature = "concat_str")]
             ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
             #[cfg(feature = "concat_str")]
@@ -697,13 +713,13 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         match func {
             Contains { pat, literal } => {
                 map!(binary::contains, &pat, literal)
-            }
+            },
             EndsWith(sub) => {
                 map!(binary::ends_with, &sub)
-            }
+            },
             StartsWith(sub) => {
                 map!(binary::starts_with, &sub)
-            }
+            },
         }
     }
 }
@@ -734,7 +750,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             TimeStamp(tu) => map!(datetime::timestamp, tu),
             Truncate(truncate_options) => {
                 map!(datetime::truncate, &truncate_options)
-            }
+            },
             #[cfg(feature = "date_offset")]
             MonthStart => map!(datetime::month_start),
             #[cfg(feature = "date_offset")]
@@ -747,7 +763,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz, use_earliest) => {
                 map!(dispatch::replace_time_zone, tz.as_deref(), use_earliest)
-            }
+            },
             Combine(tu) => map_as_slice!(temporal::combine, tu),
             DateRange {
                 every,
@@ -763,7 +779,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     time_unit,
                     time_zone.clone()
                 )
-            }
+            },
             DateRanges {
                 every,
                 closed,
@@ -771,14 +787,14 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 time_zone,
             } => {
                 map_as_slice!(
-                    temporal::temporal_range_dispatch,
+                    temporal::temporal_ranges_dispatch,
                     "date_range",
                     every,
                     closed,
                     time_unit,
                     time_zone.clone()
                 )
-            }
+            },
             TimeRange { every, closed } => {
                 map_as_slice!(
                     temporal::temporal_range_dispatch,
@@ -788,17 +804,29 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     None,
                     None
                 )
-            }
+            },
             TimeRanges { every, closed } => {
                 map_as_slice!(
-                    temporal::temporal_range_dispatch,
+                    temporal::temporal_ranges_dispatch,
                     "time_range",
                     every,
                     closed,
                     None,
                     None
                 )
-            }
+            },
+            DatetimeFunction {
+                time_unit,
+                time_zone,
+                use_earliest,
+            } => {
+                map_as_slice!(
+                    temporal::datetime,
+                    &time_unit,
+                    time_zone.as_deref(),
+                    use_earliest
+                )
+            },
         }
     }
 }
@@ -808,15 +836,12 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: RangeFunction) -> Self {
         use RangeFunction::*;
         match func {
-            ARange { step } => {
-                map_as_slice!(range::arange, step)
-            }
             IntRange { step } => {
                 map_as_slice!(range::int_range, step)
-            }
+            },
             IntRanges { step } => {
                 map_as_slice!(range::int_ranges, step)
-            }
+            },
         }
     }
 }

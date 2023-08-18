@@ -31,11 +31,11 @@ pub(super) fn join_asof_forward_with_tolerance<T: PartialOrd + Copy + Debug + Su
                         break;
                     }
                     offset += 1;
-                }
+                },
                 None => {
                     out.extend(std::iter::repeat(None).take(left.len() - out.len()));
                     return out;
-                }
+                },
             }
         }
     }
@@ -103,7 +103,7 @@ where
                         previous_right = val_r;
                         offset += 1;
                     }
-                }
+                },
                 // we depleted the right array
                 // we cannot fill the remainder of the value, because we need to check tolerances
                 None => {
@@ -117,7 +117,7 @@ where
                     };
                     out.push(val);
                     break;
-                }
+                },
             }
         }
     }
@@ -162,7 +162,7 @@ pub(super) fn join_asof_backward<T: PartialOrd + Copy + Debug>(
                     else {
                         offset += 1;
                     }
-                }
+                },
                 // we depleted the right array
                 None => {
                     // if we have previous value, continue with that one
@@ -175,7 +175,7 @@ pub(super) fn join_asof_backward<T: PartialOrd + Copy + Debug>(
                     };
                     out.extend(std::iter::repeat(val).take(left.len() - out.len()));
                     return out;
-                }
+                },
             }
         }
     }
@@ -216,7 +216,7 @@ pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> +
                         offset -= 1;
                         break;
                     }
-                }
+                },
 
                 None => {
                     if offset > 1 {
@@ -229,7 +229,7 @@ pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> +
                         out.extend(std::iter::repeat(None).take(left.len() - out.len()));
                     }
                     return out;
-                }
+                },
             }
         }
     }
@@ -253,11 +253,11 @@ pub(super) fn join_asof_forward<T: PartialOrd + Copy + Debug>(
                         break;
                     }
                     offset += 1;
-                }
+                },
                 None => {
                     out.extend(std::iter::repeat(None).take(left.len() - out.len()));
                     return out;
-                }
+                },
             }
         }
     }

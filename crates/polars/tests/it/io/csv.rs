@@ -25,6 +25,15 @@ fn write_csv() {
         .expect("csv written");
     let csv = std::str::from_utf8(&buf).unwrap();
     assert_eq!("0,22.1\n1,19.9\n2,7.0\n3,2.0\n4,3.0\n", csv);
+
+    let mut buf: Vec<u8> = Vec::new();
+    CsvWriter::new(&mut buf)
+        .has_header(false)
+        .with_line_terminator("\r\n".into())
+        .finish(&mut df)
+        .expect("csv written");
+    let csv = std::str::from_utf8(&buf).unwrap();
+    assert_eq!("0,22.1\r\n1,19.9\r\n2,7.0\r\n3,2.0\r\n4,3.0\r\n", csv);
 }
 
 #[test]

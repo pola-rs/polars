@@ -114,16 +114,6 @@ def test_unnest_columns_available() -> None:
     }
 
 
-def test_streaming_duplicate_cols_5537() -> None:
-    assert pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).lazy().with_columns(
-        [(pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)]
-    ).collect(streaming=True).to_dict(False) == {
-        "a": [3, 6, 9],
-        "b": [1, 2, 3],
-        "foo": [2, 4, 6],
-    }
-
-
 def test_double_projection_union() -> None:
     lf1 = pl.DataFrame(
         {

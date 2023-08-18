@@ -7,6 +7,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::compute;
 use arrow::compute::comparison;
 use arrow::scalar::{BinaryScalar, PrimitiveScalar, Scalar, Utf8Scalar};
+use either::Either;
 use num_traits::{NumCast, ToPrimitive};
 use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::FromData;
@@ -29,16 +30,11 @@ where
         let chunks = self
             .downcast_iter()
             .zip(rhs.downcast_iter())
-            .map(|(left, right)| {
-                let arr = f(left, right);
-                Box::new(arr) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-
-        unsafe { ChunkedArray::from_chunks("", chunks) }
+            .map(|(left, right)| f(left, right));
+        ChunkedArray::from_chunk_iter("", chunks)
     }
 
-    // also includes validity  in comparison
+    // Also includes validity in comparison.
     pub fn not_equal_and_validity(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         let (lhs, rhs) = align_chunks_binary(self, rhs);
         lhs.comparison(&rhs, |x, y| comparison::neq_and_validity(x, y))
@@ -52,7 +48,7 @@ where
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -60,24 +56,24 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.equal(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::eq(x, y))
-            }
+            },
         }
     }
 
     fn equal_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -85,24 +81,24 @@ where
                 } else {
                     self.is_null()
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.equal_missing(value)
                 } else {
                     rhs.is_null()
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::eq_and_validity(x, y))
-            }
+            },
         }
     }
 
     fn not_equal(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -110,24 +106,24 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.not_equal(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::neq(x, y))
-            }
+            },
         }
     }
 
     fn not_equal_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -135,24 +131,24 @@ where
                 } else {
                     self.is_not_null()
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.not_equal_missing(value)
                 } else {
                     rhs.is_not_null()
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::neq_and_validity(x, y))
-            }
+            },
         }
     }
 
     fn gt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -160,24 +156,24 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.lt(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::gt(x, y))
-            }
+            },
         }
     }
 
     fn gt_eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -185,24 +181,24 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.lt_eq(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::gt_eq(x, y))
-            }
+            },
         }
     }
 
     fn lt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -210,24 +206,24 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::lt(x, y))
-            }
+            },
         }
     }
 
     fn lt_eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -235,19 +231,19 @@ where
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt_eq(value)
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 lhs.comparison(&rhs, |x, y| comparison::lt_eq(x, y))
-            }
+            },
         }
     }
 }
@@ -260,17 +256,15 @@ fn compare_bools(
     let chunks = lhs
         .downcast_iter()
         .zip(rhs.downcast_iter())
-        .map(|(l, r)| Box::new(f(l, r)) as ArrayRef)
-        .collect();
-
-    unsafe { BooleanChunked::from_chunks(lhs.name(), chunks) }
+        .map(|(l, r)| f(l, r));
+    ChunkedArray::from_chunk_iter("", chunks)
 }
 
 impl ChunkCompare<&BooleanChunked> for BooleanChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -282,18 +276,18 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => rhs.equal(self),
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::eq(lhs, rhs))
-            }
+            },
         }
     }
 
     fn equal_missing(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -325,18 +319,18 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     self.is_null()
                 }
-            }
+            },
             (1, _) => rhs.equal_missing(self),
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::eq_and_validity(lhs, rhs))
-            }
+            },
         }
     }
 
     fn not_equal(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -348,62 +342,57 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => rhs.not_equal(self),
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::neq(lhs, rhs))
-            }
+            },
         }
     }
 
     fn not_equal_missing(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
                     let chunks = if value {
-                        self.downcast_iter()
-                            .map(|arr| {
-                                let values = match arr.validity() {
-                                    None => arr.values().not(),
-                                    Some(validity) => validity.not().bitor(&arr.values().not()),
-                                };
-                                BooleanArray::from_data_default(values, None).boxed()
-                            })
-                            .collect()
+                        Either::Left(self.downcast_iter().map(|arr| {
+                            let values = match arr.validity() {
+                                None => arr.values().not(),
+                                Some(validity) => validity.not().bitor(&arr.values().not()),
+                            };
+                            BooleanArray::from_data_default(values, None)
+                        }))
                     } else {
-                        self.downcast_iter()
-                            .map(|arr| {
-                                let values = match arr.validity() {
-                                    None => arr.values().clone(),
-                                    Some(validity) => validity.not().bitor(arr.values()),
-                                };
-                                BooleanArray::from_data_default(values, None).boxed()
-                            })
-                            .collect()
+                        Either::Right(self.downcast_iter().map(|arr| {
+                            let values = match arr.validity() {
+                                None => arr.values().clone(),
+                                Some(validity) => validity.not().bitor(arr.values()),
+                            };
+                            BooleanArray::from_data_default(values, None)
+                        }))
                     };
 
-                    // safety: arrays are of dtype boolean
-                    unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
+                    ChunkedArray::from_chunk_iter(self.name(), chunks)
                 } else {
                     self.is_not_null()
                 }
-            }
+            },
             (1, _) => rhs.not_equal_missing(self),
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| {
                     comparison::neq_and_validity(lhs, rhs)
                 })
-            }
+            },
         }
     }
 
     fn gt(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -414,7 +403,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     match value {
@@ -424,17 +413,17 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::gt(lhs, rhs))
-            }
+            },
         }
     }
 
     fn gt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -445,7 +434,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     match value {
@@ -455,17 +444,17 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::gt_eq(lhs, rhs))
-            }
+            },
         }
     }
 
     fn lt(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -476,7 +465,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     match value {
@@ -486,17 +475,17 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::lt(lhs, rhs))
-            }
+            },
         }
     }
 
     fn lt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -507,7 +496,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", self.len())
                 }
-            }
+            },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     match value {
@@ -517,12 +506,12 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 } else {
                     BooleanChunked::full_null("", rhs.len())
                 }
-            }
+            },
             _ => {
-                // same length
+                // Same length.
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
                 compare_bools(&lhs, &rhs, |lhs, rhs| comparison::lt_eq(lhs, rhs))
-            }
+            },
         }
     }
 }
@@ -571,12 +560,8 @@ impl BinaryChunked {
         let chunks = self
             .downcast_iter()
             .zip(rhs.downcast_iter())
-            .map(|(left, right)| {
-                let arr = f(left, right);
-                Box::new(arr) as ArrayRef
-            })
-            .collect();
-        unsafe { BooleanChunked::from_chunks("", chunks) }
+            .map(|(left, right)| f(left, right));
+        ChunkedArray::from_chunk_iter("", chunks)
     }
 }
 
@@ -584,7 +569,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &BinaryChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
                 self.equal(value)
@@ -604,7 +589,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     }
 
     fn equal_missing(&self, rhs: &BinaryChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
                 self.equal_missing(value)
@@ -624,7 +609,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     }
 
     fn not_equal(&self, rhs: &BinaryChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
                 self.not_equal(value)
@@ -644,7 +629,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     }
 
     fn not_equal_missing(&self, rhs: &BinaryChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
                 self.not_equal_missing(value)
@@ -664,7 +649,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     }
 
     fn gt(&self, rhs: &BinaryChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
                 self.gt(value)
@@ -684,7 +669,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     }
 
     fn gt_eq(&self, rhs: &BinaryChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
                 self.gt_eq(value)
@@ -704,7 +689,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     }
 
     fn lt(&self, rhs: &BinaryChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
                 self.lt(value)
@@ -724,7 +709,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     }
 
     fn lt_eq(&self, rhs: &BinaryChunked) -> BooleanChunked {
-        // broadcast
+        // Broadcast.
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
                 self.lt_eq(value)
@@ -823,7 +808,7 @@ impl ChunkCompare<&ListChunked> for ListChunked {
             .collect_trusted()
     }
 
-    // following are not implemented because gt, lt comparison of series don't make sense
+    // The following are not implemented because gt, lt comparison of series don't make sense.
     fn gt(&self, _rhs: &ListChunked) -> BooleanChunked {
         unimplemented!()
     }
@@ -924,11 +909,8 @@ impl ChunkCompare<&ArrayChunked> for ArrayChunked {
         let chunks = a
             .downcast_iter()
             .zip(b.downcast_iter())
-            .map(|(a, b)| {
-                Box::new(polars_arrow::kernels::comparison::fixed_size_list_eq(a, b)) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
+            .map(|(a, b)| polars_arrow::kernels::comparison::fixed_size_list_eq(a, b));
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
     fn equal_missing(&self, rhs: &ArrayChunked) -> BooleanChunked {
@@ -941,11 +923,8 @@ impl ChunkCompare<&ArrayChunked> for ArrayChunked {
         let chunks = a
             .downcast_iter()
             .zip(b.downcast_iter())
-            .map(|(a, b)| {
-                Box::new(polars_arrow::kernels::comparison::fixed_size_list_neq(a, b)) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
+            .map(|(a, b)| polars_arrow::kernels::comparison::fixed_size_list_neq(a, b));
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
     fn not_equal_missing(&self, rhs: &ArrayChunked) -> Self::Item {
@@ -975,14 +954,8 @@ impl Not for &BooleanChunked {
     type Output = BooleanChunked;
 
     fn not(self) -> Self::Output {
-        let chunks = self
-            .downcast_iter()
-            .map(|a| {
-                let arr = compute::boolean::not(a);
-                Box::new(arr) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        let chunks = self.downcast_iter().map(compute::boolean::not);
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 }
 

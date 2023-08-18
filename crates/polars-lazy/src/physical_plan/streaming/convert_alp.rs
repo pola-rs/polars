@@ -140,22 +140,22 @@ pub(crate) fn insert_streaming_nodes(
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push((*input, state, current_idx))
-            }
+            },
             HStack { input, exprs, .. } if all_streamable(exprs, expr_arena, Context::Default) => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push((*input, state, current_idx))
-            }
+            },
             Slice { input, offset, .. } if *offset >= 0 => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push((*input, state, current_idx))
-            }
+            },
             Sink { input, .. } => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push((*input, state, current_idx))
-            }
+            },
             Sort {
                 input,
                 by_column,
@@ -164,14 +164,14 @@ pub(crate) fn insert_streaming_nodes(
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push((*input, state, current_idx))
-            }
+            },
             Projection { input, expr, .. }
                 if all_streamable(expr, expr_arena, Context::Default) =>
             {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push((*input, state, current_idx))
-            }
+            },
             // Rechunks are ignored
             MapFunction {
                 input,
@@ -179,7 +179,7 @@ pub(crate) fn insert_streaming_nodes(
             } => {
                 state.streamable = true;
                 stack.push((*input, state, current_idx))
-            }
+            },
             // Streamable functions will be converted
             lp @ MapFunction { input, function } => {
                 if function.is_streamable() {
@@ -197,7 +197,7 @@ pub(crate) fn insert_streaming_nodes(
                         &mut insert_file_sink_ptr,
                     )
                 }
-            }
+            },
             Scan {
                 file_options: options,
                 scan_type,
@@ -215,13 +215,13 @@ pub(crate) fn insert_streaming_nodes(
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)
                 }
-            }
+            },
             DataFrameScan { .. } => {
                 if state.streamable {
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)
                 }
-            }
+            },
             Join {
                 input_left,
                 input_right,
@@ -257,7 +257,7 @@ pub(crate) fn insert_streaming_nodes(
                 state_left.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push((input_left, state_left, current_idx));
                 stack.push((input_right, state_right, current_idx));
-            }
+            },
             // add globbing patterns
             #[cfg(any(feature = "csv", feature = "parquet"))]
             Union { inputs, options }
@@ -273,7 +273,7 @@ pub(crate) fn insert_streaming_nodes(
             {
                 state.sources.push(root);
                 pipeline_trees[current_idx].push(state);
-            }
+            },
             Union {
                 options:
                     UnionOptions {
@@ -301,7 +301,7 @@ pub(crate) fn insert_streaming_nodes(
                     state.operators_sinks.push(PipelineNode::Union(root));
                     stack.push((*input, state, current_idx));
                 }
-            }
+            },
             Union {
                 inputs,
                 options: UnionOptions { slice: None, .. },
@@ -323,7 +323,7 @@ pub(crate) fn insert_streaming_nodes(
                         stack.push((*input, state, current_idx));
                     }
                 }
-            }
+            },
             Distinct { input, options }
                 if !options.maintain_order
                     && !matches!(options.keep_strategy, UniqueKeepStrategy::None) =>
@@ -331,7 +331,7 @@ pub(crate) fn insert_streaming_nodes(
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push((*input, state, current_idx))
-            }
+            },
             #[allow(unused_variables)]
             lp @ Aggregate {
                 input,
@@ -413,7 +413,7 @@ pub(crate) fn insert_streaming_nodes(
                 } else {
                     return Ok(false);
                 }
-            }
+            },
             lp => {
                 if allow_partial {
                     process_non_streamable_node(
@@ -428,7 +428,7 @@ pub(crate) fn insert_streaming_nodes(
                 } else {
                     return Ok(false);
                 }
-            }
+            },
         }
     }
     let mut inserted = false;

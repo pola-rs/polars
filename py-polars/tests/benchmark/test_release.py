@@ -16,7 +16,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 # Mark all tests in this module as benchmark tests
-pytestmark = pytest.mark.benchmark
+pytestmark = pytest.mark.benchmark()
 
 
 @pytest.mark.skipif(
@@ -155,11 +155,11 @@ def test_max_statistic_parquet_writer() -> None:
     n = 150_000
 
     # int64 is important to hit the page size
-    df = pl.arange(0, n, eager=True, dtype=pl.Int64).to_frame()
+    df = pl.int_range(0, n, eager=True, dtype=pl.Int64).to_frame()
     f = "/tmp/tmp.parquet"
     df.write_parquet(f, statistics=True, use_pyarrow=False, row_group_size=n)
-    result = pl.scan_parquet(f).filter(pl.col("arange") > n - 3).collect()
-    expected = pl.DataFrame({"arange": [149998, 149999]})
+    result = pl.scan_parquet(f).filter(pl.col("int") > n - 3).collect()
+    expected = pl.DataFrame({"int": [149998, 149999]})
     assert_frame_equal(result, expected)
 
 

@@ -26,7 +26,7 @@ pub(super) fn predicate_to_pa(
             } else {
                 None
             }
-        }
+        },
         AExpr::Column(name) => Some(format!("pa.compute.field('{}')", name.as_ref())),
         AExpr::Alias(input, _) => predicate_to_pa(*input, expr_arena, args),
         AExpr::Literal(LiteralValue::Series(s)) => {
@@ -50,7 +50,7 @@ pub(super) fn predicate_to_pa(
 
                 Some(list_repr)
             }
-        }
+        },
         AExpr::Literal(lv) => {
             let av = lv.to_anyvalue()?;
             let dtype = av.dtype();
@@ -63,13 +63,13 @@ pub(super) fn predicate_to_pa(
                     } else {
                         Some("pa.compute.scalar(False)".to_string())
                     }
-                }
+                },
                 #[cfg(feature = "dtype-date")]
                 AnyValue::Date(v) => {
                     // the function `_to_python_date` and the `Date`
                     // dtype have to be in scope on the python side
                     Some(format!("_to_python_date(value={v})"))
-                }
+                },
                 #[cfg(feature = "dtype-datetime")]
                 AnyValue::Datetime(v, tu, tz) => {
                     // the function `_to_python_datetime` and the `Datetime`
@@ -87,7 +87,7 @@ pub(super) fn predicate_to_pa(
                             tz
                         )),
                     }
-                }
+                },
                 // Activate once pyarrow supports them
                 // #[cfg(feature = "dtype-time")]
                 // AnyValue::Time(v) => {
@@ -115,9 +115,9 @@ pub(super) fn predicate_to_pa(
                     } else {
                         None
                     }
-                }
+                },
             }
-        }
+        },
         AExpr::Function {
             function: FunctionExpr::Boolean(BooleanFunction::IsNot),
             input,
@@ -126,7 +126,7 @@ pub(super) fn predicate_to_pa(
             let input = input.first().unwrap();
             let input = predicate_to_pa(*input, expr_arena, args)?;
             Some(format!("~({input})"))
-        }
+        },
         AExpr::Function {
             function: FunctionExpr::Boolean(BooleanFunction::IsNull),
             input,
@@ -135,7 +135,7 @@ pub(super) fn predicate_to_pa(
             let input = input.first().unwrap();
             let input = predicate_to_pa(*input, expr_arena, args)?;
             Some(format!("({input}).is_null()"))
-        }
+        },
         AExpr::Function {
             function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
             input,
@@ -144,7 +144,7 @@ pub(super) fn predicate_to_pa(
             let input = input.first().unwrap();
             let input = predicate_to_pa(*input, expr_arena, args)?;
             Some(format!("~({input}).is_null()"))
-        }
+        },
         #[cfg(feature = "is_in")]
         AExpr::Function {
             function: FunctionExpr::Boolean(BooleanFunction::IsIn),
@@ -157,7 +157,7 @@ pub(super) fn predicate_to_pa(
             let values = predicate_to_pa(*input.get(1)?, expr_arena, args)?;
 
             Some(format!("({col}).isin({values})"))
-        }
+        },
         _ => None,
     }
 }

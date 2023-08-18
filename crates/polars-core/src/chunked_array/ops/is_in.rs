@@ -45,7 +45,7 @@ where
         match other.dtype() {
             DataType::List(dt) => {
                 let st = try_get_supertype(self.dtype(), dt)?;
-                if &st != self.dtype() {
+                if &st != self.dtype() || **dt != st {
                     let left = self.cast(&st)?;
                     let right = other.cast(&DataType::List(Box::new(st)))?;
                     return left.is_in(&right);
@@ -65,6 +65,7 @@ where
                         })
                         .collect_trusted()
                 } else {
+                    polars_ensure!(self.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", self.len(), other.len());
                     self.into_iter()
                         .zip(other.list()?.amortized_iter())
                         .map(|(value, series)| match (value, series) {
@@ -132,7 +133,7 @@ impl IsIn for Utf8Chunked {
                                 .collect_trusted();
                             ca.rename(self.name());
                             Ok(ca)
-                        }
+                        },
                         Some(value) => {
                             match rev_map.find(value) {
                                 // all false
@@ -154,14 +155,14 @@ impl IsIn for Utf8Chunked {
                                         .collect_trusted();
                                     ca.rename(self.name());
                                     Ok(ca)
-                                }
+                                },
                             }
-                        }
+                        },
                     }
                 } else {
                     unreachable!()
                 }
-            }
+            },
             DataType::List(dt) if DataType::Utf8 == **dt => self.as_binary().is_in(
                 &other
                     .cast(&DataType::List(Box::new(DataType::Binary)))
@@ -192,6 +193,7 @@ impl IsIn for BinaryChunked {
                         })
                         .collect_trusted()
                 } else {
+                    polars_ensure!(self.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", self.len(), other.len());
                     self.into_iter()
                         .zip(other.list()?.amortized_iter())
                         .map(|(value, series)| match (value, series) {
@@ -252,6 +254,7 @@ impl IsIn for BooleanChunked {
                             .collect_trusted()
                     }
                 } else {
+                    polars_ensure!(self.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", self.len(), other.len());
                     self.into_iter()
                         .zip(other.list()?.amortized_iter())
                         .map(|(value, series)| match (value, series) {
@@ -310,20 +313,21 @@ impl IsIn for StructChunked {
                         })
                         .collect()
                 } else {
+                    polars_ensure!(self.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", self.len(), other.len());
                     self.into_iter()
                         .zip(other.list()?.amortized_iter())
                         .map(|(value, series)| match (value, series) {
                             (val, Some(series)) => {
                                 let ca = series.as_ref().struct_().unwrap();
                                 ca.into_iter().any(|a| a == val)
-                            }
+                            },
                             _ => false,
                         })
                         .collect()
                 };
                 ca.rename(self.name());
                 Ok(ca)
-            }
+            },
             _ => {
                 let other = other.cast(&other.dtype().to_physical()).unwrap();
                 let other = other.struct_()?;
@@ -382,7 +386,7 @@ impl IsIn for StructChunked {
                     .collect();
                 ca.rename(self.name());
                 Ok(ca)
-            }
+            },
         }
     }
 }

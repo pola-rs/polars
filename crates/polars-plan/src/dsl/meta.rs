@@ -51,7 +51,7 @@ impl MetaNameSpace {
 
                 // continue iteration
                 true
-            }
+            },
             // continue iteration
             _ => true,
         });

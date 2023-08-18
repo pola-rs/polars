@@ -93,7 +93,7 @@ impl PyExpr {
                 self.inner = ciborium::de::from_reader(s.as_bytes())
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
-            }
+            },
             Err(e) => Err(e),
         }
     }
@@ -372,21 +372,25 @@ impl PyExpr {
     fn filter(&self, predicate: Self) -> Self {
         self.clone().inner.filter(predicate.inner).into()
     }
+
     fn reverse(&self) -> Self {
         self.clone().inner.reverse().into()
     }
+
     fn std(&self, ddof: u8) -> Self {
         self.clone().inner.std(ddof).into()
     }
+
     fn var(&self, ddof: u8) -> Self {
         self.clone().inner.var(ddof).into()
     }
+
     fn is_unique(&self) -> Self {
         self.clone().inner.is_unique().into()
     }
 
-    fn approx_unique(&self) -> Self {
-        self.clone().inner.approx_unique().into()
+    fn approx_n_unique(&self) -> Self {
+        self.clone().inner.approx_n_unique().into()
     }
 
     fn is_first(&self) -> Self {
@@ -401,7 +405,10 @@ impl PyExpr {
         self.clone()
             .inner
             .map(
-                move |s: Series| Ok(Some(s.take_every(n))),
+                move |s: Series| {
+                    polars_ensure!(n > 0, InvalidOperation: "take_every(n): n can't be zero");
+                    Ok(Some(s.take_every(n)))
+                },
                 GetOutput::same_type(),
             )
             .with_fmt("take_every")
@@ -636,7 +643,7 @@ impl PyExpr {
                     Ok(pyseries) => {
                         let pyseries = pyseries.extract::<PySeries>(py).unwrap();
                         pyseries.series
-                    }
+                    },
                     Err(_) => {
                         let obj = out;
                         let is_float = obj.as_ref(py).is_instance_of::<PyFloat>();
@@ -653,7 +660,7 @@ impl PyExpr {
                                     obj.extract::<u8>(py)
                                         .map(|v| UInt8Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             UInt16 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -662,7 +669,7 @@ impl PyExpr {
                                     obj.extract::<u16>(py)
                                         .map(|v| UInt16Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             UInt32 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -671,7 +678,7 @@ impl PyExpr {
                                     obj.extract::<u32>(py)
                                         .map(|v| UInt32Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             UInt64 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -680,7 +687,7 @@ impl PyExpr {
                                     obj.extract::<u64>(py)
                                         .map(|v| UInt64Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int8 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -689,7 +696,7 @@ impl PyExpr {
                                     obj.extract::<i8>(py)
                                         .map(|v| Int8Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int16 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -698,7 +705,7 @@ impl PyExpr {
                                     obj.extract::<i16>(py)
                                         .map(|v| Int16Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int32 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -707,7 +714,7 @@ impl PyExpr {
                                     obj.extract::<i32>(py)
                                         .map(|v| Int32Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Int64 => {
                                 if is_float {
                                     let v = obj.extract::<f64>(py).unwrap();
@@ -716,7 +723,7 @@ impl PyExpr {
                                     obj.extract::<i64>(py)
                                         .map(|v| Int64Chunked::from_slice("", &[v]).into_series())
                                 }
-                            }
+                            },
                             Float32 => obj
                                 .extract::<f32>(py)
                                 .map(|v| Float32Chunked::from_slice("", &[v]).into_series()),
@@ -730,9 +737,9 @@ impl PyExpr {
                             Ok(s) => s,
                             Err(e) => {
                                 panic!("{e:?}")
-                            }
+                            },
                         }
-                    }
+                    },
                 }
             })
         };
@@ -1051,38 +1058,30 @@ impl PyExpr {
         self.inner.clone().to_physical().into()
     }
 
-    #[pyo3(signature = (seed, fixed_seed))]
-    fn shuffle(&self, seed: Option<u64>, fixed_seed: bool) -> Self {
-        self.inner.clone().shuffle(seed, fixed_seed).into()
+    #[pyo3(signature = (seed))]
+    fn shuffle(&self, seed: Option<u64>) -> Self {
+        self.inner.clone().shuffle(seed).into()
     }
 
-    #[pyo3(signature = (n, with_replacement, shuffle, seed, fixed_seed))]
-    fn sample_n(
-        &self,
-        n: usize,
-        with_replacement: bool,
-        shuffle: bool,
-        seed: Option<u64>,
-        fixed_seed: bool,
-    ) -> Self {
+    #[pyo3(signature = (n, with_replacement, shuffle, seed))]
+    fn sample_n(&self, n: usize, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
         self.inner
             .clone()
-            .sample_n(n, with_replacement, shuffle, seed, fixed_seed)
+            .sample_n(n, with_replacement, shuffle, seed)
             .into()
     }
 
-    #[pyo3(signature = (frac, with_replacement, shuffle, seed, fixed_seed))]
+    #[pyo3(signature = (frac, with_replacement, shuffle, seed))]
     fn sample_frac(
         &self,
         frac: f64,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-        fixed_seed: bool,
     ) -> Self {
         self.inner
             .clone()
-            .sample_frac(frac, with_replacement, shuffle, seed, fixed_seed)
+            .sample_frac(frac, with_replacement, shuffle, seed)
             .into()
     }
 

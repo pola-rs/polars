@@ -55,13 +55,13 @@ impl<T: AsRef<str>> AsRef<[u8]> for StrAsBytes<T> {
 
 pub trait Utf8FromIter {
     #[inline]
-    fn from_values_iter<I, S>(iter: I, len: usize, value_cap: usize) -> Utf8Array<i64>
+    fn from_values_iter<I, S>(iter: I, len: usize, size_hint: usize) -> Utf8Array<i64>
     where
         S: AsRef<str>,
         I: Iterator<Item = S>,
     {
         let iter = iter.map(StrAsBytes);
-        let (offsets, values) = unsafe { fill_offsets_and_values(iter, value_cap, len) };
+        let (offsets, values) = unsafe { fill_offsets_and_values(iter, size_hint, len) };
         unsafe {
             Utf8Array::new_unchecked(DataType::LargeUtf8, offsets.into(), values.into(), None)
         }

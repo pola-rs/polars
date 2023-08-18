@@ -29,8 +29,8 @@ pub use crate::chunked_array::ops::unique::rank::{RankMethod, RankOptions};
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
+pub(crate) use crate::chunked_array::ChunkIdIter;
 pub use crate::chunked_array::ChunkedArray;
-pub(crate) use crate::chunked_array::{to_array, ChunkIdIter};
 pub use crate::datatypes::*;
 pub use crate::error::{
     polars_bail, polars_ensure, polars_err, polars_warn, PolarsError, PolarsResult,

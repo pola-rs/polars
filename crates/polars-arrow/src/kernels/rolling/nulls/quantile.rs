@@ -54,7 +54,7 @@ impl<
             | QuantileInterpolOptions::Midpoint
             | QuantileInterpolOptions::Linear => {
                 ((length as f64 - 1.0) * self.prob).floor() as usize
-            }
+            },
             QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * self.prob).ceil() as usize,
         };
 
@@ -68,7 +68,7 @@ impl<
                     (values[idx].unwrap() + values[top_idx].unwrap())
                         / T::from::<f64>(2.0f64).unwrap(),
                 )
-            }
+            },
             QuantileInterpolOptions::Linear => {
                 let float_idx = (length as f64 - 1.0) * self.prob;
                 let top_idx = f64::ceil(float_idx) as usize;
@@ -82,7 +82,7 @@ impl<
                             + values[idx].unwrap(),
                     )
                 }
-            }
+            },
             _ => Some(values[idx].unwrap()),
         }
     }

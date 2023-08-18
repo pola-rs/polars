@@ -63,12 +63,15 @@ class _XLFormatCache:
     def _key(fmt: dict[str, Any]) -> str:
         return json.dumps(fmt, sort_keys=True, default=str)
 
-    def get(self, fmt: dict[str, Any]) -> Format:
-        key = self._key(fmt)
-        wbfmt = self._cache.get(key)
-        if wbfmt is None:
-            wbfmt = self.wb.add_format(fmt)
-            self._cache[key] = wbfmt
+    def get(self, fmt: dict[str, Any] | Format) -> Format:
+        if not isinstance(fmt, dict):
+            wbfmt = fmt
+        else:
+            key = self._key(fmt)
+            wbfmt = self._cache.get(key)
+            if wbfmt is None:
+                wbfmt = self.wb.add_format(fmt)
+                self._cache[key] = wbfmt
         return wbfmt
 
 
@@ -209,7 +212,7 @@ def _xl_inject_dummy_table_columns(
 
     for col, definition in options.items():
         if col in df_original_columns:
-            raise DuplicateError(f"Cannot create a second {col!r} column")
+            raise DuplicateError(f"cannot create a second {col!r} column")
         elif not isinstance(definition, dict):
             df_select_cols.append(col)
         else:
@@ -260,7 +263,7 @@ def _xl_inject_sparklines(
     m: dict[str, Any] = {}
     data_cols = params.get("columns") if isinstance(params, dict) else params
     if not data_cols:
-        raise ValueError("Supplying 'columns' param value is mandatory for sparklines")
+        raise ValueError("supplying 'columns' param value is mandatory for sparklines")
     elif not _adjacent_cols(df, data_cols, min_max=m):
         raise RuntimeError("sparkline data range/cols must all be adjacent")
 
@@ -304,6 +307,7 @@ def _xl_setup_table_columns(
     column_totals: ColumnTotalsDefinition | None = None,
     column_formats: dict[str | tuple[str, ...], str | dict[str, str]] | None = None,
     dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
+    header_format: dict[str, Any] | None = None,
     sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
     formulas: dict[str, str | dict[str, str]] | None = None,
     row_totals: RowTotalsDefinition | None = None,
@@ -366,13 +370,14 @@ def _xl_setup_table_columns(
     # normalise formats
     column_formats = (column_formats or {}).copy()
     dtype_formats = (dtype_formats or {}).copy()
+
     for tp in list(dtype_formats):
         if isinstance(tp, (tuple, frozenset)):
             dtype_formats.update(dict.fromkeys(tp, dtype_formats.pop(tp)))
     for fmt in dtype_formats.values():
         if not isinstance(fmt, str):
             raise TypeError(
-                f"Invalid dtype_format value: {fmt!r} (expected format string, got {type(fmt)})"
+                f"invalid dtype_format value: {fmt!r} (expected format string, got {type(fmt).__name__!r})"
             )
 
     # inject sparkline/row-total placeholder(s)
@@ -431,6 +436,9 @@ def _xl_setup_table_columns(
                 fmt["valign"] = "vcenter"
             column_formats[col] = format_cache.get(fmt)
 
+    # optional custom header format
+    col_header_format = format_cache.get(header_format) if header_format else None
+
     # assemble table columns
     table_columns = [
         {
@@ -438,6 +446,7 @@ def _xl_setup_table_columns(
             for k, v in {
                 "header": col,
                 "format": column_formats[col],
+                "header_format": col_header_format,
                 "total_function": column_total_funcs.get(col),
                 "formula": (
                     row_total_funcs.get(col)
@@ -465,7 +474,7 @@ def _xl_setup_table_options(
         )
         for key in table_style:
             if key not in valid_options:
-                raise ValueError(f"Invalid table style key:{key}")
+                raise ValueError(f"invalid table style key:{key!r}")
 
         table_options = table_style.copy()
         table_style = table_options.pop("style", None)

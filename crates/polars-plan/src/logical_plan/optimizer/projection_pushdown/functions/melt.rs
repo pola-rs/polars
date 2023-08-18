@@ -53,7 +53,7 @@ pub(super) fn process_melt(
             Ok(lp)
         } else {
             Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                .project(local_projections)
+                .project(local_projections, Default::default())
                 .build())
         }
     }

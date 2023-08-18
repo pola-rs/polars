@@ -70,12 +70,12 @@ impl WindowExpr {
                     for g in groups.all() {
                         idx_mapping.extend(g.iter().copied().zip(&mut iter));
                     }
-                }
+                },
                 GroupsProxy::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         idx_mapping.extend((first..first + len).zip(&mut iter));
                     }
-                }
+                },
             }
         }
         // groups are changed, we use the new group indexes as arguments of the arg_sort
@@ -87,12 +87,12 @@ impl WindowExpr {
                     for g in groups.all() {
                         original_idx.extend_from_slice(g)
                     }
-                }
+                },
                 GroupsProxy::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         original_idx.extend(first..first + len)
                     }
-                }
+                },
             };
 
             let mut original_idx_iter = original_idx.iter().copied();
@@ -102,12 +102,12 @@ impl WindowExpr {
                     for g in groups.all() {
                         idx_mapping.extend(g.iter().copied().zip(&mut original_idx_iter));
                     }
-                }
+                },
                 GroupsProxy::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         idx_mapping.extend((first..first + len).zip(&mut original_idx_iter));
                     }
-                }
+                },
             }
             original_idx.clear();
             take_idx = original_idx;
@@ -226,8 +226,8 @@ impl WindowExpr {
                     match e {
                         Expr::Agg(AggExpr::Implode(_)) => {
                             finishes_list = true;
-                        }
-                        Expr::Alias(_, _) => {}
+                        },
+                        Expr::Alias(_, _) => {},
                         _ => break,
                     }
                 }
@@ -249,8 +249,8 @@ impl WindowExpr {
                     match e {
                         Expr::Column(_) => {
                             simple_col = true;
-                        }
-                        Expr::Alias(_, _) => {}
+                        },
+                        Expr::Alias(_, _) => {},
                         _ => break,
                     }
                 }
@@ -270,8 +270,8 @@ impl WindowExpr {
                     match e {
                         Expr::Agg(_) => {
                             agg_col = true;
-                        }
-                        Expr::Alias(_, _) => {}
+                        },
+                        Expr::Alias(_, _) => {},
                         _ => break,
                     }
                 }
@@ -294,11 +294,11 @@ impl WindowExpr {
                     match e {
                         Expr::Ternary { .. } | Expr::BinaryExpr { .. } => {
                             has_arity = true;
-                        }
-                        Expr::Alias(_, _) => {}
+                        },
+                        Expr::Alias(_, _) => {},
                         Expr::Agg(_) => {
                             agg_col = true;
-                        }
+                        },
                         Expr::Function { options, .. }
                         | Expr::AnonymousFunction { options, .. } => {
                             if options.auto_explode
@@ -306,8 +306,8 @@ impl WindowExpr {
                             {
                                 agg_col = true;
                             }
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                 }
             }
@@ -348,7 +348,7 @@ impl WindowExpr {
                 } else {
                     Ok(MapStrategy::Map)
                 }
-            }
+            },
             // no aggregations, just return column
             // or an aggregation that has been flattened
             // we have to check which one
@@ -361,7 +361,7 @@ impl WindowExpr {
                 } else {
                     Ok(MapStrategy::Map)
                 }
-            }
+            },
             (WindowMapping::Join, AggState::NotAggregated(_)) => Ok(MapStrategy::Join),
             // literals, do nothing and let broadcast
             (_, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
@@ -507,7 +507,7 @@ impl PhysicalExpr for WindowExpr {
                     out.rename(name.as_ref());
                 }
                 Ok(out)
-            }
+            },
             Explode => {
                 let mut out = ac.aggregated().explode()?;
                 cache_gb(gb, state, &cache_key);
@@ -515,7 +515,7 @@ impl PhysicalExpr for WindowExpr {
                     out.rename(name.as_ref());
                 }
                 Ok(out)
-            }
+            },
             Map => {
                 // TODO!
                 // investigate if sorted arrays can be return directly
@@ -536,7 +536,7 @@ impl PhysicalExpr for WindowExpr {
                     state,
                     &cache_key,
                 )
-            }
+            },
             Join => {
                 let out_column = ac.aggregated();
                 // we try to flatten/extend the array by repeating the aggregated value n times
@@ -552,7 +552,7 @@ impl PhysicalExpr for WindowExpr {
                     (UpdateGroups::No, Some(out)) => {
                         cache_gb(gb, state, &cache_key);
                         Ok(out)
-                    }
+                    },
                     (_, _) => {
                         let keys = gb.keys();
                         cache_gb(gb, state, &cache_key);
@@ -599,9 +599,9 @@ impl PhysicalExpr for WindowExpr {
                         }
 
                         Ok(out)
-                    }
+                    },
                 }
-            }
+            },
         }
     }
 
@@ -696,12 +696,12 @@ where
             for g in groups.all() {
                 idx_mapping.extend((&mut iter).take(g.len()).zip(g.iter().copied()));
             }
-        }
+        },
         GroupsProxy::Slice { groups, .. } => {
             for &[first, len] in groups {
                 idx_mapping.extend((&mut iter).take(len as usize).zip(first..first + len));
             }
-        }
+        },
     }
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
@@ -726,7 +726,7 @@ where
                             }
                         })
                 })
-            }
+            },
             GroupsProxy::Slice { groups, .. } => {
                 // this should always succeed as we don't expect any chunks after an aggregation
                 let agg_vals = ca.cont_slice().ok()?;
@@ -744,7 +744,7 @@ where
                             }
                         })
                 });
-            }
+            },
         }
 
         // safety: we have written all slots
@@ -778,11 +778,11 @@ where
                                 Some(v) => {
                                     *values_ptr.add(idx) = v;
                                     *validity_ptr.add(idx) = true;
-                                }
+                                },
                                 None => {
                                     *values_ptr.add(idx) = T::Native::default();
                                     *validity_ptr.add(idx) = false;
-                                }
+                                },
                             };
                         }
                     }
@@ -807,17 +807,17 @@ where
                                     Some(v) => {
                                         *values_ptr.add(idx) = v;
                                         *validity_ptr.add(idx) = true;
-                                    }
+                                    },
                                     None => {
                                         *values_ptr.add(idx) = T::Native::default();
                                         *validity_ptr.add(idx) = false;
-                                    }
+                                    },
                                 };
                             }
                         }
                     }
                 })
-            }
+            },
         }
         // safety: we have written all slots
         unsafe { values.set_len(len) }

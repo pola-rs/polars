@@ -1,7 +1,6 @@
 =========
 Selectors
 =========
-
 .. currentmodule:: polars
 
 Selectors allow for more intuitive selection of columns from :class:`DataFrame`

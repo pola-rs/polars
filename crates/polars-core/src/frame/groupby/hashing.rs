@@ -159,11 +159,11 @@ where
         match entry {
             Entry::Vacant(entry) => {
                 entry.insert((idx, vec![idx]));
-            }
+            },
             Entry::Occupied(mut entry) => {
                 let v = entry.get_mut();
                 v.1.push(idx);
-            }
+            },
         }
     });
     if sorted {
@@ -226,11 +226,11 @@ where
                                     entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
                                         hasher.hash_one(k)
                                     });
-                                }
+                                },
                                 RawEntryMut::Occupied(mut entry) => {
                                     let v = entry.get_mut();
                                     v.1.push(idx);
-                                }
+                                },
                             }
                         }
                     });
@@ -290,11 +290,11 @@ where
                                     entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
                                         hasher.hash_one(k)
                                     });
-                                }
+                                },
                                 RawEntryMut::Occupied(mut entry) => {
                                     let v = entry.get_mut();
                                     v.1.push(idx);
-                                }
+                                },
                             }
                         }
                     });
@@ -380,11 +380,11 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
     match entry {
         RawEntryMut::Vacant(entry) => {
             entry.insert_hashed_nocheck(original_h, IdxHash::new(idx, original_h), vacant_fn());
-        }
+        },
         RawEntryMut::Occupied(mut entry) => {
             let (_k, v) = entry.get_key_value_mut();
             occupied_fn(v);
-        }
+        },
     }
 }
 
@@ -442,11 +442,11 @@ pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
     match entry {
         RawEntryMut::Vacant(entry) => {
             entry.insert_hashed_nocheck(original_h, IdxHash::new(idx, original_h), vacant_fn());
-        }
+        },
         RawEntryMut::Occupied(mut entry) => {
             let (_k, v) = entry.get_key_value_mut();
             occupied_fn(v);
-        }
+        },
     }
 }
 

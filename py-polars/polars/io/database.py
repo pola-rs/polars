@@ -6,14 +6,14 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
-from polars.utils.deprecation import deprecated_alias
+from polars.utils.deprecation import deprecate_renamed_parameter
 
 if TYPE_CHECKING:
     from polars import DataFrame
     from polars.type_aliases import DbReadEngine
 
 
-@deprecated_alias(connection_uri="connection")
+@deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
 def read_database(
     query: list[str] | str,
     connection: str,
@@ -22,17 +22,17 @@ def read_database(
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
     protocol: str | None = None,
-    engine: DbReadEngine = "connectorx",
+    engine: DbReadEngine | None = None,
 ) -> DataFrame:
     """
-    Read a SQL query into a DataFrame.
+    Read the results of a SQL query into a DataFrame.
 
     Parameters
     ----------
     query
         Raw SQL query (or queries).
     connection
-        A connectorx or ADBC connection URI that starts with the backend's
+        A connectorx or ADBC connection URI string that starts with the backend's
         driver name, for example:
 
         * "postgresql://user:pass@server:port/database"
@@ -47,7 +47,7 @@ def read_database(
         Backend-specific transfer protocol directive (connectorx); see connectorx
         documentation for more details.
     engine : {'connectorx', 'adbc'}
-        Selects the engine used for reading the database:
+        Selects the engine used for reading the database (defaulting to connectorx):
 
         * ``'connectorx'``
           Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
@@ -111,6 +111,13 @@ def read_database(
     ... )  # doctest: +SKIP
 
     """  # noqa: W505
+    if not isinstance(connection, str):
+        raise TypeError(
+            f"expect connection to be a URI string; found {type(connection).__name__!r}"
+        )
+    elif engine is None:
+        engine = "connectorx"
+
     if engine == "connectorx":
         return _read_sql_connectorx(
             query,
@@ -122,10 +129,10 @@ def read_database(
         )
     elif engine == "adbc":
         if not isinstance(query, str):
-            raise ValueError("Only a single SQL query string is accepted for adbc.")
+            raise ValueError("only a single SQL query string is accepted for adbc")
         return _read_sql_adbc(query, connection)
     else:
-        raise ValueError(f"Engine {engine!r} not implemented; use connectorx or adbc.")
+        raise ValueError(f"engine {engine!r} not implemented; use connectorx or adbc")
 
 
 def _read_sql_connectorx(
@@ -140,7 +147,7 @@ def _read_sql_connectorx(
         import connectorx as cx
     except ImportError:
         raise ImportError(
-            "connectorx is not installed. Please run `pip install connectorx>=0.3.1`."
+            "connectorx is not installed. Please run `pip install connectorx>=0.3.1`"
         ) from None
 
     tbl = cx.read_sql(
@@ -176,8 +183,8 @@ def _open_adbc_connection(connection_uri: str) -> Any:
         adbc_driver = sys.modules[module_name]
     except ImportError:
         raise ImportError(
-            f"ADBC {driver_name} driver not detected; if ADBC supports this database, "
-            f"please run `pip install adbc-driver-{driver_name} pyarrow`"
+            f"ADBC {driver_name} driver not detected; if ADBC supports this database,"
+            f" please run `pip install adbc-driver-{driver_name} pyarrow`"
         ) from None
 
     # some backends require the driver name to be stripped from the URI

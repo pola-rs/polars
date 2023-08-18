@@ -11,7 +11,7 @@ fn test_agg_list_type() -> PolarsResult<()> {
     let result = match l.dtype() {
         DataType::List(inner) => {
             matches!(&**inner, DataType::Datetime(TimeUnit::Nanoseconds, None))
-        }
+        },
         _ => false,
     };
     assert!(result);

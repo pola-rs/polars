@@ -202,7 +202,9 @@ impl ProjectionPushDown {
         builder: ALogicalPlanBuilder,
     ) -> ALogicalPlan {
         if !local_projections.is_empty() {
-            builder.project(local_projections).build()
+            builder
+                .project(local_projections, Default::default())
+                .build()
         } else {
             builder.build()
         }
@@ -355,7 +357,7 @@ impl ProjectionPushDown {
                 Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
                     .project_local(proj)
                     .build())
-            }
+            },
             AnonymousScan {
                 function,
                 file_info,
@@ -398,7 +400,7 @@ impl ProjectionPushDown {
                     };
                     Ok(lp)
                 }
-            }
+            },
             DataFrameScan {
                 df,
                 schema,
@@ -424,7 +426,7 @@ impl ProjectionPushDown {
                     selection,
                 };
                 Ok(lp)
-            }
+            },
             #[cfg(feature = "python")]
             PythonScan {
                 mut options,
@@ -443,7 +445,7 @@ impl ProjectionPushDown {
                     )?))
                 };
                 Ok(PythonScan { options, predicate })
-            }
+            },
             Scan {
                 path,
                 file_info,
@@ -478,7 +480,7 @@ impl ProjectionPushDown {
                     file_options,
                 };
                 Ok(lp)
-            }
+            },
             Sort {
                 input,
                 by_column,
@@ -513,7 +515,7 @@ impl ProjectionPushDown {
                     by_column,
                     args,
                 })
-            }
+            },
             Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
                 if !acc_projections.is_empty() {
@@ -549,7 +551,7 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
                 Ok(Distinct { input, options })
-            }
+            },
             Selection { predicate, input } => {
                 if !acc_projections.is_empty() {
                     // make sure that the filter column is projected
@@ -569,7 +571,7 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
                 Ok(Selection { predicate, input })
-            }
+            },
             Aggregate {
                 input,
                 keys,
@@ -629,10 +631,16 @@ impl ProjectionPushDown {
                     expr_arena,
                 ),
             },
-            HStack { input, exprs, .. } => process_hstack(
+            HStack {
+                input,
+                exprs,
+                options,
+                ..
+            } => process_hstack(
                 self,
                 input,
                 exprs.exprs(),
+                options,
                 acc_projections,
                 projected_names,
                 projections_seen,
@@ -674,7 +682,7 @@ impl ProjectionPushDown {
                     contexts,
                     schema: Arc::new(new_schema),
                 })
-            }
+            },
             MapFunction {
                 input,
                 ref function,
@@ -699,7 +707,7 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )
-            }
+            },
             // These nodes only have inputs and exprs, so we can use same logic.
             lp @ Slice { .. } | lp @ Sink { .. } => process_generic(
                 self,
@@ -721,11 +729,11 @@ impl ProjectionPushDown {
                 } else {
                     Ok(
                         ALogicalPlanBuilder::from_lp(logical_plan, expr_arena, lp_arena)
-                            .project(acc_projections)
+                            .project(acc_projections, Default::default())
                             .build(),
                     )
                 }
-            }
+            },
         }
     }
 

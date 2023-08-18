@@ -56,10 +56,10 @@ pub fn can_convert_to_hash_agg(
                 | AExpr::Column(_)
                 | AExpr::BinaryExpr { .. }
                 | AExpr::Ternary { .. }
-                | AExpr::Alias(_, _) => {}
+                | AExpr::Alias(_, _) => {},
                 _ => {
                     can_run_partitioned = false;
-                }
+                },
             }
             ae
         })
@@ -98,7 +98,7 @@ pub fn can_convert_to_hash_agg(
                         false
                     }
                 })
-            }
+            },
             _ => false,
         }
     } else {
@@ -145,7 +145,7 @@ where
                     dt => panic!("{dt} unexpected"),
                 };
                 (logical_dtype, phys_expr, agg_fn)
-            }
+            },
             AAggExpr::Max { input, .. } => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
@@ -164,7 +164,7 @@ where
                     dt => panic!("{dt} unexpected"),
                 };
                 (logical_dtype, phys_expr, agg_fn)
-            }
+            },
             AAggExpr::Sum(input) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
@@ -186,7 +186,7 @@ where
                         } else {
                             AggregateFunction::SumU64(SumAgg::<u64>::new())
                         }
-                    }
+                    },
                     // these are aggregated as i64 to prevent overflow
                     DataType::Int8 => AggregateFunction::SumI64(SumAgg::<i64>::new()),
                     DataType::Int16 => AggregateFunction::SumI64(SumAgg::<i64>::new()),
@@ -202,7 +202,7 @@ where
                     dt => AggregateFunction::Null(NullAgg::new(dt)),
                 };
                 (logical_dtype, phys_expr, agg_fn)
-            }
+            },
             AAggExpr::Mean(input) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
 
@@ -222,7 +222,7 @@ where
                     dt => AggregateFunction::Null(NullAgg::new(dt)),
                 };
                 (logical_dtype, phys_expr, agg_fn)
-            }
+            },
             AAggExpr::First(input) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
@@ -231,7 +231,7 @@ where
                     phys_expr,
                     AggregateFunction::First(FirstAgg::new(logical_dtype.to_physical())),
                 )
-            }
+            },
             AAggExpr::Last(input) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
@@ -240,7 +240,7 @@ where
                     phys_expr,
                     AggregateFunction::Last(LastAgg::new(logical_dtype.to_physical())),
                 )
-            }
+            },
             AAggExpr::Count(input) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
@@ -249,7 +249,7 @@ where
                     phys_expr,
                     AggregateFunction::Count(CountAgg::new()),
                 )
-            }
+            },
             agg => panic!("{agg:?} not yet implemented."),
         },
         _ => todo!(),

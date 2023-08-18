@@ -381,3 +381,13 @@ def test_apply_shifted_chunks() -> None:
         "column_0": ["test", "test123", "tests"],
         "column_1": [None, "test", "test123"],
     }
+
+
+def test_apply_dict_order_10128() -> None:
+    df = pl.select(pl.lit("").apply(lambda x: {"c": 1, "b": 2, "a": 3}))
+    assert df.to_dict(False) == {"literal": [{"c": 1, "b": 2, "a": 3}]}
+
+
+def test_apply_10237() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    assert df.select(pl.all().apply(lambda x: x > 50))["a"].to_list() == [False] * 3

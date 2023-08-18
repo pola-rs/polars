@@ -45,7 +45,7 @@ impl OptimizationRule for FlattenUnionRule {
                     inputs: new_inputs,
                     options,
                 })
-            }
+            },
             _ => None,
         }
     }

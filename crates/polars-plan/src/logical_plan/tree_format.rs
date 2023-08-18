@@ -24,14 +24,14 @@ impl UpperExp for AExpr {
                 } else {
                     write!(f, "cast({})", data_type)
                 }
-            }
+            },
             AExpr::Sort { options, .. } => {
                 return write!(
                     f,
                     "sort: {}{}{}",
                     options.descending as u8, options.nulls_last as u8, options.multithreaded as u8
                 )
-            }
+            },
             AExpr::Take { .. } => "take",
             AExpr::SortBy { descending, .. } => {
                 write!(f, "sort_by:")?;
@@ -39,16 +39,16 @@ impl UpperExp for AExpr {
                     write!(f, "{}", *i as u8)?;
                 }
                 return Ok(());
-            }
+            },
             AExpr::Filter { .. } => "filter",
             AExpr::Agg(a) => {
                 let s: &str = a.into();
                 return write!(f, "{}", s.to_lowercase());
-            }
+            },
             AExpr::Ternary { .. } => "ternary",
             AExpr::AnonymousFunction { options, .. } => {
                 return write!(f, "anonymous_function: {}", options.fmt_str)
-            }
+            },
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             AExpr::Window { .. } => "window",
             AExpr::Wildcard => "*",

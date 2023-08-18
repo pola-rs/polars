@@ -27,7 +27,7 @@ unsafe fn bytes_iter<'a, T: NativeType>(
                 } else {
                     None
                 }
-            }
+            },
         }
     })
 }

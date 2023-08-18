@@ -210,14 +210,14 @@ impl CategoricalChunked {
                 } else {
                     self.logical().group_tuples(multithreaded, sorted).unwrap()
                 }
-            }
+            },
             RevMapping::Global(_mapping, _cached, _) => {
                 // TODO! see if we can optimize this
                 // the problem is that the global categories are not guaranteed packed together
                 // so we might need to deref them first to local ones, but that might be more
                 // expensive than just hashing (benchmark first)
                 self.logical().group_tuples(multithreaded, sorted).unwrap()
-            }
+            },
         };
         if sorted {
             out.sort()

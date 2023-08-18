@@ -129,28 +129,28 @@ impl StrpTimeState {
                         if negative {
                             year *= -1
                         }
-                    }
+                    },
                     b'm' => {
                         (month, offset) = update_and_parse(2, offset, val)?;
                         if month > 12 {
                             return None;
                         }
-                    }
+                    },
                     b'b' => {
                         (month, offset) = parse_month_abbrev(val, offset)?;
-                    }
+                    },
                     b'd' => {
                         (day, offset) = update_and_parse(2, offset, val)?;
-                    }
+                    },
                     b'H' => {
                         (hour, offset) = update_and_parse(2, offset, val)?;
-                    }
+                    },
                     b'M' => {
                         (min, offset) = update_and_parse(2, offset, val)?;
-                    }
+                    },
                     b'S' => {
                         (sec, offset) = update_and_parse(2, offset, val)?;
-                    }
+                    },
                     b'y' => {
                         let new_offset = offset + 2;
                         let bytes = val.get_unchecked_release(offset..new_offset);
@@ -166,21 +166,21 @@ impl StrpTimeState {
                             year = 1900 + decade;
                         }
                         offset = new_offset;
-                    }
+                    },
                     b'9' => {
                         (nano, offset) = update_and_parse(9, offset, val)?;
                         break;
-                    }
+                    },
                     b'6' => {
                         (nano, offset) = update_and_parse(6, offset, val)?;
                         nano *= 1000;
                         break;
-                    }
+                    },
                     b'3' => {
                         (nano, offset) = update_and_parse(3, offset, val)?;
                         nano *= 1_000_000;
                         break;
-                    }
+                    },
                     _ => return None,
                 }
             }
@@ -222,22 +222,22 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
                     cnt += 9;
                     debug_assert_eq!(iter.next(), Some(&b'f'));
                     return Some(cnt);
-                }
+                },
                 b'6' => {
                     cnt += 6;
                     debug_assert_eq!(iter.next(), Some(&b'f'));
                     return Some(cnt);
-                }
+                },
                 b'3' => {
                     cnt += 3;
                     debug_assert_eq!(iter.next(), Some(&b'f'));
                     return Some(cnt);
-                }
+                },
                 _ => return None,
             },
             _ => {
                 cnt += 1;
-            }
+            },
         }
     }
     Some(cnt)

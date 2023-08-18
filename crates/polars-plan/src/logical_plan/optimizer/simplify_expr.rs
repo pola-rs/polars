@@ -125,8 +125,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
             {
-                Some(expr_arena.get(*right).clone())
-            }
+                // We alias because of the left-hand naming rule.
+                Some(AExpr::Alias(*right, "literal".into()))
+            },
             // x AND true => x
             AExpr::BinaryExpr {
                 left,
@@ -138,31 +139,39 @@ impl OptimizationRule for SimplifyBooleanRule {
             ) =>
             {
                 Some(expr_arena.get(*left).clone())
-            }
+            },
+
             // x AND false -> false
-            AExpr::BinaryExpr {
-                op: Operator::And,
-                right,
-                ..
-            } if matches!(
-                expr_arena.get(*right),
-                AExpr::Literal(LiteralValue::Boolean(false))
-            ) =>
-            {
-                Some(AExpr::Literal(LiteralValue::Boolean(false)))
-            }
-            // false AND x -> false
+            // FIXME: we need an optimizer redesign to allow x & false to be optimized
+            // in general as we can forget the length of a series otherwise.
             AExpr::BinaryExpr {
                 left,
                 op: Operator::And,
-                ..
+                right,
+            } if matches!(expr_arena.get(*left), AExpr::Literal(_))
+                && matches!(
+                    expr_arena.get(*right),
+                    AExpr::Literal(LiteralValue::Boolean(false))
+                ) =>
+            {
+                Some(AExpr::Literal(LiteralValue::Boolean(false)))
+            },
+
+            // false AND x -> false
+            // FIXME: we need an optimizer redesign to allow false & x to be optimized
+            // in general as we can forget the length of a series otherwise.
+            AExpr::BinaryExpr {
+                left,
+                op: Operator::And,
+                right,
             } if matches!(
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(false))
-            ) =>
+            ) && matches!(expr_arena.get(*right), AExpr::Literal(_)) =>
             {
                 Some(AExpr::Literal(LiteralValue::Boolean(false)))
-            }
+            },
+
             // false or x => x
             AExpr::BinaryExpr {
                 left,
@@ -173,8 +182,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
             {
-                Some(expr_arena.get(*right).clone())
-            }
+                // We alias because of the left-hand naming rule.
+                Some(AExpr::Alias(*right, "literal".into()))
+            },
             // x or false => x
             AExpr::BinaryExpr {
                 left,
@@ -187,46 +197,39 @@ impl OptimizationRule for SimplifyBooleanRule {
             ) =>
             {
                 Some(expr_arena.get(*left).clone())
-            }
-
-            // false OR x => x
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Or,
-                right,
-            } if matches!(
-                expr_arena.get(*left),
-                AExpr::Literal(LiteralValue::Boolean(false))
-            ) =>
-            {
-                Some(expr_arena.get(*right).clone())
-            }
+            },
 
             // true OR x => true
+            // FIXME: we need an optimizer redesign to allow true | x to be optimized
+            // in general as we can forget the length of a series otherwise.
             AExpr::BinaryExpr {
+                left,
                 op: Operator::Or,
                 right,
-                ..
-            } if matches!(
-                expr_arena.get(*right),
-                AExpr::Literal(LiteralValue::Boolean(true))
-            ) =>
+            } if matches!(expr_arena.get(*left), AExpr::Literal(_))
+                && matches!(
+                    expr_arena.get(*right),
+                    AExpr::Literal(LiteralValue::Boolean(true))
+                ) =>
             {
                 Some(AExpr::Literal(LiteralValue::Boolean(true)))
-            }
+            },
 
             // x OR true => true
+            // FIXME: we need an optimizer redesign to allow true | x to be optimized
+            // in general as we can forget the length of a series otherwise.
             AExpr::BinaryExpr {
-                op: Operator::Or,
                 left,
-                ..
+                op: Operator::Or,
+                right,
             } if matches!(
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(true))
-            ) =>
+            ) && matches!(expr_arena.get(*right), AExpr::Literal(_)) =>
             {
                 Some(AExpr::Literal(LiteralValue::Boolean(true)))
-            }
+            },
+
             AExpr::Ternary {
                 truthy, predicate, ..
             } if matches!(
@@ -235,7 +238,7 @@ impl OptimizationRule for SimplifyBooleanRule {
             ) =>
             {
                 Some(expr_arena.get(*truthy).clone())
-            }
+            },
             AExpr::Ternary {
                 truthy,
                 falsy,
@@ -246,12 +249,9 @@ impl OptimizationRule for SimplifyBooleanRule {
             ) =>
             {
                 let names = aexpr_to_leaf_names(*truthy, expr_arena);
-                if names.is_empty() {
-                    None
-                } else {
-                    Some(AExpr::Alias(*falsy, names[0].clone()))
-                }
-            }
+                let name = names.get(0).map(Arc::clone).unwrap_or_else(|| "".into());
+                Some(AExpr::Alias(*falsy, name))
+            },
             AExpr::Function {
                 input,
                 function: FunctionExpr::Boolean(BooleanFunction::IsNot),
@@ -269,10 +269,10 @@ impl OptimizationRule for SimplifyBooleanRule {
                     // not(lit x) => !x
                     AExpr::Literal(LiteralValue::Boolean(b)) => {
                         Some(AExpr::Literal(LiteralValue::Boolean(!b)))
-                    }
+                    },
                     _ => None,
                 }
-            }
+            },
             _ => None,
         };
         Ok(out)
@@ -287,7 +287,7 @@ where
         return match (lit_left, lit_right) {
             (LiteralValue::Boolean(x), LiteralValue::Boolean(y)) => {
                 Some(AExpr::Literal(LiteralValue::Boolean(operation(*x, *y))))
-            }
+            },
             _ => None,
         };
     }
@@ -350,7 +350,7 @@ fn string_addition_to_linear_concat(
                     } else {
                         None
                     }
-                }
+                },
                 // concat + str
                 (
                     AExpr::Function {
@@ -372,7 +372,7 @@ fn string_addition_to_linear_concat(
                     } else {
                         None
                     }
-                }
+                },
                 // str + concat
                 (
                     _,
@@ -395,7 +395,7 @@ fn string_addition_to_linear_concat(
                     } else {
                         None
                     }
-                }
+                },
                 _ => Some(AExpr::Function {
                     input: vec![left_ae, right_ae],
                     function: StringFunction::ConcatHorizontal("".to_string()).into(),
@@ -479,9 +479,9 @@ impl OptimizationRule for SimplifyExprRule {
                                 {
                                     None
                                 }
-                            }
+                            },
                         }
-                    }
+                    },
                     Minus => eval_binary_same_type!(left_aexpr, -, right_aexpr),
                     Multiply => eval_binary_same_type!(left_aexpr, *, right_aexpr),
                     Divide => eval_binary_same_type!(left_aexpr, /, right_aexpr),
@@ -492,10 +492,10 @@ impl OptimizationRule for SimplifyExprRule {
                             match (lit_left, lit_right) {
                                 (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
                                     Some(AExpr::Literal(LiteralValue::Float32(x / y)))
-                                }
+                                },
                                 (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
                                     Some(AExpr::Literal(LiteralValue::Float64(x / y)))
-                                }
+                                },
                                 #[cfg(feature = "dtype-i8")]
                                 (LiteralValue::Int8(x), LiteralValue::Int8(y)) => Some(
                                     AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
@@ -529,7 +529,7 @@ impl OptimizationRule for SimplifyExprRule {
                         } else {
                             None
                         }
-                    }
+                    },
                     Modulus => eval_binary_same_type!(left_aexpr, %, right_aexpr),
                     Lt => eval_binary_bool_type!(left_aexpr, <, right_aexpr),
                     Gt => eval_binary_bool_type!(left_aexpr, >, right_aexpr),
@@ -591,7 +591,7 @@ impl OptimizationRule for SimplifyExprRule {
                     }),
                     _ => None,
                 }
-            }
+            },
             // sort().reverse() -> sort(reverse)
             // sort_by().reverse() -> sort_by(reverse)
             AExpr::Function {
@@ -608,7 +608,7 @@ impl OptimizationRule for SimplifyExprRule {
                             expr: *expr,
                             options,
                         })
-                    }
+                    },
                     AExpr::SortBy {
                         expr,
                         by,
@@ -621,7 +621,7 @@ impl OptimizationRule for SimplifyExprRule {
                     // TODO: add support for cumsum and other operation that allow reversing.
                     _ => None,
                 }
-            }
+            },
             AExpr::Cast {
                 expr,
                 data_type,
@@ -629,7 +629,7 @@ impl OptimizationRule for SimplifyExprRule {
             } => {
                 let input = expr_arena.get(*expr);
                 inline_cast(input, data_type, *strict)?
-            }
+            },
             // flatten nested concat_str calls
             #[cfg(all(feature = "strings", feature = "concat_str"))]
             AExpr::Function {
@@ -658,7 +658,7 @@ impl OptimizationRule for SimplifyExprRule {
                 } else {
                     None
                 }
-            }
+            },
 
             _ => None,
         };
@@ -676,7 +676,7 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                     s.cast(dtype)
                 }?;
                 LiteralValue::Series(SpecialEq::new(s))
-            }
+            },
             _ => {
                 let Some(av) = lv.to_anyvalue() else {
                     return Ok(None);
@@ -692,7 +692,7 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                     #[cfg(feature = "dtype-categorical")]
                     (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_)) => {
                         return Ok(None)
-                    }
+                    },
                     #[cfg(feature = "dtype-struct")]
                     (_, DataType::Struct(_)) => return Ok(None),
                     (av, _) => {
@@ -708,9 +708,9 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                             }
                         };
                         out.try_into()?
-                    }
+                    },
                 }
-            }
+            },
         },
         _ => return Ok(None),
     };

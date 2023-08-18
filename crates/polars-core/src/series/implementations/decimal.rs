@@ -51,8 +51,11 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _clear_settings(&mut self) {
-        self.0.clear_settings()
+    fn _get_flags(&self) -> Settings {
+        self.0.get_flags()
+    }
+    fn _set_flags(&mut self, flags: Settings) {
+        self.0.set_flags(flags)
     }
 
     #[cfg(feature = "zip_with")]

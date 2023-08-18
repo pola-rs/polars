@@ -47,26 +47,21 @@ fn compute_chunked_array_2_args<T: PolarsNumericType>(
     ca_1: &ChunkedArray<T>,
     ca_2: &ChunkedArray<T>,
 ) -> ChunkedArray<T> {
-    // this ensures both ChunkedArrays have the same number of chunks with the same offset
-    // and the same length.
+    // This ensures both ChunkedArrays have the same number of chunks with the
+    // same offset and the same length.
     let (ca_1, ca_2) = align_chunks_binary(ca_1, ca_2);
-
     let chunks = ca_1
         .downcast_iter()
         .zip(ca_2.downcast_iter())
-        .map(|(arr_1, arr_2)| compute_kernel(arr_1, arr_2).boxed())
-        .collect::<Vec<_>>();
-
-    // Safety: we are sure the `ArrayRef` holds type `T`
-    unsafe { ChunkedArray::from_chunks(ca_1.name(), chunks) }
+        .map(|(arr_1, arr_2)| compute_kernel(arr_1, arr_2));
+    ChunkedArray::from_chunk_iter(ca_1.name(), chunks)
 }
 
 pub fn compute_expr_2_args(arg_1: &Series, arg_2: &Series) -> Series {
-    // dispatch the numerical series to `compute_chunked_array_2_args`
+    // Dispatch the numerical series to `compute_chunked_array_2_args`.
     with_match_physical_numeric_polars_type!(arg_1.dtype(), |$T| {
-            let ca_1: &ChunkedArray<$T> = arg_1.as_ref().as_ref().as_ref();
-            let ca_2: &ChunkedArray<$T> = arg_2.as_ref().as_ref().as_ref();
-
-    compute_chunked_array_2_args(ca_1, ca_2).into_series()
-        })
+        let ca_1: &ChunkedArray<$T> = arg_1.as_ref().as_ref().as_ref();
+        let ca_2: &ChunkedArray<$T> = arg_2.as_ref().as_ref().as_ref();
+        compute_chunked_array_2_args(ca_1, ca_2).into_series()
+    })
 }

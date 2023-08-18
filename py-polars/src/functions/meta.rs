@@ -42,7 +42,7 @@ pub fn set_float_fmt(fmt: &str) -> PyResult<()> {
             return Err(PyValueError::new_err(format!(
                 "fmt must be one of {{'full', 'mixed'}}, got {e}",
             )))
-        }
+        },
     };
     polars_core::fmt::set_float_fmt(fmt);
     Ok(())

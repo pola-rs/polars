@@ -38,17 +38,17 @@ impl PolarsMonthEnd for DatetimeChunked {
                 timestamp_to_datetime = timestamp_ns_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_ns;
                 offset_fn = Duration::add_ns;
-            }
+            },
             TimeUnit::Microseconds => {
                 timestamp_to_datetime = timestamp_us_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_us;
                 offset_fn = Duration::add_us;
-            }
+            },
             TimeUnit::Milliseconds => {
                 timestamp_to_datetime = timestamp_ms_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_ms;
                 offset_fn = Duration::add_ms;
-            }
+            },
         };
         Ok(self
             .0

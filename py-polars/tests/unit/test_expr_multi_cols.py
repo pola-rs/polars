@@ -85,3 +85,42 @@ def test_multiple_columns_length_9137() -> None:
         "a": [1],
         "b": [[True, False]],
     }
+
+
+def test_regex_in_cols() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": [1, 2, 3],
+            "col2": [4, 5, 6],
+            "val1": ["a", "b", "c"],
+            "val2": ["A", "B", "C"],
+        }
+    )
+
+    assert df.select(pl.col("^col.*$").prefix("matched_")).to_dict(False) == {
+        "matched_col1": [1, 2, 3],
+        "matched_col2": [4, 5, 6],
+    }
+
+    assert df.with_columns(pl.col("^col.*$", "^val.*$").prefix("matched_")).to_dict(
+        False
+    ) == {
+        "col1": [1, 2, 3],
+        "col2": [4, 5, 6],
+        "val1": ["a", "b", "c"],
+        "val2": ["A", "B", "C"],
+        "matched_col1": [1, 2, 3],
+        "matched_col2": [4, 5, 6],
+        "matched_val1": ["a", "b", "c"],
+        "matched_val2": ["A", "B", "C"],
+    }
+    assert df.select(pl.col("^col.*$", "val1").prefix("matched_")).to_dict(False) == {
+        "matched_col1": [1, 2, 3],
+        "matched_col2": [4, 5, 6],
+        "matched_val1": ["a", "b", "c"],
+    }
+
+    assert df.select(pl.col("^col.*$", "val1").exclude("col2")).to_dict(False) == {
+        "col1": [1, 2, 3],
+        "val1": ["a", "b", "c"],
+    }

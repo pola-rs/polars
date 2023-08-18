@@ -22,11 +22,11 @@ impl BooleanChunked {
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_first(groups);
-            }
+            },
             (IsSorted::Descending, 0) => {
                 return self.clone().into_series().agg_last(groups);
-            }
-            _ => {}
+            },
+            _ => {},
         }
         let ca_self = self.rechunk();
         let arr = ca_self.downcast_iter().next().unwrap();
@@ -55,7 +55,7 @@ impl BooleanChunked {
                     _ => {
                         let arr_group = _slice_from_offsets(self, first, len);
                         arr_group.min()
-                    }
+                    },
                 }
             }),
         }
@@ -65,11 +65,11 @@ impl BooleanChunked {
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_last(groups);
-            }
+            },
             (IsSorted::Descending, 0) => {
                 return self.clone().into_series().agg_first(groups);
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         let ca_self = self.rechunk();
@@ -99,7 +99,7 @@ impl BooleanChunked {
                     _ => {
                         let arr_group = _slice_from_offsets(self, first, len);
                         arr_group.max()
-                    }
+                    },
                 }
             }),
         }

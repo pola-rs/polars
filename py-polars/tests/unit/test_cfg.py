@@ -87,6 +87,30 @@ def test_hide_header_elements() -> None:
     )
 
 
+def test_html_tables() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+
+    # default: header contains names/dtypes
+    header = "<thead><tr><th>a</th><th>b</th><th>c</th></tr><tr><td>i64</td><td>i64</td><td>i64</td></tr></thead>"
+    assert header in df._repr_html_()
+
+    # validate that relevant config options are respected
+    with pl.Config(tbl_hide_column_names=True):
+        header = "<thead><tr><td>i64</td><td>i64</td><td>i64</td></tr></thead>"
+        assert header in df._repr_html_()
+
+    with pl.Config(tbl_hide_column_data_types=True):
+        header = "<thead><tr><th>a</th><th>b</th><th>c</th></tr></thead>"
+        assert header in df._repr_html_()
+
+    with pl.Config(
+        tbl_hide_column_data_types=True,
+        tbl_hide_column_names=True,
+    ):
+        header = "<thead></thead>"
+        assert header in df._repr_html_()
+
+
 def test_set_tbl_cols() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
 

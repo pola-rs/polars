@@ -170,7 +170,7 @@ impl FunctionNode {
                 Some(schema_fn) => {
                     let output_schema = schema_fn.get_schema(input_schema)?;
                     Ok(Cow::Owned(output_schema))
-                }
+                },
             },
             #[cfg(feature = "python")]
             OpaquePython { schema, .. } => Ok(schema
@@ -187,7 +187,7 @@ impl FunctionNode {
                     })
                     .collect::<PolarsResult<Schema>>()?;
                 Ok(Cow::Owned(Arc::new(schema)))
-            }
+            },
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
             Rechunk => Ok(Cow::Borrowed(input_schema)),
             Unnest { columns: _columns } => {
@@ -204,15 +204,15 @@ impl FunctionNode {
                                             fld.data_type().clone(),
                                         );
                                     }
-                                }
+                                },
                                 DataType::Unknown => {
                                     // pass through unknown
-                                }
+                                },
                                 _ => {
                                     polars_bail!(
                                         SchemaMismatch: "expected struct dtype, got: `{}`", dtype
                                     );
-                                }
+                                },
                             }
                         } else {
                             new_schema.with_column(name.clone(), dtype.clone());
@@ -225,14 +225,14 @@ impl FunctionNode {
                 {
                     panic!("activate feature 'dtype-struct'")
                 }
-            }
+            },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
             Drop { names } => drop::drop_schema(input_schema, names),
             Explode { schema, .. } | RowCount { schema, .. } | Melt { schema, .. } => {
                 Ok(Cow::Owned(schema.clone()))
-            }
+            },
         }
     }
 
@@ -305,7 +305,7 @@ impl FunctionNode {
             Rechunk => {
                 df.as_single_chunk_par();
                 Ok(df)
-            }
+            },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { column } => merge_sorted(&df, column.as_ref()),
             Unnest { columns: _columns } => {
@@ -317,7 +317,7 @@ impl FunctionNode {
                 {
                     panic!("activate feature 'dtype-struct'")
                 }
-            }
+            },
             Pipeline { function, .. } => {
                 // we use a global string cache here as streaming chunks all have different rev maps
                 #[cfg(feature = "dtype-categorical")]
@@ -330,14 +330,14 @@ impl FunctionNode {
                 {
                     Arc::get_mut(function).unwrap().call_udf(df)
                 }
-            }
+            },
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
             Drop { names } => drop::drop_impl(df, names),
             Explode { columns, .. } => df.explode(columns.as_ref()),
             Melt { args, .. } => {
                 let args = (**args).clone();
                 df.melt2(args)
-            }
+            },
             RowCount { name, offset, .. } => df.with_row_count(name.as_ref(), *offset),
         }
     }
@@ -360,18 +360,18 @@ impl Display for FunctionNode {
                 write!(f, "FAST_PROJECT: ")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")
-            }
+            },
             DropNulls { subset } => {
                 write!(f, "DROP_NULLS by: ")?;
                 let subset = subset.as_ref();
                 fmt_column_delimited(f, subset, "[", "]")
-            }
+            },
             Rechunk => write!(f, "RECHUNK"),
             Unnest { columns } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")
-            }
+            },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => write!(f, "MERGE SORTED"),
             Pipeline { original, .. } => {
@@ -383,7 +383,7 @@ impl Display for FunctionNode {
                 } else {
                     writeln!(f, "PIPELINE")
                 }
-            }
+            },
             Rename { .. } => write!(f, "RENAME"),
             Drop { .. } => write!(f, "DROP"),
             Explode { .. } => write!(f, "EXPLODE"),

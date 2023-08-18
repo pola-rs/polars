@@ -316,12 +316,12 @@ pub fn _left_join_multiple_keys(
                                 result_idx_left
                                     .extend(std::iter::repeat(idx_a).take(indexes_b.len()));
                                 result_idx_right.extend(indexes_b.iter().copied().map(Some))
-                            }
+                            },
                             // only left values, right = null
                             None => {
                                 result_idx_left.push(idx_a);
                                 result_idx_right.push(None);
-                            }
+                            },
                         }
                         idx_a += 1;
                     }
@@ -521,7 +521,7 @@ fn probe_outer<F, G, H>(
                         let (tracker, indexes_b) = occupied.get_mut();
                         *tracker = true;
                         results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
-                    }
+                    },
                     // no match
                     RawEntryMut::Vacant(_) => results.push(swap_fn_no_match(idx_a)),
                 }

@@ -13,8 +13,6 @@ mod selectors;
 mod syntactic_sugar;
 mod temporal;
 
-use std::ops::{BitAnd, BitOr};
-
 pub use arity::*;
 pub use coerce::*;
 pub use concat::*;

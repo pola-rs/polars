@@ -42,7 +42,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: pip install numpy pytest
+        run: pip install ipython numpy pytest
 
       - name: Run tests
         if: github.ref_name != 'main'

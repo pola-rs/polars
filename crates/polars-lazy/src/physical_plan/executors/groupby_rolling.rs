@@ -68,14 +68,14 @@ impl GroupByRollingExec {
                         for key in keys.iter_mut() {
                             *key = key.take_unchecked_from_slice(first).unwrap();
                         }
-                    }
+                    },
                     GroupsProxy::Slice { groups, .. } => {
                         for key in keys.iter_mut() {
                             let iter = &mut groups.iter().map(|[first, _len]| *first as usize)
                                 as &mut dyn TakeIterator<Item = usize>;
                             *key = key.take_iter_unchecked(iter);
                         }
-                    }
+                    },
                 }
             }
         };

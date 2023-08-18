@@ -58,7 +58,7 @@ impl ArrowReader for MMapChunkIter<'_> {
                     let cols = chunk.into_arrays();
                     let arrays = proj.iter().map(|i| cols[*i].clone()).collect();
                     Chunk::new(arrays)
-                }
+                },
             };
             Ok(Some(chunk))
         } else {
@@ -100,7 +100,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
                     &schema,
                     self.row_count.clone(),
                 )
-            }
+            },
             None => polars_bail!(ComputeError: "cannot memory-map, you must provide a file"),
         }
     }

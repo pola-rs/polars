@@ -9,7 +9,6 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import deprecated_alias
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -47,9 +46,10 @@ class ExprDateTimeNameSpace:
             Offset the window
         use_earliest
             Determine how to deal with ambiguous datetimes:
-            - None (default): raise;
-            - True: use the earliest datetime;
-            - False: use the latest datetime.
+
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Notes
         -----
@@ -445,7 +445,6 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_to_string(format))
 
-    @deprecated_alias(fmt="format")
     def strftime(self, format: str) -> Expr:
         """
         Convert a Date/Time/Datetime column into a Utf8 column with the given format.
@@ -1321,7 +1320,7 @@ class ExprDateTimeNameSpace:
             return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
         else:
             raise ValueError(
-                f"time_unit must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit}"
+                f"time_unit must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
             )
 
     def timestamp(self, time_unit: TimeUnit = "us") -> Expr:
@@ -1507,9 +1506,10 @@ class ExprDateTimeNameSpace:
             Time zone for the `Datetime` expression. Pass `None` to unset time zone.
         use_earliest
             Determine how to deal with ambiguous datetimes:
-            - None (default): raise;
-            - True: use the earliest datetime;
-            - False: use the latest datetime.
+
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Examples
         --------
@@ -1923,13 +1923,13 @@ class ExprDateTimeNameSpace:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
+            By "calendar day", we mean the corresponding time on the next day (which may
+            not be 24 hours, due to daylight savings). Similarly for "calendar week",
+            "calendar month", "calendar quarter", and "calendar year".
 
         Returns
         -------
@@ -1987,6 +1987,7 @@ class ExprDateTimeNameSpace:
         │ 2004-01-31 00:00:00 │
         │ 2005-01-31 00:00:00 │
         └─────────────────────┘
+
         """
         return wrap_expr(self._pyexpr.dt_offset_by(by))
 

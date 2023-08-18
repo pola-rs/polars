@@ -8,7 +8,7 @@ on:
 env:
   RUST_TOOLCHAIN: nightly-2023-07-27
   PYTHON_VERSION: '3.8'
-  MATURIN_VERSION: '1.1.0'
+  MATURIN_VERSION: '1.2.1'
   MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
 
 defaults:
@@ -30,7 +30,7 @@ jobs:
           cp README.md py-polars/README.md
 
       - name: Publish wheel
-        uses: messense/maturin-action@v1
+        uses: PyO3/maturin-action@v1
         env:
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
@@ -60,7 +60,7 @@ jobs:
           cp README.md py-polars/README.md
 
       - name: Publish wheel
-        uses: messense/maturin-action@v1
+        uses: PyO3/maturin-action@v1
         env:
           JEMALLOC_SYS_WITH_LG_PAGE: 16
         with:
@@ -90,7 +90,7 @@ jobs:
           sed -i 's/"dynamic_groupby",/"dynamic_groupby",\n"bigidx",/' py-polars/Cargo.toml
 
       - name: Publish wheel
-        uses: messense/maturin-action@v1
+        uses: PyO3/maturin-action@v1
         env:
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
@@ -116,7 +116,7 @@ jobs:
         run: sed -i 's/name = "polars"/name = "polars-lts-cpu"/' py-polars/pyproject.toml
 
       - name: Publish wheel
-        uses: messense/maturin-action@v1
+        uses: PyO3/maturin-action@v1
         env:
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
         with:
@@ -144,7 +144,7 @@ jobs:
           cp README.md py-polars/README.md
 
       - name: Publish wheel
-        uses: messense/maturin-action@v1
+        uses: PyO3/maturin-action@v1
         env:
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
         with:
@@ -170,7 +170,7 @@ jobs:
         run: rustup target add aarch64-apple-darwin
 
       - name: Publish wheel
-        uses: messense/maturin-action@v1
+        uses: PyO3/maturin-action@v1
         with:
           command: publish
           args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46

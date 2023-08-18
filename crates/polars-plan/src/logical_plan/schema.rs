@@ -35,7 +35,7 @@ impl LogicalPlan {
                     Cow::Owned(schema) => Ok(Cow::Owned(function.schema(&schema)?.into_owned())),
                     Cow::Borrowed(schema) => function.schema(schema),
                 }
-            }
+            },
             Error { err, .. } => Err(err.take()),
             ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
         }
@@ -91,13 +91,13 @@ pub fn set_estimated_row_counts(
                 .count()
                 + 1;
             set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count)
-        }
+        },
         Slice { input, len, .. } => {
             let len = *len as usize;
             let mut out = set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count);
             apply_slice(&mut out, Some((0, len)));
             out
-        }
+        },
         Union { .. } => {
             if let Union {
                 inputs,
@@ -120,7 +120,7 @@ pub fn set_estimated_row_counts(
             } else {
                 unreachable!()
             }
-        }
+        },
         Join { .. } => {
             if let Join {
                 input_left,
@@ -145,17 +145,17 @@ pub fn set_estimated_row_counts(
                     JoinType::Left => {
                         let (known_size, estimated_size) = options.rows_left;
                         (known_size, estimated_size, filter_count_left)
-                    }
+                    },
                     JoinType::Cross | JoinType::Outer => {
                         let (known_size_left, estimated_size_left) = options.rows_left;
                         let (known_size_right, estimated_size_right) = options.rows_right;
                         match (known_size_left, known_size_right) {
                             (Some(l), Some(r)) => {
                                 (Some(l * r), estimated_size_left, estimated_size_right)
-                            }
+                            },
                             _ => (None, estimated_size_left * estimated_size_right, 0),
                         }
-                    }
+                    },
                     _ => {
                         let (known_size_left, estimated_size_left) = options.rows_left;
                         let (known_size_right, estimated_size_right) = options.rows_right;
@@ -164,7 +164,7 @@ pub fn set_estimated_row_counts(
                         } else {
                             (known_size_right, estimated_size_right, 0)
                         }
-                    }
+                    },
                 };
                 apply_slice(&mut out, options.args.slice);
                 lp_arena.replace(
@@ -182,28 +182,28 @@ pub fn set_estimated_row_counts(
             } else {
                 unreachable!()
             }
-        }
+        },
         DataFrameScan { df, .. } => {
             let len = df.height();
             (Some(len), len, _filter_count)
-        }
+        },
         Scan { file_info, .. } => {
             let (known_size, estimated_size) = file_info.row_estimation;
             (known_size, estimated_size, _filter_count)
-        }
+        },
         #[cfg(feature = "python")]
         PythonScan { .. } => {
             // TODO! get row estimation.
             (None, usize::MAX, _filter_count)
-        }
+        },
         AnonymousScan { options, .. } => {
             let size = options.n_rows;
             (size, size.unwrap_or(usize::MAX), _filter_count)
-        }
+        },
         lp => {
             let input = lp.get_input().unwrap();
             set_estimated_row_counts(input, lp_arena, expr_arena, _filter_count)
-        }
+        },
     }
 }
 
@@ -296,6 +296,6 @@ pub(crate) fn det_join_schema(
             }
 
             Ok(Arc::new(new_schema))
-        }
+        },
     }
 }

@@ -7,7 +7,6 @@ from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecated_alias, issue_deprecation_warning
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
@@ -83,7 +82,7 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool | None = None,
+        use_earliest: bool | None = None,
     ) -> Expr:
         """
         Convert a Utf8 column into a Datetime column.
@@ -113,15 +112,12 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
-        utc
-            Parse time zone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
+        use_earliest
+            Determine how to deal with ambiguous datetimes:
 
-            .. deprecated:: 0.18.0
-                This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
-                and offset-aware strings are converted to
-                ``pl.Datetime(time_unit, "UTC")``.
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Examples
         --------
@@ -135,15 +131,6 @@ class ExprStringNameSpace:
         ]
         """
         _validate_format_argument(format)
-        if utc is not None:
-            issue_deprecation_warning(
-                "The `utc` argument is now a no-op and has no effect. "
-                "You can safely remove it. "
-                "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
-                "and offset-aware strings are converted to "
-                '``pl.Datetime(time_unit, "UTC")``.',
-                version="0.17.15",
-            )
         return wrap_expr(
             self._pyexpr.str_to_datetime(
                 format,
@@ -152,6 +139,7 @@ class ExprStringNameSpace:
                 strict,
                 exact,
                 cache,
+                use_earliest,
             )
         )
 
@@ -193,7 +181,6 @@ class ExprStringNameSpace:
         _validate_format_argument(format)
         return wrap_expr(self._pyexpr.str_to_time(format, strict, cache))
 
-    @deprecated_alias(datatype="dtype", fmt="format")
     def strptime(
         self,
         dtype: PolarsTemporalType,
@@ -202,7 +189,7 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool | None = None,
+        use_earliest: bool | None = None,
     ) -> Expr:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -227,15 +214,12 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-        utc
-            Parse time zone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
+        use_earliest
+            Determine how to deal with ambiguous datetimes:
 
-            .. deprecated:: 0.18.0
-                This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
-                and offset-aware strings are converted to
-                ``pl.Datetime(time_unit, "UTC")``.
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Notes
         -----
@@ -284,8 +268,6 @@ class ExprStringNameSpace:
                 2001-07-08
         ]
         """
-        _validate_format_argument(format)
-
         if dtype == Date:
             return self.to_date(format, strict=strict, exact=exact, cache=cache)
         elif dtype == Datetime:
@@ -298,7 +280,7 @@ class ExprStringNameSpace:
                 strict=strict,
                 exact=exact,
                 cache=cache,
-                utc=utc,
+                use_earliest=use_earliest,
             )
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
@@ -1256,6 +1238,94 @@ class ExprStringNameSpace:
         '''
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_extract_all(pattern))
+
+    def extract_groups(self, pattern: str) -> Expr:
+        r"""
+        Extract all capture groups for the given regex pattern.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+
+        Notes
+        -----
+        All group names are **strings**.
+
+        If your pattern contains unnamed groups, their numerical position is converted
+        to a string.
+
+        For example, here we access groups 2 and 3 via the names `"2"` and `"3"`::
+
+            >>> df = pl.DataFrame({"col": ["foo bar baz"]})
+            >>> (
+            ...     df.with_columns(
+            ...         pl.col("col").str.extract_groups(r"(\S+) (\S+) (.+)")
+            ...     ).select(pl.col("col").struct["2"], pl.col("col").struct["3"])
+            ... )
+            shape: (1, 2)
+            ┌─────┬─────┐
+            │ 2   ┆ 3   │
+            │ --- ┆ --- │
+            │ str ┆ str │
+            ╞═════╪═════╡
+            │ bar ┆ baz │
+            └─────┴─────┘
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Struct` with fields of data type
+            :class:`Utf8`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "url": [
+        ...             "http://vote.com/ballon_dor?candidate=messi&ref=python",
+        ...             "http://vote.com/ballon_dor?candidate=weghorst&ref=polars",
+        ...             "http://vote.com/ballon_dor?error=404&ref=rust",
+        ...         ]
+        ...     }
+        ... )
+        >>> pattern = r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)"
+        >>> df.select(captures=pl.col("url").str.extract_groups(pattern)).unnest(
+        ...     "captures"
+        ... )
+        shape: (3, 2)
+        ┌───────────┬────────┐
+        │ candidate ┆ ref    │
+        │ ---       ┆ ---    │
+        │ str       ┆ str    │
+        ╞═══════════╪════════╡
+        │ messi     ┆ python │
+        │ weghorst  ┆ polars │
+        │ null      ┆ null   │
+        └───────────┴────────┘
+
+        Unnamed groups have their numerical position converted to a string:
+
+        >>> pattern = r"candidate=(\w+)&ref=(\w+)"
+        >>> (
+        ...     df.with_columns(
+        ...         captures=pl.col("url").str.extract_groups(pattern)
+        ...     ).with_columns(name=pl.col("captures").struct["1"].str.to_uppercase())
+        ... )
+        shape: (3, 3)
+        ┌───────────────────────────────────┬───────────────────────┬──────────┐
+        │ url                               ┆ captures              ┆ name     │
+        │ ---                               ┆ ---                   ┆ ---      │
+        │ str                               ┆ struct[2]             ┆ str      │
+        ╞═══════════════════════════════════╪═══════════════════════╪══════════╡
+        │ http://vote.com/ballon_dor?candi… ┆ {"messi","python"}    ┆ MESSI    │
+        │ http://vote.com/ballon_dor?candi… ┆ {"weghorst","polars"} ┆ WEGHORST │
+        │ http://vote.com/ballon_dor?error… ┆ {null,null}           ┆ null     │
+        └───────────────────────────────────┴───────────────────────┴──────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
     def count_match(self, pattern: str) -> Expr:
         r"""
