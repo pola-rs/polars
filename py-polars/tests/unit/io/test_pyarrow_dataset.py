@@ -23,7 +23,7 @@ def helper_dataset_test(
     out_lazy = query(
         pl.scan_pyarrow_dataset(dset, batch_size=batch_size),
     )
-    breakpoint()
+    
     assert "pa.compute.field" in out_lazy.explain()
     out = out_lazy.collect()
     assert_frame_equal(out, expected)
