@@ -17,9 +17,9 @@ endif
 .PHONY: requirements
 requirements: .venv  ## Install/refresh all project requirements
 	$(VENV_BIN)/python -m pip install --upgrade pip
-	$(VENV_BIN)/pip install --upgrade --force-reinstall --no-deps -r requirements-dev.txt
-	$(VENV_BIN)/pip install --upgrade --force-reinstall --no-deps -r requirements-lint.txt
-	$(VENV_BIN)/pip install --upgrade --force-reinstall --no-deps -r docs/requirements-docs.txt
+	$(VENV_BIN)/pip install --upgrade --force-reinstall -r requirements-dev.txt
+	$(VENV_BIN)/pip install --upgrade --force-reinstall -r requirements-lint.txt
+	$(VENV_BIN)/pip install --upgrade --force-reinstall -r docs/requirements-docs.txt
 
 .PHONY: build
 build: .venv  ## Compile and install Polars for development
