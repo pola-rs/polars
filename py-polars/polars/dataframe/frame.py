@@ -2604,6 +2604,7 @@ class DataFrame:
             | tuple[int, int, int, int]
             | None
         ) = None,
+        storage_options: dict[str, Any] | None = None,
     ) -> Workbook:
         """
         Write frame data to a table in an Excel workbook/worksheet.
@@ -2940,133 +2941,138 @@ class DataFrame:
                 "Excel export requires xlsxwriter; please run `pip install XlsxWriter`"
             ) from None
 
-        # setup workbook/worksheet
-        wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
-        df, is_empty = self, not len(self)
+        from polars.io._utils import _prepare_write_file_arg
+        storage_options = storage_options or {}
+        
+        with _prepare_write_file_arg(workbook, **storage_options) as workbook:
+        
+            # setup workbook/worksheet
+            wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
+            df, is_empty = self, not len(self)
 
-        # setup table format/columns
-        fmt_cache = _XLFormatCache(wb)
-        column_formats = column_formats or {}
-        table_style, table_options = _xl_setup_table_options(table_style)
-        table_name = table_name or _xl_unique_table_name(wb)
-        table_columns, column_formats, df = _xl_setup_table_columns(  # type: ignore[assignment]
-            df=df,
-            format_cache=fmt_cache,
-            column_formats=column_formats,
-            column_totals=column_totals,
-            dtype_formats=dtype_formats,
-            header_format=header_format,
-            float_precision=float_precision,
-            row_totals=row_totals,
-            sparklines=sparklines,
-            formulas=formulas,
-        )
-
-        # normalise cell refs (eg: "B3" => (2,1)) and establish table start/finish,
-        # accounting for potential presence/absence of headers and a totals row.
-        table_start = (
-            xl_cell_to_rowcol(position) if isinstance(position, str) else position
-        )
-        table_finish = (
-            table_start[0]
-            + len(df)
-            + int(is_empty)
-            - int(not has_header)
-            + int(bool(column_totals)),
-            table_start[1] + len(df.columns) - 1,
-        )
-
-        # write table structure and formats into the target sheet
-        if not is_empty or has_header:
-            ws.add_table(
-                *table_start,
-                *table_finish,
-                {
-                    "style": table_style,
-                    "columns": table_columns,
-                    "header_row": has_header,
-                    "autofilter": autofilter,
-                    "total_row": bool(column_totals) and not is_empty,
-                    "name": table_name,
-                    **table_options,
-                },
+            # setup table format/columns
+            fmt_cache = _XLFormatCache(wb)
+            column_formats = column_formats or {}
+            table_style, table_options = _xl_setup_table_options(table_style)
+            table_name = table_name or _xl_unique_table_name(wb)
+            table_columns, column_formats, df = _xl_setup_table_columns(  # type: ignore[assignment]
+                df=df,
+                format_cache=fmt_cache,
+                column_formats=column_formats,
+                column_totals=column_totals,
+                dtype_formats=dtype_formats,
+                header_format=header_format,
+                float_precision=float_precision,
+                row_totals=row_totals,
+                sparklines=sparklines,
+                formulas=formulas,
             )
 
-            # write data into the table range, column-wise
-            if not is_empty:
-                column_start = [table_start[0] + int(has_header), table_start[1]]
-                for c in df.columns:
-                    if c in self.columns:
-                        ws.write_column(
-                            *column_start,
-                            data=df[c].to_list(),
-                            cell_format=column_formats.get(c),
-                        )
-                    column_start[1] += 1
+            # normalise cell refs (eg: "B3" => (2,1)) and establish table start/finish,
+            # accounting for potential presence/absence of headers and a totals row.
+            table_start = (
+                xl_cell_to_rowcol(position) if isinstance(position, str) else position
+            )
+            table_finish = (
+                table_start[0]
+                + len(df)
+                + int(is_empty)
+                - int(not has_header)
+                + int(bool(column_totals)),
+                table_start[1] + len(df.columns) - 1,
+            )
 
-            # apply conditional formats
-            if conditional_formats:
-                _xl_apply_conditional_formats(
-                    df=df,
-                    ws=ws,
-                    conditional_formats=conditional_formats,
-                    table_start=table_start,
-                    has_header=has_header,
-                    format_cache=fmt_cache,
+            # write table structure and formats into the target sheet
+            if not is_empty or has_header:
+                ws.add_table(
+                    *table_start,
+                    *table_finish,
+                    {
+                        "style": table_style,
+                        "columns": table_columns,
+                        "header_row": has_header,
+                        "autofilter": autofilter,
+                        "total_row": bool(column_totals) and not is_empty,
+                        "name": table_name,
+                        **table_options,
+                    },
                 )
 
-        # additional column-level properties
-        hidden_columns = hidden_columns or ()
-        if isinstance(column_widths, int):
-            column_widths = {column: column_widths for column in df.columns}
-        column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
+                # write data into the table range, column-wise
+                if not is_empty:
+                    column_start = [table_start[0] + int(has_header), table_start[1]]
+                    for c in df.columns:
+                        if c in self.columns:
+                            ws.write_column(
+                                *column_start,
+                                data=df[c].to_list(),
+                                cell_format=column_formats.get(c),
+                            )
+                        column_start[1] += 1
 
-        for column in df.columns:
-            col_idx, options = table_start[1] + df.find_idx_by_name(column), {}
-            if column in hidden_columns:
-                options = {"hidden": True}
-            if column in column_widths:  # type: ignore[operator]
-                ws.set_column_pixels(
-                    col_idx, col_idx, column_widths[column], None, options  # type: ignore[index]
-                )
-            elif options:
-                ws.set_column(col_idx, col_idx, None, None, options)
+                # apply conditional formats
+                if conditional_formats:
+                    _xl_apply_conditional_formats(
+                        df=df,
+                        ws=ws,
+                        conditional_formats=conditional_formats,
+                        table_start=table_start,
+                        has_header=has_header,
+                        format_cache=fmt_cache,
+                    )
 
-        # finally, inject any sparklines into the table
-        for column, params in (sparklines or {}).items():
-            _xl_inject_sparklines(ws, df, table_start, column, has_header, params)
+            # additional column-level properties
+            hidden_columns = hidden_columns or ()
+            if isinstance(column_widths, int):
+                column_widths = {column: column_widths for column in df.columns}
+            column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
-        # worksheet options
-        if hide_gridlines:
-            ws.hide_gridlines(2)
-        if sheet_zoom:
-            ws.set_zoom(sheet_zoom)
-        if row_heights:
-            if isinstance(row_heights, int):
-                for idx in range(table_start[0], table_finish[0] + 1):
-                    ws.set_row_pixels(idx, row_heights)
-            elif isinstance(row_heights, dict):
-                for idx, height in _unpack_multi_column_dict(row_heights).items():  # type: ignore[assignment]
-                    ws.set_row_pixels(idx, height)
+            for column in df.columns:
+                col_idx, options = table_start[1] + df.find_idx_by_name(column), {}
+                if column in hidden_columns:
+                    options = {"hidden": True}
+                if column in column_widths:  # type: ignore[operator]
+                    ws.set_column_pixels(
+                        col_idx, col_idx, column_widths[column], None, options  # type: ignore[index]
+                    )
+                elif options:
+                    ws.set_column(col_idx, col_idx, None, None, options)
 
-        # table/rows all written; apply (optional) autofit
-        if autofit and not is_empty:
-            xlv = xlsxwriter.__version__
-            if parse_version(xlv) < parse_version("3.0.8"):
-                raise ModuleNotFoundError(
-                    f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
-                )
-            ws.autofit()
+            # finally, inject any sparklines into the table
+            for column, params in (sparklines or {}).items():
+                _xl_inject_sparklines(ws, df, table_start, column, has_header, params)
 
-        if freeze_panes:
-            if isinstance(freeze_panes, str):
-                ws.freeze_panes(freeze_panes)
-            else:
-                ws.freeze_panes(*freeze_panes)
+            # worksheet options
+            if hide_gridlines:
+                ws.hide_gridlines(2)
+            if sheet_zoom:
+                ws.set_zoom(sheet_zoom)
+            if row_heights:
+                if isinstance(row_heights, int):
+                    for idx in range(table_start[0], table_finish[0] + 1):
+                        ws.set_row_pixels(idx, row_heights)
+                elif isinstance(row_heights, dict):
+                    for idx, height in _unpack_multi_column_dict(row_heights).items():  # type: ignore[assignment]
+                        ws.set_row_pixels(idx, height)
 
-        if can_close:
-            wb.close()
-        return wb
+            # table/rows all written; apply (optional) autofit
+            if autofit and not is_empty:
+                xlv = xlsxwriter.__version__
+                if parse_version(xlv) < parse_version("3.0.8"):
+                    raise ModuleNotFoundError(
+                        f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
+                    )
+                ws.autofit()
+
+            if freeze_panes:
+                if isinstance(freeze_panes, str):
+                    ws.freeze_panes(freeze_panes)
+                else:
+                    ws.freeze_panes(*freeze_panes)
+
+            if can_close:
+                wb.close()
+            return wb
 
     @overload
     def write_ipc(

@@ -501,7 +501,7 @@ def _xl_setup_workbook(
         }
         if isinstance(workbook, BytesIO):
             wb, ws, can_close = Workbook(workbook, workbook_options), None, True
-        else:
+        elif workbook is None or isinstance(workbook, str):
             file = Path("dataframe.xlsx" if workbook is None else workbook)
             wb = Workbook(
                 (file if file.suffix else file.with_suffix(".xlsx"))
@@ -510,7 +510,8 @@ def _xl_setup_workbook(
                 workbook_options,
             )
             ws, can_close = None, True
-
+        else:
+            wb, ws, can_close = Workbook(workbook, workbook_options), None, True
     if ws is None:
         ws = wb.add_worksheet(name=worksheet)
     return wb, ws, can_close

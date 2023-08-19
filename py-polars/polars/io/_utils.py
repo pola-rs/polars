@@ -4,12 +4,14 @@ import glob
 from contextlib import contextmanager
 from io import BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
-from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, cast, overload
+from typing import TYPE_CHECKING, Any, ContextManager, BinaryIO, Iterator, TextIO, cast, overload
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
 from polars.utils.various import normalise_filepath
 
+if TYPE_CHECKING:
+    from xlsxwriter import Workbook
 
 def _is_glob_pattern(file: str) -> bool:
     return any(char in file for char in ["*", "?", "["])
@@ -221,6 +223,12 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
 
 @overload
 def _prepare_write_file_arg(
+    file: str | Path | BytesIO | Workbook | None, **kwargs: Any
+) -> ContextManager[str | BytesIO | Workbook | None]:
+    ...
+
+@overload
+def _prepare_write_file_arg(
     file: str | Path | BytesIO | BinaryIO, **kwargs: Any
 ) -> ContextManager[str | BytesIO | BinaryIO]:
     ...
@@ -241,11 +249,11 @@ def _prepare_write_file_arg(
 
 
 def _prepare_write_file_arg(
-    file: str | Path | BytesIO | BinaryIO | TextIOWrapper,
+    file: str | Path | BytesIO | BinaryIO | TextIOWrapper | Workbook | None,
     encoding: str | None = None,
     pyarrow_options: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ContextManager[str | BytesIO | BinaryIO | TextIOWrapper]:
+) -> ContextManager[str | BytesIO | BinaryIO | TextIOWrapper | Workbook | None]:
     """Prepare file argument."""
 
     # Small helper to use a variable as context
