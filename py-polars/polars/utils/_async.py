@@ -1,7 +1,13 @@
-from queue import Queue
+from __future__ import annotations
 
-from polars import DataFrame
+from typing import TYPE_CHECKING
+
 from polars.utils._wrap import wrap_df
+
+if TYPE_CHECKING:
+    from queue import Queue
+
+    from polars import DataFrame
 
 
 class _AsyncDataFrameResult:
