@@ -209,11 +209,6 @@ def test_error_on_double_agg() -> None:
             )
 
 
-def test_unique_on_list_df() -> None:
-    with pytest.raises(pl.InvalidOperationError):
-        pl.DataFrame({"a": [1, 2, 3, 4], "b": [[1, 1], [2], [3], [4, 4]]}).unique()
-
-
 def test_filter_not_of_type_bool() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     with pytest.raises(
