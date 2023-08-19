@@ -41,10 +41,11 @@ where
 }
 
 /// Applies a kernel that produces `Array` types.
-pub fn binary_mut<T, U, V, F, Arr>(
+pub fn binary_mut_with_options<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
+    name: &str,
 ) -> ChunkedArray<V>
 where
     T: PolarsDataType,
@@ -63,7 +64,28 @@ where
         .downcast_iter()
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr));
-    ChunkedArray::from_chunk_iter(lhs.name(), iter)
+    ChunkedArray::from_chunk_iter(name, iter)
+}
+
+/// Applies a kernel that produces `Array` types.
+pub fn binary_mut<T, U, V, F, Arr>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    op: F,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType,
+    ChunkedArray<T>: HasUnderlyingArray,
+    ChunkedArray<U>: HasUnderlyingArray,
+    Arr: Array + StaticallyMatchesPolarsType<V>,
+    F: FnMut(
+        &<ChunkedArray<T> as HasUnderlyingArray>::ArrayT,
+        &<ChunkedArray<U> as HasUnderlyingArray>::ArrayT,
+    ) -> Arr,
+{
+    binary_mut_with_options(lhs, rhs, op, lhs.name())
 }
 
 /// Applies a kernel that produces `ArrayRef` of the same type.

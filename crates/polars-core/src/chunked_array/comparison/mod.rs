@@ -21,7 +21,7 @@ where
 {
     // Also includes validity in comparison.
     pub fn not_equal_and_validity(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        arity::binary_mut(self, rhs, |a, b| comparison::neq_and_validity(a, b))
+        arity::binary_mut_with_options(self, rhs, |a, b| comparison::neq_and_validity(a, b), "")
     }
 }
 
@@ -48,7 +48,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut(self, rhs, |a, b| comparison::eq(a, b)),
+            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::eq(a, b), ""),
         }
     }
 
@@ -69,7 +69,12 @@ where
                     rhs.is_null()
                 }
             },
-            _ => arity::binary_mut(self, rhs, |a, b| comparison::eq_and_validity(a, b)),
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |a, b| comparison::eq_and_validity(a, b),
+                "",
+            ),
         }
     }
 
@@ -90,7 +95,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut(self, rhs, |a, b| comparison::neq(a, b)),
+            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::neq(a, b), ""),
         }
     }
 
@@ -111,7 +116,12 @@ where
                     rhs.is_not_null()
                 }
             },
-            _ => arity::binary_mut(self, rhs, |a, b| comparison::neq_and_validity(a, b)),
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |a, b| comparison::neq_and_validity(a, b),
+                "",
+            ),
         }
     }
 
@@ -132,7 +142,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut(self, rhs, |a, b| comparison::gt(a, b)),
+            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::gt(a, b), ""),
         }
     }
 
@@ -153,7 +163,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut(self, rhs, |a, b| comparison::gt_eq(a, b)),
+            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::gt_eq(a, b), ""),
         }
     }
 
@@ -174,7 +184,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut(self, rhs, |a, b| comparison::lt(a, b)),
+            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::lt(a, b), ""),
         }
     }
 
@@ -195,7 +205,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut(self, rhs, |a, b| comparison::lt_eq(a, b)),
+            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::lt_eq(a, b), ""),
         }
     }
 }
@@ -218,7 +228,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 }
             },
             (1, _) => rhs.equal(self),
-            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::eq(lhs, rhs)),
+            _ => arity::binary_mut_with_options(self, rhs, |lhs, rhs| comparison::eq(lhs, rhs), ""),
         }
     }
 
@@ -257,7 +267,12 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 }
             },
             (1, _) => rhs.equal_missing(self),
-            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::eq_and_validity(lhs, rhs)),
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |lhs, rhs| comparison::eq_and_validity(lhs, rhs),
+                "",
+            ),
         }
     }
 
@@ -276,7 +291,9 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 }
             },
             (1, _) => rhs.not_equal(self),
-            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::neq(lhs, rhs)),
+            _ => {
+                arity::binary_mut_with_options(self, rhs, |lhs, rhs| comparison::neq(lhs, rhs), "")
+            },
         }
     }
 
@@ -309,7 +326,12 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 }
             },
             (1, _) => rhs.not_equal_missing(self),
-            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::neq_and_validity(lhs, rhs)),
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |lhs, rhs| comparison::neq_and_validity(lhs, rhs),
+                "",
+            ),
         }
     }
 
@@ -336,7 +358,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::gt(lhs, rhs)),
+            _ => arity::binary_mut_with_options(self, rhs, |lhs, rhs| comparison::gt(lhs, rhs), ""),
         }
     }
 
@@ -363,7 +385,12 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::gt_eq(lhs, rhs)),
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |lhs, rhs| comparison::gt_eq(lhs, rhs),
+                "",
+            ),
         }
     }
 
@@ -390,7 +417,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::lt(lhs, rhs)),
+            _ => arity::binary_mut_with_options(self, rhs, |lhs, rhs| comparison::lt(lhs, rhs), ""),
         }
     }
 
@@ -417,7 +444,12 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::lt_eq(lhs, rhs)),
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |lhs, rhs| comparison::lt_eq(lhs, rhs),
+                "",
+            ),
         }
     }
 }
@@ -475,7 +507,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", rhs.len())
             }
         } else {
-            arity::binary_mut(self, rhs, comparison::binary::eq)
+            arity::binary_mut_with_options(self, rhs, comparison::binary::eq, "")
         }
     }
 
@@ -494,7 +526,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 rhs.is_null()
             }
         } else {
-            arity::binary_mut(self, rhs, comparison::binary::eq_and_validity)
+            arity::binary_mut_with_options(self, rhs, comparison::binary::eq_and_validity, "")
         }
     }
 
@@ -513,7 +545,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", rhs.len())
             }
         } else {
-            arity::binary_mut(self, rhs, comparison::binary::neq)
+            arity::binary_mut_with_options(self, rhs, comparison::binary::neq, "")
         }
     }
 
@@ -532,7 +564,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 rhs.is_not_null()
             }
         } else {
-            arity::binary_mut(self, rhs, comparison::binary::neq_and_validity)
+            arity::binary_mut_with_options(self, rhs, comparison::binary::neq_and_validity, "")
         }
     }
 
@@ -551,7 +583,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", self.len())
             }
         } else {
-            arity::binary_mut(self, rhs, comparison::binary::gt)
+            arity::binary_mut_with_options(self, rhs, comparison::binary::gt, "")
         }
     }
 
@@ -570,7 +602,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", self.len())
             }
         } else {
-            arity::binary_mut(self, rhs, comparison::binary::gt_eq)
+            arity::binary_mut_with_options(self, rhs, comparison::binary::gt_eq, "")
         }
     }
 
@@ -589,7 +621,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", self.len())
             }
         } else {
-            arity::binary_mut(self, rhs, comparison::binary::lt)
+            arity::binary_mut_with_options(self, rhs, comparison::binary::lt, "")
         }
     }
 
@@ -608,7 +640,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", self.len())
             }
         } else {
-            arity::binary_mut(self, rhs, comparison::binary::lt_eq)
+            arity::binary_mut_with_options(self, rhs, comparison::binary::lt_eq, "")
         }
     }
 }
@@ -789,10 +821,11 @@ impl ChunkCompare<&StructChunked> for StructChunked {
 impl ChunkCompare<&ArrayChunked> for ArrayChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
-        arity::binary_mut(
+        arity::binary_mut_with_options(
             self,
             rhs,
             polars_arrow::kernels::comparison::fixed_size_list_eq,
+            "",
         )
     }
 
@@ -802,10 +835,11 @@ impl ChunkCompare<&ArrayChunked> for ArrayChunked {
     }
 
     fn not_equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
-        arity::binary_mut(
+        arity::binary_mut_with_options(
             self,
             rhs,
             polars_arrow::kernels::comparison::fixed_size_list_neq,
+            "",
         )
     }
 

@@ -1,10 +1,6 @@
-use arrow::array::PrimitiveArray;
-use polars_arrow::prelude::FromData;
-
 use crate::datatypes::PolarsNumericType;
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::align_chunks_binary;
 
 fn min_binary<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> ChunkedArray<T>
 where
