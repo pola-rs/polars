@@ -10,7 +10,6 @@ use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars_arrow::utils::combine_validities_and;
 use polars_core::prelude::*;
-use polars_core::utils::align_chunks_binary;
 use polars_core::with_match_physical_integer_type;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -281,16 +280,14 @@ fn array_set_operation(
 }
 
 pub fn list_set_operation(a: &ListChunked, b: &ListChunked, set_op: SetOperation) -> ListChunked {
-    let (a, b) = align_chunks_binary(a, b);
-
-    // no downcasting needed as lists
-    // already have logical types
-    let chunks = a
-        .downcast_iter()
-        .zip(b.downcast_iter())
-        .map(|(a, b)| array_set_operation(a, b, set_op).boxed())
-        .collect::<Vec<_>>();
-
-    // safety: dtypes are correct
-    unsafe { a.with_chunks(chunks) }
+    // we use the unsafe variant because we want to keep the nested logical types type.
+    unsafe {
+        arity::binary_mut_unchecked_same_type(
+            a,
+            b,
+            |a, b| array_set_operation(a, b, set_op).boxed(),
+            false,
+            false,
+        )
+    }
 }

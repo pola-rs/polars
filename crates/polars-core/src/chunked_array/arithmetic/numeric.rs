@@ -12,15 +12,7 @@ where
     F: Fn(T::Native, T::Native) -> T::Native,
 {
     let mut ca = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => {
-            let (lhs, rhs) = align_chunks_binary(lhs, rhs);
-            let chunks = lhs
-                .downcast_iter()
-                .zip(rhs.downcast_iter())
-                .map(|(lhs, rhs)| Box::new(kernel(lhs, rhs)) as ArrayRef)
-                .collect();
-            unsafe { lhs.copy_with_chunks(chunks, false, false) }
-        },
+        (a, b) if a == b => arity::binary_mut(lhs, rhs, |lhs, rhs| kernel(lhs, rhs)),
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);

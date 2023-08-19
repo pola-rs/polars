@@ -13,7 +13,7 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
 
-fn collect_array<T: NativeType, I: TrustedLen<Item = T>>(
+pub(super) fn collect_array<T: NativeType, I: TrustedLen<Item = T>>(
     iter: I,
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T> {

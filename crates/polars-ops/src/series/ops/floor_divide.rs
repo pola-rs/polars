@@ -6,7 +6,6 @@ use polars_core::export::num;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-struct")]
 use polars_core::series::arithmetic::_struct_arithmetic;
-use polars_core::utils::align_chunks_binary;
 use polars_core::with_match_physical_numeric_polars_type;
 
 #[inline]
@@ -79,13 +78,7 @@ fn floor_div_ca<T: PolarsNumericType>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) 
             ChunkedArray::full_null(a.name(), a.len())
         };
     }
-    let (a, b) = align_chunks_binary(a, b);
-
-    let chunks = a
-        .downcast_iter()
-        .zip(b.downcast_iter())
-        .map(|(a, b)| floor_div_array(a, b));
-    ChunkedArray::from_chunk_iter(a.name(), chunks)
+    arity::binary_mut(a, b, floor_div_array)
 }
 
 pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {

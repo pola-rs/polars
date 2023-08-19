@@ -1,45 +1,20 @@
-use arrow::array::PrimitiveArray;
-use polars_arrow::prelude::FromData;
-
 use crate::datatypes::PolarsNumericType;
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::align_chunks_binary;
-
-fn cmp_binary<T, F>(left: &ChunkedArray<T>, right: &ChunkedArray<T>, op: F) -> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    F: Fn(T::Native, T::Native) -> T::Native,
-{
-    let (left, right) = align_chunks_binary(left, right);
-    let chunks = left
-        .downcast_iter()
-        .zip(right.downcast_iter())
-        .map(|(left, right)| {
-            let values = left
-                .values()
-                .iter()
-                .zip(right.values().iter())
-                .map(|(l, r)| op(*l, *r))
-                .collect::<Vec<_>>();
-            PrimitiveArray::from_data_default(values.into(), None)
-        });
-    ChunkedArray::from_chunk_iter(left.name(), chunks)
-}
 
 fn min_binary<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
-    let op = |l, r| {
+    let op = |l: &T::Native, r: &T::Native| {
         if l < r {
-            l
+            *l
         } else {
-            r
+            *r
         }
     };
-    cmp_binary(left, right, op)
+    arity::binary_elementwise_values(left, right, op)
 }
 
 fn max_binary<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> ChunkedArray<T>
@@ -47,14 +22,14 @@ where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
-    let op = |l, r| {
+    let op = |l: &T::Native, r: &T::Native| {
         if l > r {
-            l
+            *l
         } else {
-            r
+            *r
         }
     };
-    cmp_binary(left, right, op)
+    arity::binary_elementwise_values(left, right, op)
 }
 
 pub(crate) fn min_max_binary_series(

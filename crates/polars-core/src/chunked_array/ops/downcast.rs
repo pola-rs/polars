@@ -18,6 +18,7 @@ impl<'a, T> Chunks<'a, T> {
         }
     }
 
+    #[inline]
     pub fn get(&self, index: usize) -> Option<&'a T> {
         self.chunks.get(index).map(|arr| {
             let arr = &**arr;
@@ -25,6 +26,7 @@ impl<'a, T> Chunks<'a, T> {
         })
     }
 
+    #[inline]
     pub unsafe fn get_unchecked(&self, index: usize) -> &'a T {
         let arr = self.chunks.get_unchecked(index);
         let arr = &**arr;
@@ -35,6 +37,7 @@ impl<'a, T> Chunks<'a, T> {
         self.chunks.len()
     }
 
+    #[inline]
     pub fn last(&self) -> Option<&'a T> {
         self.chunks.last().map(|arr| {
             let arr = &**arr;
@@ -48,6 +51,7 @@ impl<T: PolarsDataType> ChunkedArray<T>
 where
     Self: HasUnderlyingArray,
 {
+    #[inline]
     pub fn downcast_iter(
         &self,
     ) -> impl Iterator<Item = &<Self as HasUnderlyingArray>::ArrayT> + DoubleEndedIterator {
@@ -62,6 +66,7 @@ where
     /// The caller must ensure:
     ///     * the length remains correct.
     ///     * the flags (sorted, etc) remain correct.
+    #[inline]
     pub unsafe fn downcast_iter_mut(
         &mut self,
     ) -> impl Iterator<Item = &mut <Self as HasUnderlyingArray>::ArrayT> + DoubleEndedIterator {
@@ -72,6 +77,7 @@ where
         })
     }
 
+    #[inline]
     pub fn downcast_chunks(&self) -> Chunks<'_, <Self as HasUnderlyingArray>::ArrayT> {
         Chunks::new(&self.chunks)
     }
