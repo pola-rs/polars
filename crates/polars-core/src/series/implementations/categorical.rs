@@ -98,12 +98,12 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.0.logical().vec_hash(random_state, buf);
+        self.0.logical().vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        self.0.logical().vec_hash_combine(build_hasher, hashes);
+        self.0.logical().vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
 

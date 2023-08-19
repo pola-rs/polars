@@ -172,12 +172,12 @@ vec_hash_int!(UInt8Chunked);
 
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.as_binary().vec_hash(random_state, buf);
+        self.as_binary().vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        self.as_binary().vec_hash_combine(random_state, hashes);
+        self.as_binary().vec_hash_combine(random_state, hashes)?;
         Ok(())
     }
 }
@@ -306,22 +306,24 @@ impl VecHash for BooleanChunked {
 
 impl VecHash for Float32Chunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.bit_repr_small().vec_hash(random_state, buf);
+        self.bit_repr_small().vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        self.bit_repr_small().vec_hash_combine(random_state, hashes);
+        self.bit_repr_small()
+            .vec_hash_combine(random_state, hashes)?;
         Ok(())
     }
 }
 impl VecHash for Float64Chunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.bit_repr_large().vec_hash(random_state, buf);
+        self.bit_repr_large().vec_hash(random_state, buf)?;
         Ok(())
     }
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        self.bit_repr_large().vec_hash_combine(random_state, hashes);
+        self.bit_repr_large()
+            .vec_hash_combine(random_state, hashes)?;
         Ok(())
     }
 }
@@ -373,7 +375,7 @@ impl VecHash for ListChunked {
                 });
             offset += arr.len();
             PolarsResult::Ok(())
-        });
+        })?;
         Ok(())
     }
 }
