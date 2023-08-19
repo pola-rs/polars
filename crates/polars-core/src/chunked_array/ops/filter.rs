@@ -5,7 +5,6 @@ use arrow::compute::filter::filter as filter_fn;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
-use crate::utils::align_chunks_binary;
 
 macro_rules! check_filter_len {
     ($self:expr, $filter:expr) => {{
@@ -30,14 +29,15 @@ where
             };
         }
         check_filter_len!(self, filter);
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-        unsafe { Ok(self.copy_with_chunks(chunks, true, true)) }
+        Ok(unsafe {
+            arity::binary_mut_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
     }
 }
 
@@ -51,14 +51,15 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
             };
         }
         check_filter_len!(self, filter);
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-        unsafe { Ok(self.copy_with_chunks(chunks, true, true)) }
+        Ok(unsafe {
+            arity::binary_mut_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
     }
 }
 
@@ -79,15 +80,15 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
             };
         }
         check_filter_len!(self, filter);
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-
-        unsafe { Ok(self.copy_with_chunks(chunks, true, true)) }
+        Ok(unsafe {
+            arity::binary_mut_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
     }
 }
 
@@ -103,19 +104,15 @@ impl ChunkFilter<ListType> for ListChunked {
                 )),
             };
         }
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-
-        // inner type may be categorical or logical type so we clone the state.
-        let mut ca = self.clone();
-        ca.chunks = chunks;
-        ca.compute_len();
-        Ok(ca)
+        Ok(unsafe {
+            arity::binary_mut_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
     }
 }
 
@@ -132,19 +129,15 @@ impl ChunkFilter<FixedSizeListType> for ArrayChunked {
                 )),
             };
         }
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-
-        // inner type may be categorical or logical type so we clone the state.
-        let mut ca = self.clone();
-        ca.chunks = chunks;
-        ca.compute_len();
-        Ok(ca)
+        Ok(unsafe {
+            arity::binary_mut_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
     }
 }
 

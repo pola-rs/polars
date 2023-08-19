@@ -13,6 +13,7 @@ pub(crate) mod aggregate;
 pub(crate) mod any_value;
 pub(crate) mod append;
 mod apply;
+pub mod arity;
 mod bit_repr;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
