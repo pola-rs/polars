@@ -2329,14 +2329,26 @@ class DataFrame:
             return None
 
     @overload
-    def write_ndjson(self, file: None = None) -> str:
+    def write_ndjson(
+        self,
+        file: None = None,
+        storage_options: dict[str, Any] | None = None,
+    ) -> str:
         ...
 
     @overload
-    def write_ndjson(self, file: IOBase | str | Path) -> None:
+    def write_ndjson(
+        self,
+        file: IOBase | str | Path,
+        storage_options: dict[str, Any] | None = None,
+    ) -> None:
         ...
 
-    def write_ndjson(self, file: IOBase | str | Path | None = None) -> str | None:
+    def write_ndjson(
+        self,
+        file: IOBase | str | Path | None = None,
+        storage_options: dict[str, Any] | None = None,
+    ) -> str | None:
         r"""
         Serialize to newline delimited JSON representation.
 
@@ -2345,6 +2357,11 @@ class DataFrame:
         file
             File path to which the result should be written. If set to ``None``
             (default), the output is returned as a string instead.
+        storage_options
+            Important: this only works if file is type string
+            Extra options that make sense for ``fsspec.open()`` or a particular storage
+            connection, e.g. host, port, username, password, etc.
+
 
         Examples
         --------
@@ -2358,21 +2375,24 @@ class DataFrame:
         '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
 
         """
-        if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if file is None or to_string_io:
-            with BytesIO() as buf:
-                self._df.write_ndjson(buf)
-                json_bytes = buf.getvalue()
+        from polars.io._utils import _prepare_write_file_arg
 
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
+        storage_options = storage_options or {}
+
+        with _prepare_write_file_arg(file, **storage_options) as file:
+            to_string_io = (file is not None) and isinstance(file, StringIO)
+            if file is None or to_string_io:
+                with BytesIO() as buf:
+                    self._df.write_ndjson(buf)
+                    json_bytes = buf.getvalue()
+
+                json_str = json_bytes.decode("utf8")
+                if to_string_io:
+                    file.write(json_str)  # type: ignore[union-attr]
+                else:
+                    return json_str
             else:
-                return json_str
-        else:
-            self._df.write_ndjson(file)
+                self._df.write_ndjson(file)
         return None
 
     @overload
