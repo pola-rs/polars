@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
     from xlsxwriter import Workbook
 
-    T = TypeVar("T", str, Path, TextIOWrapper, BytesIO, BinaryIO, IOBase, Workbook)
+    FileType = TypeVar("FileType", str, Path, TextIOWrapper, BytesIO, BinaryIO, IOBase, Workbook)
 
 
 def _is_glob_pattern(file: str) -> bool:
@@ -252,10 +252,10 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
 
 
 def _prepare_write_file_arg(
-    file: T,
+    file: FileType,
     pyarrow_options: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ContextManager[T]:
+) -> ContextManager[FileType]:
     """Prepare file argument."""
 
     # Small helper to use a variable as context
