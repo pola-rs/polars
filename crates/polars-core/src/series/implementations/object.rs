@@ -3,8 +3,9 @@ use std::borrow::Cow;
 
 use ahash::RandomState;
 
-use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::object::PolarsObjectSafe;
+use crate::chunked_array::ops::compare_inner::{IntoPartialEqInner, PartialEqInner};
+use crate::chunked_array::Settings;
 use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -38,10 +39,13 @@ where
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _clear_settings(&mut self) {
-        self.0.clear_settings()
-    }
 
+    fn _set_flags(&mut self, flags: Settings) {
+        self.0.set_flags(flags)
+    }
+    fn _get_flags(&self) -> Settings {
+        self.0.get_flags()
+    }
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }

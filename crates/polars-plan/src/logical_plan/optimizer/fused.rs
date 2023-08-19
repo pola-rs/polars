@@ -92,7 +92,7 @@ impl OptimizationRule for FusedArithmetic {
                             // we reordered the arguments, so we don't obey the left expression output name
                             // rule anymore, that's why we alias
                             Ok(Some(Alias(node, Arc::from(output_field.name.as_str()))))
-                        }
+                        },
                         _ => unreachable!(),
                     },
                     _ => match expr_arena.get(*right) {
@@ -108,12 +108,12 @@ impl OptimizationRule for FusedArithmetic {
                             (Some(true), _) => {
                                 let input = vec![*left, *a, *b];
                                 Ok(Some(get_expr(input, FusedOperator::MultiplyAdd)))
-                            }
+                            },
                         },
                         _ => Ok(None),
                     },
                 }
-            }
+            },
 
             BinaryExpr {
                 left,
@@ -134,7 +134,7 @@ impl OptimizationRule for FusedArithmetic {
                         (Some(true), _) => {
                             let input = vec![*left, *a, *b];
                             Ok(Some(get_expr(input, FusedOperator::SubMultiply)))
-                        }
+                        },
                     },
                     _ => {
                         // FUSED MULTIPLY SUB
@@ -152,14 +152,14 @@ impl OptimizationRule for FusedArithmetic {
                                     (Some(true), _) => {
                                         let input = vec![*a, *b, *right];
                                         Ok(Some(get_expr(input, FusedOperator::MultiplySub)))
-                                    }
+                                    },
                                 }
-                            }
+                            },
                             _ => Ok(None),
                         }
-                    }
+                    },
                 }
-            }
+            },
             _ => Ok(None),
         }
     }

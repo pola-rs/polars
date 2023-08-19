@@ -54,29 +54,29 @@ pub(super) fn par_sorted_merge_left(
         #[cfg(feature = "dtype-u16")]
         DataType::UInt16 => {
             par_sorted_merge_left_impl(s_left.u16().unwrap(), s_right.u16().unwrap())
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         DataType::Int16 => {
             par_sorted_merge_left_impl(s_left.i16().unwrap(), s_right.i16().unwrap())
-        }
+        },
         DataType::UInt32 => {
             par_sorted_merge_left_impl(s_left.u32().unwrap(), s_right.u32().unwrap())
-        }
+        },
         DataType::Int32 => {
             par_sorted_merge_left_impl(s_left.i32().unwrap(), s_right.i32().unwrap())
-        }
+        },
         DataType::UInt64 => {
             par_sorted_merge_left_impl(s_left.u64().unwrap(), s_right.u64().unwrap())
-        }
+        },
         DataType::Int64 => {
             par_sorted_merge_left_impl(s_left.i64().unwrap(), s_right.i64().unwrap())
-        }
+        },
         DataType::Float32 => {
             par_sorted_merge_left_impl(s_left.f32().unwrap(), s_right.f32().unwrap())
-        }
+        },
         DataType::Float64 => {
             par_sorted_merge_left_impl(s_left.f64().unwrap(), s_right.f64().unwrap())
-        }
+        },
         _ => unreachable!(),
     }
 }
@@ -127,29 +127,29 @@ pub(super) fn par_sorted_merge_inner_no_nulls(
         #[cfg(feature = "dtype-u16")]
         DataType::UInt16 => {
             par_sorted_merge_inner_impl(s_left.u16().unwrap(), s_right.u16().unwrap())
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         DataType::Int16 => {
             par_sorted_merge_inner_impl(s_left.i16().unwrap(), s_right.i16().unwrap())
-        }
+        },
         DataType::UInt32 => {
             par_sorted_merge_inner_impl(s_left.u32().unwrap(), s_right.u32().unwrap())
-        }
+        },
         DataType::Int32 => {
             par_sorted_merge_inner_impl(s_left.i32().unwrap(), s_right.i32().unwrap())
-        }
+        },
         DataType::UInt64 => {
             par_sorted_merge_inner_impl(s_left.u64().unwrap(), s_right.u64().unwrap())
-        }
+        },
         DataType::Int64 => {
             par_sorted_merge_inner_impl(s_left.i64().unwrap(), s_right.i64().unwrap())
-        }
+        },
         DataType::Float32 => {
             par_sorted_merge_inner_impl(s_left.f32().unwrap(), s_right.f32().unwrap())
-        }
+        },
         DataType::Float64 => {
             par_sorted_merge_inner_impl(s_left.f64().unwrap(), s_right.f64().unwrap())
-        }
+        },
         _ => unreachable!(),
     }
 }
@@ -212,7 +212,7 @@ pub fn _sort_or_hash_inner(
                 eprintln!("inner join: keys are sorted: use sorted merge join");
             }
             Ok((par_sorted_merge_inner_no_nulls(s_left, s_right), true))
-        }
+        },
         (IsSorted::Ascending, _, true)
             if is_numeric && size_factor_rhs < size_factor_acceptable =>
         {
@@ -239,7 +239,7 @@ pub fn _sort_or_hash_inner(
             });
 
             Ok(((left, right), true))
-        }
+        },
         (_, IsSorted::Ascending, true)
             if is_numeric && size_factor_lhs < size_factor_acceptable =>
         {
@@ -267,7 +267,7 @@ pub fn _sort_or_hash_inner(
 
             // set sorted to `false` as we descending sorted the left key.
             Ok(((left, right), false))
-        }
+        },
         _ => s_left.hash_join_inner(s_right, validate),
     }
 }
@@ -308,7 +308,7 @@ pub(super) fn sort_or_hash_left(
             }
             let (left_idx, right_idx) = par_sorted_merge_left(s_left, s_right);
             Ok(to_left_join_ids(left_idx, right_idx))
-        }
+        },
         (IsSorted::Ascending, _, true)
             if is_numeric && size_factor_rhs < size_factor_acceptable =>
         {
@@ -336,7 +336,7 @@ pub(super) fn sort_or_hash_left(
             });
 
             Ok(to_left_join_ids(left, right))
-        }
+        },
         // don't reverse sort a left join key yet. Have to figure out how to set sorted flag
         _ => s_left.hash_join_left(s_right, validate),
     }

@@ -46,6 +46,7 @@ jobs:
         run: >
           cargo test --all-features --no-run
           -p polars-lazy
+          -p polars-plan
           -p polars-io
           -p polars-core
           -p polars-arrow
@@ -59,6 +60,7 @@ jobs:
         run: >
           cargo test --all-features
           -p polars-lazy
+          -p polars-plan
           -p polars-io
           -p polars-core
           -p polars-arrow
@@ -112,3 +114,28 @@ jobs:
 
       - name: Run cargo hack
         run: cargo hack check -p polars --each-feature --no-dev-deps
+
+  check-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: |
+          rustup target add wasm32-unknown-unknown
+          rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Install cargo hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+
+      - name: Check wasm
+        working-directory: crates
+        run: make check-wasm
+

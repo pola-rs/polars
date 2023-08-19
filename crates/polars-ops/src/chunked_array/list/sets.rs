@@ -10,7 +10,6 @@ use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars_arrow::utils::combine_validities_and;
 use polars_core::prelude::*;
-use polars_core::utils::align_chunks_binary;
 use polars_core::with_match_physical_integer_type;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -60,19 +59,19 @@ where
             set.extend(a);
             set2.extend(b);
             out.extend_buf(set.intersection(set2).copied())
-        }
+        },
         SetOperation::Union => {
             set.extend(a);
             set.extend(b);
             out.extend_buf(set.drain(..))
-        }
+        },
         SetOperation::Difference => {
             set.extend(a);
             for v in b {
                 set.remove(&v);
             }
             out.extend_buf(set.drain(..))
-        }
+        },
         SetOperation::SymmetricDifference => {
             set2.clear();
             // We could speed this up, but implementing ourselves, but we need to have a clonable
@@ -80,7 +79,7 @@ where
             set.extend(a);
             set2.extend(b);
             out.extend_buf(set.symmetric_difference(set2).copied())
-        }
+        },
     }
 }
 
@@ -254,7 +253,7 @@ fn array_set_operation(
             let a = utf8_to_binary(a);
             let b = utf8_to_binary(b);
             binary(&a, &b, offsets_a, offsets_b, set_op, validity, true)
-        }
+        },
         ArrowDataType::LargeBinary => {
             let a = values_a
                 .as_any()
@@ -265,10 +264,10 @@ fn array_set_operation(
                 .downcast_ref::<BinaryArray<i64>>()
                 .unwrap();
             binary(a, b, offsets_a, offsets_b, set_op, validity, false)
-        }
+        },
         ArrowDataType::Boolean => {
             todo!("boolean type not yet supported in list union operations")
-        }
+        },
         _ => {
             with_match_physical_integer_type!(dtype.into(), |$T| {
                 let a = values_a.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
@@ -276,21 +275,19 @@ fn array_set_operation(
 
                 primitive(&a, &b, offsets_a, offsets_b, set_op, validity)
             })
-        }
+        },
     }
 }
 
 pub fn list_set_operation(a: &ListChunked, b: &ListChunked, set_op: SetOperation) -> ListChunked {
-    let (a, b) = align_chunks_binary(a, b);
-
-    // no downcasting needed as lists
-    // already have logical types
-    let chunks = a
-        .downcast_iter()
-        .zip(b.downcast_iter())
-        .map(|(a, b)| array_set_operation(a, b, set_op).boxed())
-        .collect::<Vec<_>>();
-
-    // safety: dtypes are correct
-    unsafe { a.with_chunks(chunks) }
+    // we use the unsafe variant because we want to keep the nested logical types type.
+    unsafe {
+        arity::binary_mut_unchecked_same_type(
+            a,
+            b,
+            |a, b| array_set_operation(a, b, set_op).boxed(),
+            false,
+            false,
+        )
+    }
 }

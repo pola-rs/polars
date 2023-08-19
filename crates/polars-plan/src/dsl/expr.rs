@@ -178,12 +178,12 @@ impl Hash for Expr {
             Expr::Filter { input, by } => {
                 input.hash(state);
                 by.hash(state);
-            }
+            },
             Expr::BinaryExpr { left, op, right } => {
                 left.hash(state);
                 right.hash(state);
                 std::mem::discriminant(op).hash(state)
-            }
+            },
             Expr::Cast {
                 expr,
                 data_type,
@@ -192,15 +192,15 @@ impl Hash for Expr {
                 expr.hash(state);
                 data_type.hash(state);
                 strict.hash(state)
-            }
+            },
             Expr::Sort { expr, options } => {
                 expr.hash(state);
                 options.hash(state);
-            }
+            },
             Expr::Alias(input, name) => {
                 input.hash(state);
                 name.hash(state)
-            }
+            },
             Expr::KeepName(input) => input.hash(state),
             Expr::Ternary {
                 predicate,
@@ -210,7 +210,7 @@ impl Hash for Expr {
                 predicate.hash(state);
                 truthy.hash(state);
                 falsy.hash(state);
-            }
+            },
             Expr::Function {
                 input,
                 function,
@@ -219,9 +219,9 @@ impl Hash for Expr {
                 input.hash(state);
                 std::mem::discriminant(function).hash(state);
                 options.hash(state);
-            }
+            },
             // already hashed by discriminant
-            Expr::Wildcard | Expr::Count => {}
+            Expr::Wildcard | Expr::Count => {},
             #[allow(unreachable_code)]
             _ => {
                 // the panic checks if we hit this
@@ -235,7 +235,7 @@ impl Hash for Expr {
                 // to check if we can cache a file
                 let s = format!("{self:?}");
                 s.hash(state)
-            }
+            },
         }
     }
 }

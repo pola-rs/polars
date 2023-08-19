@@ -238,7 +238,7 @@ pub fn apply_lambda_with_list_out_type<'a>(
                         } else {
                             panic!("should return a Series, got a {val:?}")
                         }
-                    }
+                    },
                 },
                 Err(e) => panic!("python function failed {e}"),
             }

@@ -63,15 +63,15 @@ impl PolarsMonthStart for DatetimeChunked {
             TimeUnit::Nanoseconds => {
                 timestamp_to_datetime = timestamp_ns_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_ns;
-            }
+            },
             TimeUnit::Microseconds => {
                 timestamp_to_datetime = timestamp_us_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_us;
-            }
+            },
             TimeUnit::Milliseconds => {
                 timestamp_to_datetime = timestamp_ms_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_ms;
-            }
+            },
         };
         Ok(self
             .0

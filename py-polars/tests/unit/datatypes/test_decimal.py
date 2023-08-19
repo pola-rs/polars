@@ -87,15 +87,12 @@ def test_init_decimal_dtype() -> None:
 def test_decimal_cast() -> None:
     df = pl.DataFrame(
         {
-            "decimals": [
-                D("2"),
-                D("2"),
-            ],
+            "decimals": [D("2"), D("2"), D("-1.5")],
         }
     )
     assert df.with_columns(pl.col("decimals").cast(pl.Float32).alias("b2")).to_dict(
         False
-    ) == {"decimals": [D("2"), D("2")], "b2": [2.0, 2.0]}
+    ) == {"decimals": [D("2"), D("2"), D("-1.5")], "b2": [2.0, 2.0, -1.5]}
 
 
 def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
@@ -105,7 +102,16 @@ def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
 
 def test_utf8_to_decimal() -> None:
     s = pl.Series(
-        ["40.12", "3420.13", "120134.19", "3212.98", "12.90", "143.09", "143.9"]
+        [
+            "40.12",
+            "3420.13",
+            "120134.19",
+            "3212.98",
+            "12.90",
+            "143.09",
+            "143.9",
+            "-62.44",
+        ]
     ).str.to_decimal()
     assert s.dtype == pl.Decimal(2)
 
@@ -117,6 +123,7 @@ def test_utf8_to_decimal() -> None:
         D("12.90"),
         D("143.09"),
         D("143.90"),
+        D("-62.44"),
     ]
 
 

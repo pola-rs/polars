@@ -109,14 +109,14 @@ where
                     // first_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
-            }
+            },
             IsSorted::Descending => {
                 self.last_non_null().and_then(|idx| {
                     // Safety:
                     // last returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
-            }
+            },
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_primitive)
@@ -141,14 +141,14 @@ where
                     // first_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
-            }
+            },
             IsSorted::Descending => {
                 self.first_non_null().and_then(|idx| {
                     // Safety:
                     // last returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
-            }
+            },
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_primitive)
@@ -170,7 +170,7 @@ where
             DataType::Float64 => {
                 let len = (self.len() - self.null_count()) as f64;
                 self.sum().map(|v| v.to_f64().unwrap() / len)
-            }
+            },
             _ => {
                 let null_count = self.null_count();
                 let len = self.len();
@@ -186,7 +186,7 @@ where
                             sum += polars_arrow::kernels::agg_mean::sum_as_f64(arr);
                         }
                         Some(sum / (len - null_count) as f64)
-                    }
+                    },
                     #[cfg(not(feature = "simd"))]
                     _ => {
                         let mut acc = 0.0;
@@ -214,9 +214,9 @@ where
                             }
                         }
                         Some(acc / len)
-                    }
+                    },
                 }
-            }
+            },
         }
     }
 }
@@ -231,7 +231,7 @@ impl BooleanChunked {
                 .map(|arr| match arr.validity() {
                     Some(validity) => {
                         (arr.len() - (validity & arr.values()).unset_bits()) as IdxSize
-                    }
+                    },
                     None => (arr.len() - arr.values().unset_bits()) as IdxSize,
                 })
                 .sum()

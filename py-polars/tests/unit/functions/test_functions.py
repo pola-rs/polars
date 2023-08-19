@@ -271,26 +271,6 @@ def test_align_frames_duplicate_key() -> None:
     ]
 
 
-def test_nan_aggregations() -> None:
-    df = pl.DataFrame({"a": [1.0, float("nan"), 2.0, 3.0], "b": [1, 1, 1, 1]})
-
-    aggs = [
-        pl.col("a").max().alias("max"),
-        pl.col("a").min().alias("min"),
-        pl.col("a").nan_max().alias("nan_max"),
-        pl.col("a").nan_min().alias("nan_min"),
-    ]
-
-    assert (
-        str(df.select(aggs).to_dict(False))
-        == "{'max': [3.0], 'min': [1.0], 'nan_max': [nan], 'nan_min': [nan]}"
-    )
-    assert (
-        str(df.groupby("b").agg(aggs).to_dict(False))
-        == "{'b': [1], 'max': [3.0], 'min': [2.0], 'nan_max': [nan], 'nan_min': [nan]}"
-    )
-
-
 def test_coalesce() -> None:
     df = pl.DataFrame(
         {
@@ -352,21 +332,21 @@ def test_abs_logical_type() -> None:
     assert s.abs().to_list() == [timedelta(hours=1), timedelta(hours=1)]
 
 
-def test_approx_unique() -> None:
+def test_approx_n_unique() -> None:
     df1 = pl.DataFrame({"a": [None, 1, 2], "b": [None, 2, 1]})
 
     assert_frame_equal(
-        df1.select(pl.approx_unique("b")),
+        df1.select(pl.approx_n_unique("b")),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
 
     assert_frame_equal(
-        df1.select(pl.approx_unique(pl.col("b"))),
+        df1.select(pl.approx_n_unique(pl.col("b"))),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
 
     assert_frame_equal(
-        df1.select(pl.col("b").approx_unique()),
+        df1.select(pl.col("b").approx_n_unique()),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
 

@@ -103,7 +103,7 @@ where
                 no_nulls::compute_sum_weights,
                 &weights,
             )
-        }
+        },
         (false, Some(weights)) => {
             let weights = no_nulls::coerce_weights(weights);
             no_nulls::rolling_apply_weights(
@@ -114,7 +114,7 @@ where
                 no_nulls::compute_sum_weights,
                 &weights,
             )
-        }
+        },
     }
 }
 

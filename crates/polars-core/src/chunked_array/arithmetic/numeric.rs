@@ -12,15 +12,7 @@ where
     F: Fn(T::Native, T::Native) -> T::Native,
 {
     let mut ca = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => {
-            let (lhs, rhs) = align_chunks_binary(lhs, rhs);
-            let chunks = lhs
-                .downcast_iter()
-                .zip(rhs.downcast_iter())
-                .map(|(lhs, rhs)| Box::new(kernel(lhs, rhs)) as ArrayRef)
-                .collect();
-            unsafe { lhs.copy_with_chunks(chunks, false, false) }
-        }
+        (a, b) if a == b => arity::binary_mut(lhs, rhs, |lhs, rhs| kernel(lhs, rhs)),
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);
@@ -28,14 +20,14 @@ where
                 None => ChunkedArray::full_null(lhs.name(), lhs.len()),
                 Some(rhs) => lhs.apply(|lhs| operation(lhs, rhs)),
             }
-        }
+        },
         (1, _) => {
             let opt_lhs = lhs.get(0);
             match opt_lhs {
                 None => ChunkedArray::full_null(lhs.name(), rhs.len()),
                 Some(lhs) => rhs.apply(|rhs| operation(lhs, rhs)),
             }
-        }
+        },
         _ => panic!("Cannot apply operation on arrays of different lengths"),
     };
     ca.rename(lhs.name());
@@ -65,7 +57,7 @@ where
             }
             lhs.set_sorted_flag(IsSorted::Not);
             lhs
-        }
+        },
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);
@@ -74,9 +66,9 @@ where
                 Some(rhs) => {
                     lhs.apply_mut(|lhs| operation(lhs, rhs));
                     lhs
-                }
+                },
             }
-        }
+        },
         (1, _) => {
             let opt_lhs = lhs.get(0);
             match opt_lhs {
@@ -85,9 +77,9 @@ where
                     rhs.apply_mut(|rhs| operation(lhs_val, rhs));
                     rhs.rename(lhs.name());
                     rhs
-                }
+                },
             }
-        }
+        },
         _ => panic!("Cannot apply operation on arrays of different lengths"),
     };
     ca

@@ -23,11 +23,11 @@ impl Utf8Chunked {
         match (&self.is_sorted_flag(), &self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_first(groups);
-            }
+            },
             (IsSorted::Descending, 0) => {
                 return self.clone().into_series().agg_last(groups);
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         match groups {
@@ -56,7 +56,7 @@ impl Utf8Chunked {
                         )
                     }
                 })
-            }
+            },
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
@@ -73,7 +73,7 @@ impl Utf8Chunked {
                         // The borrowed has `arr_group`s lifetime, but it actually points to data
                         // hold by self. Here we tell the compiler that.
                         unsafe { std::mem::transmute::<Option<&str>, Option<&'a str>>(borrowed) }
-                    }
+                    },
                 }
             }),
         }
@@ -85,11 +85,11 @@ impl Utf8Chunked {
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_last(groups);
-            }
+            },
             (IsSorted::Descending, 0) => {
                 return self.clone().into_series().agg_first(groups);
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         match groups {
@@ -118,7 +118,7 @@ impl Utf8Chunked {
                         )
                     }
                 })
-            }
+            },
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
@@ -135,7 +135,7 @@ impl Utf8Chunked {
                         // The borrowed has `arr_group`s lifetime, but it actually points to data
                         // hold by self. Here we tell the compiler that.
                         unsafe { std::mem::transmute::<Option<&str>, Option<&'a str>>(borrowed) }
-                    }
+                    },
                 }
             }),
         }

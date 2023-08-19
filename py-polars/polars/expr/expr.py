@@ -4,7 +4,6 @@ import contextlib
 import math
 import operator
 import os
-import random
 import warnings
 from datetime import timedelta
 from functools import partial, reduce
@@ -36,7 +35,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.exceptions import PolarsInefficientApplyWarning, PolarsPanicError
+from polars.exceptions import PolarsInefficientApplyWarning
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -52,6 +51,7 @@ from polars.utils._parse_expr_input import (
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
+    deprecate_nonkeyword_arguments,
     deprecate_renamed_parameter,
     warn_closed_future_change,
 )
@@ -133,9 +133,9 @@ class Expr:
 
     def __bool__(self) -> NoReturn:
         raise ValueError(
-            "Since Expr are lazy, the truthiness of an Expr is ambiguous. "
-            "Hint: use '&' or '|' to logically combine Expr, not 'and'/'or', and "
-            "use 'x.is_in([y,z])' instead of 'x in [y,z]' to check membership."
+            "since Expr are lazy, the truthiness of an Expr is ambiguous."
+            "\n\nHint: use '&' or '|' to logically combine Expr, not 'and'/'or', and"
+            " use 'x.is_in([y,z])' instead of 'x in [y,z]' to check membership"
         )
 
     def __abs__(self) -> Self:
@@ -148,11 +148,11 @@ class Expr:
     def __radd__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) + self._pyexpr)
 
-    def __and__(self, other: Expr | int) -> Self:
+    def __and__(self, other: Expr | int | bool) -> Self:
         return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
 
     def __rand__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
+        return self._from_pyexpr(self._to_pyexpr(other)._and(self._pyexpr))
 
     def __eq__(self, other: Any) -> Self:  # type: ignore[override]
         return self._from_pyexpr(self._pyexpr.eq(self._to_expr(other)._pyexpr))
@@ -196,7 +196,7 @@ class Expr:
     def __neg__(self) -> Expr:
         return F.lit(0) - self
 
-    def __or__(self, other: Expr | int) -> Self:
+    def __or__(self, other: Expr | int | bool) -> Self:
         return self._from_pyexpr(self._pyexpr._or(self._to_pyexpr(other)))
 
     def __ror__(self, other: Any) -> Self:
@@ -223,11 +223,11 @@ class Expr:
     def __rtruediv__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) / self._pyexpr)
 
-    def __xor__(self, other: Expr) -> Self:
+    def __xor__(self, other: Expr | int | bool) -> Self:
         return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
 
-    def __rxor__(self, other: Expr) -> Self:
-        return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
+    def __rxor__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._to_pyexpr(other)._xor(self._pyexpr))
 
     # state
     def __getstate__(self) -> Any:
@@ -317,67 +317,23 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
-    def any(self, drop_nulls: bool = True) -> Self:
+    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
+    def any(self, *, ignore_nulls: bool = True) -> Self:
         """
-        Check if any boolean value in a Boolean column is `True`.
+        Return whether any of the values in the column are ``True``.
+
+        Only works on columns of data type :class:`Boolean`.
 
         Parameters
         ----------
-        drop_nulls
-            If False, return None if there are nulls but no Trues.
+        ignore_nulls
+            Ignore null values (default).
 
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Boolean`.
+            If set to ``False``, `Kleene logic`_ is used to deal with nulls:
+            if the column contains any null values and no ``True`` values,
+            the output is null.
 
-        Examples
-        --------
-        >>> df = pl.DataFrame({"TF": [True, False], "FF": [False, False]})
-        >>> df.select(pl.all().any())
-        shape: (1, 2)
-        ┌──────┬───────┐
-        │ TF   ┆ FF    │
-        │ ---  ┆ ---   │
-        │ bool ┆ bool  │
-        ╞══════╪═══════╡
-        │ true ┆ false │
-        └──────┴───────┘
-        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
-        >>> df.select(pl.col("x").any(True), pl.col("y").any(True))
-        shape: (1, 2)
-        ┌───────┬──────┐
-        │ x     ┆ y    │
-        │ ---   ┆ ---  │
-        │ bool  ┆ bool │
-        ╞═══════╪══════╡
-        │ false ┆ true │
-        └───────┴──────┘
-        >>> df.select(pl.col("x").any(False), pl.col("y").any(False))
-        shape: (1, 2)
-        ┌──────┬──────┐
-        │ x    ┆ y    │
-        │ ---  ┆ ---  │
-        │ bool ┆ bool │
-        ╞══════╪══════╡
-        │ null ┆ true │
-        └──────┴──────┘
-
-        """
-        return self._from_pyexpr(self._pyexpr.any(drop_nulls))
-
-    def all(self, drop_nulls: bool = True) -> Self:
-        """
-        Check if all boolean values in a Boolean column are `True`.
-
-        This method is an expression - not to be confused with
-        :func:`polars.all` which is a function to select all columns.
-
-        Parameters
-        ----------
-        drop_nulls
-            If False, return None if there are any nulls.
-
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
@@ -387,39 +343,97 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"TT": [True, True], "TF": [True, False], "FF": [False, False]}
+        ...     {
+        ...         "a": [True, False],
+        ...         "b": [False, False],
+        ...         "c": [None, False],
+        ...     }
         ... )
-        >>> df.select(pl.col("*").all())
+        >>> df.select(pl.col("*").any())
         shape: (1, 3)
         ┌──────┬───────┬───────┐
-        │ TT   ┆ TF    ┆ FF    │
+        │ a    ┆ b     ┆ c     │
         │ ---  ┆ ---   ┆ ---   │
         │ bool ┆ bool  ┆ bool  │
         ╞══════╪═══════╪═══════╡
         │ true ┆ false ┆ false │
         └──────┴───────┴───────┘
-        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
-        >>> df.select(pl.col("x").all(True), pl.col("y").all(True))
-        shape: (1, 2)
-        ┌───────┬───────┐
-        │ x     ┆ y     │
-        │ ---   ┆ ---   │
-        │ bool  ┆ bool  │
-        ╞═══════╪═══════╡
-        │ false ┆ false │
-        └───────┴───────┘
-        >>> df.select(pl.col("x").all(False), pl.col("y").all(False))
-        shape: (1, 2)
-        ┌──────┬──────┐
-        │ x    ┆ y    │
-        │ ---  ┆ ---  │
-        │ bool ┆ bool │
-        ╞══════╪══════╡
-        │ null ┆ null │
-        └──────┴──────┘
+
+        Enable Kleene logic by setting ``ignore_nulls=False``.
+
+        >>> df.select(pl.col("*").any(ignore_nulls=False))
+        shape: (1, 3)
+        ┌──────┬───────┬──────┐
+        │ a    ┆ b     ┆ c    │
+        │ ---  ┆ ---   ┆ ---  │
+        │ bool ┆ bool  ┆ bool │
+        ╞══════╪═══════╪══════╡
+        │ true ┆ false ┆ null │
+        └──────┴───────┴──────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.all(drop_nulls))
+        return self._from_pyexpr(self._pyexpr.any(ignore_nulls))
+
+    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
+    def all(self, *, ignore_nulls: bool = True) -> Self:
+        """
+        Return whether all values in the column are ``True``.
+
+        Only works on columns of data type :class:`Boolean`.
+
+        .. note::
+            This method is not to be confused with the function :func:`polars.all`,
+            which can be used to select all columns.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, `Kleene logic`_ is used to deal with nulls:
+            if the column contains any null values and no ``True`` values,
+            the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [True, True],
+        ...         "b": [False, True],
+        ...         "c": [None, True],
+        ...     }
+        ... )
+        >>> df.select(pl.col("*").all())
+        shape: (1, 3)
+        ┌──────┬───────┬──────┐
+        │ a    ┆ b     ┆ c    │
+        │ ---  ┆ ---   ┆ ---  │
+        │ bool ┆ bool  ┆ bool │
+        ╞══════╪═══════╪══════╡
+        │ true ┆ false ┆ true │
+        └──────┴───────┴──────┘
+
+        Enable Kleene logic by setting ``ignore_nulls=False``.
+
+        >>> df.select(pl.col("*").all(ignore_nulls=False))
+        shape: (1, 3)
+        ┌──────┬───────┬──────┐
+        │ a    ┆ b     ┆ c    │
+        │ ---  ┆ ---   ┆ ---  │
+        │ bool ┆ bool  ┆ bool │
+        ╞══════╪═══════╪══════╡
+        │ true ┆ false ┆ null │
+        └──────┴───────┴──────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.all(ignore_nulls))
 
     def arg_true(self) -> Self:
         """
@@ -781,13 +795,14 @@ class Expr:
 
     def exclude(
         self,
-        columns: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+        columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
         *more_columns: str | PolarsDataType,
     ) -> Self:
         """
         Exclude columns from a multi-column expression.
 
-        Only works after a wildcard or regex column selection.
+        Only works after a wildcard or regex column selection, and you cannot provide
+        both string column names *and* dtypes (you may prefer to use selectors instead).
 
         Parameters
         ----------
@@ -862,43 +877,34 @@ class Expr:
         └──────┘
 
         """
-        if more_columns:
-            if isinstance(columns, str):
-                columns_str = [columns]
-                columns_str.extend(more_columns)  # type: ignore[arg-type]
-                return self._from_pyexpr(self._pyexpr.exclude(columns_str))
-            elif is_polars_dtype(columns):
-                dtypes = [columns]
-                dtypes.extend(more_columns)
-                return self._from_pyexpr(self._pyexpr.exclude_dtype(dtypes))
-            else:
-                raise TypeError(
-                    f"Invalid input for `exclude`. Expected `str` or `DataType`, got {type(columns)!r}"
-                )
-
-        if isinstance(columns, str):
-            return self._from_pyexpr(self._pyexpr.exclude([columns]))
-        elif is_polars_dtype(columns):
-            return self._from_pyexpr(self._pyexpr.exclude_dtype([columns]))
-        elif isinstance(columns, Iterable):
-            columns_list = list(columns)
-            if not columns_list:
-                return self
-
-            item = columns_list[0]
+        exclude_cols: list[str] = []
+        exclude_dtypes: list[PolarsDataType] = []
+        for item in (
+            *(
+                columns
+                if isinstance(columns, Collection) and not isinstance(columns, str)
+                else [columns]
+            ),
+            *more_columns,
+        ):
             if isinstance(item, str):
-                return self._from_pyexpr(self._pyexpr.exclude(columns_list))
+                exclude_cols.append(item)
             elif is_polars_dtype(item):
-                return self._from_pyexpr(self._pyexpr.exclude_dtype(columns_list))
+                exclude_dtypes.append(item)
             else:
                 raise TypeError(
-                    "Invalid input for `exclude`. Expected iterable of type `str` or `DataType`,"
-                    f" got iterable of type {type(item)!r}"
+                    "invalid input for `exclude`. Expected one or more `str`,"
+                    f"`DataType`, or selector; found {type(item).__name__!r} instead"
                 )
-        else:
+
+        if exclude_cols and exclude_dtypes:
             raise TypeError(
-                f"Invalid input for `exclude`. Expected `str` or `DataType`, got {type(columns)!r}"
+                "cannot exclude by both column name and dtype; use a selector instead"
             )
+        elif exclude_dtypes:
+            return self._from_pyexpr(self._pyexpr.exclude_dtype(exclude_dtypes))
+        else:
+            return self._from_pyexpr(self._pyexpr.exclude(exclude_cols))
 
     def pipe(
         self,
@@ -1807,8 +1813,8 @@ class Expr:
         dtype
             DataType to cast to.
         strict
-            Throw an error if a cast could not be done.
-            For instance, due to an overflow.
+            Throw an error if a cast could not be done (for instance, due to an
+            overflow).
 
         Examples
         --------
@@ -2477,13 +2483,13 @@ class Expr:
 
         """
         if value is not None and strategy is not None:
-            raise ValueError("cannot specify both 'value' and 'strategy'.")
+            raise ValueError("cannot specify both 'value' and 'strategy'")
         elif value is None and strategy is None:
             raise ValueError("must specify either a fill 'value' or 'strategy'")
         elif strategy not in ("forward", "backward") and limit is not None:
             raise ValueError(
-                "can only specify 'limit' when strategy is set to"
-                " 'backward' or 'forward'"
+                "can only specify 'limit' when strategy is set to "
+                "'backward' or 'forward'"
             )
 
         if value is not None:
@@ -2879,16 +2885,16 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.n_unique())
 
-    def approx_unique(self) -> Self:
+    def approx_n_unique(self) -> Self:
         """
-        Approx count unique values.
+        Approximate count of unique values.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").approx_unique())
+        >>> df.select(pl.col("a").approx_n_unique())
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2899,7 +2905,7 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.approx_unique())
+        return self._from_pyexpr(self._pyexpr.approx_n_unique())
 
     def null_count(self) -> Self:
         """
@@ -3298,10 +3304,11 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
+    @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.18.14")
     def cut(
         self,
-        breaks: list[float],
-        labels: list[str] | None = None,
+        breaks: Sequence[float],
+        labels: Sequence[str] | None = None,
         left_closed: bool = False,
         include_breaks: bool = False,
     ) -> Self:
@@ -3311,63 +3318,78 @@ class Expr:
         Parameters
         ----------
         breaks
-            A list of unique cut points.
+            List of unique cut points.
         labels
-            Labels to assign to bins. If given, the length must be len(breaks) + 1.
+            Names of the categories. The number of labels must be equal to the number
+            of cut points plus one.
         left_closed
-            Whether intervals should be [) instead of the default of (]
+            Set the intervals to be left-closed instead of right-closed.
         include_breaks
-            Include the the right endpoint of the bin each observation falls in.
-            If True, the resulting column will be a Struct.
+            Include a column with the right endpoint of the bin each observation falls
+            in. This will change the data type of the output from a
+            :class:`Categorical` to a :class:`Struct`.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Categorical` if ``include_breaks`` is set to
+            ``False`` (default), otherwise an expression of data type :class:`Struct`.
+
+        See Also
+        --------
+        qcut
 
         Examples
         --------
-        >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
-        >>> df = pl.DataFrame(dict(g=g, x=range(10)))
-        >>> df.with_columns(q=pl.col("x").cut([2, 5]))
-        shape: (10, 3)
-        ┌─────┬─────┬───────────┐
-        │ g   ┆ x   ┆ q         │
-        │ --- ┆ --- ┆ ---       │
-        │ str ┆ i64 ┆ cat       │
-        ╞═════╪═════╪═══════════╡
-        │ a   ┆ 0   ┆ (-inf, 2] │
-        │ a   ┆ 1   ┆ (-inf, 2] │
-        │ a   ┆ 2   ┆ (-inf, 2] │
-        │ a   ┆ 3   ┆ (2, 5]    │
-        │ …   ┆ …   ┆ …         │
-        │ b   ┆ 6   ┆ (5, inf]  │
-        │ b   ┆ 7   ┆ (5, inf]  │
-        │ b   ┆ 8   ┆ (5, inf]  │
-        │ b   ┆ 9   ┆ (5, inf]  │
-        └─────┴─────┴───────────┘
-        >>> df.with_columns(q=pl.col("x").cut([2, 5], left_closed=True))
-        shape: (10, 3)
-        ┌─────┬─────┬───────────┐
-        │ g   ┆ x   ┆ q         │
-        │ --- ┆ --- ┆ ---       │
-        │ str ┆ i64 ┆ cat       │
-        ╞═════╪═════╪═══════════╡
-        │ a   ┆ 0   ┆ [-inf, 2) │
-        │ a   ┆ 1   ┆ [-inf, 2) │
-        │ a   ┆ 2   ┆ [2, 5)    │
-        │ a   ┆ 3   ┆ [2, 5)    │
-        │ …   ┆ …   ┆ …         │
-        │ b   ┆ 6   ┆ [5, inf)  │
-        │ b   ┆ 7   ┆ [5, inf)  │
-        │ b   ┆ 8   ┆ [5, inf)  │
-        │ b   ┆ 9   ┆ [5, inf)  │
-        └─────┴─────┴───────────┘
+        Divide a column into three categories.
+
+        >>> df = pl.DataFrame({"foo": [-2, -1, 0, 1, 2]})
+        >>> df.with_columns(
+        ...     pl.col("foo").cut([-1, 1], labels=["a", "b", "c"]).alias("cut")
+        ... )
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ foo ┆ cut │
+        │ --- ┆ --- │
+        │ i64 ┆ cat │
+        ╞═════╪═════╡
+        │ -2  ┆ a   │
+        │ -1  ┆ a   │
+        │ 0   ┆ b   │
+        │ 1   ┆ b   │
+        │ 2   ┆ c   │
+        └─────┴─────┘
+
+        Add both the category and the breakpoint.
+
+        >>> df.with_columns(
+        ...     pl.col("foo").cut([-1, 1], include_breaks=True).alias("cut")
+        ... ).unnest("cut")
+        shape: (5, 3)
+        ┌─────┬──────┬────────────┐
+        │ foo ┆ brk  ┆ foo_bin    │
+        │ --- ┆ ---  ┆ ---        │
+        │ i64 ┆ f64  ┆ cat        │
+        ╞═════╪══════╪════════════╡
+        │ -2  ┆ -1.0 ┆ (-inf, -1] │
+        │ -1  ┆ -1.0 ┆ (-inf, -1] │
+        │ 0   ┆ 1.0  ┆ (-1, 1]    │
+        │ 1   ┆ 1.0  ┆ (-1, 1]    │
+        │ 2   ┆ inf  ┆ (1, inf]   │
+        └─────┴──────┴────────────┘
+
         """
         return self._from_pyexpr(
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
-    @deprecate_renamed_parameter("probs", "q", version="0.18.8")
+    @deprecate_nonkeyword_arguments(["self", "quantiles"], version="0.18.14")
+    @deprecate_renamed_parameter("probs", "quantiles", version="0.18.8")
+    @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
-        q: list[float] | int,
-        labels: list[str] | None = None,
+        quantiles: Sequence[float] | int,
+        labels: Sequence[str] | None = None,
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
@@ -3377,117 +3399,104 @@ class Expr:
 
         Parameters
         ----------
-        q
+        quantiles
             Either a list of quantile probabilities between 0 and 1 or a positive
-            integer determining the number of evenly spaced probabilities to use.
+            integer determining the number of bins with uniform probability.
         labels
-            Labels to assign to bins. If given, the length must be len(probs) + 1.
-            If computing over groups this must be set for now.
+            Names of the categories. The number of labels must be equal to the number
+            of categories.
         left_closed
-            Whether intervals should be [) instead of the default of (]
+            Set the intervals to be left-closed instead of right-closed.
         allow_duplicates
-            If True, the resulting quantile breaks don't have to be unique. This can
-            happen even with unique probs depending on the data. Duplicates will be
-            dropped, resulting in fewer bins.
+            If set to ``True``, duplicates in the resulting quantiles are dropped,
+            rather than raising a `DuplicateError`. This can happen even with unique
+            probabilities, depending on the data.
         include_breaks
-            Include the the right endpoint of the bin each observation falls in.
-            If True, the resulting column will be a Struct.
+            Include a column with the right endpoint of the bin each observation falls
+            in. This will change the data type of the output from a
+            :class:`Categorical` to a :class:`Struct`.
 
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Categorical` if ``include_breaks`` is set to
+            ``False`` (default), otherwise an expression of data type :class:`Struct`.
+
+        See Also
+        --------
+        cut
 
         Examples
         --------
-        >>> g = pl.repeat("a", 5, eager=True).append(pl.repeat("b", 5, eager=True))
-        >>> df = pl.DataFrame(dict(g=g, x=range(10)))
-        >>> df.with_columns(q=pl.col("x").qcut([0.5]))
-        shape: (10, 3)
-        ┌─────┬─────┬─────────────┐
-        │ g   ┆ x   ┆ q           │
-        │ --- ┆ --- ┆ ---         │
-        │ str ┆ i64 ┆ cat         │
-        ╞═════╪═════╪═════════════╡
-        │ a   ┆ 0   ┆ (-inf, 4.5] │
-        │ a   ┆ 1   ┆ (-inf, 4.5] │
-        │ a   ┆ 2   ┆ (-inf, 4.5] │
-        │ a   ┆ 3   ┆ (-inf, 4.5] │
-        │ …   ┆ …   ┆ …           │
-        │ b   ┆ 6   ┆ (4.5, inf]  │
-        │ b   ┆ 7   ┆ (4.5, inf]  │
-        │ b   ┆ 8   ┆ (4.5, inf]  │
-        │ b   ┆ 9   ┆ (4.5, inf]  │
-        └─────┴─────┴─────────────┘
-        >>> df.with_columns(q=pl.col("x").qcut(2))
-        shape: (10, 3)
-        ┌─────┬─────┬─────────────┐
-        │ g   ┆ x   ┆ q           │
-        │ --- ┆ --- ┆ ---         │
-        │ str ┆ i64 ┆ cat         │
-        ╞═════╪═════╪═════════════╡
-        │ a   ┆ 0   ┆ (-inf, 4.5] │
-        │ a   ┆ 1   ┆ (-inf, 4.5] │
-        │ a   ┆ 2   ┆ (-inf, 4.5] │
-        │ a   ┆ 3   ┆ (-inf, 4.5] │
-        │ …   ┆ …   ┆ …           │
-        │ b   ┆ 6   ┆ (4.5, inf]  │
-        │ b   ┆ 7   ┆ (4.5, inf]  │
-        │ b   ┆ 8   ┆ (4.5, inf]  │
-        │ b   ┆ 9   ┆ (4.5, inf]  │
-        └─────┴─────┴─────────────┘
-        >>> df.with_columns(q=pl.col("x").qcut([0.5], ["lo", "hi"]).over("g"))
-        shape: (10, 3)
-        ┌─────┬─────┬─────┐
-        │ g   ┆ x   ┆ q   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ cat │
-        ╞═════╪═════╪═════╡
-        │ a   ┆ 0   ┆ lo  │
-        │ a   ┆ 1   ┆ lo  │
-        │ a   ┆ 2   ┆ lo  │
-        │ a   ┆ 3   ┆ hi  │
-        │ …   ┆ …   ┆ …   │
-        │ b   ┆ 6   ┆ lo  │
-        │ b   ┆ 7   ┆ lo  │
-        │ b   ┆ 8   ┆ hi  │
-        │ b   ┆ 9   ┆ hi  │
-        └─────┴─────┴─────┘
-        >>> df.with_columns(q=pl.col("x").qcut([0.5], ["lo", "hi"], True).over("g"))
-        shape: (10, 3)
-        ┌─────┬─────┬─────┐
-        │ g   ┆ x   ┆ q   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ cat │
-        ╞═════╪═════╪═════╡
-        │ a   ┆ 0   ┆ lo  │
-        │ a   ┆ 1   ┆ lo  │
-        │ a   ┆ 2   ┆ hi  │
-        │ a   ┆ 3   ┆ hi  │
-        │ …   ┆ …   ┆ …   │
-        │ b   ┆ 6   ┆ lo  │
-        │ b   ┆ 7   ┆ hi  │
-        │ b   ┆ 8   ┆ hi  │
-        │ b   ┆ 9   ┆ hi  │
-        └─────┴─────┴─────┘
-        >>> df.with_columns(q=pl.col("x").qcut([0.25, 0.5], include_breaks=True))
-        shape: (10, 3)
-        ┌─────┬─────┬───────────────────────┐
-        │ g   ┆ x   ┆ q                     │
-        │ --- ┆ --- ┆ ---                   │
-        │ str ┆ i64 ┆ struct[2]             │
-        ╞═════╪═════╪═══════════════════════╡
-        │ a   ┆ 0   ┆ {2.25,"(-inf, 2.25]"} │
-        │ a   ┆ 1   ┆ {2.25,"(-inf, 2.25]"} │
-        │ a   ┆ 2   ┆ {2.25,"(-inf, 2.25]"} │
-        │ a   ┆ 3   ┆ {4.5,"(2.25, 4.5]"}   │
-        │ …   ┆ …   ┆ …                     │
-        │ b   ┆ 6   ┆ {inf,"(4.5, inf]"}    │
-        │ b   ┆ 7   ┆ {inf,"(4.5, inf]"}    │
-        │ b   ┆ 8   ┆ {inf,"(4.5, inf]"}    │
-        │ b   ┆ 9   ┆ {inf,"(4.5, inf]"}    │
-        └─────┴─────┴───────────────────────┘
+        Divide a column into three categories according to pre-defined quantile
+        probabilities.
+
+        >>> df = pl.DataFrame({"foo": [-2, -1, 0, 1, 2]})
+        >>> df.with_columns(
+        ...     pl.col("foo").qcut([0.25, 0.75], labels=["a", "b", "c"]).alias("qcut")
+        ... )
+        shape: (5, 2)
+        ┌─────┬──────┐
+        │ foo ┆ qcut │
+        │ --- ┆ ---  │
+        │ i64 ┆ cat  │
+        ╞═════╪══════╡
+        │ -2  ┆ a    │
+        │ -1  ┆ a    │
+        │ 0   ┆ b    │
+        │ 1   ┆ b    │
+        │ 2   ┆ c    │
+        └─────┴──────┘
+
+        Divide a column into two categories using uniform quantile probabilities.
+
+        >>> df.with_columns(
+        ...     pl.col("foo")
+        ...     .qcut(2, labels=["low", "high"], left_closed=True)
+        ...     .alias("qcut")
+        ... )
+        shape: (5, 2)
+        ┌─────┬──────┐
+        │ foo ┆ qcut │
+        │ --- ┆ ---  │
+        │ i64 ┆ cat  │
+        ╞═════╪══════╡
+        │ -2  ┆ low  │
+        │ -1  ┆ low  │
+        │ 0   ┆ high │
+        │ 1   ┆ high │
+        │ 2   ┆ high │
+        └─────┴──────┘
+
+        Add both the category and the breakpoint.
+
+        >>> df.with_columns(
+        ...     pl.col("foo").qcut([0.25, 0.75], include_breaks=True).alias("qcut")
+        ... ).unnest("qcut")
+        shape: (5, 3)
+        ┌─────┬──────┬────────────┐
+        │ foo ┆ brk  ┆ foo_bin    │
+        │ --- ┆ ---  ┆ ---        │
+        │ i64 ┆ f64  ┆ cat        │
+        ╞═════╪══════╪════════════╡
+        │ -2  ┆ -1.0 ┆ (-inf, -1] │
+        │ -1  ┆ -1.0 ┆ (-inf, -1] │
+        │ 0   ┆ 1.0  ┆ (-1, 1]    │
+        │ 1   ┆ 1.0  ┆ (-1, 1]    │
+        │ 2   ┆ inf  ┆ (1, inf]   │
+        └─────┴──────┴────────────┘
+
         """
-        expr_f = self._pyexpr.qcut_uniform if isinstance(q, int) else self._pyexpr.qcut
-        return self._from_pyexpr(
-            expr_f(q, labels, left_closed, allow_duplicates, include_breaks)
-        )
+        if isinstance(quantiles, int):
+            pyexpr = self._pyexpr.qcut_uniform(
+                quantiles, labels, left_closed, allow_duplicates, include_breaks
+            )
+        else:
+            pyexpr = self._pyexpr.qcut(
+                quantiles, labels, left_closed, allow_duplicates, include_breaks
+            )
+
+        return self._from_pyexpr(pyexpr)
 
     def rle(self) -> Self:
         """
@@ -3806,16 +3815,9 @@ class Expr:
         # input x: Series of type list containing the group values
         from polars.utils.udfs import warn_on_inefficient_apply
 
-        try:
-            root_names = self.meta.root_names()
-        except PolarsPanicError:
-            # no root names for pl.col('*')
-            pass
-        else:
-            if root_names:
-                warn_on_inefficient_apply(
-                    function, columns=root_names, apply_target="expr"
-                )
+        root_names = self.meta.root_names()
+        if len(root_names) > 0:
+            warn_on_inefficient_apply(function, columns=root_names, apply_target="expr")
 
         if pass_name:
 
@@ -7869,19 +7871,15 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
-    def shuffle(self, seed: int | None = None, fixed_seed: bool = False) -> Self:
+    def shuffle(self, seed: int | None = None) -> Self:
         """
         Shuffle the contents of this expression.
 
         Parameters
         ----------
         seed
-            Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
-        fixed_seed
-            If True, The seed will not be incremented between draws.
-            This can make output predictable because draw ordering can
-            change due to threads being scheduled in a different order.
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated each time the shuffle is called.
 
         Examples
         --------
@@ -7899,12 +7897,8 @@ class Expr:
         └─────┘
 
         """
-        # we seed from python so that we respect ``random.seed``
-        if seed is None:
-            seed = random.randint(0, 10000)
-        return self._from_pyexpr(self._pyexpr.shuffle(seed, fixed_seed))
+        return self._from_pyexpr(self._pyexpr.shuffle(seed))
 
-    @deprecate_renamed_parameter("frac", "fraction", version="0.17.0")
     def sample(
         self,
         n: int | None = None,
@@ -7913,7 +7907,6 @@ class Expr:
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
-        fixed_seed: bool = False,
     ) -> Self:
         """
         Sample from this expression.
@@ -7930,12 +7923,8 @@ class Expr:
         shuffle
             Shuffle the order of sampled data points.
         seed
-            Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
-        fixed_seed
-            If True, The seed will not be incremented between draws.
-            This can make output predictable because draw ordering can
-            change due to threads being scheduled in a different order.
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated for each sample operation.
 
         Examples
         --------
@@ -7956,20 +7945,15 @@ class Expr:
         if n is not None and fraction is not None:
             raise ValueError("cannot specify both `n` and `fraction`")
 
-        if seed is None:
-            seed = random.randint(0, 10000)
-
         if fraction is not None:
             return self._from_pyexpr(
-                self._pyexpr.sample_frac(
-                    fraction, with_replacement, shuffle, seed, fixed_seed
-                )
+                self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
             )
 
         if n is None:
             n = 1
         return self._from_pyexpr(
-            self._pyexpr.sample_n(n, with_replacement, shuffle, seed, fixed_seed)
+            self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
         )
 
     def ewm_mean(
@@ -8821,7 +8805,7 @@ class Expr:
                             )
                             if dtype != s.dtype:
                                 raise ValueError(
-                                    f"Remapping values for map_dict could not be converted to {dtype}: found {s.dtype}"
+                                    f"remapping values for map_dict could not be converted to {dtype!r}: found {s.dtype!r}"
                                 )
                 else:
                     # dtype was set, which should always be the case when:
@@ -8837,17 +8821,17 @@ class Expr:
                     )
                     if dtype != s.dtype:
                         raise ValueError(
-                            f"Remapping {'keys' if is_keys else 'values'} for map_dict could not be converted to {dtype}: found {s.dtype}"
+                            f"remapping {'keys' if is_keys else 'values'} for map_dict could not be converted to {dtype!r}: found {s.dtype!r}"
                         )
 
             except OverflowError as exc:
                 if is_keys:
                     raise ValueError(
-                        f"Remapping keys for map_dict could not be converted to {dtype}: {str(exc)}"
+                        f"remapping keys for map_dict could not be converted to {dtype!r}: {str(exc)}"
                     ) from exc
                 else:
                     raise ValueError(
-                        f"Choose a more suitable output dtype for map_dict as remapping value could not be converted to {dtype}: {str(exc)}"
+                        f"choose a more suitable output dtype for map_dict as remapping value could not be converted to {dtype!r}: {str(exc)}"
                     ) from exc
 
             if is_keys:
@@ -8858,7 +8842,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"Remapping keys for map_dict could not be converted to {dtype} without losing values in the conversion."
+                        f"remapping keys for map_dict could not be converted to {dtype!r} without losing values in the conversion"
                     )
             else:
                 # values = remapping.values()
@@ -8868,7 +8852,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"Remapping values for map_dict could not be converted to {dtype} without losing values in the conversion."
+                        f"remapping values for map_dict could not be converted to {dtype!r} without losing values in the conversion"
                     )
 
             return s
@@ -9162,28 +9146,28 @@ def _prepare_alpha(
     """Normalise EWM decay specification in terms of smoothing factor 'alpha'."""
     if sum((param is not None) for param in (com, span, half_life, alpha)) > 1:
         raise ValueError(
-            "Parameters 'com', 'span', 'half_life', and 'alpha' are mutually exclusive"
+            "parameters 'com', 'span', 'half_life', and 'alpha' are mutually exclusive"
         )
     if com is not None:
         if com < 0.0:
-            raise ValueError(f"Require 'com' >= 0 (found {com})")
+            raise ValueError(f"require 'com' >= 0 (found {com!r})")
         alpha = 1.0 / (1.0 + com)
 
     elif span is not None:
         if span < 1.0:
-            raise ValueError(f"Require 'span' >= 1 (found {span})")
+            raise ValueError(f"require 'span' >= 1 (found {span!r})")
         alpha = 2.0 / (span + 1.0)
 
     elif half_life is not None:
         if half_life <= 0.0:
-            raise ValueError(f"Require 'half_life' > 0 (found {half_life})")
+            raise ValueError(f"require 'half_life' > 0 (found {half_life!r})")
         alpha = 1.0 - math.exp(-math.log(2.0) / half_life)
 
     elif alpha is None:
-        raise ValueError("One of 'com', 'span', 'half_life', or 'alpha' must be set")
+        raise ValueError("one of 'com', 'span', 'half_life', or 'alpha' must be set")
 
     elif not (0 < alpha <= 1):
-        raise ValueError(f"Require 0 < 'alpha' <= 1 (found {alpha})")
+        raise ValueError(f"require 0 < 'alpha' <= 1 (found {alpha!r})")
 
     return alpha
 

@@ -217,7 +217,7 @@ pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPyt
                     Err(_e) => {
                         no_such_file_err(s)?;
                         unreachable!();
-                    }
+                    },
                 }
             };
             Ok(EitherRustPythonFile::Rust(f))
@@ -251,7 +251,7 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
             Err(_e) => {
                 no_such_file_err(s)?;
                 unreachable!();
-            }
+            },
         };
         Ok(Box::new(f))
     }

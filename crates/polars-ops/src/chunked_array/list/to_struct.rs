@@ -25,7 +25,7 @@ fn det_n_fields(ca: &ListChunked, n_fields: ListToStructWidthStrategy) -> usize 
                 }
             });
             max
-        }
+        },
         ListToStructWidthStrategy::FirstNonNull => {
             let mut len = 0;
             for arr in ca.downcast_iter() {
@@ -43,7 +43,7 @@ fn det_n_fields(ca: &ListChunked, n_fields: ListToStructWidthStrategy) -> usize 
                 }
             }
             len
-        }
+        },
     }
 }
 

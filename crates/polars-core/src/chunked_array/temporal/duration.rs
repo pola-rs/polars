@@ -23,32 +23,32 @@ impl DurationChunked {
                 let ca = &self.0 / 1_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Nanoseconds, Milliseconds) => {
                 let ca = &self.0 / 1_000_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Microseconds, Nanoseconds) => {
                 let ca = &self.0 * 1_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Microseconds, Milliseconds) => {
                 let ca = &self.0 / 1_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Milliseconds, Nanoseconds) => {
                 let ca = &self.0 * 1_000_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Milliseconds, Microseconds) => {
                 let ca = &self.0 * 1_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Nanoseconds, Nanoseconds)
             | (Microseconds, Microseconds)
             | (Milliseconds, Milliseconds) => out,

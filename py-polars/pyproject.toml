@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.1,<1.2"]
+requires = ["maturin~=1.2.1"]
 build-backend = "maturin"
 
 [project]
@@ -139,6 +139,7 @@ ignore = [
   "PT011", # pytest.raises({exception}) is too broad, set the match parameter or use a more specific exception
   # flake8-simplify
   "SIM102", # Use a single `if` statement instead of nested `if` statements
+  "SIM108", # Use ternary operator
   # ruff
   "RUF005", # unpack-instead-of-concatenating-to-collection-literal
   # pycodestyle
@@ -159,10 +160,7 @@ ban-relative-imports = "all"
 strict = true
 
 [tool.ruff.per-file-ignores]
-"polars/datatypes.py" = ["B019"]
 "tests/**/*.py" = ["D100", "D103", "B018"]
-"polars/utils/show_versions.py" = ["D301"]
-"polars/utils/udfs.py" = ["RUF012"]
 
 [tool.pytest.ini_options]
 addopts = [

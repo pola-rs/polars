@@ -6,6 +6,7 @@ pub struct StackExec {
     pub(crate) cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) input_schema: SchemaRef,
+    pub(crate) options: ProjectionOptions,
 }
 
 impl StackExec {
@@ -20,6 +21,7 @@ impl StackExec {
             &self.exprs,
             state,
             self.has_windows,
+            self.options.run_parallel,
         )?;
         state.clear_window_expr_cache();
 
@@ -48,7 +50,13 @@ impl Executor for StackExec {
             let by = self
                 .exprs
                 .iter()
-                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
+                .map(|s| {
+                    profile_name(
+                        s.as_ref(),
+                        self.input_schema.as_ref(),
+                        !self.cse_exprs.is_empty(),
+                    )
+                })
                 .collect::<PolarsResult<Vec<_>>>()?;
             let name = comma_delimited("with_column".to_string(), &by);
             Cow::Owned(name)

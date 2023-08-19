@@ -70,7 +70,7 @@ fn run_per_sublist(
                         Err(e) => {
                             *m_err.lock().unwrap() = Some(e);
                             None
-                        }
+                        },
                     }
                 })
             })
@@ -91,7 +91,7 @@ fn run_per_sublist(
                         Err(e) => {
                             err = Some(e);
                             None
-                        }
+                        },
                     }
                 })
             })
@@ -134,7 +134,7 @@ fn run_on_groupby_engine(
         AggState::AggregatedFlat(_) | AggState::Literal(_) => {
             let out = ac.aggregated();
             out.as_list().into_series()
-        }
+        },
         _ => ac.aggregated(),
     };
     out.rename(name);
@@ -158,15 +158,15 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                         polars_bail!(
                             ComputeError: "casting to categorical not allowed in `list.eval`"
                         )
-                    }
+                    },
                     Expr::Column(name) => {
                         polars_ensure!(
                             name.is_empty(),
                             ComputeError:
                             "named columns are not allowed in `list.eval`; consider using `element` or `col(\"\")`"
                         );
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
             let lst = s.list()?.clone();

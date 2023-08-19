@@ -51,15 +51,15 @@ pub fn temporal_range(
         TimeUnit::Nanoseconds => {
             size = ((stop - start) / every.duration_ns() + 1) as usize;
             offset_fn = Duration::add_ns;
-        }
+        },
         TimeUnit::Microseconds => {
             size = ((stop - start) / every.duration_us() + 1) as usize;
             offset_fn = Duration::add_us;
-        }
+        },
         TimeUnit::Milliseconds => {
             size = ((stop - start) / every.duration_ms() + 1) as usize;
             offset_fn = Duration::add_ms;
-        }
+        },
     }
     let mut ts = Vec::with_capacity(size);
 
@@ -70,27 +70,27 @@ pub fn temporal_range(
                 ts.push(t);
                 t = offset_fn(&every, t, tz)?
             }
-        }
+        },
         ClosedWindow::Left => {
             while t < stop {
                 ts.push(t);
                 t = offset_fn(&every, t, tz)?
             }
-        }
+        },
         ClosedWindow::Right => {
             t = offset_fn(&every, t, tz)?;
             while t <= stop {
                 ts.push(t);
                 t = offset_fn(&every, t, tz)?
             }
-        }
+        },
         ClosedWindow::None => {
             t = offset_fn(&every, t, tz)?;
             while t < stop {
                 ts.push(t);
                 t = offset_fn(&every, t, tz)?
             }
-        }
+        },
     }
     debug_assert!(size >= ts.len());
     Ok(ts)

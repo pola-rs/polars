@@ -52,7 +52,7 @@ pub(crate) fn arg_sort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
                             idx_b,
                         )
                     }
-                }
+                },
                 (true, Ordering::Less) => Ordering::Greater,
                 (true, Ordering::Greater) => Ordering::Less,
                 (_, ord) => ord,
@@ -72,12 +72,12 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_) => {
             let ca = by.categorical().unwrap();
-            if ca.use_lexical_sort() {
+            if ca.uses_lexical_ordering() {
                 by.to_arrow(0)
             } else {
                 ca.logical().chunks[0].clone()
             }
-        }
+        },
         _ => by.to_arrow(0),
     };
     Ok(out)
@@ -90,7 +90,7 @@ pub(crate) fn encode_rows_vertical(by: &[Series]) -> PolarsResult<BinaryChunked>
     let splits = _split_offsets(len, n_threads);
     let descending = vec![false; by.len()];
 
-    let chunks = splits
+    let chunks: PolarsResult<Vec<_>> = splits
         .into_par_iter()
         .map(|(offset, len)| {
             let sliced = by
@@ -98,11 +98,11 @@ pub(crate) fn encode_rows_vertical(by: &[Series]) -> PolarsResult<BinaryChunked>
                 .map(|s| s.slice(offset as i64, len))
                 .collect::<Vec<_>>();
             let rows = _get_rows_encoded(&sliced, &descending, false)?;
-            Ok(Box::new(rows.into_array()) as ArrayRef)
+            Ok(rows.into_array())
         })
-        .collect::<PolarsResult<_>>()?;
+        .collect();
 
-    unsafe { Ok(BinaryChunked::from_chunks("", chunks)) }
+    Ok(BinaryChunked::from_chunk_iter("", chunks?))
 }
 
 pub fn _get_rows_encoded(
@@ -121,18 +121,18 @@ pub fn _get_rows_encoded(
             nulls_last,
         };
         match arr.data_type() {
-            // flatten the struct fields
+            // Flatten the struct fields.
             ArrowDataType::Struct(_) => {
                 let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
                 for arr in arr.values() {
                     cols.push(arr.clone() as ArrayRef);
                     fields.push(sort_field.clone())
                 }
-            }
+            },
             _ => {
                 cols.push(arr);
                 fields.push(sort_field)
-            }
+            },
         }
     }
     Ok(convert_columns(&cols, &fields))
@@ -145,7 +145,7 @@ pub fn _get_rows_encoded_ca(
     nulls_last: bool,
 ) -> PolarsResult<BinaryChunked> {
     _get_rows_encoded(by, descending, nulls_last)
-        .map(|rows| unsafe { BinaryChunked::from_chunks(name, vec![Box::new(rows.into_array())]) })
+        .map(|rows| BinaryChunked::with_chunk(name, rows.into_array()))
 }
 
 pub(crate) fn argsort_multiple_row_fmt(

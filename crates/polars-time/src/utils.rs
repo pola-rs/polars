@@ -34,7 +34,7 @@ pub(crate) fn localize_datetime(
             polars_bail!(
                 ComputeError: format!("datetime '{}' is non-existent in time zone '{}'. Non-existent datetimes are not yet supported", ndt, tz)
             )
-        }
+        },
     }
 }
 
@@ -52,19 +52,19 @@ pub(crate) fn localize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> Polars
                 localize_datetime(timestamp_ns_to_datetime(timestamp), &tz, None)?
                     .timestamp_nanos(),
             )
-        }
+        },
         TimeUnit::Microseconds => {
             Ok(
                 localize_datetime(timestamp_us_to_datetime(timestamp), &tz, None)?
                     .timestamp_micros(),
             )
-        }
+        },
         TimeUnit::Milliseconds => {
             Ok(
                 localize_datetime(timestamp_ms_to_datetime(timestamp), &tz, None)?
                     .timestamp_millis(),
             )
-        }
+        },
     }
 }
 
@@ -73,12 +73,12 @@ pub(crate) fn unlocalize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> i64 
     match tu {
         TimeUnit::Nanoseconds => {
             unlocalize_datetime(timestamp_ns_to_datetime(timestamp), &tz).timestamp_nanos()
-        }
+        },
         TimeUnit::Microseconds => {
             unlocalize_datetime(timestamp_us_to_datetime(timestamp), &tz).timestamp_micros()
-        }
+        },
         TimeUnit::Milliseconds => {
             unlocalize_datetime(timestamp_ms_to_datetime(timestamp), &tz).timestamp_millis()
-        }
+        },
     }
 }

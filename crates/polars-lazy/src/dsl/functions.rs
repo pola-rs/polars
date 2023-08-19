@@ -44,7 +44,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
                 existing_inputs.push(lp)
             }
             lf
-        }
+        },
         _ => {
             let mut lps = Vec::with_capacity(inputs.len());
             lps.push(lf.logical_plan);
@@ -64,7 +64,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
             lf.opt_state = opt_state;
 
             lf
-        }
+        },
     };
 
     if convert_supertypes {

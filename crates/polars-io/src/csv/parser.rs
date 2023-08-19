@@ -115,7 +115,7 @@ pub(crate) fn next_line_position(
                     }
                     total_pos += pos + 1;
                 }
-            }
+            },
             // don't count the fields
             (Some(_), None) => return Some(total_pos + pos),
             // // no new line found, check latest line (without eol) for number of fields
@@ -282,12 +282,12 @@ impl<'a> Iterator for SplitLines<'a> {
                     else if c == self.end_line_char && !in_field {
                         break;
                     }
-                }
+                },
                 None => {
                     // no new line found we are done
                     // the rest will be done by last line specific code.
                     return None;
-                }
+                },
             }
         }
 
@@ -418,7 +418,7 @@ pub(super) fn parse_lines<'a>(
                 None => {
                     bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
                     break;
-                }
+                },
                 Some((mut field, needs_escaping)) => {
                     let field_len = field.len();
 
@@ -495,11 +495,11 @@ pub(super) fn parse_lines<'a>(
                                     bytes = bytes_rem;
                                 }
                                 break;
-                            }
+                            },
                         }
                     }
                     idx += 1;
-                }
+                },
             }
         }
 

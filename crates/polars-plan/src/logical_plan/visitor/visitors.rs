@@ -13,7 +13,7 @@ pub trait TreeWalker: Sized {
     /// Walks all nodes in depth-first-order.
     fn visit(&self, visitor: &mut dyn Visitor<Node = Self>) -> PolarsResult<VisitRecursion> {
         match visitor.pre_visit(self)? {
-            VisitRecursion::Continue => {}
+            VisitRecursion::Continue => {},
             // If the recursion should skip, do not apply to its children. And let the recursion continue
             VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
             // If the recursion should stop, do not apply to its children
@@ -21,10 +21,9 @@ pub trait TreeWalker: Sized {
         };
 
         match self.apply_children(&mut |node| node.visit(visitor))? {
-            VisitRecursion::Continue => {}
-            // If the recursion should skip, do not apply to its children. And let the recursion continue
-            VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
-            // If the recursion should stop, do not apply to its children
+            // let the recursion continue
+            VisitRecursion::Continue | VisitRecursion::Skip => {},
+            // If the recursion should stop, no further post visit will be performed
             VisitRecursion::Stop => return Ok(VisitRecursion::Stop),
         }
 

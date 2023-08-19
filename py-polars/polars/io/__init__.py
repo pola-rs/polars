@@ -9,7 +9,7 @@ from polars.io.ipc import read_ipc, read_ipc_schema, scan_ipc
 from polars.io.json import read_json
 from polars.io.ndjson import read_ndjson, scan_ndjson
 from polars.io.parquet import read_parquet, read_parquet_schema, scan_parquet
-from polars.io.pyarrow_dataset import scan_ds, scan_pyarrow_dataset
+from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 
 __all__ = [
     "read_avro",
@@ -26,7 +26,6 @@ __all__ = [
     "read_parquet_schema",
     "scan_csv",
     "scan_delta",
-    "scan_ds",
     "scan_ipc",
     "scan_ndjson",
     "scan_parquet",

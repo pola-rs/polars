@@ -2,6 +2,7 @@ use polars_arrow::compute::arithmetics::decimal;
 
 use super::*;
 use crate::prelude::DecimalChunked;
+use crate::utils::align_chunks_binary;
 
 // TODO: remove
 impl ArrayArithmetics for i128 {
@@ -59,7 +60,7 @@ impl DecimalChunked {
                     .map(|(lhs, rhs)| kernel(lhs, rhs).map(|a| Box::new(a) as ArrayRef))
                     .collect::<PolarsResult<_>>()?;
                 unsafe { lhs.copy_with_chunks(chunks, false, false) }
-            }
+            },
             // broadcast right path
             (_, 1) => {
                 let opt_rhs = rhs.get(0);
@@ -71,9 +72,9 @@ impl DecimalChunked {
                             .map(|lhs| operation_lhs(lhs, rhs_val).map(|a| Box::new(a) as ArrayRef))
                             .collect::<PolarsResult<_>>()?;
                         unsafe { lhs.copy_with_chunks(chunks, false, false) }
-                    }
+                    },
                 }
-            }
+            },
             (1, _) => {
                 let opt_lhs = lhs.get(0);
                 match opt_lhs {
@@ -84,12 +85,12 @@ impl DecimalChunked {
                             .map(|rhs| operation_rhs(lhs_val, rhs).map(|a| Box::new(a) as ArrayRef))
                             .collect::<PolarsResult<_>>()?;
                         unsafe { lhs.copy_with_chunks(chunks, false, false) }
-                    }
+                    },
                 }
-            }
+            },
             _ => {
                 polars_bail!(ComputeError: "Cannot apply operation on arrays of different lengths")
-            }
+            },
         };
         ca.rename(lhs.name());
         Ok(ca.into_decimal_unchecked(self.precision(), self.scale()))

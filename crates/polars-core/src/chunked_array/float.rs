@@ -27,8 +27,7 @@ where
     pub fn none_to_nan(&self) -> Self {
         let chunks = self
             .downcast_iter()
-            .map(|arr| Box::new(set_at_nulls(arr, T::Native::nan())) as ArrayRef)
-            .collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+            .map(|arr| set_at_nulls(arr, T::Native::nan()));
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 }

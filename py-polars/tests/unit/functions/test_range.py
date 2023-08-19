@@ -27,11 +27,11 @@ def test_arange() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_arange_decreasing() -> None:
-    assert pl.arange(10, 1, -2, eager=True).to_list() == list(range(10, 1, -2))
+def test_int_range_decreasing() -> None:
+    assert pl.int_range(10, 1, -2, eager=True).to_list() == list(range(10, 1, -2))
 
 
-def test_arange_expr() -> None:
+def test_int_range_expr() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
     out = df.select(pl.int_range(0, pl.col("a").count() * 10))
     assert out.shape == (20, 1)
@@ -40,54 +40,6 @@ def test_arange_expr() -> None:
     # eager arange
     out2 = pl.arange(0, 10, 2, eager=True)
     assert out2.to_list() == [0, 2, 4, 6, 8]
-
-
-def test_arange_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "start": [1, 2, 3, 5, 5, 5],
-            "stop": [8, 3, 12, 8, 8, 8],
-        }
-    )
-
-    with pytest.deprecated_call():
-        result = df.select(pl.arange(pl.lit(1), pl.col("stop") + 1).alias("test"))
-
-    expected = pl.DataFrame(
-        {
-            "test": [
-                [1, 2, 3, 4, 5, 6, 7, 8],
-                [1, 2, 3],
-                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-                [1, 2, 3, 4, 5, 6, 7, 8],
-                [1, 2, 3, 4, 5, 6, 7, 8],
-                [1, 2, 3, 4, 5, 6, 7, 8],
-            ]
-        }
-    )
-    assert_frame_equal(result, expected)
-
-    with pytest.deprecated_call():
-        result_s = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
-    assert result_s.dtype == pl.List
-    assert result_s[0].to_list() == [0, 2]
-
-
-def test_arange_name() -> None:
-    expected_name = "arange"
-    result_eager = pl.arange(0, 5, eager=True)
-    assert result_eager.name == expected_name
-
-    result_lazy = pl.select(pl.arange(0, 5)).to_series()
-    assert result_lazy.name == expected_name
-
-
-def test_arange_schema() -> None:
-    result = pl.LazyFrame().select(pl.arange(-3, 3))
-
-    expected_schema = {"arange": pl.Int64}
-    assert result.schema == expected_schema
-    assert result.collect().schema == expected_schema
 
 
 def test_int_range() -> None:
@@ -171,8 +123,7 @@ def test_date_range() -> None:
             time_unit=time_unit,
             eager=True,
         )
-        with pytest.deprecated_call(match="`Series.time_unit` is deprecated.*"):
-            assert rng.time_unit == time_unit
+        assert rng.dtype.time_unit == time_unit  # type: ignore[union-attr]
         assert rng.shape == (13,)
         assert rng.dt[0] == datetime(2020, 1, 1)
         assert rng.dt[-1] == datetime(2020, 1, 2)
@@ -547,10 +498,9 @@ def test_date_range_name() -> None:
     result_eager = pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=True)
     assert result_eager.name == expected_name
 
-    with pytest.deprecated_call():
-        result_lazy = pl.select(
-            pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=False)
-        ).to_series()
+    result_lazy = pl.select(
+        pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=False)
+    ).to_series()
     assert result_lazy.name == expected_name
 
 
@@ -580,34 +530,28 @@ def test_date_range_eager_explode() -> None:
     assert_series_equal(result, expected)
 
 
-def test_date_range_deprecated_eager() -> None:
+def test_date_range_only_first_entry_used() -> None:
     start = pl.Series([date(2022, 1, 1), date(2022, 1, 2)])
     end = pl.Series([date(2022, 1, 4), date(2022, 1, 3)])
 
-    with pytest.deprecated_call():
-        result = pl.date_range(start, end, eager=True)
+    result = pl.date_range(start, end, eager=True)
 
     expected = pl.Series(
-        "date",
-        [
-            [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3), date(2022, 1, 4)],
-            [date(2022, 1, 2), date(2022, 1, 3)],
-        ],
+        "date", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3), date(2022, 1, 4)]
     )
     assert_series_equal(result, expected)
 
 
 def test_time_range_lit_lazy() -> None:
-    with pytest.deprecated_call():
-        tm = pl.select(
-            pl.time_range(
-                start=time(1, 2, 3),
-                end=time(23, 59, 59),
-                interval="5h45m10s333ms",
-                closed="right",
-            ).alias("tm")
-        )
-    tm = tm.select(pl.col("tm").explode())
+    tm = pl.select(
+        pl.time_range(
+            start=time(1, 2, 3),
+            end=time(23, 59, 59),
+            interval="5h45m10s333ms",
+            closed="right",
+        ).alias("tm")
+    )
+
     assert tm["tm"].to_list() == [
         time(6, 47, 13, 333000),
         time(12, 32, 23, 666000),
@@ -615,9 +559,7 @@ def test_time_range_lit_lazy() -> None:
     ]
 
     # validate unset start/end
-    with pytest.deprecated_call():
-        tm = pl.select(pl.time_range(interval="5h45m10s333ms").alias("tm"))
-    tm = tm.select(pl.col("tm").explode())
+    tm = pl.select(pl.time_range(interval="5h45m10s333ms").alias("tm"))
     assert tm["tm"].to_list() == [
         time(0, 0),
         time(5, 45, 10, 333000),
@@ -626,13 +568,11 @@ def test_time_range_lit_lazy() -> None:
         time(23, 0, 41, 332000),
     ]
 
-    with pytest.deprecated_call():
-        tm = pl.select(
-            pl.time_range(
-                start=pl.lit(time(23, 59, 59, 999980)), interval="10000ns"
-            ).alias("tm")
+    tm = pl.select(
+        pl.time_range(start=pl.lit(time(23, 59, 59, 999980)), interval="10000ns").alias(
+            "tm"
         )
-    tm = tm.select(pl.col("tm").explode())
+    )
     assert tm["tm"].to_list() == [
         time(23, 59, 59, 999980),
         time(23, 59, 59, 999990),
@@ -720,10 +660,7 @@ def test_time_range_name() -> None:
     result_eager = pl.time_range(time(10), time(12), eager=True)
     assert result_eager.name == expected_name
 
-    with pytest.deprecated_call():
-        result_lazy = pl.select(
-            pl.time_range(time(10), time(12), eager=False)
-        ).to_series()
+    result_lazy = pl.select(pl.time_range(time(10), time(12), eager=False)).to_series()
     assert result_lazy.name == expected_name
 
 
@@ -774,7 +711,7 @@ def test_deprecated_name_arg() -> None:
         ("ns", "ns", "ns"),
     ],
 )
-def test_date_range_schema(
+def test_date_ranges_schema(
     values_time_zone: str | None,
     input_time_zone: str | None,
     output_time_zone: str | None,
@@ -1053,18 +990,11 @@ def test_time_range_eager_explode() -> None:
     assert_series_equal(result, expected)
 
 
-def test_time_range_deprecated_eager() -> None:
+def test_time_range_only_first_entry_used() -> None:
     start = pl.Series([time(9, 0), time(10, 0)])
     end = pl.Series([time(12, 0), time(11, 0)])
 
-    with pytest.deprecated_call():
-        result = pl.time_range(start, end, eager=True)
+    result = pl.time_range(start, end, eager=True)
 
-    expected = pl.Series(
-        "time",
-        [
-            [time(9, 0), time(10, 0), time(11, 0), time(12, 0)],
-            [time(10, 0), time(11, 0)],
-        ],
-    )
+    expected = pl.Series("time", [time(9, 0), time(10, 0), time(11, 0), time(12, 0)])
     assert_series_equal(result, expected)

@@ -191,13 +191,13 @@ fn partition_df(df: DataFrame, partitions: &IdxCa) -> PolarsResult<(DfIter, IdxC
                 unsafe { df._take_unchecked_slice_sorted(&group, false, IsSorted::Ascending) }
             });
             Box::new(iter) as DfIter
-        }
+        },
         GroupsProxy::Slice { groups, .. } => {
             let iter = groups
                 .into_iter()
                 .map(move |[first, len]| df.slice(first as i64, len as usize));
             Box::new(iter) as DfIter
-        }
+        },
     };
     Ok((out, partitions))
 }

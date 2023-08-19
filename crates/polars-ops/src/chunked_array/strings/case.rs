@@ -97,12 +97,12 @@ fn to_lowercase_helper(s: &str, buf: &mut Vec<u8>) {
                 [a, b, '\0'] => {
                     s.push(a);
                     s.push(b);
-                }
+                },
                 [a, b, c] => {
                     s.push(a);
                     s.push(b);
                     s.push(c);
-                }
+                },
             }
         }
     }
@@ -177,12 +177,12 @@ fn push_char_to_upper(c: char, s: &mut String) {
         [a, b, '\0'] => {
             s.push(a);
             s.push(b);
-        }
+        },
         [a, b, c] => {
             s.push(a);
             s.push(b);
             s.push(c);
-        }
+        },
     }
 }
 

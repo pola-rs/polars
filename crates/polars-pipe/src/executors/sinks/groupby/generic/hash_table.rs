@@ -121,7 +121,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
 
                 self.keys.extend_from_slice(row);
                 Some(aggregation_idx)
-            }
+            },
         }
     }
 

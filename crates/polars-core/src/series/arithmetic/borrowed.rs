@@ -118,7 +118,6 @@ pub mod checked {
     use num_traits::{CheckedDiv, One, ToPrimitive, Zero};
 
     use super::*;
-    use crate::utils::align_chunks_binary;
 
     pub trait NumOpsDispatchCheckedInner: PolarsDataType + Sized {
         /// Checked integer division. Computes self / rhs, returning None if rhs == 0 or the division results in overflow.
@@ -161,24 +160,14 @@ pub mod checked {
             // Note that the physical type correctness is checked!
             // The ChunkedArray with the wrong dtype is dropped after this operation
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-            let (l, r) = align_chunks_binary(lhs, rhs);
 
-            Ok((l)
-                .downcast_iter()
-                .zip(r.downcast_iter())
-                .flat_map(|(l_arr, r_arr)| {
-                    l_arr
-                        .into_iter()
-                        .zip(r_arr)
-                        // we don't use a kernel, because the checked div also supplies nulls.
-                        // so the usual bit combining is not enough.
-                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                            (Some(l), Some(r)) => l.checked_div(r),
-                            _ => None,
-                        })
+            Ok(
+                arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
+                    (Some(l), Some(r)) => l.checked_div(r),
+                    _ => None,
                 })
-                .collect::<ChunkedArray<T>>()
-                .into_series())
+                .into_series(),
+            )
         }
     }
 
@@ -187,30 +176,22 @@ pub mod checked {
             // Safety:
             // see check_div for chunkedarray<T>
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-            let (l, r) = align_chunks_binary(lhs, rhs);
 
-            Ok((l)
-                .downcast_iter()
-                .zip(r.downcast_iter())
-                .flat_map(|(l_arr, r_arr)| {
-                    l_arr
-                        .into_iter()
-                        .zip(r_arr)
-                        // we don't use a kernel, because the checked div also supplies nulls.
-                        // so the usual bit combining is not enough.
-                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                            (Some(l), Some(r)) => {
-                                if r.is_zero() {
-                                    None
-                                } else {
-                                    Some(l / r)
-                                }
-                            }
-                            _ => None,
-                        })
+            Ok(
+                arity::binary_elementwise::<_, _, Float32Type, _>(lhs, rhs, |opt_l, opt_r| match (
+                    opt_l, opt_r,
+                ) {
+                    (Some(l), Some(r)) => {
+                        if r.is_zero() {
+                            None
+                        } else {
+                            Some(l / r)
+                        }
+                    },
+                    _ => None,
                 })
-                .collect::<Float32Chunked>()
-                .into_series())
+                .into_series(),
+            )
         }
     }
 
@@ -219,30 +200,22 @@ pub mod checked {
             // Safety:
             // see check_div
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-            let (l, r) = align_chunks_binary(lhs, rhs);
 
-            Ok((l)
-                .downcast_iter()
-                .zip(r.downcast_iter())
-                .flat_map(|(l_arr, r_arr)| {
-                    l_arr
-                        .into_iter()
-                        .zip(r_arr)
-                        // we don't use a kernel, because the checked div also supplies nulls.
-                        // so the usual bit combining is not enough.
-                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                            (Some(l), Some(r)) => {
-                                if r.is_zero() {
-                                    None
-                                } else {
-                                    Some(l / r)
-                                }
-                            }
-                            _ => None,
-                        })
+            Ok(
+                arity::binary_elementwise::<_, _, Float64Type, _>(lhs, rhs, |opt_l, opt_r| match (
+                    opt_l, opt_r,
+                ) {
+                    (Some(l), Some(r)) => {
+                        if r.is_zero() {
+                            None
+                        } else {
+                            Some(l / r)
+                        }
+                    },
+                    _ => None,
                 })
-                .collect::<Float64Chunked>()
-                .into_series())
+                .into_series(),
+            )
         }
     }
 
@@ -347,7 +320,7 @@ pub(crate) fn coerce_lhs_rhs<'a>(
         #[cfg(feature = "dtype-struct")]
         (DataType::Struct(_), DataType::Struct(_)) => {
             return Ok((Cow::Borrowed(lhs), Cow::Borrowed(rhs)))
-        }
+        },
         _ => try_get_supertype(lhs.dtype(), rhs.dtype())?,
     };
 
@@ -386,7 +359,7 @@ fn coerce_time_units<'a>(
                 Cow::Owned(rhs.cast(&DataType::Duration(units)).ok()?)
             };
             Some((left, right))
-        }
+        },
         // make sure to return Some here, so we don't cast to supertype.
         (DataType::Date, DataType::Duration(_)) => Some((Cow::Borrowed(lhs), Cow::Borrowed(rhs))),
         (DataType::Duration(lu), DataType::Duration(ru)) => {
@@ -402,13 +375,13 @@ fn coerce_time_units<'a>(
                 Cow::Owned(rhs.cast(&DataType::Duration(units)).ok()?)
             };
             Some((left, right))
-        }
+        },
         // swap the order
         (DataType::Duration(_), DataType::Datetime(_, _))
         | (DataType::Duration(_), DataType::Date) => {
             let (right, left) = coerce_time_units(rhs, lhs)?;
             Some((left, right))
-        }
+        },
         _ => None,
     }
 }
@@ -428,11 +401,11 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
         (_, 1) => {
             let rhs = &rhs.fields()[0];
             s.apply_fields(|s| func(s, rhs)).into_series()
-        }
+        },
         (1, _) => {
             let s = &s.fields()[0];
             rhs.apply_fields(|rhs| func(s, rhs)).into_series()
-        }
+        },
         _ => {
             let mut rhs_iter = rhs.fields().iter();
 
@@ -441,7 +414,7 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
                 None => s.clone(),
             })
             .into_series()
-        }
+        },
     }
 }
 
@@ -453,11 +426,11 @@ impl Sub for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.sub(b))
-            }
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
                 lhs.subtract(rhs.as_ref()).expect("data types don't match")
-            }
+            },
         }
     }
 }
@@ -468,11 +441,11 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 Ok(_struct_arithmetic(self, rhs, |a, b| a.add(b)))
-            }
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
                 lhs.add_to(rhs.as_ref())
-            }
+            },
         }
     }
 }
@@ -497,11 +470,11 @@ impl Mul for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.mul(b))
-            }
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
                 lhs.multiply(rhs.as_ref()).expect("data types don't match")
-            }
+            },
         }
     }
 }
@@ -519,11 +492,11 @@ impl Div for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.div(b))
-            }
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
                 lhs.divide(rhs.as_ref()).expect("data types don't match")
-            }
+            },
         }
     }
 }
@@ -541,11 +514,11 @@ impl Rem for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.rem(b))
-            }
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
                 lhs.remainder(rhs.as_ref()).expect("data types don't match")
-            }
+            },
         }
     }
 }

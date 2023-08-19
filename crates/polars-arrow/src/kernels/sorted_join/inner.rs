@@ -37,7 +37,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                             // reset right index because the next lhs value can be the same
                             right_idx = current_idx;
                             break;
-                        }
+                        },
                         Some(&val_r) => {
                             if val_l == val_r {
                                 out_lhs.push(left_idx + left_offset);
@@ -47,7 +47,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                                 right_idx = current_idx;
                                 break;
                             }
-                        }
+                        },
                     }
                 }
                 break;

@@ -122,7 +122,7 @@ def test_read_database(
             "SELECT * FROM test_data",
             "sqlite",
             ValueError,
-            "Engine 'not_engine' not implemented; use connectorx or adbc.",
+            "engine 'not_engine' not implemented; use connectorx or adbc",
             id="Not an available sql engine",
         ),
         pytest.param(
@@ -130,7 +130,7 @@ def test_read_database(
             ["SELECT * FROM test_data", "SELECT * FROM test_data"],
             "sqlite",
             ValueError,
-            "Only a single SQL query string is accepted for adbc.",
+            "only a single SQL query string is accepted for adbc",
             id="Unavailable list of queries for adbc",
         ),
         pytest.param(
@@ -146,7 +146,7 @@ def test_read_database(
             "SELECT * FROM test_data",
             sqlite3.connect(":memory:"),
             TypeError,
-            "Expect connection to be a URI string",
+            "expect connection to be a URI string",
             id="Invalid connection URI",
         ),
     ],

@@ -42,7 +42,7 @@ fn iterator_to_struct<'a>(
             return Err(crate::error::ComputeError::new_err(format!(
                 "expected struct got {first_value:?}",
             )))
-        }
+        },
     };
 
     // every item in the struct is kept as its own buffer of anyvalues
@@ -76,7 +76,7 @@ fn iterator_to_struct<'a>(
                 for field_items in struct_fields.values_mut() {
                     field_items.push(AnyValue::Null);
                 }
-            }
+            },
             Some(dict) => {
                 let dict = dict.downcast::<PyDict>()?;
 
@@ -111,7 +111,7 @@ fn iterator_to_struct<'a>(
                         }
                     }
                 }
-            }
+            },
         }
     }
 
@@ -279,7 +279,7 @@ fn iterator_to_list(
                 } else {
                     builder.append_series(&s).map_err(PyPolarsErr::from)?
                 }
-            }
+            },
         }
     }
     Ok(builder.finish())

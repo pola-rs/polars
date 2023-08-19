@@ -6,7 +6,6 @@ use polars_arrow::utils::combine_validities_and;
 
 use super::arithmetic::arithmetic_helper;
 use super::*;
-use crate::utils::align_chunks_binary;
 
 impl<T> BitAnd for &ChunkedArray<T>
 where
@@ -51,7 +50,7 @@ impl BitOr for &BooleanChunked {
         match (self.len(), rhs.len()) {
             // make sure that we fall through if both are equal unit lengths
             // otherwise we stackoverflow
-            (1, 1) => {}
+            (1, 1) => {},
             (1, _) => {
                 return match self.get(0) {
                     Some(true) => BooleanChunked::full(self.name(), true, rhs.len()),
@@ -59,28 +58,21 @@ impl BitOr for &BooleanChunked {
                         let mut rhs = rhs.clone();
                         rhs.rename(self.name());
                         rhs
-                    }
+                    },
                     None => &self.new_from_index(0, rhs.len()) | rhs,
                 };
-            }
+            },
             (_, 1) => {
                 return match rhs.get(0) {
                     Some(true) => BooleanChunked::full(self.name(), true, self.len()),
                     Some(false) => self.clone(),
                     None => &rhs.new_from_index(0, self.len()) | self,
                 };
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
-        let (lhs, rhs) = align_chunks_binary(self, rhs);
-        let chunks = lhs
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(lhs, rhs)| Box::new(compute::boolean_kleene::or(lhs, rhs)) as ArrayRef)
-            .collect();
-        // safety: same type
-        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
+        arity::binary_mut(self, rhs, compute::boolean_kleene::or)
     }
 }
 
@@ -99,47 +91,37 @@ impl BitXor for &BooleanChunked {
         match (self.len(), rhs.len()) {
             // make sure that we fall through if both are equal unit lengths
             // otherwise we stackoverflow
-            (1, 1) => {}
+            (1, 1) => {},
             (1, _) => {
                 return match self.get(0) {
                     Some(true) => {
                         let mut rhs = rhs.not();
                         rhs.rename(self.name());
                         rhs
-                    }
+                    },
                     Some(false) => {
                         let mut rhs = rhs.clone();
                         rhs.rename(self.name());
                         rhs
-                    }
+                    },
                     None => &self.new_from_index(0, rhs.len()) | rhs,
                 };
-            }
+            },
             (_, 1) => {
                 return match rhs.get(0) {
                     Some(true) => self.not(),
                     Some(false) => self.clone(),
                     None => &rhs.new_from_index(0, self.len()) | self,
                 };
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
-        let (l, r) = align_chunks_binary(self, rhs);
-        let chunks = l
-            .downcast_iter()
-            .zip(r.downcast_iter())
-            .map(|(l_arr, r_arr)| {
-                let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
-                let values = l_arr.values() ^ r_arr.values();
-
-                let arr = BooleanArray::from_data_default(values, validity);
-                Box::new(arr) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-
-        // safety: same type
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        arity::binary_mut(self, rhs, |l_arr, r_arr| {
+            let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
+            let values = l_arr.values() ^ r_arr.values();
+            BooleanArray::from_data_default(values, validity)
+        })
     }
 }
 
@@ -158,32 +140,25 @@ impl BitAnd for &BooleanChunked {
         match (self.len(), rhs.len()) {
             // make sure that we fall through if both are equal unit lengths
             // otherwise we stackoverflow
-            (1, 1) => {}
+            (1, 1) => {},
             (1, _) => {
                 return match self.get(0) {
                     Some(true) => rhs.clone(),
                     Some(false) => BooleanChunked::full(self.name(), false, rhs.len()),
                     None => &self.new_from_index(0, rhs.len()) & rhs,
                 };
-            }
+            },
             (_, 1) => {
                 return match rhs.get(0) {
                     Some(true) => self.clone(),
                     Some(false) => BooleanChunked::full(self.name(), false, self.len()),
                     None => self & &rhs.new_from_index(0, self.len()),
                 };
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
-        let (lhs, rhs) = align_chunks_binary(self, rhs);
-        let chunks = lhs
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(lhs, rhs)| Box::new(compute::boolean_kleene::and(lhs, rhs)) as ArrayRef)
-            .collect();
-        // safety: same type
-        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
+        arity::binary_mut(self, rhs, compute::boolean_kleene::and)
     }
 }
 

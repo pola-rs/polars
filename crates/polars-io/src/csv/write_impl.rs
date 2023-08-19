@@ -17,6 +17,8 @@ use polars_core::POOL;
 use polars_utils::contention_pool::LowContentionPool;
 use rayon::prelude::*;
 
+use super::write::QuoteStyle;
+
 fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> std::io::Result<()> {
     if v.is_empty() {
         write!(f, "\"\"")
@@ -25,8 +27,7 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
 
         if needs_escaping {
             let replaced = unsafe {
-                // replace from single quote "
-                // to double quote ""
+                // Replace from single quote " to double quote "".
                 v.replace(
                     std::str::from_utf8_unchecked(&[options.quote]),
                     std::str::from_utf8_unchecked(&[options.quote, options.quote]),
@@ -34,10 +35,14 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
             };
             return write!(f, "\"{replaced}\"");
         }
-        let surround_with_quotes = memchr2(options.delimiter, b'\n', v.as_bytes()).is_some();
+        let surround_with_quotes = match options.quote_style {
+            QuoteStyle::Always | QuoteStyle::NonNumeric => true,
+            QuoteStyle::Necessary => memchr2(options.delimiter, b'\n', v.as_bytes()).is_some(),
+        };
 
+        let quote = options.quote as char;
         if surround_with_quotes {
-            write!(f, "\"{v}\"")
+            write!(f, "{quote}{v}{quote}")
         } else {
             write!(f, "{v}")
         }
@@ -64,103 +69,148 @@ unsafe fn write_anyvalue(
     i: usize,
 ) -> PolarsResult<()> {
     match value {
-        AnyValue::Null => write!(f, "{}", &options.null),
-        AnyValue::Int8(v) => write!(f, "{v}"),
-        AnyValue::Int16(v) => write!(f, "{v}"),
-        AnyValue::Int32(v) => write!(f, "{v}"),
-        AnyValue::Int64(v) => write!(f, "{v}"),
-        AnyValue::UInt8(v) => write!(f, "{v}"),
-        AnyValue::UInt16(v) => write!(f, "{v}"),
-        AnyValue::UInt32(v) => write!(f, "{v}"),
-        AnyValue::UInt64(v) => write!(f, "{v}"),
-        AnyValue::Float32(v) => match &options.float_precision {
-            None => fast_float_write(f, v, f32::FORMATTED_SIZE_DECIMAL),
-            Some(precision) => write!(f, "{v:.precision$}"),
+        // First do the string-like types as they know how to deal with quoting.
+        AnyValue::Utf8(v) => {
+            fmt_and_escape_str(f, v, options)?;
+            Ok(())
         },
-        AnyValue::Float64(v) => match &options.float_precision {
-            None => fast_float_write(f, v, f64::FORMATTED_SIZE_DECIMAL),
-            Some(precision) => write!(f, "{v:.precision$}"),
-        },
-        AnyValue::Boolean(v) => write!(f, "{v}"),
-        AnyValue::Utf8(v) => fmt_and_escape_str(f, v, options),
         #[cfg(feature = "dtype-categorical")]
         AnyValue::Categorical(idx, rev_map, _) => {
             let v = rev_map.get(idx);
-            fmt_and_escape_str(f, v, options)
-        }
-        #[cfg(feature = "dtype-date")]
-        AnyValue::Date(v) => {
-            let date = temporal_conversions::date32_to_date(v);
-            match &options.date_format {
-                None => write!(f, "{date}"),
-                Some(fmt) => write!(f, "{}", date.format(fmt)),
+            fmt_and_escape_str(f, v, options)?;
+            Ok(())
+        },
+        _ => {
+            // Then we deal with the numeric types
+            let quote = options.quote as char;
+
+            let mut end_with_quote = matches!(options.quote_style, QuoteStyle::Always);
+            if end_with_quote {
+                // start the quote
+                write!(f, "{quote}")?
             }
-        }
-        #[cfg(feature = "dtype-datetime")]
-        AnyValue::Datetime(v, tu, _) => {
-            let datetime_format = { *datetime_formats.get_unchecked(i) };
-            let time_zone = { time_zones.get_unchecked(i) };
-            let ndt = match tu {
-                TimeUnit::Nanoseconds => temporal_conversions::timestamp_ns_to_datetime(v),
-                TimeUnit::Microseconds => temporal_conversions::timestamp_us_to_datetime(v),
-                TimeUnit::Milliseconds => temporal_conversions::timestamp_ms_to_datetime(v),
-            };
-            let formatted = match time_zone {
-                #[cfg(feature = "timezones")]
-                Some(time_zone) => time_zone.from_utc_datetime(&ndt).format(datetime_format),
-                #[cfg(not(feature = "timezones"))]
-                Some(_) => {
-                    panic!("activate 'timezones' feature");
-                }
-                _ => ndt.format(datetime_format),
-            };
-            write!(f, "{formatted}")
-        }
-        #[cfg(feature = "dtype-time")]
-        AnyValue::Time(v) => {
-            let date = temporal_conversions::time64ns_to_time(v);
-            match &options.time_format {
-                None => write!(f, "{date}"),
-                Some(fmt) => write!(f, "{}", date.format(fmt)),
-            }
-        }
-        ref dt => polars_bail!(ComputeError: "datatype {} cannot be written to csv", dt),
-    }
-    .map_err(|err| match value {
-        #[cfg(feature = "dtype-datetime")]
-        AnyValue::Datetime(_, _, tz) => {
-            let datetime_format = unsafe { *datetime_formats.get_unchecked(i) };
-            let type_name = if tz.is_some() {
-                "DateTime"
-            } else {
-                "NaiveDateTime"
-            };
-            polars_err!(
+
+            match value {
+                AnyValue::Null => write!(f, "{}", &options.null),
+                AnyValue::Int8(v) => write!(f, "{v}"),
+                AnyValue::Int16(v) => write!(f, "{v}"),
+                AnyValue::Int32(v) => write!(f, "{v}"),
+                AnyValue::Int64(v) => write!(f, "{v}"),
+                AnyValue::UInt8(v) => write!(f, "{v}"),
+                AnyValue::UInt16(v) => write!(f, "{v}"),
+                AnyValue::UInt32(v) => write!(f, "{v}"),
+                AnyValue::UInt64(v) => write!(f, "{v}"),
+                AnyValue::Float32(v) => match &options.float_precision {
+                    None => fast_float_write(f, v, f32::FORMATTED_SIZE_DECIMAL),
+                    Some(precision) => write!(f, "{v:.precision$}"),
+                },
+                AnyValue::Float64(v) => match &options.float_precision {
+                    None => fast_float_write(f, v, f64::FORMATTED_SIZE_DECIMAL),
+                    Some(precision) => write!(f, "{v:.precision$}"),
+                },
+                _ => {
+                    // And here we deal with the non-numeric types (excluding strings)
+                    if !end_with_quote && matches!(options.quote_style, QuoteStyle::NonNumeric) {
+                        // start the quote
+                        write!(f, "{quote}")?;
+                        end_with_quote = true
+                    }
+
+                    match value {
+                        AnyValue::Boolean(v) => write!(f, "{v}"),
+                        #[cfg(feature = "dtype-date")]
+                        AnyValue::Date(v) => {
+                            let date = temporal_conversions::date32_to_date(v);
+                            match &options.date_format {
+                                None => write!(f, "{date}"),
+                                Some(fmt) => write!(f, "{}", date.format(fmt)),
+                            }
+                        },
+                        #[cfg(feature = "dtype-datetime")]
+                        AnyValue::Datetime(v, tu, tz) => {
+                            let datetime_format = { *datetime_formats.get_unchecked(i) };
+                            let time_zone = { time_zones.get_unchecked(i) };
+                            let ndt = match tu {
+                                TimeUnit::Nanoseconds => {
+                                    temporal_conversions::timestamp_ns_to_datetime(v)
+                                },
+                                TimeUnit::Microseconds => {
+                                    temporal_conversions::timestamp_us_to_datetime(v)
+                                },
+                                TimeUnit::Milliseconds => {
+                                    temporal_conversions::timestamp_ms_to_datetime(v)
+                                },
+                            };
+                            let formatted = match time_zone {
+                                #[cfg(feature = "timezones")]
+                                Some(time_zone) => {
+                                    time_zone.from_utc_datetime(&ndt).format(datetime_format)
+                                },
+                                #[cfg(not(feature = "timezones"))]
+                                Some(_) => {
+                                    panic!("activate 'timezones' feature");
+                                },
+                                _ => ndt.format(datetime_format),
+                            };
+                            return write!(f, "{formatted}").map_err(|_|{
+
+                                let datetime_format = unsafe { *datetime_formats.get_unchecked(i) };
+                                let type_name = if tz.is_some() {
+                                    "DateTime"
+                                } else {
+                                    "NaiveDateTime"
+                                };
+                                polars_err!(
                 ComputeError: "cannot format {} with format '{}'", type_name, datetime_format,
             )
-        }
-        _ => polars_err!(ComputeError: "error writing value {}: {}", value, err),
-    })
+                            });
+                        },
+                        #[cfg(feature = "dtype-time")]
+                        AnyValue::Time(v) => {
+                            let date = temporal_conversions::time64ns_to_time(v);
+                            match &options.time_format {
+                                None => write!(f, "{date}"),
+                                Some(fmt) => write!(f, "{}", date.format(fmt)),
+                            }
+                        },
+                        ref dt => {
+                            polars_bail!(ComputeError: "datatype {} cannot be written to csv", dt)
+                        },
+                    }
+                },
+            }
+            .map_err(|err| polars_err!(ComputeError: "error writing value {}: {}", value, err))?;
+
+            if end_with_quote {
+                write!(f, "{quote}")?
+            }
+            Ok(())
+        },
+    }
 }
 
-/// Options to serialize logical types to CSV
+/// Options to serialize logical types to CSV.
+///
 /// The default is to format times and dates as `chrono` crate formats them.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct SerializeOptions {
-    /// used for [`DataType::Date`]
+    /// Used for [`DataType::Date`].
     pub date_format: Option<String>,
-    /// used for [`DataType::Time`]
+    /// Used for [`DataType::Time`].
     pub time_format: Option<String>,
-    /// used for [`DataType::Datetime]
+    /// Used for [`DataType::Datetime`].
     pub datetime_format: Option<String>,
-    /// used for [`DataType::Float64`] and [`DataType::Float32`]
+    /// Used for [`DataType::Float64`] and [`DataType::Float32`].
     pub float_precision: Option<usize>,
-    /// used as separator/delimiter
+    /// Used as separator/delimiter.
     pub delimiter: u8,
-    /// quoting character
+    /// Quoting character.
     pub quote: u8,
-    /// null value representation
+    /// Null value representation.
     pub null: String,
+    /// String appended after every row.
+    pub line_terminator: String,
+    pub quote_style: QuoteStyle,
 }
 
 impl Default for SerializeOptions {
@@ -173,11 +223,13 @@ impl Default for SerializeOptions {
             delimiter: b',',
             quote: b'"',
             null: String::new(),
+            line_terminator: "\n".into(),
+            quote_style: Default::default(),
         }
     }
 }
 
-/// Utility to write to `&mut Vec<u8>` buffer
+/// Utility to write to `&mut Vec<u8>` buffer.
 struct StringWrap<'a>(pub &'a mut Vec<u8>);
 
 impl<'a> std::fmt::Write for StringWrap<'a> {
@@ -203,7 +255,7 @@ pub(crate) fn write<W: Write>(
                 return Err(PolarsError::ComputeError(
                     "csv writer does not support object dtype".into(),
                 ))
-            }
+            },
             _ => false,
         };
         polars_ensure!(
@@ -212,7 +264,7 @@ pub(crate) fn write<W: Write>(
         );
     }
 
-    // check that the double quote is valid utf8
+    // Check that the double quote is valid UTF-8.
     polars_ensure!(
         std::str::from_utf8(&[options.quote, options.quote]).is_ok(),
         ComputeError: "quote char results in invalid utf-8",
@@ -242,7 +294,7 @@ pub(crate) fn write<W: Write>(
                     ),
                 };
                 (format, tz_parsed)
-            }
+            },
             DataType::Datetime(TimeUnit::Microseconds, tz) => {
                 let (format, tz_parsed) = match tz {
                     #[cfg(feature = "timezones")]
@@ -262,7 +314,7 @@ pub(crate) fn write<W: Write>(
                     ),
                 };
                 (format, tz_parsed)
-            }
+            },
             DataType::Datetime(TimeUnit::Nanoseconds, tz) => {
                 let (format, tz_parsed) = match tz {
                     #[cfg(feature = "timezones")]
@@ -282,7 +334,7 @@ pub(crate) fn write<W: Write>(
                     ),
                 };
                 (format, tz_parsed)
-            }
+            },
             _ => ("", None),
         })
         .unzip();
@@ -347,7 +399,7 @@ pub(crate) fn write<W: Write>(
                         None => {
                             finished = true;
                             break;
-                        }
+                        },
                     }
                     let current_ptr = col as *const SeriesIter;
                     if current_ptr != last_ptr {
@@ -355,7 +407,7 @@ pub(crate) fn write<W: Write>(
                     }
                 }
                 if !finished {
-                    writeln!(&mut write_buffer).unwrap();
+                    write!(&mut write_buffer, "{}", options.line_terminator).unwrap();
                 }
             }
 
@@ -381,7 +433,7 @@ pub(crate) fn write<W: Write>(
     Ok(())
 }
 
-/// Writes a CSV header to `writer`
+/// Writes a CSV header to `writer`.
 pub(crate) fn write_header<W: Write>(
     writer: &mut W,
     names: &[&str],
@@ -393,7 +445,7 @@ pub(crate) fn write_header<W: Write>(
     for name in names {
         fmt_and_escape_str(&mut nm, name, options)?;
         unsafe {
-            // Safety: we know headers will be valid utf8 at this point
+            // SAFETY: we know headers will be valid UTF-8 at this point
             escaped_names.push(std::str::from_utf8_unchecked(&nm).to_string());
         }
         nm.clear();
@@ -403,6 +455,6 @@ pub(crate) fn write_header<W: Write>(
             .join(std::str::from_utf8(&[options.delimiter]).unwrap())
             .as_bytes(),
     )?;
-    writer.write_all(&[b'\n'])?;
+    writer.write_all(options.line_terminator.as_bytes())?;
     Ok(())
 }

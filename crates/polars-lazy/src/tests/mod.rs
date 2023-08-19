@@ -82,16 +82,16 @@ fn init_files() {
                             .with_statistics(true)
                             .finish(&mut df)
                             .unwrap();
-                    }
+                    },
                     ".ipc" => {
                         IpcWriter::new(f).finish(&mut df).unwrap();
-                    }
+                    },
                     ".ndjson" => {
                         #[cfg(feature = "json")]
                         {
                             JsonWriter::new(f).finish(&mut df).unwrap()
                         }
-                    }
+                    },
                     _ => panic!(),
                 }
             }

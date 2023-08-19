@@ -122,9 +122,6 @@ def test_groupby_args() -> None:
     assert df.groupby("a", "b").agg("c").columns == expected
     # With keyword argument
     assert df.groupby("a", "b", maintain_order=True).agg("c").columns == expected
-    # Mixed
-    with pytest.deprecated_call():
-        assert df.groupby(["a"], "b", maintain_order=True).agg("c").columns == expected
     # Multiple aggregations as list
     assert df.groupby("a").agg(["b", "c"]).columns == expected
     # Multiple aggregations as positional arguments
@@ -176,7 +173,7 @@ def test_groupby_iteration() -> None:
 
 def bad_agg_parameters() -> list[Any]:
     """Currently, IntoExpr and Iterable[IntoExpr] are supported."""
-    return [[("b", "sum")], [("b", ["sum"])], str, "b".join]
+    return [str, "b".join]
 
 
 def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:
@@ -428,23 +425,6 @@ def test_groupby_all_masked_out() -> None:
     parts = df.partition_by("val")
     assert len(parts) == 1
     assert_frame_equal(parts[0], df)
-
-
-def test_groupby_min_max_string_type() -> None:
-    table = pl.from_dict({"a": [1, 1, 2, 2, 2], "b": ["a", "b", "c", "d", None]})
-
-    expected = {"a": [1, 2], "min": ["a", "c"], "max": ["b", "d"]}
-
-    for streaming in [True, False]:
-        assert (
-            table.lazy()
-            .groupby("a")
-            .agg([pl.min("b").alias("min"), pl.max("b").alias("max")])
-            .collect(streaming=streaming)
-            .sort("a")
-            .to_dict(False)
-            == expected
-        )
 
 
 def test_groupby_null_propagation_6185() -> None:
@@ -853,11 +833,9 @@ def test_perfect_hash_table_null_values_8663() -> None:
     }
 
 
-def test_groupby_agg_deprecation_aggs_keyword() -> None:
-    df = pl.DataFrame({"a": [1, 1, 2], "b": [3, 4, 5]})
-
-    with pytest.deprecated_call():
-        result = df.groupby("a", maintain_order=True).agg(aggs="b")
-
-    expected = pl.DataFrame({"a": [1, 2], "b": [[3, 4], [5]]})
-    assert_frame_equal(result, expected)
+def test_groupby_partitioned_ending_cast(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
+    df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
+    out = df.groupby(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))
+    expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
+    assert_frame_equal(out, expected)

@@ -91,8 +91,12 @@ macro_rules! impl_dyn_series {
                 self.0.ref_field().data_type()
             }
 
-            fn _clear_settings(&mut self) {
-                self.0.clear_settings()
+            fn _get_flags(&self) -> Settings {
+                self.0.get_flags()
+            }
+
+            fn _set_flags(&mut self, flags: Settings) {
+                self.0.set_flags(flags)
             }
 
             fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
@@ -107,10 +111,6 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "cum_agg")]
             fn _cummin(&self, reverse: bool) -> Series {
                 self.0.cummin(reverse).into_series()
-            }
-
-            fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
-                self.0.set_sorted_flag(is_sorted)
             }
 
             unsafe fn equal_element(
@@ -212,16 +212,6 @@ macro_rules! impl_dyn_series {
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
-            fn is_sorted_flag(&self) -> IsSorted {
-                if self.0.is_sorted_ascending_flag() {
-                    IsSorted::Ascending
-                } else if self.0.is_sorted_descending_flag() {
-                    IsSorted::Descending
-                } else {
-                    IsSorted::Not
-                }
-            }
-
             #[cfg(feature = "rolling_window")]
             fn rolling_apply(
                 &self,

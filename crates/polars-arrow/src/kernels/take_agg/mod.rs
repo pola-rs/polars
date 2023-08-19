@@ -139,7 +139,7 @@ pub unsafe fn take_agg_utf8_iter_unchecked<
             (_, None) => {
                 null_count += 1;
                 acc
-            }
+            },
             (None, Some(str_val)) => Some(str_val),
         });
     if null_count == len {

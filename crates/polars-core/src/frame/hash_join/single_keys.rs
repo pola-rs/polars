@@ -36,11 +36,11 @@ where
                             match entry {
                                 Entry::Vacant(entry) => {
                                     entry.insert(vec![idx]);
-                                }
+                                },
                                 Entry::Occupied(mut entry) => {
                                     let v = entry.get_mut();
                                     v.push(idx);
-                                }
+                                },
                             }
                         }
                     });

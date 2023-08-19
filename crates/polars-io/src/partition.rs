@@ -110,7 +110,7 @@ where
                             self.write_partition_df(&mut part_df, i)
                         })
                         .collect::<PolarsResult<Vec<_>>>()
-                }
+                },
                 GroupsProxy::Slice { groups, .. } => groups
                     .par_iter()
                     .enumerate()

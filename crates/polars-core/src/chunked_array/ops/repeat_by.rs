@@ -30,23 +30,17 @@ where
                     .collect::<Vec<IdxSize>>(),
             ));
         }
-        let iter = self
-            .into_iter()
-            .zip(by)
-            .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize)));
 
-        // Safety:
-        // Length of iter is trusted
-        unsafe {
-            Ok(ListChunked::from_chunks(
-                self.name(),
-                vec![Box::new(LargeListArray::from_iter_primitive_trusted_len::<
-                    T::Native,
-                    _,
-                    _,
-                >(iter, T::get_dtype().to_arrow()))],
-            ))
-        }
+        Ok(arity::binary_mut(self, by, |arr, by| {
+            let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
+                opt_by.map(|by| std::iter::repeat(opt_v.copied()).take(*by as usize))
+            });
+
+            // SAFETY: length of iter is trusted.
+            unsafe {
+                LargeListArray::from_iter_primitive_trusted_len(iter, T::get_dtype().to_arrow())
+            }
+        }))
     }
 }
 impl RepeatBy for BooleanChunked {
@@ -62,19 +56,14 @@ impl RepeatBy for BooleanChunked {
             ));
         }
 
-        let iter = self
-            .into_iter()
-            .zip(by)
-            .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize)));
+        Ok(arity::binary_mut(self, by, |arr, by| {
+            let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
+                opt_by.map(|by| std::iter::repeat(opt_v).take(*by as usize))
+            });
 
-        // Safety:
-        // Length of iter is trusted
-        unsafe {
-            Ok(ListChunked::from_chunks(
-                self.name(),
-                vec![Box::new(LargeListArray::from_iter_bool_trusted_len(iter))],
-            ))
-        }
+            // SAFETY: length of iter is trusted.
+            unsafe { LargeListArray::from_iter_bool_trusted_len(iter) }
+        }))
     }
 }
 impl RepeatBy for Utf8Chunked {
@@ -91,22 +80,14 @@ impl RepeatBy for Utf8Chunked {
             ));
         }
 
-        let iter = self
-            .into_iter()
-            .zip(by)
-            .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize)));
+        Ok(arity::binary_mut(self, by, |arr, by| {
+            let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
+                opt_by.map(|by| std::iter::repeat(opt_v).take(*by as usize))
+            });
 
-        // Safety:
-        // Length of iter is trusted
-        unsafe {
-            Ok(ListChunked::from_chunks(
-                self.name(),
-                vec![Box::new(LargeListArray::from_iter_utf8_trusted_len(
-                    iter,
-                    self.len(),
-                ))],
-            ))
-        }
+            // SAFETY: length of iter is trusted.
+            unsafe { LargeListArray::from_iter_utf8_trusted_len(iter, self.len()) }
+        }))
     }
 }
 
@@ -122,21 +103,14 @@ impl RepeatBy for BinaryChunked {
                     .collect::<Vec<IdxSize>>(),
             ));
         }
-        let iter = self
-            .into_iter()
-            .zip(by)
-            .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize)));
 
-        // Safety:
-        // Length of iter is trusted
-        unsafe {
-            Ok(ListChunked::from_chunks(
-                self.name(),
-                vec![Box::new(LargeListArray::from_iter_binary_trusted_len(
-                    iter,
-                    self.len(),
-                ))],
-            ))
-        }
+        Ok(arity::binary_mut(self, by, |arr, by| {
+            let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
+                opt_by.map(|by| std::iter::repeat(opt_v).take(*by as usize))
+            });
+
+            // SAFETY: length of iter is trusted.
+            unsafe { LargeListArray::from_iter_binary_trusted_len(iter, self.len()) }
+        }))
     }
 }

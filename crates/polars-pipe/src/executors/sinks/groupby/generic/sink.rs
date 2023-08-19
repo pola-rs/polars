@@ -96,7 +96,7 @@ impl Sink for GenericGroupby2 {
             .ooc_state
             .check_memory_usage(&|| self.global_table.get_ooc_dump_schema())?
         {
-            SpillAction::None => {}
+            SpillAction::None => {},
             SpillAction::EarlyMerge => self.global_table.early_merge(),
             SpillAction::Dump => {
                 if let Some((partition_no, spill)) = self.global_table.get_ooc_dump() {
@@ -104,7 +104,7 @@ impl Sink for GenericGroupby2 {
                 } else {
                     // do nothing
                 }
-            }
+            },
         }
         Ok(SinkResult::CanHaveMoreInput)
     }

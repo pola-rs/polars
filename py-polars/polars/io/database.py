@@ -113,7 +113,7 @@ def read_database(
     """  # noqa: W505
     if not isinstance(connection, str):
         raise TypeError(
-            f"Expect connection to be a URI string; found {type(connection)}"
+            f"expect connection to be a URI string; found {type(connection).__name__!r}"
         )
     elif engine is None:
         engine = "connectorx"
@@ -129,10 +129,10 @@ def read_database(
         )
     elif engine == "adbc":
         if not isinstance(query, str):
-            raise ValueError("Only a single SQL query string is accepted for adbc.")
+            raise ValueError("only a single SQL query string is accepted for adbc")
         return _read_sql_adbc(query, connection)
     else:
-        raise ValueError(f"Engine {engine!r} not implemented; use connectorx or adbc.")
+        raise ValueError(f"engine {engine!r} not implemented; use connectorx or adbc")
 
 
 def _read_sql_connectorx(
@@ -147,7 +147,7 @@ def _read_sql_connectorx(
         import connectorx as cx
     except ImportError:
         raise ImportError(
-            "connectorx is not installed. Please run `pip install connectorx>=0.3.1`."
+            "connectorx is not installed. Please run `pip install connectorx>=0.3.1`"
         ) from None
 
     tbl = cx.read_sql(
@@ -183,8 +183,8 @@ def _open_adbc_connection(connection_uri: str) -> Any:
         adbc_driver = sys.modules[module_name]
     except ImportError:
         raise ImportError(
-            f"ADBC {driver_name} driver not detected; if ADBC supports this database, "
-            f"please run `pip install adbc-driver-{driver_name} pyarrow`"
+            f"ADBC {driver_name} driver not detected; if ADBC supports this database,"
+            f" please run `pip install adbc-driver-{driver_name} pyarrow`"
         ) from None
 
     # some backends require the driver name to be stripped from the URI

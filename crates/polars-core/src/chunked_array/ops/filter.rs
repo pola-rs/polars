@@ -5,7 +5,6 @@ use arrow::compute::filter::filter as filter_fn;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
-use crate::utils::align_chunks_binary;
 
 macro_rules! check_filter_len {
     ($self:expr, $filter:expr) => {{
@@ -22,7 +21,7 @@ where
     T: PolarsNumericType,
 {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<T>> {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
@@ -30,20 +29,21 @@ where
             };
         }
         check_filter_len!(self, filter);
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-        unsafe { Ok(self.copy_with_chunks(chunks, true, true)) }
+        Ok(unsafe {
+            arity::binary_mut_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
     }
 }
 
 impl ChunkFilter<BooleanType> for BooleanChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<BooleanType>> {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
@@ -51,14 +51,15 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
             };
         }
         check_filter_len!(self, filter);
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-        unsafe { Ok(self.copy_with_chunks(chunks, true, true)) }
+        Ok(unsafe {
+            arity::binary_mut_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
     }
 }
 
@@ -71,7 +72,7 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
 
 impl ChunkFilter<BinaryType> for BinaryChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<BinaryType>> {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
@@ -79,76 +80,64 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
             };
         }
         check_filter_len!(self, filter);
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-
-        unsafe { Ok(self.copy_with_chunks(chunks, true, true)) }
+        Ok(unsafe {
+            arity::binary_mut_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
     }
 }
 
 impl ChunkFilter<ListType> for ListChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ListChunked> {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => unsafe {
-                    Ok(ListChunked::from_chunks(
-                        self.name(),
-                        vec![new_empty_array(self.dtype().to_arrow())],
-                    ))
-                },
+                _ => Ok(ListChunked::from_chunk_iter(
+                    self.name(),
+                    [ListArray::new_empty(self.dtype().to_arrow())],
+                )),
             };
         }
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-
-        // inner type may be categorical or logical type so we clone the state.
-        let mut ca = self.clone();
-        ca.chunks = chunks;
-        ca.compute_len();
-        Ok(ca)
+        Ok(unsafe {
+            arity::binary_mut_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
     }
 }
 
 #[cfg(feature = "dtype-array")]
 impl ChunkFilter<FixedSizeListType> for ArrayChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ArrayChunked> {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => unsafe {
-                    Ok(ChunkedArray::from_chunks(
-                        self.name(),
-                        vec![new_empty_array(self.dtype().to_arrow())],
-                    ))
-                },
+                _ => Ok(ArrayChunked::from_chunk_iter(
+                    self.name(),
+                    [FixedSizeListArray::new_empty(self.dtype().to_arrow())],
+                )),
             };
         }
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-
-        // inner type may be categorical or logical type so we clone the state.
-        let mut ca = self.clone();
-        ca.chunks = chunks;
-        ca.compute_len();
-        Ok(ca)
+        Ok(unsafe {
+            arity::binary_mut_unchecked_same_type(
+                self,
+                filter,
+                |left, mask| filter_fn(left, mask).unwrap(),
+                true,
+                true,
+            )
+        })
     }
 }
 
@@ -161,7 +150,7 @@ where
     where
         Self: Sized,
     {
-        // broadcast
+        // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
@@ -181,7 +170,7 @@ where
                         false => {
                             let v = arr.value(idx);
                             builder.append_value(v.clone())
-                        }
+                        },
                     }
                 }
             }

@@ -78,7 +78,7 @@ impl Series {
             Array(_, _) => {
                 ArrayChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
                     .into_series()
-            }
+            },
             List(_) => ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
                 .into_series(),
             Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
@@ -92,7 +92,7 @@ impl Series {
                 );
                 ca.set_fast_unique(false);
                 ca.into_series()
-            }
+            },
             Boolean => BooleanChunked::from_chunks(name, chunks).into_series(),
             Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
@@ -115,7 +115,7 @@ impl Series {
                     pe.take_and_forget();
                     s
                 }
-            }
+            },
             Null => new_null(name, &chunks),
             Unknown => panic!("uh oh, somehow we don't know the dtype?"),
             #[allow(unreachable_patterns)]
@@ -136,14 +136,14 @@ impl Series {
             ArrowDataType::Utf8 => {
                 let chunks = cast_chunks(&chunks, &DataType::Utf8, false).unwrap();
                 Ok(Utf8Chunked::from_chunks(name, chunks).into_series())
-            }
+            },
             ArrowDataType::LargeBinary => {
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
-            }
+            },
             ArrowDataType::Binary => {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, false).unwrap();
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
-            }
+            },
             ArrowDataType::List(_) | ArrowDataType::LargeList(_) => {
                 let (chunks, dtype) = to_physical_and_dtype(chunks);
                 unsafe {
@@ -152,7 +152,7 @@ impl Series {
                             .into_series(),
                     )
                 }
-            }
+            },
             #[cfg(feature = "dtype-array")]
             ArrowDataType::FixedSizeList(_, _) => {
                 let (chunks, dtype) = to_physical_and_dtype(chunks);
@@ -162,7 +162,7 @@ impl Series {
                             .into_series(),
                     )
                 }
-            }
+            },
             ArrowDataType::Boolean => Ok(BooleanChunked::from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-u8")]
             ArrowDataType::UInt8 => Ok(UInt8Chunked::from_chunks(name, chunks).into_series()),
@@ -179,7 +179,7 @@ impl Series {
             ArrowDataType::Float16 => {
                 let chunks = cast_chunks(&chunks, &DataType::Float32, false).unwrap();
                 Ok(Float32Chunked::from_chunks(name, chunks).into_series())
-            }
+            },
             ArrowDataType::Float32 => Ok(Float32Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Float64 => Ok(Float64Chunked::from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-date")]
@@ -188,13 +188,13 @@ impl Series {
                 Ok(Int32Chunked::from_chunks(name, chunks)
                     .into_date()
                     .into_series())
-            }
+            },
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Date64 => {
                 let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let ca = Int64Chunked::from_chunks(name, chunks);
                 Ok(ca.into_datetime(TimeUnit::Milliseconds, None).into_series())
-            }
+            },
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
                 let mut tz = tz.clone();
@@ -216,7 +216,7 @@ impl Series {
                     ArrowTimeUnit::Microsecond => s,
                     ArrowTimeUnit::Nanosecond => s,
                 })
-            }
+            },
             #[cfg(feature = "dtype-duration")]
             ArrowDataType::Duration(tu) => {
                 let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
@@ -229,7 +229,7 @@ impl Series {
                     ArrowTimeUnit::Microsecond => s,
                     ArrowTimeUnit::Nanosecond => s,
                 })
-            }
+            },
             #[cfg(feature = "dtype-time")]
             ArrowDataType::Time64(tu) | ArrowDataType::Time32(tu) => {
                 let mut chunks = chunks;
@@ -246,12 +246,12 @@ impl Series {
                     ArrowTimeUnit::Microsecond => &s * 1_000,
                     ArrowTimeUnit::Nanosecond => s,
                 })
-            }
+            },
             ArrowDataType::Null => Ok(new_null(name, &chunks)),
             #[cfg(not(feature = "dtype-categorical"))]
             ArrowDataType::Dictionary(_, _, _) => {
                 panic!("activate dtype-categorical to convert dictionary arrays")
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type, _) => {
                 use arrow::datatypes::IntegerType;
@@ -285,25 +285,25 @@ impl Series {
                 let (keys, values) = match key_type {
                     IntegerType::Int8 => {
                         unpack_keys_values!(i8)
-                    }
+                    },
                     IntegerType::UInt8 => {
                         unpack_keys_values!(u8)
-                    }
+                    },
                     IntegerType::Int16 => {
                         unpack_keys_values!(i16)
-                    }
+                    },
                     IntegerType::UInt16 => {
                         unpack_keys_values!(u16)
-                    }
+                    },
                     IntegerType::Int32 => {
                         unpack_keys_values!(i32)
-                    }
+                    },
                     IntegerType::UInt32 => {
                         unpack_keys_values!(u32)
-                    }
+                    },
                     IntegerType::Int64 => {
                         unpack_keys_values!(i64)
-                    }
+                    },
                     _ => polars_bail!(
                         ComputeError: "dictionaries with unsigned 64-bit keys are not supported"
                     ),
@@ -316,7 +316,7 @@ impl Series {
                 let mut ca = CategoricalChunked::from_keys_and_values(name, keys, values);
                 ca.set_fast_unique(false);
                 Ok(ca.into_series())
-            }
+            },
             #[cfg(feature = "object")]
             ArrowDataType::Extension(s, _, Some(_)) if s == EXTENSION_NAME => {
                 assert_eq!(chunks.len(), 1);
@@ -335,7 +335,7 @@ impl Series {
                     s
                 };
                 Ok(s)
-            }
+            },
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(logical_fields) => {
                 // We don't have to convert inner types, as that already
@@ -359,7 +359,7 @@ impl Series {
                                 None => arr.with_validity(Some(validity.clone())),
                                 Some(arr_validity) => {
                                     arr.with_validity(Some(arr_validity & validity))
-                                }
+                                },
                             },
                         })
                         .collect();
@@ -391,7 +391,7 @@ impl Series {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(StructChunked::new_unchecked(name, &fields).into_series())
-            }
+            },
             ArrowDataType::FixedSizeBinary(_) => {
                 if verbose() {
                     eprintln!(
@@ -400,7 +400,7 @@ impl Series {
                 }
                 let chunks = cast_chunks(&chunks, &DataType::Binary, true)?;
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
-            }
+            },
             #[cfg(feature = "dtype-decimal")]
             ArrowDataType::Decimal(precision, scale)
             | ArrowDataType::Decimal256(precision, scale) => {
@@ -439,7 +439,7 @@ impl Series {
                         .into_decimal_unchecked(precision, scale)
                         .into_series())
                 }
-            }
+            },
             #[allow(unreachable_patterns)]
             ArrowDataType::Decimal256(_, _) | ArrowDataType::Decimal(_, _) => {
                 if verbose() {
@@ -452,7 +452,7 @@ impl Series {
                     cast_chunks(&chunks, &DataType::Float64, true)?,
                 )
                 .into_series())
-            }
+            },
             ArrowDataType::Map(_, _) => map_arrays_to_series(name, chunks),
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
@@ -504,13 +504,13 @@ fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
                 .unwrap();
                 (s.chunks().clone(), s.dtype().clone())
             })
-        }
+        },
         ArrowDataType::List(field) => {
             let out = convert(&arrays, |arr| {
                 cast(arr, &ArrowDataType::LargeList(field.clone())).unwrap()
             });
             to_physical_and_dtype(out)
-        }
+        },
         #[cfg(feature = "dtype-array")]
         #[allow(unused_variables)]
         ArrowDataType::FixedSizeList(_, size) => {
@@ -542,13 +542,13 @@ fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
                     .collect();
                 (arrays, DataType::Array(Box::new(dtype), *size))
             })
-        }
+        },
         ArrowDataType::FixedSizeBinary(_) | ArrowDataType::Binary => {
             let out = convert(&arrays, |arr| {
                 cast(arr, &ArrowDataType::LargeBinary).unwrap()
             });
             to_physical_and_dtype(out)
-        }
+        },
         ArrowDataType::LargeList(_) => {
             let values = arrays
                 .iter()
@@ -576,7 +576,7 @@ fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
                 })
                 .collect();
             (arrays, DataType::List(Box::new(dtype)))
-        }
+        },
         ArrowDataType::Struct(_fields) => {
             feature_gated!("dtype-struct", {
                 debug_assert_eq!(arrays.len(), 1);
@@ -608,11 +608,11 @@ fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
                     .collect();
                 (vec![arrow_array], DataType::Struct(polars_fields))
             })
-        }
+        },
         dt => {
             let dtype = dt.into();
             (arrays, dtype)
-        }
+        },
     }
 }
 

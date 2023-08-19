@@ -34,6 +34,7 @@ pub struct CsvParserOptions {
     pub null_values: Option<NullValues>,
     pub encoding: CsvEncoding,
     pub try_parse_dates: bool,
+    pub raise_if_empty: bool,
 }
 
 #[cfg(feature = "parquet")]
@@ -190,7 +191,9 @@ pub struct FunctionOptions {
     pub auto_explode: bool,
     // if the expression and its inputs should be cast to supertypes
     pub cast_to_supertypes: bool,
-    // apply physical expression may rename the output of this function
+    // The physical expression may rename the output of this function.
+    // If set to `false` the physical engine will ensure the left input
+    // expression is the output name.
     pub allow_rename: bool,
     // if set, then the `Series` passed to the function in the groupby operation
     // will ensure the name is set. This is an extra heap allocation per group.
@@ -300,4 +303,16 @@ pub enum FileType {
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
     Memory,
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Debug)]
+pub struct ProjectionOptions {
+    pub run_parallel: bool,
+}
+
+impl Default for ProjectionOptions {
+    fn default() -> Self {
+        Self { run_parallel: true }
+    }
 }

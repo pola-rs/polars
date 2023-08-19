@@ -79,7 +79,7 @@ impl FromStr for CloudType {
         Ok(match parsed.scheme() {
             "s3" => Self::Aws,
             "az" | "adl" | "abfs" => Self::Azure,
-            "gs" | "gcp" => Self::Gcp,
+            "gs" | "gcp" | "gcs" => Self::Gcp,
             "file" => Self::File,
             _ => polars_bail!(ComputeError: "unknown url scheme"),
         })
@@ -208,7 +208,7 @@ impl CloudOptions {
                 {
                     polars_bail!(ComputeError: "'aws' feature is not enabled");
                 }
-            }
+            },
             CloudType::Azure => {
                 #[cfg(feature = "azure")]
                 {
@@ -219,7 +219,7 @@ impl CloudOptions {
                 {
                     polars_bail!(ComputeError: "'azure' feature is not enabled");
                 }
-            }
+            },
             CloudType::File => Ok(Self::default()),
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
@@ -231,7 +231,7 @@ impl CloudOptions {
                 {
                     polars_bail!(ComputeError: "'gcp' feature is not enabled");
                 }
-            }
+            },
         }
     }
 }

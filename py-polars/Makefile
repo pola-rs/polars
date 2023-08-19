@@ -17,17 +17,42 @@ endif
 .PHONY: requirements
 requirements: .venv  ## Install/refresh all project requirements
 	$(VENV_BIN)/python -m pip install --upgrade pip
-	$(VENV_BIN)/pip install -r requirements-dev.txt
-	$(VENV_BIN)/pip install -r requirements-lint.txt
-	$(VENV_BIN)/pip install -r docs/requirements-docs.txt
+	$(VENV_BIN)/pip install --upgrade -r requirements-dev.txt
+	$(VENV_BIN)/pip install --upgrade -r requirements-lint.txt
+	$(VENV_BIN)/pip install --upgrade -r docs/requirements-docs.txt
 
 .PHONY: build
 build: .venv  ## Compile and install Polars for development
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
 
+.PHONY: build-debug-opt
+build-debug-opt: .venv  ## Compile and install Polars for development, with minimal optimizations turned on
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile opt-dev
+
+.PHONY: build-opt
+build-opt: .venv  ## Compile and install Polars for performance-sensitive development, with nearly \
+	                 full optimization on and debug assertions turned off, but with debug symbols on
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile debug-release
+
 .PHONY: build-release
-build-release: .venv  ## Compile and install a faster Polars binary
+build-release: .venv  ## Compile and install a faster Polars binary with full optimizations
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --release
+
+.PHONY: build-native
+build-native: .venv  ## Same as build, except with native CPU optimizations turned on
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop -- -C target-cpu=native
+
+.PHONY: build-debug-opt-native
+build-debug-opt-native: .venv  ## Same as build-debug-opt, except with native CPU optimizations turned on
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile opt-dev -- -C target-cpu=native
+
+.PHONY: build-opt-native
+build-opt-native: .venv  ## Same as build-opt, except with native CPU optimizations turned on
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile debug-release -- -C target-cpu=native
+
+.PHONY: build-release-native
+build-release-native: .venv  ## Same as build-release, except with native CPU optimizations turned on
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --release -- -C target-cpu=native
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting and linting
@@ -42,14 +67,14 @@ fmt: .venv  ## Run autoformatting and linting
 
 .PHONY: clippy
 clippy:  ## Run clippy
-	cargo clippy -- -D warnings
+	cargo clippy --locked -- -D warnings
 
 .PHONY: pre-commit
 pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
 test: .venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest -n auto --dist worksteal
+	$(VENV_BIN)/pytest -n auto --dist loadgroup
 
 .PHONY: doctest
 doctest: .venv build  ## Run doctests
@@ -57,12 +82,12 @@ doctest: .venv build  ## Run doctests
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests
-	$(VENV_BIN)/pytest -n auto --dist worksteal -m "slow or not slow"
+	$(VENV_BIN)/pytest -n auto --dist loadgroup -m "slow or not slow"
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: coverage
 coverage: .venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov -n auto --dist worksteal -m "not benchmark"
+	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not benchmark"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts

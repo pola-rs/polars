@@ -37,10 +37,6 @@ autolabeler:
     title:
       # Example: feat(python): ...
       - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\(.*python.*\))?\!?\: /'
-  - label: cli
-    title:
-      # Example: feat(cli): ...
-      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)\(.*cli.*\)\!?\: /'  # CLI tag not in global scope
   - label: breaking
     title:
       # Example: feat!: ...

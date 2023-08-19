@@ -23,8 +23,8 @@ impl Series {
                 if tz_lhs != tz_rhs {
                     return false;
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         // differences from Partial::eq in that numerical dtype may be different

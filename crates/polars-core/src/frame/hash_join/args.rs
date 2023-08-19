@@ -137,18 +137,22 @@ impl JoinValidation {
         s_right: &Series,
         build_shortest_table: bool,
     ) -> PolarsResult<()> {
-        // the shortest relation is built
-        let swap = build_shortest_table && s_left.len() > s_right.len();
+        // In default, probe is the left series.
+        //
+        // In inner join and outer join, the shortest relation will be used to create a hash table.
+        // In left join, always use the right side to create.
+        //
+        // If `build_shortest_table` and left is shorter, swap. Then rhs will be the probe.
+        // If left == right, swap too. (apply the same logic as `det_hash_prone_order`)
+        let should_swap = build_shortest_table && s_left.len() <= s_right.len();
+        let probe = if should_swap { s_right } else { s_left };
 
         use JoinValidation::*;
-        // all rhs `Many`s are valid
-        // rhs `One`s need to be checked
-        let valid = match self.swap(swap) {
-            ManyToMany | OneToMany => true,
-            ManyToOne | OneToOne => {
-                let s = if swap { s_left } else { s_right };
-                s.n_unique()? == s.len()
-            }
+        let valid = match self.swap(should_swap) {
+            // Only check the `build` side.
+            // The other side use `validate_build` to check
+            ManyToMany | ManyToOne => true,
+            OneToMany | OneToOne => probe.n_unique()? == probe.len(),
         };
         polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
         Ok(())
@@ -158,15 +162,16 @@ impl JoinValidation {
         &self,
         build_size: usize,
         expected_size: usize,
-        check_rhs: bool,
+        swapped: bool,
     ) -> PolarsResult<()> {
         use JoinValidation::*;
 
-        // all lhs `Many`s are valid
-        // lhs `One`s need to be checked
-        let valid = match self.swap(check_rhs) {
-            ManyToMany | ManyToOne => true,
-            OneToMany | OneToOne => build_size == expected_size,
+        // In default, build is in rhs.
+        let valid = match self.swap(swapped) {
+            // Only check the `build` side.
+            // The other side use `validate_prone` to check
+            ManyToMany | OneToMany => true,
+            ManyToOne | OneToOne => build_size == expected_size,
         };
         polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
         Ok(())

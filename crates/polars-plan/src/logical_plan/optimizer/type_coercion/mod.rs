@@ -30,124 +30,124 @@ fn shrink_literal(dtype_other: &DataType, literal: &LiteralValue) -> Option<Data
             if *v > 0 {
                 return Some(DataType::UInt64);
             }
-        }
+        },
         (DataType::UInt64, LiteralValue::Int32(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt64);
             }
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         (DataType::UInt64, LiteralValue::Int16(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt64);
             }
-        }
+        },
         #[cfg(feature = "dtype-i8")]
         (DataType::UInt64, LiteralValue::Int8(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt64);
             }
-        }
+        },
         (DataType::UInt32, LiteralValue::Int64(v)) => {
             if *v > 0 && *v < u32::MAX as i64 {
                 return Some(DataType::UInt32);
             }
-        }
+        },
         (DataType::UInt32, LiteralValue::Int32(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt32);
             }
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         (DataType::UInt32, LiteralValue::Int16(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt32);
             }
-        }
+        },
         #[cfg(feature = "dtype-i8")]
         (DataType::UInt32, LiteralValue::Int8(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt32);
             }
-        }
+        },
         (DataType::UInt16, LiteralValue::Int64(v)) => {
             if *v > 0 && *v < u16::MAX as i64 {
                 return Some(DataType::UInt16);
             }
-        }
+        },
         (DataType::UInt16, LiteralValue::Int32(v)) => {
             if *v > 0 && *v < u16::MAX as i32 {
                 return Some(DataType::UInt16);
             }
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         (DataType::UInt16, LiteralValue::Int16(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt16);
             }
-        }
+        },
         #[cfg(feature = "dtype-i8")]
         (DataType::UInt16, LiteralValue::Int8(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt16);
             }
-        }
+        },
         (DataType::UInt8, LiteralValue::Int64(v)) => {
             if *v > 0 && *v < u8::MAX as i64 {
                 return Some(DataType::UInt8);
             }
-        }
+        },
         (DataType::UInt8, LiteralValue::Int32(v)) => {
             if *v > 0 && *v < u8::MAX as i32 {
                 return Some(DataType::UInt8);
             }
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         (DataType::UInt8, LiteralValue::Int16(v)) => {
             if *v > 0 && *v < u8::MAX as i16 {
                 return Some(DataType::UInt8);
             }
-        }
+        },
         #[cfg(feature = "dtype-i8")]
         (DataType::UInt8, LiteralValue::Int8(v)) => {
             if *v > 0 && *v < u8::MAX as i8 {
                 return Some(DataType::UInt8);
             }
-        }
+        },
         (DataType::Int32, LiteralValue::Int64(v)) => {
             if *v <= i32::MAX as i64 {
                 return Some(DataType::Int32);
             }
-        }
+        },
         (DataType::Int16, LiteralValue::Int64(v)) => {
             if *v <= i16::MAX as i64 {
                 return Some(DataType::Int16);
             }
-        }
+        },
         (DataType::Int16, LiteralValue::Int32(v)) => {
             if *v <= i16::MAX as i32 {
                 return Some(DataType::Int16);
             }
-        }
+        },
         (DataType::Int8, LiteralValue::Int64(v)) => {
             if *v <= i8::MAX as i64 {
                 return Some(DataType::Int8);
             }
-        }
+        },
         (DataType::Int8, LiteralValue::Int32(v)) => {
             if *v <= i8::MAX as i32 {
                 return Some(DataType::Int8);
             }
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         (DataType::Int8, LiteralValue::Int16(v)) => {
             if *v <= i8::MAX as i16 {
                 return Some(DataType::Int8);
             }
-        }
+        },
         _ => {
             // the rest is done by supertypes.
-        }
+        },
     }
     None
 }
@@ -176,7 +176,7 @@ fn modify_supertype(
                 Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
             ) if matches!(type_left, DataType::Float32) => st = DataType::Float32,
             // always make sure that we cast to floats if one of the operands is float
-            (Literal(lv), _) | (_, Literal(lv)) if lv.is_float() => {}
+            (Literal(lv), _) | (_, Literal(lv)) if lv.is_float() => {},
 
             // TODO: see if we can activate this for columns as well.
             // shrink the literal value if it fits in the column dtype
@@ -184,15 +184,15 @@ fn modify_supertype(
                 if let Some(dtype) = shrink_literal(type_left, lv) {
                     st = dtype;
                 }
-            }
+            },
             // shrink the literal value if it fits in the column dtype
             (Literal(lv), Literal(LiteralValue::Series(_))) => {
                 if let Some(dtype) = shrink_literal(type_right, lv) {
                     st = dtype;
                 }
-            }
+            },
             // do nothing and use supertype
-            (Literal(_), Literal(_)) => {}
+            (Literal(_), Literal(_)) => {},
 
             // cast literal to right type if they fit in the range
             (Literal(value), _) => {
@@ -201,7 +201,7 @@ fn modify_supertype(
                         st = type_right.clone();
                     }
                 }
-            }
+            },
             // cast literal to left type
             (_, Literal(value)) => {
                 if let Some(lit_val) = value.to_anyvalue() {
@@ -209,9 +209,9 @@ fn modify_supertype(
                         st = type_left.clone();
                     }
                 }
-            }
+            },
             // do nothing
-            _ => {}
+            _ => {},
         }
     } else {
         use DataType::*;
@@ -221,7 +221,7 @@ fn modify_supertype(
             (Categorical(_), Utf8, _, AExpr::Literal(_))
             | (Utf8, Categorical(_), AExpr::Literal(_), _) => {
                 st = Categorical(None);
-            }
+            },
             // when then expression literals can have a different list type.
             // so we cast the literal to the other hand side.
             (List(inner), List(other), _, AExpr::Literal(_))
@@ -229,9 +229,9 @@ fn modify_supertype(
                 if inner != other =>
             {
                 st = DataType::List(inner.clone())
-            }
+            },
             // do nothing
-            _ => {}
+            _ => {},
         }
     }
     st
@@ -325,7 +325,7 @@ impl OptimizationRule for TypeCoercionRule {
                     falsy: new_node_falsy,
                     predicate,
                 })
-            }
+            },
             AExpr::BinaryExpr {
                 left: node_left,
                 op,
@@ -359,10 +359,10 @@ impl OptimizationRule for TypeCoercionRule {
                             // does not matter
                             strict: false,
                         }
-                    }
+                    },
                     (dt, DataType::Utf8) => {
                         polars_bail!(ComputeError: "cannot compare {:?} to {:?} type in 'is_in' operation", dt, type_other)
-                    }
+                    },
                     (DataType::List(_), _) | (_, DataType::List(_)) => return Ok(None),
                     #[cfg(feature = "dtype-struct")]
                     (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return Ok(None),
@@ -376,7 +376,7 @@ impl OptimizationRule for TypeCoercionRule {
                             // does not matter
                             strict: false,
                         }
-                    }
+                    },
                     // do nothing
                     _ => return Ok(None),
                 };
@@ -390,7 +390,7 @@ impl OptimizationRule for TypeCoercionRule {
                     input,
                     options,
                 })
-            }
+            },
             // fill null has a supertype set during projection
             // to make the schema known before the optimization phase
             AExpr::Function {
@@ -417,7 +417,7 @@ impl OptimizationRule for TypeCoercionRule {
                 } else {
                     None
                 }
-            }
+            },
             // generic type coercion of any function.
             AExpr::Function {
                 // only for `DataType::Unknown` as it still has to be set.
@@ -497,7 +497,7 @@ impl OptimizationRule for TypeCoercionRule {
                     input: new_nodes,
                     options,
                 })
-            }
+            },
             _ => None,
         };
         Ok(out)

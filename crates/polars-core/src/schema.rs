@@ -55,7 +55,7 @@ where
                         fld.coerce(DataType::Float64);
                         fld
                     }
-                }
+                },
                 _ => fld,
             };
 

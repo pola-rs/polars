@@ -1,6 +1,10 @@
 use super::*;
 
-fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> bool {
+// information concerning individual sides of a join
+#[derive(PartialEq, Eq)]
+struct LeftRight<T>(T, T);
+
+fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> LeftRight<bool> {
     use AExpr::*;
     match ae {
         // joins can produce null values
@@ -23,31 +27,42 @@ fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> bool {
                 FunctionExpr::Boolean(BooleanFunction::IsUnique)
                 | FunctionExpr::Boolean(BooleanFunction::IsDuplicated),
             ..
-        } => true,
+        } => LeftRight(true, true),
         #[cfg(feature = "is_first")]
         Function {
             function: FunctionExpr::Boolean(BooleanFunction::IsFirst),
             ..
-        } => true,
+        } => LeftRight(true, true),
         // any operation that checks for equality or ordering can be wrong because
         // the join can produce null values
         // TODO! check if we can be less conservative here
-        BinaryExpr { op, .. } => !matches!(op, Operator::NotEq) && join_produces_null(how),
-        _ => false,
+        BinaryExpr { op, .. } => {
+            if matches!(op, Operator::NotEq) {
+                LeftRight(false, false)
+            } else {
+                join_produces_null(how)
+            }
+        },
+        _ => LeftRight(false, false),
     }
 }
 
-fn join_produces_null(how: &JoinType) -> bool {
+fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
     #[cfg(feature = "asof_join")]
     {
-        matches!(
-            how,
-            JoinType::Left | JoinType::Outer | JoinType::Cross | JoinType::AsOf(_)
-        )
+        match how {
+            JoinType::Left => LeftRight(false, true),
+            JoinType::Outer | JoinType::Cross | JoinType::AsOf(_) => LeftRight(true, true),
+            _ => LeftRight(false, false),
+        }
     }
     #[cfg(not(feature = "asof_join"))]
     {
-        matches!(how, JoinType::Left | JoinType::Outer | JoinType::Cross)
+        match how {
+            JoinType::Left => LeftRight(false, true),
+            JoinType::Outer | JoinType::Cross => LeftRight(true, true),
+            _ => LeftRight(false, false),
+        }
     }
 }
 
@@ -74,12 +89,13 @@ pub(super) fn process_join(
 
     for (_, predicate) in acc_predicates {
         // check if predicate can pass the joins node
-        if has_aexpr(predicate, expr_arena, |ae| {
-            should_block_join_specific(ae, &options.args.how)
-        }) {
-            local_predicates.push(predicate);
-            continue;
-        }
+        let block_pushdown_left = has_aexpr(predicate, expr_arena, |ae| {
+            should_block_join_specific(ae, &options.args.how).0
+        });
+        let block_pushdown_right = has_aexpr(predicate, expr_arena, |ae| {
+            should_block_join_specific(ae, &options.args.how).1
+        });
+
         // these indicate to which tables we are going to push down the predicate
         let mut filter_left = false;
         let mut filter_right = false;
@@ -88,7 +104,7 @@ pub(super) fn process_join(
         // be influenced by join
         #[allow(clippy::suspicious_else_formatting)]
         if !predicate_is_pushdown_boundary(predicate, expr_arena) {
-            if check_input_node(predicate, &schema_left, expr_arena) {
+            if check_input_node(predicate, &schema_left, expr_arena) && !block_pushdown_left {
                 insert_and_combine_predicate(&mut pushdown_left, predicate, expr_arena);
                 filter_left = true;
             }
@@ -96,7 +112,9 @@ pub(super) fn process_join(
             // the right hand side should be renamed with the suffix.
             // in that case we should not push down as the user wants to filter on `x`
             // not on `x_rhs`.
-            else if check_input_node(predicate, &schema_right, expr_arena) {
+            else if check_input_node(predicate, &schema_right, expr_arena)
+                && !block_pushdown_right
+            {
                 insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
                 filter_right = true;
             }

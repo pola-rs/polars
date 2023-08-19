@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::ops::Sub;
+use std::ops::{Add, Sub};
 
 use ahash::RandomState;
 use arrow::types::NativeType;
@@ -91,6 +91,69 @@ pub(super) unsafe fn join_asof_forward_with_indirection_and_tolerance<
     (None, offsets.len())
 }
 
+pub(super) unsafe fn join_asof_nearest_with_indirection_and_tolerance<
+    T: PartialOrd + Copy + Debug + Sub<Output = T> + Add<Output = T>,
+>(
+    val_l: T,
+    right: &[T],
+    offsets: &[IdxSize],
+    tolerance: T,
+) -> (Option<IdxSize>, usize) {
+    if offsets.is_empty() {
+        return (None, 0);
+    }
+
+    // If we know the first/last values, we can leave early in many cases.
+    let n_right = offsets.len();
+    let r_upper_bound = right[offsets[n_right - 1] as usize] + tolerance;
+
+    // The left value is too high. Subsequent values are guaranteed to be too
+    // high as well, so we can early return.
+    if val_l > r_upper_bound {
+        return (None, n_right - 1);
+    }
+
+    let mut dist: T = tolerance;
+    let mut prev_offset: IdxSize = 0;
+    let mut found_window = false;
+    for (idx, &offset) in offsets.iter().enumerate() {
+        let val_r = *right.get_unchecked(offset as usize);
+
+        // We haven't reached the window yet; go to next RHS value.
+        if val_l > val_r + tolerance {
+            prev_offset = offset;
+            continue;
+        }
+
+        // We passed the window without a match, so leave immediately.
+        if !found_window && (val_r > val_l + tolerance) {
+            return (None, n_right - 1);
+        }
+
+        // We made it to the window: matches are now possible, start measuring distance.
+        found_window = true;
+        let current_dist = if val_l > val_r {
+            val_l - val_r
+        } else {
+            val_r - val_l
+        };
+        if current_dist <= dist {
+            dist = current_dist;
+            if idx == (n_right - 1) {
+                // We're the last item, it's a match.
+                return (Some(offset), idx);
+            }
+            prev_offset = offset;
+        } else {
+            // We'ved moved farther away, so the last element was the match.
+            return (Some(prev_offset), idx - 1);
+        }
+    }
+
+    // This should be unreachable.
+    (None, 0)
+}
+
 pub(super) unsafe fn join_asof_backward_with_indirection<T: PartialOrd + Copy + Debug>(
     val_l: T,
     right: &[T],
@@ -167,8 +230,6 @@ pub(super) unsafe fn join_asof_nearest_with_indirection<
             // candidate for match
             dist = dist_curr;
         } else {
-            // note for a nearest-match, we can re-match on the same val_r next time,
-            // so we need to rewind the idx by 1
             return (Some(prev_offset), idx - 1);
         }
         prev_offset = offset;
@@ -215,7 +276,7 @@ fn process_group<K, T>(
         Some(_) => {
             results.push(join_idx);
             right_tbl_offsets.insert(k, (offset_slice, join_idx));
-        }
+        },
         None => {
             if forward {
                 previous_join_idx = None;
@@ -231,7 +292,7 @@ fn process_group<K, T>(
                 }
             }
             results.push(previous_join_idx)
-        }
+        },
     }
 }
 
@@ -261,7 +322,7 @@ where
                 tol,
                 false,
             )
-        }
+        },
         (None, AsofStrategy::Backward) => (
             join_asof_backward_with_indirection,
             T::Native::zero(),
@@ -270,13 +331,17 @@ where
         (Some(tolerance), AsofStrategy::Forward) => {
             let tol = tolerance.extract::<T::Native>().unwrap();
             (join_asof_forward_with_indirection_and_tolerance, tol, true)
-        }
+        },
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
-        }
-        (_, AsofStrategy::Nearest) => {
+        },
+        (Some(tolerance), AsofStrategy::Nearest) => {
+            let tol = tolerance.extract::<T::Native>().unwrap();
+            (join_asof_nearest_with_indirection_and_tolerance, tol, false)
+        },
+        (None, AsofStrategy::Nearest) => {
             (join_asof_nearest_with_indirection, T::Native::zero(), false)
-        }
+        },
     };
 
     let left_asof = left_asof.rechunk();
@@ -360,7 +425,7 @@ where
                                 &mut results,
                                 forward,
                             );
-                        }
+                        },
                         // only left values, right = null
                         None => results.push(None),
                     }
@@ -395,7 +460,7 @@ where
                 tol,
                 false,
             )
-        }
+        },
         (None, AsofStrategy::Backward) => (
             join_asof_backward_with_indirection,
             T::Native::zero(),
@@ -404,13 +469,17 @@ where
         (Some(tolerance), AsofStrategy::Forward) => {
             let tol = tolerance.extract::<T::Native>().unwrap();
             (join_asof_forward_with_indirection_and_tolerance, tol, true)
-        }
+        },
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
-        }
-        (_, AsofStrategy::Nearest) => {
+        },
+        (Some(tolerance), AsofStrategy::Nearest) => {
+            let tol = tolerance.extract::<T::Native>().unwrap();
+            (join_asof_nearest_with_indirection_and_tolerance, tol, false)
+        },
+        (None, AsofStrategy::Nearest) => {
             (join_asof_nearest_with_indirection, T::Native::zero(), false)
-        }
+        },
     };
 
     let left_asof = left_asof.rechunk();
@@ -484,7 +553,7 @@ where
                                 &mut results,
                                 forward,
                             );
-                        }
+                        },
                         // only left values, right = null
                         None => results.push(None),
                     }
@@ -521,7 +590,7 @@ where
                 tol,
                 false,
             )
-        }
+        },
         (None, AsofStrategy::Backward) => (
             join_asof_backward_with_indirection,
             T::Native::zero(),
@@ -530,13 +599,17 @@ where
         (Some(tolerance), AsofStrategy::Forward) => {
             let tol = tolerance.extract::<T::Native>().unwrap();
             (join_asof_forward_with_indirection_and_tolerance, tol, true)
-        }
+        },
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
-        }
-        (_, AsofStrategy::Nearest) => {
+        },
+        (Some(tolerance), AsofStrategy::Nearest) => {
+            let tol = tolerance.extract::<T::Native>().unwrap();
+            (join_asof_nearest_with_indirection_and_tolerance, tol, false)
+        },
+        (None, AsofStrategy::Nearest) => {
             (join_asof_nearest_with_indirection, T::Native::zero(), false)
-        }
+        },
     };
     let left_asof = left_asof.rechunk();
     let left_asof = left_asof.cont_slice().unwrap();
@@ -607,7 +680,7 @@ where
                                     &mut results,
                                     forward,
                                 );
-                            }
+                            },
                             // only left values, right = null
                             None => results.push(None),
                         }
@@ -633,7 +706,12 @@ fn dispatch_join<T: PolarsNumericType>(
     tolerance: Option<AnyValue<'static>>,
 ) -> PolarsResult<Vec<Option<IdxSize>>> {
     let out = if left_by.width() == 1 {
-        match left_by_s.dtype() {
+        let left_dtype = left_by_s.dtype();
+        let right_dtype = right_by_s.dtype();
+        polars_ensure!(left_dtype == right_dtype,
+            ComputeError: "mismatching dtypes in 'by' parameter of asof-join: `{}` and `{}`", left_dtype, right_dtype
+        );
+        match left_dtype {
             DataType::Utf8 => asof_join_by_binary(
                 &left_by_s.utf8().unwrap().as_binary(),
                 &right_by_s.utf8().unwrap().as_binary(),
@@ -664,12 +742,12 @@ fn dispatch_join<T: PolarsNumericType>(
                         &left_by, &right_by, left_asof, right_asof, tolerance, strategy,
                     )?
                 }
-            }
+            },
         }
     } else {
         for (lhs, rhs) in left_by.get_columns().iter().zip(right_by.get_columns()) {
             polars_ensure!(lhs.dtype() == rhs.dtype(),
-                ComputeError: "mismatching dtypes in 'on' parameter of asof-join: `{}` and `{}`", lhs.dtype(), rhs.dtype()
+                ComputeError: "mismatching dtypes in 'by' parameter of asof-join: `{}` and `{}`", lhs.dtype(), rhs.dtype()
             );
             #[cfg(feature = "dtype-categorical")]
             _check_categorical_src(lhs.dtype(), rhs.dtype())?;

@@ -34,7 +34,7 @@ fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> PolarsResult
                 }
             }
             s.mean()
-        }
+        },
     };
     Ok(out)
 }

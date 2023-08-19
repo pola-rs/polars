@@ -162,7 +162,7 @@
 //!     )
 //!     .groupby([col("b")])
 //!     .agg(
-//!         vec![col("b").first(), col("c").first()]
+//!         vec![col("b").first().alias("first_b"), col("c").first().alias("first_c")]
 //!      )
 //!     .select(&[col("b"), col("c_first")])
 //! }

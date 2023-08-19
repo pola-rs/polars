@@ -55,6 +55,7 @@ class BatchedCsvReader:
         sample_size: int = 1024,
         eol_char: str = "\n",
         new_columns: Sequence[str] | None = None,
+        raise_if_empty: bool = True,
     ):
         path: str | None
         if isinstance(source, (str, Path)):
@@ -101,6 +102,7 @@ class BatchedCsvReader:
             row_count=_prepare_row_count_args(row_count_name, row_count_offset),
             sample_size=sample_size,
             eol_char=eol_char,
+            raise_if_empty=raise_if_empty,
         )
         self.new_columns = new_columns
 

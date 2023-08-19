@@ -42,13 +42,13 @@ impl Sink for ReProjectSink {
         Ok(match self.sink.finalize(context)? {
             FinalizedSink::Finished(df) => {
                 FinalizedSink::Finished(df.select(self.schema.iter_names())?)
-            }
+            },
             FinalizedSink::Operator(op) => {
                 FinalizedSink::Operator(Box::new(ReProjectOperator::new(self.schema.clone(), op)))
-            }
+            },
             FinalizedSink::Source(source) => {
                 FinalizedSink::Source(Box::new(ReProjectSource::new(self.schema.clone(), source)))
-            }
+            },
         })
     }
 
