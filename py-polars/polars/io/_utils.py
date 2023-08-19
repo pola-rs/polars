@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import glob
 from contextlib import contextmanager
-from io import BytesIO, IOBase, StringIO, TextIOWrapper
 from pathlib import Path
 from typing import (
     Any,
@@ -13,14 +12,16 @@ from typing import (
     TypeVar,
     cast,
     overload,
+    TYPE_CHECKING
 )
-
-from xlsxwriter import Workbook
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
 from polars.utils.various import normalise_filepath
 
+if TYPE_CHECKING:
+    from xlsxwriter import Workbook
+    from io import BytesIO, IOBase, StringIO, TextIOWrapper
 
 def _is_glob_pattern(file: str) -> bool:
     return any(char in file for char in ["*", "?", "["])
