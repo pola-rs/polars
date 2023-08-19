@@ -208,8 +208,9 @@ def _prepare_file_arg(
             kwargs["encoding"] = encoding
             return fsspec.open_files(file, **kwargs)
         else:
-            for f in file:
-                _raise_fsspec_import_error(f) 
+            raise ImportError(
+                "fsspec needs to be installed to make use of storage_options"
+            )
 
     if isinstance(file, str):
         file = normalise_filepath(file, check_not_dir)
