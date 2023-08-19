@@ -3198,8 +3198,9 @@ class DataFrame:
             compression = "uncompressed"
 
         with _prepare_write_file_arg(
-            file, pyarrow_options=pyarrow_options, storage_options=storage_options
+            file, **storage_options
         ) as file:
+            print(file)
             if use_pyarrow:
                 tbl = self.to_arrow()
                 data = {}
@@ -3225,13 +3226,14 @@ class DataFrame:
                     pyarrow_options["compression_level"] = compression_level
                     pyarrow_options["write_statistics"] = statistics
                     pyarrow_options["row_group_size"] = row_group_size
-
+                    print("writing with pyarrow options")
                     pa.parquet.write_to_dataset(
                         table=tbl,
                         root_path=file,
                         **(pyarrow_options or {}),
                     )
                 else:
+                    print("writing without pyarrow options")
                     pa.parquet.write_table(
                         table=tbl,
                         where=file,
@@ -3244,6 +3246,7 @@ class DataFrame:
                         **(pyarrow_options or {}),
                     )
             else:
+                print("writing with rust")
                 self._df.write_parquet(
                     file, compression, compression_level, statistics, row_group_size
                 )
